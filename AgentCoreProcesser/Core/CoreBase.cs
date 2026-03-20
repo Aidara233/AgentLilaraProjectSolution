@@ -39,8 +39,6 @@ namespace AgentCoreProcesser.Core
         {
             StringBuilder result = new();
 
-            int breakScanLine = 0;
-
             await processor.ProcessAsync((response) =>
             {
                 // 有reasoning content或者content都触发onDelta事件，方便外部监听
@@ -49,32 +47,16 @@ namespace AgentCoreProcesser.Core
                     onDelta?.Invoke(response);
                 }
 
-                // 监测到换行符，且包含breakString中的任意一个字符串，就触发onBreak事件，并把当前result内容（去掉breakString）作为参数传递，同时清空result继续监听后续内容
+                // 包含breakString中的任意一个字符串，就触发onBreak事件，并把当前result内容（去掉breakString）作为参数传递，同时清空result继续监听后续内容
                 if (onBreak != null && response.Choices[0].Delta?.Content != null)
                 {
                     result.Append(response.Choices[0].Delta?.Content);
-
-                    string[] lines = result.ToString().Split('\n');
-                    Console.Write("");
-                    if (breakScanLine == lines.Length)
-                        breakScanLine--;
-                    for (; breakScanLine < lines.Length; breakScanLine++)
+                    foreach (var breakStr in breakString)
                     {
-                        string line = lines[breakScanLine];
-                        bool isBreak = false;
-                        foreach (var breakStr in breakString)
+                        if (result.ToString().Contains(breakStr))
                         {
-                            if (line.Contains(breakStr))
-                            {
-                                onBreak?.Invoke(new ResponseBlock() { name = breakStr, content = result.ToString().Replace(breakStr, "") });
-                                result.Clear();
-                                breakScanLine = 0;
-                                isBreak = true;
-                                break;
-                            }
-                        }
-                        if (isBreak)
-                        {
+                            onBreak?.Invoke(new ResponseBlock() { name = breakStr, content = result.ToString().Replace(breakStr, "") });
+                            result.Clear();
                             break;
                         }
                     }
