@@ -12,13 +12,13 @@ using AgentCoreProcesser.Client;
 
 namespace AgentCoreProcesser.Core
 {
-    internal class Processer
+    internal class Processor
     {
         public string cfgDirectionPath;
 
         public AIApiClient client = new();
 
-        string cfgName = "base";
+        string cfgName = "Base";
 
         public string CfgName
         {
@@ -28,8 +28,8 @@ namespace AgentCoreProcesser.Core
                 // 查错
                 if (!File.Exists(Path.Combine(cfgDirectionPath, value) + ".json"))
                 {
-                    Console.WriteLine($"Configuration file {value} not found in {cfgDirectionPath}.");
-                    cfgName = "base";
+                    //Console.WriteLine($"Configuration file {value} not found in {cfgDirectionPath}.");
+                    cfgName = "Base";
                     return;
                 }
                 // 初始化
@@ -38,7 +38,7 @@ namespace AgentCoreProcesser.Core
             }
         }
 
-        public Processer(string cfgName="base", string cfgDirectionPath = "E:\\Workspace\\AgentLilaraProject\\Storage\\Core")
+        public Processor(string cfgName="base", string cfgDirectionPath = "E:\\Workspace\\AgentLilaraProject\\Storage\\Core")
         {
             this.cfgDirectionPath = cfgDirectionPath;
             CfgName = cfgName;

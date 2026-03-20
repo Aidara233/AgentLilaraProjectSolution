@@ -12,11 +12,22 @@ namespace AgentCoreProcesser  // 建议用你的项目名替换
         {
             Console.OutputEncoding = Encoding.UTF8;
 
-            PreprocessingCore ec = new();
-            Console.Write(ec.Generate());
+            WorkingCore ec = new();
+            await ec.Generate(OnDelta,OnBreak);
 
             await Task.Delay(1); // 模拟一些异步操作
             return 0;
+        }
+
+        public static void OnDelta(ApiResponse response)
+        {
+            Console.Write(response.Choices[0].Delta?.ReasoningContent);
+            Console.Write(response.Choices[0].Delta?.Content);
+        }
+
+        public static void OnBreak(ResponseBlock block)
+        {
+            Console.WriteLine($"\n[Break Detected] Type: {block.name}, Content: {block.content}\n");
         }
     }
 }

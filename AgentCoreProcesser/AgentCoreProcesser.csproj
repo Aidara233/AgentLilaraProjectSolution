@@ -19,4 +19,8 @@
     <Folder Include="DataBase\" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="Core\CoreBase.cs" />
+  </ItemGroup>
+
 </Project>
