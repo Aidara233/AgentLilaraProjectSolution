@@ -41,6 +41,13 @@ namespace AgentCoreProcesser.Models
         public int? ReasoningTokens { get; set; }
     }
 
+    // 新增：表示 prompt_tokens_details 对象
+    public class PromptTokensDetails
+    {
+        [JsonProperty("cached_tokens", NullValueHandling = NullValueHandling.Ignore)]
+        public int? CachedTokens { get; set; }
+    }
+
     public class Usage
     {
         [JsonProperty("prompt_tokens")]
@@ -54,6 +61,17 @@ namespace AgentCoreProcesser.Models
 
         [JsonProperty("completion_tokens_details", NullValueHandling = NullValueHandling.Ignore)]
         public CompletionTokensDetails? CompletionTokensDetails { get; set; }
+
+        // 新增：支持 JSON 中的 prompt_tokens_details 子对象
+        [JsonProperty("prompt_tokens_details", NullValueHandling = NullValueHandling.Ignore)]
+        public PromptTokensDetails? PromptTokensDetails { get; set; }
+
+        // 新增：支持 JSON 中的 prompt_cache_hit_tokens 和 prompt_cache_miss_tokens
+        [JsonProperty("prompt_cache_hit_tokens", NullValueHandling = NullValueHandling.Ignore)]
+        public int? PromptCacheHitTokens { get; set; }
+
+        [JsonProperty("prompt_cache_miss_tokens", NullValueHandling = NullValueHandling.Ignore)]
+        public int? PromptCacheMissTokens { get; set; }
     }
 
     public class ApiResponse

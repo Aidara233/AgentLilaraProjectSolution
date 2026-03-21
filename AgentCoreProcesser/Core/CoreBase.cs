@@ -35,9 +35,11 @@ namespace AgentCoreProcesser.Core
             }
         }
 
-        public async Task GenerateAsync(Action<ApiResponse>? onDelta = null, Action<ResponseBlock>? onBreak = null)
+        public async Task<Usage> GenerateAsync(Action<ApiResponse>? onDelta = null, Action<ResponseBlock>? onBreak = null)
         {
             StringBuilder result = new();
+
+            Usage usage = new();
 
             await processor.ProcessAsync((response) =>
             {
@@ -46,6 +48,7 @@ namespace AgentCoreProcesser.Core
                 {
                     onDelta?.Invoke(response);
                     OnDelta(response);
+                    usage = response.Usage ?? usage;
                 }
 
                 // 包含breakString中的任意一个字符串，就触发onBreak事件，并把当前result内容（去掉breakString）作为参数传递，同时清空result继续监听后续内容
@@ -65,6 +68,7 @@ namespace AgentCoreProcesser.Core
                 }
                 return;
             });
+            return usage;
         }
 
         public virtual void OnDelta(ApiResponse response) { }
