@@ -61,7 +61,6 @@ namespace AgentCoreProcesser.Core
                         }
                     }
                 }
-                ;
                 return;
             });
         }

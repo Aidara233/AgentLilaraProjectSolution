@@ -38,7 +38,7 @@ namespace AgentCoreProcesser.Core
             }
         }
 
-        public Processor(string cfgName="base", string cfgDirectionPath = "E:\\Workspace\\AgentLilaraProject\\Storage\\Core")
+        public Processor(string cfgName="Base", string cfgDirectionPath = "E:\\Workspace\\AgentLilaraProject\\Storage\\Core")
         {
             this.cfgDirectionPath = cfgDirectionPath;
             CfgName = cfgName;
