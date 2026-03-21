@@ -170,7 +170,7 @@ namespace AgentCoreProcesser.Client
         }
 
         // 流式响应处理（使用 Newtonsoft.Json.Linq 替代 System.Text.Json）
-        public async Task<string> StreamChatAsync(Action<ApiStreamResponse> onDelta, CancellationToken ct = default)
+        public async Task<string> StreamChatAsync(Action<ApiResponse> onDelta, CancellationToken ct = default)
         {
             ArgumentNullException.ThrowIfNull(onDelta);
 
@@ -232,7 +232,7 @@ namespace AgentCoreProcesser.Client
 
                 try
                 {
-                    ApiStreamResponse? apiResponse = JsonConvert.DeserializeObject<ApiStreamResponse>(payload);
+                    ApiResponse? apiResponse = JsonConvert.DeserializeObject<ApiResponse>(payload);
                     if (apiResponse != null)
                     {
                         onDelta(apiResponse);

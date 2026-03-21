@@ -19,7 +19,7 @@ namespace AgentCoreProcesser  // 建议用你的项目名替换
             return 0;
         }
 
-        public static void OnDelta(ApiStreamResponse response)
+        public static void OnDelta(ApiResponse response)
         {
             Console.Write(response.Choices[0].Delta?.ReasoningContent);
             Console.Write(response.Choices[0].Delta?.Content);

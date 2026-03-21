@@ -35,7 +35,7 @@ namespace AgentCoreProcesser.Core
             }
         }
 
-        public async Task GenerateAsync(Action<ApiStreamResponse>? onDelta = null, Action<ResponseBlock>? onBreak = null)
+        public async Task GenerateAsync(Action<ApiResponse>? onDelta = null, Action<ResponseBlock>? onBreak = null)
         {
             StringBuilder result = new();
 
@@ -67,7 +67,7 @@ namespace AgentCoreProcesser.Core
             });
         }
 
-        public virtual void OnDelta(ApiStreamResponse response) { }
+        public virtual void OnDelta(ApiResponse response) { }
 
         public virtual void OnBreak(ResponseBlock block) { }
     }

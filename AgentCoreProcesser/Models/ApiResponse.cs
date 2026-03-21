@@ -56,7 +56,7 @@ namespace AgentCoreProcesser.Models
         public CompletionTokensDetails? CompletionTokensDetails { get; set; }
     }
 
-    public class ApiStreamResponse
+    public class ApiResponse
     {
         [JsonProperty("id")]
         public string Id { get; set; } = "";

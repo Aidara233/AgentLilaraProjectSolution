@@ -44,7 +44,7 @@ namespace AgentCoreProcesser.Core
             CfgName = cfgName;
         }
 
-        public async Task ProcessAsync(Action<ApiStreamResponse> OnDelta)
+        public async Task ProcessAsync(Action<ApiResponse> OnDelta)
         {
 
             // 调用模型
