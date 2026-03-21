@@ -12,14 +12,14 @@ namespace AgentCoreProcesser  // 建议用你的项目名替换
         {
             Console.OutputEncoding = Encoding.UTF8;
 
-            WorkingCore ec = new();
-            await ec.Generate(OnDelta,OnBreak);
+            PreprocessingCore ec = new();
+            await ec.GenerateAsync(OnDelta,OnBreak);
 
             await Task.Delay(1); // 模拟一些异步操作
             return 0;
         }
 
-        public static void OnDelta(ApiResponse response)
+        public static void OnDelta(ApiStreamResponse response)
         {
             Console.Write(response.Choices[0].Delta?.ReasoningContent);
             Console.Write(response.Choices[0].Delta?.Content);

@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace AgentCoreProcesser.Core
 {
-    internal class CoreBase
+    internal abstract class CoreBase
     {
         public string CoreName { get => GetType().Name; }
 
@@ -35,7 +35,7 @@ namespace AgentCoreProcesser.Core
             }
         }
 
-        public async Task Generate(Action<ApiResponse>? onDelta = null, Action<ResponseBlock>? onBreak = null)
+        public async Task GenerateAsync(Action<ApiStreamResponse>? onDelta = null, Action<ResponseBlock>? onBreak = null)
         {
             StringBuilder result = new();
 
@@ -45,6 +45,7 @@ namespace AgentCoreProcesser.Core
                 if (response.Choices[0].Delta?.ReasoningContent != null || response.Choices[0].Delta?.Content != null)
                 {
                     onDelta?.Invoke(response);
+                    OnDelta(response);
                 }
 
                 // 包含breakString中的任意一个字符串，就触发onBreak事件，并把当前result内容（去掉breakString）作为参数传递，同时清空result继续监听后续内容
@@ -56,6 +57,7 @@ namespace AgentCoreProcesser.Core
                         if (result.ToString().Contains(breakStr))
                         {
                             onBreak?.Invoke(new ResponseBlock() { name = breakStr, content = result.ToString().Replace(breakStr, "") });
+                            OnBreak(new ResponseBlock() { name = breakStr, content = result.ToString().Replace(breakStr, "") });
                             result.Clear();
                             break;
                         }
@@ -64,6 +66,10 @@ namespace AgentCoreProcesser.Core
                 return;
             });
         }
+
+        public virtual void OnDelta(ApiStreamResponse response) { }
+
+        public virtual void OnBreak(ResponseBlock block) { }
     }
 
     public struct ResponseBlock

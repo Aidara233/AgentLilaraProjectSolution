@@ -31,5 +31,8 @@ namespace AgentCoreProcesser.Models
 
         [JsonProperty("n", NullValueHandling = NullValueHandling.Ignore)]
         public int? N { get; set; }
+
+        [JsonProperty("extra_body", NullValueHandling = NullValueHandling.Ignore)]
+        public Dictionary<string, object>? ExtraBody { get; set; } = null;
     }
 }
