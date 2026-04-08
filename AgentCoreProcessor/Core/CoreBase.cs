@@ -1,11 +1,11 @@
-using AgentCoreProcesser.Models;
+using AgentCoreProcessor.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace AgentCoreProcesser.Core
+namespace AgentCoreProcessor.Core
 {
     internal abstract class CoreBase
     {

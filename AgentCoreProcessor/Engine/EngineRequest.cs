@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace AgentCoreProcesser.Engine
+namespace AgentCoreProcessor.Engine
 {
     internal class EngineRequest
     {

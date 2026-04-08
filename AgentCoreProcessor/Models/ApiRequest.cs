@@ -2,13 +2,13 @@
 using Newtonsoft.Json.Linq;
 using System.Collections.Generic;
 
-namespace AgentCoreProcesser.Models
+namespace AgentCoreProcessor.Models
 {
     [JsonConverter(typeof(ApiRequestConverter))]
     public class ApiRequest
     {
         [JsonProperty("model")]
-        public string Model { get; set; } = "gpt-3.5-turbo";
+        public string Model { get; set; } = "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B";
 
         [JsonProperty("messages")]
         public List<Message> Messages { get; set; } = new List<Message>();

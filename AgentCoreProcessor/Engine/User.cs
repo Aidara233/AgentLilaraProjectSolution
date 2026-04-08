@@ -1,7 +1,7 @@
 ﻿using SQLite;
 using System;
 
-namespace AgentCoreProcesser.Engine
+namespace AgentCoreProcessor.Engine
 {
     [Table("Users")]
     internal class User

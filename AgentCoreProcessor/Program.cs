@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Text;
-using AgentCoreProcesser.Client;
-using AgentCoreProcesser.Core;
-using AgentCoreProcesser.Models;
+using AgentCoreProcessor.Client;
+using AgentCoreProcessor.Core;
+using AgentCoreProcessor.Models;
 
-namespace AgentCoreProcesser  // 建议用你的项目名替换
+namespace AgentCoreProcessor
 {
     class Program
     {
@@ -13,9 +13,8 @@ namespace AgentCoreProcesser  // 建议用你的项目名替换
             Console.OutputEncoding = Encoding.UTF8;
 
             PreprocessingCore ec = new();
-            await ec.GenerateAsync(OnDelta,OnBreak);
+            await ec.GenerateAsync(OnDelta, OnBreak);
 
-            await Task.Delay(1); // 模拟一些异步操作
             return 0;
         }
 

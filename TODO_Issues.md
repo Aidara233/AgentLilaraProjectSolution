@@ -1,31 +1,26 @@
 # 待修复问题记录
 
-## Client 层重构时发现
+> 本文件记录重构过程中发现的问题及其状态。
 
-1. **ConversationHistory 职责错位** — `ApiClientCfg` 是"配置"类，但持有了 `ConversationHistory`（运行时状态）。理想情况下对话历史应由 Engine 层或 Processor 管理，Config 只存静态参数。当前未动，因为 Processor 和上层都依赖这个结构。
+## 已全部解决
 
-2. **Processor 硬编码路径** — `Processor` 构造函数默认参数 `cfgDirectionPath = "E:\\Workspace\\AgentLilaraProject\\Storage\\Core"`，绝对路径硬编码不利于部署和协作。
+- ~~ConversationHistory 职责错位~~ — 已改为 `[JsonIgnore]`，不再参与配置序列化
+- ~~Processor 硬编码路径~~ — 已改为相对路径默认值
+- ~~Processor.client 是 public 字段~~ — 已改为 private + 只读属性
+- ~~Payload.cs 死代码~~ — 已删除
+- ~~ApiRequest.Model 默认值不一致~~ — 已对齐为 `"deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"`
+- ~~AgentCoreProcesser 拼写~~ — 已全局重命名为 AgentCoreProcessor
+- ~~databaseDirection / cfgDirectionPath 拼写~~ — 已修复
+- ~~MasterEngine.databaseDirectory 硬编码路径~~ — 已改为相对路径默认值
+- ~~MasterEngine async 方法无 await~~ — 已改为返回 Task.CompletedTask
+- ~~EngineRequest.userMessage 未赋值~~ — 已改为 required 属性
+- ~~csproj 冗余 SQLite 包~~ — 已精简为仅 sqlite-net-pcl
+- ~~csproj 多余的 None/Folder 引用~~ — 已移除
+- ~~Program.cs 无意义代码~~ — 已清理
+- ~~无用 using~~ — 已清理（ApiClientCfg、AIApiClient）
 
-3. **Processor.client 是 public 字段** — 外部可以随意替换 client 实例，应改为属性或降低可见性。
+## 待后续重构
 
-4. **Payload.cs 整个文件被注释掉** — 看起来是被 ApiResponse.cs 替代了，可以删除这个文件。
+1. **ToolCall.AfterThan → AfterThen** — JSON 字段名拼写错误，用户要求后续重构时处理。目前无兼容性约束。
 
-5. **ApiRequest.Model 默认值 "gpt-3.5-turbo"** — 与 ApiClientCfg.Model 的默认值 "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B" 不一致，虽然实际使用时会被覆盖，但容易造成混淆。
-
-## 拼写问题
-
-1. **AgentCoreProcesser → AgentCoreProcessor** — 项目名、命名空间、文件夹名全部拼错。涉及 .csproj、.sln、所有 namespace 声明，改动面太大，建议找一个合适的时机统一重命名。
-
-2. **ToolCall.AfterThan → AfterThen** — JSON 字段名 `"afterThan"` 语法错误，但改了会破坏已有 JSON 数据的兼容性，需要评估是否有持久化数据依赖这个字段名。
-
-3. ~~**databaseDirection → databaseDirectory**~~ — 已修复（MasterEngine.cs）。
-
-4. ~~**cfgDirectionPath → cfgDirectoryPath**~~ — 已修复（Processor.cs 重构时）。
-
-## Core/Models 层重构时发现
-
-1. **MasterEngine.databaseDirectory 硬编码绝对路径** — 与 Processor 同样的问题。
-
-2. **MasterEngine 的 async 方法没有 await** — `EngineMain()` 和 `PreProcess()` 标记为 async 但方法体为空，编译器警告 CS1998。属于未完成的代码。
-
-3. **EngineRequest.userMessage 从未赋值** — 编译器警告 CS0649/CS8618，字段声明了但没有初始化也没有赋值路径。
+2. **ConversationHistory 仍在 ApiClientCfg 中** — 虽然已从序列化中排除，但从职责上讲对话历史不属于"配置"。彻底拆分需要改动 AIApiClient 和上层调用方式，留待架构重构。

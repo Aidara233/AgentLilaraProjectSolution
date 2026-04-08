@@ -1,10 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Serialization;
-using AgentCoreProcesser.Models;
+using AgentCoreProcessor.Models;
 
-namespace AgentCoreProcesser.Client
+namespace AgentCoreProcessor.Client
 {
     [JsonObject(MemberSerialization.OptIn)]
     public class ApiClientCfg
@@ -54,8 +53,8 @@ namespace AgentCoreProcesser.Client
         [JsonProperty("n")]
         public int N { get; set; } = 1;
 
-        // 历史对话记录 - 始终初始化为一个空列表（可序列化）
-        [JsonProperty("conversationHistory")]
+        // 历史对话记录 - 运行时状态，不参与配置序列化
+        [JsonIgnore]
         public List<Message> ConversationHistory { get; set; } = new List<Message>();
 
         // 无参构造函数（用于手动创建或序列化库）

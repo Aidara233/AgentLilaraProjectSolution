@@ -1,18 +1,27 @@
 ﻿using System;
+using System.IO;
 using System.Threading.Tasks;
-using AgentCoreProcesser.Core;
+using AgentCoreProcessor.Core;
 
-namespace AgentCoreProcesser.Engine
+namespace AgentCoreProcessor.Engine
 {
     //主引擎，负责接收用户输入，调用核心进行处理，并返回结果
     internal class MasterEngine
     {
-        private string databaseDirectory = "E:\\Workspace\\AgentLilaraProject\\Storage\\Database";
+        private static readonly string DefaultDatabasePath =
+            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "Storage", "Database");
+
+        private string databaseDirectory;
 
         public string DatabaseDirectory
         {
             get => databaseDirectory;
             set => databaseDirectory = value;
+        }
+
+        public MasterEngine(string? databaseDirectory = null)
+        {
+            this.databaseDirectory = databaseDirectory ?? DefaultDatabasePath;
         }
 
         public Task EngineMain()

@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using Newtonsoft.Json;
 
-namespace AgentCoreProcesser.Core
+namespace AgentCoreProcessor.Core
 {
     /// <summary>
     /// 表示一个工具调用的数据结构，字段名与提供的 JSON 对应。

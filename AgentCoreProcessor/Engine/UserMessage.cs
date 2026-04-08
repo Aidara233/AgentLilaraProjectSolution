@@ -1,7 +1,7 @@
 ﻿using System;
 using SQLite;
 
-namespace AgentCoreProcesser.Engine
+namespace AgentCoreProcessor.Engine
 {
     [Table("UserMessages")]
     internal class UserMessage

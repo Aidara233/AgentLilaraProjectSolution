@@ -2,10 +2,10 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using AgentCoreProcesser.Models;
-using AgentCoreProcesser.Client;
+using AgentCoreProcessor.Models;
+using AgentCoreProcessor.Client;
 
-namespace AgentCoreProcesser.Core
+namespace AgentCoreProcessor.Core
 {
     internal class Processor
     {
