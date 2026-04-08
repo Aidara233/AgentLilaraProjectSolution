@@ -71,6 +71,22 @@ namespace AgentCoreProcesser.Core
             return usage;
         }
 
+        public async Task<string> GenerateOnceAsync()
+        {
+            StringBuilder result = new();
+            Usage usage = new();
+            await processor.ProcessAsync((response) =>
+            {
+                if (response.Choices[0].Delta?.Content != null)
+                {
+                    result.Append(response.Choices[0].Delta?.Content);
+                    usage = response.Usage ?? usage;
+                }
+                return;
+            });
+            return result.ToString();
+        }
+
         public virtual void OnDelta(ApiResponse response) { }
 
         public virtual void OnBreak(ResponseBlock block) { }
