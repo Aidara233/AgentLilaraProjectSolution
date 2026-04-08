@@ -66,14 +66,6 @@ namespace AgentCoreProcesser.Core
                 errors.Add("字段 'tool' 不能为空。");
             if (string.IsNullOrWhiteSpace(ToolId))
                 errors.Add("字段 'toolId' 不能为空。");
-            // pipeIn/pipeOut 可能为空，取决于工具类型，但做基本长度检查
-            if (PipeIn != null && PipeIn.Length > 1024)
-                errors.Add("字段 'pipeIn' 太长。");
-            if (PipeOut != null && PipeOut.Length > 1024)
-                errors.Add("字段 'pipeOut' 太长。");
-            // afterThan 长度限制示例
-            if (AfterThan != null && AfterThan.Count > 1000)
-                errors.Add("字段 'afterThan' 包含过多项。");
 
             return errors;
         }

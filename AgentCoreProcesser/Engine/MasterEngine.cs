@@ -10,7 +10,7 @@ namespace AgentCoreProcesser.Engine
     //主引擎，负责接收用户输入，调用核心进行处理，并返回结果
     internal class MasterEngine
     {
-        public string databaseDirection = "E:\\Workspace\\AgentLilaraProject\\Storage\\Database";
+        public string databaseDirectory = "E:\\Workspace\\AgentLilaraProject\\Storage\\Database";
 
         public async Task EngineMain()
         {

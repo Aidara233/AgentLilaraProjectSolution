@@ -1,4 +1,4 @@
-﻿using AgentCoreProcesser.Models;
+using AgentCoreProcesser.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,79 +11,86 @@ namespace AgentCoreProcesser.Core
     {
         public string CoreName { get => GetType().Name; }
 
-        public Processor processor;
+        protected Processor processor;
 
-        public List<Message> extraMessage = [];
+        protected List<Message> extraMessage = [];
 
-        public List<string> breakString = ["<over>"];
+        protected List<string> breakString = ["<over>"];
 
         public CoreBase()
         {
             processor = new Processor(CoreName);
+        }
+
+        /// <summary>
+        /// 将 extraMessage 注入到 processor，供子类在初始化字段后调用。
+        /// </summary>
+        protected void ApplyExtraMessages()
+        {
             foreach (var msg in extraMessage)
             {
-                processor.client.AddMessage(msg.Role, msg.Content);
+                processor.Client.AddMessage(msg.Role, msg.Content);
             }
         }
 
         public void ResetProcessor()
         {
             processor = new Processor(CoreName);
-            foreach (var msg in extraMessage)
-            {
-                processor.client.AddMessage(msg.Role, msg.Content);
-            }
+            ApplyExtraMessages();
         }
 
         public async Task<Usage> GenerateAsync(Action<ApiResponse>? onDelta = null, Action<ResponseBlock>? onBreak = null)
         {
-            StringBuilder result = new();
-
+            var buffer = new StringBuilder();
             Usage usage = new();
 
             await processor.ProcessAsync((response) =>
             {
-                // 有reasoning content或者content都触发onDelta事件，方便外部监听
-                if (response.Choices[0].Delta?.ReasoningContent != null || response.Choices[0].Delta?.Content != null)
-                {
-                    onDelta?.Invoke(response);
-                    OnDelta(response);
-                    usage = response.Usage ?? usage;
-                }
+                var delta = response.Choices is { Count: > 0 } ? response.Choices[0].Delta : null;
+                if (delta == null) return;
 
-                // 包含breakString中的任意一个字符串，就触发onBreak事件，并把当前result内容（去掉breakString）作为参数传递，同时清空result继续监听后续内容
-                if (onBreak != null && response.Choices[0].Delta?.Content != null)
+                bool hasContent = delta.ReasoningContent != null || delta.Content != null;
+                if (!hasContent) return;
+
+                onDelta?.Invoke(response);
+                OnDelta(response);
+
+                if (response.Usage != null)
+                    usage = response.Usage;
+
+                // break 检测：仅在有 content 且注册了 onBreak 时执行
+                if (delta.Content != null && onBreak != null)
                 {
-                    result.Append(response.Choices[0].Delta?.Content);
+                    buffer.Append(delta.Content);
+                    var text = buffer.ToString();
+
                     foreach (var breakStr in breakString)
                     {
-                        if (result.ToString().Contains(breakStr))
-                        {
-                            onBreak?.Invoke(new ResponseBlock() { name = breakStr, content = result.ToString().Replace(breakStr, "") });
-                            OnBreak(new ResponseBlock() { name = breakStr, content = result.ToString().Replace(breakStr, "") });
-                            result.Clear();
-                            break;
-                        }
+                        if (!text.Contains(breakStr)) continue;
+
+                        var block = new ResponseBlock(breakStr, text.Replace(breakStr, ""));
+                        onBreak.Invoke(block);
+                        OnBreak(block);
+                        buffer.Clear();
+                        break;
                     }
                 }
-                return;
             });
+
             return usage;
         }
 
         public async Task<string> GenerateOnceAsync()
         {
-            StringBuilder result = new();
-            Usage usage = new();
+            var result = new StringBuilder();
+
             await processor.ProcessAsync((response) =>
             {
-                if (response.Choices[0].Delta?.Content != null)
-                {
-                    result.Append(response.Choices[0].Delta?.Content);
-                    usage = response.Usage ?? usage;
-                }
-                return;
+                var content = response.Choices is { Count: > 0 } ? response.Choices[0].Delta?.Content : null;
+                if (content != null)
+                    result.Append(content);
             });
+
             return result.ToString();
         }
 
@@ -92,9 +99,15 @@ namespace AgentCoreProcesser.Core
         public virtual void OnBreak(ResponseBlock block) { }
     }
 
-    public struct ResponseBlock
+    public readonly struct ResponseBlock
     {
-        public string name;
-        public string content;
+        public string Name { get; }
+        public string Content { get; }
+
+        public ResponseBlock(string name, string content)
+        {
+            Name = name;
+            Content = content;
+        }
     }
 }

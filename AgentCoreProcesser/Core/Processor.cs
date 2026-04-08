@@ -1,60 +1,49 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+using System;
+using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcesser.Models;
-using System.IO;
-using System.Text.Json.Nodes;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using AgentCoreProcesser.Client;
 
 namespace AgentCoreProcesser.Core
 {
     internal class Processor
     {
-        public string cfgDirectionPath;
+        private static readonly string DefaultCfgPath =
+            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "Storage", "Core");
 
-        public AIApiClient client = new();
+        private string cfgDirectoryPath;
 
-        string cfgName = "Base";
+        private AIApiClient client = new();
+
+        private string cfgName = "Base";
+
+        public AIApiClient Client => client;
 
         public string CfgName
         {
             get => cfgName;
             set
             {
-                // 查错
-                if (!File.Exists(Path.Combine(cfgDirectionPath, value) + ".json"))
+                if (!File.Exists(Path.Combine(cfgDirectoryPath, value) + ".json"))
                 {
-                    //Console.WriteLine($"Configuration file {value} not found in {cfgDirectionPath}.");
                     cfgName = "Base";
                     return;
                 }
-                // 初始化
                 cfgName = value;
-                client.Config = ApiClientCfg.FromJson(File.ReadAllText(Path.Combine(cfgDirectionPath, cfgName) + ".json"));
+                client.Config = ApiClientCfg.FromJson(File.ReadAllText(Path.Combine(cfgDirectoryPath, cfgName) + ".json"));
             }
         }
 
-        public Processor(string cfgName="Base", string cfgDirectionPath = "E:\\Workspace\\AgentLilaraProject\\Storage\\Core")
+        public Processor(string cfgName = "Base", string? cfgDirectoryPath = null)
         {
-            this.cfgDirectionPath = cfgDirectionPath;
+            this.cfgDirectoryPath = cfgDirectoryPath ?? DefaultCfgPath;
             CfgName = cfgName;
         }
 
-        public async Task ProcessAsync(Action<ApiResponse> OnDelta)
+        public async Task ProcessAsync(Action<ApiResponse> onDelta, CancellationToken ct = default)
         {
-
-            // 调用模型
-            using var cts = new CancellationTokenSource();
-            await client.StreamChatAsync(OnDelta, cts.Token).ConfigureAwait(false);
+            await client.StreamChatAsync(onDelta, ct).ConfigureAwait(false);
         }
-    }
-
-    public struct ProcessBody
-    {
-        public string Prompt { get; set; }
     }
 }

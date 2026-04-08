@@ -27,7 +27,7 @@ namespace AgentCoreProcesser  // 建议用你的项目名替换
 
         public static void OnBreak(ResponseBlock block)
         {
-            Console.WriteLine($"\n[Break Detected] Type: {block.name}, Content: {block.content}\n");
+            Console.WriteLine($"\n[Break Detected] Type: {block.Name}, Content: {block.Content}\n");
         }
     }
 }
