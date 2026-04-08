@@ -34,7 +34,7 @@ namespace AgentCoreProcesser.Core
                 }
                 // 初始化
                 cfgName = value;
-                client.apiClientCfg = ApiClientCfg.FromJson(File.ReadAllText(Path.Combine(cfgDirectionPath, cfgName) + ".json"));
+                client.Config = ApiClientCfg.FromJson(File.ReadAllText(Path.Combine(cfgDirectionPath, cfgName) + ".json"));
             }
         }
 

@@ -13,42 +13,37 @@ namespace AgentCoreProcesser.Client
 {
     public class AIApiClient : IDisposable
     {
-        public HttpClient httpClient;
-        public ApiClientCfg apiClientCfg;
+        private readonly HttpClient httpClient;
+        private ApiClientCfg apiClientCfg;
+
+        /// <summary>
+        /// 供外部（如 Processor）读写配置。setter 会同步更新内部状态。
+        /// </summary>
+        public ApiClientCfg Config
+        {
+            get => apiClientCfg;
+            set => apiClientCfg = value ?? new ApiClientCfg();
+        }
 
         public AIApiClient()
         {
             httpClient = new HttpClient();
             apiClientCfg = new ApiClientCfg();
-            if (!string.IsNullOrWhiteSpace(apiClientCfg.ApiKey))
-            {
-                httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiClientCfg.ApiKey}");
-            }
         }
 
         public AIApiClient(ApiClientCfg apiClientCfg)
         {
             httpClient = new HttpClient();
             this.apiClientCfg = apiClientCfg ?? new ApiClientCfg();
-            if (!string.IsNullOrWhiteSpace(this.apiClientCfg.ApiKey))
-            {
-                httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {this.apiClientCfg.ApiKey}");
-            }
         }
 
         public AIApiClient(string apiKey) : this(new ApiClientCfg { ApiKey = apiKey })
         {
         }
 
-        // API配置相关方法（已改为返回 AIApiClient 以支持链式调用）
         public AIApiClient SetApiKey(string apiKey)
         {
             apiClientCfg.ApiKey = apiKey;
-            httpClient.DefaultRequestHeaders.Remove("Authorization");
-            if (!string.IsNullOrWhiteSpace(apiKey))
-            {
-                httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
-            }
             return this;
         }
 
@@ -156,12 +151,13 @@ namespace AgentCoreProcesser.Client
             return this;
         }
 
-        public void RemoveLastMessage()
+        public AIApiClient RemoveLastMessage()
         {
             if (apiClientCfg.ConversationHistory.Count > 0)
             {
                 apiClientCfg.ConversationHistory.RemoveAt(apiClientCfg.ConversationHistory.Count - 1);
             }
+            return this;
         }
 
         public int GetHistoryCount()
@@ -169,7 +165,9 @@ namespace AgentCoreProcesser.Client
             return apiClientCfg.ConversationHistory.Count;
         }
 
-        // 流式响应处理（使用 Newtonsoft.Json.Linq 替代 System.Text.Json）
+        /// <summary>
+        /// 流式请求。逐 chunk 回调 onDelta，返回拼接后的完整 content 文本。
+        /// </summary>
         public async Task<string> StreamChatAsync(Action<ApiResponse> onDelta, CancellationToken ct = default)
         {
             ArgumentNullException.ThrowIfNull(onDelta);
@@ -188,14 +186,14 @@ namespace AgentCoreProcesser.Client
                 ExtraBody = apiClientCfg.ExtraBody,
             };
 
-            var jsonConvert = JsonConvert.SerializeObject(apiRequest);
+            var json = JsonConvert.SerializeObject(apiRequest);
 
             using var request = new HttpRequestMessage(HttpMethod.Post, apiClientCfg.ApiEndpoint);
             if (!string.IsNullOrWhiteSpace(apiClientCfg.ApiKey))
             {
                 request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiClientCfg.ApiKey);
             }
-            request.Content = new StringContent(jsonConvert, Encoding.UTF8, "application/json");
+            request.Content = new StringContent(json, Encoding.UTF8, "application/json");
 
             using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
@@ -203,52 +201,45 @@ namespace AgentCoreProcesser.Client
             await using var responseStream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
             using var reader = new StreamReader(responseStream);
 
-            var fullBuilder = new StringBuilder();
-            // OpenAI stream uses SSE-like format: lines like "data: {...}\n\n"
+            var fullContent = new StringBuilder();
+
             while (!reader.EndOfStream && !ct.IsCancellationRequested)
             {
                 var line = await reader.ReadLineAsync().ConfigureAwait(false);
                 if (line == null) break;
 
                 line = line.Trim();
-                if (string.IsNullOrEmpty(line))
-                {
-                    // 空行表示一个事件结束，继续等待下一事件
-                    continue;
-                }
+                if (string.IsNullOrEmpty(line)) continue;
 
                 const string dataPrefix = "data: ";
-                if (!line.StartsWith(dataPrefix, StringComparison.OrdinalIgnoreCase))
-                {
-                    // 有时可能不会有 "data: " 前缀，尝试直接处理
-                }
+                var payload = line.StartsWith(dataPrefix, StringComparison.Ordinal)
+                    ? line.Substring(dataPrefix.Length)
+                    : line;
 
-                var payload = line.StartsWith(dataPrefix) ? line.Substring(dataPrefix.Length) : line;
-
-                if (payload == "[DONE]")
-                {
-                    break;
-                }
+                if (payload == "[DONE]") break;
 
                 try
                 {
-                    ApiResponse? apiResponse = JsonConvert.DeserializeObject<ApiResponse>(payload);
-                    if (apiResponse != null)
+                    var apiResponse = JsonConvert.DeserializeObject<ApiResponse>(payload);
+                    if (apiResponse == null) continue;
+
+                    // 累积 content 文本
+                    if (apiResponse.Choices is { Count: > 0 })
                     {
-                        onDelta(apiResponse);
+                        var delta = apiResponse.Choices[0].Delta;
+                        if (delta?.Content != null)
+                            fullContent.Append(delta.Content);
                     }
+
+                    onDelta(apiResponse);
                 }
                 catch (JsonReaderException)
                 {
-                    // 忽略无法解析的片段（保持与原来忽略 JsonException 的行为）
-                }
-                catch (Exception)
-                {
-                    // 其他解析或运行时错误也忽略，以保持流式处理的健壮性
+                    // 无法解析的 SSE 片段，跳过
                 }
             }
 
-            return fullBuilder.ToString();
+            return fullContent.ToString();
         }
 
         public void Dispose()

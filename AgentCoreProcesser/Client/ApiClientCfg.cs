@@ -47,24 +47,8 @@ namespace AgentCoreProcesser.Client
         public void AddExtraBody(string key, object value)
         {
             if (string.IsNullOrEmpty(key)) throw new ArgumentException("key 不能为空", nameof(key));
-            if (ExtraBody == null) ExtraBody = new Dictionary<string, object>();
+            ExtraBody ??= new Dictionary<string, object>();
             ExtraBody[key] = value;
-        }
-
-        /// <summary>
-        /// 将 ExtraBody 的内容合并到目标字典（通常为将要发送的请求体）。
-        /// 如果键冲突则覆盖目标中的值。
-        /// </summary>
-        public IDictionary<string, object> MergeExtraBodyInto(IDictionary<string, object> target)
-        {
-            if (target == null) throw new ArgumentNullException(nameof(target));
-            if (ExtraBody == null || ExtraBody.Count == 0) return target;
-
-            foreach (var kv in ExtraBody)
-            {
-                target[kv.Key] = kv.Value;
-            }
-            return target;
         }
 
         [JsonProperty("n")]
