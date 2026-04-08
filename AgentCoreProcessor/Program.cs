@@ -1,8 +1,8 @@
-﻿using System;
+using System;
 using System.Text;
-using AgentCoreProcessor.Client;
-using AgentCoreProcessor.Core;
-using AgentCoreProcessor.Models;
+using System.Threading.Tasks;
+using AgentCoreProcessor.Adapter;
+using AgentCoreProcessor.Engine;
 
 namespace AgentCoreProcessor
 {
@@ -12,21 +12,21 @@ namespace AgentCoreProcessor
         {
             Console.OutputEncoding = Encoding.UTF8;
 
-            PreprocessingCore ec = new();
-            await ec.GenerateAsync(OnDelta, OnBreak);
+            var adapterManager = new AdapterManager();
+            var consoleAdapter = new ConsoleAdapter();
+            adapterManager.RegisterAdapter(consoleAdapter);
+
+            var engine = new MasterEngine();
+
+            // 暂时简单处理：收到消息后回显确认，为后续 MasterEngine 调度做准备
+            adapterManager.OnMessageReceived += msg =>
+            {
+                Console.WriteLine($"[收到消息] 平台={msg.Platform}, 用户={msg.PlatformUserId}, 频道={msg.ChannelId}, 内容={msg.Content}");
+            };
+
+            await adapterManager.StartAllAsync();
 
             return 0;
-        }
-
-        public static void OnDelta(ApiResponse response)
-        {
-            Console.Write(response.Choices[0].Delta?.ReasoningContent);
-            Console.Write(response.Choices[0].Delta?.Content);
-        }
-
-        public static void OnBreak(ResponseBlock block)
-        {
-            Console.WriteLine($"\n[Break Detected] Type: {block.Name}, Content: {block.Content}\n");
         }
     }
 }
