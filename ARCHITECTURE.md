@@ -110,7 +110,7 @@ Core/
   │     输入：用户需求 + 可用工具列表
   │     输出：ToolCall JSON 序列，以 <over> 标签分隔
   ├── Processor           — Core 与 AIApiClient 之间的桥梁，负责加载配置并发起请求
-  └── ToolCall            — 工具调用数据结构（tool, toolId, pipeIn, pipeOut, afterThan, input）
+  └── ToolCall            — 工具调用数据结构（见下方工具调用系统）
 ```
 
 ### Client 层
@@ -186,6 +186,65 @@ WorkerEngine 解析输出时提取记忆指令，交给 MemoryService 存储。
 
 ---
 
+## 工具调用系统
+
+### ToolCall 数据结构
+
+```json
+{
+  "tool": "工具名",
+  "toolId": "唯一标识",
+  "inputs": [
+    { "type": "value", "value": "字面值" },
+    { "type": "ref", "source": "其他工具的toolId" }
+  ],
+  "output": "输出标识（可选，无输出的工具可省略）",
+  "critical": false
+}
+```
+
+字段说明：
+- `tool` — 工具名称
+- `toolId` — 本次调用的唯一标识，用于其他工具引用
+- `inputs` — 输入数组，每项为字面值（`type: "value"`）或引用其他工具输出（`type: "ref"`）
+  - ref 隐含了依赖关系：引用了某个 toolId 的输出，就必须等该工具完成
+  - 支持多输入，解决了旧设计只有单个 input 的限制
+- `output` — 输出标识，供其他工具的 inputs 引用；无输出的工具可省略
+- `critical` — 是否为关键步骤，默认 false
+  - false：失败后记录错误，其他无依赖的工具继续执行
+  - true：失败后立即中断整条 DAG
+
+依赖关系完全由 inputs 中的 ref 推导，不需要单独的依赖字段。
+
+### DAG 执行流程
+
+1. WorkingCore 输出一组 ToolCall JSON（以 `<over>` 分隔）
+2. WorkerEngine 解析所有 ToolCall，根据 inputs 中的 ref 构建 DAG
+3. 无依赖的工具并行执行，有依赖的等待上游完成后执行
+4. 某个工具失败时：
+   - 若 `critical: true` → 立即中断整条 DAG
+   - 若 `critical: false` → 记录错误，继续执行其他无依赖的工具；依赖该工具的下游标记为"未执行"
+5. 所有工具完成后（无论成功/失败），汇总结果提交回模型：
+
+```
+[read1] 成功，返回值：文件内容...
+[transform1] 异常：格式不支持
+[write1] 未执行（依赖 transform1）
+```
+
+### 示例
+
+用户需求："将 example.txt 的内容复制到 output.txt"
+
+```json
+{"tool": "文件流读取器", "toolId": "read1", "inputs": [{"type": "value", "value": "example.txt"}], "output": "read1_out"}<over>
+{"tool": "文件流写入器", "toolId": "write1", "inputs": [{"type": "ref", "source": "read1"}, {"type": "value", "value": "output.txt"}]}<over>
+```
+
+read1 无依赖，立即执行；write1 引用了 read1 的输出，等 read1 完成后执行。
+
+---
+
 ## 唤醒机制
 
 ### 被动唤醒
@@ -230,5 +289,5 @@ WorkerEngine 解析输出时提取记忆指令，交给 MemoryService 存储。
 
 ## 待重构项
 
-- ToolCall.AfterThan → AfterThen（JSON 字段名拼写错误，无兼容性约束）
+- ToolCall 重写 — 当前代码中的 ToolCall 结构（pipeIn/pipeOut/afterThan/input）需要按新设计（inputs 数组 + output + critical）重写
 - ConversationHistory 彻底从 ApiClientCfg 中拆出（当前仅做了 JsonIgnore，职责仍混合）
