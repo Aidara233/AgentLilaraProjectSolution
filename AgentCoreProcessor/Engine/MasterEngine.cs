@@ -8,7 +8,7 @@ namespace AgentCoreProcessor.Engine
     internal class MasterEngine
     {
         private static readonly string DefaultDatabasePath =
-            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "Storage", "Database");
+            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "..", "Storage", "Database");
 
         private string databaseDirectory;
         private readonly AdapterManager adapterManager;

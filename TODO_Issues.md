@@ -25,6 +25,8 @@
 
 2. ~~**ConversationHistory 需要重新设计**~~ — 已拆分为 `PresetMessages`（从配置加载，`[JsonProperty]`）和 `ConversationHistory`（运行时，`[JsonIgnore]`）。
 
+3. **Storage 路径硬编码** — Processor 和 MasterEngine 中的 Storage 路径用相对路径数 `..` 拼接，脆弱且不可移植。后续应加一个全局配置文件（如 `appsettings.json`）来指定 Storage 的绝对路径。
+
 ## 架构规划
 
 ### Adapter 层（新增）

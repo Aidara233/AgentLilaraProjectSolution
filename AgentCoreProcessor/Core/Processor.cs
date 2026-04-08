@@ -10,7 +10,7 @@ namespace AgentCoreProcessor.Core
     internal class Processor
     {
         private static readonly string DefaultCfgPath =
-            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "Storage", "Core");
+            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "..", "Storage", "Core");
 
         private string cfgDirectoryPath;
 

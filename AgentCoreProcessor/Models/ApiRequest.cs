@@ -46,27 +46,35 @@ namespace AgentCoreProcessor.Models
     /// </summary>
     internal class ApiRequestConverter : JsonConverter<ApiRequest>
     {
+        private static bool _isSerializing;
+
+        public override bool CanWrite => !_isSerializing;
+
         public override void WriteJson(JsonWriter writer, ApiRequest? value, JsonSerializer serializer)
         {
             if (value == null) { writer.WriteNull(); return; }
 
-            // 先用默认方式序列化（跳过本 converter 避免递归）
-            var t = JObject.FromObject(value, new JsonSerializer
+            // 防止递归：临时禁用本 converter
+            _isSerializing = true;
+            try
             {
-                NullValueHandling = NullValueHandling.Ignore,
-                ContractResolver = serializer.ContractResolver
-            });
+                var t = JObject.FromObject(value, serializer);
 
-            // 将 ExtraBody 的内容合并到根层
-            if (value.ExtraBody is { Count: > 0 })
-            {
-                foreach (var kv in value.ExtraBody)
+                // 将 ExtraBody 的内容合并到根层
+                if (value.ExtraBody is { Count: > 0 })
                 {
-                    t[kv.Key] = JToken.FromObject(kv.Value, serializer);
+                    foreach (var kv in value.ExtraBody)
+                    {
+                        t[kv.Key] = JToken.FromObject(kv.Value, serializer);
+                    }
                 }
-            }
 
-            t.WriteTo(writer);
+                t.WriteTo(writer);
+            }
+            finally
+            {
+                _isSerializing = false;
+            }
         }
 
         public override ApiRequest? ReadJson(JsonReader reader, System.Type objectType, ApiRequest? existingValue, bool hasExistingValue, JsonSerializer serializer)
