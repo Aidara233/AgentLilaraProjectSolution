@@ -1,17 +1,17 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Threading.Tasks;
-using AgentCoreProcessor.Core;
+using AgentCoreProcessor.Adapter;
 
 namespace AgentCoreProcessor.Engine
 {
-    //主引擎，负责接收用户输入，调用核心进行处理，并返回结果
     internal class MasterEngine
     {
         private static readonly string DefaultDatabasePath =
             Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "Storage", "Database");
 
         private string databaseDirectory;
+        private readonly AdapterManager adapterManager;
 
         public string DatabaseDirectory
         {
@@ -19,29 +19,36 @@ namespace AgentCoreProcessor.Engine
             set => databaseDirectory = value;
         }
 
-        public MasterEngine(string? databaseDirectory = null)
+        public MasterEngine(AdapterManager adapterManager, string? databaseDirectory = null)
         {
+            this.adapterManager = adapterManager;
             this.databaseDirectory = databaseDirectory ?? DefaultDatabasePath;
         }
 
-        public Task EngineMain()
+        public async Task HandleMessageAsync(IncomingMessage message)
         {
-            return Task.CompletedTask;
-        }
+            // TODO: AuthService 鉴权
+            // TODO: SessionManager 获取上下文
 
-        public void EngineThread(EngineRequest request)
-        {
+            try
+            {
+                var worker = new WorkerEngine(message, adapterManager);
+                var result = await worker.RunAsync();
 
-        }
-
-        /// <summary>
-        /// 预处理，主要负责进行分类，判断是否需要调用核心进行处理，或者直接返回结果等逻辑
-        /// </summary>
-        /// <param name="request">请求体</param>
-        /// <returns>无</returns>
-        public Task PreProcess(EngineRequest request)
-        {
-            return Task.CompletedTask;
+                await adapterManager.SendMessageAsync(message.Platform, new OutgoingMessage
+                {
+                    ChannelId = message.ChannelId,
+                    Content = result
+                });
+            }
+            catch (Exception ex)
+            {
+                await adapterManager.SendMessageAsync(message.Platform, new OutgoingMessage
+                {
+                    ChannelId = message.ChannelId,
+                    Content = $"[错误] 处理消息时发生异常：{ex.Message}"
+                });
+            }
         }
     }
 }

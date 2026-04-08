@@ -94,6 +94,12 @@ namespace AgentCoreProcessor.Core
             return result.ToString();
         }
 
+        public async Task<string> GenerateOnceAsync(string userMessage)
+        {
+            processor.Client.AddUserMessage(userMessage);
+            return await GenerateOnceAsync();
+        }
+
         public virtual void OnDelta(ApiResponse response) { }
 
         public virtual void OnBreak(ResponseBlock block) { }
