@@ -21,9 +21,9 @@
 
 ## 待后续重构
 
-1. **ToolCall.AfterThan → AfterThen** — JSON 字段名拼写错误，用户要求后续重构时处理。目前无兼容性约束。
+1. **ToolCall 重写** — 当前代码中的 ToolCall 结构（pipeIn/pipeOut/afterThan/input）需要按新设计（inputs 数组 + output + critical）重写。详见 ARCHITECTURE.md 工具调用系统章节。
 
-2. **ConversationHistory 需要重新设计** — 当前已改为 `[JsonIgnore]`，但配置文件中的 system prompt 和预设对话（`conversationHistory` 字段）依赖序列化加载。需要拆分为"预设消息模板"（从配置加载）和"运行时对话历史"（不序列化）两个概念，避免配置回写污染模板。
+2. ~~**ConversationHistory 需要重新设计**~~ — 已拆分为 `PresetMessages`（从配置加载，`[JsonProperty]`）和 `ConversationHistory`（运行时，`[JsonIgnore]`）。
 
 ## 架构规划
 

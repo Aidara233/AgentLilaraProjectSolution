@@ -53,7 +53,11 @@ namespace AgentCoreProcessor.Client
         [JsonProperty("n")]
         public int N { get; set; } = 1;
 
-        // 历史对话记录 - 运行时状态，不参与配置序列化
+        // 预设消息模板（从配置文件加载，system prompt + few-shot 示例）
+        [JsonProperty("conversationHistory")]
+        public List<Message> PresetMessages { get; set; } = new List<Message>();
+
+        // 运行时对话历史（不序列化，由 AIApiClient 管理）
         [JsonIgnore]
         public List<Message> ConversationHistory { get; set; } = new List<Message>();
 

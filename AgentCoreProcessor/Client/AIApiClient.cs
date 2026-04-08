@@ -101,7 +101,7 @@ namespace AgentCoreProcessor.Client
             return this;
         }
 
-        // 历史对话管理方法
+        // 历史对话管理方法（操作运行时历史，不影响预设消息）
         public AIApiClient AddMessage(string role, string content, string? name = null)
         {
             apiClientCfg.ConversationHistory.Add(new Message
@@ -137,12 +137,17 @@ namespace AgentCoreProcessor.Client
             return this;
         }
 
+        /// <summary>
+        /// 返回完整的消息列表：预设消息模板 + 运行时对话历史。
+        /// </summary>
         public List<Message> GetConversationHistory()
         {
-            return new List<Message>(apiClientCfg.ConversationHistory);
+            var merged = new List<Message>(apiClientCfg.PresetMessages.Count + apiClientCfg.ConversationHistory.Count);
+            merged.AddRange(apiClientCfg.PresetMessages);
+            merged.AddRange(apiClientCfg.ConversationHistory);
+            return merged;
         }
 
-        // SetConversationHistory 也改为返回 AIApiClient 以支持链式调用
         public AIApiClient SetConversationHistory(List<Message> history)
         {
             apiClientCfg.ConversationHistory.Clear();
@@ -161,7 +166,7 @@ namespace AgentCoreProcessor.Client
 
         public int GetHistoryCount()
         {
-            return apiClientCfg.ConversationHistory.Count;
+            return apiClientCfg.PresetMessages.Count + apiClientCfg.ConversationHistory.Count;
         }
 
         /// <summary>
