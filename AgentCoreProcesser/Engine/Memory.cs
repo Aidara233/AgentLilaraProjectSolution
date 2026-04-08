@@ -1,15 +1,10 @@
 ﻿using SQLite;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace AgentCoreProcesser.Engine
 {
     [Table("Memories")]
-
-    public class Memory
+    internal class Memory
     {
         [PrimaryKey, AutoIncrement]
         public int Id { get; set; }// 记忆ID，唯一标识一个记忆

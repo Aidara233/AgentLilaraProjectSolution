@@ -1,7 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using AgentCoreProcesser.Core;
 
@@ -10,11 +7,17 @@ namespace AgentCoreProcesser.Engine
     //主引擎，负责接收用户输入，调用核心进行处理，并返回结果
     internal class MasterEngine
     {
-        public string databaseDirectory = "E:\\Workspace\\AgentLilaraProject\\Storage\\Database";
+        private string databaseDirectory = "E:\\Workspace\\AgentLilaraProject\\Storage\\Database";
 
-        public async Task EngineMain()
+        public string DatabaseDirectory
         {
+            get => databaseDirectory;
+            set => databaseDirectory = value;
+        }
 
+        public Task EngineMain()
+        {
+            return Task.CompletedTask;
         }
 
         public void EngineThread(EngineRequest request)
@@ -27,9 +30,9 @@ namespace AgentCoreProcesser.Engine
         /// </summary>
         /// <param name="request">请求体</param>
         /// <returns>无</returns>
-        public async Task PreProcess(EngineRequest request)
+        public Task PreProcess(EngineRequest request)
         {
-
+            return Task.CompletedTask;
         }
     }
 }
