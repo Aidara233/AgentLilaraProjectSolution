@@ -74,11 +74,15 @@ namespace AgentCoreProcessor.Engine
                 var worker = new WorkerEngine(message, adapterManager, context);
                 var result = await worker.RunAsync();
 
-                await adapterManager.SendMessageAsync(message.Platform, new OutgoingMessage
+                // result 为 null 时表示 Agent 循环已通过说话工具实时回复，无需再推送
+                if (result != null)
                 {
-                    ChannelId = message.ChannelId,
-                    Content = result
-                });
+                    await adapterManager.SendMessageAsync(message.Platform, new OutgoingMessage
+                    {
+                        ChannelId = message.ChannelId,
+                        Content = result
+                    });
+                }
             }
             catch (Exception ex)
             {

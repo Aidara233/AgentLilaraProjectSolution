@@ -37,7 +37,11 @@ namespace AgentCoreProcessor.Engine
             this.context = context;
         }
 
-        public async Task<string> RunAsync()
+        /// <summary>
+        /// 执行消息处理流程。
+        /// 返回 null 表示已通过说话工具实时回复，MasterEngine 无需再推送。
+        /// </summary>
+        public async Task<string?> RunAsync()
         {
             try
             {
@@ -45,46 +49,45 @@ namespace AgentCoreProcessor.Engine
                 state = WorkerState.Classifying;
                 var category = await preprocessingCore.ClassifyAsync(message.Content);
 
-                // 2. 根据分类路由到对应处理
+                // 2. 根据分类路由
                 state = WorkerState.Processing;
-                string result;
                 switch (category)
                 {
                     case 1:
                     case 2:
-                        // 简单聊天 → 直接交给 ExpressCore 润色
-                        result = message.Content;
-                        break;
+                        // 简单聊天 → ExpressCore 润色后返回
+                        state = WorkerState.Expressing;
+                        expressCore.ResetProcessor();
+                        var expressed = await expressCore.GenerateOnceAsync(message.Content);
+                        state = WorkerState.Completed;
+                        return expressed;
 
                     case 3:
                     case 4:
                         // 任务类 → Agent 循环
-                        // 设置说话回调：说话工具触发时，经 ExpressCore 润色后实时推送给用户
+                        // 说话工具回调：经 ExpressCore 润色后实时推送给用户
                         workingCore.OnSpeak = async (rawText) =>
                         {
-                            expressCore.ResetProcessor();  // 清除上次调用的历史，保持无状态
-                            var expressed = await expressCore.GenerateOnceAsync(rawText);
+                            expressCore.ResetProcessor();
+                            var speakExpressed = await expressCore.GenerateOnceAsync(rawText);
                             await adapterManager.SendMessageAsync(message.Platform, new OutgoingMessage
                             {
                                 ChannelId = message.ChannelId,
-                                Content = expressed
+                                Content = speakExpressed
                             });
                         };
-                        result = await workingCore.ProcessAsync(message.Content);
-                        break;
+                        await workingCore.ProcessAsync(message.Content);
+                        // Agent 循环的用户回复由说话工具负责，这里不再额外推送
+                        state = WorkerState.Completed;
+                        return null;
 
                     default:
-                        result = message.Content;
-                        break;
+                        state = WorkerState.Expressing;
+                        expressCore.ResetProcessor();
+                        var defaultExpressed = await expressCore.GenerateOnceAsync(message.Content);
+                        state = WorkerState.Completed;
+                        return defaultExpressed;
                 }
-
-                // 3. 最终输出也经 ExpressCore 润色
-                state = WorkerState.Expressing;
-                expressCore.ResetProcessor();  // 清除说话回调可能留下的历史
-                var expressed = await expressCore.GenerateOnceAsync(result);
-
-                state = WorkerState.Completed;
-                return expressed;
             }
             catch (Exception)
             {
