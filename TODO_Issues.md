@@ -21,7 +21,7 @@
 
 ## 待后续重构
 
-1. **ToolCall 重写** — 当前代码中的 ToolCall 结构（pipeIn/pipeOut/afterThan/input）需要按新设计（inputs 数组 + output + critical）重写。详见 ARCHITECTURE.md 工具调用系统章节。
+1. **ToolCall 重写** — 当前代码中的 ToolCall 结构（pipeIn/pipeOut/afterThan/input）需要按新设计重写：inputs 数组 + output + outputToModel + ToolResult + 寄存器机制 + 双轨超时（普通工具声明超时 / 长时工具进度汇报）。详见 ARCHITECTURE.md 工具调用系统章节。
 
 2. ~~**ConversationHistory 需要重新设计**~~ — 已拆分为 `PresetMessages`（从配置加载，`[JsonProperty]`）和 `ConversationHistory`（运行时，`[JsonIgnore]`）。
 

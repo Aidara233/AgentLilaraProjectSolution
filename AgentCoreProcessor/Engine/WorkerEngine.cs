@@ -19,6 +19,7 @@ namespace AgentCoreProcessor.Engine
     {
         private readonly IncomingMessage message;
         private readonly AdapterManager adapterManager;
+        private readonly SessionContext context;
 
         private readonly PreprocessingCore preprocessingCore = new();
         private readonly ExpressCore expressCore = new();
@@ -28,10 +29,12 @@ namespace AgentCoreProcessor.Engine
 
         public WorkerState State => state;
 
-        public WorkerEngine(IncomingMessage message, AdapterManager adapterManager)
+        public WorkerEngine(IncomingMessage message, AdapterManager adapterManager,
+            SessionContext context)
         {
             this.message = message;
             this.adapterManager = adapterManager;
+            this.context = context;
         }
 
         public async Task<string> RunAsync()
@@ -40,31 +43,45 @@ namespace AgentCoreProcessor.Engine
             {
                 // 1. 分类
                 state = WorkerState.Classifying;
-                var category = await ClassifyAsync(message.Content);
+                var category = await preprocessingCore.ClassifyAsync(message.Content);
 
-                // 2. 根据分类执行对应行动
+                // 2. 根据分类路由到对应处理
                 state = WorkerState.Processing;
                 string result;
                 switch (category)
                 {
-                    case 1: // 聊天
-                        result = await ChatAsync(message.Content);
+                    case 1:
+                    case 2:
+                        // 简单聊天 → 直接交给 ExpressCore 润色
+                        result = message.Content;
                         break;
-                    case 2: // 需要额外知识（后续接入 MemoryService，当前先走聊天）
-                        result = await ChatAsync(message.Content);
+
+                    case 3:
+                    case 4:
+                        // 任务类 → Agent 循环
+                        // 设置说话回调：说话工具触发时，经 ExpressCore 润色后实时推送给用户
+                        workingCore.OnSpeak = async (rawText) =>
+                        {
+                            expressCore.ResetProcessor();  // 清除上次调用的历史，保持无状态
+                            var expressed = await expressCore.GenerateOnceAsync(rawText);
+                            await adapterManager.SendMessageAsync(message.Platform, new OutgoingMessage
+                            {
+                                ChannelId = message.ChannelId,
+                                Content = expressed
+                            });
+                        };
+                        result = await workingCore.ProcessAsync(message.Content);
                         break;
-                    case 3: // 任务
-                    case 4: // 大型任务
-                        result = await WorkAsync(message.Content);
-                        break;
+
                     default:
-                        result = await ChatAsync(message.Content);
+                        result = message.Content;
                         break;
                 }
 
-                // 3. 人格化输出
+                // 3. 最终输出也经 ExpressCore 润色
                 state = WorkerState.Expressing;
-                var expressed = await ExpressAsync(result);
+                expressCore.ResetProcessor();  // 清除说话回调可能留下的历史
+                var expressed = await expressCore.GenerateOnceAsync(result);
 
                 state = WorkerState.Completed;
                 return expressed;
@@ -74,38 +91,6 @@ namespace AgentCoreProcessor.Engine
                 state = WorkerState.Failed;
                 throw;
             }
-        }
-
-        private async Task<int> ClassifyAsync(string content)
-        {
-            var result = await preprocessingCore.GenerateOnceAsync(content);
-            result = result.Trim();
-
-            if (int.TryParse(result, out var category) && category >= 1 && category <= 4)
-                return category;
-
-            return 1; // 无法解析时默认为聊天
-        }
-
-        private Task<string> ChatAsync(string content)
-        {
-            // 纯聊天场景：直接传递给 ExpressAsync 人格化，不需要额外的工作步骤
-            return Task.FromResult(content);
-        }
-
-        private async Task<string> WorkAsync(string content)
-        {
-            // 调用 WorkingCore 生成工具调用计划
-            var result = await workingCore.GenerateOnceAsync(content);
-
-            // TODO: 解析 ToolCall JSON，构建 DAG，执行工具，汇总结果
-            // 当前先直接返回 WorkingCore 的原始输出
-            return result;
-        }
-
-        private async Task<string> ExpressAsync(string content)
-        {
-            return await expressCore.GenerateOnceAsync(content);
         }
     }
 }

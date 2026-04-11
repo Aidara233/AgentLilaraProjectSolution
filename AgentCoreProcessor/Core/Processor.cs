@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Client;
 
@@ -9,8 +10,7 @@ namespace AgentCoreProcessor.Core
 {
     internal class Processor
     {
-        private static readonly string DefaultCfgPath =
-            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "..", "Storage", "Core");
+        private static string DefaultCfgPath => PathConfig.CoreConfigPath;
 
         private string cfgDirectoryPath;
 
