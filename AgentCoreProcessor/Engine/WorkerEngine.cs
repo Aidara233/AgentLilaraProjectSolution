@@ -65,15 +65,14 @@ namespace AgentCoreProcessor.Engine
                     case 3:
                     case 4:
                         // 任务类 → Agent 循环
-                        // 说话工具回调：经 ExpressCore 润色后实时推送给用户
+                        // 说话工具回调：经 ExpressCore 润色（带上下文）后实时推送给用户
                         workingCore.OnSpeak = async (rawText) =>
                         {
-                            expressCore.ResetProcessor();
-                            var speakExpressed = await expressCore.GenerateOnceAsync(rawText);
+                            var polished = await expressCore.PolishAsync(message.Content, rawText);
                             await adapterManager.SendMessageAsync(message.Platform, new OutgoingMessage
                             {
                                 ChannelId = message.ChannelId,
-                                Content = speakExpressed
+                                Content = polished
                             });
                         };
                         await workingCore.ProcessAsync(message.Content);
