@@ -1,15 +1,22 @@
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace AgentCoreProcessor.Database
 {
     /// <summary>
     /// 用户数据访问，提供按平台ID查找、创建用户等操作。
+    /// 新建 User 时自动创建关联的 Person。
     /// </summary>
     internal class UserRepository
     {
         private readonly DbManager db;
+        private readonly PersonRepository persons;
 
-        public UserRepository(DbManager db) => this.db = db;
+        public UserRepository(DbManager db, PersonRepository persons)
+        {
+            this.db = db;
+            this.persons = persons;
+        }
 
         /// <summary>
         /// 按平台和平台用户ID查找内部用户。
@@ -24,22 +31,43 @@ namespace AgentCoreProcessor.Database
         }
 
         /// <summary>
-        /// 查找已有用户，不存在则自动创建（默认 TrustLevel = Unknown）。
+        /// 查找已有用户，不存在则自动创建（同时创建关联的 Person）。
         /// </summary>
-        public async Task<User> FindOrCreateAsync(string platform, string platformId)
+        public async Task<User> FindOrCreateAsync(string platform, string platformId,
+            PermissionLevel defaultPermission = PermissionLevel.Default)
         {
             var user = await FindByPlatformAsync(platform, platformId);
             if (user != null) return user;
 
+            // 新用户：先创建 Person，再创建 User
+            var person = await persons.CreateAsync();
             user = new User
             {
+                PersonId = person.Id,
                 Platform = platform,
                 PlatformId = platformId,
-                TrustLevel = TrustLevel.Unknown,
+                PermissionLevel = defaultPermission,
                 FastMemory = ""
             };
             await db.InsertAsync(user);
             return user;
+        }
+
+        /// <summary>获取同一自然人的所有账号。</summary>
+        public Task<List<User>> GetByPersonIdAsync(int personId)
+        {
+            return db.Table<User>()
+                .Where(u => u.PersonId == personId)
+                .ToListAsync();
+        }
+
+        /// <summary>将账号关联到指定 Person。</summary>
+        public async Task LinkToPersonAsync(int userId, int personId)
+        {
+            var user = await GetByIdAsync(userId);
+            if (user == null) return;
+            user.PersonId = personId;
+            await db.UpdateAsync(user);
         }
 
         public Task<User?> GetByIdAsync(int id) => db.GetByIdAsync<User>(id);

@@ -8,8 +8,11 @@ namespace AgentCoreProcessor.Engine
     /// </summary>
     internal class SessionContext
     {
-        /// <summary>发送消息的用户（内部实体）</summary>
+        /// <summary>发送消息的用户（内部实体，账号级）</summary>
         public required User User { get; set; }
+
+        /// <summary>用户对应的自然人</summary>
+        public required Person Person { get; set; }
 
         /// <summary>消息所属频道</summary>
         public required Channel Channel { get; set; }

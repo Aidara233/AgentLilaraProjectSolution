@@ -14,6 +14,7 @@ namespace AgentCoreProcessor.Engine
     internal class SessionManager
     {
         private readonly UserRepository users;
+        private readonly PersonRepository persons;
         private readonly ChannelRepository channels;
         private readonly TopicRepository topics;
         private readonly MessageRepository messages;
@@ -29,11 +30,13 @@ namespace AgentCoreProcessor.Engine
 
         public SessionManager(
             UserRepository users,
+            PersonRepository persons,
             ChannelRepository channels,
             TopicRepository topics,
             MessageRepository messages)
         {
             this.users = users;
+            this.persons = persons;
             this.channels = channels;
             this.topics = topics;
             this.messages = messages;
@@ -45,23 +48,31 @@ namespace AgentCoreProcessor.Engine
         /// </summary>
         public async Task<SessionContext> OnMessageAsync(IncomingMessage msg)
         {
-            // 1. 用户映射：平台用户 → 内部 User
-            var user = await users.FindOrCreateAsync(msg.Platform, msg.PlatformUserId);
+            // 1. 用户映射：平台用户 → 内部 User（自动创建 Person）
+            // 控制台用户默认 Admin 权限
+            var defaultPermission = msg.Platform == "Console"
+                ? PermissionLevel.Admin
+                : PermissionLevel.Default;
+            var user = await users.FindOrCreateAsync(msg.Platform, msg.PlatformUserId, defaultPermission);
 
-            // 2. 频道映射
+            // 2. 获取关联的自然人
+            var person = await persons.GetByIdAsync(user.PersonId)
+                ?? throw new InvalidOperationException($"User {user.Id} 关联的 Person {user.PersonId} 不存在");
+
+            // 3. 频道映射
             var channel = await channels.FindOrCreateAsync(msg.ChannelId);
 
-            // 3. 清理过期话题
+            // 4. 清理过期话题
             await topics.DeactivateStaleAsync(topicTimeout);
 
-            // 4. 话题归类（规则层）
+            // 5. 话题归类（规则层）
             var topic = await ClassifyTopicAsync(user, channel, msg);
 
-            // 5. 更新话题最后活跃时间
+            // 6. 更新话题最后活跃时间
             topic.LastMessageTime = msg.Time;
             await topics.UpdateAsync(topic);
 
-            // 6. 消息入库
+            // 7. 消息入库
             var userMessage = new UserMessage
             {
                 UserId = user.Id,
@@ -72,12 +83,13 @@ namespace AgentCoreProcessor.Engine
             };
             await messages.SaveAsync(userMessage);
 
-            // 7. 获取最近历史消息
+            // 8. 获取最近历史消息
             var recent = await GetContextAsync(topic.Id);
 
             return new SessionContext
             {
                 User = user,
+                Person = person,
                 Channel = channel,
                 Topic = topic,
                 RecentMessages = recent

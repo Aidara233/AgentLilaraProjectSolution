@@ -37,6 +37,22 @@ namespace AgentCoreProcessor.Database
             return GetByScopeAsync(MemoryScope.User, userId);
         }
 
+        /// <summary>
+        /// 获取指定自然人的所有记忆（聚合其名下所有 User 的记忆）。
+        /// 存储按来源 User，查询按 Person 聚合。
+        /// </summary>
+        public async Task<List<MemoryEntry>> GetByPersonAsync(int personId, PersonRepository personRepo)
+        {
+            var userIds = await personRepo.GetAllUserIdsAsync(personId);
+            var all = new List<MemoryEntry>();
+            foreach (var uid in userIds)
+            {
+                var entries = await GetByScopeAsync(MemoryScope.User, uid);
+                all.AddRange(entries);
+            }
+            return all;
+        }
+
         /// <summary>获取指定频道的记忆。</summary>
         public Task<List<MemoryEntry>> GetByChannelAsync(int channelId)
         {

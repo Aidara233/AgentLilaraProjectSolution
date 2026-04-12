@@ -20,6 +20,7 @@ namespace AgentCoreProcessor.Engine
 
         // 各 Repository，供 Engine 内部使用
         public UserRepository? Users { get; private set; }
+        public PersonRepository? Persons { get; private set; }
         public ChannelRepository? Channels { get; private set; }
         public TopicRepository? Topics { get; private set; }
         public MessageRepository? Messages { get; private set; }
@@ -52,24 +53,32 @@ namespace AgentCoreProcessor.Engine
             await db.InitAsync();
 
             // 初始化各 Repository
-            Users = new UserRepository(db);
+            Persons = new PersonRepository(db);
+            Users = new UserRepository(db, Persons);
             Channels = new ChannelRepository(db);
             Topics = new TopicRepository(db);
             Messages = new MessageRepository(db);
             Memories = new MemoryRepository(db);
 
             // 初始化 SessionManager
-            Session = new SessionManager(Users, Channels, Topics, Messages);
+            Session = new SessionManager(Users, Persons, Channels, Topics, Messages);
         }
 
         public async Task HandleMessageAsync(IncomingMessage message)
         {
-            // TODO: AuthService 鉴权
-
             try
             {
                 // 会话管理：用户映射、频道映射、话题归类、消息入库
                 var context = await Session!.OnMessageAsync(message);
+
+                // 权限检查
+                switch (context.User.PermissionLevel)
+                {
+                    case PermissionLevel.Blocked:
+                        return; // 黑名单，完全不响应
+                    case PermissionLevel.Restricted:
+                        return; // 受限，消息已入库但不触发响应（静默观察）
+                }
 
                 var worker = new WorkerEngine(message, adapterManager, context);
                 var result = await worker.RunAsync();

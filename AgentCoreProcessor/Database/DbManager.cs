@@ -28,6 +28,7 @@ namespace AgentCoreProcessor.Database
         /// </summary>
         public async Task InitAsync()
         {
+            await db.CreateTableAsync<Person>();
             await db.CreateTableAsync<User>();
             await db.CreateTableAsync<Channel>();
             await db.CreateTableAsync<Topic>();
