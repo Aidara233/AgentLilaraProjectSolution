@@ -2,8 +2,10 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
+using AgentCoreProcessor.Client;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Database;
+using AgentCoreProcessor.Memory;
 
 namespace AgentCoreProcessor.Engine
 {
@@ -25,6 +27,9 @@ namespace AgentCoreProcessor.Engine
         public TopicRepository? Topics { get; private set; }
         public MessageRepository? Messages { get; private set; }
         public MemoryRepository? Memories { get; private set; }
+        public TempMemoryRepository? TempMemories { get; private set; }
+        public MemoryLinkRepository? MemoryLinks { get; private set; }
+        public MemoryService? MemorySvc { get; private set; }
         public SessionManager? Session { get; private set; }
 
         public string DatabaseDirectory
@@ -59,6 +64,16 @@ namespace AgentCoreProcessor.Engine
             Topics = new TopicRepository(db);
             Messages = new MessageRepository(db);
             Memories = new MemoryRepository(db);
+            TempMemories = new TempMemoryRepository(db);
+            MemoryLinks = new MemoryLinkRepository(db);
+
+            // 初始化 Embedding 提供者（从 Base.json 读取 ApiKey）
+            var baseConfigPath = Path.Combine(PathConfig.CoreConfigPath, "Base.json");
+            var baseConfig = ApiClientCfg.FromJson(File.ReadAllText(baseConfigPath));
+            var embeddingProvider = new SiliconFlowEmbeddingProvider(apiKey: baseConfig.ApiKey);
+
+            // 初始化记忆服务
+            MemorySvc = new MemoryService(Memories, TempMemories, MemoryLinks, embeddingProvider);
 
             // 初始化 SessionManager
             Session = new SessionManager(Users, Persons, Channels, Topics, Messages);
@@ -80,7 +95,7 @@ namespace AgentCoreProcessor.Engine
                         return; // 受限，消息已入库但不触发响应（静默观察）
                 }
 
-                var worker = new WorkerEngine(message, adapterManager, context);
+                var worker = new WorkerEngine(message, adapterManager, context, MemorySvc);
                 var result = await worker.RunAsync();
 
                 // result 为 null 时表示 Agent 循环已通过说话工具实时回复，无需再推送

@@ -20,7 +20,8 @@ namespace AgentCoreProcessor.Tool
                 new FileWriteTool(),
                 new SpeakTool(),
                 new CompletionTool(),
-                new ThinkingNotesTool()
+                new ThinkingNotesTool(),
+                new MemoryTool()
             };
             _tools = toolList.ToDictionary(t => t.Name);
         }

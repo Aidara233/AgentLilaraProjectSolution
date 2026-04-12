@@ -1,7 +1,10 @@
 using System;
+using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Core;
+using AgentCoreProcessor.Memory;
 
 namespace AgentCoreProcessor.Engine
 {
@@ -20,6 +23,7 @@ namespace AgentCoreProcessor.Engine
         private readonly IncomingMessage message;
         private readonly AdapterManager adapterManager;
         private readonly SessionContext context;
+        private readonly MemoryService? memorySvc;
 
         private readonly PreprocessingCore preprocessingCore = new();
         private readonly ExpressCore expressCore = new();
@@ -30,11 +34,12 @@ namespace AgentCoreProcessor.Engine
         public WorkerState State => state;
 
         public WorkerEngine(IncomingMessage message, AdapterManager adapterManager,
-            SessionContext context)
+            SessionContext context, MemoryService? memorySvc = null)
         {
             this.message = message;
             this.adapterManager = adapterManager;
             this.context = context;
+            this.memorySvc = memorySvc;
         }
 
         /// <summary>
@@ -49,7 +54,11 @@ namespace AgentCoreProcessor.Engine
                 state = WorkerState.Classifying;
                 var category = await preprocessingCore.ClassifyAsync(message.Content);
 
-                // 2. 根据分类路由
+                // 2. 检索相关记忆，构建 additionalContext
+                string? memoryContext = await BuildMemoryContextAsync(
+                    includeLinks: category >= 3); // 任务类走完整流程含关联扩展
+
+                // 3. 根据分类路由
                 state = WorkerState.Processing;
                 switch (category)
                 {
@@ -58,14 +67,16 @@ namespace AgentCoreProcessor.Engine
                         // 简单聊天 → ExpressCore 润色后返回
                         state = WorkerState.Expressing;
                         expressCore.ResetProcessor();
-                        var expressed = await expressCore.GenerateOnceAsync(message.Content);
+                        var input = memoryContext != null
+                            ? $"{message.Content}\n\n[记忆参考]\n{memoryContext}"
+                            : message.Content;
+                        var expressed = await expressCore.GenerateOnceAsync(input);
                         state = WorkerState.Completed;
                         return expressed;
 
                     case 3:
                     case 4:
                         // 任务类 → Agent 循环
-                        // 说话工具回调：经 ExpressCore 润色（带上下文）后实时推送给用户
                         workingCore.OnSpeak = async (rawText) =>
                         {
                             var polished = await expressCore.PolishAsync(message.Content, rawText);
@@ -75,8 +86,14 @@ namespace AgentCoreProcessor.Engine
                                 Content = polished
                             });
                         };
-                        await workingCore.ProcessAsync(message.Content);
-                        // Agent 循环的用户回复由说话工具负责，这里不再额外推送
+                        // 记忆工具回调
+                        workingCore.OnMemory = async (content) =>
+                        {
+                            if (memorySvc != null)
+                                await memorySvc.StoreAsync(content,
+                                    context.Person.Id, context.Channel.Id, context.Topic.Id);
+                        };
+                        await workingCore.ProcessAsync(message.Content, memoryContext);
                         state = WorkerState.Completed;
                         return null;
 
@@ -92,6 +109,30 @@ namespace AgentCoreProcessor.Engine
             {
                 state = WorkerState.Failed;
                 throw;
+            }
+        }
+
+        /// <summary>检索记忆并格式化为上下文文本。</summary>
+        private async Task<string?> BuildMemoryContextAsync(bool includeLinks)
+        {
+            if (memorySvc == null) return null;
+
+            try
+            {
+                var results = await memorySvc.RecallAsync(
+                    context.Person.Id, context.Channel.Id, context.Topic.Id,
+                    message.Content, topK: 10, includeLinks: includeLinks);
+
+                if (results.Count == 0) return null;
+
+                var sb = new StringBuilder();
+                foreach (var m in results)
+                    sb.AppendLine($"- {m.Content}");
+                return sb.ToString().TrimEnd();
+            }
+            catch (Exception)
+            {
+                return null; // 记忆检索失败不阻塞主流程
             }
         }
     }

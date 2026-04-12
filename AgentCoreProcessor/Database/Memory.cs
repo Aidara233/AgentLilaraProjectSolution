@@ -1,22 +1,11 @@
-using SQLite;
 using System;
+using SQLite;
 
 namespace AgentCoreProcessor.Database
 {
     /// <summary>
-    /// 记忆的作用域类型。
-    /// </summary>
-    public enum MemoryScope
-    {
-        Global = 0,   // 跨所有频道和用户的知识
-        User = 1,     // 绑定到具体用户
-        Channel = 2,  // 绑定到频道
-        Topic = 3     // 绑定到具体话题
-    }
-
-    /// <summary>
-    /// 记忆实体，存储 Lilara 对用户、频道、话题的认知。
-    /// 按作用域（Global/User/Channel/Topic）和生命周期（永久/临时）分类。
+    /// 主记忆实体。多维标签模型，支持按 Person/Channel/Topic 组合检索。
+    /// 同时预留做梦机制所需的元数据字段。
     /// </summary>
     [Table("Memories")]
     internal class MemoryEntry
@@ -24,28 +13,55 @@ namespace AgentCoreProcessor.Database
         [PrimaryKey, AutoIncrement]
         public int Id { get; set; }
 
-        /// <summary>作用域类型</summary>
-        public MemoryScope Scope { get; set; }
+        /// <summary>关联的自然人（null=不限人，如全局知识）</summary>
+        public int? PersonId { get; set; }
 
-        /// <summary>作用域对应的 ID（userId/channelId/topicId，Global 时为 0）</summary>
-        public int ScopeId { get; set; }
+        /// <summary>关联的频道（null=不限频道）</summary>
+        public int? ChannelId { get; set; }
+
+        /// <summary>关联的话题（null=不限话题）</summary>
+        public int? TopicId { get; set; }
 
         /// <summary>记忆内容</summary>
         public string Content { get; set; } = "";
 
-        /// <summary>向量嵌入（暂存为字符串，后续接入向量模型时改为 byte[]）</summary>
-        public string? Embedding { get; set; }
+        /// <summary>向量嵌入（float[] 序列化为 byte[]，SQLite 存 BLOB）</summary>
+        public byte[]? Embedding { get; set; }
 
-        /// <summary>是否为永久记忆（false 则为临时，有过期时间）</summary>
-        public bool IsPersistent { get; set; }
+        /// <summary>重要性 (0.0-1.0)，做梦时调整</summary>
+        public float Importance { get; set; } = 0.5f;
 
-        /// <summary>临时记忆的过期时间（永久记忆为 null）</summary>
+        // ---- 来源追溯 ----
+
+        /// <summary>普通记忆的来源消息ID（与 SourceMemoryIds 互斥）</summary>
+        public int? SourceMessageId { get; set; }
+
+        /// <summary>衍生记忆的来源记忆ID列表（JSON 格式，与 SourceMessageId 互斥）</summary>
+        public string? SourceMemoryIds { get; set; }
+
+        // ---- 做梦元数据 ----
+
+        /// <summary>是否为做梦产生的衍生记忆</summary>
+        public bool IsDerived { get; set; } = false;
+
+        /// <summary>衍生记忆的来源哈希，防重复生成</summary>
+        public string? SourceHash { get; set; }
+
+        /// <summary>上次被做梦处理的时间</summary>
+        public DateTime? LastDreamTime { get; set; }
+
+        // ---- 生命周期 ----
+
+        /// <summary>是否为永久记忆</summary>
+        public bool IsPersistent { get; set; } = true;
+
+        /// <summary>临时记忆的过期时间</summary>
         public DateTime? ExpiresAt { get; set; }
 
         /// <summary>创建时间</summary>
         public DateTime CreatedAt { get; set; } = DateTime.Now;
 
-        /// <summary>最后访问时间，用于 LRU 淘汰或权重衰减</summary>
+        /// <summary>最后访问时间</summary>
         public DateTime LastAccessedAt { get; set; } = DateTime.Now;
     }
 }

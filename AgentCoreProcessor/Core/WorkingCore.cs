@@ -20,6 +20,7 @@ namespace AgentCoreProcessor.Core
         private const string CompletionToolName = "完成";
         private const string ThinkingNotesToolName = "思考笔记";
         private const string SpeakToolName = "说话";
+        private const string MemoryToolName = "记忆";
 
         private readonly PromptBuilder promptBuilder = new();
 
@@ -30,10 +31,16 @@ namespace AgentCoreProcessor.Core
         public Func<string, Task>? OnSpeak { get; set; }
 
         /// <summary>
+        /// 记忆回调。由 WorkerEngine 在调用 ProcessAsync 前设置。
+        /// 签名：async (content) => { MemoryService.StoreAsync }
+        /// </summary>
+        public Func<string, Task>? OnMemory { get; set; }
+
+        /// <summary>
         /// 多轮 Agent 循环。模型反复调用工具直到调用"完成"工具。
         /// 返回完成摘要；若超限或异常则返回错误信息。
         /// </summary>
-        public async Task<string> ProcessAsync(string userRequest)
+        public async Task<string> ProcessAsync(string userRequest, string? memoryContext = null)
         {
             // === 跨轮持久状态 ===
             var register = new Dictionary<string, string>();         // 寄存器：toolId → 输出数据
@@ -56,7 +63,8 @@ namespace AgentCoreProcessor.Core
                     thinkingNotes,
                     lastRoundResults,
                     lastRoundCalls,
-                    retainedResults
+                    retainedResults,
+                    memoryContext
                 );
                 processor.Client.ClearConversationHistory();
                 processor.Client.SetConversationHistory(messages);
@@ -105,6 +113,11 @@ namespace AgentCoreProcessor.Core
                         case SpeakToolName:
                             if (result.IsSuccess && OnSpeak != null)
                                 await OnSpeak(result.Data ?? "");
+                            break;
+
+                        case MemoryToolName:
+                            if (result.IsSuccess && OnMemory != null)
+                                await OnMemory(result.Data ?? "");
                             break;
                     }
                 }
