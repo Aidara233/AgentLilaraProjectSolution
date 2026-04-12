@@ -1,4 +1,5 @@
 using AgentCoreProcessor.Config;
+using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Models;
 using System;
 using System.Collections.Generic;
@@ -125,29 +126,42 @@ namespace AgentCoreProcessor.Core
         public virtual void OnBreak(ResponseBlock block) { }
 
         /// <summary>
-        /// 将模型输出写入调试日志文件 Storage/Logs/debug.log。
+        /// 将模型输入和输出写入独立日志文件 Storage/Logs/Model/{timestamp}_{CoreName}.log。
+        /// 返回日志文件名，供框架日志引用。
         /// </summary>
-        protected void LogOutput(string content, string reasoning = "")
+        protected string LogOutput(string content, string reasoning = "")
         {
+            string fileName = "";
             try
             {
-                var logDir = PathConfig.LogPath;
+                var logDir = Path.Combine(PathConfig.LogPath, "Model");
                 Directory.CreateDirectory(logDir);
-                var logPath = Path.Combine(logDir, "debug.log");
+                fileName = $"{DateTime.Now:yyyyMMdd_HHmmss_fff}_{CoreName}.log";
+                var logPath = Path.Combine(logDir, fileName);
 
                 var sb = new StringBuilder();
                 sb.AppendLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [{CoreName}]");
+
+                // 记录输入消息
+                sb.AppendLine("[Input]");
+                var history = processor.Client.GetConversationHistory();
+                foreach (var msg in history)
+                    sb.AppendLine($"  [{msg.Role}] {msg.Content}");
+
                 if (!string.IsNullOrEmpty(reasoning))
                     sb.AppendLine($"[Thinking] {reasoning}");
                 sb.AppendLine($"[Output] {content}");
-                sb.AppendLine("---");
 
-                File.AppendAllText(logPath, sb.ToString());
+                File.WriteAllText(logPath, sb.ToString());
+
+                // 同时在框架日志中记录引用
+                FrameworkLogger.LogModelCall("CoreBase", CoreName, fileName);
             }
             catch
             {
                 // 日志写入不应影响主流程
             }
+            return fileName;
         }
     }
 

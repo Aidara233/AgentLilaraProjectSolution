@@ -90,10 +90,13 @@ namespace AgentCoreProcessor.Engine
                 switch (context.User.PermissionLevel)
                 {
                     case PermissionLevel.Blocked:
-                        return; // 黑名单，完全不响应
+                        FrameworkLogger.LogPermission("MasterEngine", context.User.PlatformId, "Blocked", false);
+                        return;
                     case PermissionLevel.Restricted:
-                        return; // 受限，消息已入库但不触发响应（静默观察）
+                        FrameworkLogger.LogPermission("MasterEngine", context.User.PlatformId, "Restricted", false);
+                        return;
                 }
+                FrameworkLogger.Log("MasterEngine", $"消息处理: user={context.User.PlatformId} person={context.Person.Id} channel={context.Channel.Id} topic={context.Topic.Id}");
 
                 var worker = new WorkerEngine(message, adapterManager, context, MemorySvc);
                 var result = await worker.RunAsync();

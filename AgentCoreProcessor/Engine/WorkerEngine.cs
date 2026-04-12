@@ -53,6 +53,7 @@ namespace AgentCoreProcessor.Engine
                 // 1. 分类
                 state = WorkerState.Classifying;
                 var category = await preprocessingCore.ClassifyAsync(message.Content);
+                FrameworkLogger.LogClassification("WorkerEngine", category);
 
                 // 2. 检索相关记忆，构建 additionalContext
                 string? memoryContext = await BuildMemoryContextAsync(
@@ -124,6 +125,9 @@ namespace AgentCoreProcessor.Engine
                     message.Content, topK: 10, includeLinks: includeLinks);
 
                 if (results.Count == 0) return null;
+
+                FrameworkLogger.LogMemoryRecall("WorkerEngine",
+                    results.Count, results.Count(r => r.IsTemp));
 
                 var sb = new StringBuilder();
                 foreach (var m in results)
