@@ -75,7 +75,8 @@ namespace AgentCoreProcessor
                     PlatformUserId = "debug-user",
                     ChannelId = "debug",
                     Content = input,
-                    Time = DateTime.Now
+                    Time = DateTime.Now,
+                    IsPrivate = true
                 };
 
                 try
