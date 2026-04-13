@@ -3,18 +3,23 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Engine;
 
 namespace AgentCoreProcessor.Adapter
 {
     public class AdapterManager
     {
         private readonly List<IAdapter> adapters = new();
+        private readonly EventBus? eventBus;
 
-        public event Action<IncomingMessage>? OnMessageReceived;
+        public AdapterManager(EventBus? eventBus = null)
+        {
+            this.eventBus = eventBus;
+        }
 
         public void RegisterAdapter(IAdapter adapter)
         {
-            adapter.OnMessageReceived += msg => OnMessageReceived?.Invoke(msg);
+            adapter.OnMessageReceived += msg => eventBus?.PublishMessage(msg);
             adapters.Add(adapter);
         }
 

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
@@ -16,20 +17,35 @@ namespace AgentCoreProcessor
 
             PathConfig.Load();
 
-            // debug 模式
             var debug = Array.Exists(args, a => a == "--debug");
+            var fileMode = Array.Exists(args, a => a == "--file");
+
+            // 事件总线
+            var eventBus = new EventBus();
 
             // 适配器管理器
-            var adapterManager = new AdapterManager();
+            var adapterManager = new AdapterManager(eventBus);
 
             // 适配器
-            var consoleAdapter = new ConsoleAdapter();// 控制台适配器，主要调试用
-            adapterManager.RegisterAdapter(consoleAdapter);// 注册
+            if (fileMode)
+            {
+                var fileDir = Path.Combine(PathConfig.StoragePath, "FileAdapter");
+                var fileAdapter = new FileAdapter(
+                    Path.Combine(fileDir, "input.txt"),
+                    Path.Combine(fileDir, "output.txt"),
+                    pollIntervalMs: 3000);
+                adapterManager.RegisterAdapter(fileAdapter);
+            }
+            else
+            {
+                var consoleAdapter = new ConsoleAdapter();
+                adapterManager.RegisterAdapter(consoleAdapter);
+            }
 
             // 主引擎
-            var engine = new MasterEngine(adapterManager);
+            var engine = new MasterEngine(adapterManager, eventBus);
 
-            // 初始化数据库（建表 + Repository）
+            // 初始化数据库（建表 + Repository）+ 订阅事件总线
             try
             {
                 await engine.InitAsync();
@@ -64,7 +80,8 @@ namespace AgentCoreProcessor
 
                 try
                 {
-                    await engine.HandleMessageAsync(msg);
+                    // debug 模式同步等待，直接调用 HandleEventAsync
+                    await engine.HandleEventAsync(new MessageEvent { Message = msg, Time = msg.Time });
                 }
                 catch (Exception ex)
                 {
@@ -74,12 +91,7 @@ namespace AgentCoreProcessor
                 return 0;
             }
 
-            // 正常模式
-            adapterManager.OnMessageReceived += msg =>
-            {
-                _ = engine.HandleMessageAsync(msg);
-            };
-
+            // 正常模式：适配器消息已通过 EventBus 自动路由到 MasterEngine
             await adapterManager.StartAllAsync();
 
             return 0;
