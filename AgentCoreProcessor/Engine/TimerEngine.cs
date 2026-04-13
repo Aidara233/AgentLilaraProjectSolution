@@ -20,6 +20,7 @@ namespace AgentCoreProcessor.Engine
     {
         public string EngineType => "Timer";
         public bool IsAlive { get; private set; } = true;
+        public bool IsInfrastructure => true;
 
         private readonly ISystemContext ctx;
         private int intervalSeconds = 30;

@@ -58,14 +58,14 @@ namespace AgentCoreProcessor.Engine
         // 内核级状态
         private DateTime lastMessageTime = DateTime.Now;
         public DateTime LastMessageTime => lastMessageTime;
-        /// <summary>是否空闲。排除 Timer 等常驻基础设施引擎。</summary>
+        /// <summary>是否空闲。排除基础设施引擎（IsInfrastructure=true）。</summary>
         public bool IsIdle
         {
             get
             {
                 lock (engineLock)
                 {
-                    return !activeEngines.Any(e => e.IsAlive && e.EngineType != "Timer");
+                    return !activeEngines.Any(e => e.IsAlive && !e.IsInfrastructure);
                 }
             }
         }

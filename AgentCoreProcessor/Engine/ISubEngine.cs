@@ -17,6 +17,12 @@ namespace AgentCoreProcessor.Engine
         void OnEvent(EngineEvent e);
         bool IsAlive { get; }
         void RequestStop();
+
+        /// <summary>
+        /// 是否为基础设施引擎（如 Timer）。基础设施引擎不影响 IsIdle 判定。
+        /// 默认 false。
+        /// </summary>
+        bool IsInfrastructure => false;
     }
 
     /// <summary>
