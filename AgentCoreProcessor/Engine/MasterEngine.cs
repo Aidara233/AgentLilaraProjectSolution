@@ -58,7 +58,17 @@ namespace AgentCoreProcessor.Engine
         // 内核级状态
         private DateTime lastMessageTime = DateTime.Now;
         public DateTime LastMessageTime => lastMessageTime;
-        public bool IsIdle { get { lock (engineLock) { return activeEngines.Count == 0; } } }
+        /// <summary>是否空闲。排除 Timer 等常驻基础设施引擎。</summary>
+        public bool IsIdle
+        {
+            get
+            {
+                lock (engineLock)
+                {
+                    return !activeEngines.Any(e => e.IsAlive && e.EngineType != "Timer");
+                }
+            }
+        }
         public TimeSpan IdleDuration => IsIdle ? DateTime.Now - lastMessageTime : TimeSpan.Zero;
 
         // ---- 引擎注册表 ----
