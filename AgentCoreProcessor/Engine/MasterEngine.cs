@@ -48,6 +48,7 @@ namespace AgentCoreProcessor.Engine
         public MemoryRepository Memories { get; private set; } = null!;
         public TempMemoryRepository TempMemories { get; private set; } = null!;
         public MemoryLinkRepository MemoryLinks { get; private set; } = null!;
+        public ReviewHintRepository ReviewHints { get; private set; } = null!;
         public MemoryService MemorySvc { get; private set; } = null!;
         public SessionManager Session { get; private set; } = null!;
         public IEmbeddingProvider Embedding => embeddingProvider!;
@@ -72,7 +73,7 @@ namespace AgentCoreProcessor.Engine
             ["Worker"] = () => new WorkerEngineSpawnCheck(),
             ["Dream"] = () => new DreamEngineSpawnCheck(),
         };
-// PLACEHOLDER_MASTER_CONTINUE
+
 
         public MasterEngine(AdapterManager adapterManager, EventBus eventBus, string? databaseDirectory = null)
         {
@@ -111,6 +112,7 @@ namespace AgentCoreProcessor.Engine
             Memories = new MemoryRepository(db);
             TempMemories = new TempMemoryRepository(db);
             MemoryLinks = new MemoryLinkRepository(db);
+            ReviewHints = new ReviewHintRepository(db);
 
             // Embedding
             var baseConfigPath = Path.Combine(PathConfig.CoreConfigPath, "Base.json");
@@ -190,9 +192,9 @@ namespace AgentCoreProcessor.Engine
             await Task.CompletedTask;
         }
 
-        // ---- 引擎启动 ----
+        // ---- 引擎管理 ----
 
-        private void StartEngine(ISubEngine engine)
+        public ISubEngine StartEngine(ISubEngine engine)
         {
             lock (engineLock) { activeEngines.Add(engine); }
             FrameworkLogger.Log("MasterEngine", $"引擎启动: {engine.EngineType}");
@@ -207,6 +209,13 @@ namespace AgentCoreProcessor.Engine
                     FrameworkLogger.Log("MasterEngine", $"引擎异常 [{engine.EngineType}]: {ex.Message}");
                 }
             });
+            return engine;
+        }
+
+        public void RequestStopEngine(ISubEngine engine)
+        {
+            engine.RequestStop();
+            FrameworkLogger.Log("MasterEngine", $"请求停止引擎: {engine.EngineType}");
         }
     }
 }

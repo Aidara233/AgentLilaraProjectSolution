@@ -26,7 +26,8 @@ namespace AgentCoreProcessor.Tool
                 new ForceSleepTool(),
                 new DreamConfigTool(),
                 new SleepScoreTool(),
-                new RedAlertTool()
+                new RedAlertTool(),
+                new ReviewHintTool()
             };
             _tools = toolList.ToDictionary(t => t.Name);
         }

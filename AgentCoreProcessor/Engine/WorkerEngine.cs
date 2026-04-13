@@ -44,7 +44,6 @@ namespace AgentCoreProcessor.Engine
                         FrameworkLogger.LogPermission("WorkerEngine", context.User.PlatformId, "Restricted", false);
                         return;
                 }
-// PLACEHOLDER_WORKER_CONTINUE
                 FrameworkLogger.Log("WorkerEngine",
                     $"消息处理: user={context.User.PlatformId} person={context.Person.Id} channel={context.Channel.Id} topic={context.Topic.Id}");
 
@@ -93,6 +92,11 @@ namespace AgentCoreProcessor.Engine
                         {
                             ctx.EventBus.PublishSignal(signalName, payload);
                             await Task.CompletedTask;
+                        };
+                        workingCore.OnReviewHint = async (content) =>
+                        {
+                            await ctx.ReviewHints.CreateAsync(content,
+                                context.Person.Id, context.Channel.Id, context.Topic.Id);
                         };
                         await workingCore.ProcessAsync(message.Content, memoryContext);
                         break;

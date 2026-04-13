@@ -131,6 +131,11 @@ namespace AgentCoreProcessor.Engine
             return topics.GetActiveByChannelAsync(channelId);
         }
 
+        public Task<List<Channel>> GetAllChannelsAsync()
+        {
+            return channels.GetAllAsync();
+        }
+
         /// <summary>
         /// 三层话题归类：规则层 → 向量层（双阈值）→ 模型层。
         /// </summary>

@@ -35,7 +35,7 @@ namespace AgentCoreProcessor.Engine
         // ShouldSpawn 决定的睡眠级别，供 Create 读取
         private SleepLevel pendingLevel;
         private int pendingMaxFragments;
-// PLACEHOLDER_DREAM_SPAWN_CONTINUE
+
 
         public void OnEvent(EngineEvent e, ISystemContext ctx)
         {
@@ -202,6 +202,10 @@ namespace AgentCoreProcessor.Engine
 
             return new DreamEngine(ctx, pendingLevel, pendingMaxFragments, this);
         }
+
+        // ---- 供 DreamEngine 实例访问 ----
+
+        internal DreamConfig GetConfig() => cfg;
 
         // ---- 供 DreamEngine 实例回调 ----
 

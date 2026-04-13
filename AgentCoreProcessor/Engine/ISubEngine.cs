@@ -52,11 +52,18 @@ namespace AgentCoreProcessor.Engine
         // 事件总线
         EventBus EventBus { get; }
 
+        // 复盘标记
+        ReviewHintRepository ReviewHints { get; }
+
         // 引擎状态查询
         bool IsIdle { get; }
         TimeSpan IdleDuration { get; }
         DateTime LastMessageTime { get; }
         bool HasActiveEngine(string engineType);
         int GetActiveEngineCount(string engineType);
+
+        // 引擎管理（子引擎可请求启动/停止其他引擎）
+        ISubEngine StartEngine(ISubEngine engine);
+        void RequestStopEngine(ISubEngine engine);
     }
 }

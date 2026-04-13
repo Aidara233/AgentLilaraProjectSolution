@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Util;
 using Newtonsoft.Json.Linq;
@@ -15,6 +17,7 @@ namespace AgentCoreProcessor.Engine
 
     /// <summary>
     /// 做梦引擎实例。每次睡觉创建，完成后销毁。
+    /// 走神/小睡使用固定片段数循环，大睡使用两阶段制（浅睡→深睡）。
     /// </summary>
     internal class DreamEngine : ISubEngine
     {
@@ -34,6 +37,9 @@ namespace AgentCoreProcessor.Engine
         private volatile bool shouldWake = false;
         private static readonly Random rng = new();
 
+        /// <summary>每个片段的估算 token 消耗（粗略值，用于预算控制）。</summary>
+        private const int EstimatedTokensPerFragment = 2000;
+
         public DreamEngine(ISystemContext ctx, SleepLevel level, int maxFragments,
             DreamEngineSpawnCheck spawnCheck)
         {
@@ -45,29 +51,16 @@ namespace AgentCoreProcessor.Engine
 
         public async Task RunAsync()
         {
-            int executed = 0;
             FrameworkLogger.Log("DreamEngine", $"开始做梦: level={level} max={maxFragments}");
-// PLACEHOLDER_DREAM_RUN
-            for (int i = 0; i < maxFragments; i++)
-            {
-                if (shouldWake) { FrameworkLogger.Log("DreamEngine", "被叫醒"); break; }
-                var fragment = await SelectFragment();
-                if (fragment == null) { FrameworkLogger.Log("DreamEngine", "无可执行片段"); break; }
-                try
-                {
-                    FrameworkLogger.Log("DreamEngine", $"执行片段: {fragment}");
-                    await ExecuteFragment(fragment.Value);
-                    executed++;
-                }
-                catch (Exception ex)
-                {
-                    FrameworkLogger.Log("DreamEngine", $"片段异常: {fragment} - {ex.Message}");
-                }
-            }
-            // 通知 SpawnCheck 更新跨周期状态
-            int processed = 0;
+
+            int executed;
             if (level == SleepLevel.DeepSleep)
-                processed = executed; // 简化：用执行片段数近似
+                executed = await RunDeepSleepAsync();
+            else
+                executed = await RunLightSleepAsync();
+
+            // 通知 SpawnCheck 更新跨周期状态
+            int processed = level == SleepLevel.DeepSleep ? executed : 0;
             spawnCheck.OnDreamCompleted(level, processed);
 
             FrameworkLogger.Log("DreamEngine", $"做梦结束: level={level} executed={executed}");
@@ -81,11 +74,179 @@ namespace AgentCoreProcessor.Engine
 
         public void RequestStop() => shouldWake = true;
 
+        // ---- 走神/小睡：固定片段数循环 ----
+
+        private async Task<int> RunLightSleepAsync()
+        {
+            int executed = 0;
+            for (int i = 0; i < maxFragments; i++)
+            {
+                if (shouldWake) { FrameworkLogger.Log("DreamEngine", "被叫醒"); break; }
+                var fragment = await SelectFragment(isPhase2: false);
+                if (fragment == null) { FrameworkLogger.Log("DreamEngine", "无可执行片段"); break; }
+                try
+                {
+                    FrameworkLogger.Log("DreamEngine", $"执行片段: {fragment}");
+                    await ExecuteFragment(fragment.Value);
+                    executed++;
+                }
+                catch (Exception ex)
+                {
+                    FrameworkLogger.Log("DreamEngine", $"片段异常: {fragment} - {ex.Message}");
+                }
+            }
+            return executed;
+        }
+
+        // ---- 大睡：两阶段制 ----
+
+        private async Task<int> RunDeepSleepAsync()
+        {
+            var startTime = DateTime.Now;
+            var cfg = spawnCheck.GetConfig();
+            int tokensUsed = 0;
+            int executed = 0;
+            int phase1Budget = cfg.DeepSleepTokenBudget / 3;
+
+            // ========== Phase 1: 浅睡 — 集中清临时记忆 ==========
+            FrameworkLogger.Log("DreamEngine", "Phase 1: 浅睡开始");
+
+            while (!shouldWake)
+            {
+                if (tokensUsed >= phase1Budget) break;
+                if (ElapsedMinutes(startTime) > cfg.DeepSleepMaxMinutes) break;
+
+                var tempCount = (await ctx.TempMemories.GetAllAsync()).Count;
+                if (tempCount == 0)
+                {
+                    FrameworkLogger.Log("DreamEngine", "临时记忆已清空，Phase 1 完成");
+                    break;
+                }
+
+                var fragment = await SelectFragment(isPhase2: false);
+                if (fragment == null) break;
+
+                try
+                {
+                    FrameworkLogger.Log("DreamEngine", $"[Phase1] 执行片段: {fragment}");
+                    await ExecuteFragment(fragment.Value);
+                    tokensUsed += EstimatedTokensPerFragment;
+                    executed++;
+                }
+                catch (Exception ex)
+                {
+                    FrameworkLogger.Log("DreamEngine", $"[Phase1] 片段异常: {fragment} - {ex.Message}");
+                }
+            }
+
+            FrameworkLogger.Log("DreamEngine",
+                $"Phase 1 结束: executed={executed} tokens≈{tokensUsed}");
+
+            // ========== Phase 2: 深睡 — 启动 ReviewEngine + 继续做梦 ==========
+            ISubEngine? reviewEngine = null;
+
+            if (!shouldWake && ElapsedMinutes(startTime) < cfg.DeepSleepMaxMinutes)
+            {
+                FrameworkLogger.Log("DreamEngine", "Phase 2: 深睡开始");
+
+                try
+                {
+                    var (mode, preContext, progress) =
+                        await ReviewModeSelector.SelectAndPrepareAsync(ctx);
+                    reviewEngine = new ReviewEngine(ctx, mode, preContext,
+                        cfg.ReviewTokenBudget, cfg.ReviewReserveBudget, progress);
+                    ctx.StartEngine(reviewEngine);
+                    FrameworkLogger.Log("DreamEngine", $"ReviewEngine 已启动: mode={mode}");
+                }
+                catch (Exception ex)
+                {
+                    FrameworkLogger.Log("DreamEngine", $"ReviewEngine 启动失败: {ex.Message}");
+                }
+
+                // Phase 2 循环：继续跑 Weight/Link/Combine，陪跑 ReviewEngine
+                int nullCount = 0;
+                while (true)
+                {
+                    // 时间超限
+                    if (ElapsedMinutes(startTime) > cfg.DeepSleepMaxMinutes)
+                    {
+                        FrameworkLogger.Log("DreamEngine", "大睡时间超限");
+                        reviewEngine?.RequestStop();
+                        break;
+                    }
+
+                    // shouldWake 时不立刻退——等 ReviewEngine 完成当前轮
+                    if (shouldWake && (reviewEngine == null || !reviewEngine.IsAlive))
+                        break;
+
+                    // DreamEngine 自己还有预算
+                    if (tokensUsed < cfg.DeepSleepTokenBudget)
+                    {
+                        var fragment = await SelectFragment(isPhase2: true);
+                        if (fragment != null)
+                        {
+                            nullCount = 0;
+                            try
+                            {
+                                FrameworkLogger.Log("DreamEngine", $"[Phase2] 执行片段: {fragment}");
+                                await ExecuteFragment(fragment.Value);
+                                tokensUsed += EstimatedTokensPerFragment;
+                                executed++;
+                            }
+                            catch (Exception ex)
+                            {
+                                FrameworkLogger.Log("DreamEngine",
+                                    $"[Phase2] 片段异常: {fragment} - {ex.Message}");
+                            }
+                        }
+                        else
+                        {
+                            nullCount++;
+                            if (reviewEngine == null || !reviewEngine.IsAlive)
+                            {
+                                if (nullCount >= 3)
+                                {
+                                    FrameworkLogger.Log("DreamEngine", "Phase 2 无片段可跑且 Review 完成");
+                                    break;
+                                }
+                            }
+                            await Task.Delay(5000);
+                        }
+                    }
+                    else
+                    {
+                        // DreamEngine 预算用完，陪跑等 Review
+                        if (reviewEngine == null || !reviewEngine.IsAlive)
+                            break;
+                        await Task.Delay(5000);
+                    }
+                }
+
+                // 等待 ReviewEngine 完成当前轮（最多 30 秒）
+                if (reviewEngine?.IsAlive == true)
+                {
+                    FrameworkLogger.Log("DreamEngine", "等待 ReviewEngine 完成当前轮...");
+                    var waitStart = DateTime.Now;
+                    while (reviewEngine.IsAlive && (DateTime.Now - waitStart).TotalSeconds < 30)
+                        await Task.Delay(1000);
+                }
+            }
+
+            FrameworkLogger.Log("DreamEngine",
+                $"大睡结束: totalExecuted={executed} tokens≈{tokensUsed} " +
+                $"duration={ElapsedMinutes(startTime):F1}min");
+
+            return executed;
+        }
+
+        private static double ElapsedMinutes(DateTime startTime)
+            => (DateTime.Now - startTime).TotalMinutes;
+
         // ---- 片段调度 ----
 
-        private async Task<FragmentType?> SelectFragment()
+        private async Task<FragmentType?> SelectFragment(bool isPhase2)
         {
-            var weights = await ComputeWeights();
+            var weights = await ComputeWeights(isPhase2);
             var total = weights.Values.Sum();
             if (total <= 0) return null;
             var roll = rng.NextDouble() * total;
@@ -98,21 +259,36 @@ namespace AgentCoreProcessor.Engine
             return weights.Keys.Last();
         }
 
-        private async Task<Dictionary<FragmentType, float>> ComputeWeights()
+        private async Task<Dictionary<FragmentType, float>> ComputeWeights(bool isPhase2)
         {
             var weights = new Dictionary<FragmentType, float>();
             var tempCount = (await ctx.TempMemories.GetAllAsync()).Count;
+
             if (level == SleepLevel.Daydream)
             {
                 weights[FragmentType.Weight] = 1.0f;
                 weights[FragmentType.Link] = 1.0f;
                 return weights;
             }
-            weights[FragmentType.Consolidation] = tempCount > 0 ? 10.0f : 0f;
-            weights[FragmentType.Weight] = 1.0f;
-            var undreamed = await ctx.Memories.GetUndreamedAsync(10);
-            weights[FragmentType.Link] = undreamed.Count > 0 ? 3.0f : 1.0f;
-            weights[FragmentType.Combine] = 0.5f;
+
+            if (isPhase2)
+            {
+                // Phase 2：不跑 Consolidation（临时记忆已空，且 ReviewEngine 可能在写入）
+                weights[FragmentType.Weight] = 1.0f;
+                var undreamed = await ctx.Memories.GetUndreamedAsync(10);
+                weights[FragmentType.Link] = undreamed.Count > 0 ? 3.0f : 1.0f;
+                weights[FragmentType.Combine] = 0.5f;
+            }
+            else
+            {
+                // Phase 1 / 小睡：Consolidation 权重极高
+                weights[FragmentType.Consolidation] = tempCount > 0 ? 20.0f : 0f;
+                weights[FragmentType.Weight] = 1.0f;
+                var undreamed = await ctx.Memories.GetUndreamedAsync(10);
+                weights[FragmentType.Link] = undreamed.Count > 0 ? 3.0f : 1.0f;
+                weights[FragmentType.Combine] = 0.5f;
+            }
+
             return weights;
         }
 
@@ -126,6 +302,8 @@ namespace AgentCoreProcessor.Engine
                 case FragmentType.Combine: await ExecuteCombine(); break;
             }
         }
+
+        // ---- 片段执行（保持不变）----
 
         private async Task ExecuteConsolidation()
         {

@@ -53,6 +53,20 @@ namespace AgentCoreProcessor.Engine
         /// <summary>红色条件：距上次大睡最大小时数</summary>
         public float RedMaxSleepGapHours { get; set; } = 48.0f;
 
+        // ---- 预算配置 ----
+
+        /// <summary>大睡 DreamEngine 片段调用的 token 预算</summary>
+        public int DeepSleepTokenBudget { get; set; } = 100000;
+
+        /// <summary>ReviewEngine 基础 token 预算</summary>
+        public int ReviewTokenBudget { get; set; } = 50000;
+
+        /// <summary>ReviewEngine 备用 token 预算（不自动补充，需显式请求）</summary>
+        public int ReviewReserveBudget { get; set; } = 15000;
+
+        /// <summary>大睡硬性时间上限（分钟）</summary>
+        public int DeepSleepMaxMinutes { get; set; } = 120;
+
         /// <summary>判断当前时间是否在大睡时间段内。</summary>
         public bool IsInDeepSleepWindow()
         {

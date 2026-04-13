@@ -18,6 +18,9 @@ namespace AgentCoreProcessor.Tool
         /// </summary>
         private readonly Dictionary<string, string> register;
 
+        /// <summary>工具查找函数。默认使用全局 ToolRegistry。</summary>
+        private readonly Func<string, ITool?> toolResolver;
+
         /// <summary>本轮执行结果：toolId → ToolResult。每次 ExecuteAsync 调用前自动清空。</summary>
         private readonly Dictionary<string, ToolResult> results = [];
 
@@ -28,9 +31,11 @@ namespace AgentCoreProcessor.Tool
         /// 创建工具执行器。
         /// </summary>
         /// <param name="register">共享寄存器，跨轮累积工具输出供 ref 引用。</param>
-        public ToolExecutor(Dictionary<string, string> register)
+        /// <param name="toolResolver">自定义工具查找函数。为 null 时使用 ToolRegistry.Get。</param>
+        public ToolExecutor(Dictionary<string, string> register, Func<string, ITool?>? toolResolver = null)
         {
             this.register = register;
+            this.toolResolver = toolResolver ?? ToolRegistry.Get;
         }
 
         /// <summary>
@@ -139,7 +144,7 @@ namespace AgentCoreProcessor.Tool
         private async Task<ToolResult> RunSingleAsync(ToolCall call)
         {
             // 查找工具实现
-            var tool = ToolRegistry.Get(call.Tool);
+            var tool = toolResolver(call.Tool);
             if (tool == null)
             {
                 return new ToolResult

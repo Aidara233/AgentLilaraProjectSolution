@@ -26,6 +26,7 @@ namespace AgentCoreProcessor.Core
         private const string DreamConfigToolName = "修改睡眠配置";
         private const string SleepScoreToolName = "调整睡意";
         private const string RedAlertToolName = "触发红色警报";
+        private const string ReviewHintToolName = "标记复盘";
 
         private readonly PromptBuilder promptBuilder = new();
 
@@ -46,6 +47,12 @@ namespace AgentCoreProcessor.Core
         /// 签名：async (signalName, payload) => { EventBus.PublishSignal }
         /// </summary>
         public Func<string, string?, Task>? OnSignal { get; set; }
+
+        /// <summary>
+        /// 复盘标记回调。由 WorkerEngine 在调用 ProcessAsync 前设置。
+        /// 签名：async (content) => { ReviewHintRepository.CreateAsync }
+        /// </summary>
+        public Func<string, Task>? OnReviewHint { get; set; }
 
         /// <summary>
         /// 多轮 Agent 循环。模型反复调用工具直到调用"完成"工具。
@@ -154,6 +161,11 @@ namespace AgentCoreProcessor.Core
                         case RedAlertToolName:
                             if (result.IsSuccess && OnSignal != null)
                                 await OnSignal("red-alert", null);
+                            break;
+
+                        case ReviewHintToolName:
+                            if (result.IsSuccess && OnReviewHint != null)
+                                await OnReviewHint(result.Data ?? "");
                             break;
                     }
                 }
