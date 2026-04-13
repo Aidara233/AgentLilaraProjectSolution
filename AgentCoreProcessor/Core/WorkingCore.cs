@@ -21,6 +21,11 @@ namespace AgentCoreProcessor.Core
         private const string ThinkingNotesToolName = "思考笔记";
         private const string SpeakToolName = "说话";
         private const string MemoryToolName = "记忆";
+        private const string DreamPermissionToolName = "睡眠许可";
+        private const string ForceSleepToolName = "强制睡觉";
+        private const string DreamConfigToolName = "修改睡眠配置";
+        private const string SleepScoreToolName = "调整睡意";
+        private const string RedAlertToolName = "触发红色警报";
 
         private readonly PromptBuilder promptBuilder = new();
 
@@ -35,6 +40,12 @@ namespace AgentCoreProcessor.Core
         /// 签名：async (content) => { MemoryService.StoreAsync }
         /// </summary>
         public Func<string, Task>? OnMemory { get; set; }
+
+        /// <summary>
+        /// 信号回调。由 WorkerEngine 在调用 ProcessAsync 前设置。
+        /// 签名：async (signalName, payload) => { EventBus.PublishSignal }
+        /// </summary>
+        public Func<string, string?, Task>? OnSignal { get; set; }
 
         /// <summary>
         /// 多轮 Agent 循环。模型反复调用工具直到调用"完成"工具。
@@ -118,6 +129,31 @@ namespace AgentCoreProcessor.Core
                         case MemoryToolName:
                             if (result.IsSuccess && OnMemory != null)
                                 await OnMemory(result.Data ?? "");
+                            break;
+
+                        case DreamPermissionToolName:
+                            if (result.IsSuccess && OnSignal != null)
+                                await OnSignal("dream-permission", null);
+                            break;
+
+                        case ForceSleepToolName:
+                            if (result.IsSuccess && OnSignal != null)
+                                await OnSignal("force-sleep", null);
+                            break;
+
+                        case DreamConfigToolName:
+                            if (result.IsSuccess && OnSignal != null)
+                                await OnSignal("dream-config", result.Data);
+                            break;
+
+                        case SleepScoreToolName:
+                            if (result.IsSuccess && OnSignal != null)
+                                await OnSignal("sleep-score-offset", result.Data);
+                            break;
+
+                        case RedAlertToolName:
+                            if (result.IsSuccess && OnSignal != null)
+                                await OnSignal("red-alert", null);
                             break;
                     }
                 }

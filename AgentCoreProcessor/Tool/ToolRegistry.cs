@@ -21,7 +21,12 @@ namespace AgentCoreProcessor.Tool
                 new SpeakTool(),
                 new CompletionTool(),
                 new ThinkingNotesTool(),
-                new MemoryTool()
+                new MemoryTool(),
+                new DreamPermissionTool(),
+                new ForceSleepTool(),
+                new DreamConfigTool(),
+                new SleepScoreTool(),
+                new RedAlertTool()
             };
             _tools = toolList.ToDictionary(t => t.Name);
         }

@@ -104,5 +104,62 @@ namespace AgentCoreProcessor.Database
         public Task<int> DeleteAsync(MemoryEntry memory) => db.DeleteAsync(memory);
 
         public Task<MemoryEntry?> GetByIdAsync(int id) => db.GetByIdAsync<MemoryEntry>(id);
+
+        // ---- 做梦相关查询 ----
+
+        /// <summary>获取未被做梦处理的记忆（LastDreamTime 为空）。</summary>
+        public Task<List<MemoryEntry>> GetUndreamedAsync(int limit)
+        {
+            return db.QueryAsync<MemoryEntry>(
+                "SELECT * FROM Memories WHERE LastDreamTime IS NULL ORDER BY CreatedAt ASC LIMIT ?", limit);
+        }
+
+        /// <summary>获取最久未被做梦处理的记忆。</summary>
+        public Task<List<MemoryEntry>> GetOldestDreamedAsync(int limit)
+        {
+            return db.QueryAsync<MemoryEntry>(
+                "SELECT * FROM Memories WHERE LastDreamTime IS NOT NULL ORDER BY LastDreamTime ASC LIMIT ?", limit);
+        }
+
+        /// <summary>按 SourceHash 查询，用于衍生记忆防重复。</summary>
+        public async Task<MemoryEntry?> GetBySourceHashAsync(string hash)
+        {
+            var results = await db.QueryAsync<MemoryEntry>(
+                "SELECT * FROM Memories WHERE SourceHash = ? LIMIT 1", hash);
+            return results.Count > 0 ? results[0] : null;
+        }
+
+        /// <summary>创建衍生记忆（做梦产生）。</summary>
+        public async Task<MemoryEntry> CreateDerivedAsync(
+            string content, byte[]? embedding,
+            string sourceMemoryIds, string sourceHash,
+            int? personId = null, int? channelId = null, int? topicId = null,
+            float importance = 0.5f)
+        {
+            var memory = new MemoryEntry
+            {
+                PersonId = personId,
+                ChannelId = channelId,
+                TopicId = topicId,
+                Content = content,
+                Embedding = embedding,
+                Importance = importance,
+                IsDerived = true,
+                SourceMemoryIds = sourceMemoryIds,
+                SourceHash = sourceHash,
+                IsPersistent = true,
+                LastDreamTime = DateTime.Now,
+                CreatedAt = DateTime.Now,
+                LastAccessedAt = DateTime.Now
+            };
+            await db.InsertAsync(memory);
+            return memory;
+        }
+
+        /// <summary>获取主库记忆总数。</summary>
+        public async Task<int> GetCountAsync()
+        {
+            return await db.Table<MemoryEntry>().CountAsync();
+        }
     }
 }
