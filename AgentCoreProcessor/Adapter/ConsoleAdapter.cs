@@ -42,7 +42,8 @@ namespace AgentCoreProcessor.Adapter
                     PlatformUserId = "console-user",
                     ChannelId = "console",
                     Content = line,
-                    Time = DateTime.Now
+                    Time = DateTime.Now,
+                    IsPrivate = true
                 };
 
                 OnMessageReceived?.Invoke(msg);

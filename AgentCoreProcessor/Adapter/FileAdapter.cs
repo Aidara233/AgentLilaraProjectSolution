@@ -64,7 +64,8 @@ namespace AgentCoreProcessor.Adapter
                         PlatformUserId = "file-user",
                         ChannelId = "file",
                         Content = content,
-                        Time = DateTime.Now
+                        Time = DateTime.Now,
+                        IsPrivate = true
                     };
 
                     OnMessageReceived?.Invoke(msg);

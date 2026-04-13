@@ -34,8 +34,8 @@ namespace AgentCoreProcessor.Engine
     internal interface IEngineSpawnCheck
     {
         string EngineType { get; }
-        void OnEvent(EngineEvent e, ISystemContext ctx);
-        bool ShouldSpawn(EngineEvent e, ISystemContext ctx);
+        Task OnEventAsync(EngineEvent e, ISystemContext ctx);
+        Task<bool> ShouldSpawnAsync(EngineEvent e, ISystemContext ctx);
         ISubEngine Create(ISystemContext ctx);
     }
 

@@ -37,7 +37,7 @@ namespace AgentCoreProcessor.Engine
         private int pendingMaxFragments;
 
 
-        public void OnEvent(EngineEvent e, ISystemContext ctx)
+        public async Task OnEventAsync(EngineEvent e, ISystemContext ctx)
         {
             if (e is SignalEvent signal)
             {
@@ -87,7 +87,7 @@ namespace AgentCoreProcessor.Engine
             // TickEvent 时更新统计快照
             if (e is TimerEvent timer && timer.TimerName == "tick")
             {
-                _ = UpdateSnapshotAsync(ctx);
+                await UpdateSnapshotAsync(ctx);
             }
         }
 
@@ -102,7 +102,7 @@ namespace AgentCoreProcessor.Engine
             catch { }
         }
 
-        public bool ShouldSpawn(EngineEvent e, ISystemContext ctx)
+        public async Task<bool> ShouldSpawnAsync(EngineEvent e, ISystemContext ctx)
         {
             // 只在 TickEvent 时评估（避免每个事件都跑）
             if (e is not TimerEvent timer || timer.TimerName != "tick")
@@ -141,7 +141,7 @@ namespace AgentCoreProcessor.Engine
             }
 
             // ② 红色评估
-            if (EvaluateRed(ctx))
+            if (await EvaluateRedAsync(ctx))
             {
                 permissionRequestTime = DateTime.Now;
                 FrameworkLogger.Log("DreamSpawnCheck", "红色触发，锁定，等待许可");
@@ -156,7 +156,7 @@ namespace AgentCoreProcessor.Engine
             }
 
             // ③ 黄色评估
-            var score = EvaluateYellow(ctx);
+            var score = await EvaluateYellowAsync(ctx);
             if (score >= cfg.YellowThreshold)
             {
                 permissionRequestTime = DateTime.Now;
@@ -228,11 +228,11 @@ namespace AgentCoreProcessor.Engine
 
         // ---- 红/黄评估 ----
 
-        private bool EvaluateRed(ISystemContext ctx)
+        private async Task<bool> EvaluateRedAsync(ISystemContext ctx)
         {
             if (customRedAlert) return true;
 
-            var tempCount = ctx.TempMemories.GetAllAsync().Result.Count;
+            var tempCount = (await ctx.TempMemories.GetAllAsync()).Count;
             var baseline = stats.GetBaselineAvg();
             if (tempCount > cfg.RedTempMultiplier * baseline) return true;
 
@@ -243,7 +243,7 @@ namespace AgentCoreProcessor.Engine
             return false;
         }
 
-        private float EvaluateYellow(ISystemContext ctx)
+        private async Task<float> EvaluateYellowAsync(ISystemContext ctx)
         {
             float total = cfg.ScoreBase + scoreOffset;
             total += LinearScore((float)ctx.IdleDuration.TotalSeconds,
@@ -253,12 +253,12 @@ namespace AgentCoreProcessor.Engine
                 total += LinearScore((float)(DateTime.Now - lastDeepSleepTime.Value).TotalHours,
                     12f, 48f, 3f);
 
-            var tempCount = ctx.TempMemories.GetAllAsync().Result.Count;
+            var tempCount = (await ctx.TempMemories.GetAllAsync()).Count;
             var baseline = stats.GetBaselineAvg();
             if (baseline > 0)
                 total += LinearScore(tempCount / baseline, 1f, 3f, 3f);
 
-            var undreamed = ctx.Memories.GetUndreamedAsync(100).Result.Count;
+            var undreamed = (await ctx.Memories.GetUndreamedAsync(100)).Count;
             total += LinearScore(undreamed, 0f, 40f, 1f);
 
             total += cfg.CalcTimeWindowScore(3f);

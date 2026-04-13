@@ -16,10 +16,23 @@ namespace AgentCoreProcessor.Engine
 
         private readonly ISystemContext ctx;
         private readonly IncomingMessage message;
+        private readonly SessionContext? prebuiltContext;
+        private readonly string? mergedContent;
 
         private readonly ExpressCore expressCore = new();
         private readonly WorkingCore workingCore = new();
         private readonly PreprocessingCore preprocessingCore;
+
+        /// <summary>由 TopicEngine 孵化时使用。SessionContext 已构建，权限已检查。</summary>
+        public WorkerEngine(ISystemContext ctx, IncomingMessage message,
+                            SessionContext sessionContext, string mergedContent)
+        {
+            this.ctx = ctx;
+            this.message = message;
+            this.prebuiltContext = sessionContext;
+            this.mergedContent = mergedContent;
+            this.preprocessingCore = new PreprocessingCore(ctx.Embedding);
+        }
 
         public WorkerEngine(ISystemContext ctx, IncomingMessage message)
         {
@@ -32,30 +45,21 @@ namespace AgentCoreProcessor.Engine
         {
             try
             {
-                // 1. 构建 SessionContext
-                var context = await ctx.Session.OnMessageAsync(message);
+                // 1. 构建 SessionContext（TopicEngine 孵化时已预构建）
+                var context = prebuiltContext ?? await ctx.Session.OnMessageAsync(message);
+                var content = mergedContent ?? message.Content;
 
-                // 2. 权限检查
-                switch (context.User.PermissionLevel)
-                {
-                    case PermissionLevel.Blocked:
-                        FrameworkLogger.LogPermission("WorkerEngine", context.User.PlatformId, "Blocked", false);
-                        return;
-                    case PermissionLevel.Restricted:
-                        FrameworkLogger.LogPermission("WorkerEngine", context.User.PlatformId, "Restricted", false);
-                        return;
-                }
                 FrameworkLogger.Log("WorkerEngine",
                     $"消息处理: user={context.User.PlatformId} person={context.Person.Id} channel={context.Channel.Id} topic={context.Topic.Id}");
 
-                // 3. 二分类（embedding）
-                var isTask = await preprocessingCore.IsTaskAsync(message.Content);
+                // 2. 二分类（embedding）
+                var isTask = await preprocessingCore.IsTaskAsync(content);
                 FrameworkLogger.Log("WorkerEngine", $"分类结果: {(isTask ? "任务" : "聊天")}");
 
-                // 4. 检索记忆
-                string? memoryContext = await BuildMemoryContextAsync(context);
+                // 3. 检索记忆
+                string? memoryContext = await BuildMemoryContextAsync(context, content);
 
-                // 5. 路由处理
+                // 4. 路由处理
                 if (isTask)
                 {
                     // 任务 → WorkingCore Agent 循环
@@ -82,15 +86,15 @@ namespace AgentCoreProcessor.Engine
                         await ctx.ReviewHints.CreateAsync(content,
                             context.Person.Id, context.Channel.Id, context.Topic.Id);
                     };
-                    await workingCore.ProcessAsync(message.Content, memoryContext);
+                    await workingCore.ProcessAsync(content, memoryContext);
                 }
                 else
                 {
                     // 聊天 → ExpressCore 直接回复
                     expressCore.ResetProcessor();
                     var input = memoryContext != null
-                        ? $"{message.Content}\n\n[记忆参考]\n{memoryContext}"
-                        : message.Content;
+                        ? $"{content}\n\n[记忆参考]\n{memoryContext}"
+                        : content;
                     var expressed = await expressCore.GenerateOnceAsync(input);
                     await ctx.Adapters.SendMessageAsync(message.Platform, new OutgoingMessage
                     {
@@ -117,13 +121,13 @@ namespace AgentCoreProcessor.Engine
 
         public void RequestStop() => IsAlive = false;
 
-        private async Task<string?> BuildMemoryContextAsync(SessionContext context)
+        private async Task<string?> BuildMemoryContextAsync(SessionContext context, string content)
         {
             try
             {
                 var results = await ctx.MemorySvc.RecallAsync(
                     context.Person.Id, context.Channel.Id, context.Topic.Id,
-                    message.Content, topK: 10, includeLinks: true);
+                    content, topK: 10, includeLinks: true);
 
                 if (results.Count == 0) return null;
 

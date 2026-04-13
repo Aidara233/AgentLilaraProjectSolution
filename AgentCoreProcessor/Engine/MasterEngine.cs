@@ -80,7 +80,7 @@ namespace AgentCoreProcessor.Engine
         private static readonly Dictionary<string, Func<IEngineSpawnCheck>> SpawnCheckFactory = new()
         {
             ["Timer"] = () => new TimerEngineSpawnCheck(),
-            ["Worker"] = () => new WorkerEngineSpawnCheck(),
+            ["Topic"] = () => new TopicEngineSpawnCheck(),
             ["Dream"] = () => new DreamEngineSpawnCheck(),
         };
 
@@ -171,8 +171,8 @@ namespace AgentCoreProcessor.Engine
             {
                 try
                 {
-                    check.OnEvent(e, this);
-                    if (check.ShouldSpawn(e, this))
+                    await check.OnEventAsync(e, this);
+                    if (await check.ShouldSpawnAsync(e, this))
                     {
                         var engine = check.Create(this);
                         StartEngine(engine);
@@ -198,8 +198,6 @@ namespace AgentCoreProcessor.Engine
 
             // ④ 清理已死亡的实例
             lock (engineLock) { activeEngines.RemoveAll(e => !e.IsAlive); }
-
-            await Task.CompletedTask;
         }
 
         // ---- 引擎管理 ----

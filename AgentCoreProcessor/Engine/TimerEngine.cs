@@ -6,9 +6,9 @@ namespace AgentCoreProcessor.Engine
     {
         public string EngineType => "Timer";
 
-        public void OnEvent(EngineEvent e, ISystemContext ctx) { }
+        public Task OnEventAsync(EngineEvent e, ISystemContext ctx) => Task.CompletedTask;
 
-        public bool ShouldSpawn(EngineEvent e, ISystemContext ctx) => false;
+        public Task<bool> ShouldSpawnAsync(EngineEvent e, ISystemContext ctx) => Task.FromResult(false);
 
         public ISubEngine Create(ISystemContext ctx) => new TimerEngine(ctx);
     }
