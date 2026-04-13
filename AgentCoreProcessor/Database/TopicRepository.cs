@@ -55,6 +55,14 @@ namespace AgentCoreProcessor.Database
             return count;
         }
 
+        /// <summary>获取指定频道内所有有 embedding 的活跃话题。</summary>
+        public Task<List<Topic>> GetActiveWithEmbeddingAsync(int channelId)
+        {
+            return db.QueryAsync<Topic>(
+                "SELECT * FROM Topics WHERE ChannelId = ? AND IsActive = 1 AND Embedding IS NOT NULL",
+                channelId);
+        }
+
         public Task<Topic?> GetByIdAsync(int id) => db.GetByIdAsync<Topic>(id);
 
         public Task<int> UpdateAsync(Topic topic) => db.UpdateAsync(topic);

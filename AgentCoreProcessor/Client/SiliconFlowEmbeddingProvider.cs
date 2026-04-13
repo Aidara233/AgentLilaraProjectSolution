@@ -73,23 +73,13 @@ namespace AgentCoreProcessor.Client
             return results;
         }
 
-        // ---- 序列化工具方法 ----
+        // ---- 序列化工具方法（委托给 VectorUtil）----
 
         /// <summary>float[] 转 byte[]，用于 SQLite BLOB 存储。</summary>
-        public static byte[] FloatsToBytes(float[] floats)
-        {
-            var bytes = new byte[floats.Length * 4];
-            Buffer.BlockCopy(floats, 0, bytes, 0, bytes.Length);
-            return bytes;
-        }
+        public static byte[] FloatsToBytes(float[] floats) => Util.VectorUtil.FloatsToBytes(floats);
 
         /// <summary>byte[] 转 float[]，从 SQLite BLOB 读取。</summary>
-        public static float[] BytesToFloats(byte[] bytes)
-        {
-            var floats = new float[bytes.Length / 4];
-            Buffer.BlockCopy(bytes, 0, floats, 0, bytes.Length);
-            return floats;
-        }
+        public static float[] BytesToFloats(byte[] bytes) => Util.VectorUtil.BytesToFloats(bytes);
 
         public void Dispose()
         {

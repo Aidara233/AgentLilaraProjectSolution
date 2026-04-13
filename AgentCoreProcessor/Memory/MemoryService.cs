@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Client;
 using AgentCoreProcessor.Database;
+using AgentCoreProcessor.Util;
 
 namespace AgentCoreProcessor.Memory
 {
@@ -82,7 +83,7 @@ namespace AgentCoreProcessor.Memory
             var tempEntries = await tempMemories.GetByTagsAsync(personId, channelId, topicId);
             foreach (var t in tempEntries)
             {
-                float sim = ComputeSimilarity(queryVec, t.Embedding);
+                float sim = VectorUtil.ComputeSimilarity(queryVec, t.Embedding);
                 scored.Add(new ScoredMemory
                 {
                     Id = t.Id,
@@ -97,7 +98,7 @@ namespace AgentCoreProcessor.Memory
             var mainScored = mainEntries.Select(m => new
             {
                 Entry = m,
-                Similarity = ComputeSimilarity(queryVec, m.Embedding)
+                Similarity = VectorUtil.ComputeSimilarity(queryVec, m.Embedding)
             })
             .OrderByDescending(x => x.Similarity * SimilarityWeight + x.Entry.Importance * ImportanceWeight)
             .Take(topK * 2)
@@ -139,7 +140,7 @@ namespace AgentCoreProcessor.Memory
                     var linkedEntries = await memories.GetByIdsAsync(linkedIds.ToList());
                     foreach (var entry in linkedEntries)
                     {
-                        float sim = ComputeSimilarity(queryVec, entry.Embedding);
+                        float sim = VectorUtil.ComputeSimilarity(queryVec, entry.Embedding);
                         float linkStr = linkStrengths.GetValueOrDefault(entry.Id, 0f);
                         scored.Add(new ScoredMemory
                         {
@@ -176,32 +177,7 @@ namespace AgentCoreProcessor.Memory
             if (memory != null)
                 await memories.DeleteAsync(memory);
         }
-
-        /// <summary>计算余弦相似度。任一向量为 null 时返回 0。</summary>
-        private static float ComputeSimilarity(float[]? a, byte[]? bBytes)
-        {
-            if (a == null || bBytes == null || bBytes.Length == 0) return 0f;
-            var b = SiliconFlowEmbeddingProvider.BytesToFloats(bBytes);
-            return CosineSimilarity(a, b);
-        }
-
-        /// <summary>余弦相似度。</summary>
-        private static float CosineSimilarity(float[] a, float[] b)
-        {
-            if (a.Length != b.Length) return 0f;
-            float dot = 0f, normA = 0f, normB = 0f;
-            for (int i = 0; i < a.Length; i++)
-            {
-                dot += a[i] * b[i];
-                normA += a[i] * a[i];
-                normB += b[i] * b[i];
-            }
-            var denom = MathF.Sqrt(normA) * MathF.Sqrt(normB);
-            return denom == 0f ? 0f : dot / denom;
-        }
     }
-
-    /// <summary>带评分的记忆检索结果。</summary>
     internal class ScoredMemory
     {
         public int Id { get; set; }
