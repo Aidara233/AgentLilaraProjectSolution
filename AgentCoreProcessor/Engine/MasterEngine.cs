@@ -1,124 +1,212 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Client;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Memory;
+using Newtonsoft.Json;
 
 namespace AgentCoreProcessor.Engine
 {
-    internal class MasterEngine
+    /// <summary>
+    /// 引擎启动配置。
+    /// </summary>
+    internal class EngineConfig
+    {
+        public List<string> AutoStart { get; set; } = new();
+
+        public static EngineConfig Load(string path)
+        {
+            if (!File.Exists(path)) return new EngineConfig();
+            var json = File.ReadAllText(path);
+            return JsonConvert.DeserializeObject<EngineConfig>(json) ?? new EngineConfig();
+        }
+    }
+
+    /// <summary>
+    /// 主引擎（内核）。职责：资源初始化、引擎注册表、事件分发。
+    /// 不包含任何子引擎的业务逻辑。
+    /// </summary>
+    internal class MasterEngine : ISystemContext
     {
         private static string DefaultDatabasePath => PathConfig.DatabasePath;
+        private static string DefaultEngineConfigPath =>
+            Path.Combine(PathConfig.StoragePath, "Engine", "EngineConfig.json");
 
         private string databaseDirectory;
         private readonly AdapterManager adapterManager;
+        private readonly EventBus eventBus;
         private DbManager? db;
+        private IEmbeddingProvider? embeddingProvider;
 
-        /// <summary>数据库管理器，InitAsync 后可用。</summary>
-        public DbManager Db => db ?? throw new InvalidOperationException("数据库尚未初始化，请先调用 InitAsync。");
+        // ---- ISystemContext 实现 ----
+        public MemoryRepository Memories { get; private set; } = null!;
+        public TempMemoryRepository TempMemories { get; private set; } = null!;
+        public MemoryLinkRepository MemoryLinks { get; private set; } = null!;
+        public MemoryService MemorySvc { get; private set; } = null!;
+        public SessionManager Session { get; private set; } = null!;
+        public IEmbeddingProvider Embedding => embeddingProvider!;
+        public AdapterManager Adapters => adapterManager;
+        public EventBus EventBus => eventBus;
 
-        // 各 Repository，供 Engine 内部使用
-        public UserRepository? Users { get; private set; }
-        public PersonRepository? Persons { get; private set; }
-        public ChannelRepository? Channels { get; private set; }
-        public TopicRepository? Topics { get; private set; }
-        public MessageRepository? Messages { get; private set; }
-        public MemoryRepository? Memories { get; private set; }
-        public TempMemoryRepository? TempMemories { get; private set; }
-        public MemoryLinkRepository? MemoryLinks { get; private set; }
-        public MemoryService? MemorySvc { get; private set; }
-        public SessionManager? Session { get; private set; }
+        // 内核级状态
+        private DateTime lastMessageTime = DateTime.Now;
+        public DateTime LastMessageTime => lastMessageTime;
+        public bool IsIdle { get { lock (engineLock) { return activeEngines.Count == 0; } } }
+        public TimeSpan IdleDuration => IsIdle ? DateTime.Now - lastMessageTime : TimeSpan.Zero;
 
-        public string DatabaseDirectory
+        // ---- 引擎注册表 ----
+        private readonly List<IEngineSpawnCheck> spawnChecks = new();
+        private readonly List<ISubEngine> activeEngines = new();
+        private readonly object engineLock = new();
+
+        // SpawnCheck 工厂
+        private static readonly Dictionary<string, Func<IEngineSpawnCheck>> SpawnCheckFactory = new()
         {
-            get => databaseDirectory;
-            set => databaseDirectory = value;
-        }
+            ["Timer"] = () => new TimerEngineSpawnCheck(),
+            ["Worker"] = () => new WorkerEngineSpawnCheck(),
+            ["Dream"] = () => new DreamEngineSpawnCheck(),
+        };
+// PLACEHOLDER_MASTER_CONTINUE
 
-        public MasterEngine(AdapterManager adapterManager, string? databaseDirectory = null)
+        public MasterEngine(AdapterManager adapterManager, EventBus eventBus, string? databaseDirectory = null)
         {
             this.adapterManager = adapterManager;
+            this.eventBus = eventBus;
             this.databaseDirectory = databaseDirectory ?? DefaultDatabasePath;
         }
 
-        /// <summary>
-        /// 初始化数据库连接和所有 Repository。
-        /// 应在处理任何消息之前调用一次。
-        /// </summary>
+        // ---- 引擎状态查询 ----
+
+        public bool HasActiveEngine(string engineType)
+        {
+            lock (engineLock) { return activeEngines.Any(e => e.EngineType == engineType && e.IsAlive); }
+        }
+
+        public int GetActiveEngineCount(string engineType)
+        {
+            lock (engineLock) { return activeEngines.Count(e => e.EngineType == engineType && e.IsAlive); }
+        }
+
+        // ---- 初始化 ----
+
         public async Task InitAsync()
         {
-            // 确保数据库目录存在
             Directory.CreateDirectory(databaseDirectory);
-
             var dbPath = Path.Combine(databaseDirectory, "lilara.db");
             db = new DbManager(dbPath);
             await db.InitAsync();
 
-            // 初始化各 Repository
-            Persons = new PersonRepository(db);
-            Users = new UserRepository(db, Persons);
-            Channels = new ChannelRepository(db);
-            Topics = new TopicRepository(db);
-            Messages = new MessageRepository(db);
+            // Repository
+            var persons = new PersonRepository(db);
+            var users = new UserRepository(db, persons);
+            var channels = new ChannelRepository(db);
+            var topics = new TopicRepository(db);
+            var messages = new MessageRepository(db);
             Memories = new MemoryRepository(db);
             TempMemories = new TempMemoryRepository(db);
             MemoryLinks = new MemoryLinkRepository(db);
 
-            // 初始化 Embedding 提供者（从 Base.json 读取 ApiKey）
+            // Embedding
             var baseConfigPath = Path.Combine(PathConfig.CoreConfigPath, "Base.json");
             var baseConfig = ApiClientCfg.FromJson(File.ReadAllText(baseConfigPath));
-            var embeddingProvider = new SiliconFlowEmbeddingProvider(apiKey: baseConfig.ApiKey);
+            embeddingProvider = new SiliconFlowEmbeddingProvider(apiKey: baseConfig.ApiKey);
 
-            // 初始化记忆服务
+            // 服务
             MemorySvc = new MemoryService(Memories, TempMemories, MemoryLinks, embeddingProvider);
+            Session = new SessionManager(users, persons, channels, topics, messages, embeddingProvider);
 
-            // 初始化 SessionManager
-            Session = new SessionManager(Users, Persons, Channels, Topics, Messages);
+            // 注册所有 SpawnCheck
+            foreach (var (_, factory) in SpawnCheckFactory)
+                spawnChecks.Add(factory());
+
+            // 订阅事件总线
+            eventBus.OnEvent += e => _ = HandleEventAsync(e);
+
+            // 加载开机自启配置
+            var engineCfg = EngineConfig.Load(DefaultEngineConfigPath);
+            foreach (var type in engineCfg.AutoStart)
+            {
+                var check = spawnChecks.FirstOrDefault(c => c.EngineType == type);
+                if (check != null)
+                {
+                    var engine = check.Create(this);
+                    StartEngine(engine);
+                    FrameworkLogger.Log("MasterEngine", $"自启动引擎: {type}");
+                }
+            }
+
+            FrameworkLogger.Log("MasterEngine", "内核初始化完成");
         }
 
-        public async Task HandleMessageAsync(IncomingMessage message)
+        // ---- 事件分发（内核流水线） ----
+
+        public async Task HandleEventAsync(EngineEvent e)
         {
-            try
+            // ① 内核更新
+            if (e is MessageEvent msgEvent)
+                lastMessageTime = msgEvent.Time;
+
+            // ② SpawnCheck：OnEvent + ShouldSpawn
+            // 复制列表避免遍历时修改
+            var checks = spawnChecks.ToList();
+            foreach (var check in checks)
             {
-                // 会话管理：用户映射、频道映射、话题归类、消息入库
-                var context = await Session!.OnMessageAsync(message);
-
-                // 权限检查
-                switch (context.User.PermissionLevel)
+                try
                 {
-                    case PermissionLevel.Blocked:
-                        FrameworkLogger.LogPermission("MasterEngine", context.User.PlatformId, "Blocked", false);
-                        return;
-                    case PermissionLevel.Restricted:
-                        FrameworkLogger.LogPermission("MasterEngine", context.User.PlatformId, "Restricted", false);
-                        return;
-                }
-                FrameworkLogger.Log("MasterEngine", $"消息处理: user={context.User.PlatformId} person={context.Person.Id} channel={context.Channel.Id} topic={context.Topic.Id}");
-
-                var worker = new WorkerEngine(message, adapterManager, context, MemorySvc);
-                var result = await worker.RunAsync();
-
-                // result 为 null 时表示 Agent 循环已通过说话工具实时回复，无需再推送
-                if (result != null)
-                {
-                    await adapterManager.SendMessageAsync(message.Platform, new OutgoingMessage
+                    check.OnEvent(e, this);
+                    if (check.ShouldSpawn(e, this))
                     {
-                        ChannelId = message.ChannelId,
-                        Content = result
-                    });
+                        var engine = check.Create(this);
+                        StartEngine(engine);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    FrameworkLogger.Log("MasterEngine", $"SpawnCheck 异常 [{check.EngineType}]: {ex.Message}");
                 }
             }
-            catch (Exception ex)
+
+            // ③ 派发给活跃实例
+            List<ISubEngine> engines;
+            lock (engineLock) { engines = activeEngines.ToList(); }
+            foreach (var engine in engines)
             {
-                await adapterManager.SendMessageAsync(message.Platform, new OutgoingMessage
+                try { engine.OnEvent(e); }
+                catch (Exception ex)
                 {
-                    ChannelId = message.ChannelId,
-                    Content = $"[错误] 处理消息时发生异常：{ex.Message}"
-                });
+                    FrameworkLogger.Log("MasterEngine", $"引擎 OnEvent 异常 [{engine.EngineType}]: {ex.Message}");
+                }
             }
+
+            // ④ 清理已死亡的实例
+            lock (engineLock) { activeEngines.RemoveAll(e => !e.IsAlive); }
+
+            await Task.CompletedTask;
+        }
+
+        // ---- 引擎启动 ----
+
+        private void StartEngine(ISubEngine engine)
+        {
+            lock (engineLock) { activeEngines.Add(engine); }
+            FrameworkLogger.Log("MasterEngine", $"引擎启动: {engine.EngineType}");
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await engine.RunAsync();
+                }
+                catch (Exception ex)
+                {
+                    FrameworkLogger.Log("MasterEngine", $"引擎异常 [{engine.EngineType}]: {ex.Message}");
+                }
+            });
         }
     }
 }

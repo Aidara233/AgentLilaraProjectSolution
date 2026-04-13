@@ -4,123 +4,136 @@ using System.Text;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Core;
+using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Memory;
 
 namespace AgentCoreProcessor.Engine
 {
-    public enum WorkerState
+    internal class WorkerEngine : ISubEngine
     {
-        Pending,
-        Classifying,
-        Processing,
-        Expressing,
-        Completed,
-        Failed
-    }
+        public string EngineType => "Worker";
+        public bool IsAlive { get; private set; } = true;
 
-    internal class WorkerEngine
-    {
+        private readonly ISystemContext ctx;
         private readonly IncomingMessage message;
-        private readonly AdapterManager adapterManager;
-        private readonly SessionContext context;
-        private readonly MemoryService? memorySvc;
 
         private readonly PreprocessingCore preprocessingCore = new();
         private readonly ExpressCore expressCore = new();
         private readonly WorkingCore workingCore = new();
 
-        private WorkerState state = WorkerState.Pending;
-
-        public WorkerState State => state;
-
-        public WorkerEngine(IncomingMessage message, AdapterManager adapterManager,
-            SessionContext context, MemoryService? memorySvc = null)
+        public WorkerEngine(ISystemContext ctx, IncomingMessage message)
         {
+            this.ctx = ctx;
             this.message = message;
-            this.adapterManager = adapterManager;
-            this.context = context;
-            this.memorySvc = memorySvc;
         }
 
-        /// <summary>
-        /// 执行消息处理流程。
-        /// 返回 null 表示已通过说话工具实时回复，MasterEngine 无需再推送。
-        /// </summary>
-        public async Task<string?> RunAsync()
+        public async Task RunAsync()
         {
             try
             {
-                // 1. 分类
-                state = WorkerState.Classifying;
+                // 1. 构建 SessionContext
+                var context = await ctx.Session.OnMessageAsync(message);
+
+                // 2. 权限检查
+                switch (context.User.PermissionLevel)
+                {
+                    case PermissionLevel.Blocked:
+                        FrameworkLogger.LogPermission("WorkerEngine", context.User.PlatformId, "Blocked", false);
+                        return;
+                    case PermissionLevel.Restricted:
+                        FrameworkLogger.LogPermission("WorkerEngine", context.User.PlatformId, "Restricted", false);
+                        return;
+                }
+// PLACEHOLDER_WORKER_CONTINUE
+                FrameworkLogger.Log("WorkerEngine",
+                    $"消息处理: user={context.User.PlatformId} person={context.Person.Id} channel={context.Channel.Id} topic={context.Topic.Id}");
+
+                // 3. 分类
                 var category = await preprocessingCore.ClassifyAsync(message.Content);
                 FrameworkLogger.LogClassification("WorkerEngine", category);
 
-                // 2. 检索相关记忆，构建 additionalContext
-                string? memoryContext = await BuildMemoryContextAsync(
-                    includeLinks: category >= 3); // 任务类走完整流程含关联扩展
+                // 4. 检索记忆
+                string? memoryContext = await BuildMemoryContextAsync(context,
+                    includeLinks: category >= 3);
 
-                // 3. 根据分类路由
-                state = WorkerState.Processing;
+                // 5. 路由处理
                 switch (category)
                 {
                     case 1:
                     case 2:
-                        // 简单聊天 → ExpressCore 润色后返回
-                        state = WorkerState.Expressing;
                         expressCore.ResetProcessor();
                         var input = memoryContext != null
                             ? $"{message.Content}\n\n[记忆参考]\n{memoryContext}"
                             : message.Content;
                         var expressed = await expressCore.GenerateOnceAsync(input);
-                        state = WorkerState.Completed;
-                        return expressed;
+                        await ctx.Adapters.SendMessageAsync(message.Platform, new OutgoingMessage
+                        {
+                            ChannelId = message.ChannelId,
+                            Content = expressed
+                        });
+                        break;
 
                     case 3:
                     case 4:
-                        // 任务类 → Agent 循环
                         workingCore.OnSpeak = async (rawText) =>
                         {
                             var polished = await expressCore.PolishAsync(message.Content, rawText);
-                            await adapterManager.SendMessageAsync(message.Platform, new OutgoingMessage
+                            await ctx.Adapters.SendMessageAsync(message.Platform, new OutgoingMessage
                             {
                                 ChannelId = message.ChannelId,
                                 Content = polished
                             });
                         };
-                        // 记忆工具回调
                         workingCore.OnMemory = async (content) =>
                         {
-                            if (memorySvc != null)
-                                await memorySvc.StoreAsync(content,
-                                    context.Person.Id, context.Channel.Id, context.Topic.Id);
+                            await ctx.MemorySvc.StoreAsync(content,
+                                context.Person.Id, context.Channel.Id, context.Topic.Id);
+                        };
+                        workingCore.OnSignal = async (signalName, payload) =>
+                        {
+                            ctx.EventBus.PublishSignal(signalName, payload);
+                            await Task.CompletedTask;
                         };
                         await workingCore.ProcessAsync(message.Content, memoryContext);
-                        state = WorkerState.Completed;
-                        return null;
+                        break;
 
                     default:
-                        state = WorkerState.Expressing;
                         expressCore.ResetProcessor();
                         var defaultExpressed = await expressCore.GenerateOnceAsync(message.Content);
-                        state = WorkerState.Completed;
-                        return defaultExpressed;
+                        await ctx.Adapters.SendMessageAsync(message.Platform, new OutgoingMessage
+                        {
+                            ChannelId = message.ChannelId,
+                            Content = defaultExpressed
+                        });
+                        break;
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                state = WorkerState.Failed;
-                throw;
+                await ctx.Adapters.SendMessageAsync(message.Platform, new OutgoingMessage
+                {
+                    ChannelId = message.ChannelId,
+                    Content = $"[错误] 处理消息时发生异常：{ex.Message}"
+                });
+            }
+            finally
+            {
+                IsAlive = false;
             }
         }
 
-        /// <summary>检索记忆并格式化为上下文文本。</summary>
-        private async Task<string?> BuildMemoryContextAsync(bool includeLinks)
+        public void OnEvent(EngineEvent e)
         {
-            if (memorySvc == null) return null;
+            // 可转发信号给 WorkingCore（如果在 Agent 循环中）
+        }
 
+        public void RequestStop() => IsAlive = false;
+
+        private async Task<string?> BuildMemoryContextAsync(SessionContext context, bool includeLinks)
+        {
             try
             {
-                var results = await memorySvc.RecallAsync(
+                var results = await ctx.MemorySvc.RecallAsync(
                     context.Person.Id, context.Channel.Id, context.Topic.Id,
                     message.Content, topK: 10, includeLinks: includeLinks);
 
@@ -134,10 +147,7 @@ namespace AgentCoreProcessor.Engine
                     sb.AppendLine($"- {m.Content}");
                 return sb.ToString().TrimEnd();
             }
-            catch (Exception)
-            {
-                return null; // 记忆检索失败不阻塞主流程
-            }
+            catch { return null; }
         }
     }
 }
