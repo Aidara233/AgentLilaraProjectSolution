@@ -11,5 +11,8 @@ namespace AgentCoreProcessor.Adapter
         Task SendMessageAsync(OutgoingMessage message);
         Task StartAsync(CancellationToken ct = default);
         Task StopAsync();
+
+        /// <summary>热重载配置。默认无操作，适配器按需覆盖。</summary>
+        Task ReloadConfigAsync() => Task.CompletedTask;
     }
 }

@@ -35,6 +35,23 @@ namespace AgentCoreProcessor.Adapter
             await Task.WhenAll(tasks).ConfigureAwait(false);
         }
 
+        /// <summary>按平台名查找适配器。</summary>
+        public IAdapter? GetAdapter(string platform)
+            => adapters.FirstOrDefault(a => a.Platform.Equals(platform, StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>获取所有已注册的适配器平台名。</summary>
+        public List<string> GetRegisteredPlatforms()
+            => adapters.Select(a => a.Platform).ToList();
+
+        /// <summary>热重载指定适配器的配置。</summary>
+        public async Task<bool> ReloadAdapterAsync(string platform)
+        {
+            var adapter = GetAdapter(platform);
+            if (adapter == null) return false;
+            await adapter.ReloadConfigAsync();
+            return true;
+        }
+
         public async Task SendMessageAsync(string platform, OutgoingMessage message)
         {
             var adapter = adapters.FirstOrDefault(a =>

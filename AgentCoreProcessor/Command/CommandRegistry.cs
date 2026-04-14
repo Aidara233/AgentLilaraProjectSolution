@@ -17,6 +17,7 @@ namespace AgentCoreProcessor.Command
                 new HelpCommand(),
                 new StatusCommand(),
                 new WhoAmICommand(),
+                new ReloadCommand(),
             };
             _commands = list.ToDictionary(c => c.Name.ToLowerInvariant());
         }

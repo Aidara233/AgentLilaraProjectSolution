@@ -100,6 +100,30 @@ namespace AgentCoreProcessor.Adapter
             FrameworkLogger.Log("OneBotAdapter", "已停止");
         }
 
+        public Task ReloadConfigAsync()
+        {
+            if (!File.Exists(configPath))
+            {
+                FrameworkLogger.Log("OneBotAdapter", $"配置文件不存在: {configPath}，跳过重载");
+                return Task.CompletedTask;
+            }
+
+            var json = File.ReadAllText(configPath);
+            var newConfig = JsonConvert.DeserializeObject<OneBotConfig>(json) ?? new OneBotConfig();
+
+            // 检查连接参数是否变化
+            bool connectionChanged = newConfig.WsUrl != config.WsUrl || newConfig.Token != config.Token;
+
+            config = newConfig;
+            FrameworkLogger.Log("OneBotAdapter",
+                $"配置已重载: filterMode={config.FilterMode}, whitelist=[{string.Join(",", config.Whitelist)}]");
+
+            if (connectionChanged)
+                FrameworkLogger.Log("OneBotAdapter", "WsUrl 或 Token 已变更，需要重启适配器才能生效");
+
+            return Task.CompletedTask;
+        }
+
         public async Task SendMessageAsync(OutgoingMessage message)
         {
             string action;
