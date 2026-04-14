@@ -173,7 +173,9 @@ namespace AgentCoreProcessor
                 // 所以只等 Worker：先等 Topic 缓冲窗口过去（确保有机会孵化 Worker），
                 // 再连续 5 次无活跃 Worker 确认稳定
                 // 第一阶段：等 Topic 引擎至少完成一轮缓冲决策（~3s）
-                await Task.Delay(Math.Min(4000, (int)(deadline - sw.Elapsed).TotalMilliseconds));
+                var remainMs = (int)(deadline - sw.Elapsed).TotalMilliseconds;
+                if (remainMs > 0)
+                    await Task.Delay(Math.Min(4000, remainMs));
 
                 int idleCount = 0;
                 while (idleCount < 5 && sw.Elapsed < deadline)
