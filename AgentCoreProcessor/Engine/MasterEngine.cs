@@ -77,13 +77,14 @@ namespace AgentCoreProcessor.Engine
         private readonly object engineLock = new();
         private readonly SemaphoreSlim eventLock = new(1, 1);
 
-        // SpawnCheck 工厂
-        private static readonly Dictionary<string, Func<IEngineSpawnCheck>> SpawnCheckFactory = new()
-        {
-            ["Timer"] = () => new TimerEngineSpawnCheck(),
-            ["Topic"] = () => new TopicEngineSpawnCheck(),
-            ["Dream"] = () => new DreamEngineSpawnCheck(),
-        };
+        // SpawnCheck 工厂（有序列表，Command 在 Topic 之前拦截命令消息）
+        private static readonly List<(string Name, Func<IEngineSpawnCheck> Factory)> SpawnCheckFactory =
+        [
+            ("Command", () => new CommandSpawnCheck()),
+            ("Timer",   () => new TimerEngineSpawnCheck()),
+            ("Topic",   () => new TopicEngineSpawnCheck()),
+            ("Dream",   () => new DreamEngineSpawnCheck()),
+        ];
 
 
         public MasterEngine(AdapterManager adapterManager, EventBus eventBus, string? databaseDirectory = null)
@@ -184,6 +185,7 @@ namespace AgentCoreProcessor.Engine
             var checks = spawnChecks.ToList();
             foreach (var check in checks)
             {
+                if (e.Consumed) break;
                 try
                 {
                     await check.OnEventAsync(e, this);
@@ -199,15 +201,18 @@ namespace AgentCoreProcessor.Engine
                 }
             }
 
-            // ③ 派发给活跃实例
-            List<ISubEngine> engines;
-            lock (engineLock) { engines = activeEngines.ToList(); }
-            foreach (var engine in engines)
+            // ③ 派发给活跃实例（已消费的事件跳过）
+            if (!e.Consumed)
             {
-                try { engine.OnEvent(e); }
-                catch (Exception ex)
+                List<ISubEngine> engines;
+                lock (engineLock) { engines = activeEngines.ToList(); }
+                foreach (var engine in engines)
                 {
-                    FrameworkLogger.Log("MasterEngine", $"引擎 OnEvent 异常 [{engine.EngineType}]: {ex.Message}");
+                    try { engine.OnEvent(e); }
+                    catch (Exception ex)
+                    {
+                        FrameworkLogger.Log("MasterEngine", $"引擎 OnEvent 异常 [{engine.EngineType}]: {ex.Message}");
+                    }
                 }
             }
 

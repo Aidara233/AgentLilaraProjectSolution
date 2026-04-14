@@ -67,21 +67,28 @@ namespace AgentCoreProcessor.Engine
         }
 
         /// <summary>
+        /// 轻量用户解析：只做平台用户映射和 Person 查询。
+        /// 不进行频道映射、话题分类、消息入库。用于命令系统等不需要完整会话管道的场景。
+        /// </summary>
+        public async Task<(User User, Person Person)> ResolveUserAsync(IncomingMessage msg)
+        {
+            var defaultPermission = msg.Platform == "Console"
+                ? PermissionLevel.Admin
+                : PermissionLevel.Default;
+            var user = await users.FindOrCreateAsync(msg.Platform, msg.PlatformUserId, defaultPermission);
+            var person = await persons.GetByIdAsync(user.PersonId)
+                ?? throw new InvalidOperationException($"User {user.Id} 关联的 Person {user.PersonId} 不存在");
+            return (user, person);
+        }
+
+        /// <summary>
         /// 处理每条进入的消息：用户映射、频道映射、话题归类、消息入库。
         /// 返回 SessionContext 供 WorkerEngine 使用。
         /// </summary>
         public async Task<SessionContext> OnMessageAsync(IncomingMessage msg)
         {
-            // 1. 用户映射：平台用户 → 内部 User（自动创建 Person）
-            // 控制台用户默认 Admin 权限
-            var defaultPermission = msg.Platform == "Console"
-                ? PermissionLevel.Admin
-                : PermissionLevel.Default;
-            var user = await users.FindOrCreateAsync(msg.Platform, msg.PlatformUserId, defaultPermission);
-
-            // 2. 获取关联的自然人
-            var person = await persons.GetByIdAsync(user.PersonId)
-                ?? throw new InvalidOperationException($"User {user.Id} 关联的 Person {user.PersonId} 不存在");
+            // 1. 用户映射 + Person 查询（复用 ResolveUserAsync）
+            var (user, person) = await ResolveUserAsync(msg);
 
             // 3. 频道映射
             var channel = await channels.FindOrCreateAsync(msg.ChannelId);

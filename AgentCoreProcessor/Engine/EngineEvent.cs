@@ -16,6 +16,9 @@ namespace AgentCoreProcessor.Engine
     {
         public abstract EngineEventType Type { get; }
         public DateTime Time { get; set; } = DateTime.Now;
+
+        /// <summary>事件是否已被消费（如命令拦截），后续 SpawnCheck 应跳过。</summary>
+        public bool Consumed { get; set; }
     }
 
     /// <summary>用户消息事件，包装 IncomingMessage。</summary>
