@@ -82,6 +82,50 @@ namespace AgentCoreProcessor.Adapter
             return ProcessInputFiles();
         }
 
+        /// <summary>逐条投递消息，每条之间等待指定毫秒。用于模拟真实对话节奏。</summary>
+        public async Task<int> ProcessInputWithDelayAsync(int delayMs)
+        {
+            Directory.CreateDirectory(inputDir);
+            Directory.CreateDirectory(outputDir);
+
+            var files = Directory.GetFiles(inputDir)
+                .Where(f => f.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+                             || f.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(f => Path.GetFileName(f), StringComparer.Ordinal)
+                .ToList();
+
+            int count = 0;
+            foreach (var file in files)
+            {
+                if (count > 0 && delayMs > 0)
+                    await Task.Delay(delayMs);
+
+                try
+                {
+                    var raw = File.ReadAllText(file).Trim();
+                    if (string.IsNullOrEmpty(raw)) { File.Delete(file); continue; }
+
+                    IncomingMessage msg;
+                    if (file.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                        msg = ParseJsonMessage(raw);
+                    else
+                        msg = BuildDefaultMessage(raw);
+
+                    File.Delete(file);
+                    OnMessageReceived?.Invoke(msg);
+                    count++;
+                }
+                catch (Exception ex)
+                {
+                    try { File.Delete(file); } catch { }
+                    File.WriteAllText(
+                        Path.Combine(outputDir, $"{Interlocked.Increment(ref outputSeq):D3}_error_{DateTime.Now:HHmmss}.txt"),
+                        $"[{DateTime.Now:HH:mm:ss}] 解析失败: {Path.GetFileName(file)}\n{ex.Message}\n");
+                }
+            }
+            return count;
+        }
+
         private int ProcessInputFiles()
         {
             var files = Directory.GetFiles(inputDir)

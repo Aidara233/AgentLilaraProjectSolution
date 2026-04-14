@@ -103,9 +103,24 @@ namespace AgentCoreProcessor
                 if (timeoutIdx >= 0 && timeoutIdx + 1 < args.Length)
                     int.TryParse(args[timeoutIdx + 1], out timeoutSeconds);
 
-                // 一次性读取 input 目录
-                var msgCount = fileAdapter!.ProcessInputOnce();
-                Console.WriteLine($"[test] 读取 {msgCount} 条输入消息");
+                // 解析消息间隔参数（秒）
+                int delaySec = 0;
+                var delayIdx = Array.FindIndex(args, a => a == "--delay");
+                if (delayIdx >= 0 && delayIdx + 1 < args.Length)
+                    int.TryParse(args[delayIdx + 1], out delaySec);
+                int delayMs = delaySec * 1000;
+
+                // 读取 input 目录
+                int msgCount;
+                if (delayMs > 0)
+                {
+                    msgCount = await fileAdapter!.ProcessInputWithDelayAsync(delayMs);
+                }
+                else
+                {
+                    msgCount = fileAdapter!.ProcessInputOnce();
+                }
+                Console.WriteLine($"[test] 读取 {msgCount} 条输入消息{(delayMs > 0 ? $"（间隔 {delaySec}s）" : "")}");
 
                 if (msgCount == 0)
                 {
