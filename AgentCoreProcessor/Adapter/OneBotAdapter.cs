@@ -45,6 +45,9 @@ namespace AgentCoreProcessor.Adapter
             this.configPath = configPath;
         }
 
+        // 接收循环任务，可供外部 await 以保持进程活跃
+        private Task? receiveTask;
+
         public async Task StartAsync(CancellationToken ct = default)
         {
             // 加载配置
@@ -63,13 +66,15 @@ namespace AgentCoreProcessor.Adapter
             // 首次连接
             await ConnectAsync(cts.Token);
 
-            // 获取自身 QQ 号
+            // 先启动接收循环（后台），再查询 selfId（需要接收循环读取响应）
+            receiveTask = RunReceiveLoopWithReconnectAsync(cts.Token);
+
             selfId = await GetSelfIdAsync();
             FrameworkLogger.Log("OneBotAdapter", $"已连接，selfId={selfId}");
-
-            // 后台接收循环
-            _ = RunReceiveLoopWithReconnectAsync(cts.Token);
         }
+
+        /// <summary>等待适配器运行结束（用于保持进程活跃）。</summary>
+        public Task WaitAsync() => receiveTask ?? Task.CompletedTask;
 
         public async Task StopAsync()
         {

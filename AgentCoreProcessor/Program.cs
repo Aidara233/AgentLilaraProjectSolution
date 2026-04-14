@@ -76,7 +76,6 @@ namespace AgentCoreProcessor
             if (qqMode && testSend)
             {
                 await adapterManager.StartAllAsync();
-                await Task.Delay(2000); // 等 WS 握手 + get_login_info 完成
                 await adapterManager.SendMessageAsync("qq", new OutgoingMessage
                 {
                     ChannelId = "private_1664093638",
@@ -214,6 +213,10 @@ namespace AgentCoreProcessor
 
             // 正常模式：适配器消息已通过 EventBus 自动路由到 MasterEngine
             await adapterManager.StartAllAsync();
+
+            // --qq 模式：StartAsync 不阻塞，需要显式等待接收循环保持进程活跃
+            if (qqMode && oneBotAdapter != null)
+                await oneBotAdapter.WaitAsync();
 
             return 0;
         }
