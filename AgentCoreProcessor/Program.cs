@@ -20,6 +20,8 @@ namespace AgentCoreProcessor
             var debug = Array.Exists(args, a => a == "--debug");
             var fileMode = Array.Exists(args, a => a == "--file");
             var testMode = Array.Exists(args, a => a == "--test");
+            var qqMode = Array.Exists(args, a => a == "--qq");
+            var testSend = Array.Exists(args, a => a == "--test-send");
 
             // --test 模式启用日志镜像到控制台
             if (testMode)
@@ -33,13 +35,23 @@ namespace AgentCoreProcessor
 
             // 适配器
             FileAdapter? fileAdapter = null;
+            OneBotAdapter? oneBotAdapter = null;
+
             if (fileMode || testMode)
             {
                 var fileDir = Path.Combine(PathConfig.StoragePath, "FileAdapter");
                 fileAdapter = new FileAdapter(fileDir, pollIntervalMs: 2000);
                 adapterManager.RegisterAdapter(fileAdapter);
             }
-            else
+
+            if (qqMode)
+            {
+                var configPath = Path.Combine(PathConfig.StoragePath, "Adapter", "OneBotAdapter.json");
+                oneBotAdapter = new OneBotAdapter(configPath);
+                adapterManager.RegisterAdapter(oneBotAdapter);
+            }
+
+            if (!fileMode && !testMode && !qqMode)
             {
                 var consoleAdapter = new ConsoleAdapter();
                 adapterManager.RegisterAdapter(consoleAdapter);
@@ -58,6 +70,21 @@ namespace AgentCoreProcessor
                 Console.WriteLine($"[错误] 数据库初始化失败：{ex.Message}");
                 if (debug) Console.WriteLine(ex);
                 return 1;
+            }
+
+            // --qq --test-send：连接 NapCat 并发送一条测试消息
+            if (qqMode && testSend)
+            {
+                await adapterManager.StartAllAsync();
+                await Task.Delay(2000); // 等 WS 握手 + get_login_info 完成
+                await adapterManager.SendMessageAsync("qq", new OutgoingMessage
+                {
+                    ChannelId = "private_1664093638",
+                    Content = "Lilara 已上线，连接测试成功。"
+                });
+                Console.WriteLine("[test-send] 测试消息已发送");
+                await adapterManager.StopAllAsync();
+                return 0;
             }
 
             if (debug)

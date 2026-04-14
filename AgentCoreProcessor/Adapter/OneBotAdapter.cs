@@ -1,0 +1,367 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net.WebSockets;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using AgentCoreProcessor.Engine;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+
+namespace AgentCoreProcessor.Adapter
+{
+    public class OneBotConfig
+    {
+        public string WsUrl { get; set; } = "ws://localhost:3001";
+        public string Token { get; set; } = "";
+        public string FilterMode { get; set; } = "whitelist";
+        public List<string> Whitelist { get; set; } = new();
+        public List<string> Blacklist { get; set; } = new();
+    }
+
+    public class OneBotAdapter : IAdapter
+    {
+        public string Platform => "qq";
+        public event Action<IncomingMessage>? OnMessageReceived;
+
+        private readonly string configPath;
+        private OneBotConfig config = new();
+        private ClientWebSocket? ws;
+        private CancellationTokenSource? cts;
+        private long selfId;
+
+        // API 请求-响应关联
+        private int echoCounter;
+        private readonly ConcurrentDictionary<string, TaskCompletionSource<JObject>> pendingCalls = new();
+
+        // 重连退避
+        private const int MaxReconnectDelayMs = 30000;
+
+        public OneBotAdapter(string configPath)
+        {
+            this.configPath = configPath;
+        }
+
+        public async Task StartAsync(CancellationToken ct = default)
+        {
+            // 加载配置
+            if (File.Exists(configPath))
+            {
+                var json = File.ReadAllText(configPath);
+                config = JsonConvert.DeserializeObject<OneBotConfig>(json) ?? new OneBotConfig();
+            }
+            else
+            {
+                FrameworkLogger.Log("OneBotAdapter", $"配置文件不存在: {configPath}，使用默认配置");
+            }
+
+            cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+            // 首次连接
+            await ConnectAsync(cts.Token);
+
+            // 获取自身 QQ 号
+            selfId = await GetSelfIdAsync();
+            FrameworkLogger.Log("OneBotAdapter", $"已连接，selfId={selfId}");
+
+            // 后台接收循环
+            _ = RunReceiveLoopWithReconnectAsync(cts.Token);
+        }
+
+        public async Task StopAsync()
+        {
+            cts?.Cancel();
+
+            // 完成所有等待中的 API 调用
+            foreach (var kv in pendingCalls)
+                kv.Value.TrySetCanceled();
+            pendingCalls.Clear();
+
+            if (ws != null && ws.State == WebSocketState.Open)
+            {
+                try
+                {
+                    await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "停止", CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                catch { }
+            }
+            ws?.Dispose();
+            ws = null;
+
+            FrameworkLogger.Log("OneBotAdapter", "已停止");
+        }
+
+        public async Task SendMessageAsync(OutgoingMessage message)
+        {
+            string action;
+            var p = new JObject();
+
+            if (message.ChannelId.StartsWith("group_"))
+            {
+                action = "send_group_msg";
+                p["group_id"] = long.Parse(message.ChannelId[6..]);
+            }
+            else if (message.ChannelId.StartsWith("private_"))
+            {
+                action = "send_private_msg";
+                p["user_id"] = long.Parse(message.ChannelId[8..]);
+            }
+            else
+            {
+                FrameworkLogger.Log("OneBotAdapter", $"无法识别的 ChannelId 格式: {message.ChannelId}");
+                return;
+            }
+
+            // 构造消息段
+            var segments = new JArray
+            {
+                new JObject
+                {
+                    ["type"] = "text",
+                    ["data"] = new JObject { ["text"] = message.Content }
+                }
+            };
+            p["message"] = segments;
+
+            var resp = await CallApiAsync(action, p);
+            if (resp != null && resp["retcode"]?.Value<int>() != 0)
+            {
+                FrameworkLogger.Log("OneBotAdapter",
+                    $"发送失败: action={action}, retcode={resp["retcode"]}, msg={resp["message"]}");
+            }
+        }
+
+        // ── WebSocket 连接 ──
+
+        private async Task ConnectAsync(CancellationToken ct)
+        {
+            ws?.Dispose();
+            ws = new ClientWebSocket();
+
+            if (!string.IsNullOrEmpty(config.Token))
+                ws.Options.SetRequestHeader("Authorization", $"Bearer {config.Token}");
+
+            await ws.ConnectAsync(new Uri(config.WsUrl), ct).ConfigureAwait(false);
+        }
+
+        private async Task RunReceiveLoopWithReconnectAsync(CancellationToken ct)
+        {
+            int reconnectDelayMs = 1000;
+
+            while (!ct.IsCancellationRequested)
+            {
+                try
+                {
+                    await ReceiveLoopAsync(ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    FrameworkLogger.Log("OneBotAdapter", $"连接断开: {ex.Message}");
+                }
+
+                if (ct.IsCancellationRequested) break;
+
+                // 重连
+                FrameworkLogger.Log("OneBotAdapter", $"将在 {reconnectDelayMs}ms 后重连...");
+                try
+                {
+                    await Task.Delay(reconnectDelayMs, ct);
+                }
+                catch (OperationCanceledException) { break; }
+
+                try
+                {
+                    await ConnectAsync(ct);
+                    selfId = await GetSelfIdAsync();
+                    FrameworkLogger.Log("OneBotAdapter", $"重连成功，selfId={selfId}");
+                    reconnectDelayMs = 1000; // 重置退避
+                }
+                catch (OperationCanceledException) { break; }
+                catch (Exception ex)
+                {
+                    FrameworkLogger.Log("OneBotAdapter", $"重连失败: {ex.Message}");
+                    reconnectDelayMs = Math.Min(reconnectDelayMs * 2, MaxReconnectDelayMs);
+                }
+            }
+        }
+
+        private async Task ReceiveLoopAsync(CancellationToken ct)
+        {
+            var buffer = new byte[8192];
+
+            while (!ct.IsCancellationRequested && ws?.State == WebSocketState.Open)
+            {
+                using var ms = new MemoryStream();
+                WebSocketReceiveResult result;
+
+                do
+                {
+                    result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), ct).ConfigureAwait(false);
+                    if (result.MessageType == WebSocketMessageType.Close)
+                        return; // 服务端关闭，触发重连
+                    ms.Write(buffer, 0, result.Count);
+                }
+                while (!result.EndOfMessage);
+
+                var json = Encoding.UTF8.GetString(ms.ToArray());
+
+                JObject data;
+                try { data = JObject.Parse(json); }
+                catch { continue; } // 非法 JSON，跳过
+
+                // 区分 API 响应和事件
+                var echo = data["echo"]?.ToString();
+                if (echo != null && pendingCalls.TryRemove(echo, out var tcs))
+                {
+                    tcs.TrySetResult(data);
+                }
+                else
+                {
+                    HandleEvent(data);
+                }
+            }
+        }
+
+        // ── 事件处理 ──
+
+        private void HandleEvent(JObject data)
+        {
+            var postType = data["post_type"]?.ToString();
+            if (postType != "message") return;
+
+            var msg = ParseMessageEvent(data);
+            if (msg != null)
+                OnMessageReceived?.Invoke(msg);
+        }
+
+        private IncomingMessage? ParseMessageEvent(JObject data)
+        {
+            var userId = data["user_id"]?.Value<long>() ?? 0;
+
+            // 过滤自己的消息
+            if (userId == selfId) return null;
+
+            var messageType = data["message_type"]?.ToString();
+            bool isPrivate = messageType == "private";
+
+            // 构建 ChannelId
+            string channelId;
+            if (isPrivate)
+                channelId = $"private_{userId}";
+            else
+                channelId = $"group_{data["group_id"]?.Value<long>() ?? 0}";
+
+            // 黑白名单过滤
+            if (!PassesFilter(channelId)) return null;
+
+            // 解析消息段
+            var segments = data["message"] as JArray;
+            if (segments == null) return null;
+
+            var textBuilder = new StringBuilder();
+            bool isMentioned = false;
+            string? replyTo = null;
+
+            foreach (var seg in segments)
+            {
+                var type = seg["type"]?.ToString();
+                var segData = seg["data"] as JObject;
+                if (segData == null) continue;
+
+                switch (type)
+                {
+                    case "text":
+                        textBuilder.Append(segData["text"]?.ToString() ?? "");
+                        break;
+                    case "at":
+                        var atQq = segData["qq"]?.ToString();
+                        if (atQq == selfId.ToString())
+                            isMentioned = true;
+                        break;
+                    case "reply":
+                        replyTo = segData["id"]?.ToString();
+                        break;
+                }
+            }
+
+            var content = textBuilder.ToString().Trim();
+            if (string.IsNullOrEmpty(content)) return null;
+
+            return new IncomingMessage
+            {
+                Platform = Platform,
+                PlatformUserId = userId.ToString(),
+                ChannelId = channelId,
+                Content = content,
+                IsPrivate = isPrivate,
+                IsMentioned = isMentioned,
+                ReplyTo = replyTo,
+                Time = DateTime.Now
+            };
+        }
+
+        private bool PassesFilter(string channelId)
+        {
+            return config.FilterMode.ToLower() switch
+            {
+                "whitelist" => config.Whitelist.Contains(channelId, StringComparer.OrdinalIgnoreCase),
+                "blacklist" => !config.Blacklist.Contains(channelId, StringComparer.OrdinalIgnoreCase),
+                _ => true // "none" 或其他值：不过滤
+            };
+        }
+
+        // ── API 调用 ──
+
+        private async Task<JObject?> CallApiAsync(string action, JObject? param = null)
+        {
+            if (ws?.State != WebSocketState.Open) return null;
+
+            var echo = Interlocked.Increment(ref echoCounter).ToString();
+            var request = new JObject
+            {
+                ["action"] = action,
+                ["params"] = param ?? new JObject(),
+                ["echo"] = echo
+            };
+
+            var tcs = new TaskCompletionSource<JObject>(TaskCreationOptions.RunContinuationsAsynchronously);
+            pendingCalls[echo] = tcs;
+
+            try
+            {
+                var bytes = Encoding.UTF8.GetBytes(request.ToString(Formatting.None));
+                await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true,
+                    cts?.Token ?? CancellationToken.None).ConfigureAwait(false);
+
+                // 带超时等待响应
+                var completed = await Task.WhenAny(tcs.Task, Task.Delay(10000)).ConfigureAwait(false);
+                if (completed == tcs.Task)
+                    return await tcs.Task;
+
+                // 超时
+                pendingCalls.TryRemove(echo, out _);
+                FrameworkLogger.Log("OneBotAdapter", $"API 调用超时: {action}");
+                return null;
+            }
+            catch
+            {
+                pendingCalls.TryRemove(echo, out _);
+                return null;
+            }
+        }
+
+        private async Task<long> GetSelfIdAsync()
+        {
+            var resp = await CallApiAsync("get_login_info");
+            return resp?["data"]?["user_id"]?.Value<long>() ?? 0;
+        }
+    }
+}
