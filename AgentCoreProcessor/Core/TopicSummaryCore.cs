@@ -9,6 +9,7 @@ namespace AgentCoreProcessor.Core
     /// </summary>
     internal class TopicSummaryCore : CoreBase
     {
+        protected override bool UsePersona => false;
         /// <summary>
         /// 根据话题名和最近消息生成初始摘要。
         /// </summary>

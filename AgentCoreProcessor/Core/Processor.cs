@@ -35,11 +35,14 @@ namespace AgentCoreProcessor.Core
             }
         }
 
-        public Processor(string cfgName = "Base", string? cfgDirectoryPath = null)
+        public bool UsePersona { get; }
+
+        public Processor(string cfgName = "Base", string? cfgDirectoryPath = null, bool usePersona = true)
         {
             this.cfgDirectoryPath = cfgDirectoryPath ?? DefaultCfgPath;
+            UsePersona = usePersona;
             CfgName = cfgName;
-            InjectPersona();
+            if (usePersona) InjectPersona();
         }
 
         public async Task ProcessAsync(Action<ApiResponse> onDelta, CancellationToken ct = default)

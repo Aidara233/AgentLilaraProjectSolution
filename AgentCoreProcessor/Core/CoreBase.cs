@@ -20,9 +20,12 @@ namespace AgentCoreProcessor.Core
 
         protected List<string> breakString = ["<over>"];
 
+        /// <summary>子类覆盖为 false 可跳过 Persona 注入（工具性 Core 如分类器、摘要器）。</summary>
+        protected virtual bool UsePersona => true;
+
         public CoreBase()
         {
-            processor = new Processor(CoreName);
+            processor = new Processor(CoreName, usePersona: UsePersona);
         }
 
         /// <summary>
@@ -38,7 +41,7 @@ namespace AgentCoreProcessor.Core
 
         public void ResetProcessor()
         {
-            processor = new Processor(CoreName);
+            processor = new Processor(CoreName, usePersona: UsePersona);
             ApplyExtraMessages();
         }
 

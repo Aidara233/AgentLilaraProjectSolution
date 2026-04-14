@@ -9,6 +9,7 @@ namespace AgentCoreProcessor.Core
     /// </summary>
     internal class TopicClassificationCore : CoreBase
     {
+        protected override bool UsePersona => false;
         /// <summary>
         /// 判断新消息属于哪个候选话题，或应新建话题。
         /// 返回话题ID，或 -1 表示新建话题。
