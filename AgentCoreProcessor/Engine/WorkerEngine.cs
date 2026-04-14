@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -18,6 +19,7 @@ namespace AgentCoreProcessor.Engine
         private readonly IncomingMessage message;
         private readonly SessionContext? prebuiltContext;
         private readonly string? mergedContent;
+        private readonly List<ScoredMemory>? preloadedMemory;
 
         private readonly ExpressCore expressCore = new();
         private readonly WorkingCore workingCore = new();
@@ -25,12 +27,14 @@ namespace AgentCoreProcessor.Engine
 
         /// <summary>由 TopicEngine 孵化时使用。SessionContext 已构建，权限已检查。</summary>
         public WorkerEngine(ISystemContext ctx, IncomingMessage message,
-                            SessionContext sessionContext, string mergedContent)
+                            SessionContext sessionContext, string mergedContent,
+                            List<ScoredMemory>? preloadedMemory = null)
         {
             this.ctx = ctx;
             this.message = message;
             this.prebuiltContext = sessionContext;
             this.mergedContent = mergedContent;
+            this.preloadedMemory = preloadedMemory;
             this.preprocessingCore = new PreprocessingCore(ctx.Embedding);
         }
 
@@ -56,12 +60,15 @@ namespace AgentCoreProcessor.Engine
                 var isTask = await preprocessingCore.IsTaskAsync(content);
                 FrameworkLogger.Log("WorkerEngine", $"分类结果: {(isTask ? "任务" : "聊天")}");
 
-                // 3. 检索记忆
-                string? memoryContext = await BuildMemoryContextAsync(context, content);
+                // 3. 获取记忆（优先使用预加载）
+                var memoryResults = preloadedMemory
+                    ?? await BuildMemoryResultsAsync(context, content);
 
                 // 4. 路由处理
                 if (isTask)
                 {
+                    string? memoryContext = FormatMemory(memoryResults, topK: 10);
+
                     // 任务 → WorkingCore Agent 循环
                     workingCore.OnSpeak = async (rawText) =>
                     {
@@ -90,6 +97,8 @@ namespace AgentCoreProcessor.Engine
                 }
                 else
                 {
+                    string? memoryContext = FormatMemory(memoryResults, topK: 5);
+
                     // 聊天 → ExpressCore 直接回复
                     expressCore.ResetProcessor();
                     var input = memoryContext != null
@@ -121,7 +130,8 @@ namespace AgentCoreProcessor.Engine
 
         public void RequestStop() => IsAlive = false;
 
-        private async Task<string?> BuildMemoryContextAsync(SessionContext context, string content)
+        /// <summary>查询记忆，返回原始结果列表（无预加载缓存时的 fallback）。</summary>
+        private async Task<List<ScoredMemory>?> BuildMemoryResultsAsync(SessionContext context, string content)
         {
             try
             {
@@ -129,17 +139,24 @@ namespace AgentCoreProcessor.Engine
                     context.Person.Id, context.Channel.Id, context.Topic.Id,
                     content, topK: 10, includeLinks: true);
 
-                if (results.Count == 0) return null;
+                if (results.Count > 0)
+                    FrameworkLogger.LogMemoryRecall("WorkerEngine",
+                        results.Count, results.Count(r => r.IsTemp));
 
-                FrameworkLogger.LogMemoryRecall("WorkerEngine",
-                    results.Count, results.Count(r => r.IsTemp));
-
-                var sb = new StringBuilder();
-                foreach (var m in results)
-                    sb.AppendLine($"- {m.Content}");
-                return sb.ToString().TrimEnd();
+                return results;
             }
             catch { return null; }
+        }
+
+        /// <summary>将记忆结果格式化为注入文本。</summary>
+        private static string? FormatMemory(List<ScoredMemory>? results, int topK)
+        {
+            if (results == null || results.Count == 0) return null;
+
+            var sb = new StringBuilder();
+            foreach (var m in results.Take(topK))
+                sb.AppendLine($"- {m.Content}");
+            return sb.ToString().TrimEnd();
         }
     }
 }

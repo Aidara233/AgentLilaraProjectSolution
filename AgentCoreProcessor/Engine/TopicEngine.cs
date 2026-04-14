@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Database;
+using AgentCoreProcessor.Memory;
 
 namespace AgentCoreProcessor.Engine
 {
@@ -38,6 +39,10 @@ namespace AgentCoreProcessor.Engine
         // 负反馈抑制
         private bool awaitingResponse = false;
         private int consecutiveIgnores = 0;
+
+        // 记忆缓存：per-person，避免同话题反复查询
+        private readonly Dictionary<int, (List<ScoredMemory> Results, DateTime Time)> memoryCache = new();
+        private const float MemoryCacheTtlSeconds = 60f;
 
         // 配置常量
         private const float BufferWindowSeconds = 2.5f;
@@ -117,7 +122,7 @@ namespace AgentCoreProcessor.Engine
 
                     if (ShouldRespond(batch))
                     {
-                        SpawnWorker(batch);
+                        await SpawnWorkerAsync(batch);
                         lastResponseTime = DateTime.Now;
                         impulse = 0f;
                         awaitingResponse = true;
@@ -176,7 +181,7 @@ namespace AgentCoreProcessor.Engine
             impulse = Math.Max(0f, impulse - DecayPerSecond * elapsed);
         }
 
-        private void SpawnWorker(List<(IncomingMessage Message, SessionContext Context)> batch)
+        private async Task SpawnWorkerAsync(List<(IncomingMessage Message, SessionContext Context)> batch)
         {
             // 合并消息内容
             var mergedContent = batch.Count == 1
@@ -187,11 +192,42 @@ namespace AgentCoreProcessor.Engine
             var lastContext = batch[^1].Context;
             var lastMessage = batch[^1].Message;
 
+            // 查缓存或新查询记忆
+            var memory = await GetCachedMemoryAsync(lastContext, mergedContent);
+
             FrameworkLogger.Log("TopicEngine",
                 $"孵化 Worker: topicId={topicId}, 消息数={batch.Count}, 合并长度={mergedContent.Length}");
 
-            var worker = new WorkerEngine(ctx, lastMessage, lastContext, mergedContent);
+            var worker = new WorkerEngine(ctx, lastMessage, lastContext, mergedContent, memory);
             ctx.StartEngine(worker);
+        }
+
+        /// <summary>
+        /// 获取记忆上下文，优先返回缓存。按 personId 缓存，TTL 内复用。
+        /// </summary>
+        private async Task<List<ScoredMemory>> GetCachedMemoryAsync(SessionContext context, string query)
+        {
+            int personId = context.Person.Id;
+
+            if (memoryCache.TryGetValue(personId, out var cached) &&
+                (DateTime.Now - cached.Time).TotalSeconds < MemoryCacheTtlSeconds)
+            {
+                FrameworkLogger.Log("TopicEngine", $"记忆缓存命中: personId={personId}");
+                return cached.Results;
+            }
+
+            try
+            {
+                var results = await ctx.MemorySvc.RecallAsync(
+                    personId, context.Channel.Id, topicId,
+                    query, topK: 10, includeLinks: true);
+                memoryCache[personId] = (results, DateTime.Now);
+                return results;
+            }
+            catch
+            {
+                return new List<ScoredMemory>();
+            }
         }
 
         public void OnEvent(EngineEvent e) { }
