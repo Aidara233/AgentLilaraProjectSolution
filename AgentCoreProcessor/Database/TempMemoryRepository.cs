@@ -39,20 +39,27 @@ namespace AgentCoreProcessor.Database
             return db.GetAllAsync<TempMemoryEntry>();
         }
 
-        /// <summary>按多维标签过滤临时记忆。</summary>
-        public async Task<List<TempMemoryEntry>> GetByTagsAsync(int? personId, int? channelId, int? topicId)
+        /// <summary>按多维标签过滤临时记忆（OR 模式：任一标签匹配即召回，返回匹配标签数）。</summary>
+        public async Task<List<(TempMemoryEntry Entry, int MatchCount)>> GetByTagsAsync(
+            int? personId, int? channelId, int? topicId)
         {
             var all = await GetAllAsync();
-            return all.FindAll(m =>
-            {
-                bool personMatch = m.PersonId == null || m.PersonId == personId;
-                bool channelMatch = m.ChannelId == null || m.ChannelId == channelId;
-                bool topicMatch = m.TopicId == null || m.TopicId == topicId;
-                bool isGlobal = m.PersonId == null && m.ChannelId == null && m.TopicId == null;
+            var results = new List<(TempMemoryEntry, int)>();
 
-                return (personMatch && channelMatch && topicMatch) &&
-                       (isGlobal || m.PersonId == personId || m.ChannelId == channelId || m.TopicId == topicId);
-            });
+            foreach (var m in all)
+            {
+                int matchCount = 0;
+                if (m.PersonId != null && m.PersonId == personId) matchCount++;
+                if (m.ChannelId != null && m.ChannelId == channelId) matchCount++;
+                if (m.TopicId != null && m.TopicId == topicId) matchCount++;
+
+                // 全局记忆（全 null）或至少一个标签匹配
+                bool isGlobal = m.PersonId == null && m.ChannelId == null && m.TopicId == null;
+                if (isGlobal || matchCount > 0)
+                    results.Add((m, isGlobal ? 1 : matchCount));
+            }
+
+            return results;
         }
 
         /// <summary>删除一条临时记忆。</summary>

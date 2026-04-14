@@ -23,6 +23,7 @@ namespace AgentCoreProcessor.Memory
         private const float ImportanceWeight = 0.3f;
         private const float LinkWeight = 0.2f;
         private const float TempBoost = 0.1f; // 临时库偏置
+        private const float TagMatchBoost = 0.1f; // 每个匹配标签的额外加权
 
         public MemoryService(
             MemoryRepository memories,
@@ -79,28 +80,31 @@ namespace AgentCoreProcessor.Memory
 
             var scored = new List<ScoredMemory>();
 
-            // 1. 查临时库
-            var tempEntries = await tempMemories.GetByTagsAsync(personId, channelId, topicId);
-            foreach (var t in tempEntries)
+            // 1. 查临时库（OR 模式，匹配标签数加权）
+            var tempResults = await tempMemories.GetByTagsAsync(personId, channelId, topicId);
+            foreach (var (t, matchCount) in tempResults)
             {
                 float sim = VectorUtil.ComputeSimilarity(queryVec, t.Embedding);
                 scored.Add(new ScoredMemory
                 {
                     Id = t.Id,
                     Content = t.Content,
-                    Score = sim * SimilarityWeight + TempBoost,
+                    Score = sim * SimilarityWeight + TempBoost + matchCount * TagMatchBoost,
                     IsTemp = true
                 });
             }
 
-            // 2. 查主库：标签过滤 + 向量精排
-            var mainEntries = await memories.GetByTagsAsync(personId, channelId, topicId);
-            var mainScored = mainEntries.Select(m => new
+            // 2. 查主库（OR 模式，匹配标签数加权 + 向量精排）
+            var mainResults = await memories.GetByTagsAsync(personId, channelId, topicId);
+            var mainScored = mainResults.Select(x => new
             {
-                Entry = m,
-                Similarity = VectorUtil.ComputeSimilarity(queryVec, m.Embedding)
+                x.Entry,
+                x.MatchCount,
+                Similarity = VectorUtil.ComputeSimilarity(queryVec, x.Entry.Embedding)
             })
-            .OrderByDescending(x => x.Similarity * SimilarityWeight + x.Entry.Importance * ImportanceWeight)
+            .OrderByDescending(x => x.Similarity * SimilarityWeight
+                + x.Entry.Importance * ImportanceWeight
+                + x.MatchCount * TagMatchBoost)
             .Take(topK * 2)
             .ToList();
 
@@ -110,10 +114,15 @@ namespace AgentCoreProcessor.Memory
                 {
                     Id = x.Entry.Id,
                     Content = x.Entry.Content,
-                    Score = x.Similarity * SimilarityWeight + x.Entry.Importance * ImportanceWeight,
+                    Score = x.Similarity * SimilarityWeight
+                        + x.Entry.Importance * ImportanceWeight
+                        + x.MatchCount * TagMatchBoost,
                     IsTemp = false
                 });
             }
+
+            // mainEntries 兼容引用（关联扩展和 LastAccessedAt 更新用）
+            var mainEntries = mainResults.Select(x => x.Entry).ToList();
 
             // 3. 关联扩展
             if (includeLinks && mainScored.Count > 0)

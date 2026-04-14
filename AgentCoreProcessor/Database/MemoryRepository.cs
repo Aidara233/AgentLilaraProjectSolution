@@ -18,29 +18,32 @@ namespace AgentCoreProcessor.Database
         /// 按多维标签并集过滤记忆。
         /// 返回 PersonId/ChannelId/TopicId 任一匹配 或 对应标签为 null（不限）的记忆。
         /// </summary>
-        public async Task<List<MemoryEntry>> GetByTagsAsync(int? personId, int? channelId, int? topicId)
+        /// <summary>
+        /// 按多维标签过滤记忆（OR 模式：任一标签匹配即召回，返回匹配标签数）。
+        /// </summary>
+        public async Task<List<(MemoryEntry Entry, int MatchCount)>> GetByTagsAsync(
+            int? personId, int? channelId, int? topicId)
         {
             var all = await db.GetAllAsync<MemoryEntry>();
             var now = DateTime.Now;
+            var results = new List<(MemoryEntry, int)>();
 
-            return all.FindAll(m =>
+            foreach (var m in all)
             {
-                // 过滤过期临时记忆
                 if (!m.IsPersistent && m.ExpiresAt != null && m.ExpiresAt < now)
-                    return false;
+                    continue;
 
-                // 标签匹配：记忆标签为 null 表示不限，或与当前场景匹配
-                bool personMatch = m.PersonId == null || m.PersonId == personId;
-                bool channelMatch = m.ChannelId == null || m.ChannelId == channelId;
-                bool topicMatch = m.TopicId == null || m.TopicId == topicId;
+                int matchCount = 0;
+                if (m.PersonId != null && m.PersonId == personId) matchCount++;
+                if (m.ChannelId != null && m.ChannelId == channelId) matchCount++;
+                if (m.TopicId != null && m.TopicId == topicId) matchCount++;
 
-                // 至少有一个标签是具体匹配的（避免全 null 的记忆被所有场景命中）
-                // 全 null 视为全局记忆，始终命中
                 bool isGlobal = m.PersonId == null && m.ChannelId == null && m.TopicId == null;
+                if (isGlobal || matchCount > 0)
+                    results.Add((m, isGlobal ? 1 : matchCount));
+            }
 
-                return (personMatch && channelMatch && topicMatch) &&
-                       (isGlobal || m.PersonId == personId || m.ChannelId == channelId || m.TopicId == topicId);
-            });
+            return results;
         }
 
         /// <summary>
