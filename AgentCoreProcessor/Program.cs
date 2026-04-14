@@ -30,10 +30,7 @@ namespace AgentCoreProcessor
             if (fileMode)
             {
                 var fileDir = Path.Combine(PathConfig.StoragePath, "FileAdapter");
-                var fileAdapter = new FileAdapter(
-                    Path.Combine(fileDir, "input.txt"),
-                    Path.Combine(fileDir, "output.txt"),
-                    pollIntervalMs: 3000);
+                var fileAdapter = new FileAdapter(fileDir, pollIntervalMs: 2000);
                 adapterManager.RegisterAdapter(fileAdapter);
             }
             else
