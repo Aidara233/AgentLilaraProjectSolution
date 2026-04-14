@@ -13,6 +13,9 @@ namespace AgentCoreProcessor.Engine
     {
         private static readonly object lockObj = new();
 
+        /// <summary>是否同时输出到控制台（--test 模式启用）。</summary>
+        public static bool MirrorToConsole { get; set; } = false;
+
         private static string LogPath
         {
             get
@@ -32,6 +35,8 @@ namespace AgentCoreProcessor.Engine
                 {
                     File.AppendAllText(LogPath, line + Environment.NewLine);
                 }
+                if (MirrorToConsole)
+                    Console.WriteLine($"[log] {line}");
             }
             catch
             {

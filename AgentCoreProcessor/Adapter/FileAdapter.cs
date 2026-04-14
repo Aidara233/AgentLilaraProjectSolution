@@ -74,7 +74,15 @@ namespace AgentCoreProcessor.Adapter
             }
         }
 
-        private void ProcessInputFiles()
+        /// <summary>一次性读取 input 目录所有文件并投递消息。返回处理的消息数。</summary>
+        public int ProcessInputOnce()
+        {
+            Directory.CreateDirectory(inputDir);
+            Directory.CreateDirectory(outputDir);
+            return ProcessInputFiles();
+        }
+
+        private int ProcessInputFiles()
         {
             var files = Directory.GetFiles(inputDir)
                 .Where(f => f.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
@@ -82,6 +90,7 @@ namespace AgentCoreProcessor.Adapter
                 .OrderBy(f => Path.GetFileName(f), StringComparer.Ordinal)
                 .ToList();
 
+            int count = 0;
             foreach (var file in files)
             {
                 try
@@ -97,6 +106,7 @@ namespace AgentCoreProcessor.Adapter
 
                     File.Delete(file);
                     OnMessageReceived?.Invoke(msg);
+                    count++;
                 }
                 catch (Exception ex)
                 {
@@ -107,6 +117,7 @@ namespace AgentCoreProcessor.Adapter
                         $"[{DateTime.Now:HH:mm:ss}] 解析失败: {Path.GetFileName(file)}\n{ex.Message}\n");
                 }
             }
+            return count;
         }
 
         private static IncomingMessage ParseJsonMessage(string json)
