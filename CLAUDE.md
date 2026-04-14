@@ -25,6 +25,15 @@
 - 新实体：放 Database/，Repository 模式，DbManager.InitAsync() 加 CreateTableAsync
 - 基础设施引擎：设 IsInfrastructure => true（不影响 IsIdle 判定）
 
+## 工作流（硬性要求）
+
+每轮代码改动完成后，必须立即执行：
+1. `dotnet build` 确认编译通过
+2. `git commit` 提交改动
+3. `--test` 模式试运行验证（需要模拟对话节奏时加 `--delay N`）
+
+不要等用户提醒，做完改动就走这三步。
+
 ## 关键路径
 
 - 入口：Program.cs（--file / --debug / 默认 Console）
