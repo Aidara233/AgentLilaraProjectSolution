@@ -38,7 +38,8 @@ namespace AgentCoreProcessor.Adapter
         public async Task SendMessageAsync(string platform, OutgoingMessage message)
         {
             var adapter = adapters.FirstOrDefault(a =>
-                a.Platform.Equals(platform, StringComparison.OrdinalIgnoreCase));
+                a.Platform.Equals(platform, StringComparison.OrdinalIgnoreCase))
+                ?? adapters.FirstOrDefault(); // fallback：平台不匹配时用第一个适配器
 
             if (adapter != null)
             {
