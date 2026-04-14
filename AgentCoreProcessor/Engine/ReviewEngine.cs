@@ -400,6 +400,7 @@ namespace AgentCoreProcessor.Engine
                 new ReviewSearchMemoryTool(ctx),
                 new ReviewViewLinksTool(ctx),
                 new ReviewReadMessagesTool(ctx),
+                new ReviewUpdateAffinityTool(ctx),
                 new ReviewWriteTempMemoryTool(),
                 new ReviewThinkingNotesTool(),
                 new ReviewMarkHintTool(),

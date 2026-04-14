@@ -147,6 +147,8 @@ namespace AgentCoreProcessor.Engine
 
             var channel = channels.FirstOrDefault(c => c.Id == targetChannelId.Value);
             sb.AppendLine($"### 目标频道: {channel?.Name ?? $"ID:{targetChannelId}"}");
+            if (channel != null)
+                sb.AppendLine($"当前亲和度: {channel.Affinity:F2}（影响群聊回复倾向，1.0为基准）");
 
             var topics = await ctx.Session.GetActiveTopicsAsync(targetChannelId.Value);
             if (topics.Count > 0)
@@ -156,6 +158,13 @@ namespace AgentCoreProcessor.Engine
                     sb.AppendLine($"- [话题ID:{topic.Id}] {topic.Name}" +
                         (string.IsNullOrEmpty(topic.Summary) ? "" : $" — {topic.Summary}"));
             }
+
+            sb.AppendLine();
+            sb.AppendLine("### 亲和度调整指引");
+            sb.AppendLine("分析完频道活动后，可用「更新亲和度」工具调整该频道的参与倾向：");
+            sb.AppendLine("- 频道活跃且互动有价值 → 适当上调（+0.1 ~ +0.2）");
+            sb.AppendLine("- 频道冷清或互动质量低 → 适当下调（-0.1 ~ -0.2）");
+            sb.AppendLine("- 无明显变化 → 不调整");
         }
 
         private static async Task BuildPersonProfileContext(

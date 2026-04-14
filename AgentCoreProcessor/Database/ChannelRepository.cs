@@ -35,5 +35,7 @@ namespace AgentCoreProcessor.Database
         public Task<Channel?> GetByIdAsync(int id) => db.GetByIdAsync<Channel>(id);
 
         public Task<List<Channel>> GetAllAsync() => db.GetAllAsync<Channel>();
+
+        public Task UpdateAsync(Channel channel) => db.UpdateAsync(channel);
     }
 }

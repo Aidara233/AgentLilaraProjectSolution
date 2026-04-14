@@ -29,6 +29,16 @@ namespace AgentCoreProcessor.Engine
         private DateTime lastImpulseDecay;
         private DateTime? lastResponseTime;
 
+        // 频道亲和度（从 Channel.Affinity 读取，影响 BaseMessageScore 增益）
+        private readonly float channelAffinity;
+
+        // 参与人数追踪（影响 BaseMessageScore 折扣）
+        private readonly HashSet<int> recentParticipants = new();
+
+        // 负反馈抑制
+        private bool awaitingResponse = false;
+        private int consecutiveIgnores = 0;
+
         // 配置常量
         private const float BufferWindowSeconds = 2.5f;
         private const float ColdTimeoutSeconds = 300f;
@@ -38,17 +48,21 @@ namespace AgentCoreProcessor.Engine
         private const float DecayPerSecond = 0.5f;
         private const float ResponseThreshold = 3f;
         private const float PostResponseCooldownSeconds = 3f;
+        private const float IgnoreThresholdBoost = 1.5f;
+        private const int MaxIgnoreBoost = 3;
         public TopicEngine(ISystemContext ctx, SessionContext initialContext, IncomingMessage initialMessage)
         {
             this.ctx = ctx;
             this.topicId = initialContext.Topic.Id;
+            this.channelAffinity = initialContext.Channel.Affinity;
             this.lastImpulseDecay = DateTime.Now;
             this.lastBufferTime = DateTime.Now;
 
             buffer.Add((initialMessage, initialContext));
+            recentParticipants.Add(initialContext.User.Id);
             AccumulateImpulse(initialMessage);
 
-            FrameworkLogger.Log("TopicEngine", $"创建: topicId={topicId}");
+            FrameworkLogger.Log("TopicEngine", $"创建: topicId={topicId}, affinity={channelAffinity:F2}");
         }
 
         /// <summary>由 TopicEngineSpawnCheck 直接调用，将新消息加入缓冲。</summary>
@@ -59,6 +73,7 @@ namespace AgentCoreProcessor.Engine
                 buffer.Add((msg, sc));
                 lastBufferTime = DateTime.Now;
             }
+            recentParticipants.Add(sc.User.Id);
             AccumulateImpulse(msg);
         }
 
@@ -82,11 +97,30 @@ namespace AgentCoreProcessor.Engine
                     }
                 }
 
-                if (batch != null && ShouldRespond(batch))
+                if (batch != null)
                 {
-                    SpawnWorker(batch);
-                    lastResponseTime = DateTime.Now;
-                    impulse = 0f;
+                    // 负反馈检查：发言后的下一批消息是否有回应
+                    if (awaitingResponse)
+                    {
+                        bool gotResponse = batch.Any(b => b.Message.IsMentioned);
+                        if (gotResponse)
+                        {
+                            consecutiveIgnores = 0;
+                        }
+                        else
+                        {
+                            consecutiveIgnores = Math.Min(consecutiveIgnores + 1, MaxIgnoreBoost);
+                        }
+                        awaitingResponse = false;
+                    }
+
+                    if (ShouldRespond(batch))
+                    {
+                        SpawnWorker(batch);
+                        lastResponseTime = DateTime.Now;
+                        impulse = 0f;
+                        awaitingResponse = true;
+                    }
                 }
                 // 冷却检查：缓冲空 + 冲动归零 + 超时
                 bool bufferEmpty;
@@ -111,13 +145,24 @@ namespace AgentCoreProcessor.Engine
                 (DateTime.Now - lastResponseTime.Value).TotalSeconds < PostResponseCooldownSeconds)
                 return false;
 
-            // 群聊：冲动值判断
-            return impulse >= ResponseThreshold;
+            // 群聊：冲动值判断（含负反馈上调）
+            float effectiveThreshold = ResponseThreshold + consecutiveIgnores * IgnoreThresholdBoost;
+            return impulse >= effectiveThreshold;
         }
 
         private void AccumulateImpulse(IncomingMessage msg)
         {
-            impulse += BaseMessageScore;
+            // 参与人数折扣：人少时不必频繁插嘴
+            float participantFactor = recentParticipants.Count switch
+            {
+                <= 1 => 0.6f,
+                2 => 0.8f,
+                3 => 0.9f,
+                _ => 1.0f
+            };
+            impulse += BaseMessageScore * channelAffinity * participantFactor;
+
+            // 明确意图信号不打折
             if (msg.IsMentioned) impulse += MentionScore;
             if (msg.IsPrivate) impulse += PrivateScore;
         }
