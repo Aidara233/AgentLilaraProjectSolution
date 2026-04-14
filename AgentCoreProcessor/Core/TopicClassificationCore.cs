@@ -37,10 +37,13 @@ namespace AgentCoreProcessor.Core
             if (result.Equals("new", System.StringComparison.OrdinalIgnoreCase))
                 return -1;
 
+            if (result.Equals("chat", System.StringComparison.OrdinalIgnoreCase))
+                return -2; // 归入闲聊
+
             if (int.TryParse(result, out var topicId))
                 return topicId;
 
-            return -1; // 无法解析时默认新建
+            return -2; // 无法解析时默认归闲聊
         }
     }
 

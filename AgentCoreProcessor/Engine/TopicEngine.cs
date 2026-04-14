@@ -41,7 +41,7 @@ namespace AgentCoreProcessor.Engine
 
         // 配置常量
         private const float BufferWindowSeconds = 2.5f;
-        private const float ColdTimeoutSeconds = 300f;
+        private readonly float coldTimeoutSeconds;
         private const float MentionScore = 8f;
         private const float BaseMessageScore = 1f;
         private const float PrivateScore = 8f;
@@ -55,6 +55,7 @@ namespace AgentCoreProcessor.Engine
             this.ctx = ctx;
             this.topicId = initialContext.Topic.Id;
             this.channelAffinity = initialContext.Channel.Affinity;
+            this.coldTimeoutSeconds = initialContext.Topic.IsChatTopic ? 600f : 300f;
             this.lastImpulseDecay = DateTime.Now;
             this.lastBufferTime = DateTime.Now;
 
@@ -126,7 +127,7 @@ namespace AgentCoreProcessor.Engine
                 bool bufferEmpty;
                 lock (bufferLock) { bufferEmpty = buffer.Count == 0; }
                 if (bufferEmpty && impulse <= 0.01f &&
-                    (DateTime.Now - lastBufferTime).TotalSeconds > ColdTimeoutSeconds)
+                    (DateTime.Now - lastBufferTime).TotalSeconds > coldTimeoutSeconds)
                 {
                     FrameworkLogger.Log("TopicEngine", $"话题冷却退出: topicId={topicId}");
                     IsAlive = false;

@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Client;
@@ -41,6 +43,12 @@ namespace AgentCoreProcessor.Engine
 
         /// <summary>每隔多少条消息触发摘要更新</summary>
         private const int SummaryUpdateInterval = 5;
+
+        /// <summary>闲聊话题创建锁，防止并发创建多个</summary>
+        private readonly ConcurrentDictionary<int, SemaphoreSlim> chatTopicLocks = new();
+
+        /// <summary>分类 Core 调用锁，防止并发 Reset 导致消息覆盖</summary>
+        private readonly SemaphoreSlim classifyLock = new(1, 1);
 
         public SessionManager(
             UserRepository users,
@@ -141,10 +149,13 @@ namespace AgentCoreProcessor.Engine
         public Task UpdateChannelAsync(Channel channel) => channels.UpdateAsync(channel);
 
         /// <summary>
-        /// 三层话题归类：规则层 → 向量层（双阈值）→ 模型层。
+        /// 三层话题归类：规则层 → 向量层（双阈值）→ 模型层。闲聊 topic 作为兜底。
         /// </summary>
         private async Task<Topic> ClassifyTopicAsync(User user, Channel channel, IncomingMessage msg)
         {
+            // 确保频道有闲聊兜底话题
+            var chatTopic = await GetOrCreateChatTopicAsync(channel.Id);
+
             // 规则层：回复/引用关系 → 归入被回复消息所属的 Topic
             if (!string.IsNullOrEmpty(msg.ReplyTo) && int.TryParse(msg.ReplyTo, out var replyMsgId))
             {
@@ -193,7 +204,7 @@ namespace AgentCoreProcessor.Engine
                         }
                     }
 
-                    // 双阈值判定
+                    // 高置信度直接归入（包括闲聊 topic 也参与匹配）
                     if (bestScore > HighConfidenceThreshold && bestTopic != null)
                     {
                         FrameworkLogger.LogTopicClassification("SessionManager", bestTopic.Id,
@@ -201,66 +212,114 @@ namespace AgentCoreProcessor.Engine
                         return bestTopic;
                     }
 
-                    if (bestScore < LowConfidenceThreshold)
-                    {
-                        // 低置信度，走模型层但倾向新建
-                        var modelResult = await ModelClassifyAsync(msg, channel);
-                        FrameworkLogger.LogTopicClassification("SessionManager", modelResult.Id,
-                            $"vector-low({bestScore:F3})->model");
-                        return modelResult;
-                    }
-
-                    // 模糊地带，走模型层确认
-                    var confirmed = await ModelClassifyAsync(msg, channel);
-                    FrameworkLogger.LogTopicClassification("SessionManager", confirmed.Id,
-                        $"vector-fuzzy({bestScore:F3})->model");
-                    return confirmed;
+                    // 低置信度或模糊地带，走模型层
+                    var modelResult = await ModelClassifyAsync(msg, channel, chatTopic);
+                    FrameworkLogger.LogTopicClassification("SessionManager", modelResult.Id,
+                        bestScore < LowConfidenceThreshold
+                            ? $"vector-low({bestScore:F3})->model"
+                            : $"vector-fuzzy({bestScore:F3})->model");
+                    return modelResult;
                 }
             }
 
             // 无活跃话题有 embedding，或 embedding 不可用 → 模型层
-            // 如果没有任何活跃话题，直接新建
             var allActive = await topics.GetActiveByChannelAsync(channel.Id);
-            if (allActive.Count == 0)
+            // 只有闲聊话题时，走模型层判断是归闲聊还是新建
+            if (allActive.Count <= 1 && allActive.All(t => t.IsChatTopic))
             {
-                var newTopic = await CreateNewTopicAsync(channel.Id, msg);
-                FrameworkLogger.LogTopicClassification("SessionManager", newTopic.Id, "new-no-active");
-                return newTopic;
+                var modelResult = await ModelClassifyAsync(msg, channel, chatTopic);
+                FrameworkLogger.LogTopicClassification("SessionManager", modelResult.Id, "model-only-chat");
+                return modelResult;
             }
 
-            var fallback = await ModelClassifyAsync(msg, channel);
+            var fallback = await ModelClassifyAsync(msg, channel, chatTopic);
             FrameworkLogger.LogTopicClassification("SessionManager", fallback.Id, "model-fallback");
             return fallback;
         }
 
         /// <summary>
         /// 模型层分类：收集活跃话题摘要+最近消息，调用 TopicClassificationCore。
+        /// 闲聊 topic 以 [闲聊] 标记出现在候选列表中。
         /// </summary>
-        private async Task<Topic> ModelClassifyAsync(IncomingMessage msg, Channel channel)
+        private async Task<Topic> ModelClassifyAsync(IncomingMessage msg, Channel channel, Topic chatTopic)
         {
             var activeTopics = await topics.GetActiveByChannelAsync(channel.Id);
-            if (activeTopics.Count == 0)
-                return await CreateNewTopicAsync(channel.Id, msg);
 
             var candidates = new List<TopicCandidate>();
             foreach (var t in activeTopics)
             {
                 var recentMsgs = await messages.GetRecentByTopicAsync(t.Id, 3);
+                var label = t.IsChatTopic ? "[闲聊] " : "";
                 candidates.Add(new TopicCandidate
                 {
                     TopicId = t.Id,
-                    Summary = string.IsNullOrEmpty(t.Summary) ? t.Name : t.Summary,
+                    Summary = label + (string.IsNullOrEmpty(t.Summary) ? t.Name : t.Summary),
                     RecentMessages = recentMsgs.Select(m => m.Content).ToList()
                 });
             }
 
-            var topicId = await classificationCore.ClassifyAsync(msg.Content, candidates);
+            // 如果闲聊 topic 不在活跃列表中（理论上不应该，但防御性处理）
+            if (!activeTopics.Any(t => t.IsChatTopic))
+            {
+                candidates.Add(new TopicCandidate
+                {
+                    TopicId = chatTopic.Id,
+                    Summary = "[闲聊] 日常闲聊和杂谈",
+                    RecentMessages = []
+                });
+            }
 
-            if (topicId == -1)
+            int topicId;
+            await classifyLock.WaitAsync();
+            try
+            {
+                topicId = await classificationCore.ClassifyAsync(msg.Content, candidates);
+            }
+            finally
+            {
+                classifyLock.Release();
+            }
+
+            if (topicId == -2) // chat
+                return chatTopic;
+
+            if (topicId == -1) // new
                 return await CreateNewTopicAsync(channel.Id, msg);
 
             var matched = activeTopics.FirstOrDefault(t => t.Id == topicId);
-            return matched ?? await CreateNewTopicAsync(channel.Id, msg);
+            return matched ?? chatTopic; // 无法匹配时归闲聊而不是新建
+        }
+
+        /// <summary>获取或创建频道的闲聊兜底话题。per-channel 加锁防并发重复创建。</summary>
+        private async Task<Topic> GetOrCreateChatTopicAsync(int channelId)
+        {
+            var existing = await topics.GetChatTopicAsync(channelId);
+            if (existing != null) return existing;
+
+            var sem = chatTopicLocks.GetOrAdd(channelId, _ => new SemaphoreSlim(1, 1));
+            await sem.WaitAsync();
+            try
+            {
+                // double-check
+                existing = await topics.GetChatTopicAsync(channelId);
+                if (existing != null) return existing;
+
+                var topic = await topics.CreateAsync(channelId, "闲聊", "日常闲聊和杂谈");
+                topic.IsChatTopic = true;
+                try
+                {
+                    var vec = await embeddingProvider.GetEmbeddingAsync("日常闲聊和杂谈");
+                    topic.Embedding = VectorUtil.FloatsToBytes(vec);
+                }
+                catch { }
+                await topics.UpdateAsync(topic);
+                FrameworkLogger.Log("SessionManager", $"创建闲聊话题: channelId={channelId} topicId={topic.Id}");
+                return topic;
+            }
+            finally
+            {
+                sem.Release();
+            }
         }
 
         /// <summary>
@@ -299,6 +358,8 @@ namespace AgentCoreProcessor.Engine
         {
             try
             {
+                // 闲聊话题不更新摘要，保持固定 embedding 防漂移
+                if (topic.IsChatTopic) return;
                 if (topic.MessageCount % SummaryUpdateInterval != 0) return;
 
                 var recentMsgs = await messages.GetRecentByTopicAsync(topic.Id, SummaryUpdateInterval);

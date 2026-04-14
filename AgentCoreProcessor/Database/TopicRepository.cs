@@ -37,13 +37,13 @@ namespace AgentCoreProcessor.Database
         }
 
         /// <summary>
-        /// 将超过指定时间未活跃的话题标记为关闭。
+        /// 将超过指定时间未活跃的话题标记为关闭。闲聊话题不过期。
         /// </summary>
         public async Task<int> DeactivateStaleAsync(TimeSpan timeout)
         {
             var cutoff = DateTime.Now - timeout;
             var stale = await db.Table<Topic>()
-                .Where(t => t.IsActive && t.LastMessageTime < cutoff)
+                .Where(t => t.IsActive && !t.IsChatTopic && t.LastMessageTime < cutoff)
                 .ToListAsync();
 
             foreach (var t in stale)
@@ -61,6 +61,15 @@ namespace AgentCoreProcessor.Database
             return db.QueryAsync<Topic>(
                 "SELECT * FROM Topics WHERE ChannelId = ? AND IsActive = 1 AND Embedding IS NOT NULL",
                 channelId);
+        }
+
+        /// <summary>获取指定频道的闲聊兜底话题，没有则返回 null。</summary>
+        public async Task<Topic?> GetChatTopicAsync(int channelId)
+        {
+            var list = await db.Table<Topic>()
+                .Where(t => t.ChannelId == channelId && t.IsChatTopic)
+                .ToListAsync();
+            return list.FirstOrDefault();
         }
 
         public Task<Topic?> GetByIdAsync(int id) => db.GetByIdAsync<Topic>(id);

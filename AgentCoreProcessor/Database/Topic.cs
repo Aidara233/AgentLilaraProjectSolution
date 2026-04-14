@@ -30,6 +30,9 @@ namespace AgentCoreProcessor.Database
         /// <summary>是否活跃（超时自动关闭，避免 Topic 无限增长）</summary>
         public bool IsActive { get; set; } = true;
 
+        /// <summary>是否为频道的闲聊兜底话题（不过期、不需要精确摘要）</summary>
+        public bool IsChatTopic { get; set; } = false;
+
         /// <summary>最后一条消息的时间</summary>
         public DateTime LastMessageTime { get; set; }
     }
