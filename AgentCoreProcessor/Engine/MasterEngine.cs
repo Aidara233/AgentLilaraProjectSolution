@@ -75,6 +75,7 @@ namespace AgentCoreProcessor.Engine
         private readonly List<IEngineSpawnCheck> spawnChecks = new();
         private readonly List<ISubEngine> activeEngines = new();
         private readonly object engineLock = new();
+        private readonly SemaphoreSlim eventLock = new(1, 1);
 
         // SpawnCheck 工厂
         private static readonly Dictionary<string, Func<IEngineSpawnCheck>> SpawnCheckFactory = new()
@@ -159,6 +160,20 @@ namespace AgentCoreProcessor.Engine
         // ---- 事件分发（内核流水线） ----
 
         public async Task HandleEventAsync(EngineEvent e)
+        {
+            // 串行化事件处理，防止 SpawnCheck 并发状态冲突
+            await eventLock.WaitAsync();
+            try
+            {
+                await HandleEventCoreAsync(e);
+            }
+            finally
+            {
+                eventLock.Release();
+            }
+        }
+
+        private async Task HandleEventCoreAsync(EngineEvent e)
         {
             // ① 内核更新
             if (e is MessageEvent msgEvent)

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Client;
+using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Util;
 
 namespace AgentCoreProcessor.Core
@@ -32,7 +33,7 @@ namespace AgentCoreProcessor.Core
         };
 
         /// <summary>判定为任务的相似度阈值。</summary>
-        private const float TaskThreshold = 0.5f;
+        private const float TaskThreshold = 0.55f;
 
         public PreprocessingCore(IEmbeddingProvider embedding)
         {
@@ -68,9 +69,14 @@ namespace AgentCoreProcessor.Core
             }
 
             // 取与所有锚点的最高相似度
-            float maxSim = anchorVectors!
+            var sims = anchorVectors!
                 .Select(anchor => VectorUtil.CosineSimilarity(queryVec, anchor))
-                .Max();
+                .ToList();
+            float maxSim = sims.Max();
+            int bestIdx = sims.IndexOf(maxSim);
+
+            FrameworkLogger.Log("Preprocessing",
+                $"分类得分: maxSim={maxSim:F3} bestAnchor=\"{TaskAnchors[bestIdx]}\" threshold={TaskThreshold}");
 
             return maxSim > TaskThreshold;
         }
