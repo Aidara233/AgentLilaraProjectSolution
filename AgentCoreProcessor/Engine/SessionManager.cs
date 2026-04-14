@@ -133,6 +133,20 @@ namespace AgentCoreProcessor.Engine
             return msgs;
         }
 
+        /// <summary>保存 Lilara 的回复到消息历史。</summary>
+        public async Task SaveBotMessageAsync(int topicId, int channelId, string content)
+        {
+            await messages.SaveAsync(new UserMessage
+            {
+                UserId = 0,
+                ChannelId = channelId,
+                TopicId = topicId,
+                Content = content,
+                IsFromBot = true,
+                Time = DateTime.Now
+            });
+        }
+
         /// <summary>获取频道内所有活跃话题。</summary>
         public Task<List<Topic>> GetActiveTopicsAsync(int channelId)
         {

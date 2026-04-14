@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
+using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Memory;
 
@@ -43,6 +44,11 @@ namespace AgentCoreProcessor.Engine
         // 记忆缓存：per-person，避免同话题反复查询
         private readonly Dictionary<int, (List<ScoredMemory> Results, DateTime Time)> memoryCache = new();
         private const float MemoryCacheTtlSeconds = 60f;
+
+        // 记忆提取：每 N 条消息触发一次
+        private int processedMessageCount = 0;
+        private const int MemoryExtractionInterval = 3;
+        private SessionContext? lastContext;
 
         // 配置常量
         private const float BufferWindowSeconds = 2.5f;
@@ -134,6 +140,10 @@ namespace AgentCoreProcessor.Engine
                 if (bufferEmpty && impulse <= 0.01f &&
                     (DateTime.Now - lastBufferTime).TotalSeconds > coldTimeoutSeconds)
                 {
+                    // 冷却退出前，剩余消息强制提取记忆
+                    if (processedMessageCount > 0 && lastContext != null)
+                        await ExtractMemoryAsync(lastContext);
+
                     FrameworkLogger.Log("TopicEngine", $"话题冷却退出: topicId={topicId}");
                     IsAlive = false;
                 }
@@ -200,6 +210,15 @@ namespace AgentCoreProcessor.Engine
 
             var worker = new WorkerEngine(ctx, lastMessage, lastContext, mergedContent, memory);
             ctx.StartEngine(worker);
+
+            // 记忆提取计数
+            this.lastContext = lastContext;
+            processedMessageCount += batch.Count;
+            if (processedMessageCount >= MemoryExtractionInterval)
+            {
+                processedMessageCount = 0;
+                _ = ExtractMemoryAsync(lastContext);
+            }
         }
 
         /// <summary>
@@ -227,6 +246,36 @@ namespace AgentCoreProcessor.Engine
             catch
             {
                 return new List<ScoredMemory>();
+            }
+        }
+
+        /// <summary>异步提取对话中的记忆事实，写入临时记忆库。</summary>
+        private async Task ExtractMemoryAsync(SessionContext context)
+        {
+            try
+            {
+                var recent = await ctx.Session.GetContextAsync(topicId, limit: 10);
+                if (recent.Count < 2) return;
+
+                var lines = recent.Select(m =>
+                    $"{(m.IsFromBot ? "Lilara" : "用户")}: {m.Content}").ToList();
+
+                var core = new MemoryExtractionCore();
+                var facts = await core.ExtractAsync(lines);
+
+                foreach (var fact in facts)
+                {
+                    await ctx.MemorySvc.StoreAsync(fact,
+                        context.Person.Id, context.Channel.Id, topicId);
+                }
+
+                if (facts.Count > 0)
+                    FrameworkLogger.Log("TopicEngine",
+                        $"记忆提取: topicId={topicId}, 提取{facts.Count}条");
+            }
+            catch (Exception ex)
+            {
+                FrameworkLogger.Log("TopicEngine", $"记忆提取失败: {ex.Message}");
             }
         }
 

@@ -13,5 +13,7 @@ namespace AgentCoreProcessor.Database
         public int TopicId { get; set; }// 话题ID，标识消息所属的话题
         public string Content { get; set; } = "";// 消息内容
         public DateTime Time { get; set; }// 消息时间
+        /// <summary>是否为 Lilara 的回复（区分用户消息和 bot 回复）</summary>
+        public bool IsFromBot { get; set; } = false;
     }
 }
