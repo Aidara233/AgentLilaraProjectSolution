@@ -72,16 +72,22 @@ namespace AgentCoreProcessor
                 return 1;
             }
 
-            // --qq --test-send：连接 NapCat 并发送一条测试消息
+            // --qq --test-send [channelId] [message]：连接 NapCat 并发送一条测试消息
             if (qqMode && testSend)
             {
+                var tsIdx = Array.FindIndex(args, a => a == "--test-send");
+                var tsChannel = (tsIdx + 1 < args.Length && !args[tsIdx + 1].StartsWith("--"))
+                    ? args[tsIdx + 1] : "private_1664093638";
+                var tsContent = (tsIdx + 2 < args.Length && !args[tsIdx + 2].StartsWith("--"))
+                    ? args[tsIdx + 2] : "Lilara 已上线，连接测试成功。";
+
                 await adapterManager.StartAllAsync();
                 await adapterManager.SendMessageAsync("qq", new OutgoingMessage
                 {
-                    ChannelId = "private_1664093638",
-                    Content = "Lilara 已上线，连接测试成功。"
+                    ChannelId = tsChannel,
+                    Content = tsContent
                 });
-                Console.WriteLine("[test-send] 测试消息已发送");
+                Console.WriteLine($"[test-send] 测试消息已发送 → {tsChannel}");
                 await adapterManager.StopAllAsync();
                 return 0;
             }
