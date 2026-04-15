@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -167,6 +168,36 @@ namespace AgentCoreProcessor.Adapter
         private static IncomingMessage ParseJsonMessage(string json)
         {
             var dto = JsonConvert.DeserializeObject<FileMessage>(json) ?? new FileMessage();
+
+            // 解析附件（本地路径）
+            List<MessageAttachment>? attachments = null;
+            if (dto.Attachments != null)
+            {
+                foreach (var fa in dto.Attachments)
+                {
+                    if (string.IsNullOrEmpty(fa.Path) || !File.Exists(fa.Path)) continue;
+                    var type = (fa.Type?.ToLowerInvariant()) switch
+                    {
+                        "image" => AttachmentType.Image,
+                        "audio" => AttachmentType.Audio,
+                        "video" => AttachmentType.Video,
+                        _ => AttachmentType.File
+                    };
+                    try
+                    {
+                        var localPath = ImageStorage.CopyToStorageAsync(fa.Path).GetAwaiter().GetResult();
+                        attachments ??= new List<MessageAttachment>();
+                        attachments.Add(new MessageAttachment
+                        {
+                            Type = type,
+                            LocalPath = localPath,
+                            FileName = Path.GetFileName(localPath)
+                        });
+                    }
+                    catch { /* 复制失败跳过 */ }
+                }
+            }
+
             return new IncomingMessage
             {
                 Platform = dto.Platform ?? "File",
@@ -176,7 +207,8 @@ namespace AgentCoreProcessor.Adapter
                 IsPrivate = dto.IsPrivate ?? true,
                 IsMentioned = dto.IsMentioned ?? false,
                 ReplyTo = dto.ReplyTo,
-                Time = DateTime.Now
+                Time = DateTime.Now,
+                Attachments = attachments
             };
         }
 
@@ -208,6 +240,13 @@ namespace AgentCoreProcessor.Adapter
             public bool? IsPrivate { get; set; }
             public bool? IsMentioned { get; set; }
             public string? ReplyTo { get; set; }
+            public List<FileAttachment>? Attachments { get; set; }
+        }
+
+        private class FileAttachment
+        {
+            public string? Type { get; set; }
+            public string? Path { get; set; }
         }
 
         public Task StopAsync()

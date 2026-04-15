@@ -198,6 +198,13 @@ namespace AgentCoreProcessor.Engine
                 ? batch[0].Message.Content
                 : string.Join("\n", batch.Select(b => b.Message.Content));
 
+            // 图片描述：收集所有附件中的图片，调视觉模型生成描述
+            var imageDescriptions = await GenerateImageDescriptionsAsync(batch, mergedContent);
+            if (!string.IsNullOrEmpty(imageDescriptions))
+                mergedContent = string.IsNullOrEmpty(mergedContent)
+                    ? imageDescriptions
+                    : $"{mergedContent}\n\n{imageDescriptions}";
+
             // 使用最后一条消息的上下文（最新话题状态）
             var lastContext = batch[^1].Context;
             var lastMessage = batch[^1].Message;
@@ -277,6 +284,44 @@ namespace AgentCoreProcessor.Engine
             {
                 FrameworkLogger.Log("TopicEngine", $"记忆提取失败: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// 为批次中所有图片附件生成文字描述。无视觉模型或无图片时返回 null。
+        /// </summary>
+        private async Task<string?> GenerateImageDescriptionsAsync(
+            List<(IncomingMessage Message, SessionContext Context)> batch, string textContext)
+        {
+            if (ctx.Vision == null) return null;
+
+            var imageAttachments = batch
+                .Where(b => b.Message.Attachments != null)
+                .SelectMany(b => b.Message.Attachments!)
+                .Where(a => a.Type == AttachmentType.Image && !string.IsNullOrEmpty(a.LocalPath))
+                .ToList();
+
+            if (imageAttachments.Count == 0) return null;
+
+            var descriptions = new List<string>();
+            var contextHint = textContext.Length > 200 ? textContext[..200] : textContext;
+
+            foreach (var att in imageAttachments)
+            {
+                try
+                {
+                    var desc = await ctx.Vision.DescribeImageAsync(att.LocalPath!, contextHint);
+                    att.Description = desc;
+                    descriptions.Add($"[图片描述] {desc}");
+                    FrameworkLogger.Log("TopicEngine", $"图片描述完成: {att.FileName}");
+                }
+                catch (Exception ex)
+                {
+                    descriptions.Add("[图片：描述生成失败]");
+                    FrameworkLogger.Log("TopicEngine", $"图片描述失败: {ex.Message}");
+                }
+            }
+
+            return descriptions.Count > 0 ? string.Join("\n", descriptions) : null;
         }
 
         public void OnEvent(EngineEvent e) { }

@@ -52,6 +52,9 @@ namespace AgentCoreProcessor.Engine
         SessionManager Session { get; }
         IEmbeddingProvider Embedding { get; }
 
+        // 视觉
+        IVisionProvider? Vision { get; }
+
         // 适配器
         AdapterManager Adapters { get; }
 

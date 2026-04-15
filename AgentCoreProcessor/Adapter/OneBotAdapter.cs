@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
@@ -32,6 +33,9 @@ namespace AgentCoreProcessor.Adapter
         private ClientWebSocket? ws;
         private CancellationTokenSource? cts;
         private long selfId;
+
+        // 图片下载用
+        private readonly HttpClient httpClient = new();
 
         // API 请求-响应关联
         private int echoCounter;
@@ -95,6 +99,7 @@ namespace AgentCoreProcessor.Adapter
                 catch { }
             }
             ws?.Dispose();
+            httpClient?.Dispose();
             ws = null;
 
             FrameworkLogger.Log("OneBotAdapter", "已停止");
@@ -261,17 +266,17 @@ namespace AgentCoreProcessor.Adapter
 
         // ── 事件处理 ──
 
-        private void HandleEvent(JObject data)
+        private async void HandleEvent(JObject data)
         {
             var postType = data["post_type"]?.ToString();
             if (postType != "message") return;
 
-            var msg = ParseMessageEvent(data);
+            var msg = await ParseMessageEventAsync(data);
             if (msg != null)
                 OnMessageReceived?.Invoke(msg);
         }
 
-        private IncomingMessage? ParseMessageEvent(JObject data)
+        private async Task<IncomingMessage?> ParseMessageEventAsync(JObject data)
         {
             var userId = data["user_id"]?.Value<long>() ?? 0;
 
@@ -298,6 +303,7 @@ namespace AgentCoreProcessor.Adapter
             var textBuilder = new StringBuilder();
             bool isMentioned = false;
             string? replyTo = null;
+            List<MessageAttachment>? attachments = null;
 
             foreach (var seg in segments)
             {
@@ -318,11 +324,35 @@ namespace AgentCoreProcessor.Adapter
                     case "reply":
                         replyTo = segData["id"]?.ToString();
                         break;
+                    case "image":
+                        var imageUrl = segData["url"]?.ToString();
+                        if (!string.IsNullOrEmpty(imageUrl))
+                        {
+                            try
+                            {
+                                var localPath = await ImageStorage.DownloadAndSaveAsync(imageUrl, httpClient);
+                                attachments ??= new List<MessageAttachment>();
+                                attachments.Add(new MessageAttachment
+                                {
+                                    Type = AttachmentType.Image,
+                                    SourceUrl = imageUrl,
+                                    LocalPath = localPath,
+                                    FileName = Path.GetFileName(localPath)
+                                });
+                            }
+                            catch (Exception ex)
+                            {
+                                FrameworkLogger.Log("OneBotAdapter", $"图片下载失败: {ex.Message}");
+                            }
+                        }
+                        break;
                 }
             }
 
             var content = textBuilder.ToString().Trim();
-            if (string.IsNullOrEmpty(content)) return null;
+            // 允许纯图片消息（无文本但有附件）
+            if (string.IsNullOrEmpty(content) && (attachments == null || attachments.Count == 0))
+                return null;
 
             return new IncomingMessage
             {
@@ -333,7 +363,8 @@ namespace AgentCoreProcessor.Adapter
                 IsPrivate = isPrivate,
                 IsMentioned = isMentioned,
                 ReplyTo = replyTo,
-                Time = DateTime.Now
+                Time = DateTime.Now,
+                Attachments = attachments
             };
         }
 

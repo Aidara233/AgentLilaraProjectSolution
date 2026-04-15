@@ -43,6 +43,7 @@ namespace AgentCoreProcessor.Engine
         private readonly EventBus eventBus;
         private DbManager? db;
         private IEmbeddingProvider? embeddingProvider;
+        private IVisionProvider? visionProvider;
 
         // ---- ISystemContext 实现 ----
         public MemoryRepository Memories { get; private set; } = null!;
@@ -52,6 +53,7 @@ namespace AgentCoreProcessor.Engine
         public MemoryService MemorySvc { get; private set; } = null!;
         public SessionManager Session { get; private set; } = null!;
         public IEmbeddingProvider Embedding => embeddingProvider!;
+        public IVisionProvider? Vision => visionProvider;
         public AdapterManager Adapters => adapterManager;
         public EventBus EventBus => eventBus;
 
@@ -130,6 +132,25 @@ namespace AgentCoreProcessor.Engine
             var baseConfigPath = Path.Combine(PathConfig.CoreConfigPath, "Base.json");
             var baseConfig = ApiClientCfg.FromJson(File.ReadAllText(baseConfigPath));
             embeddingProvider = new SiliconFlowEmbeddingProvider(apiKey: baseConfig.ApiKey);
+
+            // Vision（可选，配置文件不存在则跳过）
+            var visionConfigPath = Path.Combine(PathConfig.CoreConfigPath, "VisionProvider.json");
+            if (File.Exists(visionConfigPath))
+            {
+                try
+                {
+                    var vjson = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(visionConfigPath));
+                    var vApiKey = vjson["apiKey"]?.ToString() ?? baseConfig.ApiKey;
+                    var vEndpoint = vjson["endpoint"]?.ToString() ?? "https://api.siliconflow.cn/v1/chat/completions";
+                    var vModel = vjson["model"]?.ToString() ?? "Qwen/Qwen2.5-VL-72B-Instruct";
+                    visionProvider = new SiliconFlowVisionProvider(vApiKey, vEndpoint, vModel);
+                    FrameworkLogger.Log("MasterEngine", $"视觉模型已加载: {vModel}");
+                }
+                catch (Exception ex)
+                {
+                    FrameworkLogger.Log("MasterEngine", $"视觉模型配置加载失败: {ex.Message}");
+                }
+            }
 
             // 服务
             MemorySvc = new MemoryService(Memories, TempMemories, MemoryLinks, embeddingProvider);

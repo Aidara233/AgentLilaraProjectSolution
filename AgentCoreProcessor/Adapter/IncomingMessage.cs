@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace AgentCoreProcessor.Adapter
 {
@@ -16,5 +17,8 @@ namespace AgentCoreProcessor.Adapter
 
         /// <summary>是否被 @（适配器层按平台特性填充）。</summary>
         public bool IsMentioned { get; set; } = false;
+
+        /// <summary>消息附件（图片、音频等）。</summary>
+        public List<MessageAttachment>? Attachments { get; set; }
     }
 }
