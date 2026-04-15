@@ -266,10 +266,31 @@ namespace AgentCoreProcessor.Adapter
 
         // ── 事件处理 ──
 
+        // 消息去重（防止同一条消息被处理两次）
+        private readonly HashSet<long> recentMessageIds = new();
+        private DateTime lastMessageIdCleanup = DateTime.Now;
+
         private async void HandleEvent(JObject data)
         {
             var postType = data["post_type"]?.ToString();
             if (postType != "message") return;
+
+            // message_id 去重
+            var messageId = data["message_id"]?.Value<long>() ?? 0;
+            if (messageId != 0)
+            {
+                lock (recentMessageIds)
+                {
+                    // 定期清理（每 60 秒）
+                    if ((DateTime.Now - lastMessageIdCleanup).TotalSeconds > 60)
+                    {
+                        recentMessageIds.Clear();
+                        lastMessageIdCleanup = DateTime.Now;
+                    }
+                    if (!recentMessageIds.Add(messageId))
+                        return; // 重复消息，跳过
+                }
+            }
 
             var msg = await ParseMessageEventAsync(data);
             if (msg != null)
