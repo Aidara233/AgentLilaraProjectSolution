@@ -7,7 +7,7 @@ namespace AgentCoreProcessor.Core
 {
     /// <summary>
     /// 提示词组装器。为 Agent 循环的每一轮构建动态消息列表。
-    /// 生成的消息作为 ConversationHistory 注入 AIApiClient，
+    /// 生成的消息作为 ConversationHistory 注入 IModelClient，
     /// 与 PresetMessages（系统提示）合并后发送给模型。
     /// </summary>
     internal class PromptBuilder

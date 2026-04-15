@@ -14,11 +14,11 @@ namespace AgentCoreProcessor.Core
 
         private string cfgDirectoryPath;
 
-        private AIApiClient client = new();
+        private IModelClient client = new OpenAIModelClient();
 
         private string cfgName = "Base";
 
-        public AIApiClient Client => client;
+        public IModelClient Client => client;
 
         public string CfgName
         {
@@ -31,7 +31,8 @@ namespace AgentCoreProcessor.Core
                     return;
                 }
                 cfgName = value;
-                client.Config = ApiClientCfg.FromJson(File.ReadAllText(Path.Combine(cfgDirectoryPath, cfgName) + ".json"));
+                var cfg = ApiClientCfg.FromJson(File.ReadAllText(Path.Combine(cfgDirectoryPath, cfgName) + ".json"));
+                client = ModelClientFactory.Create(cfg);
             }
         }
 

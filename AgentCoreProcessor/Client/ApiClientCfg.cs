@@ -53,11 +53,19 @@ namespace AgentCoreProcessor.Client
         [JsonProperty("n")]
         public int N { get; set; } = 1;
 
+        // 模型协议提供者：openai（默认）或 claude
+        [JsonProperty("provider")]
+        public string Provider { get; set; } = "openai";
+
+        // Claude 专用：API 版本号
+        [JsonProperty("anthropicVersion")]
+        public string? AnthropicVersion { get; set; } = null;
+
         // 预设消息模板（从配置文件加载，system prompt + few-shot 示例）
         [JsonProperty("conversationHistory")]
         public List<Message> PresetMessages { get; set; } = new List<Message>();
 
-        // 运行时对话历史（不序列化，由 AIApiClient 管理）
+        // 运行时对话历史（不序列化，由 ModelClientBase 管理）
         [JsonIgnore]
         public List<Message> ConversationHistory { get; set; } = new List<Message>();
 
