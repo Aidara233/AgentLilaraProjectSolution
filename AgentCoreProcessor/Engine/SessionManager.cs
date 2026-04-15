@@ -178,6 +178,12 @@ namespace AgentCoreProcessor.Engine
 
         public Task UpdateUserAsync(User user) => users.UpdateAsync(user);
 
+        // ---- Person 管理代理 ----
+
+        public Task<Person?> GetPersonByIdAsync(int id) => persons.GetByIdAsync(id);
+
+        public Task UpdatePersonAsync(Person person) => persons.UpdateAsync(person);
+
         /// <summary>
         /// 三层话题归类：规则层 → 向量层（双阈值）→ 模型层。闲聊 topic 作为兜底。
         /// </summary>

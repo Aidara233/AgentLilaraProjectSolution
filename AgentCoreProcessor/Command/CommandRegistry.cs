@@ -25,6 +25,10 @@ namespace AgentCoreProcessor.Command
                 new TopicCommand(),
                 new ChannelCommand(),
                 new UserCommand(),
+                new TestCommand(),
+                new NoteCommand(),
+                new PersonaCommand(),
+                new TrustCommand(),
             };
             _commands = list.ToDictionary(c => c.Name.ToLowerInvariant());
         }
