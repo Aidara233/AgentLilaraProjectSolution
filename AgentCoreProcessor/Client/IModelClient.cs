@@ -15,6 +15,7 @@ namespace AgentCoreProcessor.Client
         IModelClient AddUserMessage(string content, string? name = null);
         IModelClient AddAssistantMessage(string content, string? name = null);
         IModelClient AddSystemMessage(string content, string? name = null);
+        IModelClient AddMultimodalMessage(string role, string text, List<string> imagePaths);
         IModelClient ClearConversationHistory();
         List<Message> GetConversationHistory();
         IModelClient SetConversationHistory(List<Message> history);

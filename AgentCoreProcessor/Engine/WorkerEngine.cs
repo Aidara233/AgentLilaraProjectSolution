@@ -20,6 +20,7 @@ namespace AgentCoreProcessor.Engine
         private readonly SessionContext? prebuiltContext;
         private readonly string? mergedContent;
         private readonly List<ScoredMemory>? preloadedMemory;
+        private readonly List<string>? imagePaths;
 
         private readonly ExpressCore expressCore = new();
         private readonly WorkingCore workingCore = new();
@@ -28,13 +29,15 @@ namespace AgentCoreProcessor.Engine
         /// <summary>由 TopicEngine 孵化时使用。SessionContext 已构建，权限已检查。</summary>
         public WorkerEngine(ISystemContext ctx, IncomingMessage message,
                             SessionContext sessionContext, string mergedContent,
-                            List<ScoredMemory>? preloadedMemory = null)
+                            List<ScoredMemory>? preloadedMemory = null,
+                            List<string>? imagePaths = null)
         {
             this.ctx = ctx;
             this.message = message;
             this.prebuiltContext = sessionContext;
             this.mergedContent = mergedContent;
             this.preloadedMemory = preloadedMemory;
+            this.imagePaths = imagePaths;
             this.preprocessingCore = new PreprocessingCore(ctx.Embedding);
         }
 
@@ -97,7 +100,7 @@ namespace AgentCoreProcessor.Engine
                         await ctx.ReviewHints.CreateAsync(content,
                             context.Person.Id, context.Channel.Id, context.Topic.Id);
                     };
-                    await workingCore.ProcessAsync(content, memoryContext);
+                    await workingCore.ProcessAsync(content, memoryContext, imagePaths);
                 }
                 else
                 {
@@ -125,7 +128,10 @@ namespace AgentCoreProcessor.Engine
 
                     // 聊天 → ExpressCore 直接回复
                     expressCore.ResetProcessor();
-                    var expressed = await expressCore.GenerateOnceAsync(inputBuilder.ToString());
+                    var expressInput = inputBuilder.ToString();
+                    var expressed = imagePaths != null && imagePaths.Count > 0
+                        ? await expressCore.GenerateOnceAsync(expressInput, imagePaths)
+                        : await expressCore.GenerateOnceAsync(expressInput);
                     await ctx.Adapters.SendMessageAsync(message.Platform, new OutgoingMessage
                     {
                         ChannelId = message.ChannelId,

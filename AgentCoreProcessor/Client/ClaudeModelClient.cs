@@ -37,11 +37,37 @@ namespace AgentCoreProcessor.Client
             var messages = new JArray();
             foreach (var msg in history.Where(m => m.Role != "system"))
             {
-                messages.Add(new JObject
+                var msgObj = new JObject { ["role"] = msg.Role };
+
+                // 多模态内容块
+                if (msg.ContentParts != null && msg.ContentParts.Count > 0)
                 {
-                    ["role"] = msg.Role,
-                    ["content"] = msg.Content
-                });
+                    var contentBlocks = new JArray();
+                    foreach (var part in msg.ContentParts)
+                    {
+                        if (part.Type == "text" && part.Text != null)
+                        {
+                            contentBlocks.Add(new JObject
+                            {
+                                ["type"] = "text",
+                                ["text"] = part.Text
+                            });
+                        }
+                        else if (part.Type == "image" && !string.IsNullOrEmpty(part.ImagePath))
+                        {
+                            var imageBlock = BuildImageBlock(part.ImagePath);
+                            if (imageBlock != null)
+                                contentBlocks.Add(imageBlock);
+                        }
+                    }
+                    msgObj["content"] = contentBlocks.Count > 0 ? contentBlocks : msg.Content;
+                }
+                else
+                {
+                    msgObj["content"] = msg.Content;
+                }
+
+                messages.Add(msgObj);
             }
 
             // 构造请求体
@@ -188,6 +214,46 @@ namespace AgentCoreProcessor.Client
                         }
                     }
                 }
+            };
+        }
+
+        /// <summary>读取图片文件，构造 Claude image content block。</summary>
+        private static JObject? BuildImageBlock(string imagePath)
+        {
+            try
+            {
+                if (!File.Exists(imagePath)) return null;
+                var bytes = File.ReadAllBytes(imagePath);
+                var base64 = Convert.ToBase64String(bytes);
+                var mediaType = InferMediaType(imagePath);
+
+                return new JObject
+                {
+                    ["type"] = "image",
+                    ["source"] = new JObject
+                    {
+                        ["type"] = "base64",
+                        ["media_type"] = mediaType,
+                        ["data"] = base64
+                    }
+                };
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string InferMediaType(string path)
+        {
+            var ext = Path.GetExtension(path).ToLowerInvariant();
+            return ext switch
+            {
+                ".png" => "image/png",
+                ".jpg" or ".jpeg" => "image/jpeg",
+                ".gif" => "image/gif",
+                ".webp" => "image/webp",
+                _ => "image/png"
             };
         }
     }

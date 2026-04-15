@@ -30,7 +30,8 @@ namespace AgentCoreProcessor.Core
             List<ToolResult>? lastRoundResults,
             List<ToolCall>? lastRoundCalls,
             List<(ToolCall call, ToolResult result)> retainedResults,
-            string? additionalContext = null)
+            string? additionalContext = null,
+            List<string>? imagePaths = null)
         {
             var messages = new List<Message>();
 
@@ -41,8 +42,19 @@ namespace AgentCoreProcessor.Core
             if (!string.IsNullOrEmpty(additionalContext))
                 messages.Add(new Message { Role = "user", Content = $"补充上下文：\n{additionalContext}" });
 
-            // 3. 用户原始需求
-            messages.Add(new Message { Role = "user", Content = $"用户需求：{userRequest}" });
+            // 3. 用户原始需求（有图片时附加多模态内容块）
+            var requestMsg = new Message { Role = "user", Content = $"用户需求：{userRequest}" };
+            if (imagePaths != null && imagePaths.Count > 0)
+            {
+                var parts = new List<ContentPart>
+                {
+                    new() { Type = "text", Text = $"用户需求：{userRequest}" }
+                };
+                foreach (var path in imagePaths)
+                    parts.Add(new ContentPart { Type = "image", ImagePath = path });
+                requestMsg.ContentParts = parts;
+            }
+            messages.Add(requestMsg);
 
             // 4. 思考笔记（模型通过思考笔记工具维护，每轮全量注入）
             if (thinkingNotes.Count > 0)

@@ -58,7 +58,8 @@ namespace AgentCoreProcessor.Core
         /// 多轮 Agent 循环。模型反复调用工具直到调用"完成"工具。
         /// 返回完成摘要；若超限或异常则返回错误信息。
         /// </summary>
-        public async Task<string> ProcessAsync(string userRequest, string? memoryContext = null)
+        public async Task<string> ProcessAsync(string userRequest, string? memoryContext = null,
+            List<string>? imagePaths = null)
         {
             // === 跨轮持久状态 ===
             var register = new Dictionary<string, string>();         // 寄存器：toolId → 输出数据
@@ -82,7 +83,8 @@ namespace AgentCoreProcessor.Core
                     lastRoundResults,
                     lastRoundCalls,
                     retainedResults,
-                    memoryContext
+                    memoryContext,
+                    imagePaths: round == 0 ? imagePaths : null
                 );
                 processor.Client.ClearConversationHistory();
                 processor.Client.SetConversationHistory(messages);

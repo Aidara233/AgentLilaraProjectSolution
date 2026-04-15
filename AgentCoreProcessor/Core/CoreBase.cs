@@ -124,6 +124,13 @@ namespace AgentCoreProcessor.Core
             return await GenerateOnceAsync();
         }
 
+        /// <summary>多模态版本：文本 + 图片路径。</summary>
+        public async Task<string> GenerateOnceAsync(string userMessage, List<string> imagePaths)
+        {
+            processor.Client.AddMultimodalMessage("user", userMessage, imagePaths);
+            return await GenerateOnceAsync();
+        }
+
         public virtual void OnDelta(ApiResponse response) { }
 
         public virtual void OnBreak(ResponseBlock block) { }

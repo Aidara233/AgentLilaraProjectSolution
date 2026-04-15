@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -51,6 +52,23 @@ namespace AgentCoreProcessor.Client
 
         public IModelClient AddSystemMessage(string content, string? name = null)
             => AddMessage("system", content, name);
+
+        public IModelClient AddMultimodalMessage(string role, string text, List<string> imagePaths)
+        {
+            var parts = new List<ContentPart>();
+            if (!string.IsNullOrEmpty(text))
+                parts.Add(new ContentPart { Type = "text", Text = text });
+            foreach (var path in imagePaths.Where(p => !string.IsNullOrEmpty(p)))
+                parts.Add(new ContentPart { Type = "image", ImagePath = path });
+
+            apiClientCfg.ConversationHistory.Add(new Message
+            {
+                Role = role,
+                Content = text ?? "",
+                ContentParts = parts.Count > 0 ? parts : null
+            });
+            return this;
+        }
 
         public IModelClient ClearConversationHistory()
         {

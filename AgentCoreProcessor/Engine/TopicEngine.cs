@@ -198,21 +198,21 @@ namespace AgentCoreProcessor.Engine
                 ? batch[0].Message.Content
                 : string.Join("\n", batch.Select(b => b.Message.Content));
 
-            // 图片描述：收集所有附件中的图片，调视觉模型生成描述
-            var imageDescriptions = await GenerateImageDescriptionsAsync(batch, mergedContent);
-            if (!string.IsNullOrEmpty(imageDescriptions))
-            {
-                // 给图片消息加语义帧，让模型明确知道用户发了图片
-                var imageCount = batch
-                    .Where(b => b.Message.Attachments != null)
-                    .SelectMany(b => b.Message.Attachments!)
-                    .Count(a => a.Type == AttachmentType.Image);
-                var prefix = imageCount == 1 ? "（用户发送了一张图片）" : $"（用户发送了{imageCount}张图片）";
+            // 收集图片本地路径
+            var imagePaths = batch
+                .Where(b => b.Message.Attachments != null)
+                .SelectMany(b => b.Message.Attachments!)
+                .Where(a => a.Type == AttachmentType.Image && !string.IsNullOrEmpty(a.LocalPath))
+                .Select(a => a.LocalPath!)
+                .ToList();
 
-                if (string.IsNullOrEmpty(mergedContent))
-                    mergedContent = $"{prefix}\n{imageDescriptions}";
-                else
-                    mergedContent = $"{mergedContent}\n\n{prefix}\n{imageDescriptions}";
+            if (imagePaths.Count > 0)
+            {
+                // 给图片消息加语义帧
+                var prefix = imagePaths.Count == 1 ? "（用户发送了一张图片）" : $"（用户发送了{imagePaths.Count}张图片）";
+                mergedContent = string.IsNullOrEmpty(mergedContent)
+                    ? prefix
+                    : $"{mergedContent}\n\n{prefix}";
             }
 
             // 使用最后一条消息的上下文（最新话题状态）
@@ -223,9 +223,12 @@ namespace AgentCoreProcessor.Engine
             var memory = await GetCachedMemoryAsync(lastContext, mergedContent);
 
             FrameworkLogger.Log("TopicEngine",
-                $"孵化 Worker: topicId={topicId}, 消息数={batch.Count}, 合并长度={mergedContent.Length}");
+                $"孵化 Worker: topicId={topicId}, 消息数={batch.Count}, 合并长度={mergedContent.Length}" +
+                (imagePaths.Count > 0 ? $", 图片={imagePaths.Count}" : ""));
 
-            var worker = new WorkerEngine(ctx, lastMessage, lastContext, mergedContent, memory);
+            var worker = new WorkerEngine(ctx, lastMessage, lastContext, mergedContent,
+                preloadedMemory: memory,
+                imagePaths: imagePaths.Count > 0 ? imagePaths : null);
             ctx.StartEngine(worker);
 
             // 记忆提取计数
