@@ -256,7 +256,7 @@ namespace AgentCoreProcessor.Engine
             {
                 var results = await ctx.MemorySvc.RecallAsync(
                     personId, context.Channel.Id, topicId,
-                    query, topK: 10, includeLinks: true);
+                    query, topK: 10, includeLinks: true, includePersona: true);
                 memoryCache[personId] = (results, DateTime.Now);
                 return results;
             }

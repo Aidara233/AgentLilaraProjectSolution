@@ -163,6 +163,9 @@ namespace AgentCoreProcessor.Engine
             MemorySvc = new MemoryService(Memories, TempMemories, MemoryLinks, embeddingProvider, PersonaMemories);
             Session = new SessionManager(users, persons, channels, topics, messages, embeddingProvider);
 
+            // 人设记忆种子加载（表空时从文件导入）
+            await LoadPersonaMemorySeedAsync();
+
             // 注册所有 SpawnCheck
             foreach (var (_, factory) in SpawnCheckFactory)
                 spawnChecks.Add(factory());
@@ -272,6 +275,47 @@ namespace AgentCoreProcessor.Engine
         {
             engine.RequestStop();
             FrameworkLogger.Log("MasterEngine", $"请求停止引擎: {engine.EngineType}");
+        }
+
+        /// <summary>人设记忆种子加载：表空时从 Storage/PersonaMemorySeed.txt 导入。</summary>
+        private async Task LoadPersonaMemorySeedAsync()
+        {
+            try
+            {
+                var count = await PersonaMemories.GetCountAsync();
+                if (count > 0) return; // 已有数据，跳过
+
+                var seedPath = Path.Combine(PathConfig.StoragePath, "PersonaMemorySeed.txt");
+                if (!File.Exists(seedPath)) return;
+
+                var lines = File.ReadAllLines(seedPath)
+                    .Select(l => l.Trim())
+                    .Where(l => !string.IsNullOrEmpty(l))
+                    .ToList();
+
+                if (lines.Count == 0) return;
+
+                int loaded = 0;
+                foreach (var line in lines)
+                {
+                    byte[]? embBytes = null;
+                    try
+                    {
+                        var vec = await embeddingProvider!.GetEmbeddingAsync(line);
+                        embBytes = SiliconFlowEmbeddingProvider.FloatsToBytes(vec);
+                    }
+                    catch { }
+
+                    await PersonaMemories.CreateAsync(line, embBytes);
+                    loaded++;
+                }
+
+                FrameworkLogger.Log("MasterEngine", $"人设记忆种子已加载: {loaded} 条");
+            }
+            catch (Exception ex)
+            {
+                FrameworkLogger.Log("MasterEngine", $"人设记忆种子加载失败: {ex.Message}");
+            }
         }
     }
 }

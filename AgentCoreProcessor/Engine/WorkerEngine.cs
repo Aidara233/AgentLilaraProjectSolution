@@ -60,14 +60,16 @@ namespace AgentCoreProcessor.Engine
                 var isTask = await preprocessingCore.IsTaskAsync(content);
                 FrameworkLogger.Log("WorkerEngine", $"分类结果: {(isTask ? "任务" : "聊天")}");
 
-                // 3. 获取记忆（优先使用预加载；聊天路径额外启用人设记忆）
+                // 3. 获取记忆（优先使用预加载）
                 var memoryResults = preloadedMemory
-                    ?? await BuildMemoryResultsAsync(context, content, includePersona: !isTask);
+                    ?? await BuildMemoryResultsAsync(context, content, includePersona: true);
 
                 // 4. 路由处理
                 if (isTask)
                 {
-                    string? memoryContext = FormatMemory(memoryResults, topK: 10);
+                    // 任务路径排除人设记忆
+                    var taskMemory = memoryResults?.Where(m => !m.IsPersona).ToList();
+                    string? memoryContext = FormatMemory(taskMemory, topK: 10);
 
                     // 任务 → WorkingCore Agent 循环
                     workingCore.OnSpeak = async (rawText) =>

@@ -26,7 +26,8 @@ namespace AgentCoreProcessor.Memory
         private const float TempBoost = 0.1f; // 临时库偏置
         private const float TagMatchBoost = 0.1f; // 每个匹配标签的额外加权
         private const float MinRecallScore = 0.25f; // 召回最低分数门槛，低于此值不返回
-        private const float PersonaPenalty = 0.15f; // 人设记忆降权，确保真记忆优先
+        private const float PersonaPenalty = 0.05f; // 人设记忆降权，确保真记忆优先
+        private const float PersonaMinScore = 0.12f; // 人设记忆独立门槛（低于主门槛，因为没有标签/重要性加成）
 
         public MemoryService(
             MemoryRepository memories,
@@ -175,11 +176,11 @@ namespace AgentCoreProcessor.Memory
                 {
                     float sim = VectorUtil.ComputeSimilarity(queryVec, p.Embedding);
                     float personaScore = sim * SimilarityWeight - PersonaPenalty;
-                    if (personaScore >= MinRecallScore)
+                    if (personaScore >= PersonaMinScore)
                     {
                         scored.Add(new ScoredMemory
                         {
-                            Id = -p.Id, // 负数 ID 区分来源，避免与主库冲突
+                            Id = -p.Id,
                             Content = p.Content,
                             Score = personaScore,
                             IsTemp = false,
@@ -189,9 +190,9 @@ namespace AgentCoreProcessor.Memory
                 }
             }
 
-            // 5. 综合排序，过滤低分，取 topN
+            // 5. 综合排序，过滤低分（人设记忆用独立门槛），取 topN
             var result = scored
-                .Where(s => s.Score >= MinRecallScore)
+                .Where(s => s.Score >= (s.IsPersona ? PersonaMinScore : MinRecallScore))
                 .OrderByDescending(s => s.Score)
                 .Take(topK)
                 .ToList();
