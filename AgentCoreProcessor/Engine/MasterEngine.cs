@@ -109,6 +109,26 @@ namespace AgentCoreProcessor.Engine
             lock (engineLock) { return activeEngines.Count(e => e.EngineType == engineType && e.IsAlive); }
         }
 
+        public List<(string Type, int Count)> GetActiveEngineSummary()
+        {
+            lock (engineLock)
+            {
+                return activeEngines.Where(e => e.IsAlive)
+                    .GroupBy(e => e.EngineType)
+                    .Select(g => (g.Key, g.Count()))
+                    .ToList();
+            }
+        }
+
+        public void RequestStopEnginesByType(string engineType)
+        {
+            lock (engineLock)
+            {
+                foreach (var e in activeEngines.Where(e => e.EngineType == engineType && e.IsAlive))
+                    e.RequestStop();
+            }
+        }
+
         // ---- 初始化 ----
 
         public async Task InitAsync()

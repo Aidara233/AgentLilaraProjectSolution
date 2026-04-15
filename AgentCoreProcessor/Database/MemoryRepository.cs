@@ -165,5 +165,13 @@ namespace AgentCoreProcessor.Database
         {
             return await db.Table<MemoryEntry>().CountAsync();
         }
+
+        /// <summary>按关键词搜索记忆内容（LIKE 匹配）。</summary>
+        public async Task<List<MemoryEntry>> SearchAsync(string keyword, int limit = 10)
+        {
+            return await db.QueryAsync<MemoryEntry>(
+                "SELECT * FROM MemoryEntry WHERE Content LIKE ? ORDER BY CreatedAt DESC LIMIT ?",
+                $"%{keyword}%", limit);
+        }
     }
 }

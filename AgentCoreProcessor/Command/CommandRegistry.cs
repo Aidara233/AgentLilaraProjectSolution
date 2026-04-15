@@ -19,6 +19,12 @@ namespace AgentCoreProcessor.Command
                 new WhoAmICommand(),
                 new ReloadCommand(),
                 new SleepCommand(),
+                new MemoryCommand(),
+                new EngineCommand(),
+                new WakeCommand(),
+                new TopicCommand(),
+                new ChannelCommand(),
+                new UserCommand(),
             };
             _commands = list.ToDictionary(c => c.Name.ToLowerInvariant());
         }

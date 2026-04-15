@@ -169,6 +169,15 @@ namespace AgentCoreProcessor.Engine
 
         public Task UpdateChannelAsync(Channel channel) => channels.UpdateAsync(channel);
 
+        // ---- 用户管理代理 ----
+
+        public Task<List<User>> GetAllUsersAsync() => users.GetAllAsync();
+
+        public Task<User?> FindUserAsync(string platform, string platformId)
+            => users.FindByPlatformAsync(platform, platformId);
+
+        public Task UpdateUserAsync(User user) => users.UpdateAsync(user);
+
         /// <summary>
         /// 三层话题归类：规则层 → 向量层（双阈值）→ 模型层。闲聊 topic 作为兜底。
         /// </summary>

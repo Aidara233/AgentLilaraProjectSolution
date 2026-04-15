@@ -75,5 +75,7 @@ namespace AgentCoreProcessor.Engine
         // 引擎管理（子引擎可请求启动/停止其他引擎）
         ISubEngine StartEngine(ISubEngine engine);
         void RequestStopEngine(ISubEngine engine);
+        List<(string Type, int Count)> GetActiveEngineSummary();
+        void RequestStopEnginesByType(string engineType);
     }
 }

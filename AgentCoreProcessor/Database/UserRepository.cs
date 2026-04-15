@@ -73,5 +73,7 @@ namespace AgentCoreProcessor.Database
         public Task<User?> GetByIdAsync(int id) => db.GetByIdAsync<User>(id);
 
         public Task<int> UpdateAsync(User user) => db.UpdateAsync(user);
+
+        public Task<List<User>> GetAllAsync() => db.GetAllAsync<User>();
     }
 }
