@@ -84,10 +84,13 @@ namespace AgentCoreProcessor.Client
 
         private static string BuildPrompt(string? contextHint)
         {
-            if (string.IsNullOrEmpty(contextHint))
-                return "请详细描述这张图片的内容。用中文回答，简洁但不遗漏关键信息。";
-
-            return $"当前对话背景：{contextHint}\n\n请结合对话背景，描述这张图片中与对话相关的内容。如果图片与对话无关，则正常描述图片内容。用中文回答，简洁但不遗漏关键信息。";
+            var prompt = @"请描述这张图片的内容。要求：
+1. 客观描述图片中的视觉元素（人物、物体、场景、文字等）
+2. 如果图片包含文字，完整转录文字内容
+3. 如果是表情包、梗图或幽默图片，说明其幽默意图或表达的情绪
+4. 不要判断图片与任何上下文是否相关，只描述图片本身
+5. 用中文回答，简洁但不遗漏关键信息";
+            return prompt;
         }
 
         private static string GuessMimeType(string path)
