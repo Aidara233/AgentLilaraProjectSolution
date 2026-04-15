@@ -1,247 +1,177 @@
 using AgentCoreProcessor.Models;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
+using Anthropic.SDK;
+using Anthropic.SDK.Messaging;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+
+// 避免歧义的别名
+using SdkMessage = Anthropic.SDK.Messaging.Message;
+using SdkDelta = Anthropic.SDK.Messaging.Delta;
 
 namespace AgentCoreProcessor.Client
 {
     /// <summary>
-    /// Claude 原生 Messages API 实现。
+    /// Claude 原生 Messages API 实现（基于 Anthropic.SDK）。
     /// </summary>
     public class ClaudeModelClient : ModelClientBase
     {
-        private const string DefaultAnthropicVersion = "2023-06-01";
         private const int DefaultMaxTokens = 4096;
+        private AnthropicClient? _client;
 
         public ClaudeModelClient() : base() { }
         public ClaudeModelClient(ApiClientCfg cfg) : base(cfg) { }
+
+        private AnthropicClient GetOrCreateClient()
+        {
+            if (_client != null) return _client;
+
+            _client = new AnthropicClient(new APIAuthentication(apiClientCfg.ApiKey));
+
+            // 自定义端点（中转站）
+            if (!string.IsNullOrEmpty(apiClientCfg.ApiEndpoint))
+            {
+                var baseUrl = apiClientCfg.ApiEndpoint.TrimEnd('/');
+                if (baseUrl.EndsWith("/v1/messages", StringComparison.OrdinalIgnoreCase))
+                    baseUrl = baseUrl[..^"/v1/messages".Length];
+                _client.ApiUrlFormat = baseUrl + "/{0}";
+            }
+
+            if (!string.IsNullOrEmpty(apiClientCfg.AnthropicVersion))
+                _client.AnthropicVersion = apiClientCfg.AnthropicVersion;
+
+            return _client;
+        }
 
         public override async Task<string> StreamChatAsync(Action<ApiResponse> onDelta, CancellationToken ct = default)
         {
             ArgumentNullException.ThrowIfNull(onDelta);
 
+            var client = GetOrCreateClient();
             var history = GetConversationHistory();
 
-            // 提取 system 消息，拼接为顶层 system 字段
+            // 提取 system 消息
             var systemParts = history.Where(m => m.Role == "system").Select(m => m.Content).ToList();
-            var systemText = systemParts.Count > 0 ? string.Join("\n\n", systemParts) : null;
+            var systemList = systemParts.Count > 0
+                ? new List<SystemMessage> { new(string.Join("\n\n", systemParts)) }
+                : null;
 
-            // 非 system 消息转为 Claude 格式
-            var messages = new JArray();
+            // 构造 SDK 消息列表
+            var messages = new List<SdkMessage>();
             foreach (var msg in history.Where(m => m.Role != "system"))
             {
-                var msgObj = new JObject { ["role"] = msg.Role };
-
-                // 多模态内容块
-                if (msg.ContentParts != null && msg.ContentParts.Count > 0)
-                {
-                    var contentBlocks = new JArray();
-                    foreach (var part in msg.ContentParts)
-                    {
-                        if (part.Type == "text" && part.Text != null)
-                        {
-                            contentBlocks.Add(new JObject
-                            {
-                                ["type"] = "text",
-                                ["text"] = part.Text
-                            });
-                        }
-                        else if (part.Type == "image" && !string.IsNullOrEmpty(part.ImagePath))
-                        {
-                            var imageBlock = BuildImageBlock(part.ImagePath);
-                            if (imageBlock != null)
-                                contentBlocks.Add(imageBlock);
-                        }
-                    }
-                    msgObj["content"] = contentBlocks.Count > 0 ? contentBlocks : msg.Content;
-                }
-                else
-                {
-                    msgObj["content"] = msg.Content;
-                }
-
-                messages.Add(msgObj);
+                var role = msg.Role == "assistant" ? RoleType.Assistant : RoleType.User;
+                var sdkMsg = new SdkMessage(role, "placeholder");
+                sdkMsg.Content = BuildContentBlocks(msg);
+                messages.Add(sdkMsg);
             }
 
-            // 构造请求体
-            var body = new JObject
+            var parameters = new MessageParameters
             {
-                ["model"] = apiClientCfg.Model,
-                ["messages"] = messages,
-                ["max_tokens"] = apiClientCfg.MaxTokens ?? DefaultMaxTokens,
-                ["stream"] = apiClientCfg.Stream
+                Model = apiClientCfg.Model,
+                MaxTokens = apiClientCfg.MaxTokens ?? DefaultMaxTokens,
+                Messages = messages,
+                Stream = true,
+                Temperature = (decimal)apiClientCfg.Temperature,
             };
 
-            if (systemText != null)
-                body["system"] = systemText;
-            if (apiClientCfg.Temperature > 0)
-                body["temperature"] = apiClientCfg.Temperature;
+            if (systemList != null)
+                parameters.System = systemList;
             if (apiClientCfg.TopP.HasValue)
-                body["top_p"] = apiClientCfg.TopP.Value;
+                parameters.TopP = (decimal)apiClientCfg.TopP.Value;
 
-            // ExtraBody 注入（如 thinking 配置）
-            if (apiClientCfg.ExtraBody != null)
+            // ExtraBody: thinking 配置等
+            if (apiClientCfg.ExtraBody != null &&
+                apiClientCfg.ExtraBody.TryGetValue("thinking", out var thinkingObj) &&
+                thinkingObj is Newtonsoft.Json.Linq.JObject jThinking)
             {
-                foreach (var kv in apiClientCfg.ExtraBody)
-                    body[kv.Key] = JToken.FromObject(kv.Value);
-            }
-
-            var json = body.ToString(Formatting.None);
-
-            using var request = new HttpRequestMessage(HttpMethod.Post, apiClientCfg.ApiEndpoint);
-            request.Headers.Add("x-api-key", apiClientCfg.ApiKey);
-            request.Headers.Add("anthropic-version", apiClientCfg.AnthropicVersion ?? DefaultAnthropicVersion);
-            request.Content = new StringContent(json, Encoding.UTF8, "application/json");
-
-            using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-
-            await using var responseStream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-            using var reader = new StreamReader(responseStream);
-
-            var fullContent = new StringBuilder();
-            bool isThinkingBlock = false;
-            int inputTokens = 0;
-            int outputTokens = 0;
-
-            // Claude SSE 解析
-            string? currentEventType = null;
-
-            while (!reader.EndOfStream && !ct.IsCancellationRequested)
-            {
-                var line = await reader.ReadLineAsync().ConfigureAwait(false);
-                if (line == null) break;
-
-                // event: 行
-                if (line.StartsWith("event: ", StringComparison.Ordinal))
+                var thinkingType = jThinking["type"]?.ToString();
+                if (thinkingType == "enabled")
                 {
-                    currentEventType = line.Substring(7).Trim();
-                    continue;
-                }
-
-                // data: 行
-                if (!line.StartsWith("data: ", StringComparison.Ordinal)) continue;
-                var payload = line.Substring(6);
-
-                JObject data;
-                try { data = JObject.Parse(payload); }
-                catch { continue; }
-
-                switch (currentEventType)
-                {
-                    case "message_start":
-                        var msgUsage = data["message"]?["usage"];
-                        if (msgUsage != null)
-                            inputTokens = msgUsage["input_tokens"]?.Value<int>() ?? 0;
-                        break;
-
-                    case "content_block_start":
-                        var blockType = data["content_block"]?["type"]?.ToString();
-                        isThinkingBlock = blockType == "thinking";
-                        break;
-
-                    case "content_block_delta":
-                        var deltaType = data["delta"]?["type"]?.ToString();
-                        string? text = null;
-
-                        if (deltaType == "thinking_delta")
-                            text = data["delta"]?["thinking"]?.ToString();
-                        else if (deltaType == "text_delta")
-                            text = data["delta"]?["text"]?.ToString();
-
-                        if (text != null)
-                        {
-                            var synth = BuildSyntheticResponse(
-                                isThinkingBlock ? null : text,
-                                isThinkingBlock ? text : null);
-
-                            if (!isThinkingBlock)
-                                fullContent.Append(text);
-
-                            onDelta(synth);
-                        }
-                        break;
-
-                    case "content_block_stop":
-                        isThinkingBlock = false;
-                        break;
-
-                    case "message_delta":
-                        var deltaUsage = data["usage"];
-                        if (deltaUsage != null)
-                            outputTokens = deltaUsage["output_tokens"]?.Value<int>() ?? 0;
-
-                        // 发送带 usage 的最终 delta
-                        var usageResponse = BuildSyntheticResponse(null, null);
-                        usageResponse.Usage = new Usage
-                        {
-                            PromptTokens = inputTokens,
-                            CompletionTokens = outputTokens,
-                            TotalTokens = inputTokens + outputTokens
-                        };
-                        onDelta(usageResponse);
-                        break;
-
-                    case "message_stop":
-                        goto done;
+                    var budget = jThinking["budget_tokens"]?.ToObject<int>() ?? 10000;
+                    parameters.Thinking = new ThinkingParameters { BudgetTokens = budget };
                 }
             }
 
-            done:
+            var fullContent = new System.Text.StringBuilder();
+            int inputTokens = 0, outputTokens = 0;
+
+            await foreach (var resp in client.Messages.StreamClaudeMessageAsync(parameters, ct))
+            {
+                if (resp.Usage != null)
+                {
+                    if (resp.Usage.InputTokens > 0) inputTokens = resp.Usage.InputTokens;
+                    if (resp.Usage.OutputTokens > 0) outputTokens = resp.Usage.OutputTokens;
+                }
+
+                if (resp.Delta?.Text != null)
+                {
+                    fullContent.Append(resp.Delta.Text);
+                    onDelta(BuildSyntheticResponse(resp.Delta.Text, null));
+                }
+
+                // thinking 块
+                if (resp.ContentBlock?.Type == "thinking" && resp.Delta?.Type == "thinking_delta")
+                {
+                    var thinking = resp.Delta?.Text;
+                    if (thinking != null)
+                        onDelta(BuildSyntheticResponse(null, thinking));
+                }
+            }
+
+            // 最终 usage
+            var usageResp = BuildSyntheticResponse(null, null);
+            usageResp.Usage = new Models.Usage
+            {
+                PromptTokens = inputTokens,
+                CompletionTokens = outputTokens,
+                TotalTokens = inputTokens + outputTokens
+            };
+            onDelta(usageResp);
+
             return fullContent.ToString();
         }
 
-        private static ApiResponse BuildSyntheticResponse(string? content, string? reasoning)
+        private static List<ContentBase> BuildContentBlocks(Models.Message msg)
         {
-            return new ApiResponse
+            if (msg.ContentParts != null && msg.ContentParts.Count > 0)
             {
-                Choices = new List<Choice>
+                var blocks = new List<ContentBase>();
+                foreach (var part in msg.ContentParts)
                 {
-                    new Choice
+                    if (part.Type == "text" && part.Text != null)
+                        blocks.Add(new TextContent { Text = part.Text });
+                    else if (part.Type == "image" && !string.IsNullOrEmpty(part.ImagePath))
                     {
-                        Index = 0,
-                        Delta = new Delta
-                        {
-                            Content = content,
-                            ReasoningContent = reasoning
-                        }
+                        var imgBlock = BuildImageContent(part.ImagePath);
+                        if (imgBlock != null) blocks.Add(imgBlock);
                     }
                 }
-            };
+                return blocks.Count > 0 ? blocks : [new TextContent { Text = msg.Content }];
+            }
+            return [new TextContent { Text = msg.Content }];
         }
 
-        /// <summary>读取图片文件，构造 Claude image content block。</summary>
-        private static JObject? BuildImageBlock(string imagePath)
+        private static ImageContent? BuildImageContent(string imagePath)
         {
             try
             {
                 if (!File.Exists(imagePath)) return null;
                 var bytes = File.ReadAllBytes(imagePath);
                 var base64 = Convert.ToBase64String(bytes);
-                var mediaType = InferMediaType(imagePath);
-
-                return new JObject
+                return new ImageContent
                 {
-                    ["type"] = "image",
-                    ["source"] = new JObject
+                    Source = new ImageSource
                     {
-                        ["type"] = "base64",
-                        ["media_type"] = mediaType,
-                        ["data"] = base64
+                        MediaType = InferMediaType(imagePath),
+                        Data = base64
                     }
                 };
             }
-            catch
-            {
-                return null;
-            }
+            catch { return null; }
         }
 
         private static string InferMediaType(string path)
@@ -255,6 +185,31 @@ namespace AgentCoreProcessor.Client
                 ".webp" => "image/webp",
                 _ => "image/png"
             };
+        }
+
+        private static ApiResponse BuildSyntheticResponse(string? content, string? reasoning)
+        {
+            return new ApiResponse
+            {
+                Choices = new List<Choice>
+                {
+                    new()
+                    {
+                        Index = 0,
+                        Delta = new Models.Delta
+                        {
+                            Content = content,
+                            ReasoningContent = reasoning
+                        }
+                    }
+                }
+            };
+        }
+
+        public override void Dispose()
+        {
+            _client?.Dispose();
+            base.Dispose();
         }
     }
 }
