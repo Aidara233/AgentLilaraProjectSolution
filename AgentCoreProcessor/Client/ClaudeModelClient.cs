@@ -32,7 +32,9 @@ namespace AgentCoreProcessor.Client
         {
             if (_client != null) return _client;
 
-            _client = new AnthropicClient(new APIAuthentication(apiClientCfg.ApiKey));
+            _client = new AnthropicClient(
+                new APIAuthentication(apiClientCfg.ApiKey),
+                requestInterceptor: new RequestDumpInterceptor());
 
             // 自定义端点（中转站）
             if (!string.IsNullOrEmpty(apiClientCfg.ApiEndpoint))
@@ -213,6 +215,45 @@ namespace AgentCoreProcessor.Client
         {
             _client?.Dispose();
             base.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// 请求 dump 拦截器：每次请求写入文件，失败时保留证据。
+    /// </summary>
+    internal class RequestDumpInterceptor : IRequestInterceptor
+    {
+        private static readonly string DumpDir = Path.Combine(
+            Config.PathConfig.StoragePath, "Logs", "ClaudeRequests");
+        private static int _seq;
+
+        public async Task<HttpResponseMessage> InvokeAsync(
+            HttpRequestMessage request,
+            Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> next,
+            CancellationToken ct)
+        {
+            string? body = null;
+            if (request.Content != null)
+                body = await request.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+
+            var seq = Interlocked.Increment(ref _seq);
+            var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+            Directory.CreateDirectory(DumpDir);
+
+            var resp = await next(request, ct).ConfigureAwait(false);
+
+            // 只在非 2xx 时 dump
+            if (!resp.IsSuccessStatusCode)
+            {
+                var respBody = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                var dump = $"[{ts}] #{seq} {(int)resp.StatusCode} {request.RequestUri}\n\n" +
+                           $"=== REQUEST ===\n{body}\n\n" +
+                           $"=== RESPONSE ===\n{respBody}\n";
+                var path = Path.Combine(DumpDir, $"{ts}_{seq}_FAIL.txt");
+                await File.WriteAllTextAsync(path, dump, ct).ConfigureAwait(false);
+            }
+
+            return resp;
         }
     }
 }
