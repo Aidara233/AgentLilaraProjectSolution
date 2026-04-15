@@ -37,7 +37,7 @@ namespace AgentCoreProcessor.Client
                 var baseUrl = apiClientCfg.ApiEndpoint.TrimEnd('/');
                 if (baseUrl.EndsWith("/v1/messages", StringComparison.OrdinalIgnoreCase))
                     baseUrl = baseUrl[..^"/v1/messages".Length];
-                _client.ApiUrlFormat = baseUrl + "/{0}";
+                _client.ApiUrlFormat = baseUrl + "/{0}/{1}";
             }
 
             if (!string.IsNullOrEmpty(apiClientCfg.AnthropicVersion))
