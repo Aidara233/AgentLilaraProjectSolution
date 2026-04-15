@@ -99,6 +99,9 @@ namespace AgentCoreProcessor.Command
             return sb.ToString().TrimEnd();
         }
 
+        private static readonly HashSet<string> SensitiveKeys =
+            new(StringComparer.OrdinalIgnoreCase) { "apiKey", "apikey", "api_key" };
+
         private static CommandResult ShowGroup(string group, string path)
         {
             if (!File.Exists(path))
@@ -113,11 +116,20 @@ namespace AgentCoreProcessor.Command
                     JTokenType.Array => $"[...] ({((JArray)prop.Value).Count} 项)",
                     JTokenType.Object => "{...}",
                     JTokenType.Null => "null",
-                    _ => prop.Value.ToString()
+                    _ => SensitiveKeys.Contains(prop.Name)
+                        ? MaskValue(prop.Value.ToString())
+                        : prop.Value.ToString()
                 };
                 sb.AppendLine($"  {prop.Name} = {val}");
             }
             return CommandResult.Ok(sb.ToString().TrimEnd());
+        }
+
+        private static string MaskValue(string value)
+        {
+            if (string.IsNullOrEmpty(value) || value.Length <= 4)
+                return "****";
+            return new string('*', value.Length - 4) + value[^4..];
         }
 
         private static CommandResult SetValue(string group, string path, string key, string rawValue)

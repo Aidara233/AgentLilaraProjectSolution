@@ -44,6 +44,41 @@ namespace AgentCoreProcessor.Engine
             }
         }
 
+        /// <summary>记录完整异常信息（堆栈、内部异常链、上下文参数）。</summary>
+        public static void LogError(string source, Exception ex, string? context = null)
+        {
+            try
+            {
+                var sb = new StringBuilder();
+                sb.AppendLine($"[{DateTime.Now:HH:mm:ss.fff}] [{source}] 异常: {ex.GetType().Name}: {ex.Message}");
+                if (!string.IsNullOrEmpty(context))
+                    sb.AppendLine($"  上下文: {context}");
+                sb.AppendLine($"  堆栈: {ex.StackTrace}");
+
+                var inner = ex.InnerException;
+                int depth = 0;
+                while (inner != null && depth < 5)
+                {
+                    sb.AppendLine($"  内部异常[{depth}]: {inner.GetType().Name}: {inner.Message}");
+                    sb.AppendLine($"  堆栈: {inner.StackTrace}");
+                    inner = inner.InnerException;
+                    depth++;
+                }
+
+                var line = sb.ToString();
+                lock (lockObj)
+                {
+                    File.AppendAllText(LogPath, line + Environment.NewLine);
+                }
+                if (MirrorToConsole)
+                    Console.WriteLine($"[error] {line}");
+            }
+            catch
+            {
+                // 日志不应影响主流程
+            }
+        }
+
         /// <summary>记录模型调用，引用模型日志文件名。</summary>
         public static void LogModelCall(string source, string coreName, string modelLogFile)
         {

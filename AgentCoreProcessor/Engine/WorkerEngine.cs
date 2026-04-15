@@ -145,6 +145,10 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
+                var errorContext = $"platform={message.Platform} channel={message.ChannelId} " +
+                                   $"content={Truncate(message.Content, 200)}";
+                FrameworkLogger.LogError("WorkerEngine", ex, errorContext);
+
                 await ctx.Adapters.SendMessageAsync(message.Platform, new OutgoingMessage
                 {
                     ChannelId = message.ChannelId,
@@ -213,5 +217,8 @@ namespace AgentCoreProcessor.Engine
             }
             return sb.ToString().TrimEnd();
         }
+
+        private static string Truncate(string? s, int maxLen)
+            => s == null ? "" : s.Length <= maxLen ? s : s[..maxLen] + "...";
     }
 }

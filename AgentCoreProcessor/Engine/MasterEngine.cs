@@ -248,7 +248,7 @@ namespace AgentCoreProcessor.Engine
                 }
                 catch (Exception ex)
                 {
-                    FrameworkLogger.Log("MasterEngine", $"SpawnCheck 异常 [{check.EngineType}]: {ex.Message}");
+                    FrameworkLogger.LogError("MasterEngine", ex, $"SpawnCheck={check.EngineType}");
                 }
             }
 
@@ -262,7 +262,7 @@ namespace AgentCoreProcessor.Engine
                     try { engine.OnEvent(e); }
                     catch (Exception ex)
                     {
-                        FrameworkLogger.Log("MasterEngine", $"引擎 OnEvent 异常 [{engine.EngineType}]: {ex.Message}");
+                        FrameworkLogger.LogError("MasterEngine", ex, $"引擎 OnEvent={engine.EngineType}");
                     }
                 }
             }
@@ -285,7 +285,7 @@ namespace AgentCoreProcessor.Engine
                 }
                 catch (Exception ex)
                 {
-                    FrameworkLogger.Log("MasterEngine", $"引擎异常 [{engine.EngineType}]: {ex.Message}");
+                    FrameworkLogger.LogError("MasterEngine", ex, $"引擎类型={engine.EngineType}");
                 }
             });
             return engine;

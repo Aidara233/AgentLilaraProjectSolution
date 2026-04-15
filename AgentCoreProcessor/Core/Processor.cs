@@ -3,6 +3,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Config;
+using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Client;
 
@@ -46,9 +47,32 @@ namespace AgentCoreProcessor.Core
             if (usePersona) InjectPersona();
         }
 
-        public async Task ProcessAsync(Action<ApiResponse> onDelta, CancellationToken ct = default)
+        public async Task ProcessAsync(Action<ApiResponse> onDelta, CancellationToken ct = default,
+            Action? onRetryReset = null)
         {
-            await client.StreamChatAsync(onDelta, ct).ConfigureAwait(false);
+            try
+            {
+                await client.StreamChatAsync(onDelta, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                var cfg = client.Config;
+                var context = $"core={cfgName} provider={cfg.Provider} model={cfg.Model} endpoint={cfg.ApiEndpoint}";
+                FrameworkLogger.LogError("Processor", ex, context);
+
+                // 重试一次：先让调用方清空已累积的部分内容
+                onRetryReset?.Invoke();
+                try
+                {
+                    FrameworkLogger.Log("Processor", $"流式请求失败，正在重试: {cfgName}");
+                    await client.StreamChatAsync(onDelta, ct).ConfigureAwait(false);
+                }
+                catch (Exception retryEx)
+                {
+                    FrameworkLogger.LogError("Processor", retryEx, $"重试失败: {context}");
+                    throw;
+                }
+            }
         }
 
         /// <summary>

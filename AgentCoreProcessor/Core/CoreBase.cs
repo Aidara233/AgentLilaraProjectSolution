@@ -91,6 +91,13 @@ namespace AgentCoreProcessor.Core
                         }
                     }
                 }
+            },
+            default,
+            onRetryReset: () =>
+            {
+                buffer.Clear();
+                fullContent.Clear();
+                reasoningLog.Clear();
             });
 
             LogOutput(fullContent.ToString(), reasoningLog.ToString());
@@ -111,6 +118,12 @@ namespace AgentCoreProcessor.Core
                     result.Append(delta.Content);
                 if (delta.ReasoningContent != null)
                     reasoningLog.Append(delta.ReasoningContent);
+            },
+            default,
+            onRetryReset: () =>
+            {
+                result.Clear();
+                reasoningLog.Clear();
             });
 
             var output = result.ToString();
