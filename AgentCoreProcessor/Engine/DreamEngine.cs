@@ -326,7 +326,8 @@ namespace AgentCoreProcessor.Engine
                     {
                         case "keep":
                             await ctx.Memories.CreateAsync(temp.Content, temp.Embedding,
-                                temp.PersonId, temp.ChannelId, temp.TopicId, temp.SourceMessageId);
+                                temp.PersonId, temp.ChannelId, temp.TopicId, temp.SourceMessageId,
+                                confidence: temp.Confidence);
                             await ctx.TempMemories.DeleteAsync(temp);
                             break;
                         case "merge":
@@ -334,8 +335,11 @@ namespace AgentCoreProcessor.Engine
                             byte[]? emb = null;
                             try { emb = VectorUtil.FloatsToBytes(await ctx.Embedding.GetEmbeddingAsync(content)); }
                             catch { }
+                            // 合并记忆继承最低置信度
+                            var mergeConfidence = temp.Confidence;
                             await ctx.Memories.CreateAsync(content, emb,
-                                temp.PersonId, temp.ChannelId, temp.TopicId);
+                                temp.PersonId, temp.ChannelId, temp.TopicId,
+                                confidence: mergeConfidence);
                             await ctx.TempMemories.DeleteAsync(temp);
                             var mergeWith = item["mergeWith"] as JArray;
                             if (mergeWith != null)

@@ -266,7 +266,7 @@ namespace AgentCoreProcessor.Engine
             }
         }
 
-        /// <summary>异步提取对话中的记忆事实，写入临时记忆库。</summary>
+        /// <summary>异步提取对话中的记忆事实和反馈，写入临时记忆库。</summary>
         private async Task ExtractMemoryAsync(SessionContext context)
         {
             try
@@ -278,17 +278,32 @@ namespace AgentCoreProcessor.Engine
                     $"{(m.IsFromBot ? "Lilara" : "用户")}: {m.Content}").ToList();
 
                 var core = new MemoryExtractionCore();
-                var facts = await core.ExtractAsync(lines);
+                var results = await core.ExtractAsync(lines);
 
-                foreach (var fact in facts)
+                int factCount = 0;
+                int feedbackCount = 0;
+
+                foreach (var item in results)
                 {
-                    await ctx.MemorySvc.StoreAsync(fact,
-                        context.Person.Id, context.Channel.Id, topicId);
+                    if (item.Type == "feedback" && item.Sentiment != null)
+                    {
+                        await ctx.MemorySvc.ApplyFeedbackAsync(
+                            context.Person.Id, item.Content,
+                            item.Sentiment, item.Correction);
+                        feedbackCount++;
+                    }
+                    else
+                    {
+                        await ctx.MemorySvc.StoreAsync(item.Content,
+                            context.Person.Id, context.Channel.Id, topicId,
+                            confidence: item.Confidence);
+                        factCount++;
+                    }
                 }
 
-                if (facts.Count > 0)
+                if (factCount + feedbackCount > 0)
                     FrameworkLogger.Log("TopicEngine",
-                        $"记忆提取: topicId={topicId}, 提取{facts.Count}条");
+                        $"记忆提取: topicId={topicId}, 事实{factCount}条, 反馈{feedbackCount}条");
             }
             catch (Exception ex)
             {

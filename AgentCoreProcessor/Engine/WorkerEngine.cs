@@ -192,14 +192,19 @@ namespace AgentCoreProcessor.Engine
             return sb.ToString().TrimEnd();
         }
 
-        /// <summary>将记忆结果格式化为注入文本。</summary>
+        /// <summary>将记忆结果格式化为注入文本。低置信记忆加标注。</summary>
         private static string? FormatMemory(List<ScoredMemory>? results, int topK)
         {
             if (results == null || results.Count == 0) return null;
 
             var sb = new StringBuilder();
             foreach (var m in results.Take(topK))
-                sb.AppendLine($"- {m.Content}");
+            {
+                if (m.Confidence == "low")
+                    sb.AppendLine($"- {m.Content}（不太确定）");
+                else
+                    sb.AppendLine($"- {m.Content}");
+            }
             return sb.ToString().TrimEnd();
         }
     }

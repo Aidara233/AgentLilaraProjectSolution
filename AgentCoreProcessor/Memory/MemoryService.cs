@@ -49,7 +49,7 @@ namespace AgentCoreProcessor.Memory
         public async Task<TempMemoryEntry> StoreAsync(
             string content,
             int? personId = null, int? channelId = null, int? topicId = null,
-            int? sourceMessageId = null)
+            int? sourceMessageId = null, string confidence = "high")
         {
             byte[]? embeddingBytes = null;
             try
@@ -63,7 +63,7 @@ namespace AgentCoreProcessor.Memory
             }
 
             return await tempMemories.CreateAsync(
-                content, embeddingBytes, personId, channelId, topicId, sourceMessageId);
+                content, embeddingBytes, personId, channelId, topicId, sourceMessageId, confidence);
         }
 
         /// <summary>
@@ -96,7 +96,8 @@ namespace AgentCoreProcessor.Memory
                     Id = t.Id,
                     Content = t.Content,
                     Score = sim * SimilarityWeight + TempBoost + matchCount * TagMatchBoost,
-                    IsTemp = true
+                    IsTemp = true,
+                    Confidence = t.Confidence
                 });
             }
 
@@ -123,7 +124,8 @@ namespace AgentCoreProcessor.Memory
                     Score = x.Similarity * SimilarityWeight
                         + x.Entry.Importance * ImportanceWeight
                         + x.MatchCount * TagMatchBoost,
-                    IsTemp = false
+                    IsTemp = false,
+                    Confidence = x.Entry.Confidence
                 });
             }
 
@@ -162,7 +164,8 @@ namespace AgentCoreProcessor.Memory
                             Id = entry.Id,
                             Content = entry.Content,
                             Score = sim * SimilarityWeight + entry.Importance * ImportanceWeight + linkStr * LinkWeight,
-                            IsTemp = false
+                            IsTemp = false,
+                            Confidence = entry.Confidence
                         });
                     }
                 }
@@ -215,6 +218,78 @@ namespace AgentCoreProcessor.Memory
             if (memory != null)
                 await memories.DeleteAsync(memory);
         }
+
+        /// <summary>
+        /// 应用用户反馈到最相关的记忆。
+        /// positive → 置信度升为 high；negative → 标记反馈 + 降低重要性。
+        /// </summary>
+        public async Task ApplyFeedbackAsync(
+            int personId, string feedbackContent,
+            string sentiment, string? correction)
+        {
+            float[]? queryVec = null;
+            try { queryVec = await embedding.GetEmbeddingAsync(feedbackContent); }
+            catch { return; } // embedding 不可用时无法匹配
+
+            // 搜索主库中该用户的记忆
+            var personMemories = await memories.GetByPersonAsync(personId);
+            MemoryEntry? bestMatch = null;
+            float bestSim = 0.6f; // 最低匹配阈值
+
+            foreach (var m in personMemories)
+            {
+                float sim = VectorUtil.ComputeSimilarity(queryVec, m.Embedding);
+                if (sim > bestSim)
+                {
+                    bestSim = sim;
+                    bestMatch = m;
+                }
+            }
+
+            // 也搜索临时库
+            var tempAll = await tempMemories.GetByTagsAsync(personId, null, null);
+            TempMemoryEntry? bestTempMatch = null;
+            float bestTempSim = 0.6f;
+
+            foreach (var (t, _) in tempAll)
+            {
+                float sim = VectorUtil.ComputeSimilarity(queryVec, t.Embedding);
+                if (sim > bestTempSim)
+                {
+                    bestTempSim = sim;
+                    bestTempMatch = t;
+                }
+            }
+
+            // 优先匹配主库（更稳定），否则匹配临时库
+            if (bestMatch != null && bestSim >= bestTempSim)
+            {
+                if (sentiment == "positive")
+                {
+                    bestMatch.Confidence = "high";
+                }
+                else if (sentiment == "negative")
+                {
+                    bestMatch.Feedback = "negative";
+                    if (bestMatch.Importance > 0.3f)
+                        bestMatch.Importance = 0.2f;
+                }
+                await memories.UpdateAsync(bestMatch);
+            }
+            else if (bestTempMatch != null)
+            {
+                if (sentiment == "positive")
+                {
+                    bestTempMatch.Confidence = "high";
+                    await tempMemories.UpdateAsync(bestTempMatch);
+                }
+                else if (sentiment == "negative")
+                {
+                    // 临时记忆被否定，直接删除
+                    await tempMemories.DeleteAsync(bestTempMatch);
+                }
+            }
+        }
     }
     internal class ScoredMemory
     {
@@ -222,6 +297,7 @@ namespace AgentCoreProcessor.Memory
         public string Content { get; set; } = "";
         public float Score { get; set; }
         public bool IsTemp { get; set; }
+        public string Confidence { get; set; } = "high";
         public bool IsPersona { get; set; }
     }
 }

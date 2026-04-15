@@ -31,6 +31,12 @@ namespace AgentCoreProcessor.Database
         /// <summary>重要性 (0.0-1.0)，做梦时调整</summary>
         public float Importance { get; set; } = 0.5f;
 
+        /// <summary>置信度：high/low，从临时记忆继承，被用户确认后升为 high</summary>
+        public string Confidence { get; set; } = "high";
+
+        /// <summary>反馈标记：null=无反馈, positive=被用户肯定, negative=被用户否定</summary>
+        public string? Feedback { get; set; }
+
         // ---- 来源追溯 ----
 
         /// <summary>普通记忆的来源消息ID（与 SourceMemoryIds 互斥）</summary>

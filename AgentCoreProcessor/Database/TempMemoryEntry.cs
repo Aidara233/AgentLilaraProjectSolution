@@ -31,6 +31,9 @@ namespace AgentCoreProcessor.Database
         /// <summary>来源消息ID</summary>
         public int? SourceMessageId { get; set; }
 
+        /// <summary>置信度：high=用户明确陈述, low=模型推断或模糊提及</summary>
+        public string Confidence { get; set; } = "high";
+
         /// <summary>创建时间</summary>
         public DateTime CreatedAt { get; set; } = DateTime.Now;
     }

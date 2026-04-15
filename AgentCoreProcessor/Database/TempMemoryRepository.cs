@@ -17,7 +17,7 @@ namespace AgentCoreProcessor.Database
         public async Task<TempMemoryEntry> CreateAsync(
             string content, byte[]? embedding,
             int? personId = null, int? channelId = null, int? topicId = null,
-            int? sourceMessageId = null)
+            int? sourceMessageId = null, string confidence = "high")
         {
             var entry = new TempMemoryEntry
             {
@@ -27,6 +27,7 @@ namespace AgentCoreProcessor.Database
                 Content = content,
                 Embedding = embedding,
                 SourceMessageId = sourceMessageId,
+                Confidence = confidence,
                 CreatedAt = DateTime.Now
             };
             await db.InsertAsync(entry);
@@ -64,6 +65,9 @@ namespace AgentCoreProcessor.Database
 
         /// <summary>删除一条临时记忆。</summary>
         public Task<int> DeleteAsync(TempMemoryEntry entry) => db.DeleteAsync(entry);
+
+        /// <summary>更新一条临时记忆。</summary>
+        public Task<int> UpdateAsync(TempMemoryEntry entry) => db.UpdateAsync(entry);
 
         /// <summary>清空全部临时记忆。</summary>
         public async Task<int> ClearAllAsync()

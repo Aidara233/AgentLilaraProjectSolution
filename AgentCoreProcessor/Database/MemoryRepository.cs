@@ -77,7 +77,7 @@ namespace AgentCoreProcessor.Database
         public async Task<MemoryEntry> CreateAsync(
             string content, byte[]? embedding,
             int? personId = null, int? channelId = null, int? topicId = null,
-            int? sourceMessageId = null, float importance = 0.5f)
+            int? sourceMessageId = null, float importance = 0.5f, string confidence = "high")
         {
             var memory = new MemoryEntry
             {
@@ -87,6 +87,7 @@ namespace AgentCoreProcessor.Database
                 Content = content,
                 Embedding = embedding,
                 Importance = importance,
+                Confidence = confidence,
                 SourceMessageId = sourceMessageId,
                 IsPersistent = true,
                 CreatedAt = DateTime.Now,
