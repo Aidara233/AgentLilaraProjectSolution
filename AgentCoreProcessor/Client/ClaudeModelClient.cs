@@ -5,6 +5,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -29,7 +32,9 @@ namespace AgentCoreProcessor.Client
         {
             if (_client != null) return _client;
 
-            _client = new AnthropicClient(new APIAuthentication(apiClientCfg.ApiKey));
+            _client = new AnthropicClient(
+                new APIAuthentication(apiClientCfg.ApiKey),
+                requestInterceptor: new SystemFieldInterceptor());
 
             // 自定义端点（中转站）
             if (!string.IsNullOrEmpty(apiClientCfg.ApiEndpoint))
@@ -210,6 +215,42 @@ namespace AgentCoreProcessor.Client
         {
             _client?.Dispose();
             base.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// 拦截请求，将 system 数组格式转为字符串格式以兼容 Bedrock 中转站。
+    /// [{"type":"text","text":"..."}] → "..."
+    /// </summary>
+    internal class SystemFieldInterceptor : IRequestInterceptor
+    {
+        public async Task<HttpResponseMessage> InvokeAsync(
+            HttpRequestMessage request,
+            Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> next,
+            CancellationToken ct)
+        {
+            if (request.Content != null)
+            {
+                var body = await request.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                var node = JsonNode.Parse(body);
+                if (node?["system"] is JsonArray systemArr && systemArr.Count > 0)
+                {
+                    var texts = new List<string>();
+                    foreach (var item in systemArr)
+                    {
+                        var text = item?["text"]?.GetValue<string>();
+                        if (text != null) texts.Add(text);
+                    }
+                    if (texts.Count > 0)
+                    {
+                        node["system"] = string.Join("\n\n", texts);
+                        var newBody = node!.ToJsonString();
+                        request.Content = new StringContent(
+                            newBody, System.Text.Encoding.UTF8, "application/json");
+                    }
+                }
+            }
+            return await next(request, ct).ConfigureAwait(false);
         }
     }
 }
