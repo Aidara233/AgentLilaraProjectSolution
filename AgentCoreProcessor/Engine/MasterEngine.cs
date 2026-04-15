@@ -49,6 +49,7 @@ namespace AgentCoreProcessor.Engine
         public MemoryRepository Memories { get; private set; } = null!;
         public TempMemoryRepository TempMemories { get; private set; } = null!;
         public MemoryLinkRepository MemoryLinks { get; private set; } = null!;
+        public PersonaMemoryRepository PersonaMemories { get; private set; } = null!;
         public ReviewHintRepository ReviewHints { get; private set; } = null!;
         public MemoryService MemorySvc { get; private set; } = null!;
         public SessionManager Session { get; private set; } = null!;
@@ -126,6 +127,7 @@ namespace AgentCoreProcessor.Engine
             Memories = new MemoryRepository(db);
             TempMemories = new TempMemoryRepository(db);
             MemoryLinks = new MemoryLinkRepository(db);
+            PersonaMemories = new PersonaMemoryRepository(db);
             ReviewHints = new ReviewHintRepository(db);
 
             // Embedding
@@ -158,7 +160,7 @@ namespace AgentCoreProcessor.Engine
             }
 
             // 服务
-            MemorySvc = new MemoryService(Memories, TempMemories, MemoryLinks, embeddingProvider);
+            MemorySvc = new MemoryService(Memories, TempMemories, MemoryLinks, embeddingProvider, PersonaMemories);
             Session = new SessionManager(users, persons, channels, topics, messages, embeddingProvider);
 
             // 注册所有 SpawnCheck

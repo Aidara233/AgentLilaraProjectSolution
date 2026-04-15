@@ -49,6 +49,7 @@ namespace AgentCoreProcessor.Engine
         TempMemoryRepository TempMemories { get; }
         MemoryLinkRepository MemoryLinks { get; }
         MemoryService MemorySvc { get; }
+        PersonaMemoryRepository PersonaMemories { get; }
         SessionManager Session { get; }
         IEmbeddingProvider Embedding { get; }
 

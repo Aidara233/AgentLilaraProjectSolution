@@ -60,9 +60,9 @@ namespace AgentCoreProcessor.Engine
                 var isTask = await preprocessingCore.IsTaskAsync(content);
                 FrameworkLogger.Log("WorkerEngine", $"分类结果: {(isTask ? "任务" : "聊天")}");
 
-                // 3. 获取记忆（优先使用预加载）
+                // 3. 获取记忆（优先使用预加载；聊天路径额外启用人设记忆）
                 var memoryResults = preloadedMemory
-                    ?? await BuildMemoryResultsAsync(context, content);
+                    ?? await BuildMemoryResultsAsync(context, content, includePersona: !isTask);
 
                 // 4. 路由处理
                 if (isTask)
@@ -154,13 +154,14 @@ namespace AgentCoreProcessor.Engine
         public void RequestStop() => IsAlive = false;
 
         /// <summary>查询记忆，返回原始结果列表（无预加载缓存时的 fallback）。</summary>
-        private async Task<List<ScoredMemory>?> BuildMemoryResultsAsync(SessionContext context, string content)
+        private async Task<List<ScoredMemory>?> BuildMemoryResultsAsync(
+            SessionContext context, string content, bool includePersona = false)
         {
             try
             {
                 var results = await ctx.MemorySvc.RecallAsync(
                     context.Person.Id, context.Channel.Id, context.Topic.Id,
-                    content, topK: 10, includeLinks: true);
+                    content, topK: 10, includeLinks: true, includePersona: includePersona);
 
                 if (results.Count > 0)
                     FrameworkLogger.LogMemoryRecall("WorkerEngine",

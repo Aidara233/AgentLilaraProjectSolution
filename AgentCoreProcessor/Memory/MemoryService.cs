@@ -16,6 +16,7 @@ namespace AgentCoreProcessor.Memory
         private readonly MemoryRepository memories;
         private readonly TempMemoryRepository tempMemories;
         private readonly MemoryLinkRepository memoryLinks;
+        private readonly PersonaMemoryRepository? personaMemories;
         private readonly IEmbeddingProvider embedding;
 
         // 综合排序权重
@@ -24,17 +25,21 @@ namespace AgentCoreProcessor.Memory
         private const float LinkWeight = 0.2f;
         private const float TempBoost = 0.1f; // 临时库偏置
         private const float TagMatchBoost = 0.1f; // 每个匹配标签的额外加权
+        private const float MinRecallScore = 0.25f; // 召回最低分数门槛，低于此值不返回
+        private const float PersonaPenalty = 0.15f; // 人设记忆降权，确保真记忆优先
 
         public MemoryService(
             MemoryRepository memories,
             TempMemoryRepository tempMemories,
             MemoryLinkRepository memoryLinks,
-            IEmbeddingProvider embedding)
+            IEmbeddingProvider embedding,
+            PersonaMemoryRepository? personaMemories = null)
         {
             this.memories = memories;
             this.tempMemories = tempMemories;
             this.memoryLinks = memoryLinks;
             this.embedding = embedding;
+            this.personaMemories = personaMemories;
         }
 
         /// <summary>
@@ -65,7 +70,7 @@ namespace AgentCoreProcessor.Memory
         /// </summary>
         public async Task<List<ScoredMemory>> RecallAsync(
             int personId, int channelId, int topicId,
-            string query, int topK = 10, bool includeLinks = true)
+            string query, int topK = 10, bool includeLinks = true, bool includePersona = false)
         {
             // 生成 query embedding
             float[]? queryVec = null;
@@ -162,14 +167,37 @@ namespace AgentCoreProcessor.Memory
                 }
             }
 
-            // 4. 综合排序，取 topN
+            // 4. 人设记忆（仅聊天时启用，降权确保真记忆优先）
+            if (includePersona && personaMemories != null)
+            {
+                var personaAll = await personaMemories.GetAllAsync();
+                foreach (var p in personaAll)
+                {
+                    float sim = VectorUtil.ComputeSimilarity(queryVec, p.Embedding);
+                    float personaScore = sim * SimilarityWeight - PersonaPenalty;
+                    if (personaScore >= MinRecallScore)
+                    {
+                        scored.Add(new ScoredMemory
+                        {
+                            Id = -p.Id, // 负数 ID 区分来源，避免与主库冲突
+                            Content = p.Content,
+                            Score = personaScore,
+                            IsTemp = false,
+                            IsPersona = true
+                        });
+                    }
+                }
+            }
+
+            // 5. 综合排序，过滤低分，取 topN
             var result = scored
+                .Where(s => s.Score >= MinRecallScore)
                 .OrderByDescending(s => s.Score)
                 .Take(topK)
                 .ToList();
 
-            // 5. 更新主库记忆的 LastAccessedAt
-            foreach (var s in result.Where(s => !s.IsTemp))
+            // 6. 更新主库记忆的 LastAccessedAt（跳过临时和人设记忆）
+            foreach (var s in result.Where(s => !s.IsTemp && !s.IsPersona))
             {
                 var entry = mainEntries.FirstOrDefault(m => m.Id == s.Id);
                 if (entry != null)
@@ -193,5 +221,6 @@ namespace AgentCoreProcessor.Memory
         public string Content { get; set; } = "";
         public float Score { get; set; }
         public bool IsTemp { get; set; }
+        public bool IsPersona { get; set; }
     }
 }
