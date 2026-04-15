@@ -133,23 +133,28 @@ namespace AgentCoreProcessor.Engine
             var baseConfig = ApiClientCfg.FromJson(File.ReadAllText(baseConfigPath));
             embeddingProvider = new SiliconFlowEmbeddingProvider(apiKey: baseConfig.ApiKey);
 
-            // Vision（可选，配置文件不存在则跳过）
-            var visionConfigPath = Path.Combine(PathConfig.CoreConfigPath, "VisionProvider.json");
-            if (File.Exists(visionConfigPath))
+            // Vision（默认用 Base.json 的 apiKey，VisionProvider.json 可覆盖模型和端点）
+            try
             {
-                try
+                var vApiKey = baseConfig.ApiKey;
+                var vEndpoint = "https://api.siliconflow.cn/v1/chat/completions";
+                var vModel = "Qwen/Qwen2.5-VL-72B-Instruct";
+
+                var visionConfigPath = Path.Combine(PathConfig.CoreConfigPath, "VisionProvider.json");
+                if (File.Exists(visionConfigPath))
                 {
                     var vjson = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(visionConfigPath));
-                    var vApiKey = vjson["apiKey"]?.ToString() ?? baseConfig.ApiKey;
-                    var vEndpoint = vjson["endpoint"]?.ToString() ?? "https://api.siliconflow.cn/v1/chat/completions";
-                    var vModel = vjson["model"]?.ToString() ?? "Qwen/Qwen2.5-VL-72B-Instruct";
-                    visionProvider = new SiliconFlowVisionProvider(vApiKey, vEndpoint, vModel);
-                    FrameworkLogger.Log("MasterEngine", $"视觉模型已加载: {vModel}");
+                    vApiKey = vjson["apiKey"]?.ToString() ?? vApiKey;
+                    vEndpoint = vjson["endpoint"]?.ToString() ?? vEndpoint;
+                    vModel = vjson["model"]?.ToString() ?? vModel;
                 }
-                catch (Exception ex)
-                {
-                    FrameworkLogger.Log("MasterEngine", $"视觉模型配置加载失败: {ex.Message}");
-                }
+
+                visionProvider = new SiliconFlowVisionProvider(vApiKey, vEndpoint, vModel);
+                FrameworkLogger.Log("MasterEngine", $"视觉模型已加载: {vModel}");
+            }
+            catch (Exception ex)
+            {
+                FrameworkLogger.Log("MasterEngine", $"视觉模型初始化失败: {ex.Message}");
             }
 
             // 服务
