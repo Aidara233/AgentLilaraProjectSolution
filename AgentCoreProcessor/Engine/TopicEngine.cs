@@ -201,9 +201,19 @@ namespace AgentCoreProcessor.Engine
             // 图片描述：收集所有附件中的图片，调视觉模型生成描述
             var imageDescriptions = await GenerateImageDescriptionsAsync(batch, mergedContent);
             if (!string.IsNullOrEmpty(imageDescriptions))
-                mergedContent = string.IsNullOrEmpty(mergedContent)
-                    ? imageDescriptions
-                    : $"{mergedContent}\n\n{imageDescriptions}";
+            {
+                // 给图片消息加语义帧，让模型明确知道用户发了图片
+                var imageCount = batch
+                    .Where(b => b.Message.Attachments != null)
+                    .SelectMany(b => b.Message.Attachments!)
+                    .Count(a => a.Type == AttachmentType.Image);
+                var prefix = imageCount == 1 ? "（用户发送了一张图片）" : $"（用户发送了{imageCount}张图片）";
+
+                if (string.IsNullOrEmpty(mergedContent))
+                    mergedContent = $"{prefix}\n{imageDescriptions}";
+                else
+                    mergedContent = $"{mergedContent}\n\n{prefix}\n{imageDescriptions}";
+            }
 
             // 使用最后一条消息的上下文（最新话题状态）
             var lastContext = batch[^1].Context;
