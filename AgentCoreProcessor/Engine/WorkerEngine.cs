@@ -40,7 +40,6 @@ namespace AgentCoreProcessor.Engine
         private readonly int channelId;
         private long _busyFlag = 0;
         private long _completionTicks = 0;
-        private volatile bool stopRequested = false;
 
         // ---- 消息缓冲 ----
         private readonly object bufferLock = new();
@@ -162,6 +161,9 @@ namespace AgentCoreProcessor.Engine
 
                 if (batch != null)
                 {
+                    FrameworkLogger.Log("WorkerEngine",
+                        $"缓冲触发: channelId={channelId}, 消息数={batch.Count}, impulse={impulse:F2}");
+
                     // 负反馈检查
                     if (awaitingResponse)
                     {
@@ -171,6 +173,8 @@ namespace AgentCoreProcessor.Engine
                         else
                             consecutiveIgnores = Math.Min(consecutiveIgnores + 1, MaxIgnoreBoost);
                         awaitingResponse = false;
+                        FrameworkLogger.Log("WorkerEngine",
+                            $"负反馈: gotResponse={gotResponse}, consecutiveIgnores={consecutiveIgnores}");
                     }
 
                     if (!ctx.MuteMode && ShouldRespond(batch))
@@ -230,7 +234,6 @@ namespace AgentCoreProcessor.Engine
 
         public void RequestStop()
         {
-            stopRequested = true;
             IsAlive = false;
         }
 // PLACEHOLDER_IMPULSE_METHODS
@@ -239,15 +242,33 @@ namespace AgentCoreProcessor.Engine
 
         private bool ShouldRespond(List<(IncomingMessage Message, SessionContext Context)> batch)
         {
-            if (batch.Any(b => b.Message.IsPrivate)) return true;
-            if (batch.Any(b => b.Message.IsMentioned)) return true;
+            if (batch.Any(b => b.Message.IsPrivate))
+            {
+                FrameworkLogger.Log("WorkerEngine", $"决策: 私聊必回, channelId={channelId}");
+                return true;
+            }
+            if (batch.Any(b => b.Message.IsMentioned))
+            {
+                FrameworkLogger.Log("WorkerEngine", $"决策: @提及必回, channelId={channelId}");
+                return true;
+            }
 
             if (LastCompletionTime != null &&
                 (DateTime.Now - LastCompletionTime.Value).TotalSeconds < PostResponseCooldownSeconds)
+            {
+                FrameworkLogger.Log("WorkerEngine",
+                    $"决策: 发言冷却中, channelId={channelId}, " +
+                    $"elapsed={(DateTime.Now - LastCompletionTime.Value).TotalSeconds:F1}s");
                 return false;
+            }
 
             float effectiveThreshold = ResponseThreshold + consecutiveIgnores * IgnoreThresholdBoost;
-            return impulse >= effectiveThreshold;
+            bool respond = impulse >= effectiveThreshold;
+            FrameworkLogger.Log("WorkerEngine",
+                $"决策: impulse={impulse:F2}, threshold={effectiveThreshold:F1}" +
+                $"(base={ResponseThreshold}+ignore={consecutiveIgnores}x{IgnoreThresholdBoost}), " +
+                $"respond={respond}, channelId={channelId}");
+            return respond;
         }
 
         private void AccumulateImpulse(IncomingMessage msg)
@@ -259,9 +280,14 @@ namespace AgentCoreProcessor.Engine
                 3 => 0.9f,
                 _ => 1.0f
             };
-            impulse += BaseMessageScore * channelAffinity * participantFactor;
-            if (msg.IsMentioned) impulse += MentionScore;
-            if (msg.IsPrivate) impulse += PrivateScore;
+            float added = BaseMessageScore * channelAffinity * participantFactor;
+            if (msg.IsMentioned) added += MentionScore;
+            if (msg.IsPrivate) added += PrivateScore;
+            impulse += added;
+            FrameworkLogger.Log("WorkerEngine",
+                $"冲动值+{added:F2}: impulse={impulse:F2}, " +
+                $"affinity={channelAffinity:F2}, participants={recentParticipants.Count}, " +
+                $"mentioned={msg.IsMentioned}, private={msg.IsPrivate}, channelId={channelId}");
         }
 
         private void DecayImpulse()
