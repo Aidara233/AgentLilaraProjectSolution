@@ -29,7 +29,8 @@ namespace AgentCoreProcessor.Tool
                 new RedAlertTool(),
                 new ReviewHintTool(),
                 new DelegateTool(),
-                new SubAgentDetailTool()
+                new SubAgentDetailTool(),
+                new TaskTool()
             };
             _tools = toolList.ToDictionary(t => t.Name);
         }

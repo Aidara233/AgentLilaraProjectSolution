@@ -32,6 +32,7 @@ namespace AgentCoreProcessor.Core
         private const string ReviewHintToolName = "标记复盘";
         private const string DelegateToolName = "委派任务";
         private const string SubAgentDetailToolName = "查看子任务详情";
+        private const string TaskToolName = "任务管理";
 
         private readonly PromptBuilder promptBuilder = new();
 
@@ -40,6 +41,9 @@ namespace AgentCoreProcessor.Core
         public Func<string, Task>? OnMemory { get; set; }
         public Func<string, string?, Task>? OnSignal { get; set; }
         public Func<string, Task>? OnReviewHint { get; set; }
+
+        // 任务列表（跨轮保持）
+        private readonly List<(string Description, bool Done)> taskList = new();
 
         // 子 agent 管理
         private readonly Dictionary<string, SubAgentRecord> subAgentRecords = new();
@@ -88,7 +92,8 @@ namespace AgentCoreProcessor.Core
                     memoryContext,
                     imagePaths: round == 0 ? imagePaths : null,
                     newMessages: pendingNewMessages.Count > 0 ? pendingNewMessages : null,
-                    subAgentResults: pendingSubResults.Count > 0 ? pendingSubResults : null);
+                    subAgentResults: pendingSubResults.Count > 0 ? pendingSubResults : null,
+                    taskList: taskList.Count > 0 ? taskList : null);
 
                 processor.Client.ClearConversationHistory();
                 processor.Client.SetConversationHistory(messages);
@@ -164,6 +169,10 @@ namespace AgentCoreProcessor.Core
                             if (result.IsSuccess && OnReviewHint != null) await OnReviewHint(result.Data ?? "");
                             break;
 
+                        case TaskToolName:
+                            if (result.IsSuccess) ApplyTaskAction(result.Data ?? "");
+                            break;
+
                         case DelegateToolName:
                             if (result.IsSuccess) LaunchSubAgent(result.Data ?? "", call.ToolId, register);
                             break;
@@ -192,6 +201,31 @@ namespace AgentCoreProcessor.Core
             }
 
             return "[Agent] 已达到最大执行轮次限制，任务未完成。";
+        }
+
+        // ---- 任务列表管理 ----
+
+        private void ApplyTaskAction(string data)
+        {
+            var sep = data.IndexOf(':');
+            if (sep < 0) return;
+            var action = data[..sep];
+            var content = data[(sep + 1)..];
+
+            switch (action)
+            {
+                case "add":
+                    taskList.Add((content, false));
+                    break;
+                case "complete":
+                    if (int.TryParse(content, out var ci) && ci >= 1 && ci <= taskList.Count)
+                        taskList[ci - 1] = (taskList[ci - 1].Description, true);
+                    break;
+                case "remove":
+                    if (int.TryParse(content, out var ri) && ri >= 1 && ri <= taskList.Count)
+                        taskList.RemoveAt(ri - 1);
+                    break;
+            }
         }
 
         // ---- 子 agent 管理 ----

@@ -25,6 +25,7 @@ namespace AgentCoreProcessor.Core
         /// <param name="imagePaths">图片路径列表（仅首轮注入）</param>
         /// <param name="newMessages">运行时到达的新消息（WorkerEngine 推送）</param>
         /// <param name="subAgentResults">已完成的子 agent 结果</param>
+        /// <param name="taskList">当前任务列表（跨轮保持）</param>
         /// <returns>组装好的消息列表，设置为 ConversationHistory 即可</returns>
         public List<Message> BuildRoundMessages(
             string toolDescriptions,
@@ -36,7 +37,8 @@ namespace AgentCoreProcessor.Core
             string? additionalContext = null,
             List<string>? imagePaths = null,
             List<string>? newMessages = null,
-            List<(string id, string summary)>? subAgentResults = null)
+            List<(string id, string summary)>? subAgentResults = null,
+            List<(string Description, bool Done)>? taskList = null)
         {
             var messages = new List<Message>();
 
@@ -67,6 +69,19 @@ namespace AgentCoreProcessor.Core
                 var sb = new StringBuilder("你的思考笔记：\n");
                 foreach (var (key, value) in thinkingNotes)
                     sb.AppendLine($"- {key}: {value}");
+                messages.Add(new Message { Role = "user", Content = sb.ToString() });
+            }
+
+            // 4.5 任务列表（模型通过任务管理工具维护，每轮全量注入）
+            if (taskList != null && taskList.Count > 0)
+            {
+                var sb = new StringBuilder("[当前任务]\n");
+                for (int i = 0; i < taskList.Count; i++)
+                {
+                    var (desc, done) = taskList[i];
+                    var mark = done ? "\u2713" : " ";
+                    sb.AppendLine($"{i + 1}. [{mark}] {desc}");
+                }
                 messages.Add(new Message { Role = "user", Content = sb.ToString() });
             }
 
