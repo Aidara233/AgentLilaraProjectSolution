@@ -39,7 +39,7 @@ namespace AgentCoreProcessor.Command
             sb.AppendLine($"频道 [{channel.Name}] 活跃话题:");
             foreach (var t in topics)
             {
-                var chat = t.IsChatTopic ? " [闲聊]" : "";
+                var chat = t.IsChatTopic ? " [闲聊]" : t.IsUnclassified ? " [未分类]" : "";
                 sb.AppendLine($"  [{t.Id}]{chat} {t.Name} (消息数={t.MessageCount})");
             }
             return CommandResult.Ok(sb.ToString().TrimEnd());
@@ -59,8 +59,8 @@ namespace AgentCoreProcessor.Command
                 sb.AppendLine($"频道 [{ch.Name}] (亲和度={ch.Affinity:F2}):");
                 foreach (var t in topics)
                 {
-                    var chat = t.IsChatTopic ? " [闲聊]" : "";
-                    sb.AppendLine($"  [{t.Id}]{chat} {t.Name} (消息数={t.MessageCount})");
+                    var tag = t.IsChatTopic ? " [闲聊]" : t.IsUnclassified ? " [未分类]" : "";
+                    sb.AppendLine($"  [{t.Id}]{tag} {t.Name} (消息数={t.MessageCount})");
                 }
             }
             return sb.Length == 0

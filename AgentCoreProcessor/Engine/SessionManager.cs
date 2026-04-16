@@ -144,6 +144,18 @@ namespace AgentCoreProcessor.Engine
             return topics.GetActiveByChannelAsync(channelId);
         }
 
+        /// <summary>创建新话题（做梦归档用）。</summary>
+        public Task<Topic> CreateTopicAsync(int channelId, string name, string summary = "")
+        {
+            return topics.CreateAsync(channelId, name, summary);
+        }
+
+        /// <summary>更新话题（做梦归档用）。</summary>
+        public Task<int> UpdateTopicAsync(Topic topic)
+        {
+            return topics.UpdateAsync(topic);
+        }
+
         public Task<List<Channel>> GetAllChannelsAsync()
         {
             return channels.GetAllAsync();
