@@ -41,15 +41,17 @@ namespace AgentCoreProcessor.Tool
         public static IReadOnlyDictionary<string, ITool> All => _tools;
 
         /// <summary>
-        /// 根据所有已注册工具的元数据，自动生成供 prompt 注入的工具描述文本。
-        /// 格式与之前 WorkingCore.json 中硬编码的 user 消息一致。
+        /// 根据已注册工具的元数据，自动生成供 prompt 注入的工具描述文本。
+        /// 传入 tools 时只生成指定工具的描述（Phase 2 子 agent 用）；
+        /// 不传时生成全部工具的描述。
         /// </summary>
-        public static string GenerateDescriptions()
+        public static string GenerateDescriptions(IEnumerable<ITool>? tools = null)
         {
+            var source = tools ?? _tools.Values;
             var sb = new StringBuilder();
             int i = 1;
 
-            foreach (var tool in _tools.Values)
+            foreach (var tool in source)
             {
                 sb.AppendLine($"工具{i}：{tool.Name}");
                 sb.AppendLine($"描述：{tool.Description}");

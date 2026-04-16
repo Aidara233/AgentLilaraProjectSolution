@@ -167,15 +167,12 @@ namespace AgentCoreProcessor
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 var deadline = TimeSpan.FromSeconds(timeoutSeconds);
 
-                // 等引擎开始工作（有 Worker 或 Topic 引擎启动）
-                while (!engine.HasActiveEngine("Worker") && !engine.HasActiveEngine("Topic")
-                       && sw.Elapsed < deadline)
+                // 等引擎开始工作（有 Topic 引擎启动）
+                while (!engine.HasActiveEngine("Topic") && sw.Elapsed < deadline)
                     await Task.Delay(200);
 
-                // 等所有 Worker 完成。Topic 引擎有 ColdTimeout 会长期存活，
-                // 所以只等 Worker：先等 Topic 缓冲窗口过去（确保有机会孵化 Worker），
-                // 再连续 5 次无活跃 Worker 确认稳定
-                // 第一阶段：等 Topic 引擎至少完成一轮缓冲决策（~3s）
+                // 等 Worker 处理完成。Worker 现在是常驻的（一直 alive），
+                // 所以改为检查 IsBusy：先等缓冲窗口过去，再连续 5 次 Worker 不忙确认稳定
                 var remainMs = (int)(deadline - sw.Elapsed).TotalMilliseconds;
                 if (remainMs > 0)
                     await Task.Delay(Math.Min(4000, remainMs));
@@ -184,7 +181,7 @@ namespace AgentCoreProcessor
                 while (idleCount < 5 && sw.Elapsed < deadline)
                 {
                     await Task.Delay(1000);
-                    idleCount = engine.HasActiveEngine("Worker") ? 0 : idleCount + 1;
+                    idleCount = engine.HasBusyWorker() ? 0 : idleCount + 1;
                 }
 
                 sw.Stop();

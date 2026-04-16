@@ -107,6 +107,12 @@ namespace AgentCoreProcessor.Engine
             lock (engineLock) { return activeEngines.Any(e => e.EngineType == engineType && e.IsAlive); }
         }
 
+        /// <summary>是否有正在处理消息的 WorkerEngine（常驻 Worker 忙碌中）。</summary>
+        public bool HasBusyWorker()
+        {
+            lock (engineLock) { return activeEngines.Any(e => e is WorkerEngine w && w.IsAlive && w.IsBusy); }
+        }
+
         public int GetActiveEngineCount(string engineType)
         {
             lock (engineLock) { return activeEngines.Count(e => e.EngineType == engineType && e.IsAlive); }
