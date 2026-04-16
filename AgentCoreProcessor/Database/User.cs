@@ -23,6 +23,9 @@ namespace AgentCoreProcessor.Database
         /// <summary>权限等级，只能通过管理员指令修改</summary>
         public PermissionLevel PermissionLevel { get; set; } = PermissionLevel.Default;
 
+        /// <summary>显示名（群名片优先，昵称兜底）。由适配器每次消息时更新。</summary>
+        public string DisplayName { get; set; } = "";
+
         /// <summary>快速记忆，记录用户的主要信息（姓名、兴趣等）</summary>
         public string FastMemory { get; set; } = "";
     }

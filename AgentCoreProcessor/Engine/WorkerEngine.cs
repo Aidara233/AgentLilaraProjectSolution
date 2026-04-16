@@ -106,17 +106,8 @@ namespace AgentCoreProcessor.Engine
                 {
                     string? memoryContext = FormatMemory(memoryResults, topK: 5);
 
-                    // 构建对话历史
-                    string? historyContext = FormatHistory(context.RecentMessages);
-
-                    // 组装 ExpressCore 输入
+                    // 组装 ExpressCore 输入：格式化上下文（含参与者+历史+新消息）+ 记忆
                     var inputBuilder = new StringBuilder();
-                    if (historyContext != null)
-                    {
-                        inputBuilder.AppendLine("[对话历史]");
-                        inputBuilder.AppendLine(historyContext);
-                        inputBuilder.AppendLine();
-                    }
                     inputBuilder.Append(content);
                     if (memoryContext != null)
                     {
@@ -182,24 +173,6 @@ namespace AgentCoreProcessor.Engine
                 return results;
             }
             catch { return null; }
-        }
-
-        /// <summary>格式化对话历史（排除当前消息，最近 10 条）。</summary>
-        private static string? FormatHistory(List<UserMessage> messages, int limit = 10)
-        {
-            // RecentMessages 包含刚保存的当前消息，跳过最后一条
-            if (messages.Count <= 1) return null;
-
-            var history = messages.Take(messages.Count - 1).TakeLast(limit).ToList();
-            if (history.Count == 0) return null;
-
-            var sb = new StringBuilder();
-            foreach (var m in history)
-            {
-                var role = m.IsFromBot ? "Lilara" : "用户";
-                sb.AppendLine($"{role}: {m.Content}");
-            }
-            return sb.ToString().TrimEnd();
         }
 
         /// <summary>将记忆结果格式化为注入文本。低置信记忆加标注。</summary>

@@ -12,6 +12,8 @@ namespace AgentCoreProcessor.Database
         public int ChannelId { get; set; }// 频道ID，标识消息所属的频道
         public int TopicId { get; set; }// 话题ID，标识消息所属的话题
         public string Content { get; set; } = "";// 消息内容
+        /// <summary>发言人显示名（冗余存储，避免查询时 join）。Bot 消息为 "Lilara"。</summary>
+        public string SenderName { get; set; } = "";
         public DateTime Time { get; set; }// 消息时间
         /// <summary>是否为 Lilara 的回复（区分用户消息和 bot 回复）</summary>
         public bool IsFromBot { get; set; } = false;

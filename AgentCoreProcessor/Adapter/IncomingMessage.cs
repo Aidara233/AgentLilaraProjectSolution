@@ -9,6 +9,12 @@ namespace AgentCoreProcessor.Adapter
         public required string PlatformUserId { get; set; }
         public required string ChannelId { get; set; }
         public required string Content { get; set; }
+
+        /// <summary>发言人显示名（群名片优先，昵称兜底）。适配器层填充。</summary>
+        public string? DisplayName { get; set; }
+        /// <summary>发言人平台昵称（原始昵称，不随群变化）。</summary>
+        public string? Nickname { get; set; }
+
         public string? ReplyTo { get; set; }
         public DateTime Time { get; set; } = DateTime.Now;
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Core;
@@ -35,8 +36,8 @@ namespace AgentCoreProcessor.Engine
         // 频道亲和度（从 Channel.Affinity 读取，影响 BaseMessageScore 增益）
         private readonly float channelAffinity;
 
-        // 参与人数追踪（影响 BaseMessageScore 折扣）
-        private readonly ConcurrentDictionary<int, byte> recentParticipants = new();
+        // 参与人数追踪（话题级，存储发言人元数据用于 XML 头部声明）
+        private readonly ConcurrentDictionary<int, ParticipantInfo> recentParticipants = new();
 
         // 负反馈抑制
         private bool awaitingResponse = false;
@@ -72,7 +73,7 @@ namespace AgentCoreProcessor.Engine
             this.lastBufferTime = DateTime.Now;
 
             buffer.Add((initialMessage, initialContext));
-            recentParticipants.TryAdd(initialContext.User.Id, 0);
+            recentParticipants.TryAdd(initialContext.User.Id, ParticipantInfo.From(initialContext.User, initialMessage));
             AccumulateImpulse(initialMessage);
 
             FrameworkLogger.Log("TopicEngine", $"创建: topicId={topicId}, affinity={channelAffinity:F2}");
@@ -86,7 +87,10 @@ namespace AgentCoreProcessor.Engine
                 buffer.Add((msg, sc));
                 lastBufferTime = DateTime.Now;
             }
-            recentParticipants.TryAdd(sc.User.Id, 0);
+            recentParticipants.AddOrUpdate(
+                sc.User.Id,
+                ParticipantInfo.From(sc.User, msg),
+                (_, _) => ParticipantInfo.From(sc.User, msg));
             AccumulateImpulse(msg);
         }
 
@@ -197,11 +201,6 @@ namespace AgentCoreProcessor.Engine
 
         private async Task SpawnWorkerAsync(List<(IncomingMessage Message, SessionContext Context)> batch)
         {
-            // 合并消息内容
-            var mergedContent = batch.Count == 1
-                ? batch[0].Message.Content
-                : string.Join("\n", batch.Select(b => b.Message.Content));
-
             // 收集图片本地路径
             var imagePaths = batch
                 .Where(b => b.Message.Attachments != null)
@@ -210,27 +209,28 @@ namespace AgentCoreProcessor.Engine
                 .Select(a => a.LocalPath!)
                 .ToList();
 
-            if (imagePaths.Count > 0)
-            {
-                // 给图片消息加语义帧
-                var prefix = imagePaths.Count == 1 ? "（用户发送了一张图片）" : $"（用户发送了{imagePaths.Count}张图片）";
-                mergedContent = string.IsNullOrEmpty(mergedContent)
-                    ? prefix
-                    : $"{mergedContent}\n\n{prefix}";
-            }
-
             // 使用最后一条消息的上下文（最新话题状态）
             var lastContext = batch[^1].Context;
             var lastMessage = batch[^1].Message;
 
+            // 构建 XML 格式上下文（参与者 + 历史 + 新消息）
+            var formattedContext = BuildContextXml(batch, lastContext.RecentMessages);
+
+            // 图片语义帧追加到格式化文本之后
+            if (imagePaths.Count > 0)
+            {
+                var prefix = imagePaths.Count == 1 ? "（用户发送了一张图片）" : $"（用户发送了{imagePaths.Count}张图片）";
+                formattedContext += $"\n\n{prefix}";
+            }
+
             // 查缓存或新查询记忆
-            var memory = await GetCachedMemoryAsync(lastContext, mergedContent);
+            var memory = await GetCachedMemoryAsync(lastContext, lastMessage.Content);
 
             FrameworkLogger.Log("TopicEngine",
-                $"孵化 Worker: topicId={topicId}, 消息数={batch.Count}, 合并长度={mergedContent.Length}" +
+                $"孵化 Worker: topicId={topicId}, 消息数={batch.Count}, 上下文长度={formattedContext.Length}" +
                 (imagePaths.Count > 0 ? $", 图片={imagePaths.Count}" : ""));
 
-            var worker = new WorkerEngine(ctx, lastMessage, lastContext, mergedContent,
+            var worker = new WorkerEngine(ctx, lastMessage, lastContext, formattedContext,
                 preloadedMemory: memory,
                 imagePaths: imagePaths.Count > 0 ? imagePaths : null);
             ctx.StartEngine(worker);
@@ -286,7 +286,12 @@ namespace AgentCoreProcessor.Engine
                 if (recent.Count < 2) return;
 
                 var lines = recent.Select(m =>
-                    $"{(m.IsFromBot ? "Lilara" : "用户")}: {m.Content}").ToList();
+                {
+                    var name = m.IsFromBot ? "Lilara"
+                             : !string.IsNullOrEmpty(m.SenderName) ? m.SenderName
+                             : "用户";
+                    return $"{name}: {m.Content}";
+                }).ToList();
 
                 var core = new MemoryExtractionCore();
                 var results = await core.ExtractAsync(lines);
@@ -363,5 +368,151 @@ namespace AgentCoreProcessor.Engine
         public void OnEvent(EngineEvent e) { }
 
         public void RequestStop() => IsAlive = false;
+
+        // ---- XML 格式构建 ----
+
+        /// <summary>
+        /// 构建完整的 XML 格式上下文：participants + history + new。
+        /// </summary>
+        private string BuildContextXml(
+            List<(IncomingMessage Message, SessionContext Context)> batch,
+            List<UserMessage> recentMessages)
+        {
+            var sb = new StringBuilder();
+
+            // 解析短名映射（话题级查重）
+            var shortNames = ResolveShortNames();
+
+            // 1. 参与者声明
+            sb.AppendLine("<participants>");
+            foreach (var (userId, info) in recentParticipants)
+            {
+                var name = SanitizeAttr(shortNames.GetValueOrDefault(userId, info.DisplayName));
+                var nick = SanitizeAttr(info.Nickname);
+                sb.AppendLine($"  <user name=\"{name}\" nickname=\"{nick}\" qq=\"{info.PlatformId}\"/>");
+            }
+            sb.AppendLine("</participants>");
+
+            // 2. 对话历史（从 RecentMessages，排除当前 batch 中的消息）
+            // RecentMessages 包含刚保存的消息，需要排除 batch 中的条目
+            var batchTimes = new HashSet<long>(batch.Select(b => b.Message.Time.Ticks));
+            var historyMessages = recentMessages
+                .Where(m => !batchTimes.Contains(m.Time.Ticks))
+                .ToList();
+
+            if (historyMessages.Count > 0)
+            {
+                sb.AppendLine("<history>");
+                foreach (var m in historyMessages)
+                {
+                    var name = m.IsFromBot ? "Lilara"
+                             : ResolveHistoryShortName(m, shortNames);
+                    sb.AppendLine($"<msg user=\"{SanitizeAttr(name)}\">{SanitizeContent(m.Content)}</msg>");
+                }
+                sb.AppendLine("</history>");
+            }
+
+            // 3. 新消息（当前 batch）
+            sb.AppendLine("<new>");
+            foreach (var (msg, sc) in batch)
+            {
+                var name = shortNames.GetValueOrDefault(sc.User.Id, sc.User.DisplayName);
+                if (string.IsNullOrEmpty(name))
+                    name = msg.DisplayName ?? msg.PlatformUserId;
+                sb.AppendLine($"<msg user=\"{SanitizeAttr(name)}\">{SanitizeContent(msg.Content)}</msg>");
+            }
+            sb.Append("</new>");
+
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// 话题级短名解析：检测重名，冲突时加后缀（昵称优先，QQ号兜底）。
+        /// </summary>
+        private Dictionary<int, string> ResolveShortNames()
+        {
+            var result = new Dictionary<int, string>();
+            var participants = recentParticipants.ToArray();
+
+            // 按 displayName 分组检测冲突
+            var groups = participants.GroupBy(p => p.Value.DisplayName, StringComparer.Ordinal);
+
+            foreach (var group in groups)
+            {
+                var members = group.ToList();
+                if (members.Count == 1)
+                {
+                    // 无冲突，直接用 displayName
+                    result[members[0].Key] = members[0].Value.DisplayName;
+                }
+                else
+                {
+                    // 冲突：尝试用昵称区分
+                    var nicknames = members.Select(m => m.Value.Nickname).ToList();
+                    bool nicknamesUnique = nicknames.Distinct().Count() == nicknames.Count
+                                           && nicknames.All(n => !string.IsNullOrEmpty(n));
+
+                    foreach (var member in members)
+                    {
+                        if (nicknamesUnique && !string.IsNullOrEmpty(member.Value.Nickname))
+                            result[member.Key] = $"{member.Value.DisplayName}({member.Value.Nickname})";
+                        else
+                        {
+                            var pid = member.Value.PlatformId;
+                            var suffix = pid.Length > 4 ? pid[^4..] : pid;
+                            result[member.Key] = $"{member.Value.DisplayName}(…{suffix})";
+                        }
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>历史消息的短名解析：通过 UserId 查参与者表，fallback 到 SenderName。</summary>
+        private string ResolveHistoryShortName(UserMessage m, Dictionary<int, string> shortNames)
+        {
+            if (shortNames.TryGetValue(m.UserId, out var name))
+                return name;
+            return !string.IsNullOrEmpty(m.SenderName) ? m.SenderName : "用户";
+        }
+
+        /// <summary>清洗 XML 属性值：去换行、限长度。</summary>
+        private static string SanitizeAttr(string? value)
+        {
+            if (string.IsNullOrEmpty(value)) return "";
+            var s = value.Replace("\n", " ").Replace("\r", "").Replace("\"", "'");
+            // 转义 XML 特殊字符
+            s = s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
+            return s.Length > 40 ? s[..40] : s;
+        }
+
+        /// <summary>清洗消息内容：转义 XML 标签防注入。</summary>
+        private static string SanitizeContent(string? content)
+        {
+            if (string.IsNullOrEmpty(content)) return "";
+            return content.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
+        }
+
+        /// <summary>话题参与者信息。</summary>
+        private sealed class ParticipantInfo
+        {
+            public required string DisplayName { get; init; }
+            public required string Nickname { get; init; }
+            public required string PlatformId { get; init; }
+
+            public static ParticipantInfo From(User user, IncomingMessage msg)
+            {
+                var display = !string.IsNullOrEmpty(user.DisplayName) ? user.DisplayName
+                            : !string.IsNullOrEmpty(msg.DisplayName) ? msg.DisplayName
+                            : msg.PlatformUserId;
+                return new ParticipantInfo
+                {
+                    DisplayName = display,
+                    Nickname = msg.Nickname ?? "",
+                    PlatformId = msg.PlatformUserId
+                };
+            }
+        }
     }
 }

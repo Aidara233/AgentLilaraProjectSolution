@@ -90,6 +90,13 @@ namespace AgentCoreProcessor.Engine
             // 1. 用户映射 + Person 查询（复用 ResolveUserAsync）
             var (user, person) = await ResolveUserAsync(msg);
 
+            // 2. 更新显示名（适配器每次消息带来最新的群名片/昵称）
+            if (!string.IsNullOrEmpty(msg.DisplayName) && msg.DisplayName != user.DisplayName)
+            {
+                user.DisplayName = msg.DisplayName;
+                await users.UpdateAsync(user);
+            }
+
             // 3. 频道映射
             var channel = await channels.FindOrCreateAsync(msg.ChannelId);
 
@@ -105,12 +112,16 @@ namespace AgentCoreProcessor.Engine
             await topics.UpdateAsync(topic);
 
             // 7. 消息入库
+            var senderName = !string.IsNullOrEmpty(user.DisplayName) ? user.DisplayName
+                           : !string.IsNullOrEmpty(msg.DisplayName) ? msg.DisplayName
+                           : msg.PlatformUserId;
             var userMessage = new UserMessage
             {
                 UserId = user.Id,
                 ChannelId = channel.Id,
                 TopicId = topic.Id,
                 Content = msg.Content,
+                SenderName = senderName,
                 Time = msg.Time
             };
             await messages.SaveAsync(userMessage);
@@ -149,6 +160,7 @@ namespace AgentCoreProcessor.Engine
                 ChannelId = channelId,
                 TopicId = topicId,
                 Content = content,
+                SenderName = "Lilara",
                 IsFromBot = true,
                 Time = DateTime.Now
             });

@@ -375,12 +375,21 @@ namespace AgentCoreProcessor.Adapter
             if (string.IsNullOrEmpty(content) && (attachments == null || attachments.Count == 0))
                 return null;
 
+            // 提取发言人信息
+            var sender = data["sender"] as JObject;
+            var nickname = sender?["nickname"]?.ToString();
+            var card = sender?["card"]?.ToString();
+            // 群名片优先，昵称兜底
+            var displayName = !string.IsNullOrWhiteSpace(card) ? card : nickname;
+
             return new IncomingMessage
             {
                 Platform = Platform,
                 PlatformUserId = userId.ToString(),
                 ChannelId = channelId,
                 Content = content,
+                DisplayName = displayName,
+                Nickname = nickname,
                 IsPrivate = isPrivate,
                 IsMentioned = isMentioned,
                 ReplyTo = replyTo,
