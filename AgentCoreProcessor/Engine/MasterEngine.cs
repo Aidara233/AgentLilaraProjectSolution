@@ -190,7 +190,7 @@ namespace AgentCoreProcessor.Engine
 
             // 服务
             MemorySvc = new MemoryService(Memories, TempMemories, MemoryLinks, embeddingProvider, PersonaMemories);
-            Session = new SessionManager(users, persons, channels, topics, messages, embeddingProvider);
+            Session = new SessionManager(users, persons, channels, topics, messages);
 
             // 人设记忆种子加载（表空时从文件导入）
             await LoadPersonaMemorySeedAsync();

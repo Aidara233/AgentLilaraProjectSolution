@@ -39,7 +39,7 @@ namespace AgentCoreProcessor.Engine
         // ---- 内部状态 ----
 
         private readonly ISystemContext ctx;
-        private readonly int topicId;
+        private readonly int channelId;
         private long _busyFlag = 0;
         private long _completionTicks = 0;
         private volatile bool stopRequested = false;
@@ -70,10 +70,10 @@ namespace AgentCoreProcessor.Engine
         private ConcurrentQueue<IncomingMessage>? activeMessageQueue;
         private SemaphoreSlim? activeMessageSignal;
 
-        public WorkerEngine(ISystemContext ctx, int topicId)
+        public WorkerEngine(ISystemContext ctx, int channelId)
         {
             this.ctx = ctx;
-            this.topicId = topicId;
+            this.channelId = channelId;
             this.preprocessingCore = new PreprocessingCore(ctx.Embedding);
         }
 
@@ -89,7 +89,7 @@ namespace AgentCoreProcessor.Engine
                 }
                 activeMessageSignal?.Release();
                 FrameworkLogger.Log("WorkerEngine",
-                    $"忙时消息转发: topicId={topicId}, 消息数={batch.Messages.Count}");
+                    $"忙时消息转发: channelId={channelId}, 消息数={batch.Messages.Count}");
                 return;
             }
 
@@ -99,7 +99,7 @@ namespace AgentCoreProcessor.Engine
 
         public async Task RunAsync()
         {
-            FrameworkLogger.Log("WorkerEngine", $"常驻启动: topicId={topicId}");
+            FrameworkLogger.Log("WorkerEngine", $"常驻启动: channelId={channelId}");
 
             while (!stopRequested)
             {
@@ -127,7 +127,7 @@ namespace AgentCoreProcessor.Engine
                 {
                     var msg = batches[0].Messages[0].Message;
                     FrameworkLogger.LogError("WorkerEngine", ex,
-                        $"topicId={topicId} channel={msg.ChannelId}");
+                        $"channelId={channelId} channel={msg.ChannelId}");
 
                     // 尝试发送错误提示
                     try
@@ -151,7 +151,7 @@ namespace AgentCoreProcessor.Engine
             if (processedMessageCount > 0 && lastContext != null)
                 await ExtractMemoryAsync(lastContext);
 
-            FrameworkLogger.Log("WorkerEngine", $"常驻退出: topicId={topicId}");
+            FrameworkLogger.Log("WorkerEngine", $"常驻退出: channelId={channelId}");
             IsAlive = false;
         }
 
@@ -190,7 +190,7 @@ namespace AgentCoreProcessor.Engine
             var lastSc = messages[^1].Context;
 
             FrameworkLogger.Log("WorkerEngine",
-                $"处理批次: topicId={topicId}, 消息数={messages.Count}, " +
+                $"处理批次: channelId={channelId}, 消息数={messages.Count}, " +
                 $"user={lastSc.User.PlatformId} person={lastSc.Person.Id}");
 
             // 1. 收集图片
@@ -243,7 +243,7 @@ namespace AgentCoreProcessor.Engine
                 };
                 workingCore.OnMemory = async (content) =>
                 {
-                    await ctx.MemorySvc.StoreAsync(content, lastSc.Person.Id, lastSc.Channel.Id, lastSc.Topic.Id);
+                    await ctx.MemorySvc.StoreAsync(content, lastSc.Person.Id, lastSc.Channel.Id, null);
                 };
                 workingCore.OnSignal = async (signalName, payload) =>
                 {
@@ -252,7 +252,7 @@ namespace AgentCoreProcessor.Engine
                 };
                 workingCore.OnReviewHint = async (content) =>
                 {
-                    await ctx.ReviewHints.CreateAsync(content, lastSc.Person.Id, lastSc.Channel.Id, lastSc.Topic.Id);
+                    await ctx.ReviewHints.CreateAsync(content, lastSc.Person.Id, lastSc.Channel.Id, null);
                 };
 
                 // 设置消息通道：WorkingCore 运行期间可感知新消息
@@ -334,7 +334,7 @@ namespace AgentCoreProcessor.Engine
             try
             {
                 var results = await ctx.MemorySvc.RecallAsync(
-                    personId, context.Channel.Id, topicId,
+                    personId, context.Channel.Id, 0,
                     query, topK: 10, includeLinks: true, includePersona: true);
                 memoryCache[personId] = (results, DateTime.Now);
                 return results;
@@ -349,7 +349,7 @@ namespace AgentCoreProcessor.Engine
         {
             try
             {
-                var recent = await ctx.Session.GetContextAsync(topicId, limit: 10);
+                var recent = await ctx.Session.GetContextByChannelAsync(channelId, limit: 10);
                 if (recent.Count < 2) return;
 
                 var lines = recent.Select(m =>
@@ -375,7 +375,7 @@ namespace AgentCoreProcessor.Engine
                     else
                     {
                         await ctx.MemorySvc.StoreAsync(item.Content,
-                            context.Person.Id, context.Channel.Id, topicId,
+                            context.Person.Id, context.Channel.Id, null,
                             confidence: item.Confidence);
                         factCount++;
                     }
@@ -383,7 +383,7 @@ namespace AgentCoreProcessor.Engine
 
                 if (factCount + feedbackCount > 0)
                     FrameworkLogger.Log("WorkerEngine",
-                        $"记忆提取: topicId={topicId}, 事实{factCount}条, 反馈{feedbackCount}条");
+                        $"记忆提取: channelId={channelId}, 事实{factCount}条, 反馈{feedbackCount}条");
             }
             catch (Exception ex)
             {

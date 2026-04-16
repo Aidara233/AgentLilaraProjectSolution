@@ -43,7 +43,7 @@ namespace AgentCoreProcessor.Database
         {
             var cutoff = DateTime.Now - timeout;
             var stale = await db.Table<Topic>()
-                .Where(t => t.IsActive && !t.IsChatTopic && t.LastMessageTime < cutoff)
+                .Where(t => t.IsActive && !t.IsChatTopic && !t.IsUnclassified && t.LastMessageTime < cutoff)
                 .ToListAsync();
 
             foreach (var t in stale)
@@ -68,6 +68,15 @@ namespace AgentCoreProcessor.Database
         {
             var list = await db.Table<Topic>()
                 .Where(t => t.ChannelId == channelId && t.IsChatTopic)
+                .ToListAsync();
+            return list.FirstOrDefault();
+        }
+
+        /// <summary>获取指定频道的未分类话题，没有则返回 null。</summary>
+        public async Task<Topic?> GetUnclassifiedTopicAsync(int channelId)
+        {
+            var list = await db.Table<Topic>()
+                .Where(t => t.ChannelId == channelId && t.IsUnclassified)
                 .ToListAsync();
             return list.FirstOrDefault();
         }

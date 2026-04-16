@@ -9,7 +9,7 @@ using AgentCoreProcessor.Database;
 namespace AgentCoreProcessor.Engine
 {
     /// <summary>
-    /// 话题引擎（社交网关）。长生命周期，一个活跃话题一个实例。
+    /// 话题引擎（社交网关）。长生命周期，一个活跃频道一个实例。
     /// 负责消息缓冲聚合、冲动值决策、参与者追踪。
     /// 决定回复时通过 Activate 激活常驻的 WorkerEngine。
     /// </summary>
@@ -19,7 +19,7 @@ namespace AgentCoreProcessor.Engine
         public bool IsAlive { get; private set; } = true;
 
         private readonly ISystemContext ctx;
-        private readonly int topicId;
+        private readonly int channelId;
         private readonly WorkerEngine worker;
 
         // 消息缓冲
@@ -56,9 +56,9 @@ namespace AgentCoreProcessor.Engine
         public TopicEngine(ISystemContext ctx, SessionContext initialContext, IncomingMessage initialMessage)
         {
             this.ctx = ctx;
-            this.topicId = initialContext.Topic.Id;
+            this.channelId = initialContext.Channel.Id;
             this.channelAffinity = initialContext.Channel.Affinity;
-            this.coldTimeoutSeconds = initialContext.Topic.IsChatTopic ? 600f : 300f;
+            this.coldTimeoutSeconds = 600f;
             this.lastImpulseDecay = DateTime.Now;
             this.lastBufferTime = DateTime.Now;
 
@@ -67,10 +67,10 @@ namespace AgentCoreProcessor.Engine
             AccumulateImpulse(initialMessage);
 
             // 创建常驻 WorkerEngine
-            worker = new WorkerEngine(ctx, topicId);
+            worker = new WorkerEngine(ctx, channelId);
             ctx.StartEngine(worker);
 
-            FrameworkLogger.Log("TopicEngine", $"创建: topicId={topicId}, affinity={channelAffinity:F2}");
+            FrameworkLogger.Log("TopicEngine", $"创建: channelId={channelId}, affinity={channelAffinity:F2}");
         }
 
         /// <summary>由 TopicEngineSpawnCheck 直接调用，将新消息加入缓冲。</summary>
@@ -141,7 +141,7 @@ namespace AgentCoreProcessor.Engine
                     (DateTime.Now - lastBufferTime).TotalSeconds > coldTimeoutSeconds)
                 {
                     worker.RequestStop();
-                    FrameworkLogger.Log("TopicEngine", $"话题冷却退出: topicId={topicId}");
+                    FrameworkLogger.Log("TopicEngine", $"话题冷却退出: channelId={channelId}");
                     IsAlive = false;
                 }
             }

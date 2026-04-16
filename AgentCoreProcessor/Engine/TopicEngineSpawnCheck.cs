@@ -7,8 +7,8 @@ using AgentCoreProcessor.Database;
 namespace AgentCoreProcessor.Engine
 {
     /// <summary>
-    /// 话题引擎的创建条件检查。接管 SessionManager 调用和话题路由。
-    /// 维护活跃话题引擎表，按 TopicId 路由消息。
+    /// 话题引擎的创建条件检查。接管 SessionManager 调用和频道路由。
+    /// 维护活跃频道引擎表，按 ChannelId 路由消息。
     /// </summary>
     internal class TopicEngineSpawnCheck : IEngineSpawnCheck
     {
@@ -17,14 +17,14 @@ namespace AgentCoreProcessor.Engine
         private SessionContext? pendingContext;
         private IncomingMessage? pendingMessage;
 
-        /// <summary>活跃话题引擎表（TopicId → TopicEngine）。</summary>
-        private readonly Dictionary<int, TopicEngine> activeTopics = new();
+        /// <summary>活跃频道引擎表（ChannelId → TopicEngine）。</summary>
+        private readonly Dictionary<int, TopicEngine> activeChannels = new();
 
         public Task OnEventAsync(EngineEvent e, ISystemContext ctx)
         {
-            // 清理已死亡的话题引擎
-            var dead = activeTopics.Where(kv => !kv.Value.IsAlive).Select(kv => kv.Key).ToList();
-            foreach (var key in dead) activeTopics.Remove(key);
+            // 清理已死亡的频道引擎
+            var dead = activeChannels.Where(kv => !kv.Value.IsAlive).Select(kv => kv.Key).ToList();
+            foreach (var key in dead) activeChannels.Remove(key);
             return Task.CompletedTask;
         }
 
@@ -34,7 +34,7 @@ namespace AgentCoreProcessor.Engine
 
             var message = msgEvent.Message;
 
-            // SessionManager：用户映射、频道、话题分类、消息入库
+            // SessionManager：用户映射、频道、消息入库（不做话题分类）
             var sessionContext = await ctx.Session.OnMessageAsync(message);
 
             // 权限检查
@@ -47,16 +47,16 @@ namespace AgentCoreProcessor.Engine
                     FrameworkLogger.LogPermission("TopicSpawnCheck", sessionContext.User.PlatformId, "Restricted", false);
                     return false;
             }
-            var topicId = sessionContext.Topic.Id;
+            var channelId = sessionContext.Channel.Id;
 
-            // 已有活跃的话题引擎 → 转发消息
-            if (activeTopics.TryGetValue(topicId, out var existing) && existing.IsAlive)
+            // 已有活跃的频道引擎 → 转发消息
+            if (activeChannels.TryGetValue(channelId, out var existing) && existing.IsAlive)
             {
                 existing.EnqueueMessage(message, sessionContext);
                 return false;
             }
 
-            // 需要创建新的话题引擎
+            // 需要创建新的频道引擎
             pendingContext = sessionContext;
             pendingMessage = message;
             return true;
@@ -70,7 +70,7 @@ namespace AgentCoreProcessor.Engine
             pendingMessage = null;
 
             var engine = new TopicEngine(ctx, sc, msg);
-            activeTopics[sc.Topic.Id] = engine;
+            activeChannels[sc.Channel.Id] = engine;
             return engine;
         }
     }
