@@ -209,7 +209,7 @@ namespace AgentCoreProcessor.Adapter
                 IsPrivate = dto.IsPrivate ?? true,
                 IsMentioned = dto.IsMentioned ?? false,
                 ReplyTo = dto.ReplyTo,
-                Time = DateTime.Now,
+                Time = !string.IsNullOrEmpty(dto.Time) && DateTime.TryParse(dto.Time, out var parsed) ? parsed : DateTime.Now,
                 Attachments = attachments
             };
         }
@@ -244,6 +244,7 @@ namespace AgentCoreProcessor.Adapter
             public bool? IsPrivate { get; set; }
             public bool? IsMentioned { get; set; }
             public string? ReplyTo { get; set; }
+            public string? Time { get; set; }
             public List<FileAttachment>? Attachments { get; set; }
         }
 
