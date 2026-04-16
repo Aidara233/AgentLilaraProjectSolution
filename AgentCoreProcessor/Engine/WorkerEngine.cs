@@ -275,10 +275,10 @@ namespace AgentCoreProcessor.Engine
         {
             float participantFactor = recentParticipants.Count switch
             {
-                <= 1 => 0.6f,
-                2 => 0.8f,
-                3 => 0.9f,
-                _ => 1.0f
+                <= 1 => 1.0f,
+                2 => 0.9f,
+                3 => 0.8f,
+                _ => 0.6f
             };
             float added = BaseMessageScore * channelAffinity * participantFactor;
             if (msg.IsMentioned) added += MentionScore;

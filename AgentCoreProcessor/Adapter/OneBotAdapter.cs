@@ -21,6 +21,7 @@ namespace AgentCoreProcessor.Adapter
         public string FilterMode { get; set; } = "whitelist";
         public List<string> Whitelist { get; set; } = new();
         public List<string> Blacklist { get; set; } = new();
+        public List<string> BotNames { get; set; } = new();
     }
 
     public class OneBotAdapter : IAdapter
@@ -374,6 +375,19 @@ namespace AgentCoreProcessor.Adapter
             // 允许纯图片消息（无文本但有附件）
             if (string.IsNullOrEmpty(content) && (attachments == null || attachments.Count == 0))
                 return null;
+
+            // 文本提及检测：消息内容包含 bot 名字
+            if (!isMentioned && config.BotNames.Count > 0 && !string.IsNullOrEmpty(content))
+            {
+                foreach (var name in config.BotNames)
+                {
+                    if (content.Contains(name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        isMentioned = true;
+                        break;
+                    }
+                }
+            }
 
             // 提取发言人信息
             var sender = data["sender"] as JObject;
