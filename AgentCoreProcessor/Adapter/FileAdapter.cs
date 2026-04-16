@@ -204,6 +204,8 @@ namespace AgentCoreProcessor.Adapter
                 PlatformUserId = dto.UserId ?? "file-user",
                 ChannelId = dto.ChannelId ?? "file",
                 Content = dto.Content ?? "",
+                DisplayName = dto.DisplayName,
+                Nickname = dto.Nickname,
                 IsPrivate = dto.IsPrivate ?? true,
                 IsMentioned = dto.IsMentioned ?? false,
                 ReplyTo = dto.ReplyTo,
@@ -237,6 +239,8 @@ namespace AgentCoreProcessor.Adapter
             public string? UserId { get; set; }
             public string? ChannelId { get; set; }
             public string? Content { get; set; }
+            public string? DisplayName { get; set; }
+            public string? Nickname { get; set; }
             public bool? IsPrivate { get; set; }
             public bool? IsMentioned { get; set; }
             public string? ReplyTo { get; set; }
