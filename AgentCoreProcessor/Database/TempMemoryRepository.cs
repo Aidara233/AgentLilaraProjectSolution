@@ -16,14 +16,13 @@ namespace AgentCoreProcessor.Database
         /// <summary>写入一条临时记忆。</summary>
         public async Task<TempMemoryEntry> CreateAsync(
             string content, byte[]? embedding,
-            int? personId = null, int? channelId = null, int? topicId = null,
+            int? personId = null, int? channelId = null,
             int? sourceMessageId = null, string confidence = "high")
         {
             var entry = new TempMemoryEntry
             {
                 PersonId = personId,
                 ChannelId = channelId,
-                TopicId = topicId,
                 Content = content,
                 Embedding = embedding,
                 SourceMessageId = sourceMessageId,
@@ -42,7 +41,7 @@ namespace AgentCoreProcessor.Database
 
         /// <summary>按多维标签过滤临时记忆（OR 模式：任一标签匹配即召回，返回匹配标签数）。</summary>
         public async Task<List<(TempMemoryEntry Entry, int MatchCount)>> GetByTagsAsync(
-            int? personId, int? channelId, int? topicId)
+            int? personId, int? channelId)
         {
             var all = await GetAllAsync();
             var results = new List<(TempMemoryEntry, int)>();
@@ -52,10 +51,9 @@ namespace AgentCoreProcessor.Database
                 int matchCount = 0;
                 if (m.PersonId != null && m.PersonId == personId) matchCount++;
                 if (m.ChannelId != null && m.ChannelId == channelId) matchCount++;
-                if (m.TopicId != null && m.TopicId == topicId) matchCount++;
 
                 // 全局记忆（全 null）或至少一个标签匹配
-                bool isGlobal = m.PersonId == null && m.ChannelId == null && m.TopicId == null;
+                bool isGlobal = m.PersonId == null && m.ChannelId == null;
                 if (isGlobal || matchCount > 0)
                     results.Add((m, isGlobal ? 1 : matchCount));
             }

@@ -83,12 +83,12 @@ namespace AgentCoreProcessor.Engine
         private readonly object engineLock = new();
         private readonly SemaphoreSlim eventLock = new(1, 1);
 
-        // SpawnCheck 工厂（有序列表，Command 在 Topic 之前拦截命令消息）
+        // SpawnCheck 工厂（有序列表，Command 在 Worker 之前拦截命令消息）
         private static readonly List<(string Name, Func<IEngineSpawnCheck> Factory)> SpawnCheckFactory =
         [
             ("Command", () => new CommandSpawnCheck()),
             ("Timer",   () => new TimerEngineSpawnCheck()),
-            ("Topic",   () => new TopicEngineSpawnCheck()),
+            ("Worker",  () => new WorkerEngineSpawnCheck()),
             ("Dream",   () => new DreamEngineSpawnCheck()),
         ];
 
@@ -151,7 +151,6 @@ namespace AgentCoreProcessor.Engine
             var persons = new PersonRepository(db);
             var users = new UserRepository(db, persons);
             var channels = new ChannelRepository(db);
-            var topics = new TopicRepository(db);
             var messages = new MessageRepository(db);
             Memories = new MemoryRepository(db);
             TempMemories = new TempMemoryRepository(db);
@@ -190,7 +189,7 @@ namespace AgentCoreProcessor.Engine
 
             // 服务
             MemorySvc = new MemoryService(Memories, TempMemories, MemoryLinks, embeddingProvider, PersonaMemories);
-            Session = new SessionManager(users, persons, channels, topics, messages);
+            Session = new SessionManager(users, persons, channels, messages);
 
             // 人设记忆种子加载（表空时从文件导入）
             await LoadPersonaMemorySeedAsync();

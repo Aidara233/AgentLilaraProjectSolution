@@ -34,8 +34,6 @@ namespace AgentCoreProcessor.Command
             ["link"] = Path.Combine(PathConfig.CoreConfigPath, "LinkCore.json"),
             ["combine"] = Path.Combine(PathConfig.CoreConfigPath, "CombineCore.json"),
             ["review"] = Path.Combine(PathConfig.CoreConfigPath, "ReviewCore.json"),
-            ["topic-class"] = Path.Combine(PathConfig.CoreConfigPath, "TopicClassificationCore.json"),
-            ["topic-summary"] = Path.Combine(PathConfig.CoreConfigPath, "TopicSummaryCore.json"),
             ["dream"] = Path.Combine(PathConfig.StoragePath, "Dream", "DreamConfig.json"),
         };
 

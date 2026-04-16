@@ -14,7 +14,7 @@ using Newtonsoft.Json.Linq;
 namespace AgentCoreProcessor.Engine
 {
     internal enum SleepLevel { Daydream, Nap, DeepSleep }
-    internal enum FragmentType { Consolidation, Weight, Link, Combine, TopicSegmentation }
+    internal enum FragmentType { Consolidation, Weight, Link, Combine }
 
     /// <summary>
     /// 做梦引擎实例。每次睡觉创建，完成后销毁。
@@ -34,8 +34,6 @@ namespace AgentCoreProcessor.Engine
         private readonly WeightCore weightCore = new();
         private readonly LinkCore linkCore = new();
         private readonly CombineCore combineCore = new();
-        private readonly TopicSegmentationCore segmentationCore = new();
-        private readonly TopicSummaryCore summaryCore = new();
 
         private volatile bool shouldWake = false;
         private static readonly Random rng = new();
@@ -267,35 +265,27 @@ namespace AgentCoreProcessor.Engine
             var weights = new Dictionary<FragmentType, float>();
             var tempCount = (await ctx.TempMemories.GetAllAsync()).Count;
 
-            // 检查是否有未分类消息
-            var hasUnclassified = await HasUnclassifiedMessagesAsync();
-
             if (level == SleepLevel.Daydream)
             {
                 weights[FragmentType.Weight] = 1.0f;
                 weights[FragmentType.Link] = 1.0f;
-                // 走神不跑分段
                 return weights;
             }
 
             if (isPhase2)
             {
-                // Phase 2：不跑 Consolidation（临时记忆已空，且 ReviewEngine 可能在写入）
                 weights[FragmentType.Weight] = 1.0f;
                 var undreamed = await ctx.Memories.GetUndreamedAsync(10);
                 weights[FragmentType.Link] = undreamed.Count > 0 ? 3.0f : 1.0f;
                 weights[FragmentType.Combine] = 0.5f;
-                weights[FragmentType.TopicSegmentation] = hasUnclassified ? 2.0f : 0f;
             }
             else
             {
-                // Phase 1 / 小睡：Consolidation 权重极高
                 weights[FragmentType.Consolidation] = tempCount > 0 ? 20.0f : 0f;
                 weights[FragmentType.Weight] = 1.0f;
                 var undreamed = await ctx.Memories.GetUndreamedAsync(10);
                 weights[FragmentType.Link] = undreamed.Count > 0 ? 3.0f : 1.0f;
                 weights[FragmentType.Combine] = 0.5f;
-                weights[FragmentType.TopicSegmentation] = hasUnclassified ? 2.0f : 0f;
             }
 
             return weights;
@@ -309,7 +299,6 @@ namespace AgentCoreProcessor.Engine
                 case FragmentType.Weight: await ExecuteWeight(); break;
                 case FragmentType.Link: await ExecuteLink(); break;
                 case FragmentType.Combine: await ExecuteCombine(); break;
-                case FragmentType.TopicSegmentation: await ExecuteTopicSegmentation(); break;
             }
         }
 
@@ -336,7 +325,7 @@ namespace AgentCoreProcessor.Engine
                     {
                         case "keep":
                             await ctx.Memories.CreateAsync(temp.Content, temp.Embedding,
-                                temp.PersonId, temp.ChannelId, temp.TopicId, temp.SourceMessageId,
+                                temp.PersonId, temp.ChannelId, temp.SourceMessageId,
                                 confidence: temp.Confidence);
                             await ctx.TempMemories.DeleteAsync(temp);
                             break;
@@ -345,10 +334,9 @@ namespace AgentCoreProcessor.Engine
                             byte[]? emb = null;
                             try { emb = VectorUtil.FloatsToBytes(await ctx.Embedding.GetEmbeddingAsync(content)); }
                             catch { }
-                            // 合并记忆继承最低置信度
                             var mergeConfidence = temp.Confidence;
                             await ctx.Memories.CreateAsync(content, emb,
-                                temp.PersonId, temp.ChannelId, temp.TopicId,
+                                temp.PersonId, temp.ChannelId,
                                 confidence: mergeConfidence);
                             await ctx.TempMemories.DeleteAsync(temp);
                             var mergeWith = item["mergeWith"] as JArray;
@@ -453,164 +441,7 @@ namespace AgentCoreProcessor.Engine
             try { emb = VectorUtil.FloatsToBytes(await ctx.Embedding.GetEmbeddingAsync(result)); } catch { }
             await ctx.Memories.CreateDerivedAsync(result, emb,
                 System.Text.Json.JsonSerializer.Serialize(sids), hash,
-                src.PersonId ?? tgt.PersonId, src.ChannelId ?? tgt.ChannelId, src.TopicId ?? tgt.TopicId);
-        }
-
-        // ---- 话题分段归档 ----
-
-        /// <summary>检查是否有未分类消息需要处理。</summary>
-        private async Task<bool> HasUnclassifiedMessagesAsync()
-        {
-            var channels = await ctx.Session.GetAllChannelsAsync();
-            foreach (var ch in channels)
-            {
-                var topic = await ctx.Session.GetUnclassifiedTopicAsync(ch.Id);
-                if (topic != null && topic.MessageCount > 0)
-                    return true;
-            }
-            return false;
-        }
-
-        /// <summary>
-        /// 话题分段归档：按频道遍历未分类消息，按静默间隔切段，整段归类。
-        /// </summary>
-        private async Task ExecuteTopicSegmentation()
-        {
-            var channels = await ctx.Session.GetAllChannelsAsync();
-
-            foreach (var channel in channels)
-            {
-                if (shouldWake) break;
-
-                var unclassifiedTopic = await ctx.Session.GetUnclassifiedTopicAsync(channel.Id);
-                if (unclassifiedTopic == null) continue;
-
-                // 取所有未分类消息
-                var messages = await ctx.Session.GetUnclassifiedMessagesAsync(
-                    channel.Id, DateTime.MinValue);
-                if (messages.Count < 3) continue;
-
-                // 按 5 分钟静默间隔切段
-                var segments = SegmentBySilenceGap(messages, gapMinutes: 5);
-
-                // 获取已有话题作为候选
-                var activeTopics = await ctx.Session.GetActiveTopicsAsync(channel.Id);
-                var candidates = activeTopics
-                    .Where(t => !t.IsUnclassified && !t.IsChatTopic)
-                    .Select(t => new TopicCandidate
-                    {
-                        TopicId = t.Id,
-                        Summary = string.IsNullOrEmpty(t.Summary) ? t.Name : t.Summary
-                    })
-                    .ToList();
-
-                foreach (var segment in segments)
-                {
-                    if (shouldWake) break;
-                    if (segment.Count < 3) continue; // 太短的段跳过
-
-                    try
-                    {
-                        var result = await segmentationCore.ClassifySegmentAsync(segment, candidates);
-
-                        int targetTopicId;
-                        if (result.TopicId == -2)
-                        {
-                            // 闲聊 → 获取或创建闲聊话题
-                            var chatTopic = await GetOrCreateChatTopicAsync(channel.Id);
-                            targetTopicId = chatTopic.Id;
-                        }
-                        else if (result.TopicId == -1)
-                        {
-                            // 新话题
-                            var newTopic = await CreateDreamTopicAsync(
-                                channel.Id, result.SuggestedName, segment);
-                            targetTopicId = newTopic.Id;
-                            // 加入候选列表供后续段使用
-                            candidates.Add(new TopicCandidate
-                            {
-                                TopicId = newTopic.Id,
-                                Summary = newTopic.Summary ?? newTopic.Name
-                            });
-                        }
-                        else
-                        {
-                            targetTopicId = result.TopicId;
-                        }
-
-                        // 重新分配消息
-                        await ctx.Session.ReassignMessagesAsync(result.MessageIds, targetTopicId);
-
-                        FrameworkLogger.Log("DreamEngine",
-                            $"话题分段: channelId={channel.Id} 消息{result.MessageIds.Count}条 → topicId={targetTopicId}");
-                    }
-                    catch (Exception ex)
-                    {
-                        FrameworkLogger.Log("DreamEngine", $"话题分段异常: {ex.Message}");
-                    }
-                }
-
-                // 更新未分类话题的消息计数
-                var remaining = await ctx.Session.GetUnclassifiedMessagesAsync(
-                    channel.Id, DateTime.MinValue);
-                unclassifiedTopic.MessageCount = remaining.Count;
-                await ctx.Session.UpdateTopicAsync(unclassifiedTopic);
-            }
-        }
-
-        private static List<List<UserMessage>> SegmentBySilenceGap(
-            List<UserMessage> messages, int gapMinutes)
-        {
-            var segments = new List<List<UserMessage>>();
-            var current = new List<UserMessage>();
-
-            foreach (var msg in messages)
-            {
-                if (current.Count > 0 &&
-                    (msg.Time - current[^1].Time).TotalMinutes > gapMinutes)
-                {
-                    segments.Add(current);
-                    current = new List<UserMessage>();
-                }
-                current.Add(msg);
-            }
-            if (current.Count > 0) segments.Add(current);
-
-            return segments;
-        }
-
-        /// <summary>做梦时创建新话题，生成摘要和 embedding。</summary>
-        private async Task<Topic> CreateDreamTopicAsync(
-            int channelId, string name, List<UserMessage> segment)
-        {
-            var topic = await ctx.Session.CreateTopicAsync(channelId, name);
-            try
-            {
-                var msgContents = segment.Select(m => m.Content).ToList();
-                var summary = await summaryCore.GenerateSummaryAsync(name, msgContents);
-                topic.Summary = summary;
-                var vec = await ctx.Embedding.GetEmbeddingAsync(summary);
-                topic.Embedding = VectorUtil.FloatsToBytes(vec);
-                await ctx.Session.UpdateTopicAsync(topic);
-            }
-            catch (Exception)
-            {
-                // 摘要/embedding 失败不阻塞
-            }
-            return topic;
-        }
-
-        /// <summary>获取或创建频道的闲聊话题（做梦归档用）。</summary>
-        private async Task<Topic> GetOrCreateChatTopicAsync(int channelId)
-        {
-            var activeTopics = await ctx.Session.GetActiveTopicsAsync(channelId);
-            var chat = activeTopics.FirstOrDefault(t => t.IsChatTopic);
-            if (chat != null) return chat;
-
-            var topic = await ctx.Session.CreateTopicAsync(channelId, "闲聊", "日常闲聊和杂谈");
-            topic.IsChatTopic = true;
-            await ctx.Session.UpdateTopicAsync(topic);
-            return topic;
+                src.PersonId ?? tgt.PersonId, src.ChannelId ?? tgt.ChannelId);
         }
 
         private static string ComputeHash(string input)

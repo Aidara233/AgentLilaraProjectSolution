@@ -7,18 +7,18 @@ using AgentCoreProcessor.Database;
 namespace AgentCoreProcessor.Engine
 {
     /// <summary>
-    /// 话题引擎的创建条件检查。接管 SessionManager 调用和频道路由。
+    /// WorkerEngine 的创建条件检查。接管 SessionManager 调用和频道路由。
     /// 维护活跃频道引擎表，按 ChannelId 路由消息。
     /// </summary>
-    internal class TopicEngineSpawnCheck : IEngineSpawnCheck
+    internal class WorkerEngineSpawnCheck : IEngineSpawnCheck
     {
-        public string EngineType => "Topic";
+        public string EngineType => "Worker";
 
         private SessionContext? pendingContext;
         private IncomingMessage? pendingMessage;
 
-        /// <summary>活跃频道引擎表（ChannelId → TopicEngine）。</summary>
-        private readonly Dictionary<int, TopicEngine> activeChannels = new();
+        /// <summary>活跃频道引擎表（ChannelId → WorkerEngine）。</summary>
+        private readonly Dictionary<int, WorkerEngine> activeChannels = new();
 
         public Task OnEventAsync(EngineEvent e, ISystemContext ctx)
         {
@@ -34,17 +34,17 @@ namespace AgentCoreProcessor.Engine
 
             var message = msgEvent.Message;
 
-            // SessionManager：用户映射、频道、消息入库（不做话题分类）
+            // SessionManager：用户映射、频道、消息入库
             var sessionContext = await ctx.Session.OnMessageAsync(message);
 
             // 权限检查
             switch (sessionContext.User.PermissionLevel)
             {
                 case PermissionLevel.Blocked:
-                    FrameworkLogger.LogPermission("TopicSpawnCheck", sessionContext.User.PlatformId, "Blocked", false);
+                    FrameworkLogger.LogPermission("WorkerSpawnCheck", sessionContext.User.PlatformId, "Blocked", false);
                     return false;
                 case PermissionLevel.Restricted:
-                    FrameworkLogger.LogPermission("TopicSpawnCheck", sessionContext.User.PlatformId, "Restricted", false);
+                    FrameworkLogger.LogPermission("WorkerSpawnCheck", sessionContext.User.PlatformId, "Restricted", false);
                     return false;
             }
             var channelId = sessionContext.Channel.Id;
@@ -69,7 +69,7 @@ namespace AgentCoreProcessor.Engine
             pendingContext = null;
             pendingMessage = null;
 
-            var engine = new TopicEngine(ctx, sc, msg);
+            var engine = new WorkerEngine(ctx, sc, msg);
             activeChannels[sc.Channel.Id] = engine;
             return engine;
         }

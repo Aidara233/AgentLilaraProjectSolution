@@ -13,20 +13,18 @@ using AgentCoreProcessor.Memory;
 namespace AgentCoreProcessor.Engine
 {
     /// <summary>
-    /// 工作引擎。常驻，与 TopicEngine 同生命周期。
-    /// 空闲时挂起等待激活，被激活后处理消息批次（分类→记忆→回复→提取）。
+    /// 工作引擎。长生命周期，一个活跃频道一个实例。
+    /// 负责消息缓冲聚合、冲动值决策、参与者追踪、消息处理（分类→记忆→回复→提取）。
     /// </summary>
     internal class WorkerEngine : ISubEngine
     {
         public string EngineType => "Worker";
         public bool IsAlive { get; private set; } = true;
 
-        // ---- 公开状态（TopicEngine 读取） ----
-
-        /// <summary>是否正在处理消息。TopicEngine 读取用于冷却判断。</summary>
+        /// <summary>是否正在处理消息。</summary>
         public bool IsBusy => Interlocked.Read(ref _busyFlag) == 1;
 
-        /// <summary>上次处理完成的时间。TopicEngine 读取用于冷却期计算。</summary>
+        /// <summary>上次处理完成的时间。用于冷却期计算。</summary>
         public DateTime? LastCompletionTime
         {
             get
@@ -44,16 +42,42 @@ namespace AgentCoreProcessor.Engine
         private long _completionTicks = 0;
         private volatile bool stopRequested = false;
 
-        // 激活队列
-        private readonly ConcurrentQueue<ActivationBatch> activationQueue = new();
-        private readonly SemaphoreSlim activationSignal = new(0);
+        // ---- 消息缓冲 ----
+        private readonly object bufferLock = new();
+        private readonly List<(IncomingMessage Message, SessionContext Context)> buffer = new();
+        private DateTime lastBufferTime;
+// PLACEHOLDER_IMPULSE
 
-        // Core 实例（复用，不每次新建）
+        // ---- 冲动值 ----
+        private float impulse = 0f;
+        private DateTime lastImpulseDecay;
+        private readonly float channelAffinity;
+
+        // 参与者追踪
+        private readonly ConcurrentDictionary<int, ParticipantInfo> recentParticipants = new();
+
+        // 负反馈抑制
+        private bool awaitingResponse = false;
+        private int consecutiveIgnores = 0;
+
+        // 缓冲/冲动值常量
+        private const float BufferWindowSeconds = 2.5f;
+        private const float ColdTimeoutSeconds = 600f;
+        private const float MentionScore = 8f;
+        private const float BaseMessageScore = 1f;
+        private const float PrivateScore = 8f;
+        private const float DecayPerSecond = 0.5f;
+        private const float ResponseThreshold = 3f;
+        private const float PostResponseCooldownSeconds = 3f;
+        private const float IgnoreThresholdBoost = 1.5f;
+        private const int MaxIgnoreBoost = 3;
+
+        // Core 实例（复用）
         private readonly ExpressCore expressCore = new();
         private readonly WorkingCore workingCore = new();
         private readonly PreprocessingCore preprocessingCore;
 
-        // 已处理消息标记（新旧区分）
+        // 已处理消息标记
         private readonly LinkedList<long> processedTicks = new();
         private const int MaxProcessedTicksWindow = 50;
 
@@ -66,93 +90,140 @@ namespace AgentCoreProcessor.Engine
         private const int MemoryExtractionInterval = 3;
         private SessionContext? lastContext;
 
-        // 任务路径消息通道（WorkingCore 运行期间，新消息推入此队列）
+        // 任务路径消息通道
         private ConcurrentQueue<IncomingMessage>? activeMessageQueue;
         private SemaphoreSlim? activeMessageSignal;
+// PLACEHOLDER_CTOR
 
-        public WorkerEngine(ISystemContext ctx, int channelId)
+        /// <summary>由 SpawnCheck 创建，传入初始消息。</summary>
+        public WorkerEngine(ISystemContext ctx, SessionContext initialContext, IncomingMessage initialMessage)
         {
             this.ctx = ctx;
-            this.channelId = channelId;
+            this.channelId = initialContext.Channel.Id;
+            this.channelAffinity = initialContext.Channel.Affinity;
+            this.lastImpulseDecay = DateTime.Now;
+            this.lastBufferTime = DateTime.Now;
             this.preprocessingCore = new PreprocessingCore(ctx.Embedding);
+
+            buffer.Add((initialMessage, initialContext));
+            recentParticipants.TryAdd(initialContext.User.Id, ParticipantInfo.From(initialContext.User, initialMessage));
+            AccumulateImpulse(initialMessage);
+
+            FrameworkLogger.Log("WorkerEngine", $"创建: channelId={channelId}, affinity={channelAffinity:F2}");
         }
 
-        /// <summary>由 TopicEngine 调用，将激活批次推入队列并唤醒事件循环。</summary>
-        public void Activate(ActivationBatch batch)
+        /// <summary>由 SpawnCheck 调用，将新消息加入缓冲。</summary>
+        public void EnqueueMessage(IncomingMessage msg, SessionContext sc)
         {
-            // 忙时：将消息转发给 WorkingCore 的消息通道（如果有）
+            // 忙时且有活跃消息通道：转发给 WorkingCore
             if (IsBusy && activeMessageQueue != null)
             {
-                foreach (var (msg, _) in batch.Messages)
-                {
-                    activeMessageQueue.Enqueue(msg);
-                }
+                activeMessageQueue.Enqueue(msg);
                 activeMessageSignal?.Release();
                 FrameworkLogger.Log("WorkerEngine",
-                    $"忙时消息转发: channelId={channelId}, 消息数={batch.Messages.Count}");
+                    $"忙时消息转发: channelId={channelId}");
                 return;
             }
 
-            activationQueue.Enqueue(batch);
-            activationSignal.Release();
+            lock (bufferLock)
+            {
+                buffer.Add((msg, sc));
+                lastBufferTime = DateTime.Now;
+            }
+            recentParticipants.AddOrUpdate(
+                sc.User.Id,
+                ParticipantInfo.From(sc.User, msg),
+                (_, _) => ParticipantInfo.From(sc.User, msg));
+            AccumulateImpulse(msg);
         }
+// PLACEHOLDER_RUN
 
         public async Task RunAsync()
         {
-            FrameworkLogger.Log("WorkerEngine", $"常驻启动: channelId={channelId}");
+            FrameworkLogger.Log("WorkerEngine", $"启动: channelId={channelId}");
 
-            while (!stopRequested)
+            while (IsAlive)
             {
-                try
+                await Task.Delay(200);
+
+                DecayImpulse();
+
+                // 检查缓冲窗口是否到期
+                List<(IncomingMessage Message, SessionContext Context)>? batch = null;
+                lock (bufferLock)
                 {
-                    // 等待激活信号或超时（超时用于检查 stopRequested）
-                    await activationSignal.WaitAsync(TimeSpan.FromSeconds(5));
-                }
-                catch (OperationCanceledException) { break; }
-
-                // 排空队列，合并所有待处理批次
-                var batches = new List<ActivationBatch>();
-                while (activationQueue.TryDequeue(out var batch))
-                    batches.Add(batch);
-
-                if (batches.Count == 0) continue;
-
-                Interlocked.Exchange(ref _busyFlag, 1);
-                try
-                {
-                    var merged = MergeBatches(batches);
-                    await ProcessBatchAsync(merged);
-                }
-                catch (Exception ex)
-                {
-                    var msg = batches[0].Messages[0].Message;
-                    FrameworkLogger.LogError("WorkerEngine", ex,
-                        $"channelId={channelId} channel={msg.ChannelId}");
-
-                    // 尝试发送错误提示
-                    try
+                    if (buffer.Count > 0 &&
+                        (DateTime.Now - lastBufferTime).TotalSeconds >= BufferWindowSeconds)
                     {
-                        await ctx.Adapters.SendMessageAsync(msg.Platform, new OutgoingMessage
-                        {
-                            ChannelId = msg.ChannelId,
-                            Content = $"[错误] 处理消息时发生异常：{ex.Message}"
-                        });
+                        batch = new(buffer);
+                        buffer.Clear();
                     }
-                    catch { }
                 }
-                finally
+
+                if (batch != null)
                 {
-                    Interlocked.Exchange(ref _busyFlag, 0);
-                    Interlocked.Exchange(ref _completionTicks, DateTime.Now.Ticks);
+                    // 负反馈检查
+                    if (awaitingResponse)
+                    {
+                        bool gotResponse = batch.Any(b => b.Message.IsMentioned);
+                        if (gotResponse)
+                            consecutiveIgnores = 0;
+                        else
+                            consecutiveIgnores = Math.Min(consecutiveIgnores + 1, MaxIgnoreBoost);
+                        awaitingResponse = false;
+                    }
+
+                    if (!ctx.MuteMode && ShouldRespond(batch))
+                    {
+                        Interlocked.Exchange(ref _busyFlag, 1);
+                        try
+                        {
+                            var snapshot = new Dictionary<int, ParticipantInfo>(recentParticipants);
+                            await ProcessBatchAsync(batch, snapshot);
+                            impulse = 0f;
+                            awaitingResponse = true;
+                        }
+                        catch (Exception ex)
+                        {
+                            var msg = batch[0].Message;
+                            FrameworkLogger.LogError("WorkerEngine", ex,
+                                $"channelId={channelId} channel={msg.ChannelId}");
+                            try
+                            {
+                                await ctx.Adapters.SendMessageAsync(msg.Platform, new OutgoingMessage
+                                {
+                                    ChannelId = msg.ChannelId,
+                                    Content = $"[错误] 处理消息时发生异常：{ex.Message}"
+                                });
+                            }
+                            catch { }
+                        }
+                        finally
+                        {
+                            Interlocked.Exchange(ref _busyFlag, 0);
+                            Interlocked.Exchange(ref _completionTicks, DateTime.Now.Ticks);
+                        }
+                    }
+
+                    // 静音模式下仍追踪记忆提取
+                    if (ctx.MuteMode)
+                        TrackMemoryExtraction(batch, batch[^1].Context);
+                }
+
+                // 冷却检查
+                bool bufferEmpty;
+                lock (bufferLock) { bufferEmpty = buffer.Count == 0; }
+                if (bufferEmpty && impulse <= 0.01f && !IsBusy &&
+                    (DateTime.Now - lastBufferTime).TotalSeconds > ColdTimeoutSeconds)
+                {
+                    // 退出前：剩余消息强制提取记忆
+                    if (processedMessageCount > 0 && lastContext != null)
+                        await ExtractMemoryAsync(lastContext);
+
+                    FrameworkLogger.Log("WorkerEngine", $"冷却退出: channelId={channelId}");
+                    IsAlive = false;
                 }
             }
-
-            // 退出前：剩余消息强制提取记忆
-            if (processedMessageCount > 0 && lastContext != null)
-                await ExtractMemoryAsync(lastContext);
-
-            FrameworkLogger.Log("WorkerEngine", $"常驻退出: channelId={channelId}");
-            IsAlive = false;
         }
 
         public void OnEvent(EngineEvent e) { }
@@ -160,32 +231,54 @@ namespace AgentCoreProcessor.Engine
         public void RequestStop()
         {
             stopRequested = true;
-            activationSignal.Release(); // 唤醒等待，让循环检查 stopRequested
+            IsAlive = false;
         }
+// PLACEHOLDER_IMPULSE_METHODS
+
+        // ---- 冲动值决策 ----
+
+        private bool ShouldRespond(List<(IncomingMessage Message, SessionContext Context)> batch)
+        {
+            if (batch.Any(b => b.Message.IsPrivate)) return true;
+            if (batch.Any(b => b.Message.IsMentioned)) return true;
+
+            if (LastCompletionTime != null &&
+                (DateTime.Now - LastCompletionTime.Value).TotalSeconds < PostResponseCooldownSeconds)
+                return false;
+
+            float effectiveThreshold = ResponseThreshold + consecutiveIgnores * IgnoreThresholdBoost;
+            return impulse >= effectiveThreshold;
+        }
+
+        private void AccumulateImpulse(IncomingMessage msg)
+        {
+            float participantFactor = recentParticipants.Count switch
+            {
+                <= 1 => 0.6f,
+                2 => 0.8f,
+                3 => 0.9f,
+                _ => 1.0f
+            };
+            impulse += BaseMessageScore * channelAffinity * participantFactor;
+            if (msg.IsMentioned) impulse += MentionScore;
+            if (msg.IsPrivate) impulse += PrivateScore;
+        }
+
+        private void DecayImpulse()
+        {
+            var now = DateTime.Now;
+            var elapsed = (float)(now - lastImpulseDecay).TotalSeconds;
+            lastImpulseDecay = now;
+            impulse = Math.Max(0f, impulse - DecayPerSecond * elapsed);
+        }
+// PLACEHOLDER_PROCESS
 
         // ---- 批次处理 ----
 
-        /// <summary>合并多个激活批次为一个。参与者快照取最新的。</summary>
-        private static ActivationBatch MergeBatches(List<ActivationBatch> batches)
+        private async Task ProcessBatchAsync(
+            List<(IncomingMessage Message, SessionContext Context)> messages,
+            Dictionary<int, ParticipantInfo> participantSnapshot)
         {
-            if (batches.Count == 1) return batches[0];
-
-            var allMessages = new List<(IncomingMessage Message, SessionContext Context)>();
-            foreach (var b in batches)
-                allMessages.AddRange(b.Messages);
-
-            // 参与者快照合并（后来的覆盖先来的）
-            var merged = new Dictionary<int, ParticipantInfo>();
-            foreach (var b in batches)
-                foreach (var kv in b.ParticipantSnapshot)
-                    merged[kv.Key] = kv.Value;
-
-            return new ActivationBatch { Messages = allMessages, ParticipantSnapshot = merged };
-        }
-
-        private async Task ProcessBatchAsync(ActivationBatch batch)
-        {
-            var messages = batch.Messages;
             var lastMsg = messages[^1].Message;
             var lastSc = messages[^1].Context;
 
@@ -201,10 +294,9 @@ namespace AgentCoreProcessor.Engine
                 .Select(a => a.LocalPath!)
                 .ToList();
 
-            // 2. 构建 XML 上下文（参与者 + 历史 + 新消息）
-            var formattedContext = BuildContextXml(messages, lastSc.RecentMessages, batch.ParticipantSnapshot);
+            // 2. 构建 XML 上下文
+            var formattedContext = BuildContextXml(messages, lastSc.RecentMessages, participantSnapshot);
 
-            // 图片语义帧
             if (imagePaths.Count > 0)
             {
                 var prefix = imagePaths.Count == 1 ? "（用户发送了一张图片）" : $"（用户发送了{imagePaths.Count}张图片）";
@@ -225,6 +317,7 @@ namespace AgentCoreProcessor.Engine
 
             // 5. 查记忆
             var memoryResults = await GetCachedMemoryAsync(lastSc, lastMsg.Content);
+// PLACEHOLDER_ROUTE
 
             // 6. 路由处理
             if (isTask)
@@ -239,11 +332,11 @@ namespace AgentCoreProcessor.Engine
                         ChannelId = lastMsg.ChannelId,
                         Content = rawText
                     });
-                    await ctx.Session.SaveBotMessageAsync(lastSc.Topic.Id, lastSc.Channel.Id, rawText);
+                    await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, rawText);
                 };
                 workingCore.OnMemory = async (content) =>
                 {
-                    await ctx.MemorySvc.StoreAsync(content, lastSc.Person.Id, lastSc.Channel.Id, null);
+                    await ctx.MemorySvc.StoreAsync(content, lastSc.Person.Id, lastSc.Channel.Id);
                 };
                 workingCore.OnSignal = async (signalName, payload) =>
                 {
@@ -252,10 +345,9 @@ namespace AgentCoreProcessor.Engine
                 };
                 workingCore.OnReviewHint = async (content) =>
                 {
-                    await ctx.ReviewHints.CreateAsync(content, lastSc.Person.Id, lastSc.Channel.Id, null);
+                    await ctx.ReviewHints.CreateAsync(content, lastSc.Person.Id, lastSc.Channel.Id);
                 };
 
-                // 设置消息通道：WorkingCore 运行期间可感知新消息
                 var msgQueue = new ConcurrentQueue<IncomingMessage>();
                 var msgSignal = new SemaphoreSlim(0);
                 workingCore.SetMessageChannel(msgQueue, msgSignal);
@@ -269,7 +361,6 @@ namespace AgentCoreProcessor.Engine
                 }
                 finally
                 {
-                    // 清理消息通道
                     this.activeMessageQueue = null;
                     this.activeMessageSignal = null;
                 }
@@ -299,12 +390,13 @@ namespace AgentCoreProcessor.Engine
                     ChannelId = lastMsg.ChannelId,
                     Content = expressed
                 });
-                await ctx.Session.SaveBotMessageAsync(lastSc.Topic.Id, lastSc.Channel.Id, expressed);
+                await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, expressed);
             }
 
             // 7. 记忆提取计数
             TrackMemoryExtraction(messages, lastSc);
         }
+// PLACEHOLDER_MEMORY
 
         // ---- 记忆 ----
 
@@ -334,7 +426,7 @@ namespace AgentCoreProcessor.Engine
             try
             {
                 var results = await ctx.MemorySvc.RecallAsync(
-                    personId, context.Channel.Id, 0,
+                    personId, context.Channel.Id,
                     query, topK: 10, includeLinks: true, includePersona: true);
                 memoryCache[personId] = (results, DateTime.Now);
                 return results;
@@ -375,7 +467,7 @@ namespace AgentCoreProcessor.Engine
                     else
                     {
                         await ctx.MemorySvc.StoreAsync(item.Content,
-                            context.Person.Id, context.Channel.Id, null,
+                            context.Person.Id, context.Channel.Id,
                             confidence: item.Confidence);
                         factCount++;
                     }
@@ -404,6 +496,7 @@ namespace AgentCoreProcessor.Engine
             }
             return sb.ToString().TrimEnd();
         }
+// PLACEHOLDER_XML
 
         // ---- XML 格式构建 ----
 
@@ -415,7 +508,6 @@ namespace AgentCoreProcessor.Engine
             var sb = new StringBuilder();
             var shortNames = ResolveShortNames(participants);
 
-            // 1. 参与者声明
             sb.AppendLine("<participants>");
             foreach (var (userId, info) in participants)
             {
@@ -425,7 +517,6 @@ namespace AgentCoreProcessor.Engine
             }
             sb.AppendLine("</participants>");
 
-            // 2. 对话历史（已处理的消息 + 数据库历史，排除当前 batch）
             var batchTicks = new HashSet<long>(batch.Select(b => b.Message.Time.Ticks));
             var historyMessages = recentMessages
                 .Where(m => !batchTicks.Contains(m.Time.Ticks))
@@ -443,7 +534,6 @@ namespace AgentCoreProcessor.Engine
                 sb.AppendLine("</history>");
             }
 
-            // 3. 新消息（当前 batch）
             sb.AppendLine("<new>");
             foreach (var (msg, sc) in batch)
             {
@@ -456,6 +546,7 @@ namespace AgentCoreProcessor.Engine
 
             return sb.ToString();
         }
+// PLACEHOLDER_HELPERS
 
         private static Dictionary<int, string> ResolveShortNames(Dictionary<int, ParticipantInfo> participants)
         {

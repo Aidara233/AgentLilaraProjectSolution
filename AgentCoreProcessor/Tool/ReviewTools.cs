@@ -40,7 +40,7 @@ namespace AgentCoreProcessor.Tool
             var results = await ctx.MemorySvc.RecallAsync(
                 personId > 0 ? personId : 0,
                 channelId > 0 ? channelId : 0,
-                0, query, topK: 15, includeLinks: true);
+                query, topK: 15, includeLinks: true);
 
             if (results.Count == 0)
                 return new ToolResult { Status = "success", Data = "未找到相关记忆" };
@@ -99,26 +99,26 @@ namespace AgentCoreProcessor.Tool
         public ReviewReadMessagesTool(ISystemContext ctx) { this.ctx = ctx; }
 
         public string Name => "读取消息历史";
-        public string Description => "读取指定话题ID的原始消息记录";
+        public string Description => "读取指定频道ID的原始消息记录";
         public IReadOnlyList<ToolParameter> Parameters =>
         [
-            new("话题ID", "要读取的话题ID", 0),
+            new("频道ID", "要读取的频道ID", 0),
             new("数量限制", "可选，最多返回多少条消息（默认50）", 1)
         ];
         public TimeSpan Timeout => TimeSpan.FromSeconds(15);
 
         public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
-            if (!int.TryParse(resolvedInputs.ElementAtOrDefault(0), out var topicId))
-                return new ToolResult { Status = "failed", Error = "话题ID必须是整数" };
+            if (!int.TryParse(resolvedInputs.ElementAtOrDefault(0), out var channelId))
+                return new ToolResult { Status = "failed", Error = "频道ID必须是整数" };
 
             int limit = 50;
             int.TryParse(resolvedInputs.ElementAtOrDefault(1) ?? "", out var parsedLimit);
             if (parsedLimit > 0) limit = Math.Min(parsedLimit, 200);
 
-            var messages = await ctx.Session.GetContextAsync(topicId, limit);
+            var messages = await ctx.Session.GetContextByChannelAsync(channelId, limit);
             if (messages.Count == 0)
-                return new ToolResult { Status = "success", Data = "该话题没有消息" };
+                return new ToolResult { Status = "success", Data = "该频道没有消息" };
 
             var sb = new StringBuilder();
             foreach (var msg in messages)

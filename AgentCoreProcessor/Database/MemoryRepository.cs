@@ -16,13 +16,13 @@ namespace AgentCoreProcessor.Database
 
         /// <summary>
         /// 按多维标签并集过滤记忆。
-        /// 返回 PersonId/ChannelId/TopicId 任一匹配 或 对应标签为 null（不限）的记忆。
+        /// 返回 PersonId/ChannelId 任一匹配 或 对应标签为 null（不限）的记忆。
         /// </summary>
         /// <summary>
         /// 按多维标签过滤记忆（OR 模式：任一标签匹配即召回，返回匹配标签数）。
         /// </summary>
         public async Task<List<(MemoryEntry Entry, int MatchCount)>> GetByTagsAsync(
-            int? personId, int? channelId, int? topicId)
+            int? personId, int? channelId)
         {
             var all = await db.GetAllAsync<MemoryEntry>();
             var now = DateTime.Now;
@@ -36,9 +36,8 @@ namespace AgentCoreProcessor.Database
                 int matchCount = 0;
                 if (m.PersonId != null && m.PersonId == personId) matchCount++;
                 if (m.ChannelId != null && m.ChannelId == channelId) matchCount++;
-                if (m.TopicId != null && m.TopicId == topicId) matchCount++;
 
-                bool isGlobal = m.PersonId == null && m.ChannelId == null && m.TopicId == null;
+                bool isGlobal = m.PersonId == null && m.ChannelId == null;
                 if (isGlobal || matchCount > 0)
                     results.Add((m, isGlobal ? 1 : matchCount));
             }
@@ -76,14 +75,13 @@ namespace AgentCoreProcessor.Database
         /// <summary>创建一条主库记忆。</summary>
         public async Task<MemoryEntry> CreateAsync(
             string content, byte[]? embedding,
-            int? personId = null, int? channelId = null, int? topicId = null,
+            int? personId = null, int? channelId = null,
             int? sourceMessageId = null, float importance = 0.5f, string confidence = "high")
         {
             var memory = new MemoryEntry
             {
                 PersonId = personId,
                 ChannelId = channelId,
-                TopicId = topicId,
                 Content = content,
                 Embedding = embedding,
                 Importance = importance,
@@ -137,14 +135,13 @@ namespace AgentCoreProcessor.Database
         public async Task<MemoryEntry> CreateDerivedAsync(
             string content, byte[]? embedding,
             string sourceMemoryIds, string sourceHash,
-            int? personId = null, int? channelId = null, int? topicId = null,
+            int? personId = null, int? channelId = null,
             float importance = 0.5f)
         {
             var memory = new MemoryEntry
             {
                 PersonId = personId,
                 ChannelId = channelId,
-                TopicId = topicId,
                 Content = content,
                 Embedding = embedding,
                 Importance = importance,

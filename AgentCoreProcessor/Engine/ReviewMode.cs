@@ -150,13 +150,19 @@ namespace AgentCoreProcessor.Engine
             if (channel != null)
                 sb.AppendLine($"当前亲和度: {channel.Affinity:F2}（影响群聊回复倾向，1.0为基准）");
 
-            var topics = await ctx.Session.GetActiveTopicsAsync(targetChannelId.Value);
-            if (topics.Count > 0)
+            // 展示最近消息摘要
+            var recentMessages = await ctx.Session.GetContextByChannelAsync(targetChannelId.Value, limit: 30);
+            if (recentMessages.Count > 0)
             {
-                sb.AppendLine($"### 活跃话题 ({topics.Count}个)");
-                foreach (var topic in topics)
-                    sb.AppendLine($"- [话题ID:{topic.Id}] {topic.Name}" +
-                        (string.IsNullOrEmpty(topic.Summary) ? "" : $" — {topic.Summary}"));
+                sb.AppendLine($"### 最近消息 ({recentMessages.Count}条)");
+                foreach (var msg in recentMessages.TakeLast(20))
+                {
+                    var name = msg.IsFromBot ? "Lilara"
+                             : !string.IsNullOrEmpty(msg.SenderName) ? msg.SenderName
+                             : "用户";
+                    var preview = msg.Content.Length > 60 ? msg.Content[..60] + "..." : msg.Content;
+                    sb.AppendLine($"- [{msg.Time:HH:mm}] {name}: {preview}");
+                }
             }
 
             sb.AppendLine();
@@ -198,18 +204,23 @@ namespace AgentCoreProcessor.Engine
         private static async Task BuildCrossDomainContext(ISystemContext ctx, StringBuilder sb)
         {
             sb.AppendLine("## 复盘模式：跨域关联");
-            sb.AppendLine("跨频道/话题发现被忽略的联系和共同趋势。");
+            sb.AppendLine("跨频道发现被忽略的联系和共同趋势。");
             sb.AppendLine();
 
             var channels = await ctx.Session.GetAllChannelsAsync();
             sb.AppendLine($"### 活跃频道 ({channels.Count}个)");
             foreach (var channel in channels)
             {
-                var topics = await ctx.Session.GetActiveTopicsAsync(channel.Id);
-                sb.AppendLine($"- {channel.Name}:");
-                foreach (var topic in topics.Take(5))
-                    sb.AppendLine($"  - [话题ID:{topic.Id}] {topic.Name}" +
-                        (string.IsNullOrEmpty(topic.Summary) ? "" : $" — {topic.Summary}"));
+                sb.AppendLine($"- {channel.Name} (亲和度={channel.Affinity:F2})");
+                var recent = await ctx.Session.GetContextByChannelAsync(channel.Id, limit: 5);
+                foreach (var msg in recent)
+                {
+                    var name = msg.IsFromBot ? "Lilara"
+                             : !string.IsNullOrEmpty(msg.SenderName) ? msg.SenderName
+                             : "用户";
+                    var preview = msg.Content.Length > 50 ? msg.Content[..50] + "..." : msg.Content;
+                    sb.AppendLine($"  - [{msg.Time:HH:mm}] {name}: {preview}");
+                }
             }
         }
 

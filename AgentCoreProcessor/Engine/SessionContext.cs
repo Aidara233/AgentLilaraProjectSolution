@@ -4,7 +4,7 @@ using AgentCoreProcessor.Database;
 namespace AgentCoreProcessor.Engine
 {
     /// <summary>
-    /// 一次消息处理所需的会话上下文，由 SessionManager 构建后传递给 WorkerEngine。
+    /// 一次消息处理所需的会话上下文，由 SessionManager 构建后传递给引擎。
     /// </summary>
     internal class SessionContext
     {
@@ -17,10 +17,7 @@ namespace AgentCoreProcessor.Engine
         /// <summary>消息所属频道</summary>
         public required Channel Channel { get; set; }
 
-        /// <summary>消息被归类到的话题</summary>
-        public required Topic Topic { get; set; }
-
-        /// <summary>当前话题的最近历史消息（按时间升序）</summary>
+        /// <summary>频道的最近历史消息（按时间升序）</summary>
         public List<UserMessage> RecentMessages { get; set; } = new();
     }
 }

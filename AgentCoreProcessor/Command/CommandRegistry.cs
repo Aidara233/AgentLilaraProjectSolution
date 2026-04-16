@@ -22,7 +22,6 @@ namespace AgentCoreProcessor.Command
                 new MemoryCommand(),
                 new EngineCommand(),
                 new WakeCommand(),
-                new TopicCommand(),
                 new ChannelCommand(),
                 new UserCommand(),
                 new TestCommand(),

@@ -19,7 +19,6 @@ namespace AgentCoreProcessor.Command
             sb.AppendLine($"  空闲: {(ctx.IsIdle ? "是" : "否")}");
             sb.AppendLine($"  空闲时长: {ctx.IdleDuration:hh\\:mm\\:ss}");
             sb.AppendLine($"  上次消息: {ctx.LastMessageTime:yyyy-MM-dd HH:mm:ss}");
-            sb.AppendLine($"  活跃 Topic: {ctx.GetActiveEngineCount("Topic")}");
             sb.AppendLine($"  活跃 Worker: {ctx.GetActiveEngineCount("Worker")}");
             sb.AppendLine($"  活跃 Dream: {ctx.GetActiveEngineCount("Dream")}");
 

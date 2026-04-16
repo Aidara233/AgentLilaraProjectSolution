@@ -48,7 +48,7 @@ namespace AgentCoreProcessor.Memory
         /// </summary>
         public async Task<TempMemoryEntry> StoreAsync(
             string content,
-            int? personId = null, int? channelId = null, int? topicId = null,
+            int? personId = null, int? channelId = null,
             int? sourceMessageId = null, string confidence = "high")
         {
             byte[]? embeddingBytes = null;
@@ -63,14 +63,14 @@ namespace AgentCoreProcessor.Memory
             }
 
             return await tempMemories.CreateAsync(
-                content, embeddingBytes, personId, channelId, topicId, sourceMessageId, confidence);
+                content, embeddingBytes, personId, channelId, sourceMessageId, confidence);
         }
 
         /// <summary>
         /// 检索相关记忆。先查临时库，再查主库（标签过滤→向量精排→关联扩展→综合排序）。
         /// </summary>
         public async Task<List<ScoredMemory>> RecallAsync(
-            int personId, int channelId, int topicId,
+            int personId, int channelId,
             string query, int topK = 10, bool includeLinks = true, bool includePersona = false)
         {
             // 生成 query embedding
@@ -87,7 +87,7 @@ namespace AgentCoreProcessor.Memory
             var scored = new List<ScoredMemory>();
 
             // 1. 查临时库（OR 模式，匹配标签数加权）
-            var tempResults = await tempMemories.GetByTagsAsync(personId, channelId, topicId);
+            var tempResults = await tempMemories.GetByTagsAsync(personId, channelId);
             foreach (var (t, matchCount) in tempResults)
             {
                 float sim = VectorUtil.ComputeSimilarity(queryVec, t.Embedding);
@@ -102,7 +102,7 @@ namespace AgentCoreProcessor.Memory
             }
 
             // 2. 查主库（OR 模式，匹配标签数加权 + 向量精排）
-            var mainResults = await memories.GetByTagsAsync(personId, channelId, topicId);
+            var mainResults = await memories.GetByTagsAsync(personId, channelId);
             var mainScored = mainResults.Select(x => new
             {
                 x.Entry,
@@ -247,7 +247,7 @@ namespace AgentCoreProcessor.Memory
             }
 
             // 也搜索临时库
-            var tempAll = await tempMemories.GetByTagsAsync(personId, null, null);
+            var tempAll = await tempMemories.GetByTagsAsync(personId, null);
             TempMemoryEntry? bestTempMatch = null;
             float bestTempSim = 0.6f;
 

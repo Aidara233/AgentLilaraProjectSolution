@@ -31,7 +31,6 @@ namespace AgentCoreProcessor.Database
             await db.CreateTableAsync<Person>();
             await db.CreateTableAsync<User>();
             await db.CreateTableAsync<Channel>();
-            await db.CreateTableAsync<Topic>();
             await db.CreateTableAsync<UserMessage>();
             await db.CreateTableAsync<MemoryEntry>();
             await db.CreateTableAsync<TempMemoryEntry>();

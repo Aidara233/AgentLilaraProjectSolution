@@ -4,7 +4,7 @@ using AgentCoreProcessor.Database;
 namespace AgentCoreProcessor.Engine
 {
     /// <summary>
-    /// 话题参与者信息。TopicEngine 维护，通过 ActivationBatch 快照传递给 WorkerEngine。
+    /// 频道参与者信息。WorkerEngine 维护。
     /// </summary>
     internal sealed class ParticipantInfo
     {

@@ -37,7 +37,7 @@ namespace AgentCoreProcessor.Command
             var personId = context.Person.Id;
 
             var results = await ctx.MemorySvc.RecallAsync(
-                personId, channelId: 0, topicId: 0,
+                personId, channelId: 0,
                 query, topK: 10, includeLinks: true, includePersona: true);
 
             if (results.Count == 0)

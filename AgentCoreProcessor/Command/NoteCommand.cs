@@ -20,7 +20,7 @@ namespace AgentCoreProcessor.Command
 
             var ctx = context.SystemContext;
             await ctx.MemorySvc.StoreAsync(args.Trim(),
-                context.Person.Id, channelId: 0, topicId: 0);
+                context.Person.Id, channelId: 0);
 
             return CommandResult.Ok($"已写入临时记忆: {args.Trim()}");
         }

@@ -108,11 +108,5 @@ namespace AgentCoreProcessor.Engine
         {
             Log(source, $"工具调用: [{toolName}] id={toolId} status={status}");
         }
-
-        /// <summary>记录话题分类结果。</summary>
-        public static void LogTopicClassification(string source, int topicId, string method)
-        {
-            Log(source, $"话题分类: topic={topicId} method={method}");
-        }
     }
 }
