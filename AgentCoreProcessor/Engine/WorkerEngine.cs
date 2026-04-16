@@ -179,13 +179,16 @@ namespace AgentCoreProcessor.Engine
 
                     if (!ctx.MuteMode && ShouldRespond(batch))
                     {
+                        bool triggeredByMention = batch.Any(b => b.Message.IsMentioned || b.Message.IsPrivate);
                         Interlocked.Exchange(ref _busyFlag, 1);
                         try
                         {
                             var snapshot = new Dictionary<int, ParticipantInfo>(recentParticipants);
                             await ProcessBatchAsync(batch, snapshot);
                             impulse = 0f;
-                            awaitingResponse = true;
+                            // 只有主动发言（非@/非私聊触发）才等待对方回应
+                            if (!triggeredByMention)
+                                awaitingResponse = true;
                         }
                         catch (Exception ex)
                         {
@@ -571,9 +574,32 @@ namespace AgentCoreProcessor.Engine
             sb.AppendLine("</participants>");
 
             var batchTicks = new HashSet<long>(batch.Select(b => b.Message.Time.Ticks));
-            var historyMessages = recentMessages
-                .Where(m => !batchTicks.Contains(m.Time.Ticks))
-                .ToList();
+
+            // 找 recentMessages 中最后一条 bot 回复的位置，之后的都算"未回应"
+            int lastBotIndex = -1;
+            for (int i = recentMessages.Count - 1; i >= 0; i--)
+            {
+                if (recentMessages[i].IsFromBot)
+                {
+                    lastBotIndex = i;
+                    break;
+                }
+            }
+
+            // lastBotIndex 之后的非 batch 消息 = 未回应消息，归入 new
+            var unrespondedMessages = new List<UserMessage>();
+            var historyMessages = new List<UserMessage>();
+            for (int i = 0; i < recentMessages.Count; i++)
+            {
+                if (batchTicks.Contains(recentMessages[i].Time.Ticks))
+                    continue;
+                if (i > lastBotIndex && lastBotIndex >= 0 && !recentMessages[i].IsFromBot)
+                    unrespondedMessages.Add(recentMessages[i]);
+                else if (lastBotIndex < 0 && !recentMessages[i].IsFromBot)
+                    unrespondedMessages.Add(recentMessages[i]);
+                else
+                    historyMessages.Add(recentMessages[i]);
+            }
 
             if (historyMessages.Count > 0)
             {
@@ -588,12 +614,20 @@ namespace AgentCoreProcessor.Engine
             }
 
             sb.AppendLine("<new>");
+            // 先放未回应的历史消息
+            foreach (var m in unrespondedMessages)
+            {
+                var name = ResolveHistoryShortName(m, shortNames);
+                sb.AppendLine($"<msg user=\"{SanitizeAttr(name)}\">{SanitizeContent(m.Content)}</msg>");
+            }
+            // 再放当前 batch
             foreach (var (msg, sc) in batch)
             {
                 var name = shortNames.GetValueOrDefault(sc.User.Id, sc.User.DisplayName);
                 if (string.IsNullOrEmpty(name))
                     name = msg.DisplayName ?? msg.PlatformUserId;
-                sb.AppendLine($"<msg user=\"{SanitizeAttr(name)}\">{SanitizeContent(msg.Content)}</msg>");
+                var mentionAttr = msg.IsMentioned ? " mentioned=\"true\"" : "";
+                sb.AppendLine($"<msg user=\"{SanitizeAttr(name)}\"{mentionAttr}>{SanitizeContent(msg.Content)}</msg>");
             }
             sb.Append("</new>");
 
