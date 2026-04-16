@@ -77,5 +77,8 @@ namespace AgentCoreProcessor.Engine
         void RequestStopEngine(ISubEngine engine);
         List<(string Type, int Count)> GetActiveEngineSummary();
         void RequestStopEnginesByType(string engineType);
+
+        /// <summary>静音模式：内部处理照常，但不产生对外输出。</summary>
+        bool MuteMode { get; set; }
     }
 }

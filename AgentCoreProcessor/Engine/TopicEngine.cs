@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -35,7 +36,7 @@ namespace AgentCoreProcessor.Engine
         private readonly float channelAffinity;
 
         // 参与人数追踪（影响 BaseMessageScore 折扣）
-        private readonly HashSet<int> recentParticipants = new();
+        private readonly ConcurrentDictionary<int, byte> recentParticipants = new();
 
         // 负反馈抑制
         private bool awaitingResponse = false;
@@ -71,7 +72,7 @@ namespace AgentCoreProcessor.Engine
             this.lastBufferTime = DateTime.Now;
 
             buffer.Add((initialMessage, initialContext));
-            recentParticipants.Add(initialContext.User.Id);
+            recentParticipants.TryAdd(initialContext.User.Id, 0);
             AccumulateImpulse(initialMessage);
 
             FrameworkLogger.Log("TopicEngine", $"创建: topicId={topicId}, affinity={channelAffinity:F2}");
@@ -85,7 +86,7 @@ namespace AgentCoreProcessor.Engine
                 buffer.Add((msg, sc));
                 lastBufferTime = DateTime.Now;
             }
-            recentParticipants.Add(sc.User.Id);
+            recentParticipants.TryAdd(sc.User.Id, 0);
             AccumulateImpulse(msg);
         }
 
@@ -126,7 +127,10 @@ namespace AgentCoreProcessor.Engine
                         awaitingResponse = false;
                     }
 
-                    if (ShouldRespond(batch))
+                    // 记忆提取计数（无论是否回复都要跑）
+                    TrackMemoryExtraction(batch);
+
+                    if (!ctx.MuteMode && ShouldRespond(batch))
                     {
                         await SpawnWorkerAsync(batch);
                         lastResponseTime = DateTime.Now;
@@ -230,14 +234,18 @@ namespace AgentCoreProcessor.Engine
                 preloadedMemory: memory,
                 imagePaths: imagePaths.Count > 0 ? imagePaths : null);
             ctx.StartEngine(worker);
+        }
 
-            // 记忆提取计数
-            this.lastContext = lastContext;
+        /// <summary>记忆提取计数，达到间隔时异步触发提取。独立于是否回复。</summary>
+        private void TrackMemoryExtraction(List<(IncomingMessage Message, SessionContext Context)> batch)
+        {
+            var batchContext = batch[^1].Context;
+            this.lastContext = batchContext;
             processedMessageCount += batch.Count;
             if (processedMessageCount >= MemoryExtractionInterval)
             {
                 processedMessageCount = 0;
-                _ = ExtractMemoryAsync(lastContext);
+                _ = ExtractMemoryAsync(batchContext);
             }
         }
 

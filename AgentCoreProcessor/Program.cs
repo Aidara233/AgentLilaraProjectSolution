@@ -22,6 +22,7 @@ namespace AgentCoreProcessor
             var testMode = Array.Exists(args, a => a == "--test");
             var qqMode = Array.Exists(args, a => a == "--qq");
             var testSend = Array.Exists(args, a => a == "--test-send");
+            var muteMode = Array.Exists(args, a => a == "--mute");
 
             // --test 模式启用日志镜像到控制台
             if (testMode)
@@ -59,6 +60,8 @@ namespace AgentCoreProcessor
 
             // 主引擎
             var engine = new MasterEngine(adapterManager, eventBus);
+            if (muteMode)
+                engine.MuteMode = true;
 
             // 初始化数据库（建表 + Repository）+ 订阅事件总线
             try
