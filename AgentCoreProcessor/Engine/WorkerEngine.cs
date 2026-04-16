@@ -385,12 +385,39 @@ namespace AgentCoreProcessor.Engine
                     ? await expressCore.GenerateOnceAsync(expressInput, imagePaths)
                     : await expressCore.GenerateOnceAsync(expressInput);
 
-                await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
+                // 按换行拆分为多条消息，逐条发送，模拟真人打字节奏
+                var segments = expressed
+                    .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(s => s.Trim())
+                    .Where(s => s.Length > 0)
+                    .ToList();
+
+                if (segments.Count <= 1)
                 {
-                    ChannelId = lastMsg.ChannelId,
-                    Content = expressed
-                });
-                await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, expressed);
+                    // 单条直接发
+                    await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
+                    {
+                        ChannelId = lastMsg.ChannelId,
+                        Content = expressed.Trim()
+                    });
+                }
+                else
+                {
+                    var rng = new Random();
+                    for (int i = 0; i < segments.Count; i++)
+                    {
+                        if (i > 0)
+                            await Task.Delay(rng.Next(600, 2000));
+                        await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
+                        {
+                            ChannelId = lastMsg.ChannelId,
+                            Content = segments[i]
+                        });
+                    }
+                }
+
+                // 数据库存完整文本
+                await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, expressed.Trim());
             }
 
             // 7. 记忆提取计数
