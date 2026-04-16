@@ -16,6 +16,7 @@ namespace AgentCoreProcessor.Tool
         public IReadOnlyList<ToolParameter> Parameters =>
             [new("标记内容", "值得复盘时深入分析的内容", 0)];
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);
+        public bool AllowSubAgent => false;
 
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {

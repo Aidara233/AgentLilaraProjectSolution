@@ -22,6 +22,9 @@ namespace AgentCoreProcessor.Core
         /// <param name="lastRoundCalls">上一轮的工具调用（与 lastRoundResults 一一对应）</param>
         /// <param name="retainedResults">被 retain=true 标记的历史结果（跨轮保留）</param>
         /// <param name="additionalContext">附加上下文（预留给记忆系统注入）</param>
+        /// <param name="imagePaths">图片路径列表（仅首轮注入）</param>
+        /// <param name="newMessages">运行时到达的新消息（WorkerEngine 推送）</param>
+        /// <param name="subAgentResults">已完成的子 agent 结果</param>
         /// <returns>组装好的消息列表，设置为 ConversationHistory 即可</returns>
         public List<Message> BuildRoundMessages(
             string toolDescriptions,
@@ -31,7 +34,9 @@ namespace AgentCoreProcessor.Core
             List<ToolCall>? lastRoundCalls,
             List<(ToolCall call, ToolResult result)> retainedResults,
             string? additionalContext = null,
-            List<string>? imagePaths = null)
+            List<string>? imagePaths = null,
+            List<string>? newMessages = null,
+            List<(string id, string summary)>? subAgentResults = null)
         {
             var messages = new List<Message>();
 
@@ -83,6 +88,24 @@ namespace AgentCoreProcessor.Core
                     if (i < lastRoundResults.Count)
                         FormatSingleResult(sb, lastRoundCalls[i], lastRoundResults[i]);
                 }
+                messages.Add(new Message { Role = "user", Content = sb.ToString() });
+            }
+
+            // 7. 运行时新消息（WorkerEngine 推送的新到达消息）
+            if (newMessages != null && newMessages.Count > 0)
+            {
+                var sb = new StringBuilder("[新消息到达]\n");
+                foreach (var msg in newMessages)
+                    sb.AppendLine(msg);
+                messages.Add(new Message { Role = "user", Content = sb.ToString() });
+            }
+
+            // 8. 子 agent 完成结果
+            if (subAgentResults != null && subAgentResults.Count > 0)
+            {
+                var sb = new StringBuilder("[子任务完成]\n");
+                foreach (var (id, summary) in subAgentResults)
+                    sb.AppendLine($"{id}: {summary}");
                 messages.Add(new Message { Role = "user", Content = sb.ToString() });
             }
 

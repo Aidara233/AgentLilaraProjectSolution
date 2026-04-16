@@ -1,7 +1,11 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Adapter;
+using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Tool;
 
@@ -9,12 +13,11 @@ namespace AgentCoreProcessor.Core
 {
     /// <summary>
     /// 工作核心。Agent 循环的中心——通过多轮工具调用完成任务。
-    /// 模型通过工具调用控制框架行为：说话、思考、完成都是工具。
+    /// 支持子 agent 异步委派和运行时新消息感知。
     /// </summary>
     internal class WorkingCore : CoreBase
     {
-        /// <summary>安全上限，防止死循环。</summary>
-        private const int MaxRounds = 10;
+        private const int MaxRounds = 15;
 
         // 特殊工具名称常量
         private const string CompletionToolName = "完成";
@@ -27,219 +30,306 @@ namespace AgentCoreProcessor.Core
         private const string SleepScoreToolName = "调整睡意";
         private const string RedAlertToolName = "触发红色警报";
         private const string ReviewHintToolName = "标记复盘";
+        private const string DelegateToolName = "委派任务";
+        private const string SubAgentDetailToolName = "查看子任务详情";
 
         private readonly PromptBuilder promptBuilder = new();
 
-        /// <summary>
-        /// 说话回调。由 WorkerEngine 在调用 ProcessAsync 前设置。
-        /// 签名：async (rawText) => { ExpressCore 润色 + Adapter 推送 }
-        /// </summary>
+        // 回调
         public Func<string, Task>? OnSpeak { get; set; }
-
-        /// <summary>
-        /// 记忆回调。由 WorkerEngine 在调用 ProcessAsync 前设置。
-        /// 签名：async (content) => { MemoryService.StoreAsync }
-        /// </summary>
         public Func<string, Task>? OnMemory { get; set; }
-
-        /// <summary>
-        /// 信号回调。由 WorkerEngine 在调用 ProcessAsync 前设置。
-        /// 签名：async (signalName, payload) => { EventBus.PublishSignal }
-        /// </summary>
         public Func<string, string?, Task>? OnSignal { get; set; }
-
-        /// <summary>
-        /// 复盘标记回调。由 WorkerEngine 在调用 ProcessAsync 前设置。
-        /// 签名：async (content) => { ReviewHintRepository.CreateAsync }
-        /// </summary>
         public Func<string, Task>? OnReviewHint { get; set; }
 
+        // 子 agent 管理
+        private readonly Dictionary<string, SubAgentRecord> subAgentRecords = new();
+        private int subAgentSeq = 0;
+
+        // 消息通道（由 WorkerEngine 注入）
+        private ConcurrentQueue<IncomingMessage>? messageQueue;
+        private SemaphoreSlim? messageSignal;
+
+        /// <summary>注入消息通道，启用运行时消息感知。</summary>
+        public void SetMessageChannel(ConcurrentQueue<IncomingMessage> queue, SemaphoreSlim signal)
+        {
+            this.messageQueue = queue;
+            this.messageSignal = signal;
+        }
+
         /// <summary>
-        /// 多轮 Agent 循环。模型反复调用工具直到调用"完成"工具。
-        /// 返回完成摘要；若超限或异常则返回错误信息。
+        /// 事件驱动 Agent 循环。支持子 agent 异步委派和运行时新消息感知。
         /// </summary>
         public async Task<string> ProcessAsync(string userRequest, string? memoryContext = null,
             List<string>? imagePaths = null)
         {
-            // === 跨轮持久状态 ===
-            var register = new Dictionary<string, string>();         // 寄存器：toolId → 输出数据
-            var thinkingNotes = new Dictionary<string, string>();    // 思考笔记：key → value
-            var retainedResults = new List<(ToolCall call, ToolResult result)>();  // retain=true 的历史结果
-
-            // === 滚动状态（仅最近一轮）===
+            // 跨轮持久状态
+            var register = new Dictionary<string, string>();
+            var thinkingNotes = new Dictionary<string, string>();
+            var retainedResults = new List<(ToolCall call, ToolResult result)>();
             List<ToolCall>? lastRoundCalls = null;
             List<ToolResult>? lastRoundResults = null;
 
-            // 工具描述在循环期间不变（ToolRegistry 是静态的）
+            // 新消息和子 agent 结果的累积缓冲
+            var pendingNewMessages = new List<string>();
+            var pendingSubResults = new List<(string id, string summary)>();
+
             var toolDescriptions = ToolRegistry.GenerateDescriptions();
 
             for (int round = 0; round < MaxRounds; round++)
             {
-                // ── 1. 组装本轮提示词 ──
+                // 1. 收集本轮新增内容
+                DrainNewMessages(pendingNewMessages);
+                CollectCompletedSubAgents(pendingSubResults);
+
+                // 2. 组装本轮提示词
                 var messages = promptBuilder.BuildRoundMessages(
-                    toolDescriptions,
-                    userRequest,
-                    thinkingNotes,
-                    lastRoundResults,
-                    lastRoundCalls,
-                    retainedResults,
+                    toolDescriptions, userRequest, thinkingNotes,
+                    lastRoundResults, lastRoundCalls, retainedResults,
                     memoryContext,
-                    imagePaths: round == 0 ? imagePaths : null
-                );
+                    imagePaths: round == 0 ? imagePaths : null,
+                    newMessages: pendingNewMessages.Count > 0 ? pendingNewMessages : null,
+                    subAgentResults: pendingSubResults.Count > 0 ? pendingSubResults : null);
+
                 processor.Client.ClearConversationHistory();
                 processor.Client.SetConversationHistory(messages);
 
-                // ── 2. 调用模型，通过 <over> break 解析工具调用 ──
+                // 清空已注入的缓冲
+                pendingNewMessages.Clear();
+                pendingSubResults.Clear();
+
+                // 3. 调用模型，解析工具调用
                 var toolCalls = await ParseToolCallsAsync();
 
-                // ── 3. 空输出检查 ──
                 if (toolCalls.Count == 0)
                 {
-                    // 首轮空输出 → 模型无法理解任务
-                    if (round == 0)
-                        return "[Agent] 未能生成有效的工具调用计划。";
-                    // 后续轮空输出 → 视为隐式完成
+                    if (round == 0) return "[Agent] 未能生成有效的工具调用计划。";
                     break;
                 }
 
-                // ── 4. DAG 执行（寄存器跨轮共享）──
-                var executor = new ToolExecutor(register);
-                var results = await executor.ExecuteAsync(toolCalls);
+                // 4. 分拣：委派/详情 vs 同步工具
+                var syncCalls = new List<ToolCall>();
+                var delegateCalls = new List<ToolCall>();
+                var detailCalls = new List<ToolCall>();
 
-                // ── 5. 处理特殊工具的副作用 ──
+                foreach (var call in toolCalls)
+                {
+                    if (call.Tool == DelegateToolName) delegateCalls.Add(call);
+                    else if (call.Tool == SubAgentDetailToolName) detailCalls.Add(call);
+                    else syncCalls.Add(call);
+                }
+
+                // 5. 同步工具执行（含委派和详情的信号工具）
+                var executor = new ToolExecutor(register);
+                var allResults = await executor.ExecuteAsync(toolCalls);
+
+                // 6. 处理副作用
                 bool shouldExit = false;
                 string? completionSummary = null;
 
                 for (int i = 0; i < toolCalls.Count; i++)
                 {
                     var call = toolCalls[i];
-                    var result = results[i];
+                    var result = allResults[i];
 
                     switch (call.Tool)
                     {
                         case CompletionToolName:
-                            if (result.IsSuccess)
-                            {
-                                shouldExit = true;
-                                completionSummary = result.Data;
-                            }
+                            if (result.IsSuccess) { shouldExit = true; completionSummary = result.Data; }
                             break;
-
                         case ThinkingNotesToolName:
-                            if (result.IsSuccess)
-                                ApplyThinkingNotes(call, thinkingNotes);
+                            if (result.IsSuccess) ApplyThinkingNotes(call, thinkingNotes);
                             break;
-
                         case SpeakToolName:
-                            if (result.IsSuccess && OnSpeak != null)
-                                await OnSpeak(result.Data ?? "");
+                            if (result.IsSuccess && OnSpeak != null) await OnSpeak(result.Data ?? "");
                             break;
-
                         case MemoryToolName:
-                            if (result.IsSuccess && OnMemory != null)
-                                await OnMemory(result.Data ?? "");
+                            if (result.IsSuccess && OnMemory != null) await OnMemory(result.Data ?? "");
                             break;
-
                         case DreamPermissionToolName:
-                            if (result.IsSuccess && OnSignal != null)
-                                await OnSignal("dream-permission", null);
+                            if (result.IsSuccess && OnSignal != null) await OnSignal("dream-permission", null);
                             break;
-
                         case ForceSleepToolName:
-                            if (result.IsSuccess && OnSignal != null)
-                                await OnSignal("force-sleep", null);
+                            if (result.IsSuccess && OnSignal != null) await OnSignal("force-sleep", null);
                             break;
-
                         case DreamConfigToolName:
-                            if (result.IsSuccess && OnSignal != null)
-                                await OnSignal("dream-config", result.Data);
+                            if (result.IsSuccess && OnSignal != null) await OnSignal("dream-config", result.Data);
                             break;
-
                         case SleepScoreToolName:
-                            if (result.IsSuccess && OnSignal != null)
-                                await OnSignal("sleep-score-offset", result.Data);
+                            if (result.IsSuccess && OnSignal != null) await OnSignal("sleep-score-offset", result.Data);
                             break;
-
                         case RedAlertToolName:
-                            if (result.IsSuccess && OnSignal != null)
-                                await OnSignal("red-alert", null);
+                            if (result.IsSuccess && OnSignal != null) await OnSignal("red-alert", null);
+                            break;
+                        case ReviewHintToolName:
+                            if (result.IsSuccess && OnReviewHint != null) await OnReviewHint(result.Data ?? "");
                             break;
 
-                        case ReviewHintToolName:
-                            if (result.IsSuccess && OnReviewHint != null)
-                                await OnReviewHint(result.Data ?? "");
+                        case DelegateToolName:
+                            if (result.IsSuccess) LaunchSubAgent(result.Data ?? "", call.ToolId, register);
+                            break;
+                        case SubAgentDetailToolName:
+                            if (result.IsSuccess) HandleSubAgentDetail(result.Data ?? "", call.ToolId, register);
                             break;
                     }
                 }
 
-                // ── 6. 完成工具被调用 → 退出循环 ──
                 if (shouldExit)
                     return completionSummary ?? "任务完成";
 
-                // ── 7. 收集本轮 retain=true 的结果 ──
+                // 7. 收集 retain 结果
                 for (int i = 0; i < toolCalls.Count; i++)
                 {
-                    if (toolCalls[i].Retain && results[i].IsSuccess)
-                        retainedResults.Add((toolCalls[i], results[i]));
+                    if (toolCalls[i].Retain && allResults[i].IsSuccess)
+                        retainedResults.Add((toolCalls[i], allResults[i]));
                 }
 
-                // ── 8. 更新滚动状态，进入下一轮 ──
+                // 8. 更新滚动状态
                 lastRoundCalls = toolCalls;
-                lastRoundResults = results;
+                lastRoundResults = allResults;
+
+                // 9. 如果有挂起的子 agent → 等待事件
+                await WaitForEventsAsync();
             }
 
             return "[Agent] 已达到最大执行轮次限制，任务未完成。";
         }
 
-        /// <summary>
-        /// 调用 GenerateAsync，通过 &lt;over&gt; break 逐个解析模型输出的 ToolCall JSON。
-        /// 注意：不再自行 AddUserMessage——消息已由 Agent 循环通过 PromptBuilder 设置。
-        /// </summary>
-        private async Task<List<ToolCall>> ParseToolCallsAsync()
+        // ---- 子 agent 管理 ----
+
+        private void LaunchSubAgent(string taskDescription, string toolId, Dictionary<string, string> register)
         {
-            var toolCalls = new List<ToolCall>();
+            var id = $"sa_{++subAgentSeq:D2}";
+            var tools = ToolRegistry.All.Values.Where(t => t.AllowSubAgent).ToList();
+            var record = new SubAgentRecord { Id = id, TaskDescription = taskDescription };
 
-            await GenerateAsync(onBreak: (block) =>
+            record.ExecutionTask = Task.Run(async () =>
             {
-                var json = block.Content.Trim();
-                if (string.IsNullOrEmpty(json))
-                    return;
-
                 try
                 {
-                    var call = ToolCall.FromJson(json);
-                    var errors = call.Validate().ToList();
-                    if (errors.Count == 0)
-                        toolCalls.Add(call);
+                    FrameworkLogger.Log("WorkingCore", $"子agent启动: {id}, 任务={Truncate(taskDescription, 100)}");
+                    return await SubAgentRunner.RunAsync(taskDescription, tools, record);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // 模型输出的 JSON 畸形，跳过该块
+                    record.Status = "failed";
+                    record.Summary = ex.Message;
+                    record.Log.Add($"[异常] {ex.Message}");
+                    FrameworkLogger.LogError("WorkingCore", ex, $"子agent {id} 执行异常");
+                    return $"[子任务 {id} 异常] {ex.Message}";
                 }
             });
 
-            return toolCalls;
+            subAgentRecords[id] = record;
+            // 覆盖信号工具的返回值，让模型看到分配的 ID
+            register[toolId] = $"已派出子任务 {id}";
+        }
+
+        private void HandleSubAgentDetail(string subAgentId, string toolId, Dictionary<string, string> register)
+        {
+            if (!subAgentRecords.TryGetValue(subAgentId, out var record))
+            {
+                register[toolId] = $"未找到子任务: {subAgentId}";
+                return;
+            }
+
+            var lines = new List<string>
+            {
+                $"子任务: {record.Id}",
+                $"状态: {record.Status}",
+                $"任务: {record.TaskDescription}"
+            };
+            if (record.Summary != null)
+                lines.Add($"结果: {record.Summary}");
+            lines.Add("--- 执行日志 ---");
+            lines.AddRange(record.Log);
+
+            register[toolId] = string.Join("\n", lines);
+        }
+
+        private void CollectCompletedSubAgents(List<(string id, string summary)> buffer)
+        {
+            foreach (var record in subAgentRecords.Values)
+            {
+                if (record.Status != "running") continue;
+                if (record.ExecutionTask == null || !record.ExecutionTask.IsCompleted) continue;
+
+                // 任务已完成但状态还没更新（可能是异常路径）
+                if (record.Status == "running")
+                {
+                    record.Status = "completed";
+                    record.Summary ??= record.ExecutionTask.Result;
+                }
+                buffer.Add((record.Id, record.Summary ?? "完成"));
+                FrameworkLogger.Log("WorkingCore", $"子agent完成: {record.Id}, 结果={Truncate(record.Summary, 100)}");
+            }
+        }
+
+        // ---- 消息感知 ----
+
+        private void DrainNewMessages(List<string> buffer)
+        {
+            if (messageQueue == null) return;
+            while (messageQueue.TryDequeue(out var msg))
+            {
+                var sender = msg.DisplayName ?? msg.PlatformUserId;
+                buffer.Add($"{sender}: {msg.Content}");
+            }
         }
 
         /// <summary>
-        /// 根据思考笔记工具的输入，更新笔记字典。
-        /// 思考笔记的输入始终是 value 类型（不会用 ref），直接读 Inputs[i].Value。
+        /// 等待事件：子 agent 完成 或 新消息到达。
+        /// 没有挂起的子 agent 且没有消息通道时直接返回。
         /// </summary>
+        private async Task WaitForEventsAsync()
+        {
+            var pendingSubs = subAgentRecords.Values
+                .Where(r => r.Status == "running" && r.ExecutionTask != null)
+                .Select(r => r.ExecutionTask!)
+                .ToList();
+
+            if (pendingSubs.Count == 0 && messageSignal == null)
+                return;
+
+            var waitTasks = new List<Task>(pendingSubs);
+            if (messageSignal != null)
+                waitTasks.Add(messageSignal.WaitAsync(TimeSpan.FromSeconds(30)));
+
+            if (waitTasks.Count > 0)
+                await Task.WhenAny(waitTasks);
+        }
+
+        // ---- 工具调用解析 ----
+
+        private async Task<List<ToolCall>> ParseToolCallsAsync()
+        {
+            var toolCalls = new List<ToolCall>();
+            await GenerateAsync(onBreak: (block) =>
+            {
+                var json = block.Content.Trim();
+                if (string.IsNullOrEmpty(json)) return;
+                try
+                {
+                    var call = ToolCall.FromJson(json);
+                    if (!call.Validate().Any())
+                        toolCalls.Add(call);
+                }
+                catch { }
+            });
+            return toolCalls;
+        }
+
         private static void ApplyThinkingNotes(ToolCall call, Dictionary<string, string> notes)
         {
             if (call.Inputs.Count < 2) return;
-
             var action = call.Inputs[0].Value?.Trim().ToLower();
             var key = call.Inputs[1].Value ?? "";
-
             if (action == "write" && call.Inputs.Count >= 3)
-            {
                 notes[key] = call.Inputs[2].Value ?? "";
-            }
             else if (action == "delete")
-            {
                 notes.Remove(key);
-            }
         }
+
+        private static string Truncate(string? s, int maxLen)
+            => s == null ? "" : s.Length <= maxLen ? s : s[..maxLen] + "...";
     }
 }

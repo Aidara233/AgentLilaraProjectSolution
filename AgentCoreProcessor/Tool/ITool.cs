@@ -29,5 +29,8 @@ namespace AgentCoreProcessor.Tool
         /// <param name="ct">取消令牌（含超时控制）。</param>
         /// <returns>执行结果。ToolId 由调用方填充，工具本身无需设置。</returns>
         Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct);
+
+        /// <summary>是否允许子 agent 使用。默认 true。信号类/说话/委派等工具覆盖为 false。</summary>
+        bool AllowSubAgent => true;
     }
 }

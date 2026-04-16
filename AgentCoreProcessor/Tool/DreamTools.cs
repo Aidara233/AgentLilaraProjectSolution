@@ -15,6 +15,7 @@ namespace AgentCoreProcessor.Tool
         public string Description => "授予大睡许可，允许系统在满足其他条件时进入深度睡眠";
         public IReadOnlyList<ToolParameter> Parameters => [];
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);
+        public bool AllowSubAgent => false;
 
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
@@ -35,6 +36,7 @@ namespace AgentCoreProcessor.Tool
         public string Description => "立即触发深度睡眠，跳过所有前置条件检查";
         public IReadOnlyList<ToolParameter> Parameters => [];
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);
+        public bool AllowSubAgent => false;
 
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
@@ -56,6 +58,7 @@ namespace AgentCoreProcessor.Tool
         public IReadOnlyList<ToolParameter> Parameters =>
             [new("配置JSON", "JSON格式的配置内容", 0)];
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);
+        public bool AllowSubAgent => false;
 
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
@@ -84,6 +87,7 @@ namespace AgentCoreProcessor.Tool
         public IReadOnlyList<ToolParameter> Parameters =>
             [new("偏移值", "浮点数，如 3.0 或 -5.0", 0)];
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);
+        public bool AllowSubAgent => false;
 
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
@@ -110,6 +114,7 @@ namespace AgentCoreProcessor.Tool
         public string Description => "触发深度睡眠红色警报，跳过黄色评分直接进入许可等待阶段";
         public IReadOnlyList<ToolParameter> Parameters => [];
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);
+        public bool AllowSubAgent => false;
 
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {

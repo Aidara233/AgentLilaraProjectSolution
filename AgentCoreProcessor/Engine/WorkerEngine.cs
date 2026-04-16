@@ -66,6 +66,10 @@ namespace AgentCoreProcessor.Engine
         private const int MemoryExtractionInterval = 3;
         private SessionContext? lastContext;
 
+        // 任务路径消息通道（WorkingCore 运行期间，新消息推入此队列）
+        private ConcurrentQueue<IncomingMessage>? activeMessageQueue;
+        private SemaphoreSlim? activeMessageSignal;
+
         public WorkerEngine(ISystemContext ctx, int topicId)
         {
             this.ctx = ctx;
@@ -76,6 +80,19 @@ namespace AgentCoreProcessor.Engine
         /// <summary>由 TopicEngine 调用，将激活批次推入队列并唤醒事件循环。</summary>
         public void Activate(ActivationBatch batch)
         {
+            // 忙时：将消息转发给 WorkingCore 的消息通道（如果有）
+            if (IsBusy && activeMessageQueue != null)
+            {
+                foreach (var (msg, _) in batch.Messages)
+                {
+                    activeMessageQueue.Enqueue(msg);
+                }
+                activeMessageSignal?.Release();
+                FrameworkLogger.Log("WorkerEngine",
+                    $"忙时消息转发: topicId={topicId}, 消息数={batch.Messages.Count}");
+                return;
+            }
+
             activationQueue.Enqueue(batch);
             activationSignal.Release();
         }
@@ -237,9 +254,25 @@ namespace AgentCoreProcessor.Engine
                 {
                     await ctx.ReviewHints.CreateAsync(content, lastSc.Person.Id, lastSc.Channel.Id, lastSc.Topic.Id);
                 };
-                // Phase 2 扩展点：WorkingCore 循环内检查消息队列
-                await workingCore.ProcessAsync(formattedContext, memoryContext,
-                    imagePaths: imagePaths.Count > 0 ? imagePaths : null);
+
+                // 设置消息通道：WorkingCore 运行期间可感知新消息
+                var msgQueue = new ConcurrentQueue<IncomingMessage>();
+                var msgSignal = new SemaphoreSlim(0);
+                workingCore.SetMessageChannel(msgQueue, msgSignal);
+                this.activeMessageQueue = msgQueue;
+                this.activeMessageSignal = msgSignal;
+
+                try
+                {
+                    await workingCore.ProcessAsync(formattedContext, memoryContext,
+                        imagePaths: imagePaths.Count > 0 ? imagePaths : null);
+                }
+                finally
+                {
+                    // 清理消息通道
+                    this.activeMessageQueue = null;
+                    this.activeMessageSignal = null;
+                }
             }
             else
             {

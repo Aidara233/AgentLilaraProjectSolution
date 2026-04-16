@@ -16,6 +16,7 @@ namespace AgentCoreProcessor.Tool
         public IReadOnlyList<ToolParameter> Parameters =>
             [new("消息内容", "要发送给用户的文本内容", 0)];
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);
+        public bool AllowSubAgent => false;
 
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
