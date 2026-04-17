@@ -791,7 +791,7 @@ namespace AgentCoreProcessor.Engine
                 {
                     mentions ??= new List<string>();
                     if (!mentions.Contains(qq)) mentions.Add(qq);
-                    return "";
+                    return " ";
                 }
                 return $"@{userName} ";
             });
