@@ -181,11 +181,14 @@ namespace AgentCoreProcessor.Adapter
                 }
             }
 
-            // text 段
+            // text 段（at 段后补空格，防止文字紧贴 @名字）
+            var textContent = message.Mentions is { Count: > 0 } && !message.Content.StartsWith(" ")
+                ? " " + message.Content
+                : message.Content;
             segments.Add(new JObject
             {
                 ["type"] = "text",
-                ["data"] = new JObject { ["text"] = message.Content }
+                ["data"] = new JObject { ["text"] = textContent }
             });
             p["message"] = segments;
 
