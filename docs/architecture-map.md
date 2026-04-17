@@ -13,7 +13,7 @@ AgentCoreProcessor/
 ├── Command/     框架指令系统（/help /status /config 等）
 ├── Config/      PathConfig 绝对路径管理
 ├── Core/        业务核心（11个），继承 CoreBase，各自 JSON 配置
-├── Database/    实体 + Repository（SQLite，11张表）
+├── Database/    实体 + Repository（SQLite，12张表）
 ├── Engine/      引擎生态（MasterEngine 内核 + 子引擎）
 ├── Memory/      MemoryService 检索管线
 ├── Tool/        工具接口 + DAG 执行器 + 全局/局部工具集
@@ -51,20 +51,25 @@ Adapter → EventBus(MessageEvent) → WorkerEngineSpawnCheck
 
 WorkerEngine (常驻，一个活跃频道一个):
   消息缓冲聚合 (2.5s窗口) → 冲动值决策 → ProcessBatch:
-  ① 构建 XML 上下文 (<participants> + <history> + <new>)
+  ① 构建 XML 上下文 (<participants> + <quoted-context> + <history> + <new>)
+     所有 <msg> 带 id(PlatformMessageId) + reply(引用关系) 属性
+     引用链递归展开(默认2层)，上下文外引用从DB拉取+周围消息
+     引用消息的图片通过 ImageRecord 加载
   ② PreprocessingCore Embedding 二分类 (聊天/任务)
   ③ MemoryService.RecallAsync 检索记忆
   ④ 路由:
      聊天 → ExpressCore (分条输出，逐条发送+随机延迟)
      任务 → WorkingCore Agent 循环 (多轮工具调用，子agent支持)
-  ⑤ MemoryExtractionCore 异步提取记忆 (每3条触发)
+     ExpressCore 可输出 [TASK] 转交 WorkingCore
+  ⑤ ParseBotOutput 解析 <at/>/<reply/> 标签 → OutgoingMessage
+  ⑥ MemoryExtractionCore 异步提取记忆 (每3条触发)
 ```
 
 ## 冲动值决策 (per Channel)
 
 ```
 私聊/控制台 → 缓冲聚合后一定回复
-@提及(CQ at 或文本包含 botNames) → 穿透冷却期，必回
+@提及(CQ at 或文本包含 botNames 或引用bot消息) → 穿透冷却期，必回
 群聊 → 冲动值 ≥ 有效阈值:
   累加: BaseMessageScore(1.0) × channelAffinity × participantFactor
     participantFactor: 1人=1.0, 2人=0.9, 3人=0.8, 4+=0.6
@@ -112,7 +117,7 @@ ReviewEngine (由DreamEngine孵化，不注册SpawnCheck):
 低置信: Confidence(high/low) + Feedback(positive/negative)，低置信记忆标注"不太确定"
 ```
 
-11张表: Person / User / Channel / UserMessage / MemoryEntry / TempMemoryEntry / MemoryLink / PersonaMemoryEntry / ReviewHint / (Topics 保留但不再使用)
+12张表: Person / User / Channel / UserMessage / MemoryEntry / TempMemoryEntry / MemoryLink / PersonaMemoryEntry / ReviewHint / ImageRecord / (Topics 保留但不再使用)
 
 ## 工具系统
 
@@ -122,7 +127,7 @@ ToolCall(JSON): tool + toolId + inputs(value/ref) + output + outputToModel + ret
 ToolExecutor: DAG拓扑排序 + 分波并行 + 寄存器(跨轮) + 可选toolResolver
 
 全局工具 (ToolRegistry, WorkerEngine用):
-  文件流读取器 / 文件流写入器 / 说话 / 完成 / 思考笔记 / 记忆
+  文件流读取器 / 文件流写入器(均已禁用) / 说话 / 完成 / 思考笔记 / 记忆
   睡眠许可 / 强制睡觉 / 修改睡眠配置 / 调整睡意 / 触发红色警报 / 标记复盘
   委派任务 / 查看子agent / 任务管理
 
