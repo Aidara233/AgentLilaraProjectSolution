@@ -16,8 +16,7 @@ namespace AgentCoreProcessor.Tool
         {
             var toolList = new ITool[]
             {
-                new FileReadTool(),
-                new FileWriteTool(),
+                // FileReadTool / FileWriteTool 暂禁用：无路径沙盒，群聊场景风险过高
                 new SpeakTool(),
                 new CompletionTool(),
                 new ThinkingNotesTool(),
@@ -28,8 +27,7 @@ namespace AgentCoreProcessor.Tool
                 new SleepScoreTool(),
                 new RedAlertTool(),
                 new ReviewHintTool(),
-                new DelegateTool(),
-                new SubAgentDetailTool(),
+                // DelegateTool / SubAgentDetailTool 暂禁用：子 agent 会继承文件工具风险
                 new TaskTool()
             };
             _tools = toolList.ToDictionary(t => t.Name);
