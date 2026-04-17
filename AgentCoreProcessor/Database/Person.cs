@@ -16,8 +16,17 @@ namespace AgentCoreProcessor.Database
         /// <summary>信任等级，影响框架前置路由行为</summary>
         public TrustLevel TrustLevel { get; set; } = TrustLevel.Unknown;
 
-        /// <summary>级内进度值 (0.0-1.0)，预留平滑用</summary>
+        /// <summary>全局好感度（可负），与硬性条件共同决定实际信任等级</summary>
         public float TrustProgress { get; set; } = 0f;
+
+        /// <summary>快速记忆，一句话概括此人关键信息</summary>
+        public string FastMemory { get; set; } = "";
+
+        /// <summary>警报等级（0-4），递增惩罚</summary>
+        public int AlertLevel { get; set; } = 0;
+
+        /// <summary>上次警报触发时间，用于冷却恢复</summary>
+        public DateTime? LastAlertTime { get; set; }
 
         /// <summary>创建时间</summary>
         public DateTime CreatedAt { get; set; } = DateTime.Now;
@@ -29,11 +38,13 @@ namespace AgentCoreProcessor.Database
     /// </summary>
     public enum TrustLevel
     {
-        Unknown = 0,        // 完全没定级/默认，只响应聊天
-        Stranger = 1,       // 有记录但不多，同上
-        Understanding = 2,  // 有点记录，会根据记录回应
-        Familiarity = 3,    // 有很多记录，会主动响应
-        Trust = 4,          // 信任，允许更深入的交互
-        AbsoluteTrust = 5,  // 绝对信任
+        Hostile = -2,       // 敌视，基本不想理，被@才敷衍回应
+        Wary = -1,          // 警惕，态度冷淡但还是会回应
+        Unknown = 0,        // 完全没定级/默认
+        Stranger = 1,       // 出现过但不熟
+        Understanding = 2,  // 有一定记忆，会根据记录回应
+        Familiarity = 3,    // 互动频繁，会主动响应
+        Trust = 4,          // 信任，模型评估通过
+        AbsoluteTrust = 5,  // 绝对信任，管理员手动
     }
 }

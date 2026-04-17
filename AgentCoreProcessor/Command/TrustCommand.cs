@@ -20,12 +20,12 @@ namespace AgentCoreProcessor.Command
             if (parts.Length < 2 || !int.TryParse(parts[0], out var personId))
                 return CommandResult.Fail(
                     "用法: /trust <personId> <level>\n" +
-                    "等级: Unknown, Stranger, Understanding, Familiarity, Trust, AbsoluteTrust");
+                    "等级: Hostile, Wary, Unknown, Stranger, Understanding, Familiarity, Trust, AbsoluteTrust");
 
             if (!Enum.TryParse<TrustLevel>(parts[1], true, out var level))
                 return CommandResult.Fail(
                     $"未知信任等级: {parts[1]}\n" +
-                    "可选: Unknown, Stranger, Understanding, Familiarity, Trust, AbsoluteTrust");
+                    "可选: Hostile, Wary, Unknown, Stranger, Understanding, Familiarity, Trust, AbsoluteTrust");
 
             var person = await context.SystemContext.Session.GetPersonByIdAsync(personId);
             if (person == null)

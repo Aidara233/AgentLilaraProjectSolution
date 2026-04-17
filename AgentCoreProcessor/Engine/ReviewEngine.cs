@@ -401,6 +401,8 @@ namespace AgentCoreProcessor.Engine
                 new ReviewViewLinksTool(ctx),
                 new ReviewReadMessagesTool(ctx),
                 new ReviewUpdateAffinityTool(ctx),
+                new ReviewUpdateFastMemoryTool(ctx),
+                new ReviewUpdateTrustProgressTool(ctx),
                 new ReviewWriteTempMemoryTool(),
                 new ReviewThinkingNotesTool(),
                 new ReviewMarkHintTool(),

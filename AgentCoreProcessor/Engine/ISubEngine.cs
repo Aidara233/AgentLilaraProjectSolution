@@ -65,6 +65,10 @@ namespace AgentCoreProcessor.Engine
         // 复盘标记
         ReviewHintRepository ReviewHints { get; }
 
+        // 配置
+        ImpulseConfig ImpulseConfig { get; }
+        TrustProgressionConfig TrustConfig { get; }
+
         // 引擎状态查询
         bool IsIdle { get; }
         TimeSpan IdleDuration { get; }

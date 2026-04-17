@@ -46,8 +46,7 @@ namespace AgentCoreProcessor.Database
                 PersonId = person.Id,
                 Platform = platform,
                 PlatformId = platformId,
-                PermissionLevel = defaultPermission,
-                FastMemory = ""
+                PermissionLevel = defaultPermission
             };
             await db.InsertAsync(user);
             return user;

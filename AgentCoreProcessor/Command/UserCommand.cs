@@ -13,7 +13,7 @@ namespace AgentCoreProcessor.Command
     internal class UserCommand : ICommand
     {
         public string Name => "user";
-        public string Description => "用户管理 (list/permission)";
+        public string Description => "用户管理 (list/permission/memo)";
         public PermissionLevel RequiredPermission => PermissionLevel.Admin;
 
         public async Task<CommandResult> ExecuteAsync(string args, CommandContext context)
@@ -26,6 +26,7 @@ namespace AgentCoreProcessor.Command
             {
                 "list" => await ListAsync(ctx),
                 "permission" => await SetPermissionAsync(parts, ctx),
+                "memo" => await SetMemoAsync(parts, ctx),
                 _ => CommandResult.Fail($"未知子命令: {sub}")
             };
         }
@@ -66,6 +67,22 @@ namespace AgentCoreProcessor.Command
             user.PermissionLevel = level;
             await ctx.Session.UpdateUserAsync(user);
             return CommandResult.Ok($"用户 {platform}:{platformId} 权限已设为 {level}。");
+        }
+
+        private static async Task<CommandResult> SetMemoAsync(
+            string[] parts, Engine.ISystemContext ctx)
+        {
+            if (parts.Length < 3 || !int.TryParse(parts[1], out var personId))
+                return CommandResult.Fail("用法: /user memo <personId> <文本>");
+
+            var person = await ctx.Session.GetPersonByIdAsync(personId);
+            if (person == null)
+                return CommandResult.Fail($"Person [{personId}] 不存在。");
+
+            var text = string.Join(' ', parts.Skip(2));
+            person.FastMemory = text;
+            await ctx.Session.UpdatePersonAsync(person);
+            return CommandResult.Ok($"Person [{personId}] 快速记忆已更新: {text}");
         }
     }
 }

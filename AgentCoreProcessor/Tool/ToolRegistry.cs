@@ -28,7 +28,8 @@ namespace AgentCoreProcessor.Tool
                 new RedAlertTool(),
                 new ReviewHintTool(),
                 // DelegateTool / SubAgentDetailTool 暂禁用：子 agent 会继承文件工具风险
-                new TaskTool()
+                new TaskTool(),
+                new AlertButtonTool()
             };
             _tools = toolList.ToDictionary(t => t.Name);
         }

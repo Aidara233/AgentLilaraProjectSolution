@@ -243,4 +243,74 @@ namespace AgentCoreProcessor.Tool
                 Data = resolvedInputs.ElementAtOrDefault(0) ?? "复盘完成"
             });
     }
+
+    internal class ReviewUpdateFastMemoryTool : ITool
+    {
+        private readonly ISystemContext ctx;
+        public ReviewUpdateFastMemoryTool(ISystemContext ctx) { this.ctx = ctx; }
+
+        public string Name => "更新快速记忆";
+        public string Description => "更新人物的快速记忆摘要（一句话概括此人的关键信息，简明扼要）";
+        public IReadOnlyList<ToolParameter> Parameters =>
+        [
+            new("人物ID", "目标人物ID", 0),
+            new("内容", "快速记忆内容", 1)
+        ];
+        public TimeSpan Timeout => TimeSpan.FromSeconds(10);
+
+        public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
+        {
+            if (!int.TryParse(resolvedInputs.ElementAtOrDefault(0), out var personId))
+                return new ToolResult { Status = "failed", Error = "人物ID必须是整数" };
+            var content = resolvedInputs.ElementAtOrDefault(1) ?? "";
+            if (string.IsNullOrWhiteSpace(content))
+                return new ToolResult { Status = "failed", Error = "内容不能为空" };
+
+            var person = await ctx.Session.GetPersonByIdAsync(personId);
+            if (person == null)
+                return new ToolResult { Status = "failed", Error = $"Person [{personId}] 不存在" };
+
+            person.FastMemory = content;
+            await ctx.Session.UpdatePersonAsync(person);
+            return new ToolResult { Status = "success", Data = $"已更新 Person [{personId}] 快速记忆" };
+        }
+    }
+
+    internal class ReviewUpdateTrustProgressTool : ITool
+    {
+        private readonly ISystemContext ctx;
+        public ReviewUpdateTrustProgressTool(ISystemContext ctx) { this.ctx = ctx; }
+
+        public string Name => "调整好感度";
+        public string Description => "调整人物的好感度（正值=好感增加，负值=好感降低，每次上限±0.3）";
+        public IReadOnlyList<ToolParameter> Parameters =>
+        [
+            new("人物ID", "目标人物ID", 0),
+            new("变化量", "好感度变化量（如 0.2 或 -0.1）", 1)
+        ];
+        public TimeSpan Timeout => TimeSpan.FromSeconds(10);
+
+        public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
+        {
+            if (!int.TryParse(resolvedInputs.ElementAtOrDefault(0), out var personId))
+                return new ToolResult { Status = "failed", Error = "人物ID必须是整数" };
+            if (!float.TryParse(resolvedInputs.ElementAtOrDefault(1), out var delta))
+                return new ToolResult { Status = "failed", Error = "变化量必须是数字" };
+
+            var cap = ctx.TrustConfig.DreamEvaluationCap;
+            delta = Math.Clamp(delta, -cap, cap);
+
+            var person = await ctx.Session.GetPersonByIdAsync(personId);
+            if (person == null)
+                return new ToolResult { Status = "failed", Error = $"Person [{personId}] 不存在" };
+
+            person.TrustProgress += delta;
+            await ctx.Session.UpdatePersonAsync(person);
+            return new ToolResult
+            {
+                Status = "success",
+                Data = $"Person [{personId}] 好感度 {(delta >= 0 ? "+" : "")}{delta:F2} → {person.TrustProgress:F2}"
+            };
+        }
+    }
 }

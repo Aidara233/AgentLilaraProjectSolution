@@ -47,6 +47,14 @@ namespace AgentCoreProcessor.Engine
                     FrameworkLogger.LogPermission("WorkerSpawnCheck", sessionContext.User.PlatformId, "Restricted", false);
                     return false;
             }
+
+            // 信任等级：首次出现自动升为 Stranger
+            if (sessionContext.Person.TrustLevel == TrustLevel.Unknown)
+            {
+                sessionContext.Person.TrustLevel = TrustLevel.Stranger;
+                await ctx.Session.UpdatePersonAsync(sessionContext.Person);
+            }
+
             var channelId = sessionContext.Channel.Id;
 
             // 已有活跃的频道引擎 → 转发消息

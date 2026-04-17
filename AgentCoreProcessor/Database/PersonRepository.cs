@@ -31,6 +31,8 @@ namespace AgentCoreProcessor.Database
 
         public Task<int> UpdateAsync(Person person) => db.UpdateAsync(person);
 
+        public Task<List<Person>> GetAllAsync() => db.GetAllAsync<Person>();
+
         /// <summary>获取 Person 下所有 User 的 Id 列表。</summary>
         public async Task<List<int>> GetAllUserIdsAsync(int personId)
         {

@@ -48,28 +48,22 @@ namespace AgentCoreProcessor.Engine
 // PLACEHOLDER_IMPULSE
 
         // ---- 冲动值 ----
+        private readonly ImpulseConfig impulseConfig;
         private float impulse = 0f;
         private DateTime lastImpulseDecay;
         private readonly float channelAffinity;
 
+        // EMA 社交满足度
+        private float expectation = 0f;
+        private float reality = 0f;
+        private DateTime lastEmaDecay;
+
+        // 消息频率 EMA
+        private float messageRate = 0f;
+        private DateTime lastMessageRateUpdate;
+
         // 参与者追踪
         private readonly ConcurrentDictionary<int, ParticipantInfo> recentParticipants = new();
-
-        // 负反馈抑制
-        private bool awaitingResponse = false;
-        private int consecutiveIgnores = 0;
-
-        // 缓冲/冲动值常量
-        private const float BufferWindowSeconds = 2.5f;
-        private const float ColdTimeoutSeconds = 600f;
-        private const float MentionScore = 8f;
-        private const float BaseMessageScore = 1f;
-        private const float PrivateScore = 8f;
-        private const float DecayPerSecond = 0.5f;
-        private const float ResponseThreshold = 3f;
-        private const float PostResponseCooldownSeconds = 3f;
-        private const float IgnoreThresholdBoost = 1.5f;
-        private const int MaxIgnoreBoost = 3;
 
         // Core 实例（复用）
         private readonly ExpressCore expressCore = new();
@@ -89,6 +83,9 @@ namespace AgentCoreProcessor.Engine
         private const int MemoryExtractionInterval = 3;
         private SessionContext? lastContext;
 
+        // TrustProgress 每日自动增长跟踪
+        private readonly Dictionary<int, (DateTime Date, float Accumulated)> dailyProgressTracker = new();
+
         // 任务路径消息通道
         private ConcurrentQueue<IncomingMessage>? activeMessageQueue;
         private SemaphoreSlim? activeMessageSignal;
@@ -101,16 +98,20 @@ namespace AgentCoreProcessor.Engine
         public WorkerEngine(ISystemContext ctx, SessionContext initialContext, IncomingMessage initialMessage)
         {
             this.ctx = ctx;
+            this.impulseConfig = ctx.ImpulseConfig;
             this.channelId = initialContext.Channel.Id;
             this.channelAffinity = initialContext.Channel.Affinity;
-            this.lastImpulseDecay = DateTime.Now;
-            this.lastBufferTime = DateTime.Now;
+            var now = DateTime.Now;
+            this.lastImpulseDecay = now;
+            this.lastEmaDecay = now;
+            this.lastMessageRateUpdate = now;
+            this.lastBufferTime = now;
             this.preprocessingCore = new PreprocessingCore(ctx.Embedding);
 
             buffer.Add((initialMessage, initialContext));
             CollectImagePaths(initialMessage);
-            recentParticipants.TryAdd(initialContext.User.Id, ParticipantInfo.From(initialContext.User, initialMessage));
-            AccumulateImpulse(initialMessage);
+            recentParticipants.TryAdd(initialContext.User.Id, ParticipantInfo.From(initialContext.User, initialContext.Person, initialMessage));
+            AccumulateImpulse(initialMessage, initialContext);
 
             FrameworkLogger.Log("WorkerEngine", $"创建: channelId={channelId}, affinity={channelAffinity:F2}");
         }
@@ -136,9 +137,9 @@ namespace AgentCoreProcessor.Engine
             }
             recentParticipants.AddOrUpdate(
                 sc.User.Id,
-                ParticipantInfo.From(sc.User, msg),
-                (_, _) => ParticipantInfo.From(sc.User, msg));
-            AccumulateImpulse(msg);
+                ParticipantInfo.From(sc.User, sc.Person, msg),
+                (_, _) => ParticipantInfo.From(sc.User, sc.Person, msg));
+            AccumulateImpulse(msg, sc);
         }
 // PLACEHOLDER_RUN
 
@@ -157,7 +158,7 @@ namespace AgentCoreProcessor.Engine
                 lock (bufferLock)
                 {
                     if (buffer.Count > 0 &&
-                        (DateTime.Now - lastBufferTime).TotalSeconds >= BufferWindowSeconds)
+                        (DateTime.Now - lastBufferTime).TotalSeconds >= impulseConfig.BufferWindowSeconds)
                     {
                         batch = new(buffer);
                         buffer.Clear();
@@ -169,19 +170,6 @@ namespace AgentCoreProcessor.Engine
                     FrameworkLogger.Log("WorkerEngine",
                         $"缓冲触发: channelId={channelId}, 消息数={batch.Count}, impulse={impulse:F2}");
 
-                    // 负反馈检查
-                    if (awaitingResponse)
-                    {
-                        bool gotResponse = batch.Any(b => b.Message.IsMentioned);
-                        if (gotResponse)
-                            consecutiveIgnores = 0;
-                        else
-                            consecutiveIgnores = Math.Min(consecutiveIgnores + 1, MaxIgnoreBoost);
-                        awaitingResponse = false;
-                        FrameworkLogger.Log("WorkerEngine",
-                            $"负反馈: gotResponse={gotResponse}, consecutiveIgnores={consecutiveIgnores}");
-                    }
-
                     if (!ctx.MuteMode && ShouldRespond(batch))
                     {
                         bool triggeredByMention = batch.Any(b => b.Message.IsMentioned || b.Message.IsPrivate);
@@ -190,10 +178,15 @@ namespace AgentCoreProcessor.Engine
                         {
                             var snapshot = new Dictionary<int, ParticipantInfo>(recentParticipants);
                             await ProcessBatchAsync(batch, snapshot);
-                            impulse = 0f;
-                            // 只有主动发言（非@/非私聊触发）才等待对方回应
-                            if (!triggeredByMention)
-                                awaitingResponse = true;
+                            // 触发后扣减阈值，不归零
+                            float dynamicThreshold = impulseConfig.BaseThreshold
+                                + messageRate * impulseConfig.MessageRateScaleFactor;
+                            impulse = Math.Max(0f, impulse - dynamicThreshold);
+                            // 更新 expectation
+                            if (triggeredByMention)
+                                expectation += impulseConfig.ExpectationOnMentionTriggered;
+                            else
+                                expectation += impulseConfig.ExpectationOnProactive;
                         }
                         catch (Exception ex)
                         {
@@ -226,7 +219,7 @@ namespace AgentCoreProcessor.Engine
                 bool bufferEmpty;
                 lock (bufferLock) { bufferEmpty = buffer.Count == 0; }
                 if (bufferEmpty && impulse <= 0.01f && !IsBusy &&
-                    (DateTime.Now - lastBufferTime).TotalSeconds > ColdTimeoutSeconds)
+                    (DateTime.Now - lastBufferTime).TotalSeconds > impulseConfig.ColdTimeoutSeconds)
                 {
                     // 退出前：剩余消息强制提取记忆
                     if (processedMessageCount > 0 && lastContext != null)
@@ -262,7 +255,7 @@ namespace AgentCoreProcessor.Engine
             }
 
             if (LastCompletionTime != null &&
-                (DateTime.Now - LastCompletionTime.Value).TotalSeconds < PostResponseCooldownSeconds)
+                (DateTime.Now - LastCompletionTime.Value).TotalSeconds < impulseConfig.PostResponseCooldownSeconds)
             {
                 FrameworkLogger.Log("WorkerEngine",
                     $"决策: 发言冷却中, channelId={channelId}, " +
@@ -270,17 +263,20 @@ namespace AgentCoreProcessor.Engine
                 return false;
             }
 
-            float effectiveThreshold = ResponseThreshold + consecutiveIgnores * IgnoreThresholdBoost;
-            bool respond = impulse >= effectiveThreshold;
+            float dynamicThreshold = impulseConfig.BaseThreshold
+                + messageRate * impulseConfig.MessageRateScaleFactor;
+            bool respond = impulse >= dynamicThreshold;
             FrameworkLogger.Log("WorkerEngine",
-                $"决策: impulse={impulse:F2}, threshold={effectiveThreshold:F1}" +
-                $"(base={ResponseThreshold}+ignore={consecutiveIgnores}x{IgnoreThresholdBoost}), " +
+                $"决策: impulse={impulse:F2}, threshold={dynamicThreshold:F1}" +
+                $"(base={impulseConfig.BaseThreshold}+rate={messageRate:F2}x{impulseConfig.MessageRateScaleFactor}), " +
+                $"ratio={ComputeRatioFactor():F2}(E={expectation:F2}/R={reality:F2}), " +
                 $"respond={respond}, channelId={channelId}");
             return respond;
         }
 
-        private void AccumulateImpulse(IncomingMessage msg)
+        private void AccumulateImpulse(IncomingMessage msg, SessionContext? sc = null)
         {
+            var cfg = impulseConfig;
             float participantFactor = recentParticipants.Count switch
             {
                 <= 1 => 1.0f,
@@ -288,14 +284,34 @@ namespace AgentCoreProcessor.Engine
                 3 => 0.8f,
                 _ => 0.6f
             };
-            float added = BaseMessageScore * channelAffinity * participantFactor;
-            if (msg.IsMentioned) added += MentionScore;
-            if (msg.IsPrivate) added += PrivateScore;
+            float ratioFactor = ComputeRatioFactor();
+            float added = cfg.BaseMessageScore * channelAffinity * participantFactor * ratioFactor;
+            if (msg.IsMentioned) added += cfg.MentionScore;
+            if (msg.IsPrivate) added += cfg.PrivateScore;
             impulse += added;
+
+            // 更新消息频率 EMA
+            var now = DateTime.Now;
+            var elapsed = (float)(now - lastMessageRateUpdate).TotalSeconds;
+            if (elapsed > 0)
+            {
+                float instantRate = 1f / Math.Max(elapsed, 0.1f);
+                messageRate = cfg.MessageRateEmaAlpha * instantRate
+                    + (1 - cfg.MessageRateEmaAlpha) * messageRate;
+                lastMessageRateUpdate = now;
+            }
+
+            // 被 @ / 引用 → 更新 reality
+            if (sc != null && msg.IsMentioned)
+            {
+                float trustMult = cfg.GetTrustMultiplier(sc.Person.TrustLevel);
+                reality += cfg.RealityOnEngagement * trustMult;
+            }
+
             FrameworkLogger.Log("WorkerEngine",
-                $"冲动值+{added:F2}: impulse={impulse:F2}, " +
+                $"冲动值+{added:F2}: impulse={impulse:F2}, ratio={ratioFactor:F2}, " +
                 $"affinity={channelAffinity:F2}, participants={recentParticipants.Count}, " +
-                $"mentioned={msg.IsMentioned}, private={msg.IsPrivate}, channelId={channelId}");
+                $"msgRate={messageRate:F2}, mentioned={msg.IsMentioned}, channelId={channelId}");
         }
 
         private void DecayImpulse()
@@ -303,7 +319,21 @@ namespace AgentCoreProcessor.Engine
             var now = DateTime.Now;
             var elapsed = (float)(now - lastImpulseDecay).TotalSeconds;
             lastImpulseDecay = now;
-            impulse = Math.Max(0f, impulse - DecayPerSecond * elapsed);
+            impulse = Math.Max(0f, impulse - impulseConfig.DecayPerSecond * elapsed);
+
+            // EMA 衰减
+            var emaElapsed = (float)(now - lastEmaDecay).TotalSeconds;
+            lastEmaDecay = now;
+            float decayFactor = MathF.Pow(impulseConfig.EmaDecayRate, emaElapsed);
+            expectation *= decayFactor;
+            reality *= decayFactor;
+        }
+
+        private float ComputeRatioFactor()
+        {
+            float effectiveExpectation = Math.Max(expectation, impulseConfig.BaseExpectation);
+            float ratio = reality / effectiveExpectation;
+            return Math.Clamp(ratio, impulseConfig.RatioFactorLower, impulseConfig.RatioFactorUpper);
         }
 // PLACEHOLDER_PROCESS
 
@@ -374,6 +404,15 @@ namespace AgentCoreProcessor.Engine
                 var expressed = imagePaths.Count > 0
                     ? await expressCore.GenerateOnceAsync(expressInput, imagePaths)
                     : await expressCore.GenerateOnceAsync(expressInput);
+
+                // [ALERT] 检测：ExpressCore 输出包含 [ALERT] 时触发报警
+                if (expressed.Contains("[ALERT]"))
+                {
+                    FrameworkLogger.Log("WorkerEngine", $"ExpressCore 触发报警: channelId={channelId}");
+                    var reason = expressed.Replace("[ALERT]", "").Trim();
+                    await HandleAlertAsync(lastSc.Person, lastSc, string.IsNullOrEmpty(reason) ? "聊天中触发" : reason);
+                    expressed = expressed.Replace("[ALERT]", "").Trim();
+                }
 
                 if (expressed.Contains("[TASK]"))
                 {
@@ -453,6 +492,10 @@ namespace AgentCoreProcessor.Engine
                 {
                     await ctx.ReviewHints.CreateAsync(content, lastSc.Person.Id, lastSc.Channel.Id);
                 };
+                workingCore.OnAlert = async (reason) =>
+                {
+                    await HandleAlertAsync(lastSc.Person, lastSc, reason);
+                };
 
                 var msgQueue = new ConcurrentQueue<IncomingMessage>();
                 var msgSignal = new SemaphoreSlim(0);
@@ -474,6 +517,9 @@ namespace AgentCoreProcessor.Engine
 
             // 7. 记忆提取计数
             TrackMemoryExtraction(messages, lastSc);
+
+            // 8. TrustProgress 每日自动增长
+            await IncrementDailyProgressAsync(lastSc.Person);
         }
 // PLACEHOLDER_MEMORY
 
@@ -595,7 +641,9 @@ namespace AgentCoreProcessor.Engine
             {
                 var name = SanitizeAttr(shortNames.GetValueOrDefault(userId, info.DisplayName));
                 var nick = SanitizeAttr(info.Nickname);
-                sb.AppendLine($"  <user name=\"{name}\" nickname=\"{nick}\" qq=\"{info.PlatformId}\"/>");
+                var memo = SanitizeAttr(string.IsNullOrEmpty(info.Memo) ? "还不太了解" : info.Memo);
+                var relation = TrustLevelToRelation(info.TrustLevel);
+                sb.AppendLine($"  <user name=\"{name}\" nickname=\"{nick}\" qq=\"{info.PlatformId}\" relation=\"{relation}\" memo=\"{memo}\"/>");
             }
             sb.AppendLine("</participants>");
 
@@ -812,6 +860,97 @@ namespace AgentCoreProcessor.Engine
             return (raw.Trim(), replyTo, mentions);
         }
 // PLACEHOLDER_HELPERS
+
+        private async Task HandleAlertAsync(Person person, SessionContext sc, string reason)
+        {
+            person.AlertLevel = Math.Min(person.AlertLevel + 1, 4);
+            person.LastAlertTime = DateTime.Now;
+
+            FrameworkLogger.Log("WorkerEngine",
+                $"报警触发: personId={person.Id}, alertLevel={person.AlertLevel}, reason={reason}");
+
+            switch (person.AlertLevel)
+            {
+                case 1:
+                    await ctx.ReviewHints.CreateAsync($"[警报] {reason}", person.Id, sc.Channel.Id);
+                    break;
+                case 2:
+                    person.TrustProgress -= 1.0f;
+                    await ctx.ReviewHints.CreateAsync($"[警报升级] {reason}", person.Id, sc.Channel.Id);
+                    break;
+                case 3:
+                    person.TrustProgress -= 3.0f;
+                    await ctx.ReviewHints.CreateAsync($"[警报严重] {reason}", person.Id, sc.Channel.Id);
+                    break;
+                default: // 4+
+                    person.TrustProgress -= 10.0f;
+                    // 临时限制该 Person 的所有账号
+                    var users = await ctx.Session.GetAllUsersAsync();
+                    foreach (var u in users.Where(u => u.PersonId == person.Id))
+                    {
+                        u.PermissionLevel = PermissionLevel.Restricted;
+                        await ctx.Session.UpdateUserAsync(u);
+                    }
+                    await ctx.ReviewHints.CreateAsync(
+                        $"[警报-已限制] {reason}", person.Id, sc.Channel.Id);
+                    // 通知管理员
+                    try
+                    {
+                        var admins = users.Where(u => u.PermissionLevel == PermissionLevel.Admin).ToList();
+                        if (admins.Count > 0)
+                        {
+                            var admin = admins[0];
+                            var channelId = $"private_{admin.PlatformId}";
+                            await ctx.Adapters.SendMessageAsync(admin.Platform, new Adapter.OutgoingMessage
+                            {
+                                ChannelId = channelId,
+                                Content = $"[框架警报] Person [{person.Id}] 已被临时限制（AlertLevel={person.AlertLevel}）\n原因: {reason}"
+                            });
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        FrameworkLogger.Log("WorkerEngine", $"管理员通知失败: {ex.Message}");
+                    }
+                    break;
+            }
+
+            await ctx.Session.UpdatePersonAsync(person);
+        }
+
+        private async Task IncrementDailyProgressAsync(Person person)
+        {
+            var cfg = ctx.TrustConfig;
+            var today = DateTime.Today;
+            var personId = person.Id;
+
+            if (dailyProgressTracker.TryGetValue(personId, out var entry) && entry.Date == today)
+            {
+                if (entry.Accumulated >= cfg.DailyInteractionCap) return;
+                var newAcc = entry.Accumulated + cfg.DailyInteractionIncrement;
+                dailyProgressTracker[personId] = (today, newAcc);
+            }
+            else
+            {
+                dailyProgressTracker[personId] = (today, cfg.DailyInteractionIncrement);
+            }
+
+            person.TrustProgress += cfg.DailyInteractionIncrement;
+            await ctx.Session.UpdatePersonAsync(person);
+        }
+
+        private static string TrustLevelToRelation(TrustLevel level) => level switch
+        {
+            TrustLevel.Hostile => "不太想理",
+            TrustLevel.Wary => "有点警惕",
+            TrustLevel.Unknown => "陌生人",
+            TrustLevel.Stranger => "不太熟",
+            TrustLevel.Understanding => "认识",
+            TrustLevel.Familiarity => "熟人",
+            TrustLevel.Trust => "好友",
+            TrustLevel.AbsoluteTrust => "挚友",
+            _ => "陌生人"
+        };
 
         private static Dictionary<int, string> ResolveShortNames(Dictionary<int, ParticipantInfo> participants)
         {

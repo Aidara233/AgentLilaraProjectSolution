@@ -143,12 +143,15 @@ namespace AgentCoreProcessor.Engine
             FrameworkLogger.Log("DreamEngine",
                 $"Phase 1 结束: executed={executed} tokens≈{tokensUsed}");
 
-            // ========== Phase 2: 深睡 — 启动 ReviewEngine + 继续做梦 ==========
+            // ========== Phase 2: 深睡 — 信任评估 + 启动 ReviewEngine + 继续做梦 ==========
             ISubEngine? reviewEngine = null;
 
             if (!shouldWake && ElapsedMinutes(startTime) < cfg.DeepSleepMaxMinutes)
             {
                 FrameworkLogger.Log("DreamEngine", "Phase 2: 深睡开始");
+
+                // 信任等级评估（不消耗 token，纯框架逻辑）
+                await ExecuteTrustEvaluationAsync();
 
                 try
                 {
@@ -448,6 +451,95 @@ namespace AgentCoreProcessor.Engine
         {
             var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(input));
             return Convert.ToHexString(bytes)[..16];
+        }
+
+        // ---- 信任评估（纯框架逻辑，不消耗 token）----
+
+        private async Task ExecuteTrustEvaluationAsync()
+        {
+            try
+            {
+                var tcfg = ctx.TrustConfig;
+                var persons = await ctx.Session.GetAllPersonsAsync();
+
+                foreach (var person in persons)
+                {
+                    bool changed = false;
+
+                    // 1. 硬性条件升级检查
+                    if (person.TrustLevel == TrustLevel.Stranger)
+                    {
+                        var memCount = (await ctx.Memories.GetByPersonAsync(person.Id)).Count;
+                        if (memCount >= tcfg.UnderstandingMemoryCount
+                            && person.TrustProgress >= 0)
+                        {
+                            person.TrustLevel = TrustLevel.Understanding;
+                            changed = true;
+                            // 触发 FastMemory 生成提示
+                            if (string.IsNullOrEmpty(person.FastMemory))
+                                await ctx.ReviewHints.CreateAsync(
+                                    $"Person [{person.Id}] 升级为 Understanding，需要生成 FastMemory", person.Id);
+                            FrameworkLogger.Log("DreamEngine",
+                                $"信任升级: Person [{person.Id}] Stranger → Understanding");
+                        }
+                    }
+                    else if (person.TrustLevel == TrustLevel.Understanding)
+                    {
+                        var daysSinceCreation = (DateTime.Now - person.CreatedAt).TotalDays;
+                        if (daysSinceCreation >= tcfg.FamiliarityDays
+                            && person.TrustProgress >= 0)
+                        {
+                            var memCount = (await ctx.Memories.GetByPersonAsync(person.Id)).Count;
+                            if (memCount >= tcfg.FamiliarityInteractionCount)
+                            {
+                                person.TrustLevel = TrustLevel.Familiarity;
+                                changed = true;
+                                FrameworkLogger.Log("DreamEngine",
+                                    $"信任升级: Person [{person.Id}] Understanding → Familiarity");
+                            }
+                        }
+                    }
+
+                    // 2. TrustProgress 压低等级检查
+                    if (person.TrustProgress <= tcfg.ProgressForHostile
+                        && person.TrustLevel > TrustLevel.Hostile)
+                    {
+                        person.TrustLevel = TrustLevel.Hostile;
+                        changed = true;
+                        FrameworkLogger.Log("DreamEngine",
+                            $"信任降级: Person [{person.Id}] → Hostile (progress={person.TrustProgress:F1})");
+                    }
+                    else if (person.TrustProgress <= tcfg.ProgressForWary
+                        && person.TrustLevel > TrustLevel.Wary)
+                    {
+                        person.TrustLevel = TrustLevel.Wary;
+                        changed = true;
+                        FrameworkLogger.Log("DreamEngine",
+                            $"信任降级: Person [{person.Id}] → Wary (progress={person.TrustProgress:F1})");
+                    }
+
+                    // 3. 警报冷却恢复
+                    if (person.AlertLevel > 0 && person.LastAlertTime != null)
+                    {
+                        var daysSinceAlert = (DateTime.Now - person.LastAlertTime.Value).TotalDays;
+                        var requiredDays = tcfg.GetAlertCooldownDays(person.AlertLevel);
+                        if (daysSinceAlert >= requiredDays)
+                        {
+                            person.AlertLevel--;
+                            changed = true;
+                            FrameworkLogger.Log("DreamEngine",
+                                $"警报冷却: Person [{person.Id}] alertLevel → {person.AlertLevel}");
+                        }
+                    }
+
+                    if (changed)
+                        await ctx.Session.UpdatePersonAsync(person);
+                }
+            }
+            catch (Exception ex)
+            {
+                FrameworkLogger.Log("DreamEngine", $"信任评估异常: {ex.Message}");
+            }
         }
     }
 }

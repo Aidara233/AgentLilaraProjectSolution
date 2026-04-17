@@ -141,6 +141,8 @@ namespace AgentCoreProcessor.Engine
 
         public Task UpdatePersonAsync(Person person) => persons.UpdateAsync(person);
 
+        public Task<List<Person>> GetAllPersonsAsync() => persons.GetAllAsync();
+
         /// <summary>获取指定频道的最近历史消息（按时间升序）。</summary>
         public async Task<List<UserMessage>> GetContextByChannelAsync(int channelId, int limit = DefaultContextLimit)
         {

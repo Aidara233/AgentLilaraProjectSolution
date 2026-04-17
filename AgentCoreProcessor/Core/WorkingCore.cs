@@ -33,6 +33,7 @@ namespace AgentCoreProcessor.Core
         private const string DelegateToolName = "委派任务";
         private const string SubAgentDetailToolName = "查看子任务详情";
         private const string TaskToolName = "任务管理";
+        private const string AlertButtonToolName = "报警";
 
         private readonly PromptBuilder promptBuilder = new();
 
@@ -41,6 +42,7 @@ namespace AgentCoreProcessor.Core
         public Func<string, Task>? OnMemory { get; set; }
         public Func<string, string?, Task>? OnSignal { get; set; }
         public Func<string, Task>? OnReviewHint { get; set; }
+        public Func<string, Task>? OnAlert { get; set; }
 
         // 任务列表（跨轮保持）
         private readonly List<(string Description, bool Done)> taskList = new();
@@ -167,6 +169,9 @@ namespace AgentCoreProcessor.Core
                             break;
                         case ReviewHintToolName:
                             if (result.IsSuccess && OnReviewHint != null) await OnReviewHint(result.Data ?? "");
+                            break;
+                        case AlertButtonToolName:
+                            if (result.IsSuccess && OnAlert != null) await OnAlert(result.Data ?? "");
                             break;
 
                         case TaskToolName:

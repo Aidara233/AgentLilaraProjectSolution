@@ -11,8 +11,10 @@ namespace AgentCoreProcessor.Engine
         public required string DisplayName { get; init; }
         public required string Nickname { get; init; }
         public required string PlatformId { get; init; }
+        public required string Memo { get; init; }
+        public TrustLevel TrustLevel { get; init; } = TrustLevel.Unknown;
 
-        public static ParticipantInfo From(User user, IncomingMessage msg)
+        public static ParticipantInfo From(User user, Person person, IncomingMessage msg)
         {
             var display = !string.IsNullOrEmpty(user.DisplayName) ? user.DisplayName
                         : !string.IsNullOrEmpty(msg.DisplayName) ? msg.DisplayName
@@ -21,7 +23,9 @@ namespace AgentCoreProcessor.Engine
             {
                 DisplayName = display,
                 Nickname = msg.Nickname ?? "",
-                PlatformId = msg.PlatformUserId
+                PlatformId = msg.PlatformUserId,
+                Memo = person.FastMemory ?? "",
+                TrustLevel = person.TrustLevel
             };
         }
     }

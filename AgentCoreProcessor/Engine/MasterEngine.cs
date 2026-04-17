@@ -57,6 +57,8 @@ namespace AgentCoreProcessor.Engine
         public IVisionProvider? Vision => visionProvider;
         public AdapterManager Adapters => adapterManager;
         public EventBus EventBus => eventBus;
+        public ImpulseConfig ImpulseConfig { get; private set; } = null!;
+        public TrustProgressionConfig TrustConfig { get; private set; } = null!;
 
         // 内核级状态
         private DateTime lastMessageTime = DateTime.Now;
@@ -192,6 +194,12 @@ namespace AgentCoreProcessor.Engine
             // 服务
             MemorySvc = new MemoryService(Memories, TempMemories, MemoryLinks, embeddingProvider, PersonaMemories);
             Session = new SessionManager(users, persons, channels, messages);
+
+            // 冲动值配置
+            ImpulseConfig = ImpulseConfig.Load(
+                Path.Combine(PathConfig.StoragePath, "Engine", "ImpulseConfig.json"));
+            TrustConfig = TrustProgressionConfig.Load(
+                Path.Combine(PathConfig.StoragePath, "Engine", "TrustProgressionConfig.json"));
 
             // 人设记忆种子加载（表空时从文件导入）
             await LoadPersonaMemorySeedAsync();

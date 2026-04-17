@@ -35,6 +35,8 @@ namespace AgentCoreProcessor.Command
             ["combine"] = Path.Combine(PathConfig.CoreConfigPath, "CombineCore.json"),
             ["review"] = Path.Combine(PathConfig.CoreConfigPath, "ReviewCore.json"),
             ["dream"] = Path.Combine(PathConfig.StoragePath, "Dream", "DreamConfig.json"),
+            ["impulse"] = Path.Combine(PathConfig.StoragePath, "Engine", "ImpulseConfig.json"),
+            ["trust"] = Path.Combine(PathConfig.StoragePath, "Engine", "TrustProgressionConfig.json"),
         };
 
         // ---- 交互式定义 ----

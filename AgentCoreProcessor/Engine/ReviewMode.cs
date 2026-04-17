@@ -192,6 +192,15 @@ namespace AgentCoreProcessor.Engine
 
             sb.AppendLine($"### 目标人物ID: {targetPersonId}");
 
+            // 展示当前人物状态
+            var person = await ctx.Session.GetPersonByIdAsync(targetPersonId.Value);
+            if (person != null)
+            {
+                sb.AppendLine($"信任等级: {person.TrustLevel}, 好感度: {person.TrustProgress:F2}, 警报等级: {person.AlertLevel}");
+                sb.AppendLine($"快速记忆: {(string.IsNullOrEmpty(person.FastMemory) ? "（空）" : person.FastMemory)}");
+                sb.AppendLine();
+            }
+
             var personMemories = await ctx.Memories.GetByPersonAsync(targetPersonId.Value);
             if (personMemories.Count > 0)
             {
@@ -199,6 +208,13 @@ namespace AgentCoreProcessor.Engine
                 foreach (var m in personMemories.TakeLast(10))
                     sb.AppendLine($"- [ID:{m.Id}] {m.Content}");
             }
+
+            sb.AppendLine();
+            sb.AppendLine("### 人物回顾指引");
+            sb.AppendLine("回顾完成后：");
+            sb.AppendLine("- 用「更新快速记忆」工具更新此人的一句话概括（简明扼要，关键信息）");
+            sb.AppendLine("- 用「调整好感度」工具根据互动质量调整好感度（正值=好感增加，负值=降低）");
+            sb.AppendLine("- 将深入发现写入临时记忆");
         }
 
         private static async Task BuildCrossDomainContext(ISystemContext ctx, StringBuilder sb)
