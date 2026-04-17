@@ -27,6 +27,9 @@ namespace AgentCoreProcessor.Adapter
         /// <summary>被引用消息的文本内容（适配器层填充）。</summary>
         public string? QuotedContent { get; set; }
 
+        /// <summary>平台侧消息ID（用于数据库关联）。</summary>
+        public string? PlatformMessageId { get; set; }
+
         /// <summary>消息附件（图片、音频等）。</summary>
         public List<MessageAttachment>? Attachments { get; set; }
     }

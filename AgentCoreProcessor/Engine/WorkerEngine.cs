@@ -329,7 +329,7 @@ namespace AgentCoreProcessor.Engine
             }
 
             // 2. 构建 XML 上下文
-            var formattedContext = BuildContextXml(messages, lastSc.RecentMessages, participantSnapshot);
+            var formattedContext = await BuildContextXmlAsync(messages, lastSc.RecentMessages, participantSnapshot);
 
             if (imagePaths.Count > 0)
             {
@@ -561,7 +561,7 @@ namespace AgentCoreProcessor.Engine
 
         // ---- XML 格式构建 ----
 
-        private string BuildContextXml(
+        private async Task<string> BuildContextXmlAsync(
             List<(IncomingMessage Message, SessionContext Context)> batch,
             List<UserMessage> recentMessages,
             Dictionary<int, ParticipantInfo> participants)
@@ -578,26 +578,24 @@ namespace AgentCoreProcessor.Engine
             }
             sb.AppendLine("</participants>");
 
+            // 引用上下文补全
+            var replyMsg = batch.FirstOrDefault(b => !string.IsNullOrEmpty(b.Message.ReplyTo));
+            if (replyMsg.Message != null)
+                await AppendQuotedContextAsync(sb, replyMsg.Message, shortNames);
+
             var batchTicks = new HashSet<long>(batch.Select(b => b.Message.Time.Ticks));
 
-            // 找 recentMessages 中最后一条 bot 回复的位置，之后的都算"未回应"
             int lastBotIndex = -1;
             for (int i = recentMessages.Count - 1; i >= 0; i--)
             {
-                if (recentMessages[i].IsFromBot)
-                {
-                    lastBotIndex = i;
-                    break;
-                }
+                if (recentMessages[i].IsFromBot) { lastBotIndex = i; break; }
             }
 
-            // lastBotIndex 之后的非 batch 消息 = 未回应消息，归入 new
             var unrespondedMessages = new List<UserMessage>();
             var historyMessages = new List<UserMessage>();
             for (int i = 0; i < recentMessages.Count; i++)
             {
-                if (batchTicks.Contains(recentMessages[i].Time.Ticks))
-                    continue;
+                if (batchTicks.Contains(recentMessages[i].Time.Ticks)) continue;
                 if (i > lastBotIndex && lastBotIndex >= 0 && !recentMessages[i].IsFromBot)
                     unrespondedMessages.Add(recentMessages[i]);
                 else if (lastBotIndex < 0 && !recentMessages[i].IsFromBot)
@@ -611,42 +609,80 @@ namespace AgentCoreProcessor.Engine
                 sb.AppendLine("<history>");
                 foreach (var m in historyMessages)
                 {
-                    var name = m.IsFromBot ? "Lilara"
-                             : ResolveHistoryShortName(m, shortNames);
-                    sb.AppendLine($"<msg user=\"{SanitizeAttr(name)}\">{SanitizeContent(m.Content)}</msg>");
+                    var name = m.IsFromBot ? "Lilara" : ResolveHistoryShortName(m, shortNames);
+                    var imgAttr = m.ImageCount > 0 ? $" images=\"{m.ImageCount}\"" : "";
+                    sb.AppendLine($"<msg user=\"{SanitizeAttr(name)}\"{imgAttr}>{SanitizeContent(m.Content)}</msg>");
                 }
                 sb.AppendLine("</history>");
             }
 
             sb.AppendLine("<new>");
-            // 先放未回应的历史消息
             foreach (var m in unrespondedMessages)
             {
                 var name = ResolveHistoryShortName(m, shortNames);
-                sb.AppendLine($"<msg user=\"{SanitizeAttr(name)}\">{SanitizeContent(m.Content)}</msg>");
+                var imgAttr = m.ImageCount > 0 ? $" images=\"{m.ImageCount}\"" : "";
+                sb.AppendLine($"<msg user=\"{SanitizeAttr(name)}\"{imgAttr}>{SanitizeContent(m.Content)}</msg>");
             }
-            // 再放当前 batch
             foreach (var (msg, sc) in batch)
             {
                 var name = shortNames.GetValueOrDefault(sc.User.Id, sc.User.DisplayName);
-                if (string.IsNullOrEmpty(name))
-                    name = msg.DisplayName ?? msg.PlatformUserId;
+                if (string.IsNullOrEmpty(name)) name = msg.DisplayName ?? msg.PlatformUserId;
                 var mentionAttr = msg.IsMentioned ? " mentioned=\"true\"" : "";
-                if (!string.IsNullOrEmpty(msg.QuotedContent))
+                var batchImgCount = msg.Attachments?.Count(a => a.Type == AttachmentType.Image) ?? 0;
+                var imgAttr = batchImgCount > 0 ? $" images=\"{batchImgCount}\"" : "";
+                if (!string.IsNullOrEmpty(msg.QuotedContent) || !string.IsNullOrEmpty(msg.ReplyTo))
                 {
-                    sb.AppendLine($"<msg user=\"{SanitizeAttr(name)}\"{mentionAttr}>");
-                    sb.AppendLine($"  <quote>{SanitizeContent(msg.QuotedContent)}</quote>");
+                    sb.AppendLine($"<msg user=\"{SanitizeAttr(name)}\"{mentionAttr}{imgAttr}>");
+                    if (!string.IsNullOrEmpty(msg.QuotedContent))
+                        sb.AppendLine($"  <quote>{SanitizeContent(msg.QuotedContent)}</quote>");
                     sb.AppendLine($"  {SanitizeContent(msg.Content)}");
                     sb.AppendLine("</msg>");
                 }
                 else
                 {
-                    sb.AppendLine($"<msg user=\"{SanitizeAttr(name)}\"{mentionAttr}>{SanitizeContent(msg.Content)}</msg>");
+                    sb.AppendLine($"<msg user=\"{SanitizeAttr(name)}\"{mentionAttr}{imgAttr}>{SanitizeContent(msg.Content)}</msg>");
                 }
             }
             sb.Append("</new>");
 
             return sb.ToString();
+        }
+
+        private async Task AppendQuotedContextAsync(StringBuilder sb, IncomingMessage replyMsg,
+            Dictionary<int, string> shortNames)
+        {
+            try
+            {
+                var quoted = await ctx.Session.GetByPlatformMessageIdAsync(channelId, replyMsg.ReplyTo!);
+                if (quoted != null)
+                {
+                    var around = await ctx.Session.GetContextAroundAsync(quoted.Id, channelId, 3);
+                    if (around.Count > 0)
+                    {
+                        sb.AppendLine("<quoted-context>");
+                        foreach (var m in around)
+                        {
+                            var name = m.IsFromBot ? "Lilara" : ResolveHistoryShortName(m, shortNames);
+                            var isTarget = m.Id == quoted.Id ? " quoted=\"true\"" : "";
+                            var imgAttr = m.ImageCount > 0 ? $" images=\"{m.ImageCount}\"" : "";
+                            sb.AppendLine($"<msg user=\"{SanitizeAttr(name)}\"{isTarget}{imgAttr}>{SanitizeContent(m.Content)}</msg>");
+                        }
+                        sb.AppendLine("</quoted-context>");
+                        return;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                FrameworkLogger.Log("WorkerEngine", $"引用上下文查询失败: {ex.Message}");
+            }
+
+            if (!string.IsNullOrEmpty(replyMsg.QuotedContent))
+            {
+                sb.AppendLine("<quoted-context>");
+                sb.AppendLine($"<msg quoted=\"true\">{SanitizeContent(replyMsg.QuotedContent)}</msg>");
+                sb.AppendLine("</quoted-context>");
+            }
         }
 // PLACEHOLDER_HELPERS
 

@@ -37,5 +37,36 @@ namespace AgentCoreProcessor.Database
         }
 
         public Task<UserMessage?> GetByIdAsync(int id) => db.GetByIdAsync<UserMessage>(id);
+
+        /// <summary>按平台消息ID查找（用于引用消息上下文）。</summary>
+        public async Task<UserMessage?> GetByPlatformMessageIdAsync(int channelId, string platformMessageId)
+        {
+            var results = await db.QueryAsync<UserMessage>(
+                "SELECT * FROM UserMessages WHERE ChannelId = ? AND PlatformMessageId = ? LIMIT 1",
+                channelId, platformMessageId);
+            return results.Count > 0 ? results[0] : null;
+        }
+
+        /// <summary>以某条消息为锚点，取前后各 radius 条消息作为上下文。</summary>
+        public async Task<List<UserMessage>> GetContextAroundAsync(int messageId, int channelId, int radius = 3)
+        {
+            var before = await db.QueryAsync<UserMessage>(
+                "SELECT * FROM UserMessages WHERE ChannelId = ? AND Id < ? ORDER BY Id DESC LIMIT ?",
+                channelId, messageId, radius);
+            before.Reverse();
+
+            var target = await db.QueryAsync<UserMessage>(
+                "SELECT * FROM UserMessages WHERE Id = ?", messageId);
+
+            var after = await db.QueryAsync<UserMessage>(
+                "SELECT * FROM UserMessages WHERE ChannelId = ? AND Id > ? ORDER BY Id ASC LIMIT ?",
+                channelId, messageId, radius);
+
+            var result = new List<UserMessage>(before.Count + 1 + after.Count);
+            result.AddRange(before);
+            if (target.Count > 0) result.Add(target[0]);
+            result.AddRange(after);
+            return result;
+        }
     }
 }

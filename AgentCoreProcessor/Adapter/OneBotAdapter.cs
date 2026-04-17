@@ -457,6 +457,7 @@ namespace AgentCoreProcessor.Adapter
                 IsMentioned = isMentioned,
                 ReplyTo = replyTo,
                 QuotedContent = quotedContent,
+                PlatformMessageId = data["message_id"]?.ToString(),
                 Time = DateTime.Now,
                 Attachments = attachments
             };

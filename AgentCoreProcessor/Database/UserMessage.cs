@@ -17,5 +17,9 @@ namespace AgentCoreProcessor.Database
         public DateTime Time { get; set; }// 消息时间
         /// <summary>是否为 Lilara 的回复（区分用户消息和 bot 回复）</summary>
         public bool IsFromBot { get; set; } = false;
+        /// <summary>平台侧消息ID（用于引用消息上下文查询）。可空，Console/File 不填。</summary>
+        public string? PlatformMessageId { get; set; }
+        /// <summary>消息中的图片数量（用于 XML 上下文标记）。</summary>
+        public int ImageCount { get; set; } = 0;
     }
 }

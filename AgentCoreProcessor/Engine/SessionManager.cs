@@ -75,7 +75,9 @@ namespace AgentCoreProcessor.Engine
                 ChannelId = channel.Id,
                 Content = msg.Content,
                 SenderName = senderName,
-                Time = msg.Time
+                Time = msg.Time,
+                PlatformMessageId = msg.PlatformMessageId,
+                ImageCount = msg.Attachments?.Count(a => a.Type == AttachmentType.Image) ?? 0
             };
             await messages.SaveAsync(userMessage);
 
@@ -136,5 +138,13 @@ namespace AgentCoreProcessor.Engine
             msgs.Reverse();
             return msgs;
         }
+
+        /// <summary>按平台消息ID查找消息（用于引用上下文）。</summary>
+        public Task<UserMessage?> GetByPlatformMessageIdAsync(int channelId, string platformMessageId)
+            => messages.GetByPlatformMessageIdAsync(channelId, platformMessageId);
+
+        /// <summary>以某条消息为锚点，取前后各 radius 条消息作为上下文。</summary>
+        public Task<List<UserMessage>> GetContextAroundAsync(int messageId, int channelId, int radius = 3)
+            => messages.GetContextAroundAsync(messageId, channelId, radius);
     }
 }
