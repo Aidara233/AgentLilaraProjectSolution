@@ -69,6 +69,10 @@ namespace AgentCoreProcessor.Engine
             var senderName = !string.IsNullOrEmpty(user.DisplayName) ? user.DisplayName
                            : !string.IsNullOrEmpty(msg.DisplayName) ? msg.DisplayName
                            : msg.PlatformUserId;
+            var imageHashes = msg.Attachments?
+                .Where(a => a.Type == AttachmentType.Image && !string.IsNullOrEmpty(a.Hash))
+                .Select(a => a.Hash!)
+                .ToList();
             var userMessage = new UserMessage
             {
                 UserId = user.Id,
@@ -78,6 +82,7 @@ namespace AgentCoreProcessor.Engine
                 Time = msg.Time,
                 PlatformMessageId = msg.PlatformMessageId,
                 ImageCount = msg.Attachments?.Count(a => a.Type == AttachmentType.Image) ?? 0,
+                ImageHashes = imageHashes is { Count: > 0 } ? string.Join(",", imageHashes) : null,
                 ReplyToPlatformMessageId = msg.ReplyTo,
                 MentionedPlatformIds = msg.MentionedPlatformIds != null && msg.MentionedPlatformIds.Count > 0
                     ? string.Join(",", msg.MentionedPlatformIds)

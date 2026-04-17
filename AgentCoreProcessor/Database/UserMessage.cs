@@ -21,6 +21,8 @@ namespace AgentCoreProcessor.Database
         public string? PlatformMessageId { get; set; }
         /// <summary>消息中的图片数量（用于 XML 上下文标记）。</summary>
         public int ImageCount { get; set; } = 0;
+        /// <summary>图片哈希列表（逗号分隔），引用 ImageRecord 表。</summary>
+        public string? ImageHashes { get; set; }
         /// <summary>被引用消息的平台ID（引用关系）。</summary>
         public string? ReplyToPlatformMessageId { get; set; }
         /// <summary>被@的平台用户ID列表（逗号分隔）。</summary>

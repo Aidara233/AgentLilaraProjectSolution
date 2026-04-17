@@ -409,14 +409,15 @@ namespace AgentCoreProcessor.Adapter
                         {
                             try
                             {
-                                var localPath = await ImageStorage.DownloadAndSaveAsync(imageUrl, httpClient);
+                                var (localPath, imgHash) = await ImageStorage.DownloadAndSaveAsync(imageUrl, httpClient);
                                 attachments ??= new List<MessageAttachment>();
                                 attachments.Add(new MessageAttachment
                                 {
                                     Type = AttachmentType.Image,
                                     SourceUrl = imageUrl,
                                     LocalPath = localPath,
-                                    FileName = Path.GetFileName(localPath)
+                                    FileName = Path.GetFileName(localPath),
+                                    Hash = imgHash
                                 });
                             }
                             catch (Exception ex)

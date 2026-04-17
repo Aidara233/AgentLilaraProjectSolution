@@ -185,13 +185,14 @@ namespace AgentCoreProcessor.Adapter
                     };
                     try
                     {
-                        var localPath = ImageStorage.CopyToStorageAsync(fa.Path).GetAwaiter().GetResult();
+                        var (localPath, imgHash) = ImageStorage.CopyToStorageAsync(fa.Path).GetAwaiter().GetResult();
                         attachments ??= new List<MessageAttachment>();
                         attachments.Add(new MessageAttachment
                         {
                             Type = type,
                             LocalPath = localPath,
-                            FileName = Path.GetFileName(localPath)
+                            FileName = Path.GetFileName(localPath),
+                            Hash = imgHash
                         });
                     }
                     catch { /* 复制失败跳过 */ }

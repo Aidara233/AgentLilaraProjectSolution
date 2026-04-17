@@ -329,7 +329,8 @@ namespace AgentCoreProcessor.Engine
             }
 
             // 2. 构建 XML 上下文
-            var formattedContext = await BuildContextXmlAsync(messages, lastSc.RecentMessages, participantSnapshot);
+            var (formattedContext, quotedImagePaths) = await BuildContextXmlAsync(messages, lastSc.RecentMessages, participantSnapshot);
+            imagePaths.AddRange(quotedImagePaths);
 
             if (imagePaths.Count > 0)
             {
@@ -580,12 +581,13 @@ namespace AgentCoreProcessor.Engine
 
         private const int MaxQuoteDepth = 2;
 
-        private async Task<string> BuildContextXmlAsync(
+        private async Task<(string Xml, List<string> QuotedImagePaths)> BuildContextXmlAsync(
             List<(IncomingMessage Message, SessionContext Context)> batch,
             List<UserMessage> recentMessages,
             Dictionary<int, ParticipantInfo> participants)
         {
             var sb = new StringBuilder();
+            var quotedImagePaths = new List<string>();
             var shortNames = ResolveShortNames(participants);
 
             sb.AppendLine("<participants>");
@@ -636,7 +638,7 @@ namespace AgentCoreProcessor.Engine
 
             // 引用上下文递归展开
             if (missingTargets.Count > 0)
-                await AppendQuotedContextAsync(sb, missingTargets, contextIds, shortNames, MaxQuoteDepth);
+                await AppendQuotedContextAsync(sb, missingTargets, contextIds, shortNames, MaxQuoteDepth, quotedImagePaths);
 
             // history
             if (historyMessages.Count > 0)
@@ -655,7 +657,7 @@ namespace AgentCoreProcessor.Engine
                 sb.AppendLine(FormatBatchMessage(msg, sc, shortNames, contextIds));
             sb.Append("</new>");
 
-            return sb.ToString();
+            return (sb.ToString(), quotedImagePaths);
         }
 
         private string FormatDbMessage(UserMessage m, Dictionary<int, string> shortNames, HashSet<string> contextIds)
@@ -692,7 +694,8 @@ namespace AgentCoreProcessor.Engine
         }
 
         private async Task AppendQuotedContextAsync(StringBuilder sb, HashSet<string> targetIds,
-            HashSet<string> contextIds, Dictionary<int, string> shortNames, int maxDepth)
+            HashSet<string> contextIds, Dictionary<int, string> shortNames, int maxDepth,
+            List<string> quotedImagePaths)
         {
             if (targetIds.Count == 0 || maxDepth <= 0) return;
 
@@ -731,10 +734,20 @@ namespace AgentCoreProcessor.Engine
 
             // 递归展开下一层
             if (nextTargets.Count > 0 && maxDepth > 1)
-                await AppendQuotedContextAsync(sb, nextTargets, contextIds, shortNames, maxDepth - 1);
+                await AppendQuotedContextAsync(sb, nextTargets, contextIds, shortNames, maxDepth - 1, quotedImagePaths);
 
             if (expanded.Count > 0)
             {
+                // 收集引用消息中的图片
+                foreach (var m in expanded)
+                {
+                    if (!string.IsNullOrEmpty(m.ImageHashes))
+                    {
+                        var paths = await ImageStorage.ResolvePathsAsync(m.ImageHashes);
+                        quotedImagePaths.AddRange(paths);
+                    }
+                }
+
                 sb.AppendLine("<quoted-context>");
                 foreach (var m in expanded)
                 {

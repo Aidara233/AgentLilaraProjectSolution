@@ -37,6 +37,7 @@ namespace AgentCoreProcessor.Database
             await db.CreateTableAsync<MemoryLink>();
             await db.CreateTableAsync<PersonaMemoryEntry>();
             await db.CreateTableAsync<ReviewHint>();
+            await db.CreateTableAsync<ImageRecord>();
         }
 
         /// <summary>插入一条记录，返回受影响的行数。</summary>

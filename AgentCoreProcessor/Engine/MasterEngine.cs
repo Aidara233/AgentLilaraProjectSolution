@@ -157,6 +157,8 @@ namespace AgentCoreProcessor.Engine
             MemoryLinks = new MemoryLinkRepository(db);
             PersonaMemories = new PersonaMemoryRepository(db);
             ReviewHints = new ReviewHintRepository(db);
+            var images = new ImageRepository(db);
+            ImageStorage.Init(images);
 
             // Embedding
             var baseConfigPath = Path.Combine(PathConfig.CoreConfigPath, "Base.json");
