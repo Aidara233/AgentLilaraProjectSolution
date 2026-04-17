@@ -353,7 +353,71 @@ namespace AgentCoreProcessor.Engine
             var memoryResults = await GetCachedMemoryAsync(lastSc, lastMsg.Content);
 // PLACEHOLDER_ROUTE
 
-            // 6. 路由处理
+            // 6. 路由处理：先尝试聊天，ExpressCore 可转交任务
+            if (!isTask)
+            {
+                string? chatMemory = FormatMemory(memoryResults, topK: 5);
+
+                var inputBuilder = new StringBuilder();
+                inputBuilder.Append(formattedContext);
+                if (chatMemory != null)
+                {
+                    inputBuilder.AppendLine();
+                    inputBuilder.AppendLine();
+                    inputBuilder.AppendLine("[记忆参考]");
+                    inputBuilder.Append(chatMemory);
+                }
+
+                expressCore.ResetProcessor();
+                var expressInput = inputBuilder.ToString();
+                var expressed = imagePaths.Count > 0
+                    ? await expressCore.GenerateOnceAsync(expressInput, imagePaths)
+                    : await expressCore.GenerateOnceAsync(expressInput);
+
+                if (expressed.Contains("[TASK]"))
+                {
+                    FrameworkLogger.Log("WorkerEngine", $"ExpressCore 转交任务: channelId={channelId}");
+                    isTask = true;
+                }
+                else
+                {
+                    // 按换行拆分为多条消息，逐条发送
+                    var segments = expressed
+                        .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                        .Select(s => s.Trim())
+                        .Where(s => s.Length > 0)
+                        .ToList();
+
+                if (segments.Count <= 1)
+                {
+                    // 单条直接发
+                    await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
+                    {
+                        ChannelId = lastMsg.ChannelId,
+                        Content = expressed.Trim()
+                    });
+                }
+                else
+                {
+                    var rng = new Random();
+                    for (int i = 0; i < segments.Count; i++)
+                    {
+                        if (i > 0)
+                            await Task.Delay(rng.Next(600, 2000));
+                        await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
+                        {
+                            ChannelId = lastMsg.ChannelId,
+                            Content = segments[i]
+                        });
+                    }
+                }
+
+                // 数据库存完整文本
+                await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, expressed.Trim());
+                }
+            }
+
+            // 任务路径（直接分类为任务，或 ExpressCore 转交）
             if (isTask)
             {
                 var taskMemory = memoryResults?.Where(m => !m.IsPersona).ToList();
@@ -398,60 +462,6 @@ namespace AgentCoreProcessor.Engine
                     this.activeMessageQueue = null;
                     this.activeMessageSignal = null;
                 }
-            }
-            else
-            {
-                string? memoryContext = FormatMemory(memoryResults, topK: 5);
-
-                var inputBuilder = new StringBuilder();
-                inputBuilder.Append(formattedContext);
-                if (memoryContext != null)
-                {
-                    inputBuilder.AppendLine();
-                    inputBuilder.AppendLine();
-                    inputBuilder.AppendLine("[记忆参考]");
-                    inputBuilder.Append(memoryContext);
-                }
-
-                expressCore.ResetProcessor();
-                var expressInput = inputBuilder.ToString();
-                var expressed = imagePaths.Count > 0
-                    ? await expressCore.GenerateOnceAsync(expressInput, imagePaths)
-                    : await expressCore.GenerateOnceAsync(expressInput);
-
-                // 按换行拆分为多条消息，逐条发送，模拟真人打字节奏
-                var segments = expressed
-                    .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                    .Select(s => s.Trim())
-                    .Where(s => s.Length > 0)
-                    .ToList();
-
-                if (segments.Count <= 1)
-                {
-                    // 单条直接发
-                    await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
-                    {
-                        ChannelId = lastMsg.ChannelId,
-                        Content = expressed.Trim()
-                    });
-                }
-                else
-                {
-                    var rng = new Random();
-                    for (int i = 0; i < segments.Count; i++)
-                    {
-                        if (i > 0)
-                            await Task.Delay(rng.Next(600, 2000));
-                        await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
-                        {
-                            ChannelId = lastMsg.ChannelId,
-                            Content = segments[i]
-                        });
-                    }
-                }
-
-                // 数据库存完整文本
-                await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, expressed.Trim());
             }
 
             // 7. 记忆提取计数
