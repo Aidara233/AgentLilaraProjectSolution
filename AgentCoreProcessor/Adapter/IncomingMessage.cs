@@ -32,5 +32,8 @@ namespace AgentCoreProcessor.Adapter
 
         /// <summary>消息附件（图片、音频等）。</summary>
         public List<MessageAttachment>? Attachments { get; set; }
+
+        /// <summary>被@的平台用户ID列表（包括非bot用户）。</summary>
+        public List<string>? MentionedPlatformIds { get; set; }
     }
 }

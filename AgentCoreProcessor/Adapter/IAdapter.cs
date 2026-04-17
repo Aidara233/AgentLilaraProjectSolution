@@ -8,7 +8,8 @@ namespace AgentCoreProcessor.Adapter
     {
         string Platform { get; }
         event Action<IncomingMessage> OnMessageReceived;
-        Task SendMessageAsync(OutgoingMessage message);
+        /// <summary>发送消息，返回平台侧消息ID（用于数据库关联）。不支持时返回 null。</summary>
+        Task<string?> SendMessageAsync(OutgoingMessage message);
         Task StartAsync(CancellationToken ct = default);
         Task StopAsync();
 

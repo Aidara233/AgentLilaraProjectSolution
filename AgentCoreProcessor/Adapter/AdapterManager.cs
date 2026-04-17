@@ -52,7 +52,7 @@ namespace AgentCoreProcessor.Adapter
             return true;
         }
 
-        public async Task SendMessageAsync(string platform, OutgoingMessage message)
+        public async Task<string?> SendMessageAsync(string platform, OutgoingMessage message)
         {
             var adapter = adapters.FirstOrDefault(a =>
                 a.Platform.Equals(platform, StringComparison.OrdinalIgnoreCase))
@@ -60,8 +60,9 @@ namespace AgentCoreProcessor.Adapter
 
             if (adapter != null)
             {
-                await adapter.SendMessageAsync(message).ConfigureAwait(false);
+                return await adapter.SendMessageAsync(message).ConfigureAwait(false);
             }
+            return null;
         }
     }
 }

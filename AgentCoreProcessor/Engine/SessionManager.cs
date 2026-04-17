@@ -77,7 +77,11 @@ namespace AgentCoreProcessor.Engine
                 SenderName = senderName,
                 Time = msg.Time,
                 PlatformMessageId = msg.PlatformMessageId,
-                ImageCount = msg.Attachments?.Count(a => a.Type == AttachmentType.Image) ?? 0
+                ImageCount = msg.Attachments?.Count(a => a.Type == AttachmentType.Image) ?? 0,
+                ReplyToPlatformMessageId = msg.ReplyTo,
+                MentionedPlatformIds = msg.MentionedPlatformIds != null && msg.MentionedPlatformIds.Count > 0
+                    ? string.Join(",", msg.MentionedPlatformIds)
+                    : null
             };
             await messages.SaveAsync(userMessage);
 
@@ -94,7 +98,7 @@ namespace AgentCoreProcessor.Engine
         }
 
         /// <summary>保存 Lilara 的回复到消息历史。</summary>
-        public async Task SaveBotMessageAsync(int channelId, string content)
+        public async Task SaveBotMessageAsync(int channelId, string content, string? platformMessageId = null)
         {
             await messages.SaveAsync(new UserMessage
             {
@@ -103,7 +107,8 @@ namespace AgentCoreProcessor.Engine
                 Content = content,
                 SenderName = "Lilara",
                 IsFromBot = true,
-                Time = DateTime.Now
+                Time = DateTime.Now,
+                PlatformMessageId = platformMessageId
             });
         }
 

@@ -32,7 +32,7 @@ namespace AgentCoreProcessor.Adapter
             this.pollIntervalMs = pollIntervalMs;
         }
 
-        public Task SendMessageAsync(OutgoingMessage message)
+        public Task<string?> SendMessageAsync(OutgoingMessage message)
         {
             var seq = Interlocked.Increment(ref outputSeq);
             var ts = DateTime.Now.ToString("HHmmss");
@@ -40,7 +40,7 @@ namespace AgentCoreProcessor.Adapter
             var fileName = $"{seq:D3}_{safeChannel}_{ts}.txt";
             var content = $"[{DateTime.Now:HH:mm:ss}] channelId={message.ChannelId}\n{message.Content}\n";
             File.WriteAllText(Path.Combine(outputDir, fileName), content);
-            return Task.CompletedTask;
+            return Task.FromResult<string?>(null);
         }
 
         public async Task StartAsync(CancellationToken ct = default)

@@ -12,10 +12,10 @@ namespace AgentCoreProcessor.Adapter
 
         private CancellationTokenSource? cts;
 
-        public Task SendMessageAsync(OutgoingMessage message)
+        public Task<string?> SendMessageAsync(OutgoingMessage message)
         {
             Console.WriteLine(message.Content);
-            return Task.CompletedTask;
+            return Task.FromResult<string?>(null);
         }
 
         public async Task StartAsync(CancellationToken ct = default)

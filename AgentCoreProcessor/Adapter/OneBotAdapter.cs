@@ -134,7 +134,7 @@ namespace AgentCoreProcessor.Adapter
             return Task.CompletedTask;
         }
 
-        public async Task SendMessageAsync(OutgoingMessage message)
+        public async Task<string?> SendMessageAsync(OutgoingMessage message)
         {
             string action;
             var p = new JObject();
@@ -152,7 +152,7 @@ namespace AgentCoreProcessor.Adapter
             else
             {
                 FrameworkLogger.Log("OneBotAdapter", $"无法识别的 ChannelId 格式: {message.ChannelId}");
-                return;
+                return null;
             }
 
             // 构造消息段
@@ -185,9 +185,11 @@ namespace AgentCoreProcessor.Adapter
                                 sentMessageIds.Clear();
                             sentMessageIds.Add(sentId);
                         }
+                        return sentId.ToString();
                     }
                 }
             }
+            return null;
         }
 
         // ── WebSocket 连接 ──
@@ -346,6 +348,7 @@ namespace AgentCoreProcessor.Adapter
             bool isMentioned = false;
             string? replyTo = null;
             List<MessageAttachment>? attachments = null;
+            List<string>? mentionedIds = null;
 
             foreach (var seg in segments)
             {
@@ -362,6 +365,11 @@ namespace AgentCoreProcessor.Adapter
                         var atQq = segData["qq"]?.ToString();
                         if (atQq == selfId.ToString())
                             isMentioned = true;
+                        if (!string.IsNullOrEmpty(atQq))
+                        {
+                            mentionedIds ??= new List<string>();
+                            mentionedIds.Add(atQq);
+                        }
                         break;
                     case "reply":
                         replyTo = segData["id"]?.ToString();
@@ -459,7 +467,8 @@ namespace AgentCoreProcessor.Adapter
                 QuotedContent = quotedContent,
                 PlatformMessageId = data["message_id"]?.ToString(),
                 Time = DateTime.Now,
-                Attachments = attachments
+                Attachments = attachments,
+                MentionedPlatformIds = mentionedIds
             };
         }
 

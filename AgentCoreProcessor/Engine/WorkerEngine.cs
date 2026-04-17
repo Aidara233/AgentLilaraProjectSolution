@@ -381,12 +381,12 @@ namespace AgentCoreProcessor.Engine
                     var preTask = expressed.Split("[TASK]")[0].Trim();
                     if (!string.IsNullOrEmpty(preTask))
                     {
-                        await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
+                        var sentId = await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
                         {
                             ChannelId = lastMsg.ChannelId,
                             Content = preTask
                         });
-                        await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, preTask);
+                        await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, preTask, sentId);
                     }
                     isTask = true;
                 }
@@ -402,11 +402,12 @@ namespace AgentCoreProcessor.Engine
                 if (segments.Count <= 1)
                 {
                     // 单条直接发
-                    await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
+                    var sentId = await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
                     {
                         ChannelId = lastMsg.ChannelId,
                         Content = expressed.Trim()
                     });
+                    await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, expressed.Trim(), sentId);
                 }
                 else
                 {
@@ -415,16 +416,14 @@ namespace AgentCoreProcessor.Engine
                     {
                         if (i > 0)
                             await Task.Delay(rng.Next(600, 2000));
-                        await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
+                        var sentId = await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
                         {
                             ChannelId = lastMsg.ChannelId,
                             Content = segments[i]
                         });
+                        await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, segments[i], sentId);
                     }
                 }
-
-                // 数据库存完整文本
-                await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, expressed.Trim());
                 }
             }
 
@@ -436,12 +435,12 @@ namespace AgentCoreProcessor.Engine
 
                 workingCore.OnSpeak = async (rawText) =>
                 {
-                    await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
+                    var sentId = await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
                     {
                         ChannelId = lastMsg.ChannelId,
                         Content = rawText
                     });
-                    await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, rawText);
+                    await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, rawText, sentId);
                 };
                 workingCore.OnMemory = async (content) =>
                 {
