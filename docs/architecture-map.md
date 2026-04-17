@@ -131,14 +131,22 @@ ReviewEngine (由DreamEngine孵化，不注册SpawnCheck):
 ## 工具系统
 
 ```
-ITool: Name / Description / Parameters / Timeout / ExecuteAsync / AllowSubAgent(默认true)
+ITool: Name / Description / Parameters / Timeout / ExecuteAsync / AllowSubAgent(默认true) / RequiredPermission(默认Default)
 ToolCall(JSON): tool + toolId + inputs(value/ref) + output + outputToModel + retain
-ToolExecutor: DAG拓扑排序 + 分波并行 + 寄存器(跨轮) + 可选toolResolver
+ToolExecutor: DAG拓扑排序 + 分波并行 + 寄存器(跨轮) + 可选toolResolver + 授权检查
+
+运行时工具授权:
+  ITool.RequiredPermission > Default 的工具为受限工具
+  未授权: prompt 只显示一行摘要，调用被 ToolExecutor 拦截
+  授权流程: 模型调用「申请工具授权」→ 框架发4位验证码 → 有权限用户复述 → 解锁
+  授权绑定单次 Agent 循环，会话结束自动撤销
+  等待期间非验证码消息不丢弃，放回队列
 
 全局工具 (ToolRegistry, WorkerEngine用):
-  文件流读取器 / 文件流写入器(均已禁用) / 说话 / 完成 / 思考笔记 / 记忆
-  睡眠许可 / 强制睡觉 / 修改睡眠配置 / 调整睡意 / 触发红色警报 / 标记复盘
-  委派任务 / 查看子agent / 任务管理 / 报警
+  自由工具(Default): 说话 / 完成 / 思考笔记 / 记忆 / 标记复盘 / 任务管理 / 报警 / 申请工具授权
+  受限工具(Elevated): 睡眠许可 / 强制睡觉 / 调整睡意
+  受限工具(Admin): 修改睡眠配置 / 触发红色警报
+  已禁用: 文件流读取器 / 文件流写入器 / 委派任务 / 查看子agent
 
 Review专用工具 (ReviewEngine内部):
   检索记忆 / 查看关联 / 读取消息历史 / 更新亲和度 / 写入临时记忆 / 思考笔记

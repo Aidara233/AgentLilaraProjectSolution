@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Database;
 
 namespace AgentCoreProcessor.Tool
 {
@@ -21,6 +22,9 @@ namespace AgentCoreProcessor.Tool
         /// <summary>工具查找函数。默认使用全局 ToolRegistry。</summary>
         private readonly Func<string, ITool?> toolResolver;
 
+        /// <summary>已授权的受限工具名集合。null 表示不做授权检查。</summary>
+        private readonly HashSet<string>? authorizedTools;
+
         /// <summary>本轮执行结果：toolId → ToolResult。每次 ExecuteAsync 调用前自动清空。</summary>
         private readonly Dictionary<string, ToolResult> results = [];
 
@@ -32,10 +36,14 @@ namespace AgentCoreProcessor.Tool
         /// </summary>
         /// <param name="register">共享寄存器，跨轮累积工具输出供 ref 引用。</param>
         /// <param name="toolResolver">自定义工具查找函数。为 null 时使用 ToolRegistry.Get。</param>
-        public ToolExecutor(Dictionary<string, string> register, Func<string, ITool?>? toolResolver = null)
+        /// <param name="authorizedTools">已授权的受限工具名集合。null 时不做授权检查（ReviewEngine 等内部场景）。</param>
+        public ToolExecutor(Dictionary<string, string> register,
+            Func<string, ITool?>? toolResolver = null,
+            HashSet<string>? authorizedTools = null)
         {
             this.register = register;
             this.toolResolver = toolResolver ?? ToolRegistry.Get;
+            this.authorizedTools = authorizedTools;
         }
 
         /// <summary>
@@ -152,6 +160,18 @@ namespace AgentCoreProcessor.Tool
                     ToolId = call.ToolId,
                     Status = "failed",
                     Error = $"未知工具: {call.Tool}"
+                };
+            }
+
+            if (authorizedTools != null
+                && tool.RequiredPermission > PermissionLevel.Default
+                && !authorizedTools.Contains(tool.Name))
+            {
+                return new ToolResult
+                {
+                    ToolId = call.ToolId,
+                    Status = "failed",
+                    Error = "未授权：需要先调用「申请工具授权」获取使用权"
                 };
             }
 

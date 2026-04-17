@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using AgentCoreProcessor.Database;
 using Newtonsoft.Json;
 
 namespace AgentCoreProcessor.Tool
@@ -29,7 +30,8 @@ namespace AgentCoreProcessor.Tool
                 new ReviewHintTool(),
                 // DelegateTool / SubAgentDetailTool 暂禁用：子 agent 会继承文件工具风险
                 new TaskTool(),
-                new AlertButtonTool()
+                new AlertButtonTool(),
+                new RequestAuthorizationTool()
             };
             _tools = toolList.ToDictionary(t => t.Name);
         }
@@ -46,8 +48,11 @@ namespace AgentCoreProcessor.Tool
         /// 根据已注册工具的元数据，自动生成供 prompt 注入的工具描述文本。
         /// 传入 tools 时只生成指定工具的描述（Phase 2 子 agent 用）；
         /// 不传时生成全部工具的描述。
+        /// authorizedTools 控制受限工具的显示：已授权显示完整描述，未授权只显示一行摘要。
         /// </summary>
-        public static string GenerateDescriptions(IEnumerable<ITool>? tools = null)
+        public static string GenerateDescriptions(
+            IEnumerable<ITool>? tools = null,
+            HashSet<string>? authorizedTools = null)
         {
             var source = tools ?? _tools.Values;
             var sb = new StringBuilder();
@@ -55,6 +60,17 @@ namespace AgentCoreProcessor.Tool
 
             foreach (var tool in source)
             {
+                bool isRestricted = tool.RequiredPermission > PermissionLevel.Default;
+                bool isAuthorized = authorizedTools != null && authorizedTools.Contains(tool.Name);
+
+                if (isRestricted && !isAuthorized)
+                {
+                    sb.AppendLine($"受限工具：{tool.Name} — {tool.Description}（需要授权，调用「申请工具授权」获取使用权）");
+                    sb.AppendLine();
+                    i++;
+                    continue;
+                }
+
                 sb.AppendLine($"工具{i}：{tool.Name}");
                 sb.AppendLine($"描述：{tool.Description}");
 

@@ -34,6 +34,7 @@ namespace AgentCoreProcessor.Core
         private const string SubAgentDetailToolName = "查看子任务详情";
         private const string TaskToolName = "任务管理";
         private const string AlertButtonToolName = "报警";
+        private const string RequestAuthToolName = "申请工具授权";
 
         private readonly PromptBuilder promptBuilder = new();
 
@@ -43,6 +44,7 @@ namespace AgentCoreProcessor.Core
         public Func<string, string?, Task>? OnSignal { get; set; }
         public Func<string, Task>? OnReviewHint { get; set; }
         public Func<string, Task>? OnAlert { get; set; }
+        public Func<List<string>, string, Task<bool>>? OnRequestAuth { get; set; }
 
         // 任务列表（跨轮保持）
         private readonly List<(string Description, bool Done)> taskList = new();
@@ -50,6 +52,9 @@ namespace AgentCoreProcessor.Core
         // 子 agent 管理
         private readonly Dictionary<string, SubAgentRecord> subAgentRecords = new();
         private int subAgentSeq = 0;
+
+        // 运行时工具授权
+        private readonly HashSet<string> authorizedTools = new();
 
         // 消息通道（由 WorkerEngine 注入）
         private ConcurrentQueue<IncomingMessage>? messageQueue;
@@ -79,10 +84,11 @@ namespace AgentCoreProcessor.Core
             var pendingNewMessages = new List<string>();
             var pendingSubResults = new List<(string id, string summary)>();
 
-            var toolDescriptions = ToolRegistry.GenerateDescriptions();
-
             for (int round = 0; round < MaxRounds; round++)
             {
+                // 0. 每轮重新生成工具描述（授权状态可能在循环中变化）
+                var toolDescriptions = ToolRegistry.GenerateDescriptions(authorizedTools: authorizedTools);
+
                 // 1. 收集本轮新增内容
                 DrainNewMessages(pendingNewMessages);
                 CollectCompletedSubAgents(pendingSubResults);
@@ -126,7 +132,7 @@ namespace AgentCoreProcessor.Core
                 }
 
                 // 5. 同步工具执行（含委派和详情的信号工具）
-                var executor = new ToolExecutor(register);
+                var executor = new ToolExecutor(register, authorizedTools: authorizedTools);
                 var allResults = await executor.ExecuteAsync(toolCalls);
 
                 // 6. 处理副作用
@@ -172,6 +178,22 @@ namespace AgentCoreProcessor.Core
                             break;
                         case AlertButtonToolName:
                             if (result.IsSuccess && OnAlert != null) await OnAlert(result.Data ?? "");
+                            break;
+
+                        case RequestAuthToolName:
+                            if (result.IsSuccess && OnRequestAuth != null)
+                            {
+                                var authParts = (result.Data ?? "").Split('|', 2);
+                                var authNames = authParts[0].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+                                var authReason = authParts.Length > 1 ? authParts[1] : "";
+                                var approved = await OnRequestAuth(authNames, authReason);
+                                if (approved)
+                                    foreach (var name in authNames)
+                                        authorizedTools.Add(name);
+                                register[call.ToolId] = approved
+                                    ? $"授权通过，已解锁工具：{string.Join("、", authNames)}"
+                                    : "授权被拒绝";
+                            }
                             break;
 
                         case TaskToolName:

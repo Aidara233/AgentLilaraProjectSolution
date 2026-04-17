@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Database;
 
 namespace AgentCoreProcessor.Tool
 {
@@ -32,5 +33,8 @@ namespace AgentCoreProcessor.Tool
 
         /// <summary>是否允许子 agent 使用。默认 true。信号类/说话/委派等工具覆盖为 false。</summary>
         bool AllowSubAgent => true;
+
+        /// <summary>使用此工具所需的最低权限。Default = 自由工具，高于 Default 需要运行时授权。</summary>
+        PermissionLevel RequiredPermission => PermissionLevel.Default;
     }
 }

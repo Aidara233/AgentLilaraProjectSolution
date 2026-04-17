@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Database;
 
 namespace AgentCoreProcessor.Tool
 {
@@ -16,6 +17,7 @@ namespace AgentCoreProcessor.Tool
         public IReadOnlyList<ToolParameter> Parameters => [];
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);
         public bool AllowSubAgent => false;
+        public PermissionLevel RequiredPermission => PermissionLevel.Elevated;
 
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
@@ -37,6 +39,7 @@ namespace AgentCoreProcessor.Tool
         public IReadOnlyList<ToolParameter> Parameters => [];
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);
         public bool AllowSubAgent => false;
+        public PermissionLevel RequiredPermission => PermissionLevel.Elevated;
 
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
@@ -59,6 +62,7 @@ namespace AgentCoreProcessor.Tool
             [new("配置JSON", "JSON格式的配置内容", 0)];
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);
         public bool AllowSubAgent => false;
+        public PermissionLevel RequiredPermission => PermissionLevel.Admin;
 
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
@@ -88,6 +92,7 @@ namespace AgentCoreProcessor.Tool
             [new("偏移值", "浮点数，如 3.0 或 -5.0", 0)];
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);
         public bool AllowSubAgent => false;
+        public PermissionLevel RequiredPermission => PermissionLevel.Elevated;
 
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
@@ -115,6 +120,7 @@ namespace AgentCoreProcessor.Tool
         public IReadOnlyList<ToolParameter> Parameters => [];
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);
         public bool AllowSubAgent => false;
+        public PermissionLevel RequiredPermission => PermissionLevel.Admin;
 
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
