@@ -377,6 +377,17 @@ namespace AgentCoreProcessor.Engine
                 if (expressed.Contains("[TASK]"))
                 {
                     FrameworkLogger.Log("WorkerEngine", $"ExpressCore 转交任务: channelId={channelId}");
+                    // 发送 [TASK] 之前的内容作为快速响应
+                    var preTask = expressed.Split("[TASK]")[0].Trim();
+                    if (!string.IsNullOrEmpty(preTask))
+                    {
+                        await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
+                        {
+                            ChannelId = lastMsg.ChannelId,
+                            Content = preTask
+                        });
+                        await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, preTask);
+                    }
                     isTask = true;
                 }
                 else
