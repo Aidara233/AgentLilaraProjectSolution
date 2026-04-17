@@ -60,23 +60,32 @@ WorkerEngine (常驻，一个活跃频道一个):
   ④ 路由:
      聊天 → ExpressCore (分条输出，逐条发送+随机延迟)
      任务 → WorkingCore Agent 循环 (多轮工具调用，子agent支持)
-     ExpressCore 可输出 [TASK] 转交 WorkingCore
+     ExpressCore 可输出 [TASK] 转交 WorkingCore，[ALERT] 触发报警
   ⑤ ParseBotOutput 解析 <at/>/<reply/> 标签 → OutgoingMessage
   ⑥ MemoryExtractionCore 异步提取记忆 (每3条触发)
+  ⑦ TrustProgress 每日自动增长 (per-person 日上限)
 ```
 
-## 冲动值决策 (per Channel)
+## 冲动值决策 (per Channel, ImpulseConfig.json 全参数可配置)
 
 ```
 私聊/控制台 → 缓冲聚合后一定回复
 @提及(CQ at 或文本包含 botNames 或引用bot消息) → 穿透冷却期，必回
-群聊 → 冲动值 ≥ 有效阈值:
-  累加: BaseMessageScore(1.0) × channelAffinity × participantFactor
+群聊 → 冲动值 ≥ 动态阈值:
+  累加: BaseMessageScore × channelAffinity × participantFactor × ratioFactor
     participantFactor: 1人=1.0, 2人=0.9, 3人=0.8, 4+=0.6
-  衰减: 每秒 -0.5
-  有效阈值: 3.0 + consecutiveIgnores × 1.5 (最多3次)
+    ratioFactor: clamp(reality / max(expectation, base), lower, upper)
+  衰减: 每秒 -0.1 (线性)
+  动态阈值: BaseThreshold + messageRate × ScaleFactor
+    messageRate: EMA 跟踪消息频率，活跃频道阈值更高(bot占比更低)
+  触发后: impulse -= threshold (不归零，保持活跃状态)
   发言后冷却 3s
-  负反馈: 仅主动发言(非@/私聊触发)后才等待回应
+
+EMA 社交满足度 (per Channel):
+  expectation: bot主动发言 +2.0, 被@触发发言 +0.5
+  reality: bot被@/引用/叫名字 +2.0 × trustMultiplier
+  两者按时间指数衰减 (EmaDecayRate^elapsed)
+  trustMultiplier 只影响 reality，不直接影响冲动值累加
 ```
 
 ## 做梦系统
@@ -129,11 +138,11 @@ ToolExecutor: DAG拓扑排序 + 分波并行 + 寄存器(跨轮) + 可选toolRes
 全局工具 (ToolRegistry, WorkerEngine用):
   文件流读取器 / 文件流写入器(均已禁用) / 说话 / 完成 / 思考笔记 / 记忆
   睡眠许可 / 强制睡觉 / 修改睡眠配置 / 调整睡意 / 触发红色警报 / 标记复盘
-  委派任务 / 查看子agent / 任务管理
+  委派任务 / 查看子agent / 任务管理 / 报警
 
 Review专用工具 (ReviewEngine内部):
-  检索记忆 / 查看关联 / 读取消息历史 / 写入临时记忆 / 思考笔记
-  标记复盘 / 请求增援 / 保存进度 / 完成
+  检索记忆 / 查看关联 / 读取消息历史 / 更新亲和度 / 写入临时记忆 / 思考笔记
+  更新快速记忆 / 调整好感度 / 标记复盘 / 请求增援 / 保存进度 / 完成
 ```
 
 ## 用户系统
@@ -141,10 +150,21 @@ Review专用工具 (ReviewEngine内部):
 ```
 Person (自然人)          User (账号)
   Id                       Id
-  TrustLevel (0-5)         PersonId → Person
-  TrustProgress            Platform + PlatformId
-                           PermissionLevel (Blocked~Admin)
-                           DisplayName / FastMemory
+  TrustLevel (-2~5)        PersonId → Person
+  TrustProgress (好感度)   Platform + PlatformId
+  FastMemory (一句话概括)  PermissionLevel (Blocked~Admin)
+  AlertLevel (0-4)         DisplayName
+  LastAlertTime
+
+TrustLevel: Hostile(-2) / Wary(-1) / Unknown(0) / Stranger(1) /
+            Understanding(2) / Familiarity(3) / Trust(4) / AbsoluteTrust(5)
+
+信任升级: Unknown→Stranger(首条消息) → Understanding(记忆数) → Familiarity(互动跨度) → Trust(模型评估)
+实际等级 = min(硬性条件等级, TrustProgress允许等级)
+TrustProgress 可负 → 等级被压到 Wary/Hostile
+
+报警按钮: alertLevel 递增惩罚(记录→扣分→限制+通知管理员)，冷却恢复(1/3/7/14天)
+participants XML: <user name="..." relation="好友" memo="..."/>
 
 一个Person可关联多个User (跨平台)
 Console平台用户默认Admin权限
@@ -172,7 +192,9 @@ Storage/
 │     ├── DreamStats.json     滚动7天统计+自适应基线
 │     └── DreamProgress.json  复盘进度存档
 ├── Engine/
-│     └── EngineConfig.json   自启动引擎列表 {"autoStart":["Timer"]}
+│     ├── EngineConfig.json          自启动引擎列表 {"autoStart":["Timer"]}
+│     ├── ImpulseConfig.json         冲动值全参数配置
+│     └── TrustProgressionConfig.json 信任升降阈值+警报冷却配置
 ├── Adapter/
 │     └── OneBotAdapter.json  QQ适配器配置(WS地址/白名单/botNames)
 ├── Command/
