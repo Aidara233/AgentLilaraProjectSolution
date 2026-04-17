@@ -156,14 +156,37 @@ namespace AgentCoreProcessor.Adapter
             }
 
             // 构造消息段
-            var segments = new JArray
+            var segments = new JArray();
+
+            // reply 段（引用消息）
+            if (!string.IsNullOrEmpty(message.ReplyTo))
             {
-                new JObject
+                segments.Add(new JObject
                 {
-                    ["type"] = "text",
-                    ["data"] = new JObject { ["text"] = message.Content }
+                    ["type"] = "reply",
+                    ["data"] = new JObject { ["id"] = message.ReplyTo }
+                });
+            }
+
+            // at 段
+            if (message.Mentions != null)
+            {
+                foreach (var qq in message.Mentions)
+                {
+                    segments.Add(new JObject
+                    {
+                        ["type"] = "at",
+                        ["data"] = new JObject { ["qq"] = qq }
+                    });
                 }
-            };
+            }
+
+            // text 段
+            segments.Add(new JObject
+            {
+                ["type"] = "text",
+                ["data"] = new JObject { ["text"] = message.Content }
+            });
             p["message"] = segments;
 
             var resp = await CallApiAsync(action, p);
@@ -370,6 +393,9 @@ namespace AgentCoreProcessor.Adapter
                             mentionedIds ??= new List<string>();
                             mentionedIds.Add(atQq);
                         }
+                        var atName = segData["name"]?.ToString();
+                        if (string.IsNullOrEmpty(atName)) atName = atQq;
+                        textBuilder.Append($"@{atName} ");
                         break;
                     case "reply":
                         replyTo = segData["id"]?.ToString();

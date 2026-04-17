@@ -9,6 +9,9 @@ namespace AgentCoreProcessor.Adapter
         public required string Content { get; set; }
         public string? ReplyTo { get; set; }
 
+        /// <summary>需要 @ 的平台用户ID列表。</summary>
+        public List<string>? Mentions { get; set; }
+
         /// <summary>消息附件（图片等，后续扩展用）。</summary>
         public List<MessageAttachment>? Attachments { get; set; }
     }

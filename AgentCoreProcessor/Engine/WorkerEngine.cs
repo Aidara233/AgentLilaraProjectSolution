@@ -377,53 +377,47 @@ namespace AgentCoreProcessor.Engine
                 if (expressed.Contains("[TASK]"))
                 {
                     FrameworkLogger.Log("WorkerEngine", $"ExpressCore 转交任务: channelId={channelId}");
-                    // 发送 [TASK] 之前的内容作为快速响应
                     var preTask = expressed.Split("[TASK]")[0].Trim();
                     if (!string.IsNullOrEmpty(preTask))
                     {
+                        var (content, replyTo, mentions) = ParseBotOutput(preTask, participantSnapshot);
                         var sentId = await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
                         {
                             ChannelId = lastMsg.ChannelId,
-                            Content = preTask
+                            Content = content,
+                            ReplyTo = replyTo,
+                            Mentions = mentions
                         });
-                        await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, preTask, sentId);
+                        await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, content, sentId);
                     }
                     isTask = true;
                 }
                 else
                 {
-                    // 按换行拆分为多条消息，逐条发送
                     var segments = expressed
                         .Split('\n', StringSplitOptions.RemoveEmptyEntries)
                         .Select(s => s.Trim())
                         .Where(s => s.Length > 0)
                         .ToList();
 
-                if (segments.Count <= 1)
-                {
-                    // 单条直接发
-                    var sentId = await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
-                    {
-                        ChannelId = lastMsg.ChannelId,
-                        Content = expressed.Trim()
-                    });
-                    await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, expressed.Trim(), sentId);
-                }
-                else
-                {
+                    // reply 只对第一条消息生效
+                    string? firstReplyTo = null;
                     var rng = new Random();
                     for (int i = 0; i < segments.Count; i++)
                     {
                         if (i > 0)
                             await Task.Delay(rng.Next(600, 2000));
+                        var (content, replyTo, mentions) = ParseBotOutput(segments[i], participantSnapshot);
+                        if (i == 0) firstReplyTo = replyTo;
                         var sentId = await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
                         {
                             ChannelId = lastMsg.ChannelId,
-                            Content = segments[i]
+                            Content = content,
+                            ReplyTo = i == 0 ? firstReplyTo : null,
+                            Mentions = mentions
                         });
-                        await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, segments[i], sentId);
+                        await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, content, sentId);
                     }
-                }
                 }
             }
 
@@ -435,12 +429,15 @@ namespace AgentCoreProcessor.Engine
 
                 workingCore.OnSpeak = async (rawText) =>
                 {
+                    var (content, replyTo, mentions) = ParseBotOutput(rawText, participantSnapshot);
                     var sentId = await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
                     {
                         ChannelId = lastMsg.ChannelId,
-                        Content = rawText
+                        Content = content,
+                        ReplyTo = replyTo,
+                        Mentions = mentions
                     });
-                    await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, rawText, sentId);
+                    await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, content, sentId);
                 };
                 workingCore.OnMemory = async (content) =>
                 {
@@ -581,6 +578,8 @@ namespace AgentCoreProcessor.Engine
 
         // ---- XML 格式构建 ----
 
+        private const int MaxQuoteDepth = 2;
+
         private async Task<string> BuildContextXmlAsync(
             List<(IncomingMessage Message, SessionContext Context)> batch,
             List<UserMessage> recentMessages,
@@ -597,11 +596,6 @@ namespace AgentCoreProcessor.Engine
                 sb.AppendLine($"  <user name=\"{name}\" nickname=\"{nick}\" qq=\"{info.PlatformId}\"/>");
             }
             sb.AppendLine("</participants>");
-
-            // 引用上下文补全
-            var replyMsg = batch.FirstOrDefault(b => !string.IsNullOrEmpty(b.Message.ReplyTo));
-            if (replyMsg.Message != null)
-                await AppendQuotedContextAsync(sb, replyMsg.Message, shortNames);
 
             var batchTicks = new HashSet<long>(batch.Select(b => b.Message.Time.Ticks));
 
@@ -624,85 +618,185 @@ namespace AgentCoreProcessor.Engine
                     historyMessages.Add(recentMessages[i]);
             }
 
+            // 收集上下文中所有可见的 PlatformMessageId
+            var contextIds = new HashSet<string>();
+            foreach (var m in recentMessages)
+                if (!string.IsNullOrEmpty(m.PlatformMessageId)) contextIds.Add(m.PlatformMessageId);
+            foreach (var (msg, _) in batch)
+                if (!string.IsNullOrEmpty(msg.PlatformMessageId)) contextIds.Add(msg.PlatformMessageId);
+
+            // 收集需要展开的引用目标（不在上下文中的）
+            var missingTargets = new HashSet<string>();
+            foreach (var m in historyMessages.Concat(unrespondedMessages))
+                if (!string.IsNullOrEmpty(m.ReplyToPlatformMessageId) && !contextIds.Contains(m.ReplyToPlatformMessageId))
+                    missingTargets.Add(m.ReplyToPlatformMessageId);
+            foreach (var (msg, _) in batch)
+                if (!string.IsNullOrEmpty(msg.ReplyTo) && !contextIds.Contains(msg.ReplyTo))
+                    missingTargets.Add(msg.ReplyTo);
+
+            // 引用上下文递归展开
+            if (missingTargets.Count > 0)
+                await AppendQuotedContextAsync(sb, missingTargets, contextIds, shortNames, MaxQuoteDepth);
+
+            // history
             if (historyMessages.Count > 0)
             {
                 sb.AppendLine("<history>");
                 foreach (var m in historyMessages)
-                {
-                    var name = m.IsFromBot ? "Lilara" : ResolveHistoryShortName(m, shortNames);
-                    var imgAttr = m.ImageCount > 0 ? $" images=\"{m.ImageCount}\"" : "";
-                    sb.AppendLine($"<msg user=\"{SanitizeAttr(name)}\"{imgAttr}>{SanitizeContent(m.Content)}</msg>");
-                }
+                    sb.AppendLine(FormatDbMessage(m, shortNames, contextIds));
                 sb.AppendLine("</history>");
             }
 
+            // new
             sb.AppendLine("<new>");
             foreach (var m in unrespondedMessages)
-            {
-                var name = ResolveHistoryShortName(m, shortNames);
-                var imgAttr = m.ImageCount > 0 ? $" images=\"{m.ImageCount}\"" : "";
-                sb.AppendLine($"<msg user=\"{SanitizeAttr(name)}\"{imgAttr}>{SanitizeContent(m.Content)}</msg>");
-            }
+                sb.AppendLine(FormatDbMessage(m, shortNames, contextIds));
             foreach (var (msg, sc) in batch)
-            {
-                var name = shortNames.GetValueOrDefault(sc.User.Id, sc.User.DisplayName);
-                if (string.IsNullOrEmpty(name)) name = msg.DisplayName ?? msg.PlatformUserId;
-                var mentionAttr = msg.IsMentioned ? " mentioned=\"true\"" : "";
-                var batchImgCount = msg.Attachments?.Count(a => a.Type == AttachmentType.Image) ?? 0;
-                var imgAttr = batchImgCount > 0 ? $" images=\"{batchImgCount}\"" : "";
-                if (!string.IsNullOrEmpty(msg.QuotedContent) || !string.IsNullOrEmpty(msg.ReplyTo))
-                {
-                    sb.AppendLine($"<msg user=\"{SanitizeAttr(name)}\"{mentionAttr}{imgAttr}>");
-                    if (!string.IsNullOrEmpty(msg.QuotedContent))
-                        sb.AppendLine($"  <quote>{SanitizeContent(msg.QuotedContent)}</quote>");
-                    sb.AppendLine($"  {SanitizeContent(msg.Content)}");
-                    sb.AppendLine("</msg>");
-                }
-                else
-                {
-                    sb.AppendLine($"<msg user=\"{SanitizeAttr(name)}\"{mentionAttr}{imgAttr}>{SanitizeContent(msg.Content)}</msg>");
-                }
-            }
+                sb.AppendLine(FormatBatchMessage(msg, sc, shortNames, contextIds));
             sb.Append("</new>");
 
             return sb.ToString();
         }
 
-        private async Task AppendQuotedContextAsync(StringBuilder sb, IncomingMessage replyMsg,
-            Dictionary<int, string> shortNames)
+        private string FormatDbMessage(UserMessage m, Dictionary<int, string> shortNames, HashSet<string> contextIds)
         {
-            try
+            var name = m.IsFromBot ? "Lilara" : ResolveHistoryShortName(m, shortNames);
+            var attrs = new StringBuilder();
+            if (!string.IsNullOrEmpty(m.PlatformMessageId))
+                attrs.Append($" id=\"{SanitizeAttr(m.PlatformMessageId)}\"");
+            attrs.Append($" user=\"{SanitizeAttr(name)}\"");
+            if (!string.IsNullOrEmpty(m.ReplyToPlatformMessageId))
+                attrs.Append($" reply=\"{SanitizeAttr(m.ReplyToPlatformMessageId)}\"");
+            if (m.ImageCount > 0)
+                attrs.Append($" images=\"{m.ImageCount}\"");
+            return $"<msg{attrs}>{SanitizeContent(m.Content)}</msg>";
+        }
+
+        private string FormatBatchMessage(IncomingMessage msg, SessionContext sc,
+            Dictionary<int, string> shortNames, HashSet<string> contextIds)
+        {
+            var name = shortNames.GetValueOrDefault(sc.User.Id, sc.User.DisplayName);
+            if (string.IsNullOrEmpty(name)) name = msg.DisplayName ?? msg.PlatformUserId;
+            var attrs = new StringBuilder();
+            if (!string.IsNullOrEmpty(msg.PlatformMessageId))
+                attrs.Append($" id=\"{SanitizeAttr(msg.PlatformMessageId)}\"");
+            attrs.Append($" user=\"{SanitizeAttr(name)}\"");
+            if (!string.IsNullOrEmpty(msg.ReplyTo))
+                attrs.Append($" reply=\"{SanitizeAttr(msg.ReplyTo)}\"");
+            if (msg.IsMentioned)
+                attrs.Append(" mentioned=\"true\"");
+            var imgCount = msg.Attachments?.Count(a => a.Type == AttachmentType.Image) ?? 0;
+            if (imgCount > 0)
+                attrs.Append($" images=\"{imgCount}\"");
+            return $"<msg{attrs}>{SanitizeContent(msg.Content)}</msg>";
+        }
+
+        private async Task AppendQuotedContextAsync(StringBuilder sb, HashSet<string> targetIds,
+            HashSet<string> contextIds, Dictionary<int, string> shortNames, int maxDepth)
+        {
+            if (targetIds.Count == 0 || maxDepth <= 0) return;
+
+            var expanded = new List<UserMessage>();
+            var nextTargets = new HashSet<string>();
+
+            foreach (var targetId in targetIds)
             {
-                var quoted = await ctx.Session.GetByPlatformMessageIdAsync(channelId, replyMsg.ReplyTo!);
-                if (quoted != null)
+                if (contextIds.Contains(targetId)) continue;
+                try
                 {
-                    var around = await ctx.Session.GetContextAroundAsync(quoted.Id, channelId, 3);
-                    if (around.Count > 0)
+                    var quoted = await ctx.Session.GetByPlatformMessageIdAsync(channelId, targetId);
+                    if (quoted != null)
                     {
-                        sb.AppendLine("<quoted-context>");
+                        var around = await ctx.Session.GetContextAroundAsync(quoted.Id, channelId, 3);
                         foreach (var m in around)
                         {
-                            var name = m.IsFromBot ? "Lilara" : ResolveHistoryShortName(m, shortNames);
-                            var isTarget = m.Id == quoted.Id ? " quoted=\"true\"" : "";
-                            var imgAttr = m.ImageCount > 0 ? $" images=\"{m.ImageCount}\"" : "";
-                            sb.AppendLine($"<msg user=\"{SanitizeAttr(name)}\"{isTarget}{imgAttr}>{SanitizeContent(m.Content)}</msg>");
+                            if (!contextIds.Contains(m.PlatformMessageId ?? ""))
+                            {
+                                expanded.Add(m);
+                                if (!string.IsNullOrEmpty(m.PlatformMessageId))
+                                    contextIds.Add(m.PlatformMessageId);
+                            }
                         }
-                        sb.AppendLine("</quoted-context>");
-                        return;
+                        // 被引用消息自身也有引用？下一层递归
+                        if (!string.IsNullOrEmpty(quoted.ReplyToPlatformMessageId)
+                            && !contextIds.Contains(quoted.ReplyToPlatformMessageId))
+                            nextTargets.Add(quoted.ReplyToPlatformMessageId);
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                FrameworkLogger.Log("WorkerEngine", $"引用上下文查询失败: {ex.Message}");
+                catch (Exception ex)
+                {
+                    FrameworkLogger.Log("WorkerEngine", $"引用上下文查询失败: {ex.Message}");
+                }
             }
 
-            if (!string.IsNullOrEmpty(replyMsg.QuotedContent))
+            // 递归展开下一层
+            if (nextTargets.Count > 0 && maxDepth > 1)
+                await AppendQuotedContextAsync(sb, nextTargets, contextIds, shortNames, maxDepth - 1);
+
+            if (expanded.Count > 0)
             {
                 sb.AppendLine("<quoted-context>");
-                sb.AppendLine($"<msg quoted=\"true\">{SanitizeContent(replyMsg.QuotedContent)}</msg>");
+                foreach (var m in expanded)
+                {
+                    var isTarget = targetIds.Contains(m.PlatformMessageId ?? "");
+                    var quotedAttr = isTarget ? " quoted=\"true\"" : "";
+                    var name = m.IsFromBot ? "Lilara" : ResolveHistoryShortName(m, shortNames);
+                    var attrs = new StringBuilder();
+                    if (!string.IsNullOrEmpty(m.PlatformMessageId))
+                        attrs.Append($" id=\"{SanitizeAttr(m.PlatformMessageId)}\"");
+                    attrs.Append($" user=\"{SanitizeAttr(name)}\"");
+                    attrs.Append(quotedAttr);
+                    if (!string.IsNullOrEmpty(m.ReplyToPlatformMessageId))
+                        attrs.Append($" reply=\"{SanitizeAttr(m.ReplyToPlatformMessageId)}\"");
+                    if (m.ImageCount > 0)
+                        attrs.Append($" images=\"{m.ImageCount}\"");
+                    sb.AppendLine($"<msg{attrs}>{SanitizeContent(m.Content)}</msg>");
+                }
                 sb.AppendLine("</quoted-context>");
             }
+        }
+
+        private static readonly System.Text.RegularExpressions.Regex AtTagRegex =
+            new(@"<at\s+user=""([^""]+)""\s*/>", System.Text.RegularExpressions.RegexOptions.Compiled);
+        private static readonly System.Text.RegularExpressions.Regex ReplyTagRegex =
+            new(@"<reply\s+id=""([^""]+)""\s*/>", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        private (string Content, string? ReplyTo, List<string>? Mentions) ParseBotOutput(
+            string raw, Dictionary<int, ParticipantInfo> participants)
+        {
+            string? replyTo = null;
+            List<string>? mentions = null;
+
+            // 提取 <reply id="xxx"/>
+            var replyMatch = ReplyTagRegex.Match(raw);
+            if (replyMatch.Success)
+            {
+                replyTo = replyMatch.Groups[1].Value;
+                raw = raw.Remove(replyMatch.Index, replyMatch.Length).TrimStart();
+            }
+
+            // 提取 <at user="名字"/> → 反查 QQ 号
+            var nameToQq = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (_, info) in participants)
+            {
+                nameToQq.TryAdd(info.DisplayName, info.PlatformId);
+                if (!string.IsNullOrEmpty(info.Nickname))
+                    nameToQq.TryAdd(info.Nickname, info.PlatformId);
+            }
+
+            raw = AtTagRegex.Replace(raw, match =>
+            {
+                var userName = match.Groups[1].Value;
+                if (nameToQq.TryGetValue(userName, out var qq))
+                {
+                    mentions ??= new List<string>();
+                    if (!mentions.Contains(qq)) mentions.Add(qq);
+                    return $"@{userName} ";
+                }
+                return $"@{userName} ";
+            });
+
+            return (raw.Trim(), replyTo, mentions);
         }
 // PLACEHOLDER_HELPERS
 
