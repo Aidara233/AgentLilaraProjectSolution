@@ -92,6 +92,9 @@ namespace AgentCoreProcessor.Engine
         // 任务路径消息通道
         private ConcurrentQueue<IncomingMessage>? activeMessageQueue;
         private SemaphoreSlim? activeMessageSignal;
+
+        // 未消费的图片路径（跨 batch 保留，直到 ProcessBatch 消费）
+        private readonly List<string> pendingImagePaths = new();
 // PLACEHOLDER_CTOR
 
         /// <summary>由 SpawnCheck 创建，传入初始消息。</summary>
@@ -105,6 +108,7 @@ namespace AgentCoreProcessor.Engine
             this.preprocessingCore = new PreprocessingCore(ctx.Embedding);
 
             buffer.Add((initialMessage, initialContext));
+            CollectImagePaths(initialMessage);
             recentParticipants.TryAdd(initialContext.User.Id, ParticipantInfo.From(initialContext.User, initialMessage));
             AccumulateImpulse(initialMessage);
 
@@ -128,6 +132,7 @@ namespace AgentCoreProcessor.Engine
             {
                 buffer.Add((msg, sc));
                 lastBufferTime = DateTime.Now;
+                CollectImagePaths(msg);
             }
             recentParticipants.AddOrUpdate(
                 sc.User.Id,
@@ -315,13 +320,13 @@ namespace AgentCoreProcessor.Engine
                 $"处理批次: channelId={channelId}, 消息数={messages.Count}, " +
                 $"user={lastSc.User.PlatformId} person={lastSc.Person.Id}");
 
-            // 1. 收集图片
-            var imagePaths = messages
-                .Where(b => b.Message.Attachments != null)
-                .SelectMany(b => b.Message.Attachments!)
-                .Where(a => a.Type == AttachmentType.Image && !string.IsNullOrEmpty(a.LocalPath))
-                .Select(a => a.LocalPath!)
-                .ToList();
+            // 1. 消费 pending 图片
+            List<string> imagePaths;
+            lock (bufferLock)
+            {
+                imagePaths = new List<string>(pendingImagePaths);
+                pendingImagePaths.Clear();
+            }
 
             // 2. 构建 XML 上下文
             var formattedContext = BuildContextXml(messages, lastSc.RecentMessages, participantSnapshot);
@@ -687,6 +692,16 @@ namespace AgentCoreProcessor.Engine
         {
             if (string.IsNullOrEmpty(content)) return "";
             return content.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
+        }
+
+        private void CollectImagePaths(IncomingMessage msg)
+        {
+            if (msg.Attachments == null) return;
+            foreach (var a in msg.Attachments)
+            {
+                if (a.Type == AttachmentType.Image && !string.IsNullOrEmpty(a.LocalPath))
+                    pendingImagePaths.Add(a.LocalPath!);
+            }
         }
     }
 }

@@ -42,6 +42,10 @@ namespace AgentCoreProcessor.Adapter
         private int echoCounter;
         private readonly ConcurrentDictionary<string, TaskCompletionSource<JObject>> pendingCalls = new();
 
+        // bot 发送消息的 message_id 集合（用于判断 reply 是否引用了 bot）
+        private readonly HashSet<long> sentMessageIds = new();
+        private const int MaxSentMessageIds = 200;
+
         // 重连退避
         private const int MaxReconnectDelayMs = 30000;
 
@@ -163,10 +167,26 @@ namespace AgentCoreProcessor.Adapter
             p["message"] = segments;
 
             var resp = await CallApiAsync(action, p);
-            if (resp != null && resp["retcode"]?.Value<int>() != 0)
+            if (resp != null)
             {
-                FrameworkLogger.Log("OneBotAdapter",
-                    $"发送失败: action={action}, retcode={resp["retcode"]}, msg={resp["message"]}");
+                if (resp["retcode"]?.Value<int>() != 0)
+                {
+                    FrameworkLogger.Log("OneBotAdapter",
+                        $"发送失败: action={action}, retcode={resp["retcode"]}, msg={resp["message"]}");
+                }
+                else
+                {
+                    var sentId = resp["data"]?["message_id"]?.Value<long>() ?? 0;
+                    if (sentId != 0)
+                    {
+                        lock (sentMessageIds)
+                        {
+                            if (sentMessageIds.Count >= MaxSentMessageIds)
+                                sentMessageIds.Clear();
+                            sentMessageIds.Add(sentId);
+                        }
+                    }
+                }
             }
         }
 
@@ -386,6 +406,16 @@ namespace AgentCoreProcessor.Adapter
                         isMentioned = true;
                         break;
                     }
+                }
+            }
+
+            // 引用检测：引用了 bot 发送的消息视为提及
+            if (!isMentioned && replyTo != null && long.TryParse(replyTo, out var replyMsgId))
+            {
+                lock (sentMessageIds)
+                {
+                    if (sentMessageIds.Contains(replyMsgId))
+                        isMentioned = true;
                 }
             }
 
