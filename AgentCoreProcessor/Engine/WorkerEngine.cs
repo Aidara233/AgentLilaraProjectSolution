@@ -632,7 +632,17 @@ namespace AgentCoreProcessor.Engine
                 if (string.IsNullOrEmpty(name))
                     name = msg.DisplayName ?? msg.PlatformUserId;
                 var mentionAttr = msg.IsMentioned ? " mentioned=\"true\"" : "";
-                sb.AppendLine($"<msg user=\"{SanitizeAttr(name)}\"{mentionAttr}>{SanitizeContent(msg.Content)}</msg>");
+                if (!string.IsNullOrEmpty(msg.QuotedContent))
+                {
+                    sb.AppendLine($"<msg user=\"{SanitizeAttr(name)}\"{mentionAttr}>");
+                    sb.AppendLine($"  <quote>{SanitizeContent(msg.QuotedContent)}</quote>");
+                    sb.AppendLine($"  {SanitizeContent(msg.Content)}");
+                    sb.AppendLine("</msg>");
+                }
+                else
+                {
+                    sb.AppendLine($"<msg user=\"{SanitizeAttr(name)}\"{mentionAttr}>{SanitizeContent(msg.Content)}</msg>");
+                }
             }
             sb.Append("</new>");
 

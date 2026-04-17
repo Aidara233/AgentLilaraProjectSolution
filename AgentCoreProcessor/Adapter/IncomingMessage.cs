@@ -24,6 +24,9 @@ namespace AgentCoreProcessor.Adapter
         /// <summary>是否被 @（适配器层按平台特性填充）。</summary>
         public bool IsMentioned { get; set; } = false;
 
+        /// <summary>被引用消息的文本内容（适配器层填充）。</summary>
+        public string? QuotedContent { get; set; }
+
         /// <summary>消息附件（图片、音频等）。</summary>
         public List<MessageAttachment>? Attachments { get; set; }
     }

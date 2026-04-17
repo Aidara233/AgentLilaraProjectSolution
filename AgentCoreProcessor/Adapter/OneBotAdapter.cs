@@ -426,6 +426,25 @@ namespace AgentCoreProcessor.Adapter
             // 群名片优先，昵称兜底
             var displayName = !string.IsNullOrWhiteSpace(card) ? card : nickname;
 
+            // 拉取被引用消息的内容
+            string? quotedContent = null;
+            if (replyTo != null)
+            {
+                try
+                {
+                    var resp = await CallApiAsync("get_msg", new JObject { ["message_id"] = long.Parse(replyTo) });
+                    if (resp?["retcode"]?.Value<int>() == 0)
+                    {
+                        var msgData = resp["data"];
+                        var rawMsg = msgData?["raw_message"]?.ToString()
+                                  ?? msgData?["message"]?.ToString();
+                        if (!string.IsNullOrEmpty(rawMsg))
+                            quotedContent = rawMsg.Length > 200 ? rawMsg[..200] + "..." : rawMsg;
+                    }
+                }
+                catch { }
+            }
+
             return new IncomingMessage
             {
                 Platform = Platform,
@@ -437,6 +456,7 @@ namespace AgentCoreProcessor.Adapter
                 IsPrivate = isPrivate,
                 IsMentioned = isMentioned,
                 ReplyTo = replyTo,
+                QuotedContent = quotedContent,
                 Time = DateTime.Now,
                 Attachments = attachments
             };
