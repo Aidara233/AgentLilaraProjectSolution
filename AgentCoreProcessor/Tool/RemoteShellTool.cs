@@ -22,7 +22,7 @@ namespace AgentCoreProcessor.Tool
         ];
         public TimeSpan Timeout => TimeSpan.FromSeconds(65);
         public bool AllowSubAgent => false;
-        public PermissionLevel RequiredPermission => PermissionLevel.Elevated;
+        public PermissionLevel RequiredPermission => PermissionLevel.Default;
         public bool ContinueLoop => true;
         public bool RetainResult => true;
         public string? CapabilitySummary => "在远程服务器上执行命令";

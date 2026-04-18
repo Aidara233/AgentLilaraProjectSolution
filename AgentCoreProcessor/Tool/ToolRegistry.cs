@@ -19,6 +19,7 @@ namespace AgentCoreProcessor.Tool
             {
                 new FileReadTool(),
                 new FileWriteTool(),
+                new FileManagementTool(),
                 new SpeakTool(),
                 new ThinkingNotesTool(),
                 new MemoryTool(),
