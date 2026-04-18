@@ -84,6 +84,7 @@ namespace AgentCoreProcessor.Tool
 
                 process.OutputDataReceived += (_, e) => { if (e.Data != null) stdout.AppendLine(e.Data); };
                 process.ErrorDataReceived += (_, e) => { if (e.Data != null) stderr.AppendLine(e.Data); };
+                process.EnableRaisingEvents = true;
 
                 process.Start();
                 process.BeginOutputReadLine();
@@ -144,15 +145,17 @@ namespace AgentCoreProcessor.Tool
 
         private static async Task<bool> WaitForExitAsync(Process process, int ms, CancellationToken ct)
         {
-            var tcs = new TaskCompletionSource<bool>();
-            process.EnableRaisingEvents = true;
-            process.Exited += (_, _) => tcs.TrySetResult(true);
-            if (process.HasExited) return true;
-
-            using var reg = ct.Register(() => tcs.TrySetResult(false));
-            var delay = Task.Delay(ms, CancellationToken.None);
-            var completed = await Task.WhenAny(tcs.Task, delay);
-            return completed == tcs.Task && tcs.Task.Result;
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(ms);
+            try
+            {
+                await process.WaitForExitAsync(cts.Token);
+                return true;
+            }
+            catch (OperationCanceledException)
+            {
+                return false;
+            }
         }
     }
 }
