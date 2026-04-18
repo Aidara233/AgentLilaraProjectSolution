@@ -55,12 +55,14 @@ WorkerEngine (常驻，一个活跃频道一个):
      所有 <msg> 带 id(PlatformMessageId) + reply(引用关系) 属性
      引用链递归展开(默认2层)，上下文外引用从DB拉取+周围消息
      引用消息的图片通过 ImageRecord 加载
-  ② PreprocessingCore Embedding 二分类 (聊天/任务)
+  ② PreprocessingCore Embedding 二分类 (仅 Express 模式下执行)
   ③ MemoryService.RecallAsync 检索记忆
-  ④ 路由:
-     聊天 → ExpressCore (分条输出，逐条发送+随机延迟)
-     任务 → WorkingCore Agent 循环 (多轮工具调用，子agent支持)
-     ExpressCore 可输出 [TASK] 转交 WorkingCore，[ALERT] 触发报警
+  ④ 自适应模式路由:
+     Express 模式(默认) → ExpressCore (分条输出，逐条发送+随机延迟)
+       ExpressCore 可输出 [ESCALATE] 升级到 Working 模式，[ALERT] 触发报警
+       便签板内容注入 Express 输入
+     Working 模式 → WorkingCore 事件驱动循环 (ContinueLoop 驱动迭代)
+       连续 3 次外部消息触发无工具使用 → 自动回退到 Express 模式
   ⑤ ParseBotOutput 解析 <at/>/<reply/> 标签 → OutgoingMessage
   ⑥ MemoryExtractionCore 异步提取记忆 (每3条触发)
   ⑦ TrustProgress 每日自动增长 (per-person 日上限)
@@ -131,19 +133,46 @@ ReviewEngine (由DreamEngine孵化，不注册SpawnCheck):
 ## 工具系统
 
 ```
-ITool: Name / Description / Parameters / Timeout / ExecuteAsync / AllowSubAgent(默认true) / RequiredPermission(默认Default)
-ToolCall(JSON): tool + toolId + inputs(value/ref) + output + outputToModel + retain
-ToolExecutor: DAG拓扑排序 + 分波并行 + 寄存器(跨轮) + 可选toolResolver + 授权检查
+ITool: Name / Description / Parameters / Timeout / ExecuteAsync
+       AllowSubAgent(默认true) / RequiredPermission(默认Default)
+       ContinueLoop(默认false) / RetainResult(默认false) / CapabilitySummary(默认null)
 
-运行时工具授权:
+ToolCall(JSON): {"tool": "工具名", "inputs": ["参数1", "参数2"]}
+ToolExecutor: 顺序执行 + 授权回调(OnAuthRequired) + 可选toolResolver
+
+事件驱动循环 (WorkingCore):
+  ContinueLoop=true 的工具被调用 → 自动触发下一轮（结果返回模型）
+  全部 ContinueLoop=false → 自然 idle，等待外部事件
+  不需要显式"完成"工具
+
+便签板 (Pinboard):
+  会话级上下文注入，Express/Working 共享
+  Working 通过 PinboardTool 操作(pin/unpin/list)，Express 只读
+  每轮 prompt 全量展示内容
+
+缓存列表 (Retain):
+  RetainResult=true 的工具结果自动收集（摘要+完整内容）
+  prompt 只注入摘要，模型通过 RetainListTool 的 view 查看完整内容
+  支持 remove/clear 管理
+
+继续工具:
+  ContinueLoop=true 的空操作工具
+  便签板等非 ContinueLoop 工具操作后想继续工作时使用
+
+框架透明授权:
   ITool.RequiredPermission > Default 的工具为受限工具
-  未授权: prompt 只显示一行摘要，调用被 ToolExecutor 拦截
-  授权流程: 模型调用「申请工具授权」→ 框架发4位验证码 → 有权限用户复述 → 解锁
+  模型直接调用 → ToolExecutor 自动触发验证码流程 → 通过后执行
+  模型无需知道授权机制的存在
   授权绑定单次 Agent 循环，会话结束自动撤销
-  等待期间非验证码消息不丢弃，放回队列
 
-全局工具 (ToolRegistry, WorkerEngine用):
-  自由工具(Default): 说话 / 完成 / 思考笔记 / 记忆 / 标记复盘 / 任务管理 / 报警 / 申请工具授权 / 读取文件
+Express/Working 自适应切换:
+  默认 Express 模式（轻量聊天）
+  ExpressCore 输出 [ESCALATE] → 切换到 Working 模式
+  Working 模式下连续 3 次外部消息触发 → 回退到 Express
+  CapabilitySummary 自动注入 Express prompt（模型知道可升级的能力）
+
+全局工具 (ToolRegistry):
+  自由工具(Default): 说话 / 思考笔记 / 记忆 / 标记复盘 / 任务管理 / 报警 / 读取文件 / 便签板 / 缓存管理 / 继续
   受限工具(Elevated): 睡眠许可 / 强制睡觉 / 调整睡意 / 远程终端 / 写入文件 / 文件传输
   受限工具(Admin): 修改睡眠配置 / 触发红色警报
   已禁用: 委派任务 / 查看子agent
