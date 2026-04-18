@@ -191,9 +191,12 @@ namespace AgentCoreProcessor.Core
                                 if (approved)
                                     foreach (var name in authNames)
                                         authorizedTools.Add(name);
-                                register[call.ToolId] = approved
+                                var authResult = approved
                                     ? $"授权通过，已解锁工具：{string.Join("、", authNames)}"
                                     : "授权被拒绝";
+                                register[call.ToolId] = authResult;
+                                result.Data = authResult;
+                                call.OutputToModel = true;
                                 authRequested = true;
                             }
                             break;
