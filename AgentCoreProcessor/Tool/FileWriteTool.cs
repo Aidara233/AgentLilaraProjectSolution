@@ -3,36 +3,65 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Database;
 
 namespace AgentCoreProcessor.Tool
 {
-    /// <summary>
-    /// 文件流写入器：将内容写入到指定文件中。
-    /// inputs[0] = 要写入的内容（来自 ref 或 value）
-    /// inputs[1] = 文件路径
-    /// </summary>
     internal class FileWriteTool : ITool
     {
-        public string Name => "文件流写入器";
-        public string Description => "将内容写入到指定文件中";
+        public string Name => "写入文件";
+        public string Description => "向 Storage 目录内的文件写入内容。路径可以是相对于 Storage/ 的相对路径或绝对路径。支持覆盖写和追加模式。Storage/Workspace/ 是自由工作区";
         public IReadOnlyList<ToolParameter> Parameters =>
-            [new("写入内容", "要写入的内容", 0, canBeRef: true), new("文件路径", "写入目标文件路径", 1)];
+        [
+            new("文件路径", "要写入的文件路径", 0),
+            new("内容", "要写入的文本内容", 1, canBeRef: true),
+            new("模式", "overwrite（覆盖，默认）或 append（追加）", 2)
+        ];
         public TimeSpan Timeout => TimeSpan.FromSeconds(10);
+        public PermissionLevel RequiredPermission => PermissionLevel.Elevated;
 
         public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
-            if (resolvedInputs.Count < 2)
-                return new ToolResult { Status = "failed", Error = "缺少输入参数：需要写入内容和文件路径" };
+            var rawPath = resolvedInputs.ElementAtOrDefault(0) ?? "";
+            if (string.IsNullOrWhiteSpace(rawPath))
+                return new ToolResult { Status = "failed", Error = "文件路径不能为空" };
 
-            var content = resolvedInputs[0];
-            var path = resolvedInputs[1];
+            var content = resolvedInputs.ElementAtOrDefault(1) ?? "";
+            var mode = (resolvedInputs.ElementAtOrDefault(2) ?? "overwrite").Trim().ToLower();
+            bool append = mode == "append";
 
-            var dir = Path.GetDirectoryName(path);
-            if (!string.IsNullOrEmpty(dir))
+            var fullPath = FileAccessControl.ResolvePath(rawPath);
+            var (allowed, error) = FileAccessControl.CheckAccess(fullPath);
+            if (!allowed)
+                return new ToolResult { Status = "failed", Error = error };
+
+            var (sizeOk, sizeError) = FileAccessControl.CheckWriteSize(content);
+            if (!sizeOk)
+                return new ToolResult { Status = "failed", Error = sizeError };
+
+            if (FileAccessControl.IsWorkspacePath(fullPath))
+            {
+                long additionalBytes = content.Length * 2L;
+                var (capOk, capError) = FileAccessControl.CheckWorkspaceCapacity(additionalBytes);
+                if (!capOk)
+                    return new ToolResult { Status = "failed", Error = capError };
+            }
+
+            var dir = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                 Directory.CreateDirectory(dir);
 
-            await File.WriteAllTextAsync(path, content, ct);
-            return new ToolResult { Status = "success", Data = $"已写入: {path}" };
+            if (append)
+                await File.AppendAllTextAsync(fullPath, content, ct);
+            else
+                await File.WriteAllTextAsync(fullPath, content, ct);
+
+            var info = new FileInfo(fullPath);
+            return new ToolResult
+            {
+                Status = "success",
+                Data = $"已{(append ? "追加" : "写入")}: {rawPath} ({info.Length}字节)"
+            };
         }
     }
 }

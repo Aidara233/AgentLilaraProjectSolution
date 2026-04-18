@@ -143,10 +143,17 @@ ToolExecutor: DAG拓扑排序 + 分波并行 + 寄存器(跨轮) + 可选toolRes
   等待期间非验证码消息不丢弃，放回队列
 
 全局工具 (ToolRegistry, WorkerEngine用):
-  自由工具(Default): 说话 / 完成 / 思考笔记 / 记忆 / 标记复盘 / 任务管理 / 报警 / 申请工具授权
-  受限工具(Elevated): 睡眠许可 / 强制睡觉 / 调整睡意 / 远程终端
+  自由工具(Default): 说话 / 完成 / 思考笔记 / 记忆 / 标记复盘 / 任务管理 / 报警 / 申请工具授权 / 读取文件
+  受限工具(Elevated): 睡眠许可 / 强制睡觉 / 调整睡意 / 远程终端 / 写入文件 / 文件传输
   受限工具(Admin): 修改睡眠配置 / 触发红色警报
-  已禁用: 文件流读取器 / 文件流写入器 / 委派任务 / 查看子agent
+  已禁用: 委派任务 / 查看子agent
+
+文件系统沙盒:
+  Storage/Workspace/ — 自由工作区（500MB上限）
+  Storage/ 其余 — 受限区（写入需 Elevated）
+  Storage/ 之外 — 完全禁止
+  黑名单: lilara.db / SSH目录 / *.key 文件
+  FileTransferTool: SCP 双向传输（主机↔Alpine VM，10MB上限）
 
 Review专用工具 (ReviewEngine内部):
   检索记忆 / 查看关联 / 读取消息历史 / 更新亲和度 / 写入临时记忆 / 思考笔记

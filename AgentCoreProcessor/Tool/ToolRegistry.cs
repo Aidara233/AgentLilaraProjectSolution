@@ -17,7 +17,8 @@ namespace AgentCoreProcessor.Tool
         {
             var toolList = new ITool[]
             {
-                // FileReadTool / FileWriteTool 暂禁用：无路径沙盒，群聊场景风险过高
+                new FileReadTool(),
+                new FileWriteTool(),
                 new SpeakTool(),
                 new CompletionTool(),
                 new ThinkingNotesTool(),
@@ -32,7 +33,8 @@ namespace AgentCoreProcessor.Tool
                 new TaskTool(),
                 new AlertButtonTool(),
                 new RequestAuthorizationTool(),
-                new RemoteShellTool()
+                new RemoteShellTool(),
+                new FileTransferTool()
             };
             _tools = toolList.ToDictionary(t => t.Name);
         }
