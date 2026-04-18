@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
+using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Tool;
@@ -12,14 +13,22 @@ using AgentCoreProcessor.Tool;
 namespace AgentCoreProcessor.Core
 {
     /// <summary>
-    /// 工作核心。Agent 循环的中心——通过多轮工具调用完成任务。
-    /// 支持运行时新消息感知。Phase 3 将重写为事件驱动 idle 模型。
+    /// 循环退出原因。
+    /// </summary>
+    internal enum LoopExitReason
+    {
+        Idle,
+        NoToolCalls,
+        MaxRounds,
+    }
+
+    /// <summary>
+    /// 工作核心。事件驱动 Agent 循环——ContinueLoop 工具触发下一轮，否则自然 idle。
     /// </summary>
     internal class WorkingCore : CoreBase
     {
         private const int MaxRounds = 15;
 
-        // 特殊工具名称常量
         private const string ThinkingNotesToolName = "思考笔记";
         private const string SpeakToolName = "说话";
         private const string MemoryToolName = "记忆";
@@ -31,7 +40,8 @@ namespace AgentCoreProcessor.Core
         private const string ReviewHintToolName = "标记复盘";
         private const string TaskToolName = "任务管理";
         private const string AlertButtonToolName = "报警";
-        private const string ContinueToolName = "继续";
+        private const string PinboardToolName = "便签板";
+        private const string RetainListToolName = "缓存管理";
 
         private readonly PromptBuilder promptBuilder = new();
 
@@ -41,32 +51,36 @@ namespace AgentCoreProcessor.Core
         public Func<string, string?, Task>? OnSignal { get; set; }
         public Func<string, Task>? OnReviewHint { get; set; }
         public Func<string, Task>? OnAlert { get; set; }
+        public Func<string, PermissionLevel, Task<bool>>? OnAuthRequired { get; set; }
 
-        /// <summary>授权回调：工具名 + 所需权限 → 是否通过。由 WorkerEngine 注入。</summary>
-        public Func<string, Database.PermissionLevel, Task<bool>>? OnAuthRequired { get; set; }
-
-        // 任务列表（跨轮保持）
+        // 跨轮状态
         private readonly List<(string Description, bool Done)> taskList = new();
-
-        // 运行时工具授权
+        private readonly List<(string Summary, string FullContent)> retainList = new();
         private readonly HashSet<string> authorizedTools = new();
 
-        // 消息通道（由 WorkerEngine 注入）
+        // 便签板（由 WorkerEngine 注入，Express/Working 共享）
+        private Dictionary<string, string>? pinboard;
+
+        // 消息通道
         private ConcurrentQueue<IncomingMessage>? messageQueue;
         private SemaphoreSlim? messageSignal;
 
-        /// <summary>注入消息通道，启用运行时消息感知。</summary>
         public void SetMessageChannel(ConcurrentQueue<IncomingMessage> queue, SemaphoreSlim signal)
         {
             this.messageQueue = queue;
             this.messageSignal = signal;
         }
 
+        public void SetPinboard(Dictionary<string, string> pinboard)
+        {
+            this.pinboard = pinboard;
+        }
+
         /// <summary>
-        /// Agent 循环。Phase 3 将重写为事件驱动 idle 模型。
+        /// 事件驱动 Agent 循环。ContinueLoop 工具触发下一轮，否则自然 idle。
         /// </summary>
-        public async Task<string> ProcessAsync(string userRequest, string? memoryContext = null,
-            List<string>? imagePaths = null)
+        public async Task<LoopExitReason> ProcessAsync(string userRequest,
+            string? memoryContext = null, List<string>? imagePaths = null)
         {
             var thinkingNotes = new Dictionary<string, string>();
             List<ToolCall>? lastRoundCalls = null;
@@ -76,7 +90,6 @@ namespace AgentCoreProcessor.Core
             for (int round = 0; round < MaxRounds; round++)
             {
                 var toolDescriptions = ToolRegistry.GenerateDescriptions(authorizedTools: authorizedTools);
-
                 DrainNewMessages(pendingNewMessages);
 
                 var messages = promptBuilder.BuildRoundMessages(
@@ -85,101 +98,93 @@ namespace AgentCoreProcessor.Core
                     memoryContext,
                     imagePaths: round == 0 ? imagePaths : null,
                     newMessages: pendingNewMessages.Count > 0 ? pendingNewMessages : null,
-                    taskList: taskList.Count > 0 ? taskList : null);
+                    taskList: taskList.Count > 0 ? taskList : null,
+                    pinboard: pinboard?.Count > 0 ? pinboard : null,
+                    retainList: retainList.Count > 0 ? retainList : null);
 
                 processor.Client.ClearConversationHistory();
                 processor.Client.SetConversationHistory(messages);
-
                 pendingNewMessages.Clear();
 
                 var toolCalls = await ParseToolCallsAsync();
 
                 if (toolCalls.Count == 0)
-                {
-                    if (round == 0) return "[Agent] 未能生成有效的工具调用计划。";
-                    break;
-                }
+                    return round == 0 ? LoopExitReason.NoToolCalls : LoopExitReason.Idle;
 
                 // 顺序执行
                 var executor = new ToolExecutor(authorizedTools: authorizedTools);
                 executor.OnAuthRequired = OnAuthRequired;
                 var allResults = await executor.ExecuteAsync(toolCalls);
 
-                // 处理副作用：先 Speak
+                // 副作用：先 Speak
                 for (int i = 0; i < toolCalls.Count; i++)
                 {
                     if (toolCalls[i].Tool == SpeakToolName && allResults[i].IsSuccess && OnSpeak != null)
                         await OnSpeak(allResults[i].Data ?? "");
                 }
 
-                // 处理其余副作用
+                // 副作用：其余
+                bool hasContinue = false;
                 for (int i = 0; i < toolCalls.Count; i++)
                 {
                     var call = toolCalls[i];
                     var result = allResults[i];
+                    if (!result.IsSuccess && call.Tool != SpeakToolName) continue;
 
                     switch (call.Tool)
                     {
                         case ThinkingNotesToolName:
-                            if (result.IsSuccess) ApplyThinkingNotes(call, thinkingNotes);
-                            break;
-                        case SpeakToolName:
-                            break; // 已处理
+                            ApplyThinkingNotes(call, thinkingNotes); break;
+                        case SpeakToolName: break;
                         case MemoryToolName:
-                            if (result.IsSuccess && OnMemory != null) await OnMemory(result.Data ?? "");
-                            break;
+                            if (OnMemory != null) await OnMemory(result.Data ?? ""); break;
                         case DreamPermissionToolName:
-                            if (result.IsSuccess && OnSignal != null) await OnSignal("dream-permission", null);
-                            break;
+                            if (OnSignal != null) await OnSignal("dream-permission", null); break;
                         case ForceSleepToolName:
-                            if (result.IsSuccess && OnSignal != null) await OnSignal("force-sleep", null);
-                            break;
+                            if (OnSignal != null) await OnSignal("force-sleep", null); break;
                         case DreamConfigToolName:
-                            if (result.IsSuccess && OnSignal != null) await OnSignal("dream-config", result.Data);
-                            break;
+                            if (OnSignal != null) await OnSignal("dream-config", result.Data); break;
                         case SleepScoreToolName:
-                            if (result.IsSuccess && OnSignal != null) await OnSignal("sleep-score-offset", result.Data);
-                            break;
+                            if (OnSignal != null) await OnSignal("sleep-score-offset", result.Data); break;
                         case RedAlertToolName:
-                            if (result.IsSuccess && OnSignal != null) await OnSignal("red-alert", null);
-                            break;
+                            if (OnSignal != null) await OnSignal("red-alert", null); break;
                         case ReviewHintToolName:
-                            if (result.IsSuccess && OnReviewHint != null) await OnReviewHint(result.Data ?? "");
-                            break;
+                            if (OnReviewHint != null) await OnReviewHint(result.Data ?? ""); break;
                         case AlertButtonToolName:
-                            if (result.IsSuccess && OnAlert != null) await OnAlert(result.Data ?? "");
-                            break;
+                            if (OnAlert != null) await OnAlert(result.Data ?? ""); break;
                         case TaskToolName:
-                            if (result.IsSuccess) ApplyTaskAction(result.Data ?? "");
-                            break;
+                            ApplyTaskAction(result.Data ?? ""); break;
+                        case PinboardToolName:
+                            ApplyPinboardAction(result.Data ?? ""); break;
+                        case RetainListToolName:
+                            ApplyRetainAction(call, result); break;
                     }
-                }
 
-                // 判断是否继续：有 ContinueLoop 工具被调用 → 下一轮
-                bool hasContinue = false;
-                for (int i = 0; i < toolCalls.Count; i++)
-                {
-                    var tool = ToolRegistry.Get(toolCalls[i].Tool);
-                    if (tool?.ContinueLoop == true)
+                    // 自动收集 RetainResult
+                    var toolDef = ToolRegistry.Get(call.Tool);
+                    if (toolDef?.RetainResult == true && result.IsSuccess)
                     {
-                        hasContinue = true;
-                        break;
+                        var summary = $"{call.Tool}: {string.Join(", ", call.Inputs).Truncate(50)}";
+                        retainList.Add((summary, result.Data ?? ""));
                     }
+
+                    if (toolDef?.ContinueLoop == true)
+                        hasContinue = true;
                 }
 
                 lastRoundCalls = toolCalls;
                 lastRoundResults = allResults;
 
                 if (!hasContinue)
-                    break;
+                    return LoopExitReason.Idle;
 
                 await WaitForEventsAsync();
             }
 
-            return "idle";
+            return LoopExitReason.MaxRounds;
         }
 
-        // ---- 任务列表管理 ----
+        // ---- 任务列表 ----
 
         private void ApplyTaskAction(string data)
         {
@@ -191,8 +196,7 @@ namespace AgentCoreProcessor.Core
             switch (action)
             {
                 case "add":
-                    taskList.Add((content, false));
-                    break;
+                    taskList.Add((content, false)); break;
                 case "complete":
                     if (int.TryParse(content, out var ci) && ci >= 1 && ci <= taskList.Count)
                         taskList[ci - 1] = (taskList[ci - 1].Description, true);
@@ -201,6 +205,58 @@ namespace AgentCoreProcessor.Core
                     if (int.TryParse(content, out var ri) && ri >= 1 && ri <= taskList.Count)
                         taskList.RemoveAt(ri - 1);
                     break;
+            }
+        }
+
+        // ---- 便签板 ----
+
+        private void ApplyPinboardAction(string data)
+        {
+            if (pinboard == null) return;
+            if (data.StartsWith("pin:"))
+            {
+                var rest = data[4..];
+                var sep = rest.IndexOf(':');
+                if (sep > 0)
+                {
+                    var label = rest[..sep];
+                    var content = rest[(sep + 1)..];
+                    pinboard[label] = content;
+                }
+            }
+            else if (data.StartsWith("unpin:"))
+            {
+                var label = data[6..];
+                pinboard.Remove(label);
+            }
+        }
+
+        // ---- Retain 列表 ----
+
+        private void ApplyRetainAction(ToolCall call, ToolResult result)
+        {
+            if (!result.IsSuccess) return;
+            var data = result.Data ?? "";
+
+            if (data.StartsWith("view:"))
+            {
+                if (int.TryParse(data[5..], out var idx) && idx >= 1 && idx <= retainList.Count)
+                    result.Data = retainList[idx - 1].FullContent;
+                else
+                    result.Data = "序号超出范围";
+            }
+            else if (data.StartsWith("remove:"))
+            {
+                if (int.TryParse(data[7..], out var idx) && idx >= 1 && idx <= retainList.Count)
+                {
+                    retainList.RemoveAt(idx - 1);
+                    result.Data = "已移除";
+                }
+            }
+            else if (data == "clear")
+            {
+                retainList.Clear();
+                result.Data = "已清空";
             }
         }
 
@@ -252,5 +308,11 @@ namespace AgentCoreProcessor.Core
             else if (action == "delete")
                 notes.Remove(key);
         }
+    }
+
+    internal static class StringExtensions
+    {
+        public static string Truncate(this string s, int maxLen)
+            => s.Length <= maxLen ? s : s[..maxLen] + "...";
     }
 }

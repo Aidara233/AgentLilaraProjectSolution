@@ -93,6 +93,9 @@ namespace AgentCoreProcessor.Engine
 
         // 未消费的图片路径（跨 batch 保留，直到 ProcessBatch 消费）
         private readonly List<string> pendingImagePaths = new();
+
+        // 便签板（Express/Working 共享，会话级生命周期）
+        private readonly Dictionary<string, string> pinboard = new();
 // PLACEHOLDER_CTOR
 
         /// <summary>由 SpawnCheck 创建，传入初始消息。</summary>
@@ -520,6 +523,7 @@ namespace AgentCoreProcessor.Engine
                 };
 
                 workingCore.SetMessageChannel(msgQueue, msgSignal);
+                workingCore.SetPinboard(pinboard);
                 this.activeMessageQueue = msgQueue;
                 this.activeMessageSignal = msgSignal;
 
