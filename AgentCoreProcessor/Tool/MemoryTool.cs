@@ -16,6 +16,7 @@ namespace AgentCoreProcessor.Tool
         public IReadOnlyList<ToolParameter> Parameters =>
             [new("记忆内容", "要记住的信息", 0)];
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);
+        public string? CapabilitySummary => "查询或记录关于某人的记忆";
 
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {

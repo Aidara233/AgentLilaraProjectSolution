@@ -13,14 +13,13 @@ namespace AgentCoreProcessor.Core
 {
     /// <summary>
     /// 工作核心。Agent 循环的中心——通过多轮工具调用完成任务。
-    /// 支持子 agent 异步委派和运行时新消息感知。
+    /// 支持运行时新消息感知。Phase 3 将重写为事件驱动 idle 模型。
     /// </summary>
     internal class WorkingCore : CoreBase
     {
         private const int MaxRounds = 15;
 
         // 特殊工具名称常量
-        private const string CompletionToolName = "完成";
         private const string ThinkingNotesToolName = "思考笔记";
         private const string SpeakToolName = "说话";
         private const string MemoryToolName = "记忆";
@@ -30,11 +29,9 @@ namespace AgentCoreProcessor.Core
         private const string SleepScoreToolName = "调整睡意";
         private const string RedAlertToolName = "触发红色警报";
         private const string ReviewHintToolName = "标记复盘";
-        private const string DelegateToolName = "委派任务";
-        private const string SubAgentDetailToolName = "查看子任务详情";
         private const string TaskToolName = "任务管理";
         private const string AlertButtonToolName = "报警";
-        private const string RequestAuthToolName = "申请工具授权";
+        private const string ContinueToolName = "继续";
 
         private readonly PromptBuilder promptBuilder = new();
 
@@ -44,14 +41,9 @@ namespace AgentCoreProcessor.Core
         public Func<string, string?, Task>? OnSignal { get; set; }
         public Func<string, Task>? OnReviewHint { get; set; }
         public Func<string, Task>? OnAlert { get; set; }
-        public Func<List<string>, string, Task<bool>>? OnRequestAuth { get; set; }
 
         // 任务列表（跨轮保持）
         private readonly List<(string Description, bool Done)> taskList = new();
-
-        // 子 agent 管理
-        private readonly Dictionary<string, SubAgentRecord> subAgentRecords = new();
-        private int subAgentSeq = 0;
 
         // 运行时工具授权
         private readonly HashSet<string> authorizedTools = new();
@@ -68,49 +60,35 @@ namespace AgentCoreProcessor.Core
         }
 
         /// <summary>
-        /// 事件驱动 Agent 循环。支持子 agent 异步委派和运行时新消息感知。
+        /// Agent 循环。Phase 3 将重写为事件驱动 idle 模型。
         /// </summary>
         public async Task<string> ProcessAsync(string userRequest, string? memoryContext = null,
             List<string>? imagePaths = null)
         {
-            // 跨轮持久状态
-            var register = new Dictionary<string, string>();
             var thinkingNotes = new Dictionary<string, string>();
-            var retainedResults = new List<(ToolCall call, ToolResult result)>();
             List<ToolCall>? lastRoundCalls = null;
             List<ToolResult>? lastRoundResults = null;
-
-            // 新消息和子 agent 结果的累积缓冲
             var pendingNewMessages = new List<string>();
-            var pendingSubResults = new List<(string id, string summary)>();
 
             for (int round = 0; round < MaxRounds; round++)
             {
-                // 0. 每轮重新生成工具描述（授权状态可能在循环中变化）
                 var toolDescriptions = ToolRegistry.GenerateDescriptions(authorizedTools: authorizedTools);
 
-                // 1. 收集本轮新增内容
                 DrainNewMessages(pendingNewMessages);
-                CollectCompletedSubAgents(pendingSubResults);
 
-                // 2. 组装本轮提示词
                 var messages = promptBuilder.BuildRoundMessages(
                     toolDescriptions, userRequest, thinkingNotes,
-                    lastRoundResults, lastRoundCalls, retainedResults,
+                    lastRoundResults, lastRoundCalls,
                     memoryContext,
                     imagePaths: round == 0 ? imagePaths : null,
                     newMessages: pendingNewMessages.Count > 0 ? pendingNewMessages : null,
-                    subAgentResults: pendingSubResults.Count > 0 ? pendingSubResults : null,
                     taskList: taskList.Count > 0 ? taskList : null);
 
                 processor.Client.ClearConversationHistory();
                 processor.Client.SetConversationHistory(messages);
 
-                // 清空已注入的缓冲
                 pendingNewMessages.Clear();
-                pendingSubResults.Clear();
 
-                // 3. 调用模型，解析工具调用
                 var toolCalls = await ParseToolCallsAsync();
 
                 if (toolCalls.Count == 0)
@@ -119,35 +97,18 @@ namespace AgentCoreProcessor.Core
                     break;
                 }
 
-                // 4. 分拣：委派/详情 vs 同步工具
-                var syncCalls = new List<ToolCall>();
-                var delegateCalls = new List<ToolCall>();
-                var detailCalls = new List<ToolCall>();
-
-                foreach (var call in toolCalls)
-                {
-                    if (call.Tool == DelegateToolName) delegateCalls.Add(call);
-                    else if (call.Tool == SubAgentDetailToolName) detailCalls.Add(call);
-                    else syncCalls.Add(call);
-                }
-
-                // 5. 同步工具执行（含委派和详情的信号工具）
-                var executor = new ToolExecutor(register, authorizedTools: authorizedTools);
+                // 顺序执行
+                var executor = new ToolExecutor(authorizedTools: authorizedTools);
                 var allResults = await executor.ExecuteAsync(toolCalls);
 
-                // 6. 处理副作用（分两遍：先发消息，再处理可能阻塞的操作）
-                bool shouldExit = false;
-                string? completionSummary = null;
-                bool authRequested = false;
-
-                // 6a. 先处理 Speak，确保用户先看到消息
+                // 处理副作用：先 Speak
                 for (int i = 0; i < toolCalls.Count; i++)
                 {
                     if (toolCalls[i].Tool == SpeakToolName && allResults[i].IsSuccess && OnSpeak != null)
                         await OnSpeak(allResults[i].Data ?? "");
                 }
 
-                // 6b. 处理其余副作用
+                // 处理其余副作用
                 for (int i = 0; i < toolCalls.Count; i++)
                 {
                     var call = toolCalls[i];
@@ -155,14 +116,11 @@ namespace AgentCoreProcessor.Core
 
                     switch (call.Tool)
                     {
-                        case CompletionToolName:
-                            if (result.IsSuccess) { shouldExit = true; completionSummary = result.Data; }
-                            break;
                         case ThinkingNotesToolName:
                             if (result.IsSuccess) ApplyThinkingNotes(call, thinkingNotes);
                             break;
                         case SpeakToolName:
-                            break; // 已在 6a 处理
+                            break; // 已处理
                         case MemoryToolName:
                             if (result.IsSuccess && OnMemory != null) await OnMemory(result.Data ?? "");
                             break;
@@ -187,59 +145,34 @@ namespace AgentCoreProcessor.Core
                         case AlertButtonToolName:
                             if (result.IsSuccess && OnAlert != null) await OnAlert(result.Data ?? "");
                             break;
-
-                        case RequestAuthToolName:
-                            if (result.IsSuccess && OnRequestAuth != null)
-                            {
-                                var authParts = (result.Data ?? "").Split('|', 2);
-                                var authNames = authParts[0].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-                                var authReason = authParts.Length > 1 ? authParts[1] : "";
-                                var approved = await OnRequestAuth(authNames, authReason);
-                                if (approved)
-                                    foreach (var name in authNames)
-                                        authorizedTools.Add(name);
-                                var authResult = approved
-                                    ? $"授权通过，已解锁工具：{string.Join("、", authNames)}"
-                                    : "授权被拒绝";
-                                register[call.ToolId] = authResult;
-                                result.Data = authResult;
-                                call.OutputToModel = true;
-                                authRequested = true;
-                            }
-                            break;
-
                         case TaskToolName:
                             if (result.IsSuccess) ApplyTaskAction(result.Data ?? "");
-                            break;
-
-                        case DelegateToolName:
-                            if (result.IsSuccess) LaunchSubAgent(result.Data ?? "", call.ToolId, register);
-                            break;
-                        case SubAgentDetailToolName:
-                            if (result.IsSuccess) HandleSubAgentDetail(result.Data ?? "", call.ToolId, register);
                             break;
                     }
                 }
 
-                if (shouldExit && !authRequested)
-                    return completionSummary ?? "任务完成";
-
-                // 7. 收集 retain 结果
+                // 判断是否继续：有 ContinueLoop 工具被调用 → 下一轮
+                bool hasContinue = false;
                 for (int i = 0; i < toolCalls.Count; i++)
                 {
-                    if (toolCalls[i].Retain && allResults[i].IsSuccess)
-                        retainedResults.Add((toolCalls[i], allResults[i]));
+                    var tool = ToolRegistry.Get(toolCalls[i].Tool);
+                    if (tool?.ContinueLoop == true)
+                    {
+                        hasContinue = true;
+                        break;
+                    }
                 }
 
-                // 8. 更新滚动状态
                 lastRoundCalls = toolCalls;
                 lastRoundResults = allResults;
 
-                // 9. 如果有挂起的子 agent → 等待事件
+                if (!hasContinue)
+                    break;
+
                 await WaitForEventsAsync();
             }
 
-            return "[Agent] 已达到最大执行轮次限制，任务未完成。";
+            return "idle";
         }
 
         // ---- 任务列表管理 ----
@@ -267,76 +200,6 @@ namespace AgentCoreProcessor.Core
             }
         }
 
-        // ---- 子 agent 管理 ----
-
-        private void LaunchSubAgent(string taskDescription, string toolId, Dictionary<string, string> register)
-        {
-            var id = $"sa_{++subAgentSeq:D2}";
-            var tools = ToolRegistry.All.Values.Where(t => t.AllowSubAgent).ToList();
-            var record = new SubAgentRecord { Id = id, TaskDescription = taskDescription };
-
-            record.ExecutionTask = Task.Run(async () =>
-            {
-                try
-                {
-                    FrameworkLogger.Log("WorkingCore", $"子agent启动: {id}, 任务={Truncate(taskDescription, 100)}");
-                    return await SubAgentRunner.RunAsync(taskDescription, tools, record);
-                }
-                catch (Exception ex)
-                {
-                    record.Status = "failed";
-                    record.Summary = ex.Message;
-                    record.Log.Add($"[异常] {ex.Message}");
-                    FrameworkLogger.LogError("WorkingCore", ex, $"子agent {id} 执行异常");
-                    return $"[子任务 {id} 异常] {ex.Message}";
-                }
-            });
-
-            subAgentRecords[id] = record;
-            // 覆盖信号工具的返回值，让模型看到分配的 ID
-            register[toolId] = $"已派出子任务 {id}";
-        }
-
-        private void HandleSubAgentDetail(string subAgentId, string toolId, Dictionary<string, string> register)
-        {
-            if (!subAgentRecords.TryGetValue(subAgentId, out var record))
-            {
-                register[toolId] = $"未找到子任务: {subAgentId}";
-                return;
-            }
-
-            var lines = new List<string>
-            {
-                $"子任务: {record.Id}",
-                $"状态: {record.Status}",
-                $"任务: {record.TaskDescription}"
-            };
-            if (record.Summary != null)
-                lines.Add($"结果: {record.Summary}");
-            lines.Add("--- 执行日志 ---");
-            lines.AddRange(record.Log);
-
-            register[toolId] = string.Join("\n", lines);
-        }
-
-        private void CollectCompletedSubAgents(List<(string id, string summary)> buffer)
-        {
-            foreach (var record in subAgentRecords.Values)
-            {
-                if (record.Status != "running") continue;
-                if (record.ExecutionTask == null || !record.ExecutionTask.IsCompleted) continue;
-
-                // 任务已完成但状态还没更新（可能是异常路径）
-                if (record.Status == "running")
-                {
-                    record.Status = "completed";
-                    record.Summary ??= record.ExecutionTask.Result;
-                }
-                buffer.Add((record.Id, record.Summary ?? "完成"));
-                FrameworkLogger.Log("WorkingCore", $"子agent完成: {record.Id}, 结果={Truncate(record.Summary, 100)}");
-            }
-        }
-
         // ---- 消息感知 ----
 
         private void DrainNewMessages(List<string> buffer)
@@ -349,26 +212,10 @@ namespace AgentCoreProcessor.Core
             }
         }
 
-        /// <summary>
-        /// 等待事件：子 agent 完成 或 新消息到达。
-        /// 没有挂起的子 agent 且没有消息通道时直接返回。
-        /// </summary>
         private async Task WaitForEventsAsync()
         {
-            var pendingSubs = subAgentRecords.Values
-                .Where(r => r.Status == "running" && r.ExecutionTask != null)
-                .Select(r => r.ExecutionTask!)
-                .ToList();
-
-            if (pendingSubs.Count == 0 && messageSignal == null)
-                return;
-
-            var waitTasks = new List<Task>(pendingSubs);
-            if (messageSignal != null)
-                waitTasks.Add(messageSignal.WaitAsync(TimeSpan.FromSeconds(30)));
-
-            if (waitTasks.Count > 0)
-                await Task.WhenAny(waitTasks);
+            if (messageSignal == null) return;
+            await messageSignal.WaitAsync(TimeSpan.FromSeconds(30));
         }
 
         // ---- 工具调用解析 ----
@@ -394,15 +241,12 @@ namespace AgentCoreProcessor.Core
         private static void ApplyThinkingNotes(ToolCall call, Dictionary<string, string> notes)
         {
             if (call.Inputs.Count < 2) return;
-            var action = call.Inputs[0].Value?.Trim().ToLower();
-            var key = call.Inputs[1].Value ?? "";
+            var action = call.Inputs[0]?.Trim().ToLower();
+            var key = call.Inputs[1] ?? "";
             if (action == "write" && call.Inputs.Count >= 3)
-                notes[key] = call.Inputs[2].Value ?? "";
+                notes[key] = call.Inputs[2] ?? "";
             else if (action == "delete")
                 notes.Remove(key);
         }
-
-        private static string Truncate(string? s, int maxLen)
-            => s == null ? "" : s.Length <= maxLen ? s : s[..maxLen] + "...";
     }
 }

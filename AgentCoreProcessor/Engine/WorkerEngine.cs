@@ -517,11 +517,6 @@ namespace AgentCoreProcessor.Engine
                 {
                     await HandleAlertAsync(lastSc.Person, lastSc, reason);
                 };
-                workingCore.OnRequestAuth = async (toolNames, reason) =>
-                {
-                    return await HandleAuthorizationRequestAsync(
-                        toolNames, reason, lastMsg, msgQueue, msgSignal);
-                };
 
                 workingCore.SetMessageChannel(msgQueue, msgSignal);
                 this.activeMessageQueue = msgQueue;

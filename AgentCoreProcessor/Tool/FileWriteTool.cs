@@ -14,11 +14,13 @@ namespace AgentCoreProcessor.Tool
         public IReadOnlyList<ToolParameter> Parameters =>
         [
             new("文件路径", "要写入的文件路径", 0),
-            new("内容", "要写入的文本内容", 1, canBeRef: true),
+            new("内容", "要写入的文本内容", 1),
             new("模式", "overwrite（覆盖，默认）或 append（追加）", 2)
         ];
         public TimeSpan Timeout => TimeSpan.FromSeconds(10);
         public PermissionLevel RequiredPermission => PermissionLevel.Elevated;
+        public bool ContinueLoop => true;
+        public string? CapabilitySummary => "写入或修改文件";
 
         public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {

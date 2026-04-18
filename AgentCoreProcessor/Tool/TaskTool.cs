@@ -19,6 +19,7 @@ namespace AgentCoreProcessor.Tool
             new("内容", "add 时为任务描述，complete/remove 时为任务序号（从1开始）", 1)
         ];
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);
+        public string? CapabilitySummary => "管理待办任务列表";
 
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {

@@ -23,6 +23,9 @@ namespace AgentCoreProcessor.Tool
         public TimeSpan Timeout => TimeSpan.FromSeconds(65);
         public bool AllowSubAgent => false;
         public PermissionLevel RequiredPermission => PermissionLevel.Elevated;
+        public bool ContinueLoop => true;
+        public bool RetainResult => true;
+        public string? CapabilitySummary => "在远程服务器上执行命令";
 
         private static readonly string ConfigPath =
             Path.Combine(PathConfig.StoragePath, "SSH", "RemoteShellConfig.json");

@@ -36,5 +36,14 @@ namespace AgentCoreProcessor.Tool
 
         /// <summary>使用此工具所需的最低权限。Default = 自由工具，高于 Default 需要运行时授权。</summary>
         PermissionLevel RequiredPermission => PermissionLevel.Default;
+
+        /// <summary>执行后结果需要返回模型，触发下一轮循环。</summary>
+        bool ContinueLoop => false;
+
+        /// <summary>结果跨轮保留（摘要形式注入 prompt，模型可按需查看详情或清理）。</summary>
+        bool RetainResult => false;
+
+        /// <summary>能力摘要（一句话），注入 Express prompt 让模型知道此能力存在。null 表示不暴露给 Express。</summary>
+        string? CapabilitySummary => null;
     }
 }

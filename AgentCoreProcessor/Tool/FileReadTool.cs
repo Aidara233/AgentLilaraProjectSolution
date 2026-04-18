@@ -17,6 +17,9 @@ namespace AgentCoreProcessor.Tool
             new("最大字符数", "返回内容的最大字符数，默认4000", 1)
         ];
         public TimeSpan Timeout => TimeSpan.FromSeconds(10);
+        public bool ContinueLoop => true;
+        public bool RetainResult => true;
+        public string? CapabilitySummary => "读取文件内容";
 
         public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {

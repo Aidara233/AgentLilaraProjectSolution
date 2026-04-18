@@ -20,7 +20,6 @@ namespace AgentCoreProcessor.Tool
                 new FileReadTool(),
                 new FileWriteTool(),
                 new SpeakTool(),
-                new CompletionTool(),
                 new ThinkingNotesTool(),
                 new MemoryTool(),
                 new DreamPermissionTool(),
@@ -29,12 +28,11 @@ namespace AgentCoreProcessor.Tool
                 new SleepScoreTool(),
                 new RedAlertTool(),
                 new ReviewHintTool(),
-                // DelegateTool / SubAgentDetailTool 暂禁用：子 agent 会继承文件工具风险
                 new TaskTool(),
                 new AlertButtonTool(),
-                new RequestAuthorizationTool(),
                 new RemoteShellTool(),
-                new FileTransferTool()
+                new FileTransferTool(),
+                new ContinueTool()
             };
             _tools = toolList.ToDictionary(t => t.Name);
         }
@@ -48,10 +46,8 @@ namespace AgentCoreProcessor.Tool
         public static IReadOnlyDictionary<string, ITool> All => _tools;
 
         /// <summary>
-        /// 根据已注册工具的元数据，自动生成供 prompt 注入的工具描述文本。
-        /// 传入 tools 时只生成指定工具的描述（Phase 2 子 agent 用）；
-        /// 不传时生成全部工具的描述。
-        /// authorizedTools 控制受限工具的显示：已授权显示完整描述，未授权只显示一行摘要。
+        /// 生成工具描述文本注入 prompt。
+        /// 受限工具标注"（首次使用需要确认）"，但显示完整描述。
         /// </summary>
         public static string GenerateDescriptions(
             IEnumerable<ITool>? tools = null,
@@ -66,30 +62,18 @@ namespace AgentCoreProcessor.Tool
                 bool isRestricted = tool.RequiredPermission > PermissionLevel.Default;
                 bool isAuthorized = authorizedTools != null && authorizedTools.Contains(tool.Name);
 
-                if (isRestricted && !isAuthorized)
-                {
-                    sb.AppendLine($"受限工具：{tool.Name} — {tool.Description}（需要授权，调用「申请工具授权」获取使用权）");
-                    sb.AppendLine();
-                    i++;
-                    continue;
-                }
+                var suffix = isRestricted && !isAuthorized ? "（首次使用需要确认）" : "";
 
-                sb.AppendLine($"工具{i}：{tool.Name}");
+                sb.AppendLine($"工具{i}：{tool.Name}{suffix}");
                 sb.AppendLine($"描述：{tool.Description}");
 
-                // 参数说明
                 if (tool.Parameters.Count > 0)
                 {
                     var paramParts = tool.Parameters
-                        .Select(p =>
-                        {
-                            var typeHint = p.CanBeRef ? "value 或 ref" : "value";
-                            return $"inputs[{p.Index}] = {p.Name} ({typeHint})";
-                        });
+                        .Select(p => $"inputs[{p.Index}] = {p.Name}");
                     sb.AppendLine($"参数：{string.Join(", ", paramParts)}");
                 }
 
-                // 自动生成示例 JSON
                 sb.AppendLine($"示例：{GenerateExample(tool)}<over>");
                 sb.AppendLine();
                 i++;
@@ -99,22 +83,32 @@ namespace AgentCoreProcessor.Tool
         }
 
         /// <summary>
-        /// 为工具自动生成一条示例 ToolCall JSON。
+        /// 生成能力摘要列表，注入 Express prompt 让模型知道可升级到 Working 模式的能力。
         /// </summary>
+        public static string GenerateCapabilitySummary()
+        {
+            var capabilities = _tools.Values
+                .Where(t => t.CapabilitySummary != null)
+                .Select(t => t.CapabilitySummary!)
+                .Distinct()
+                .ToList();
+
+            if (capabilities.Count == 0) return "";
+
+            var sb = new StringBuilder();
+            sb.AppendLine("你当前处于轻量对话模式。如果对话涉及以下任何能力，输出 [ESCALATE] 切换到工作模式：");
+            foreach (var cap in capabilities)
+                sb.AppendLine($"- {cap}");
+            sb.AppendLine("- 任何需要实际操作而非纯对话的场景");
+            return sb.ToString().TrimEnd();
+        }
+
         private static string GenerateExample(ITool tool)
         {
             var example = new
             {
                 tool = tool.Name,
-                toolId = $"example{tool.Name.GetHashCode():x}",
-                inputs = tool.Parameters.Select(p => new
-                {
-                    type = "value",
-                    value = $"({p.Name})"
-                }),
-                output = "result",
-                outputToModel = false,
-                retain = false
+                inputs = tool.Parameters.Select(p => $"({p.Name})").ToArray()
             };
             return JsonConvert.SerializeObject(example, Formatting.None);
         }

@@ -99,7 +99,6 @@ namespace AgentCoreProcessor.Engine
 
         private async Task RunAgentLoopAsync()
         {
-            var register = new Dictionary<string, string>();
             var thinkingNotes = new Dictionary<string, string>();
             var retainedResults = new List<(ToolCall call, ToolResult result)>();
             List<ToolCall>? lastRoundCalls = null;
@@ -150,10 +149,10 @@ namespace AgentCoreProcessor.Engine
                     break; // 隐式完成
                 }
 
-                // 4. DAG 执行（使用自有工具集）
+                // 4. 执行（使用自有工具集）
                 Func<string, ITool?> resolver = name =>
                     tools.TryGetValue(name, out var t) ? t : null;
-                var executor = new ToolExecutor(register, resolver);
+                var executor = new ToolExecutor(resolver);
                 var results = await executor.ExecuteAsync(toolCalls);
 
                 // 5. 处理特殊工具
@@ -231,7 +230,8 @@ namespace AgentCoreProcessor.Engine
                 // 6. 收集 retain 结果
                 for (int i = 0; i < toolCalls.Count; i++)
                 {
-                    if (toolCalls[i].Retain && results[i].IsSuccess)
+                    var tool = tools.TryGetValue(toolCalls[i].Tool, out var t) ? t : null;
+                    if (tool?.RetainResult == true && results[i].IsSuccess)
                         retainedResults.Add((toolCalls[i], results[i]));
                 }
 
@@ -245,13 +245,12 @@ namespace AgentCoreProcessor.Engine
             if (!shouldStop && totalTokens >= effectiveBudget)
             {
                 FrameworkLogger.Log("ReviewEngine", "预算耗尽，执行收尾轮");
-                await RunFinalRound(register, thinkingNotes, retainedResults,
+                await RunFinalRound(thinkingNotes, retainedResults,
                     lastRoundCalls, lastRoundResults, round);
             }
         }
 
         private async Task RunFinalRound(
-            Dictionary<string, string> register,
             Dictionary<string, string> thinkingNotes,
             List<(ToolCall, ToolResult)> retainedResults,
             List<ToolCall>? lastCalls, List<ToolResult>? lastResults, int round)
@@ -282,7 +281,7 @@ namespace AgentCoreProcessor.Engine
                 {
                     Func<string, ITool?> resolver = name =>
                         tools.TryGetValue(name, out var t) ? t : null;
-                    var executor = new ToolExecutor(register, resolver);
+                    var executor = new ToolExecutor(resolver);
                     var results = await executor.ExecuteAsync(toolCalls);
 
                     for (int i = 0; i < toolCalls.Count; i++)
@@ -382,12 +381,10 @@ namespace AgentCoreProcessor.Engine
 
         private static void FormatResult(StringBuilder sb, ToolCall call, ToolResult result)
         {
-            if (call.OutputToModel && result.IsSuccess)
-                sb.AppendLine($"[{call.ToolId}] {call.Tool}: 成功，返回值：{result.Data}");
-            else if (result.IsSuccess)
-                sb.AppendLine($"[{call.ToolId}] {call.Tool}: 成功");
+            if (result.IsSuccess)
+                sb.AppendLine($"[{call.Tool}]: 成功，返回值：{result.Data}");
             else
-                sb.AppendLine($"[{call.ToolId}] {call.Tool}: {result.Status}" +
+                sb.AppendLine($"[{call.Tool}]: {result.Status}" +
                     (result.Error != null ? $" - {result.Error}" : ""));
         }
 
@@ -424,22 +421,13 @@ namespace AgentCoreProcessor.Engine
                 if (tool.Parameters.Count > 0)
                 {
                     var paramParts = tool.Parameters
-                        .Select(p =>
-                        {
-                            var typeHint = p.CanBeRef ? "value 或 ref" : "value";
-                            return $"inputs[{p.Index}] = {p.Name} ({typeHint})";
-                        });
+                        .Select(p => $"inputs[{p.Index}] = {p.Name}");
                     sb.AppendLine($"参数：{string.Join(", ", paramParts)}");
                 }
                 var example = new
                 {
                     tool = tool.Name,
-                    toolId = $"r{i}",
-                    inputs = tool.Parameters.Select(p => new { type = "value", value = $"({p.Name})" }),
-                    output = $"out{i}",
-                    outputToModel = tool.Name == "检索记忆" || tool.Name == "查看关联"
-                        || tool.Name == "读取消息历史",
-                    retain = false
+                    inputs = tool.Parameters.Select(p => $"({p.Name})").ToArray()
                 };
                 sb.AppendLine($"示例：{JsonConvert.SerializeObject(example, Formatting.None)}<over>");
                 sb.AppendLine();
@@ -453,10 +441,10 @@ namespace AgentCoreProcessor.Engine
         private static void ApplyThinkingNotes(ToolCall call, Dictionary<string, string> notes)
         {
             if (call.Inputs.Count < 2) return;
-            var action = call.Inputs[0].Value?.Trim().ToLower();
-            var key = call.Inputs[1].Value ?? "";
+            var action = call.Inputs[0]?.Trim().ToLower();
+            var key = call.Inputs[1] ?? "";
             if (action == "write" && call.Inputs.Count >= 3)
-                notes[key] = call.Inputs[2].Value ?? "";
+                notes[key] = call.Inputs[2] ?? "";
             else if (action == "delete")
                 notes.Remove(key);
         }

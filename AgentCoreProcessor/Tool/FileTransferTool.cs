@@ -24,6 +24,8 @@ namespace AgentCoreProcessor.Tool
         public TimeSpan Timeout => TimeSpan.FromSeconds(35);
         public bool AllowSubAgent => false;
         public PermissionLevel RequiredPermission => PermissionLevel.Elevated;
+        public bool ContinueLoop => true;
+        public string? CapabilitySummary => "在本地和远程服务器之间传输文件";
 
         private static readonly string ConfigPath =
             Path.Combine(PathConfig.StoragePath, "SSH", "RemoteShellConfig.json");
