@@ -144,7 +144,7 @@ ToolExecutor: DAG拓扑排序 + 分波并行 + 寄存器(跨轮) + 可选toolRes
 
 全局工具 (ToolRegistry, WorkerEngine用):
   自由工具(Default): 说话 / 完成 / 思考笔记 / 记忆 / 标记复盘 / 任务管理 / 报警 / 申请工具授权
-  受限工具(Elevated): 睡眠许可 / 强制睡觉 / 调整睡意
+  受限工具(Elevated): 睡眠许可 / 强制睡觉 / 调整睡意 / 远程终端
   受限工具(Admin): 修改睡眠配置 / 触发红色警报
   已禁用: 文件流读取器 / 文件流写入器 / 委派任务 / 查看子agent
 

@@ -31,7 +31,8 @@ namespace AgentCoreProcessor.Tool
                 // DelegateTool / SubAgentDetailTool 暂禁用：子 agent 会继承文件工具风险
                 new TaskTool(),
                 new AlertButtonTool(),
-                new RequestAuthorizationTool()
+                new RequestAuthorizationTool(),
+                new RemoteShellTool()
             };
             _tools = toolList.ToDictionary(t => t.Name);
         }
