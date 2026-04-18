@@ -111,17 +111,15 @@ namespace AgentCoreProcessor.Core
                 if (toolCalls.Count == 0)
                     return round == 0 ? LoopExitReason.NoToolCalls : LoopExitReason.Idle;
 
-                // 顺序执行
+                // 顺序执行（说话副作用在每个工具执行后立即处理，不被后续授权阻塞）
                 var executor = new ToolExecutor(authorizedTools: authorizedTools);
                 executor.OnAuthRequired = OnAuthRequired;
-                var allResults = await executor.ExecuteAsync(toolCalls);
-
-                // 副作用：先 Speak
-                for (int i = 0; i < toolCalls.Count; i++)
+                executor.OnToolExecuted = async (call, result) =>
                 {
-                    if (toolCalls[i].Tool == SpeakToolName && allResults[i].IsSuccess && OnSpeak != null)
-                        await OnSpeak(allResults[i].Data ?? "");
-                }
+                    if (call.Tool == SpeakToolName && result.IsSuccess && OnSpeak != null)
+                        await OnSpeak(result.Data ?? "");
+                };
+                var allResults = await executor.ExecuteAsync(toolCalls);
 
                 // 副作用：其余
                 bool hasContinue = false;

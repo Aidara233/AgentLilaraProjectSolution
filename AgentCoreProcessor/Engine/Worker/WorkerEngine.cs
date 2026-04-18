@@ -447,7 +447,10 @@ namespace AgentCoreProcessor.Engine
                     FrameworkLogger.Log("WorkerEngine", $"ExpressCore 升级到 Working 模式: channelId={channelId}");
                     var preEscalate = expressed.Split("[ESCALATE]")[0].Trim();
                     if (!string.IsNullOrEmpty(preEscalate))
+                    {
                         await SendSegmentsAsync(preEscalate, lastMsg, lastSc, participantSnapshot);
+                        formattedContext += $"\n\n[已发送的回复]\n你刚才已经对用户说了：「{preEscalate}」\n不要重复相同意思的话，直接处理需要工具的部分。";
+                    }
 
                     isWorkingMode = true;
                     consecutiveExternalTriggers = 0;

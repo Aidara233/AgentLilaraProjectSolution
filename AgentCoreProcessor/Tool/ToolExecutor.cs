@@ -20,6 +20,12 @@ namespace AgentCoreProcessor.Tool
         /// </summary>
         public Func<string, PermissionLevel, Task<bool>>? OnAuthRequired { get; set; }
 
+        /// <summary>
+        /// 每个工具执行完毕后立即触发的回调。用于即时处理副作用（如发送说话消息），
+        /// 避免被后续工具的授权流程阻塞。
+        /// </summary>
+        public Func<ToolCall, ToolResult, Task>? OnToolExecuted { get; set; }
+
         public ToolExecutor(
             Func<string, ITool?>? toolResolver = null,
             HashSet<string>? authorizedTools = null)
@@ -35,6 +41,8 @@ namespace AgentCoreProcessor.Tool
             {
                 var result = await RunSingleAsync(call);
                 results.Add(result);
+                if (OnToolExecuted != null)
+                    await OnToolExecuted(call, result);
             }
             return results;
         }
