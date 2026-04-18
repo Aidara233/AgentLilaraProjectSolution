@@ -168,28 +168,59 @@ namespace AgentCoreProcessor.Adapter
                 });
             }
 
-            // at 段
-            if (message.Mentions != null)
+            // at 段：内联位置（通过 BotOutputParser 占位符拆分）
+            var content = message.Content ?? "";
+            var atDelim = Engine.BotOutputParser.AtDelimiter;
+            var atPrefix = Engine.BotOutputParser.AtPrefix;
+
+            if (content.Contains(atDelim))
             {
-                foreach (var qq in message.Mentions)
+                var parts = content.Split(atDelim);
+                foreach (var part in parts)
                 {
-                    segments.Add(new JObject
+                    if (part.StartsWith(atPrefix))
                     {
-                        ["type"] = "at",
-                        ["data"] = new JObject { ["qq"] = qq }
-                    });
+                        var qq = part[atPrefix.Length..];
+                        segments.Add(new JObject
+                        {
+                            ["type"] = "at",
+                            ["data"] = new JObject { ["qq"] = qq }
+                        });
+                    }
+                    else if (part.Length > 0)
+                    {
+                        segments.Add(new JObject
+                        {
+                            ["type"] = "text",
+                            ["data"] = new JObject { ["text"] = part }
+                        });
+                    }
                 }
             }
-
-            // text 段（at 段后补空格，防止文字紧贴 @名字）
-            var textContent = message.Mentions is { Count: > 0 } && !message.Content.StartsWith(" ")
-                ? " " + message.Content
-                : message.Content;
-            segments.Add(new JObject
+            else
             {
-                ["type"] = "text",
-                ["data"] = new JObject { ["text"] = textContent }
-            });
+                // 无内联 at：旧路径（mentions 列表前置）
+                if (message.Mentions != null)
+                {
+                    foreach (var qq in message.Mentions)
+                    {
+                        segments.Add(new JObject
+                        {
+                            ["type"] = "at",
+                            ["data"] = new JObject { ["qq"] = qq }
+                        });
+                    }
+                }
+
+                var textContent = message.Mentions is { Count: > 0 } && !content.StartsWith(" ")
+                    ? " " + content
+                    : content;
+                segments.Add(new JObject
+                {
+                    ["type"] = "text",
+                    ["data"] = new JObject { ["text"] = textContent }
+                });
+            }
             p["message"] = segments;
 
             var resp = await CallApiAsync(action, p);

@@ -129,7 +129,17 @@ namespace AgentCoreProcessor.Core
                 {
                     var call = toolCalls[i];
                     var result = allResults[i];
-                    if (!result.IsSuccess && call.Tool != SpeakToolName) continue;
+                    var toolDef = ToolRegistry.Get(call.Tool);
+
+                    // ContinueLoop 不论成功失败都要检查（失败时模型也需要看到错误）
+                    if (toolDef?.ContinueLoop == true)
+                        hasContinue = true;
+
+                    if (!result.IsSuccess && call.Tool != SpeakToolName)
+                    {
+                        // 自动收集 RetainResult（即使失败也记录错误信息）
+                        continue;
+                    }
 
                     switch (call.Tool)
                     {
@@ -161,15 +171,11 @@ namespace AgentCoreProcessor.Core
                     }
 
                     // 自动收集 RetainResult
-                    var toolDef = ToolRegistry.Get(call.Tool);
                     if (toolDef?.RetainResult == true && result.IsSuccess)
                     {
                         var summary = $"{call.Tool}: {string.Join(", ", call.Inputs).Truncate(50)}";
                         retainList.Add((summary, result.Data ?? ""));
                     }
-
-                    if (toolDef?.ContinueLoop == true)
-                        hasContinue = true;
                 }
 
                 lastRoundCalls = toolCalls;

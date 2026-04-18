@@ -5,9 +5,13 @@ namespace AgentCoreProcessor.Engine
 {
     /// <summary>
     /// 解析模型输出中的 &lt;at/&gt; 和 &lt;reply/&gt; 标签。
+    /// at 标签转为内联占位符 \x01AT:qq\x01，由适配器拆分为正确位置的 at 段。
     /// </summary>
     internal static class BotOutputParser
     {
+        public const char AtDelimiter = '\x01';
+        public const string AtPrefix = "AT:";
+
         private static readonly Regex AtTagRegex =
             new(@"<at\s+user=""([^""]+)""\s*/>", RegexOptions.Compiled);
         private static readonly Regex ReplyTagRegex =
@@ -41,7 +45,7 @@ namespace AgentCoreProcessor.Engine
                 {
                     mentions ??= new List<string>();
                     if (!mentions.Contains(qq)) mentions.Add(qq);
-                    return "";
+                    return $"{AtDelimiter}{AtPrefix}{qq}{AtDelimiter}";
                 }
                 return $"@{userName} ";
             });
