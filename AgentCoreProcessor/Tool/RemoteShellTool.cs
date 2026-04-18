@@ -78,33 +78,34 @@ namespace AgentCoreProcessor.Tool
                     StandardOutputEncoding = Encoding.UTF8,
                     StandardErrorEncoding = Encoding.UTF8
                 };
-
-                var stdout = new StringBuilder();
-                var stderr = new StringBuilder();
-
-                process.OutputDataReceived += (_, e) => { if (e.Data != null) stdout.AppendLine(e.Data); };
-                process.ErrorDataReceived += (_, e) => { if (e.Data != null) stderr.AppendLine(e.Data); };
                 process.EnableRaisingEvents = true;
-
                 process.Start();
-                process.BeginOutputReadLine();
-                process.BeginErrorReadLine();
 
-                var exited = await WaitForExitAsync(process, timeoutSeconds * 1000, ct);
+                // 并行读取 stdout/stderr + 等待退出，避免 BeginOutputReadLine 死锁
+                var stdoutTask = process.StandardOutput.ReadToEndAsync();
+                var stderrTask = process.StandardError.ReadToEndAsync();
 
-                if (!exited)
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                cts.CancelAfter(timeoutSeconds * 1000);
+
+                try
+                {
+                    await process.WaitForExitAsync(cts.Token);
+                }
+                catch (OperationCanceledException)
                 {
                     try { process.Kill(entireProcessTree: true); } catch { }
+                    var partialOut = stdoutTask.IsCompleted ? stdoutTask.Result : "";
                     return new ToolResult
                     {
                         Status = "failed",
                         Error = $"命令执行超时（{timeoutSeconds}秒）",
-                        Data = Truncate(stdout.ToString(), maxOutput)
+                        Data = Truncate(partialOut, maxOutput)
                     };
                 }
 
-                var output = stdout.ToString();
-                var errors = stderr.ToString();
+                var output = await stdoutTask;
+                var errors = await stderrTask;
                 var exitCode = process.ExitCode;
 
                 var result = new StringBuilder();
@@ -141,21 +142,6 @@ namespace AgentCoreProcessor.Tool
             s = s.TrimEnd();
             if (s.Length <= maxLen) return s;
             return s[..maxLen] + $"\n... (截断，共{s.Length}字符)";
-        }
-
-        private static async Task<bool> WaitForExitAsync(Process process, int ms, CancellationToken ct)
-        {
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(ms);
-            try
-            {
-                await process.WaitForExitAsync(cts.Token);
-                return true;
-            }
-            catch (OperationCanceledException)
-            {
-                return false;
-            }
         }
     }
 }
