@@ -26,20 +26,20 @@ namespace AgentCoreProcessor.Tool
         public bool RetainResult => false;
         public string? CapabilitySummary => "管理文件和文件夹";
 
-        public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
+        public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
             var op = (resolvedInputs.ElementAtOrDefault(0) ?? "").Trim().ToLower();
             var rawPath = resolvedInputs.ElementAtOrDefault(1) ?? "";
             var rawTarget = resolvedInputs.ElementAtOrDefault(2) ?? "";
 
-            return op switch
+            return Task.FromResult(op switch
             {
                 "list" or "ls" => ListDirectory(rawPath),
                 "mkdir" => MakeDirectory(rawPath),
                 "delete" or "rm" or "删除" => DeletePath(rawPath),
                 "move" or "mv" or "移动" => MovePath(rawPath, rawTarget),
                 _ => new ToolResult { Status = "failed", Error = "操作必须是 list / mkdir / delete / move" }
-            };
+            });
         }
 
         private static ToolResult ListDirectory(string rawPath)
