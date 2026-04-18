@@ -135,11 +135,19 @@ namespace AgentCoreProcessor.Core
                 var executor = new ToolExecutor(register, authorizedTools: authorizedTools);
                 var allResults = await executor.ExecuteAsync(toolCalls);
 
-                // 6. 处理副作用
+                // 6. 处理副作用（分两遍：先发消息，再处理可能阻塞的操作）
                 bool shouldExit = false;
                 string? completionSummary = null;
                 bool authRequested = false;
 
+                // 6a. 先处理 Speak，确保用户先看到消息
+                for (int i = 0; i < toolCalls.Count; i++)
+                {
+                    if (toolCalls[i].Tool == SpeakToolName && allResults[i].IsSuccess && OnSpeak != null)
+                        await OnSpeak(allResults[i].Data ?? "");
+                }
+
+                // 6b. 处理其余副作用
                 for (int i = 0; i < toolCalls.Count; i++)
                 {
                     var call = toolCalls[i];
@@ -154,8 +162,7 @@ namespace AgentCoreProcessor.Core
                             if (result.IsSuccess) ApplyThinkingNotes(call, thinkingNotes);
                             break;
                         case SpeakToolName:
-                            if (result.IsSuccess && OnSpeak != null) await OnSpeak(result.Data ?? "");
-                            break;
+                            break; // 已在 6a 处理
                         case MemoryToolName:
                             if (result.IsSuccess && OnMemory != null) await OnMemory(result.Data ?? "");
                             break;
