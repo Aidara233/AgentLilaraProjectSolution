@@ -14,12 +14,12 @@ namespace AgentCoreProcessor.Tool
     internal class FileTransferTool : ITool
     {
         public string Name => "文件传输";
-        public string Description => "在主机 Storage 目录与远程 Linux 虚拟机之间传输文件。支持上传（主机→VM）和下载（VM→主机）";
+        public string Description => "在主机 Storage 目录与远程 Linux 虚拟机之间传输文件。支持上传和下载";
         public IReadOnlyList<ToolParameter> Parameters =>
         [
-            new("方向", "upload（主机→VM）或 download（VM→主机）", 0),
-            new("本地路径", "主机上的文件路径（相对 Storage/ 或绝对路径）", 1),
-            new("远程路径", "VM 上的文件绝对路径", 2)
+            new("方向", "upload 或 download（也可以写 上传 或 下载）", 0),
+            new("本地路径", "主机上的文件路径（相对 Storage/ 的路径，如 Workspace/test.txt）", 1),
+            new("远程路径", "VM 上的文件绝对路径（如 /tmp/test.txt）", 2)
         ];
         public TimeSpan Timeout => TimeSpan.FromSeconds(35);
         public bool AllowSubAgent => false;
@@ -32,12 +32,18 @@ namespace AgentCoreProcessor.Tool
 
         public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
-            var direction = (resolvedInputs.ElementAtOrDefault(0) ?? "").Trim().ToLower();
+            var directionRaw = (resolvedInputs.ElementAtOrDefault(0) ?? "").Trim().ToLower();
+            var direction = directionRaw switch
+            {
+                "upload" or "上传" => "upload",
+                "download" or "下载" => "download",
+                _ => ""
+            };
             var localRaw = resolvedInputs.ElementAtOrDefault(1) ?? "";
             var remotePath = resolvedInputs.ElementAtOrDefault(2) ?? "";
 
-            if (direction != "upload" && direction != "download")
-                return new ToolResult { Status = "failed", Error = "方向必须是 upload 或 download" };
+            if (string.IsNullOrEmpty(direction))
+                return new ToolResult { Status = "failed", Error = "方向必须是 upload/上传 或 download/下载" };
             if (string.IsNullOrWhiteSpace(localRaw))
                 return new ToolResult { Status = "failed", Error = "本地路径不能为空" };
             if (string.IsNullOrWhiteSpace(remotePath))
@@ -63,16 +69,45 @@ namespace AgentCoreProcessor.Tool
             if (!File.Exists(keyPath))
                 return new ToolResult { Status = "failed", Error = "SSH 私钥文件不存在" };
 
+            var (sshBin, scpBin) = ResolveBinaries(config);
+
             if (direction == "upload")
-                return await UploadAsync(localPath, remotePath, host, port, username, keyPath, localRaw, ct);
+                return await UploadAsync(localPath, remotePath, host, port, username, keyPath, localRaw, scpBin, ct);
             else
-                return await DownloadAsync(localPath, remotePath, host, port, username, keyPath, localRaw, ct);
+                return await DownloadAsync(localPath, remotePath, host, port, username, keyPath, localRaw, sshBin, scpBin, ct);
+        }
+
+        private static (string ssh, string scp) ResolveBinaries(JObject config)
+        {
+            var configured = config["sshPath"]?.ToString();
+            if (!string.IsNullOrWhiteSpace(configured) && File.Exists(configured))
+            {
+                var dir = Path.GetDirectoryName(configured)!;
+                var scpPath = Path.Combine(dir, "scp.exe");
+                return (configured, File.Exists(scpPath) ? scpPath : "scp");
+            }
+
+            var candidates = new[]
+            {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Git", "usr", "bin"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Git", "usr", "bin"),
+                @"D:\Program Files\Git\usr\bin",
+            };
+            foreach (var dir in candidates)
+            {
+                var ssh = Path.Combine(dir, "ssh.exe");
+                var scp = Path.Combine(dir, "scp.exe");
+                if (File.Exists(ssh) && File.Exists(scp))
+                    return (ssh, scp);
+            }
+
+            return ("ssh", "scp");
         }
 
         private async Task<ToolResult> UploadAsync(
             string localPath, string remotePath,
             string host, int port, string username, string keyPath,
-            string displayPath, CancellationToken ct)
+            string displayPath, string scpBin, CancellationToken ct)
         {
             if (!File.Exists(localPath))
                 return new ToolResult { Status = "failed", Error = $"本地文件不存在: {displayPath}" };
@@ -82,20 +117,19 @@ namespace AgentCoreProcessor.Tool
             if (!sizeOk)
                 return new ToolResult { Status = "failed", Error = sizeError };
 
-            var args = $"-i \"{keyPath}\" -o StrictHostKeyChecking=no -P {port} " +
+            var args = $"-i \"{keyPath}\" -o StrictHostKeyChecking=no -o BatchMode=yes -P {port} " +
                        $"\"{localPath}\" {username}@{host}:\"{remotePath}\"";
-            return await RunScpAsync(args, $"已上传: {displayPath} → {remotePath} ({fileSize}字节)", ct);
+            return await RunScpAsync(scpBin, args, $"已上传: {displayPath} → {remotePath} ({fileSize}字节)", ct);
         }
 
         private async Task<ToolResult> DownloadAsync(
             string localPath, string remotePath,
             string host, int port, string username, string keyPath,
-            string displayPath, CancellationToken ct)
+            string displayPath, string sshBin, string scpBin, CancellationToken ct)
         {
-            // 先查远程文件大小
-            var sshArgs = $"-i \"{keyPath}\" -o StrictHostKeyChecking=no -o ConnectTimeout=10 " +
+            var sshArgs = $"-i \"{keyPath}\" -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=10 " +
                           $"-p {port} {username}@{host} \"stat -c %s '{remotePath}' 2>/dev/null || echo -1\"";
-            var sizeResult = await RunProcessAsync("ssh", sshArgs, 10000, ct);
+            var sizeResult = await RunProcessAsync(sshBin, sshArgs, 10000, ct);
             if (long.TryParse(sizeResult.Trim(), out var remoteSize) && remoteSize >= 0)
             {
                 var (sizeOk, sizeError) = FileAccessControl.CheckTransferSize(remoteSize);
@@ -114,9 +148,9 @@ namespace AgentCoreProcessor.Tool
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                 Directory.CreateDirectory(dir);
 
-            var args = $"-i \"{keyPath}\" -o StrictHostKeyChecking=no -P {port} " +
+            var args = $"-i \"{keyPath}\" -o StrictHostKeyChecking=no -o BatchMode=yes -P {port} " +
                        $"{username}@{host}:\"{remotePath}\" \"{localPath}\"";
-            var result = await RunScpAsync(args, $"已下载: {remotePath} → {displayPath}", ct);
+            var result = await RunScpAsync(scpBin, args, $"已下载: {remotePath} → {displayPath}", ct);
 
             if (result.IsSuccess && File.Exists(localPath))
             {
@@ -126,36 +160,46 @@ namespace AgentCoreProcessor.Tool
             return result;
         }
 
-        private static async Task<ToolResult> RunScpAsync(string args, string successMsg, CancellationToken ct)
+        private static async Task<ToolResult> RunScpAsync(string scpBin, string args, string successMsg, CancellationToken ct)
         {
             try
             {
                 using var process = new Process();
                 process.StartInfo = new ProcessStartInfo
                 {
-                    FileName = "scp",
+                    FileName = scpBin,
                     Arguments = args,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
+                    RedirectStandardInput = true,
                     UseShellExecute = false,
-                    CreateNoWindow = true
+                    CreateNoWindow = true,
+                    StandardOutputEncoding = Encoding.UTF8,
+                    StandardErrorEncoding = Encoding.UTF8
                 };
-
-                var stderr = new StringBuilder();
-                process.ErrorDataReceived += (_, e) => { if (e.Data != null) stderr.AppendLine(e.Data); };
-
+                process.EnableRaisingEvents = true;
                 process.Start();
-                process.BeginErrorReadLine();
+                process.StandardInput.Close();
 
-                var exited = await Task.Run(() => process.WaitForExit(30000), ct);
-                if (!exited)
+                var stderrTask = process.StandardError.ReadToEndAsync();
+
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                cts.CancelAfter(30000);
+
+                try
+                {
+                    await process.WaitForExitAsync(cts.Token);
+                }
+                catch (OperationCanceledException)
                 {
                     try { process.Kill(entireProcessTree: true); } catch { }
                     return new ToolResult { Status = "failed", Error = "传输超时（30秒）" };
                 }
 
+                var stderr = await stderrTask;
+
                 if (process.ExitCode != 0)
-                    return new ToolResult { Status = "failed", Error = $"SCP 失败: {stderr.ToString().Trim()}" };
+                    return new ToolResult { Status = "failed", Error = $"SCP 失败(退出码={process.ExitCode}): {stderr.Trim()}" };
 
                 return new ToolResult { Status = "success", Data = successMsg };
             }
@@ -175,13 +219,31 @@ namespace AgentCoreProcessor.Tool
                     FileName = fileName,
                     Arguments = args,
                     RedirectStandardOutput = true,
+                    RedirectStandardInput = true,
                     UseShellExecute = false,
-                    CreateNoWindow = true
+                    CreateNoWindow = true,
+                    StandardOutputEncoding = Encoding.UTF8
                 };
+                process.EnableRaisingEvents = true;
                 process.Start();
-                var output = await process.StandardOutput.ReadToEndAsync(ct);
-                process.WaitForExit(timeoutMs);
-                return output;
+                process.StandardInput.Close();
+
+                var outputTask = process.StandardOutput.ReadToEndAsync();
+
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                cts.CancelAfter(timeoutMs);
+
+                try
+                {
+                    await process.WaitForExitAsync(cts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    try { process.Kill(entireProcessTree: true); } catch { }
+                    return "-1";
+                }
+
+                return await outputTask;
             }
             catch { return "-1"; }
         }
