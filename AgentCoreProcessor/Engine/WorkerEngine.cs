@@ -421,15 +421,27 @@ namespace AgentCoreProcessor.Engine
                     var preTask = expressed.Split("[TASK]")[0].Trim();
                     if (!string.IsNullOrEmpty(preTask))
                     {
-                        var (content, replyTo, mentions) = ParseBotOutput(preTask, participantSnapshot);
-                        var sentId = await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
+                        var preSegments = preTask
+                            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                            .Select(s => s.Trim())
+                            .Where(s => s.Length > 0)
+                            .ToList();
+
+                        var rng2 = new Random();
+                        for (int i = 0; i < preSegments.Count; i++)
                         {
-                            ChannelId = lastMsg.ChannelId,
-                            Content = content,
-                            ReplyTo = replyTo,
-                            Mentions = mentions
-                        });
-                        await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, content, sentId);
+                            if (i > 0)
+                                await Task.Delay(rng2.Next(600, 2000));
+                            var (content, replyTo, mentions) = ParseBotOutput(preSegments[i], participantSnapshot);
+                            var sentId = await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
+                            {
+                                ChannelId = lastMsg.ChannelId,
+                                Content = content,
+                                ReplyTo = i == 0 ? replyTo : null,
+                                Mentions = mentions
+                            });
+                            await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, content, sentId);
+                        }
                     }
                     isTask = true;
                 }
@@ -467,6 +479,11 @@ namespace AgentCoreProcessor.Engine
             {
                 var taskMemory = memoryResults?.Where(m => !m.IsPersona).ToList();
                 string? memoryContext = FormatMemory(taskMemory, topK: 10);
+
+                // 注入当前用户权限信息，供模型判断是否需要申请授权
+                var permInfo = $"\n[当前对话者] {lastSc.User.DisplayName ?? lastSc.User.PlatformId}, " +
+                               $"权限等级={lastSc.User.PermissionLevel}";
+                memoryContext = (memoryContext ?? "") + permInfo;
 
                 var msgQueue = new ConcurrentQueue<IncomingMessage>();
                 var msgSignal = new SemaphoreSlim(0);
