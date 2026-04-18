@@ -138,6 +138,7 @@ namespace AgentCoreProcessor.Core
                 // 6. 处理副作用
                 bool shouldExit = false;
                 string? completionSummary = null;
+                bool authRequested = false;
 
                 for (int i = 0; i < toolCalls.Count; i++)
                 {
@@ -193,6 +194,7 @@ namespace AgentCoreProcessor.Core
                                 register[call.ToolId] = approved
                                     ? $"授权通过，已解锁工具：{string.Join("、", authNames)}"
                                     : "授权被拒绝";
+                                authRequested = true;
                             }
                             break;
 
@@ -209,7 +211,7 @@ namespace AgentCoreProcessor.Core
                     }
                 }
 
-                if (shouldExit)
+                if (shouldExit && !authRequested)
                     return completionSummary ?? "任务完成";
 
                 // 7. 收集 retain 结果
