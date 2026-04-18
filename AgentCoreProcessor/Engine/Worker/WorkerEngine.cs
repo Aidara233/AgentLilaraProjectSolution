@@ -3,7 +3,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
@@ -596,7 +595,8 @@ namespace AgentCoreProcessor.Engine
                 var lines = recent.Select(m =>
                 {
                     var name = m.IsFromBot ? "Lilara"
-                             : CleanDisplayName(m.SenderName) ?? "用户";
+                             : !string.IsNullOrEmpty(m.SenderName) ? m.SenderName
+                             : "用户";
                     return $"{name}: {m.Content}";
                 }).ToList();
 
@@ -643,27 +643,17 @@ namespace AgentCoreProcessor.Engine
         private int? ResolveAboutToPersonId(string? aboutName)
         {
             if (string.IsNullOrEmpty(aboutName)) return null;
-            var cleaned = CleanDisplayName(aboutName) ?? aboutName;
 
             foreach (var (_, info) in recentParticipants)
-                if (info.DisplayName.Equals(cleaned, StringComparison.OrdinalIgnoreCase))
+                if (info.DisplayName.Equals(aboutName, StringComparison.OrdinalIgnoreCase))
                     return info.PersonId;
 
             foreach (var (_, info) in recentParticipants)
-                if (info.DisplayName.Contains(cleaned, StringComparison.OrdinalIgnoreCase)
-                    || cleaned.Contains(info.DisplayName, StringComparison.OrdinalIgnoreCase))
+                if (info.DisplayName.Contains(aboutName, StringComparison.OrdinalIgnoreCase)
+                    || aboutName.Contains(info.DisplayName, StringComparison.OrdinalIgnoreCase))
                     return info.PersonId;
 
             return null;
-        }
-
-        private static readonly Regex PlatformTagRegex = new(@"^\[(human|bot|记忆体)\]\s*", RegexOptions.Compiled);
-
-        private static string? CleanDisplayName(string? name)
-        {
-            if (string.IsNullOrEmpty(name)) return null;
-            var cleaned = PlatformTagRegex.Replace(name, "").Trim();
-            return string.IsNullOrEmpty(cleaned) ? null : cleaned;
         }
 
         private static string? FormatMemory(List<ScoredMemory>? results, int topK)
