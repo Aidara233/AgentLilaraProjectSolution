@@ -24,6 +24,9 @@ namespace AgentCoreProcessor.Core
         [JsonProperty("sentiment")]
         public string? Sentiment { get; set; } // positive | negative (feedback only)
 
+        [JsonProperty("about")]
+        public string? About { get; set; } // 关于谁（对话中出现的名字）
+
         [JsonProperty("correction")]
         public string? Correction { get; set; } // negative feedback only
     }

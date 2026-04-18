@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
@@ -595,10 +596,16 @@ namespace AgentCoreProcessor.Engine
                 var lines = recent.Select(m =>
                 {
                     var name = m.IsFromBot ? "Lilara"
-                             : !string.IsNullOrEmpty(m.SenderName) ? m.SenderName
-                             : "用户";
+                             : CleanDisplayName(m.SenderName) ?? "用户";
                     return $"{name}: {m.Content}";
                 }).ToList();
+
+                var participantNames = recentParticipants.Values
+                    .Select(p => p.DisplayName)
+                    .Where(n => !string.IsNullOrEmpty(n))
+                    .Distinct().ToList();
+                if (participantNames.Count > 0)
+                    lines.Insert(0, $"[群聊参与者: {string.Join("、", participantNames)}]");
 
                 var core = new MemoryExtractionCore();
                 var results = await core.ExtractAsync(lines);
@@ -606,16 +613,18 @@ namespace AgentCoreProcessor.Engine
                 int factCount = 0, feedbackCount = 0;
                 foreach (var item in results)
                 {
+                    int personId = ResolveAboutToPersonId(item.About) ?? context.Person.Id;
+
                     if (item.Type == "feedback" && item.Sentiment != null)
                     {
                         await ctx.MemorySvc.ApplyFeedbackAsync(
-                            context.Person.Id, item.Content, item.Sentiment, item.Correction);
+                            personId, item.Content, item.Sentiment, item.Correction);
                         feedbackCount++;
                     }
                     else
                     {
                         await ctx.MemorySvc.StoreAsync(item.Content,
-                            context.Person.Id, context.Channel.Id,
+                            personId, context.Channel.Id,
                             confidence: item.Confidence);
                         factCount++;
                     }
@@ -629,6 +638,32 @@ namespace AgentCoreProcessor.Engine
             {
                 FrameworkLogger.Log("WorkerEngine", $"记忆提取失败: {ex.Message}");
             }
+        }
+
+        private int? ResolveAboutToPersonId(string? aboutName)
+        {
+            if (string.IsNullOrEmpty(aboutName)) return null;
+            var cleaned = CleanDisplayName(aboutName) ?? aboutName;
+
+            foreach (var (_, info) in recentParticipants)
+                if (info.DisplayName.Equals(cleaned, StringComparison.OrdinalIgnoreCase))
+                    return info.PersonId;
+
+            foreach (var (_, info) in recentParticipants)
+                if (info.DisplayName.Contains(cleaned, StringComparison.OrdinalIgnoreCase)
+                    || cleaned.Contains(info.DisplayName, StringComparison.OrdinalIgnoreCase))
+                    return info.PersonId;
+
+            return null;
+        }
+
+        private static readonly Regex PlatformTagRegex = new(@"^\[(human|bot|记忆体)\]\s*", RegexOptions.Compiled);
+
+        private static string? CleanDisplayName(string? name)
+        {
+            if (string.IsNullOrEmpty(name)) return null;
+            var cleaned = PlatformTagRegex.Replace(name, "").Trim();
+            return string.IsNullOrEmpty(cleaned) ? null : cleaned;
         }
 
         private static string? FormatMemory(List<ScoredMemory>? results, int topK)

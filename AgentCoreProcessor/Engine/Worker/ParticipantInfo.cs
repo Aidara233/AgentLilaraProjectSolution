@@ -8,6 +8,7 @@ namespace AgentCoreProcessor.Engine
     /// </summary>
     internal sealed class ParticipantInfo
     {
+        public required int PersonId { get; init; }
         public required string DisplayName { get; init; }
         public required string Nickname { get; init; }
         public required string PlatformId { get; init; }
@@ -21,6 +22,7 @@ namespace AgentCoreProcessor.Engine
                         : msg.PlatformUserId;
             return new ParticipantInfo
             {
+                PersonId = person.Id,
                 DisplayName = display,
                 Nickname = msg.Nickname ?? "",
                 PlatformId = msg.PlatformUserId,
