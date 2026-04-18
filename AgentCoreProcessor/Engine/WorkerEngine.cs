@@ -96,6 +96,11 @@ namespace AgentCoreProcessor.Engine
 
         // 便签板（Express/Working 共享，会话级生命周期）
         private readonly Dictionary<string, string> pinboard = new();
+
+        // Express/Working 自适应切换
+        private bool isWorkingMode = false;
+        private int consecutiveExternalTriggers = 0;
+        private const int WorkingToExpressThreshold = 3;
 // PLACEHOLDER_CTOR
 
         /// <summary>由 SpawnCheck 创建，传入初始消息。</summary>
@@ -380,17 +385,28 @@ namespace AgentCoreProcessor.Engine
                     processedTicks.RemoveFirst();
             }
 
-            // 4. 分类
-            var isTask = await preprocessingCore.IsTaskAsync(formattedContext);
-            FrameworkLogger.Log("WorkerEngine", $"分类结果: {(isTask ? "任务" : "聊天")}");
+            // 4. 分类（Working 模式下跳过，直接走 Working）
+            if (!isWorkingMode)
+            {
+                var isTask = await preprocessingCore.IsTaskAsync(formattedContext);
+                FrameworkLogger.Log("WorkerEngine", $"分类结果: {(isTask ? "任务" : "聊天")}");
+                if (isTask)
+                {
+                    isWorkingMode = true;
+                    consecutiveExternalTriggers = 0;
+                }
+            };
 
             // 5. 查记忆
             var memoryResults = await GetCachedMemoryAsync(lastSc, lastMsg.Content);
 // PLACEHOLDER_ROUTE
 
-            // 6. 路由处理：先尝试聊天，ExpressCore 可转交任务
-            if (!isTask)
+            // 6. 路由处理：模式状态机
+            bool useWorking = isWorkingMode;
+
+            if (!useWorking)
             {
+                // Express 模式：聊天，检测 [ESCALATE] 升级
                 string? chatMemory = FormatMemory(memoryResults, topK: 5);
 
                 var inputBuilder = new StringBuilder();
@@ -402,6 +418,14 @@ namespace AgentCoreProcessor.Engine
                     inputBuilder.AppendLine("[记忆参考]");
                     inputBuilder.Append(chatMemory);
                 }
+                if (pinboard.Count > 0)
+                {
+                    inputBuilder.AppendLine();
+                    inputBuilder.AppendLine();
+                    inputBuilder.AppendLine("[便签板]");
+                    foreach (var (label, content) in pinboard)
+                        inputBuilder.AppendLine($"- {label}: {content}");
+                }
 
                 expressCore.ResetProcessor();
                 var expressInput = inputBuilder.ToString();
@@ -409,7 +433,7 @@ namespace AgentCoreProcessor.Engine
                     ? await expressCore.GenerateOnceAsync(expressInput, imagePaths)
                     : await expressCore.GenerateOnceAsync(expressInput);
 
-                // [ALERT] 检测：ExpressCore 输出包含 [ALERT] 时触发报警
+                // [ALERT] 检测
                 if (expressed.Contains("[ALERT]"))
                 {
                     FrameworkLogger.Log("WorkerEngine", $"ExpressCore 触发报警: channelId={channelId}");
@@ -418,68 +442,28 @@ namespace AgentCoreProcessor.Engine
                     expressed = expressed.Replace("[ALERT]", "").Trim();
                 }
 
-                if (expressed.Contains("[TASK]"))
+                if (expressed.Contains("[ESCALATE]"))
                 {
-                    FrameworkLogger.Log("WorkerEngine", $"ExpressCore 转交任务: channelId={channelId}");
-                    var preTask = expressed.Split("[TASK]")[0].Trim();
-                    if (!string.IsNullOrEmpty(preTask))
-                    {
-                        var preSegments = preTask
-                            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                            .Select(s => s.Trim())
-                            .Where(s => s.Length > 0)
-                            .ToList();
+                    FrameworkLogger.Log("WorkerEngine", $"ExpressCore 升级到 Working 模式: channelId={channelId}");
+                    var preEscalate = expressed.Split("[ESCALATE]")[0].Trim();
+                    if (!string.IsNullOrEmpty(preEscalate))
+                        await SendSegmentsAsync(preEscalate, lastMsg, lastSc, participantSnapshot);
 
-                        var rng2 = new Random();
-                        for (int i = 0; i < preSegments.Count; i++)
-                        {
-                            if (i > 0)
-                                await Task.Delay(rng2.Next(600, 2000));
-                            var (content, replyTo, mentions) = ParseBotOutput(preSegments[i], participantSnapshot);
-                            var sentId = await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
-                            {
-                                ChannelId = lastMsg.ChannelId,
-                                Content = content,
-                                ReplyTo = i == 0 ? replyTo : null,
-                                Mentions = mentions
-                            });
-                            await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, content, sentId);
-                        }
-                    }
-                    isTask = true;
+                    isWorkingMode = true;
+                    consecutiveExternalTriggers = 0;
+                    useWorking = true;
                 }
                 else
                 {
-                    var segments = expressed
-                        .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                        .Select(s => s.Trim())
-                        .Where(s => s.Length > 0)
-                        .ToList();
-
-                    // reply 只对第一条消息生效
-                    string? firstReplyTo = null;
-                    var rng = new Random();
-                    for (int i = 0; i < segments.Count; i++)
-                    {
-                        if (i > 0)
-                            await Task.Delay(rng.Next(600, 2000));
-                        var (content, replyTo, mentions) = ParseBotOutput(segments[i], participantSnapshot);
-                        if (i == 0) firstReplyTo = replyTo;
-                        var sentId = await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
-                        {
-                            ChannelId = lastMsg.ChannelId,
-                            Content = content,
-                            ReplyTo = i == 0 ? firstReplyTo : null,
-                            Mentions = mentions
-                        });
-                        await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, content, sentId);
-                    }
+                    await SendSegmentsAsync(expressed, lastMsg, lastSc, participantSnapshot);
                 }
             }
 
-            // 任务路径（直接分类为任务，或 ExpressCore 转交）
-            if (isTask)
+            // Working 模式
+            if (useWorking)
             {
+                consecutiveExternalTriggers++;
+
                 var taskMemory = memoryResults?.Where(m => !m.IsPersona).ToList();
                 string? memoryContext = FormatMemory(taskMemory, topK: 10);
 
@@ -529,13 +513,25 @@ namespace AgentCoreProcessor.Engine
 
                 try
                 {
-                    await workingCore.ProcessAsync(formattedContext, memoryContext,
+                    var exitReason = await workingCore.ProcessAsync(formattedContext, memoryContext,
                         imagePaths: imagePaths.Count > 0 ? imagePaths : null);
+
+                    FrameworkLogger.Log("WorkerEngine",
+                        $"WorkingCore 退出: reason={exitReason}, channelId={channelId}");
                 }
                 finally
                 {
                     this.activeMessageQueue = null;
                     this.activeMessageSignal = null;
+                }
+
+                // 回退检查：连续 N 次外部消息触发都没用工具 → 回退到 Express
+                if (consecutiveExternalTriggers >= WorkingToExpressThreshold)
+                {
+                    FrameworkLogger.Log("WorkerEngine",
+                        $"Working→Express 回退: 连续{consecutiveExternalTriggers}次外部触发, channelId={channelId}");
+                    isWorkingMode = false;
+                    consecutiveExternalTriggers = 0;
                 }
             }
 
@@ -646,6 +642,36 @@ namespace AgentCoreProcessor.Engine
             return sb.ToString().TrimEnd();
         }
 // PLACEHOLDER_XML
+
+        // ---- 消息分条发送 ----
+
+        private async Task SendSegmentsAsync(string text, IncomingMessage lastMsg,
+            SessionContext lastSc, Dictionary<int, ParticipantInfo> participantSnapshot)
+        {
+            var segments = text
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => s.Trim())
+                .Where(s => s.Length > 0)
+                .ToList();
+
+            string? firstReplyTo = null;
+            var rng = new Random();
+            for (int i = 0; i < segments.Count; i++)
+            {
+                if (i > 0)
+                    await Task.Delay(rng.Next(600, 2000));
+                var (content, replyTo, mentions) = ParseBotOutput(segments[i], participantSnapshot);
+                if (i == 0) firstReplyTo = replyTo;
+                var sentId = await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
+                {
+                    ChannelId = lastMsg.ChannelId,
+                    Content = content,
+                    ReplyTo = i == 0 ? firstReplyTo : null,
+                    Mentions = mentions
+                });
+                await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, content, sentId);
+            }
+        }
 
         // ---- XML 格式构建 ----
 
