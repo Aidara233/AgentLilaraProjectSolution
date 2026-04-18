@@ -20,6 +20,7 @@ namespace AgentCoreProcessor.Core
         Idle,
         NoToolCalls,
         MaxRounds,
+        MaxSilentRounds,
     }
 
     /// <summary>
@@ -27,7 +28,9 @@ namespace AgentCoreProcessor.Core
     /// </summary>
     internal class WorkingCore : CoreBase
     {
-        private const int MaxRounds = 15;
+        private const int MaxRounds = 30;
+        private const int MaxSilentRounds = 5;
+        private const int UserMessageRoundRecovery = 5;
 
         private const string ThinkingNotesToolName = "思考笔记";
         private const string SpeakToolName = "说话";
@@ -86,11 +89,20 @@ namespace AgentCoreProcessor.Core
             List<ToolCall>? lastRoundCalls = null;
             List<ToolResult>? lastRoundResults = null;
             var pendingNewMessages = new List<string>();
+            int silentRounds = 0;
 
             for (int round = 0; round < MaxRounds; round++)
             {
                 var toolDescriptions = ToolRegistry.GenerateDescriptions(authorizedTools: authorizedTools);
-                DrainNewMessages(pendingNewMessages);
+                var drained = DrainNewMessages(pendingNewMessages);
+
+                if (drained > 0)
+                {
+                    silentRounds = 0;
+                    round = Math.Max(0, round - UserMessageRoundRecovery);
+                }
+
+                var loopStatus = $"[循环状态] 第{round + 1}轮/共{MaxRounds}轮，距上次交互{silentRounds}轮/上限{MaxSilentRounds}轮";
 
                 var messages = promptBuilder.BuildRoundMessages(
                     toolDescriptions, userRequest, thinkingNotes,
@@ -100,7 +112,8 @@ namespace AgentCoreProcessor.Core
                     newMessages: pendingNewMessages.Count > 0 ? pendingNewMessages : null,
                     taskList: taskList.Count > 0 ? taskList : null,
                     pinboard: pinboard?.Count > 0 ? pinboard : null,
-                    retainList: retainList.Count > 0 ? retainList : null);
+                    retainList: retainList.Count > 0 ? retainList : null,
+                    loopStatus: loopStatus);
 
                 processor.Client.ClearConversationHistory();
                 processor.Client.SetConversationHistory(messages);
@@ -112,12 +125,16 @@ namespace AgentCoreProcessor.Core
                     return round == 0 ? LoopExitReason.NoToolCalls : LoopExitReason.Idle;
 
                 // 顺序执行（说话副作用在每个工具执行后立即处理，不被后续授权阻塞）
+                bool hadSpeak = false;
                 var executor = new ToolExecutor(authorizedTools: authorizedTools);
                 executor.OnAuthRequired = OnAuthRequired;
                 executor.OnToolExecuted = async (call, result) =>
                 {
                     if (call.Tool == SpeakToolName && result.IsSuccess && OnSpeak != null)
+                    {
                         await OnSpeak(result.Data ?? "");
+                        hadSpeak = true;
+                    }
                 };
                 var allResults = await executor.ExecuteAsync(toolCalls);
 
@@ -179,8 +196,21 @@ namespace AgentCoreProcessor.Core
                 lastRoundCalls = toolCalls;
                 lastRoundResults = allResults;
 
+                if (hadSpeak)
+                    silentRounds = 0;
+                else
+                    silentRounds++;
+
                 if (!hasContinue)
                     return LoopExitReason.Idle;
+
+                // 静默轮次超限：自动汇报后挂起，等待用户交互
+                if (silentRounds >= MaxSilentRounds)
+                {
+                    if (OnSpeak != null)
+                        await OnSpeak("（工作暂停，等待回应后继续）");
+                    return LoopExitReason.MaxSilentRounds;
+                }
 
                 await WaitForEventsAsync();
             }
@@ -266,14 +296,17 @@ namespace AgentCoreProcessor.Core
 
         // ---- 消息感知 ----
 
-        private void DrainNewMessages(List<string> buffer)
+        private int DrainNewMessages(List<string> buffer)
         {
-            if (messageQueue == null) return;
+            if (messageQueue == null) return 0;
+            int count = 0;
             while (messageQueue.TryDequeue(out var msg))
             {
                 var sender = msg.DisplayName ?? msg.PlatformUserId;
                 buffer.Add($"{sender}: {msg.Content}");
+                count++;
             }
+            return count;
         }
 
         private async Task WaitForEventsAsync()

@@ -21,7 +21,8 @@ namespace AgentCoreProcessor.Core
             List<string>? newMessages = null,
             List<(string Description, bool Done)>? taskList = null,
             Dictionary<string, string>? pinboard = null,
-            List<(string Summary, string FullContent)>? retainList = null)
+            List<(string Summary, string FullContent)>? retainList = null,
+            string? loopStatus = null)
         {
             var messages = new List<Message>();
 
@@ -85,6 +86,10 @@ namespace AgentCoreProcessor.Core
                     sb.AppendLine($"{i + 1}. {retainList[i].Summary}");
                 messages.Add(new Message { Role = "user", Content = sb.ToString() });
             }
+
+            // 5.7 循环状态
+            if (!string.IsNullOrEmpty(loopStatus))
+                messages.Add(new Message { Role = "user", Content = loopStatus });
 
             // 6. 上一轮工具执行结果
             if (lastRoundResults != null && lastRoundCalls != null && lastRoundResults.Count > 0)
