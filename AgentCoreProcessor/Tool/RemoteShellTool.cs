@@ -30,6 +30,39 @@ namespace AgentCoreProcessor.Tool
         private static readonly string ConfigPath =
             Path.Combine(PathConfig.StoragePath, "SSH", "RemoteShellConfig.json");
 
+        private static string? _resolvedSshPath;
+
+        private static string ResolveSshPath(JObject config)
+        {
+            if (_resolvedSshPath != null) return _resolvedSshPath;
+
+            var configured = config["sshPath"]?.ToString();
+            if (!string.IsNullOrWhiteSpace(configured) && File.Exists(configured))
+            {
+                _resolvedSshPath = configured;
+                return configured;
+            }
+
+            // 未配置或路径无效时自动查找：优先 Git SSH（Windows 内置 SSH 对密钥权限要求严格）
+            var candidates = new[]
+            {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Git", "usr", "bin", "ssh.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Git", "usr", "bin", "ssh.exe"),
+                @"D:\Program Files\Git\usr\bin\ssh.exe",
+            };
+            foreach (var candidate in candidates)
+            {
+                if (File.Exists(candidate))
+                {
+                    _resolvedSshPath = candidate;
+                    return candidate;
+                }
+            }
+
+            _resolvedSshPath = "ssh";
+            return "ssh";
+        }
+
         public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
             var command = resolvedInputs.ElementAtOrDefault(0) ?? "";
@@ -69,7 +102,7 @@ namespace AgentCoreProcessor.Tool
                 using var process = new Process();
                 process.StartInfo = new ProcessStartInfo
                 {
-                    FileName = "ssh",
+                    FileName = ResolveSshPath(config),
                     Arguments = sshArgs,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
