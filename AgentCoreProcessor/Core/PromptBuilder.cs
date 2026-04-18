@@ -118,8 +118,13 @@ namespace AgentCoreProcessor.Core
             else if (result.IsSuccess)
                 sb.AppendLine($"[{call.Tool}]: 成功");
             else
-                sb.AppendLine($"[{call.Tool}]: {result.Status}" +
-                    (result.Error != null ? $" - {result.Error}" : ""));
+            {
+                sb.Append($"[{call.Tool}]: {result.Status}");
+                if (result.Error != null) sb.Append($" - {result.Error}");
+                if (!string.IsNullOrWhiteSpace(result.Data))
+                    sb.Append($"\n{result.Data}");
+                sb.AppendLine();
+            }
         }
     }
 }
