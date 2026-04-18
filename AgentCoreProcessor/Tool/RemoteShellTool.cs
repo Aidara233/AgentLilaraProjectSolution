@@ -61,7 +61,7 @@ namespace AgentCoreProcessor.Tool
             if (!File.Exists(keyPath))
                 return new ToolResult { Status = "failed", Error = "SSH 私钥文件不存在" };
 
-            var sshArgs = $"-i \"{keyPath}\" -o StrictHostKeyChecking=no -o ConnectTimeout=10 " +
+            var sshArgs = $"-i \"{keyPath}\" -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=10 " +
                           $"-p {port} {username}@{host} {EscapeCommand(command)}";
 
             try
@@ -73,6 +73,7 @@ namespace AgentCoreProcessor.Tool
                     Arguments = sshArgs,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
+                    RedirectStandardInput = true,
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     StandardOutputEncoding = Encoding.UTF8,
@@ -80,8 +81,7 @@ namespace AgentCoreProcessor.Tool
                 };
                 process.EnableRaisingEvents = true;
                 process.Start();
-
-                // 并行读取 stdout/stderr + 等待退出，避免 BeginOutputReadLine 死锁
+                process.StandardInput.Close();
                 var stdoutTask = process.StandardOutput.ReadToEndAsync();
                 var stderrTask = process.StandardError.ReadToEndAsync();
 
