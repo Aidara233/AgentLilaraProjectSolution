@@ -32,7 +32,9 @@ namespace AgentCoreProcessor.Tool
                 new AlertButtonTool(),
                 new RemoteShellTool(),
                 new FileTransferTool(),
-                new ContinueTool()
+                new ContinueTool(),
+                new PinboardTool(),
+                new RetainListTool()
             };
             _tools = toolList.ToDictionary(t => t.Name);
         }

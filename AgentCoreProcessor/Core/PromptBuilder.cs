@@ -19,7 +19,9 @@ namespace AgentCoreProcessor.Core
             string? additionalContext = null,
             List<string>? imagePaths = null,
             List<string>? newMessages = null,
-            List<(string Description, bool Done)>? taskList = null)
+            List<(string Description, bool Done)>? taskList = null,
+            Dictionary<string, string>? pinboard = null,
+            List<(string Summary, string FullContent)>? retainList = null)
         {
             var messages = new List<Message>();
 
@@ -63,6 +65,24 @@ namespace AgentCoreProcessor.Core
                     var mark = done ? "\u2713" : " ";
                     sb.AppendLine($"{i + 1}. [{mark}] {desc}");
                 }
+                messages.Add(new Message { Role = "user", Content = sb.ToString() });
+            }
+
+            // 5.5 便签板（全量内容，Express/Working 共享）
+            if (pinboard != null && pinboard.Count > 0)
+            {
+                var sb = new StringBuilder("[便签板]\n");
+                foreach (var (label, content) in pinboard)
+                    sb.AppendLine($"- {label}: {content}");
+                messages.Add(new Message { Role = "user", Content = sb.ToString() });
+            }
+
+            // 5.6 缓存列表（只显示序号+摘要，Working 专属）
+            if (retainList != null && retainList.Count > 0)
+            {
+                var sb = new StringBuilder("[缓存列表]（使用「缓存管理」工具的 view 操作查看完整内容）\n");
+                for (int i = 0; i < retainList.Count; i++)
+                    sb.AppendLine($"{i + 1}. {retainList[i].Summary}");
                 messages.Add(new Message { Role = "user", Content = sb.ToString() });
             }
 
