@@ -42,6 +42,9 @@ namespace AgentCoreProcessor.Core
         public Func<string, Task>? OnReviewHint { get; set; }
         public Func<string, Task>? OnAlert { get; set; }
 
+        /// <summary>授权回调：工具名 + 所需权限 → 是否通过。由 WorkerEngine 注入。</summary>
+        public Func<string, Database.PermissionLevel, Task<bool>>? OnAuthRequired { get; set; }
+
         // 任务列表（跨轮保持）
         private readonly List<(string Description, bool Done)> taskList = new();
 
@@ -99,6 +102,7 @@ namespace AgentCoreProcessor.Core
 
                 // 顺序执行
                 var executor = new ToolExecutor(authorizedTools: authorizedTools);
+                executor.OnAuthRequired = OnAuthRequired;
                 var allResults = await executor.ExecuteAsync(toolCalls);
 
                 // 处理副作用：先 Speak

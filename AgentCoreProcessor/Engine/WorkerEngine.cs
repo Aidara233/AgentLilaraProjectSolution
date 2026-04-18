@@ -480,11 +480,6 @@ namespace AgentCoreProcessor.Engine
                 var taskMemory = memoryResults?.Where(m => !m.IsPersona).ToList();
                 string? memoryContext = FormatMemory(taskMemory, topK: 10);
 
-                // 注入当前用户权限信息，供模型判断是否需要申请授权
-                var permInfo = $"\n[当前对话者] {lastSc.User.DisplayName ?? lastSc.User.PlatformId}, " +
-                               $"权限等级={lastSc.User.PermissionLevel}";
-                memoryContext = (memoryContext ?? "") + permInfo;
-
                 var msgQueue = new ConcurrentQueue<IncomingMessage>();
                 var msgSignal = new SemaphoreSlim(0);
 
@@ -516,6 +511,12 @@ namespace AgentCoreProcessor.Engine
                 workingCore.OnAlert = async (reason) =>
                 {
                     await HandleAlertAsync(lastSc.Person, lastSc, reason);
+                };
+                workingCore.OnAuthRequired = async (toolName, requiredLevel) =>
+                {
+                    return await HandleAuthorizationRequestAsync(
+                        new List<string> { toolName }, $"使用工具「{toolName}」",
+                        lastMsg, msgQueue, msgSignal);
                 };
 
                 workingCore.SetMessageChannel(msgQueue, msgSignal);
