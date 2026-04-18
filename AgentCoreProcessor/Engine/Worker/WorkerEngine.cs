@@ -874,99 +874,11 @@ namespace AgentCoreProcessor.Engine
 
         private (string Content, string? ReplyTo, List<string>? Mentions) ParseBotOutput(
             string raw, Dictionary<int, ParticipantInfo> participants)
-        {
-            string? replyTo = null;
-            List<string>? mentions = null;
-
-            // 提取 <reply id="xxx"/>
-            var replyMatch = ReplyTagRegex.Match(raw);
-            if (replyMatch.Success)
-            {
-                replyTo = replyMatch.Groups[1].Value;
-                raw = raw.Remove(replyMatch.Index, replyMatch.Length).TrimStart();
-            }
-
-            // 提取 <at user="名字"/> → 反查 QQ 号
-            var nameToQq = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (_, info) in participants)
-            {
-                nameToQq.TryAdd(info.DisplayName, info.PlatformId);
-                if (!string.IsNullOrEmpty(info.Nickname))
-                    nameToQq.TryAdd(info.Nickname, info.PlatformId);
-            }
-
-            raw = AtTagRegex.Replace(raw, match =>
-            {
-                var userName = match.Groups[1].Value;
-                if (nameToQq.TryGetValue(userName, out var qq))
-                {
-                    mentions ??= new List<string>();
-                    if (!mentions.Contains(qq)) mentions.Add(qq);
-                    return "";
-                }
-                return $"@{userName} ";
-            });
-
-            return (raw.Trim(), replyTo, mentions);
-        }
+            => BotOutputParser.Parse(raw, participants);
 // PLACEHOLDER_HELPERS
 
         private async Task HandleAlertAsync(Person person, SessionContext sc, string reason)
-        {
-            person.AlertLevel = Math.Min(person.AlertLevel + 1, 4);
-            person.LastAlertTime = DateTime.Now;
-
-            FrameworkLogger.Log("WorkerEngine",
-                $"报警触发: personId={person.Id}, alertLevel={person.AlertLevel}, reason={reason}");
-
-            switch (person.AlertLevel)
-            {
-                case 1:
-                    await ctx.ReviewHints.CreateAsync($"[警报] {reason}", person.Id, sc.Channel.Id);
-                    break;
-                case 2:
-                    person.TrustProgress -= 1.0f;
-                    await ctx.ReviewHints.CreateAsync($"[警报升级] {reason}", person.Id, sc.Channel.Id);
-                    break;
-                case 3:
-                    person.TrustProgress -= 3.0f;
-                    await ctx.ReviewHints.CreateAsync($"[警报严重] {reason}", person.Id, sc.Channel.Id);
-                    break;
-                default: // 4+
-                    person.TrustProgress -= 10.0f;
-                    // 临时限制该 Person 的所有账号
-                    var users = await ctx.Session.GetAllUsersAsync();
-                    foreach (var u in users.Where(u => u.PersonId == person.Id))
-                    {
-                        u.PermissionLevel = PermissionLevel.Restricted;
-                        await ctx.Session.UpdateUserAsync(u);
-                    }
-                    await ctx.ReviewHints.CreateAsync(
-                        $"[警报-已限制] {reason}", person.Id, sc.Channel.Id);
-                    // 通知管理员
-                    try
-                    {
-                        var admins = users.Where(u => u.PermissionLevel == PermissionLevel.Admin).ToList();
-                        if (admins.Count > 0)
-                        {
-                            var admin = admins[0];
-                            var channelId = $"private_{admin.PlatformId}";
-                            await ctx.Adapters.SendMessageAsync(admin.Platform, new Adapter.OutgoingMessage
-                            {
-                                ChannelId = channelId,
-                                Content = $"[框架警报] Person [{person.Id}] 已被临时限制（AlertLevel={person.AlertLevel}）\n原因: {reason}"
-                            });
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        FrameworkLogger.Log("WorkerEngine", $"管理员通知失败: {ex.Message}");
-                    }
-                    break;
-            }
-
-            await ctx.Session.UpdatePersonAsync(person);
-        }
+            => await AlertHandler.HandleAsync(person, sc, reason, ctx);
 
         private async Task<bool> HandleAuthorizationRequestAsync(
             List<string> toolNames, string reason,
