@@ -127,7 +127,6 @@ namespace AgentCoreProcessor.Core
                 // 顺序执行（说话副作用在每个工具执行后立即处理，不被后续授权阻塞）
                 bool hadSpeak = false;
                 var executor = new ToolExecutor(authorizedTools: authorizedTools);
-                executor.OnAuthRequired = OnAuthRequired;
                 executor.OnToolExecuted = async (call, result) =>
                 {
                     if (call.Tool == SpeakToolName && result.IsSuccess && OnSpeak != null)

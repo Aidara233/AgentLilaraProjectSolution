@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
+using AgentCoreProcessor.Command;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Memory;
@@ -480,6 +481,11 @@ namespace AgentCoreProcessor.Engine
             lastRoundResults = null;
             loopControlModule.OnNewMessage();
             isInWorkingSession = false;
+
+            // 同步频道授权
+            var granted = AuthStore.GetGranted(currentLastMsg.ChannelId);
+            authorizedTools.Clear();
+            foreach (var t in granted) authorizedTools.Add(t);
 
             // 冲动值扣减 + expectation 更新
             bool triggeredByMention = batch.Any(b => b.Message.IsMentioned || b.Message.IsPrivate);
@@ -978,75 +984,6 @@ namespace AgentCoreProcessor.Engine
 
         private async Task HandleAlertAsync(Person person, SessionContext sc, string reason)
             => await AlertHandler.HandleAsync(person, sc, reason, ctx);
-
-        private async Task<bool> HandleAuthorizationRequestAsync(
-            List<string> toolNames, string reason,
-            IncomingMessage triggerMsg,
-            ConcurrentQueue<IncomingMessage> msgQueue,
-            SemaphoreSlim msgSignal)
-        {
-            var maxRequired = toolNames
-                .Select(n => ToolRegistry.Get(n)?.RequiredPermission ?? PermissionLevel.Admin)
-                .Max();
-
-            var code = Random.Shared.Next(1000, 9999).ToString();
-            var timeoutSeconds = Math.Clamp(30 + toolNames.Count * 5, 30, 120);
-
-            FrameworkLogger.Log("WorkerEngine",
-                $"授权请求: tools=[{string.Join(",", toolNames)}], code={code}, " +
-                $"requiredLevel={maxRequired}, timeout={timeoutSeconds}s");
-
-            await ctx.Adapters.SendMessageAsync(triggerMsg.Platform, new Adapter.OutgoingMessage
-            {
-                ChannelId = triggerMsg.ChannelId,
-                Content = $"[授权请求] Lilara 申请使用工具：{string.Join("、", toolNames)}\n" +
-                          $"理由：{reason}\n" +
-                          $"如果同意，请回复验证码：{code}（{timeoutSeconds}秒内有效）"
-            });
-
-            var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
-            var pendingMessages = new List<IncomingMessage>();
-
-            try
-            {
-                while (DateTime.UtcNow < deadline)
-                {
-                    var remaining = deadline - DateTime.UtcNow;
-                    if (remaining <= TimeSpan.Zero) break;
-                    var waitTime = TimeSpan.FromSeconds(Math.Min(5, remaining.TotalSeconds));
-                    await msgSignal.WaitAsync(waitTime);
-
-                    while (msgQueue.TryDequeue(out var msg))
-                    {
-                        if (msg.Content.Trim().Contains(code))
-                        {
-                            var (sender, _) = await ctx.Session.ResolveUserAsync(msg);
-                            if (sender.PermissionLevel >= maxRequired)
-                            {
-                                FrameworkLogger.Log("WorkerEngine",
-                                    $"授权通过: userId={sender.Id}, level={sender.PermissionLevel}");
-                                return true;
-                            }
-                            FrameworkLogger.Log("WorkerEngine",
-                                $"授权验证码匹配但权限不足: userId={sender.Id}, " +
-                                $"level={sender.PermissionLevel}, required={maxRequired}");
-                        }
-                        pendingMessages.Add(msg);
-                    }
-                }
-
-                FrameworkLogger.Log("WorkerEngine", "授权请求超时");
-                return false;
-            }
-            finally
-            {
-                foreach (var msg in pendingMessages)
-                {
-                    msgQueue.Enqueue(msg);
-                    msgSignal.Release();
-                }
-            }
-        }
 
         private async Task IncrementDailyProgressAsync(Person person)
         {
