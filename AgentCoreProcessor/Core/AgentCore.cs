@@ -12,10 +12,20 @@ namespace AgentCoreProcessor.Core
     /// </summary>
     internal class AgentCore : CoreBase
     {
+        private string currentMode = "WorkingCore";
+
         public AgentCore()
         {
-            // Phase 7 创建 AgentCore.json 后删除此行
             processor.CfgName = "WorkingCore";
+        }
+
+        /// <summary>切换模式配置（Express/Working 用不同 LLM 配置）。</summary>
+        public void SwitchMode(Engine.EngineMode mode)
+        {
+            var target = mode == Engine.EngineMode.Express ? "ExpressCore" : "WorkingCore";
+            if (target == currentMode) return;
+            currentMode = target;
+            processor.CfgName = target;
         }
 
         /// <summary>

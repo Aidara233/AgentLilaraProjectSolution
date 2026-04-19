@@ -69,7 +69,6 @@ namespace AgentCoreProcessor.Engine
         private readonly ConcurrentDictionary<int, ParticipantInfo> recentParticipants = new();
 
         // Core 实例
-        private readonly ExpressCore expressCore = new();
         private readonly AgentCore agentCore = new();
         private readonly PreprocessingCore preprocessingCore;
         private readonly PromptBuilder promptBuilder = new();
@@ -514,11 +513,12 @@ namespace AgentCoreProcessor.Engine
             var pinSection = pinboardModule.BuildPromptSection(EngineMode.Express);
             if (pinSection != null) { inputBuilder.AppendLine(); inputBuilder.AppendLine(); inputBuilder.Append(pinSection); }
 
-            expressCore.ResetProcessor();
+            agentCore.SwitchMode(EngineMode.Express);
+            agentCore.ResetProcessor();
             var expressInput = inputBuilder.ToString();
             var expressed = currentImagePaths?.Count > 0
-                ? await expressCore.GenerateOnceAsync(expressInput, currentImagePaths)
-                : await expressCore.GenerateOnceAsync(expressInput);
+                ? await agentCore.ChatAsync(expressInput, currentImagePaths)
+                : await agentCore.ChatAsync(expressInput);
 
             // [ALERT] 检测
             if (expressed.Contains("[ALERT]"))
@@ -556,6 +556,7 @@ namespace AgentCoreProcessor.Engine
             if (lastRoundCalls == null) consecutiveExternalTriggers++;
 
             // 构建 prompt（模块驱动）
+            agentCore.SwitchMode(EngineMode.Working);
             var toolDescs = ToolRegistry.GenerateDescriptions(authorizedTools: authorizedTools);
             var messages = promptBuilder.BuildRoundMessages(
                 toolDescs, currentContextXml, modules, EngineMode.Working,

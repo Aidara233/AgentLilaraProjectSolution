@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Tool;
 
 namespace AgentCoreProcessor.Engine.Modules
@@ -77,4 +76,9 @@ namespace AgentCoreProcessor.Engine.Modules
         }
     }
 
+    internal static class StringExtensions
+    {
+        public static string Truncate(this string s, int maxLen)
+            => s.Length <= maxLen ? s : s[..maxLen] + "...";
+    }
 }
