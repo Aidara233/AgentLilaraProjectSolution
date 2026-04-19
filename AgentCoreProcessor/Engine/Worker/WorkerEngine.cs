@@ -9,6 +9,7 @@ using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Memory;
+using AgentCoreProcessor.Engine.Modules;
 using AgentCoreProcessor.Tool;
 
 namespace AgentCoreProcessor.Engine
@@ -66,10 +67,24 @@ namespace AgentCoreProcessor.Engine
         // 参与者追踪
         private readonly ConcurrentDictionary<int, ParticipantInfo> recentParticipants = new();
 
-        // Core 实例（复用）
+        // Core 实例
         private readonly ExpressCore expressCore = new();
-        private readonly WorkingCore workingCore = new();
+        private readonly AgentCore agentCore = new();
         private readonly PreprocessingCore preprocessingCore;
+        private readonly PromptBuilder promptBuilder = new();
+
+        // 闸门 + 事件总线 + 内务模块
+        private readonly LoopGate gate = new();
+        private readonly LoopBus bus = new();
+        private readonly SpeakModule speakModule = new();
+        private readonly ThinkingNotesModule thinkingNotesModule = new();
+        private readonly TaskListModule taskListModule = new();
+        private readonly PinboardModule pinboardModule = new();
+        private readonly RetainListModule retainListModule = new();
+        private readonly MemoryWindowModule memoryWindowModule = new();
+        private readonly LoopControlModule loopControlModule = new();
+        private readonly SignalDispatchModule signalDispatchModule = new();
+        private List<EngineModule> modules = null!;
 
         // 已处理消息标记
         private readonly LinkedList<long> processedTicks = new();
@@ -87,20 +102,30 @@ namespace AgentCoreProcessor.Engine
         // TrustProgress 每日自动增长跟踪
         private readonly Dictionary<int, (DateTime Date, float Accumulated)> dailyProgressTracker = new();
 
-        // 任务路径消息通道
-        private ConcurrentQueue<IncomingMessage>? activeMessageQueue;
-        private SemaphoreSlim? activeMessageSignal;
-
-        // 未消费的图片路径（跨 batch 保留，直到 ProcessBatch 消费）
-        private readonly List<string> pendingImagePaths = new();
-
-        // 便签板（Express/Working 共享，会话级生命周期）
-        private readonly Dictionary<string, string> pinboard = new();
+        // 授权工具集（会话级）
+        private readonly HashSet<string> authorizedTools = new();
 
         // Express/Working 自适应切换
         private bool isWorkingMode = false;
         private int consecutiveExternalTriggers = 0;
         private const int WorkingToExpressThreshold = 3;
+
+        // Working 会话状态（跨闸门轮次保持）
+        private string? currentContextXml;
+        private List<string>? currentImagePaths;
+        private Dictionary<int, ParticipantInfo>? currentParticipantSnapshot;
+        private IncomingMessage? currentLastMsg;
+        private SessionContext? currentLastSc;
+        private List<ToolCall>? lastRoundCalls;
+        private List<ToolResult>? lastRoundResults;
+        private readonly List<string> pendingNewMessages = new();
+        private bool isInWorkingSession = false;
+
+        // 缓冲定时器
+        private CancellationTokenSource? _bufferTimerCts;
+
+        // 未消费的图片路径
+        private readonly List<string> pendingImagePaths = new();
 // PLACEHOLDER_CTOR
 
         /// <summary>由 SpawnCheck 创建，传入初始消息。</summary>
@@ -121,23 +146,25 @@ namespace AgentCoreProcessor.Engine
             CollectImagePaths(initialMessage);
             recentParticipants.TryAdd(initialContext.User.Id, ParticipantInfo.From(initialContext.User, initialContext.Person, initialMessage));
             AccumulateImpulse(initialMessage, initialContext);
+            InitModules();
+            ScheduleBufferSignal();
 
             FrameworkLogger.Log("WorkerEngine", $"创建: channelId={channelId}, affinity={channelAffinity:F2}");
+        }
+
+        private void InitModules()
+        {
+            modules = new List<EngineModule>
+            {
+                speakModule, thinkingNotesModule, taskListModule, pinboardModule,
+                retainListModule, memoryWindowModule, loopControlModule, signalDispatchModule
+            };
+            foreach (var m in modules) m.Attach(bus);
         }
 
         /// <summary>由 SpawnCheck 调用，将新消息加入缓冲。</summary>
         public void EnqueueMessage(IncomingMessage msg, SessionContext sc)
         {
-            // 忙时且有活跃消息通道：转发给 WorkingCore
-            if (IsBusy && activeMessageQueue != null)
-            {
-                activeMessageQueue.Enqueue(msg);
-                activeMessageSignal?.Release();
-                FrameworkLogger.Log("WorkerEngine",
-                    $"忙时消息转发: channelId={channelId}");
-                return;
-            }
-
             lock (bufferLock)
             {
                 buffer.Add((msg, sc));
@@ -149,96 +176,150 @@ namespace AgentCoreProcessor.Engine
                 ParticipantInfo.From(sc.User, sc.Person, msg),
                 (_, _) => ParticipantInfo.From(sc.User, sc.Person, msg));
             AccumulateImpulse(msg, sc);
+            ScheduleBufferSignal();
+        }
+
+        /// <summary>缓冲窗口到期后 Signal 闸门。每次新消息重置定时器。</summary>
+        private void ScheduleBufferSignal()
+        {
+            _bufferTimerCts?.Cancel();
+            _bufferTimerCts = new CancellationTokenSource();
+            var cts = _bufferTimerCts;
+            _ = Task.Delay(TimeSpan.FromSeconds(impulseConfig.BufferWindowSeconds), cts.Token)
+                .ContinueWith(_ => gate.Signal(), TaskContinuationOptions.NotOnCanceled);
         }
 // PLACEHOLDER_RUN
 
         public async Task RunAsync()
         {
             FrameworkLogger.Log("WorkerEngine", $"启动: channelId={channelId}");
+            WireModuleCallbacks();
 
             while (IsAlive)
             {
-                await Task.Delay(200);
+                var triggered = await gate.WaitAsync(
+                    TimeSpan.FromSeconds(impulseConfig.ColdTimeoutSeconds));
+
+                if (!triggered)
+                {
+                    if (processedMessageCount > 0 && lastContext != null)
+                        await ExtractMemoryAsync(lastContext);
+                    FrameworkLogger.Log("WorkerEngine", $"冷却退出: channelId={channelId}");
+                    IsAlive = false;
+                    break;
+                }
 
                 DecayImpulse();
 
-                // 检查缓冲窗口是否到期
+                // 收集缓冲消息
                 List<(IncomingMessage Message, SessionContext Context)>? batch = null;
                 lock (bufferLock)
                 {
-                    if (buffer.Count > 0 &&
-                        (DateTime.Now - lastBufferTime).TotalSeconds >= impulseConfig.BufferWindowSeconds)
+                    if (buffer.Count > 0)
                     {
                         batch = new(buffer);
                         buffer.Clear();
                     }
                 }
 
-                if (batch != null)
+                // 新消息到达：准备上下文
+                if (batch != null && batch.Count > 0)
                 {
-                    FrameworkLogger.Log("WorkerEngine",
-                        $"缓冲触发: channelId={channelId}, 消息数={batch.Count}, impulse={impulse:F2}");
-
-                    if (!ctx.MuteMode && ShouldRespond(batch))
+                    if (ctx.MuteMode)
                     {
-                        bool triggeredByMention = batch.Any(b => b.Message.IsMentioned || b.Message.IsPrivate);
-                        Interlocked.Exchange(ref _busyFlag, 1);
+                        TrackMemoryExtraction(batch, batch[^1].Context);
+                        continue;
+                    }
+                    if (!ShouldRespond(batch)) continue;
+
+                    await PrepareNewBatchAsync(batch);
+                }
+                else if (!isInWorkingSession)
+                {
+                    continue; // 无消息且不在 Working 会话中，忽略
+                }
+
+                // 路由：Express 或 Working
+                Interlocked.Exchange(ref _busyFlag, 1);
+                try
+                {
+                    if (!isWorkingMode)
+                        await RunExpressAsync();
+
+                    if (isWorkingMode)
+                        await RunWorkingRoundAsync();
+                }
+                catch (Exception ex)
+                {
+                    FrameworkLogger.LogError("WorkerEngine", ex, $"channelId={channelId}");
+                    if (currentLastMsg != null)
+                    {
                         try
                         {
-                            var snapshot = new Dictionary<int, ParticipantInfo>(recentParticipants);
-                            await ProcessBatchAsync(batch, snapshot);
-                            // 触发后扣减阈值，不归零
-                            float dynamicThreshold = impulseConfig.BaseThreshold
-                                + messageRate * impulseConfig.MessageRateScaleFactor;
-                            impulse = Math.Max(0f, impulse - dynamicThreshold);
-                            // 更新 expectation
-                            if (triggeredByMention)
-                                expectation += impulseConfig.ExpectationOnMentionTriggered;
-                            else
-                                expectation += impulseConfig.ExpectationOnProactive;
-                        }
-                        catch (Exception ex)
-                        {
-                            var msg = batch[0].Message;
-                            FrameworkLogger.LogError("WorkerEngine", ex,
-                                $"channelId={channelId} channel={msg.ChannelId}");
-                            try
+                            await ctx.Adapters.SendMessageAsync(currentLastMsg.Platform, new OutgoingMessage
                             {
-                                await ctx.Adapters.SendMessageAsync(msg.Platform, new OutgoingMessage
-                                {
-                                    ChannelId = msg.ChannelId,
-                                    Content = $"[错误] 处理消息时发生异常：{ex.Message}"
-                                });
-                            }
-                            catch { }
+                                ChannelId = currentLastMsg.ChannelId,
+                                Content = $"[错误] 处理消息时发生异常：{ex.Message}"
+                            });
                         }
-                        finally
-                        {
-                            Interlocked.Exchange(ref _busyFlag, 0);
-                            Interlocked.Exchange(ref _completionTicks, DateTime.Now.Ticks);
-                        }
+                        catch { }
                     }
-
-                    // 静音模式下仍追踪记忆提取
-                    if (ctx.MuteMode)
-                        TrackMemoryExtraction(batch, batch[^1].Context);
+                    isInWorkingSession = false;
                 }
-
-                // 冷却检查
-                bool bufferEmpty;
-                lock (bufferLock) { bufferEmpty = buffer.Count == 0; }
-                if (bufferEmpty && impulse <= 0.01f && !IsBusy &&
-                    (DateTime.Now - lastBufferTime).TotalSeconds > impulseConfig.ColdTimeoutSeconds)
+                finally
                 {
-                    // 退出前：剩余消息强制提取记忆
-                    if (processedMessageCount > 0 && lastContext != null)
-                        await ExtractMemoryAsync(lastContext);
-
-                    FrameworkLogger.Log("WorkerEngine", $"冷却退出: channelId={channelId}");
-                    IsAlive = false;
+                    if (!isInWorkingSession)
+                    {
+                        Interlocked.Exchange(ref _busyFlag, 0);
+                        Interlocked.Exchange(ref _completionTicks, DateTime.Now.Ticks);
+                    }
                 }
             }
+
+            // 清理模块状态
+            foreach (var m in modules) m.Reset();
         }
+
+        private void WireModuleCallbacks()
+        {
+            // 回调在每次 RunAsync 启动时绑定，生命周期 = 引擎实例
+            // 实际的 lastMsg/lastSc 在 PrepareNewBatchAsync 中更新
+            speakModule.OnSpeak = async (rawText) =>
+            {
+                if (currentLastMsg == null || currentLastSc == null || currentParticipantSnapshot == null) return;
+                var (content, replyTo, mentions) = ParseBotOutput(rawText, currentParticipantSnapshot);
+                var sentId = await ctx.Adapters.SendMessageAsync(currentLastMsg.Platform, new OutgoingMessage
+                {
+                    ChannelId = currentLastMsg.ChannelId,
+                    Content = content,
+                    ReplyTo = replyTo,
+                    Mentions = mentions
+                });
+                await ctx.Session.SaveBotMessageAsync(currentLastSc.Channel.Id, content, sentId);
+            };
+            signalDispatchModule.OnMemory = async (content) =>
+            {
+                if (currentLastSc == null) return;
+                await ctx.MemorySvc.StoreAsync(content, currentLastSc.Person.Id, currentLastSc.Channel.Id);
+            };
+            signalDispatchModule.OnSignal = async (signalName, payload) =>
+            {
+                ctx.EventBus.PublishSignal(signalName, payload);
+                await Task.CompletedTask;
+            };
+            signalDispatchModule.OnReviewHint = async (content) =>
+            {
+                if (currentLastSc == null) return;
+                await ctx.ReviewHints.CreateAsync(content, currentLastSc.Person.Id, currentLastSc.Channel.Id);
+            };
+            signalDispatchModule.OnAlert = async (reason) =>
+            {
+                if (currentLastSc == null) return;
+                await HandleAlertAsync(currentLastSc.Person, currentLastSc, reason);
+            };
+        }
+
+        // PHASE4_PREPARE_PLACEHOLDER
 
         public void OnEvent(EngineEvent e) { }
 
@@ -344,22 +425,18 @@ namespace AgentCoreProcessor.Engine
             float ratio = reality / effectiveExpectation;
             return Math.Clamp(ratio, impulseConfig.RatioFactorLower, impulseConfig.RatioFactorUpper);
         }
-// PLACEHOLDER_PROCESS
-
-        // ---- 批次处理 ----
-
-        private async Task ProcessBatchAsync(
-            List<(IncomingMessage Message, SessionContext Context)> messages,
-            Dictionary<int, ParticipantInfo> participantSnapshot)
+        private async Task PrepareNewBatchAsync(
+            List<(IncomingMessage Message, SessionContext Context)> batch)
         {
-            var lastMsg = messages[^1].Message;
-            var lastSc = messages[^1].Context;
+            currentLastMsg = batch[^1].Message;
+            currentLastSc = batch[^1].Context;
+            currentParticipantSnapshot = new Dictionary<int, ParticipantInfo>(recentParticipants);
 
             FrameworkLogger.Log("WorkerEngine",
-                $"处理批次: channelId={channelId}, 消息数={messages.Count}, " +
-                $"user={lastSc.User.PlatformId} person={lastSc.Person.Id}");
+                $"处理批次: channelId={channelId}, 消息数={batch.Count}, " +
+                $"user={currentLastSc.User.PlatformId} person={currentLastSc.Person.Id}");
 
-            // 1. 消费 pending 图片
+            // 消费 pending 图片
             List<string> imagePaths;
             lock (bufferLock)
             {
@@ -367,182 +444,176 @@ namespace AgentCoreProcessor.Engine
                 pendingImagePaths.Clear();
             }
 
-            // 2. 构建 XML 上下文
-            var (formattedContext, quotedImagePaths) = await BuildContextXmlAsync(messages, lastSc.RecentMessages, participantSnapshot);
+            // 构建 XML 上下文
+            var (xml, quotedImagePaths) = await BuildContextXmlAsync(batch, currentLastSc.RecentMessages, currentParticipantSnapshot);
             imagePaths.AddRange(quotedImagePaths);
-
             if (imagePaths.Count > 0)
             {
                 var prefix = imagePaths.Count == 1 ? "（用户发送了一张图片）" : $"（用户发送了{imagePaths.Count}张图片）";
-                formattedContext += $"\n\n{prefix}";
+                xml += $"\n\n{prefix}";
             }
+            currentContextXml = xml;
+            currentImagePaths = imagePaths.Count > 0 ? imagePaths : null;
 
-            // 3. 标记本批消息为已处理
-            foreach (var (msg, _) in messages)
+            // 标记已处理
+            foreach (var (msg, _) in batch)
             {
                 processedTicks.AddLast(msg.Time.Ticks);
                 while (processedTicks.Count > MaxProcessedTicksWindow)
                     processedTicks.RemoveFirst();
             }
 
-            // 4. 分类（Working 模式下跳过，直接走 Working）
+            // 分类
             if (!isWorkingMode)
             {
-                var isTask = await preprocessingCore.IsTaskAsync(formattedContext);
+                var isTask = await preprocessingCore.IsTaskAsync(currentContextXml);
                 FrameworkLogger.Log("WorkerEngine", $"分类结果: {(isTask ? "任务" : "聊天")}");
-                if (isTask)
+                if (isTask) { isWorkingMode = true; consecutiveExternalTriggers = 0; }
+            }
+
+            // 查记忆
+            var memoryResults = await GetCachedMemoryAsync(currentLastSc, currentLastMsg.Content);
+            memoryWindowModule.SetMemories(memoryResults);
+
+            // 重置 Working 轮次状态
+            lastRoundCalls = null;
+            lastRoundResults = null;
+            loopControlModule.OnNewMessage();
+            isInWorkingSession = false;
+
+            // 冲动值扣减 + expectation 更新
+            bool triggeredByMention = batch.Any(b => b.Message.IsMentioned || b.Message.IsPrivate);
+            float dynamicThreshold = impulseConfig.BaseThreshold + messageRate * impulseConfig.MessageRateScaleFactor;
+            impulse = Math.Max(0f, impulse - dynamicThreshold);
+            if (triggeredByMention)
+                expectation += impulseConfig.ExpectationOnMentionTriggered;
+            else
+                expectation += impulseConfig.ExpectationOnProactive;
+
+            // 记忆提取 + 信任增长
+            TrackMemoryExtraction(batch, currentLastSc);
+            await IncrementDailyProgressAsync(currentLastSc.Person);
+        }
+
+        private async Task RunExpressAsync()
+        {
+            if (currentContextXml == null || currentLastMsg == null || currentLastSc == null
+                || currentParticipantSnapshot == null) return;
+
+            // Express：模块注入记忆和便签板
+            var inputBuilder = new StringBuilder();
+            inputBuilder.Append(currentContextXml);
+            var memSection = memoryWindowModule.BuildPromptSection(EngineMode.Express);
+            if (memSection != null) { inputBuilder.AppendLine(); inputBuilder.AppendLine(); inputBuilder.Append(memSection); }
+            var pinSection = pinboardModule.BuildPromptSection(EngineMode.Express);
+            if (pinSection != null) { inputBuilder.AppendLine(); inputBuilder.AppendLine(); inputBuilder.Append(pinSection); }
+
+            expressCore.ResetProcessor();
+            var expressInput = inputBuilder.ToString();
+            var expressed = currentImagePaths?.Count > 0
+                ? await expressCore.GenerateOnceAsync(expressInput, currentImagePaths)
+                : await expressCore.GenerateOnceAsync(expressInput);
+
+            // [ALERT] 检测
+            if (expressed.Contains("[ALERT]"))
+            {
+                FrameworkLogger.Log("WorkerEngine", $"ExpressCore 触发报警: channelId={channelId}");
+                var reason = expressed.Replace("[ALERT]", "").Trim();
+                await HandleAlertAsync(currentLastSc.Person, currentLastSc,
+                    string.IsNullOrEmpty(reason) ? "聊天中触发" : reason);
+                expressed = expressed.Replace("[ALERT]", "").Trim();
+            }
+
+            if (expressed.Contains("[ESCALATE]"))
+            {
+                FrameworkLogger.Log("WorkerEngine", $"Express→Working 升级: channelId={channelId}");
+                var preEscalate = expressed.Split("[ESCALATE]")[0].Trim();
+                if (!string.IsNullOrEmpty(preEscalate))
                 {
-                    isWorkingMode = true;
-                    consecutiveExternalTriggers = 0;
+                    await SendSegmentsAsync(preEscalate, currentLastMsg, currentLastSc, currentParticipantSnapshot);
+                    currentContextXml += $"\n\n[已发送的回复]\n你刚才已经对用户说了：「{preEscalate}」\n不要重复相同意思的话，直接处理需要工具的部分。";
                 }
+                isWorkingMode = true;
+                consecutiveExternalTriggers = 0;
+            }
+            else
+            {
+                await SendSegmentsAsync(expressed, currentLastMsg, currentLastSc, currentParticipantSnapshot);
+            }
+        }
+
+        private async Task RunWorkingRoundAsync()
+        {
+            if (currentContextXml == null || currentLastMsg == null || currentLastSc == null) return;
+
+            isInWorkingSession = true;
+            if (lastRoundCalls == null) consecutiveExternalTriggers++;
+
+            // 构建 prompt（模块驱动）
+            var toolDescs = ToolRegistry.GenerateDescriptions(authorizedTools: authorizedTools);
+            var messages = promptBuilder.BuildRoundMessages(
+                toolDescs, currentContextXml, modules, EngineMode.Working,
+                lastRoundResults, lastRoundCalls,
+                lastRoundCalls == null ? currentImagePaths : null,
+                pendingNewMessages.Count > 0 ? pendingNewMessages : null);
+            pendingNewMessages.Clear();
+
+            // 模型调用
+            agentCore.ResetProcessor();
+            agentCore.SetConversationHistory(messages);
+            var toolCalls = await agentCore.GenerateToolCallsAsync();
+
+            if (toolCalls.Count == 0)
+            {
+                FrameworkLogger.Log("WorkerEngine", $"Working idle: channelId={channelId}");
+                EndWorkingSession();
+                return;
+            }
+
+            // 执行工具 + 发布事件
+            speakModule.ResetRound();
+            var executor = new ToolExecutor(authorizedTools: authorizedTools);
+            executor.OnToolExecuted = async (call, result) =>
+            {
+                var toolDef = ToolRegistry.Get(call.Tool);
+                bus.Publish(new ToolExecutedEvent(call, result, toolDef));
+                await Task.CompletedTask;
             };
+            var results = await executor.ExecuteAsync(toolCalls);
 
-            // 5. 查记忆
-            var memoryResults = await GetCachedMemoryAsync(lastSc, lastMsg.Content);
-// PLACEHOLDER_ROUTE
+            lastRoundCalls = toolCalls;
+            lastRoundResults = results;
 
-            // 6. 路由处理：模式状态机
-            bool useWorking = isWorkingMode;
+            // 检查 ContinueLoop
+            bool hasContinue = toolCalls.Any(c => ToolRegistry.Get(c.Tool)?.ContinueLoop == true);
+            loopControlModule.AdvanceRound(speakModule.HadSpeakThisRound);
 
-            if (!useWorking)
+            if (hasContinue && !loopControlModule.IsMaxSilentReached && !loopControlModule.IsMaxRoundsReached)
             {
-                // Express 模式：聊天，检测 [ESCALATE] 升级
-                string? chatMemory = FormatMemory(memoryResults, topK: 5);
-
-                var inputBuilder = new StringBuilder();
-                inputBuilder.Append(formattedContext);
-                if (chatMemory != null)
-                {
-                    inputBuilder.AppendLine();
-                    inputBuilder.AppendLine();
-                    inputBuilder.AppendLine("[记忆参考]");
-                    inputBuilder.Append(chatMemory);
-                }
-                if (pinboard.Count > 0)
-                {
-                    inputBuilder.AppendLine();
-                    inputBuilder.AppendLine();
-                    inputBuilder.AppendLine("[便签板]");
-                    foreach (var (label, content) in pinboard)
-                        inputBuilder.AppendLine($"- {label}: {content}");
-                }
-
-                expressCore.ResetProcessor();
-                var expressInput = inputBuilder.ToString();
-                var expressed = imagePaths.Count > 0
-                    ? await expressCore.GenerateOnceAsync(expressInput, imagePaths)
-                    : await expressCore.GenerateOnceAsync(expressInput);
-
-                // [ALERT] 检测
-                if (expressed.Contains("[ALERT]"))
-                {
-                    FrameworkLogger.Log("WorkerEngine", $"ExpressCore 触发报警: channelId={channelId}");
-                    var reason = expressed.Replace("[ALERT]", "").Trim();
-                    await HandleAlertAsync(lastSc.Person, lastSc, string.IsNullOrEmpty(reason) ? "聊天中触发" : reason);
-                    expressed = expressed.Replace("[ALERT]", "").Trim();
-                }
-
-                if (expressed.Contains("[ESCALATE]"))
-                {
-                    FrameworkLogger.Log("WorkerEngine", $"ExpressCore 升级到 Working 模式: channelId={channelId}");
-                    var preEscalate = expressed.Split("[ESCALATE]")[0].Trim();
-                    if (!string.IsNullOrEmpty(preEscalate))
-                    {
-                        await SendSegmentsAsync(preEscalate, lastMsg, lastSc, participantSnapshot);
-                        formattedContext += $"\n\n[已发送的回复]\n你刚才已经对用户说了：「{preEscalate}」\n不要重复相同意思的话，直接处理需要工具的部分。";
-                    }
-
-                    isWorkingMode = true;
-                    consecutiveExternalTriggers = 0;
-                    useWorking = true;
-                }
-                else
-                {
-                    await SendSegmentsAsync(expressed, lastMsg, lastSc, participantSnapshot);
-                }
+                gate.Signal(); // 自唤醒，下一轮继续
             }
-
-            // Working 模式
-            if (useWorking)
+            else
             {
-                consecutiveExternalTriggers++;
+                if (loopControlModule.IsMaxSilentReached && speakModule.OnSpeak != null)
+                    await speakModule.OnSpeak("（工作暂停，等待回应后继续）");
 
-                var taskMemory = memoryResults?.Where(m => !m.IsPersona).ToList();
-                string? memoryContext = FormatMemory(taskMemory, topK: 10);
-
-                var msgQueue = new ConcurrentQueue<IncomingMessage>();
-                var msgSignal = new SemaphoreSlim(0);
-
-                workingCore.OnSpeak = async (rawText) =>
-                {
-                    var (content, replyTo, mentions) = ParseBotOutput(rawText, participantSnapshot);
-                    var sentId = await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
-                    {
-                        ChannelId = lastMsg.ChannelId,
-                        Content = content,
-                        ReplyTo = replyTo,
-                        Mentions = mentions
-                    });
-                    await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, content, sentId);
-                };
-                workingCore.OnMemory = async (content) =>
-                {
-                    await ctx.MemorySvc.StoreAsync(content, lastSc.Person.Id, lastSc.Channel.Id);
-                };
-                workingCore.OnSignal = async (signalName, payload) =>
-                {
-                    ctx.EventBus.PublishSignal(signalName, payload);
-                    await Task.CompletedTask;
-                };
-                workingCore.OnReviewHint = async (content) =>
-                {
-                    await ctx.ReviewHints.CreateAsync(content, lastSc.Person.Id, lastSc.Channel.Id);
-                };
-                workingCore.OnAlert = async (reason) =>
-                {
-                    await HandleAlertAsync(lastSc.Person, lastSc, reason);
-                };
-                workingCore.OnAuthRequired = async (toolName, requiredLevel) =>
-                {
-                    return await HandleAuthorizationRequestAsync(
-                        new List<string> { toolName }, $"使用工具「{toolName}」",
-                        lastMsg, msgQueue, msgSignal);
-                };
-
-                workingCore.SetMessageChannel(msgQueue, msgSignal);
-                workingCore.SetPinboard(pinboard);
-                this.activeMessageQueue = msgQueue;
-                this.activeMessageSignal = msgSignal;
-
-                try
-                {
-                    var exitReason = await workingCore.ProcessAsync(formattedContext, memoryContext,
-                        imagePaths: imagePaths.Count > 0 ? imagePaths : null);
-
-                    FrameworkLogger.Log("WorkerEngine",
-                        $"WorkingCore 退出: reason={exitReason}, channelId={channelId}");
-                }
-                finally
-                {
-                    this.activeMessageQueue = null;
-                    this.activeMessageSignal = null;
-                }
-
-                // 回退检查：连续 N 次外部消息触发都没用工具 → 回退到 Express
-                if (consecutiveExternalTriggers >= WorkingToExpressThreshold)
-                {
-                    FrameworkLogger.Log("WorkerEngine",
-                        $"Working→Express 回退: 连续{consecutiveExternalTriggers}次外部触发, channelId={channelId}");
-                    isWorkingMode = false;
-                    consecutiveExternalTriggers = 0;
-                }
+                FrameworkLogger.Log("WorkerEngine",
+                    $"Working 结束: rounds={loopControlModule.TotalRounds}, " +
+                    $"silent={loopControlModule.SilentRounds}, channelId={channelId}");
+                EndWorkingSession();
             }
+        }
 
-            // 7. 记忆提取计数
-            TrackMemoryExtraction(messages, lastSc);
-
-            // 8. TrustProgress 每日自动增长
-            await IncrementDailyProgressAsync(lastSc.Person);
+        private void EndWorkingSession()
+        {
+            isInWorkingSession = false;
+            if (consecutiveExternalTriggers >= WorkingToExpressThreshold)
+            {
+                FrameworkLogger.Log("WorkerEngine",
+                    $"Working→Express 回退: 连续{consecutiveExternalTriggers}次外部触发, channelId={channelId}");
+                isWorkingMode = false;
+                consecutiveExternalTriggers = 0;
+            }
         }
 // PLACEHOLDER_MEMORY
 

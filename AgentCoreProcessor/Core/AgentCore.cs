@@ -12,6 +12,12 @@ namespace AgentCoreProcessor.Core
     /// </summary>
     internal class AgentCore : CoreBase
     {
+        public AgentCore()
+        {
+            // Phase 7 创建 AgentCore.json 后删除此行
+            processor.CfgName = "WorkingCore";
+        }
+
         /// <summary>
         /// 单次生成（Express 模式）。
         /// </summary>
