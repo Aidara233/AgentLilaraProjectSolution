@@ -29,6 +29,27 @@ namespace AgentCoreProcessor.Core
         }
 
         /// <summary>
+        /// 统一入口。根据模式调用模型，返回文本或工具调用。
+        /// </summary>
+        public async Task<ModelOutput> InvokeAsync(List<Message> messages, Engine.EngineMode mode)
+        {
+            SwitchMode(mode);
+            ResetProcessor();
+            SetConversationHistory(messages);
+
+            if (mode == Engine.EngineMode.Express)
+            {
+                var text = await GenerateOnceAsync();
+                return ModelOutput.FromText(text);
+            }
+            else
+            {
+                var calls = await GenerateToolCallsAsync();
+                return ModelOutput.FromTools(calls);
+            }
+        }
+
+        /// <summary>
         /// 单次生成（Express 模式）。
         /// </summary>
         public async Task<string> ChatAsync(string input, List<string>? imagePaths = null)
