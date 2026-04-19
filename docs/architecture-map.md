@@ -52,7 +52,7 @@ Adapter → EventBus(MessageEvent) → WorkerEngineSpawnCheck
 WorkerEngine (常驻，一个活跃频道一个):
   闸门驱动循环 (LoopGate, auto-reset):
     gate.WaitAsync(coldTimeout) → 放行后立即重置 → 收集 → 执行 → 回到等待
-    触发源: 缓冲定时器(新消息) / ContinueLoop自唤醒 / 外部事件
+    触发源: 缓冲定时器(新消息) / ContinueLoop自唤醒 / ESCALATE切模式
     超时 → 冷却退出
 
   内务模块体系 (EngineModule + LoopBus):
@@ -61,20 +61,22 @@ WorkerEngine (常驻，一个活跃频道一个):
     模块通过 LoopBus 订阅 ToolExecutedEvent 处理副作用
     模块通过 BuildPromptSection 注入 prompt（按 PromptPriority 排序）
 
-  处理流程:
-  ① 闸门放行 → 收集缓冲消息
-  ② PrepareNewBatchAsync: XML上下文 + 分类 + 记忆检索 + AuthStore同步
-  ③ 自适应模式路由:
-     Express 模式(默认) → ExpressCore (分条输出，逐条发送+随机延迟)
-       ExpressCore 可输出 [ESCALATE] 升级到 Working 模式，[ALERT] 触发报警
-       模块注入记忆和便签板
-     Working 模式 → AgentCore + 模块驱动 prompt + ToolExecutor
-       ContinueLoop=true → gate.Signal() 自唤醒下一轮
-       静默上限 → 自动暂停等待回应
-       连续 3 次外部消息触发无工具使用 → 自动回退到 Express 模式
-  ④ ParseBotOutput 解析 <at/>/<reply/> 标签 → OutgoingMessage
-  ⑤ MemoryExtractionCore 异步提取记忆 (每3条触发)
-  ⑥ TrustProgress 每日自动增长 (per-person 日上限)
+  统一管线（主循环零分叉，每步根据 EngineMode 走不同实现）:
+  ① WaitGate → 闸门放行
+  ② CollectBuffer → drain 缓冲消息
+  ③ PrepareContext → 每轮重建 contextXml（从DB拉最新历史）+ 记忆 + 授权
+  ④ BuildPrompt → PromptBuilder（Express/Working 都走此路径）
+  ⑤ CallModel → AgentCore.InvokeAsync（Express返回文本，Working返回工具调用）
+  ⑥ ProcessResponse → Express发文本 / Working执行工具+发布事件
+  ⑦ DecideNext → ESCALATE(切模式+signal) / ContinueLoop(signal) / idle
+
+  模式切换:
+    Express [ESCALATE] → 切 Working + gate.Signal()，下轮自然走 Working
+    Working 连续3次外部触发 → 回退 Express
+    分类检测任务 → 直接进入 Working
+  ⑧ ParseBotOutput 解析 <at/>/<reply/> 标签 → OutgoingMessage
+  ⑨ MemoryExtractionCore 异步提取记忆 (每3条触发)
+  ⑩ TrustProgress 每日自动增长 (per-person 日上限)
 ```
 
 ## 冲动值决策 (per Channel, ImpulseConfig.json 全参数可配置)
