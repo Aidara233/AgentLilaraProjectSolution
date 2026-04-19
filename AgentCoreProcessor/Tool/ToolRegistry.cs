@@ -12,6 +12,7 @@ namespace AgentCoreProcessor.Tool
     internal static class ToolRegistry
     {
         private static readonly Dictionary<string, ITool> _tools;
+        private static readonly HashSet<string> _activeGroups = new();
 
         static ToolRegistry()
         {
@@ -35,7 +36,8 @@ namespace AgentCoreProcessor.Tool
                 new FileTransferTool(),
                 new ContinueTool(),
                 new PinboardTool(),
-                new RetainListTool()
+                new RetainListTool(),
+                new ActivateToolGroupTool()
             };
             _tools = toolList.ToDictionary(t => t.Name);
         }
@@ -48,38 +50,64 @@ namespace AgentCoreProcessor.Tool
 
         public static IReadOnlyDictionary<string, ITool> All => _tools;
 
+        /// <summary>激活工具组（会话级）。返回 false 表示组不存在。</summary>
+        public static bool ActivateGroup(string groupName)
+        {
+            if (!_tools.Values.Any(t => t.ToolGroup == groupName)) return false;
+            _activeGroups.Add(groupName);
+            return true;
+        }
+
+        /// <summary>重置已激活的工具组。</summary>
+        public static void ResetActiveGroups() => _activeGroups.Clear();
+
         /// <summary>
         /// 生成工具描述文本注入 prompt。
-        /// 受限工具标注"（首次使用需要确认）"，但显示完整描述。
+        /// 默认组和已展开组：完整描述。折叠组：一行摘要 + 提示使用「激活工具组」。
         /// </summary>
         public static string GenerateDescriptions(
             IEnumerable<ITool>? tools = null,
             HashSet<string>? authorizedTools = null)
         {
-            var source = tools ?? _tools.Values;
+            var source = (tools ?? _tools.Values).ToList();
             var sb = new StringBuilder();
             int i = 1;
 
-            foreach (var tool in source)
+            // 默认组（ToolGroup == null）+ 已展开组：完整描述
+            var expanded = source.Where(t =>
+                t.ToolGroup == null || t.DefaultExpanded || _activeGroups.Contains(t.ToolGroup!));
+            foreach (var tool in expanded)
             {
                 bool isRestricted = tool.RequiredPermission > PermissionLevel.Default;
                 bool isAuthorized = authorizedTools != null && authorizedTools.Contains(tool.Name);
-
-                var suffix = isRestricted && !isAuthorized ? "（首次使用需要确认）" : "";
+                var suffix = isRestricted && !isAuthorized ? "（需要管理员授权）" : "";
 
                 sb.AppendLine($"工具{i}：{tool.Name}{suffix}");
                 sb.AppendLine($"描述：{tool.Description}");
-
                 if (tool.Parameters.Count > 0)
                 {
-                    var paramParts = tool.Parameters
-                        .Select(p => $"inputs[{p.Index}] = {p.Name}");
+                    var paramParts = tool.Parameters.Select(p => $"inputs[{p.Index}] = {p.Name}");
                     sb.AppendLine($"参数：{string.Join(", ", paramParts)}");
                 }
-
                 sb.AppendLine($"示例：{GenerateExample(tool)}<over>");
                 sb.AppendLine();
                 i++;
+            }
+
+            // 折叠组：摘要
+            var collapsedGroups = source
+                .Where(t => t.ToolGroup != null && !t.DefaultExpanded && !_activeGroups.Contains(t.ToolGroup!))
+                .GroupBy(t => t.ToolGroup!)
+                .ToList();
+
+            if (collapsedGroups.Count > 0)
+            {
+                sb.AppendLine("[可用工具组]（使用「激活工具组」展开详细描述）");
+                foreach (var group in collapsedGroups)
+                {
+                    var names = string.Join("、", group.Select(t => t.Name));
+                    sb.AppendLine($"- {group.Key}：{names}");
+                }
             }
 
             return sb.ToString().TrimEnd();

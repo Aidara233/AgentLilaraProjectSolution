@@ -45,5 +45,11 @@ namespace AgentCoreProcessor.Tool
 
         /// <summary>能力摘要（一句话），注入 Express prompt 让模型知道此能力存在。null 表示不暴露给 Express。</summary>
         string? CapabilitySummary => null;
+
+        /// <summary>所属工具组名。null 表示默认组（始终可见）。</summary>
+        string? ToolGroup => null;
+
+        /// <summary>同组内是否默认展开（而非折叠为摘要）。</summary>
+        bool DefaultExpanded => true;
     }
 }

@@ -18,6 +18,8 @@ namespace AgentCoreProcessor.Tool
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);
         public bool AllowSubAgent => false;
         public PermissionLevel RequiredPermission => PermissionLevel.Elevated;
+        public string? ToolGroup => "系统管理";
+        public bool DefaultExpanded => false;
 
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
@@ -40,6 +42,8 @@ namespace AgentCoreProcessor.Tool
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);
         public bool AllowSubAgent => false;
         public PermissionLevel RequiredPermission => PermissionLevel.Elevated;
+        public string? ToolGroup => "系统管理";
+        public bool DefaultExpanded => false;
 
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
@@ -63,6 +67,8 @@ namespace AgentCoreProcessor.Tool
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);
         public bool AllowSubAgent => false;
         public PermissionLevel RequiredPermission => PermissionLevel.Admin;
+        public string? ToolGroup => "系统管理";
+        public bool DefaultExpanded => false;
 
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
@@ -93,6 +99,8 @@ namespace AgentCoreProcessor.Tool
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);
         public bool AllowSubAgent => false;
         public PermissionLevel RequiredPermission => PermissionLevel.Elevated;
+        public string? ToolGroup => "系统管理";
+        public bool DefaultExpanded => false;
 
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
@@ -121,6 +129,8 @@ namespace AgentCoreProcessor.Tool
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);
         public bool AllowSubAgent => false;
         public PermissionLevel RequiredPermission => PermissionLevel.Admin;
+        public string? ToolGroup => "系统管理";
+        public bool DefaultExpanded => false;
 
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {

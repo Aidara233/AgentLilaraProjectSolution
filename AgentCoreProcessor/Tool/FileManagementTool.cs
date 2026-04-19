@@ -23,6 +23,7 @@ namespace AgentCoreProcessor.Tool
         public bool AllowSubAgent => false;
         public PermissionLevel RequiredPermission => PermissionLevel.Default;
         public bool ContinueLoop => true;
+        public string? ToolGroup => "文件操作";
         public bool RetainResult => false;
         public string? CapabilitySummary => "管理文件和文件夹";
 

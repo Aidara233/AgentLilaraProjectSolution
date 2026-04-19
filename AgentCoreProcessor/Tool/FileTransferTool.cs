@@ -23,6 +23,7 @@ namespace AgentCoreProcessor.Tool
         ];
         public TimeSpan Timeout => TimeSpan.FromSeconds(35);
         public bool AllowSubAgent => false;
+        public string? ToolGroup => "远程终端";
         public PermissionLevel RequiredPermission => PermissionLevel.Elevated;
         public bool ContinueLoop => true;
         public string? CapabilitySummary => "在本地和远程服务器之间传输文件";

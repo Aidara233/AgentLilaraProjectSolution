@@ -18,6 +18,7 @@ namespace AgentCoreProcessor.Tool
         ];
         public TimeSpan Timeout => TimeSpan.FromSeconds(10);
         public bool ContinueLoop => true;
+        public string? ToolGroup => "文件操作";
         public bool RetainResult => true;
         public string? CapabilitySummary => "读取文件内容";
 

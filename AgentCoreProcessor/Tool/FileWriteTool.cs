@@ -18,6 +18,7 @@ namespace AgentCoreProcessor.Tool
             new("模式", "overwrite（覆盖，默认）或 append（追加）", 2)
         ];
         public TimeSpan Timeout => TimeSpan.FromSeconds(10);
+        public string? ToolGroup => "文件操作";
         public PermissionLevel RequiredPermission => PermissionLevel.Default;
         public bool ContinueLoop => true;
         public string? CapabilitySummary => "写入或修改文件";
