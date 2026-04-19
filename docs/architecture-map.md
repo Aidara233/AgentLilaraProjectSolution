@@ -12,11 +12,11 @@ AgentCoreProcessor/
 ├── Client/      IModelClient 抽象层（Claude/OpenAI 双协议）+ Embedding 接口
 ├── Command/     框架指令系统（/help /status /config 等）
 ├── Config/      PathConfig 绝对路径管理
-├── Core/        业务核心（11个），继承 CoreBase，各自 JSON 配置
+├── Core/        业务核心（AgentCore统一+PreprocessingCore+MemoryExtractionCore等），继承 CoreBase，各自 JSON 配置
 ├── Database/    实体 + Repository（SQLite，12张表）
-├── Engine/      引擎生态（MasterEngine 内核 + 子引擎）
+├── Engine/      引擎生态（MasterEngine 内核 + 子引擎 + Worker闸门循环 + 内务模块）
 ├── Memory/      MemoryService 检索管线
-├── Tool/        工具接口 + DAG 执行器 + 全局/局部工具集
+├── Tool/        工具接口 + 顺序执行器 + 工具折叠分组 + 全局/局部工具集
 ├── Util/        VectorUtil 向量操作
 └── Program.cs   入口（--qq / --file / --test / --mute / 默认 Console）
 ```
@@ -50,22 +50,31 @@ Adapter → EventBus(MessageEvent) → WorkerEngineSpawnCheck
   ③ 按 ChannelId 路由: 有活跃 Worker → EnqueueMessage / 无 → 创建新 Worker
 
 WorkerEngine (常驻，一个活跃频道一个):
-  消息缓冲聚合 (2.5s窗口) → 冲动值决策 → ProcessBatch:
-  ① 构建 XML 上下文 (<participants> + <quoted-context> + <history> + <new>)
-     所有 <msg> 带 id(PlatformMessageId) + reply(引用关系) 属性
-     引用链递归展开(默认2层)，上下文外引用从DB拉取+周围消息
-     引用消息的图片通过 ImageRecord 加载
-  ② PreprocessingCore Embedding 二分类 (仅 Express 模式下执行)
-  ③ MemoryService.RecallAsync 检索记忆
-  ④ 自适应模式路由:
+  闸门驱动循环 (LoopGate, auto-reset):
+    gate.WaitAsync(coldTimeout) → 放行后立即重置 → 收集 → 执行 → 回到等待
+    触发源: 缓冲定时器(新消息) / ContinueLoop自唤醒 / 外部事件
+    超时 → 冷却退出
+
+  内务模块体系 (EngineModule + LoopBus):
+    SpeakModule / ThinkingNotesModule / TaskListModule / PinboardModule
+    RetainListModule / MemoryWindowModule / LoopControlModule / SignalDispatchModule
+    模块通过 LoopBus 订阅 ToolExecutedEvent 处理副作用
+    模块通过 BuildPromptSection 注入 prompt（按 PromptPriority 排序）
+
+  处理流程:
+  ① 闸门放行 → 收集缓冲消息
+  ② PrepareNewBatchAsync: XML上下文 + 分类 + 记忆检索 + AuthStore同步
+  ③ 自适应模式路由:
      Express 模式(默认) → ExpressCore (分条输出，逐条发送+随机延迟)
        ExpressCore 可输出 [ESCALATE] 升级到 Working 模式，[ALERT] 触发报警
-       便签板内容注入 Express 输入
-     Working 模式 → WorkingCore 事件驱动循环 (ContinueLoop 驱动迭代)
+       模块注入记忆和便签板
+     Working 模式 → AgentCore + 模块驱动 prompt + ToolExecutor
+       ContinueLoop=true → gate.Signal() 自唤醒下一轮
+       静默上限 → 自动暂停等待回应
        连续 3 次外部消息触发无工具使用 → 自动回退到 Express 模式
-  ⑤ ParseBotOutput 解析 <at/>/<reply/> 标签 → OutgoingMessage
-  ⑥ MemoryExtractionCore 异步提取记忆 (每3条触发)
-  ⑦ TrustProgress 每日自动增长 (per-person 日上限)
+  ④ ParseBotOutput 解析 <at/>/<reply/> 标签 → OutgoingMessage
+  ⑤ MemoryExtractionCore 异步提取记忆 (每3条触发)
+  ⑥ TrustProgress 每日自动增长 (per-person 日上限)
 ```
 
 ## 冲动值决策 (per Channel, ImpulseConfig.json 全参数可配置)
@@ -136,14 +145,22 @@ ReviewEngine (由DreamEngine孵化，不注册SpawnCheck):
 ITool: Name / Description / Parameters / Timeout / ExecuteAsync
        AllowSubAgent(默认true) / RequiredPermission(默认Default)
        ContinueLoop(默认false) / RetainResult(默认false) / CapabilitySummary(默认null)
+       ToolGroup(默认null=始终可见) / DefaultExpanded(默认true)
 
 ToolCall(JSON): {"tool": "工具名", "inputs": ["参数1", "参数2"]}
-ToolExecutor: 顺序执行 + 授权回调(OnAuthRequired) + 可选toolResolver
+ToolExecutor: 顺序执行 + 预授权检查(查权限表，不阻塞) + OnToolExecuted回调
 
-事件驱动循环 (WorkingCore):
-  ContinueLoop=true 的工具被调用 → 自动触发下一轮（结果返回模型）
+事件驱动循环 (WorkerEngine 闸门模型):
+  ContinueLoop=true 的工具被调用 → gate.Signal() 自唤醒下一轮
   全部 ContinueLoop=false → 自然 idle，等待外部事件
   不需要显式"完成"工具
+
+工具折叠 (ToolGroup):
+  默认组(null): 始终可见
+  展开组(DefaultExpanded=true): 文件操作、远程终端
+  折叠组(DefaultExpanded=false): 系统管理
+  元工具「激活工具组」: 运行时展开折叠组
+  折叠组在 prompt 中只显示一行摘要
 
 便签板 (Pinboard):
   会话级上下文注入，Express/Working 共享
@@ -159,11 +176,11 @@ ToolExecutor: 顺序执行 + 授权回调(OnAuthRequired) + 可选toolResolver
   ContinueLoop=true 的空操作工具
   便签板等非 ContinueLoop 工具操作后想继续工作时使用
 
-框架透明授权:
+预授权模型:
   ITool.RequiredPermission > Default 的工具为受限工具
-  模型直接调用 → ToolExecutor 自动触发验证码流程 → 通过后执行
-  模型无需知道授权机制的存在
-  授权绑定单次 Agent 循环，会话结束自动撤销
+  管理员通过 /auth grant <工具名> 预授权（频道级）
+  ToolExecutor 查权限表：有权限执行，无权限返回提示
+  不阻塞工具执行流程
 
 Express/Working 自适应切换:
   默认 Express 模式（轻量聊天）
@@ -175,7 +192,7 @@ Express/Working 自适应切换:
   自由工具(Default): 说话 / 思考笔记 / 记忆 / 标记复盘 / 任务管理 / 报警 / 读取文件 / 便签板 / 缓存管理 / 继续
   受限工具(Elevated): 睡眠许可 / 强制睡觉 / 调整睡意 / 远程终端 / 写入文件 / 文件传输
   受限工具(Admin): 修改睡眠配置 / 触发红色警报
-  已禁用: 委派任务 / 查看子agent
+  已禁用: 委派任务 / 查看子agent (代码已删除)
 
 文件系统沙盒:
   Storage/Workspace/ — 自由工作区（500MB上限）
@@ -221,7 +238,7 @@ ICommand / IInteractiveCommand 接口
 CommandSpawnCheck 拦截 → CommandRegistry 路由
 前缀可配置 (CommandConfig.json)
 命令: /help /status /whoami /memory /engine /wake /channel /user
-      /test recall /note /persona /trust /config /reload adapter
+      /test recall /note /persona /trust /config /reload adapter /auth
 交互式: CommandSession 状态机 + 120s超时
 ```
 
