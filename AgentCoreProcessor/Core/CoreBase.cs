@@ -28,6 +28,11 @@ namespace AgentCoreProcessor.Core
             processor = new Processor(CoreName, usePersona: UsePersona);
         }
 
+        protected CoreBase(string cfgName)
+        {
+            processor = new Processor(cfgName, usePersona: UsePersona);
+        }
+
         /// <summary>
         /// 将 extraMessage 注入到 processor，供子类在初始化字段后调用。
         /// </summary>

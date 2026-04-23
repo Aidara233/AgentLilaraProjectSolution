@@ -14,9 +14,8 @@ namespace AgentCoreProcessor.Core
     {
         private string currentMode = "WorkingCore";
 
-        public AgentCore()
+        public AgentCore() : base("WorkingCore")
         {
-            processor.CfgName = "WorkingCore";
         }
 
         /// <summary>切换模式配置（Express/Working 用不同 LLM 配置）。</summary>
@@ -34,7 +33,8 @@ namespace AgentCoreProcessor.Core
         public async Task<ModelOutput> InvokeAsync(List<Message> messages, Engine.EngineMode mode)
         {
             SwitchMode(mode);
-            ResetProcessor();
+            processor = new Processor(currentMode, usePersona: UsePersona);
+            ApplyExtraMessages();
             SetConversationHistory(messages);
 
             if (mode == Engine.EngineMode.Express)

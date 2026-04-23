@@ -26,8 +26,10 @@ namespace AgentCoreProcessor.Core
             get => cfgName;
             set
             {
-                if (!File.Exists(Path.Combine(cfgDirectoryPath, value) + ".json"))
+                var fullPath = Path.Combine(cfgDirectoryPath, value) + ".json";
+                if (!File.Exists(fullPath))
                 {
+                    FrameworkLogger.Log("Processor", $"配置文件不存在，回退到 Base: {fullPath}");
                     cfgName = "Base";
                     return;
                 }
