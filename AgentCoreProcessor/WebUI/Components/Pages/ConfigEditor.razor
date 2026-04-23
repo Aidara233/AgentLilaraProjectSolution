@@ -1,0 +1,254 @@
+@page "/config"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using AgentCoreProcessor.Config
+@using Newtonsoft.Json.Linq
+@using System.IO
+
+<h4 class="mb-3">配置编辑器</h4>
+
+<div class="row">
+    <!-- 左侧：配置组列表 -->
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-header py-2 fw-semibold">配置组</div>
+            <div class="list-group list-group-flush">
+                @foreach (var (name, _) in configGroups)
+                {
+                    <button class="list-group-item list-group-item-action @(selectedGroup == name ? "active" : "")"
+                            @onclick="() => SelectGroup(name)">
+                        @name
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- 右侧：键值编辑器 -->
+    <div class="col-md-9">
+        @if (string.IsNullOrEmpty(selectedGroup))
+        {
+            <div class="card">
+                <div class="card-body text-muted text-center">选择左侧配置组查看和编辑</div>
+            </div>
+        }
+        else if (loadError != null)
+        {
+            <div class="alert alert-danger">@loadError</div>
+        }
+        else
+        {
+            <div class="card">
+                <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                    <span class="fw-semibold">@selectedGroup</span>
+                    <button class="btn btn-primary btn-sm" @onclick="SaveConfig" disabled="@(!hasChanges)">
+                        <i class="bi bi-save me-1"></i>保存
+                    </button>
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-sm mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:35%">键</th>
+                                <th>值</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var (key, value) in editValues)
+                            {
+                                <tr>
+                                    <td class="align-middle">
+                                        <code>@key</code>
+                                    </td>
+                                    <td>
+                                        @if (IsSensitive(key))
+                                        {
+                                            <div class="input-group input-group-sm">
+                                                <input type="@(revealedKeys.Contains(key) ? "text" : "password")"
+                                                       class="form-control form-control-sm"
+                                                       value="@value"
+                                                       @onchange="e => OnValueChanged(key, e.Value?.ToString())" />
+                                                <button class="btn btn-outline-secondary" @onclick="() => ToggleReveal(key)">
+                                                    <i class="bi @(revealedKeys.Contains(key) ? "bi-eye-slash" : "bi-eye")"></i>
+                                                </button>
+                                            </div>
+                                        }
+                                        else if (value == "true" || value == "false")
+                                        {
+                                            <div class="form-check form-switch">
+                                                <input class="form-check-input" type="checkbox"
+                                                       checked="@(value == "true")"
+                                                       @onchange="e => OnBoolChanged(key, e)" />
+                                            </div>
+                                        }
+                                        else if (IsNumeric(value))
+                                        {
+                                            <input type="number" class="form-control form-control-sm" step="any"
+                                                   value="@value"
+                                                   @onchange="e => OnValueChanged(key, e.Value?.ToString())" />
+                                        }
+                                        else if (IsComplex(key))
+                                        {
+                                            <span class="text-muted small">(复杂类型，请直接编辑文件)</span>
+                                        }
+                                        else
+                                        {
+                                            <input type="text" class="form-control form-control-sm"
+                                                   value="@value"
+                                                   @onchange="e => OnValueChanged(key, e.Value?.ToString())" />
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrEmpty(statusMessage))
+            {
+                <div class="alert @(statusIsError ? "alert-danger" : "alert-success") mt-3 alert-dismissible fade show">
+                    @statusMessage
+                    <button type="button" class="btn-close" @onclick="() => statusMessage = null"></button>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private static readonly Dictionary<string, string> configGroups = new()
+    {
+        ["base"] = Path.Combine(PathConfig.CoreConfigPath, "Base.json"),
+        ["express"] = Path.Combine(PathConfig.CoreConfigPath, "ExpressCore.json"),
+        ["working"] = Path.Combine(PathConfig.CoreConfigPath, "WorkingCore.json"),
+        ["extraction"] = Path.Combine(PathConfig.CoreConfigPath, "MemoryExtractionCore.json"),
+        ["consolidation"] = Path.Combine(PathConfig.CoreConfigPath, "ConsolidationCore.json"),
+        ["weight"] = Path.Combine(PathConfig.CoreConfigPath, "WeightCore.json"),
+        ["link"] = Path.Combine(PathConfig.CoreConfigPath, "LinkCore.json"),
+        ["combine"] = Path.Combine(PathConfig.CoreConfigPath, "CombineCore.json"),
+        ["review"] = Path.Combine(PathConfig.CoreConfigPath, "ReviewCore.json"),
+        ["dream"] = Path.Combine(PathConfig.StoragePath, "Dream", "DreamConfig.json"),
+        ["impulse"] = Path.Combine(PathConfig.StoragePath, "Engine", "ImpulseConfig.json"),
+        ["trust"] = Path.Combine(PathConfig.StoragePath, "Engine", "TrustProgressionConfig.json"),
+    };
+
+    private static readonly HashSet<string> sensitiveKeys =
+        new(StringComparer.OrdinalIgnoreCase) { "apiKey", "apikey", "api_key" };
+
+    private string selectedGroup = "";
+    private string? loadError;
+    private Dictionary<string, string> editValues = new();
+    private Dictionary<string, string> originalValues = new();
+    private HashSet<string> complexKeys = new();
+    private HashSet<string> revealedKeys = new();
+    private bool hasChanges = false;
+    private string? statusMessage;
+    private bool statusIsError = false;
+
+    private JObject? currentJson;
+    private string? currentPath;
+
+    private void SelectGroup(string name)
+    {
+        selectedGroup = name;
+        loadError = null;
+        statusMessage = null;
+        hasChanges = false;
+        revealedKeys.Clear();
+
+        if (!configGroups.TryGetValue(name, out var path) || !File.Exists(path))
+        {
+            loadError = $"配置文件不存在: {path}";
+            return;
+        }
+
+        try
+        {
+            currentPath = path;
+            currentJson = JObject.Parse(File.ReadAllText(path));
+            editValues = new();
+            originalValues = new();
+            complexKeys = new();
+
+            foreach (var prop in currentJson.Properties())
+            {
+                if (prop.Value.Type == JTokenType.Object || prop.Value.Type == JTokenType.Array)
+                {
+                    complexKeys.Add(prop.Name);
+                    editValues[prop.Name] = "";
+                }
+                else
+                {
+                    var val = prop.Value.ToString();
+                    editValues[prop.Name] = val;
+                    originalValues[prop.Name] = val;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            loadError = $"解析失败: {ex.Message}";
+        }
+    }
+
+    private void OnValueChanged(string key, string? newValue)
+    {
+        if (newValue == null) return;
+        editValues[key] = newValue;
+        hasChanges = editValues.Any(kv =>
+            originalValues.TryGetValue(kv.Key, out var orig) && kv.Value != orig);
+    }
+
+    private void SaveConfig()
+    {
+        if (currentJson == null || currentPath == null) return;
+
+        try
+        {
+            foreach (var (key, value) in editValues)
+            {
+                if (complexKeys.Contains(key)) continue;
+                if (!currentJson.ContainsKey(key)) continue;
+
+                var existing = currentJson[key]!;
+                currentJson[key] = existing.Type switch
+                {
+                    JTokenType.Integer => long.TryParse(value, out var l) ? l : existing,
+                    JTokenType.Float => double.TryParse(value, out var d) ? d : existing,
+                    JTokenType.Boolean => bool.TryParse(value, out var b) ? b : existing,
+                    _ => value
+                };
+            }
+
+            File.WriteAllText(currentPath, currentJson.ToString(Newtonsoft.Json.Formatting.Indented));
+
+            originalValues = new Dictionary<string, string>(editValues);
+            hasChanges = false;
+            statusMessage = "配置已保存";
+            statusIsError = false;
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"保存失败: {ex.Message}";
+            statusIsError = true;
+        }
+    }
+
+    private void ToggleReveal(string key)
+    {
+        if (!revealedKeys.Remove(key)) revealedKeys.Add(key);
+    }
+
+    private static bool IsSensitive(string key) => sensitiveKeys.Contains(key);
+    private bool IsComplex(string key) => complexKeys.Contains(key);
+
+    private void OnBoolChanged(string key, ChangeEventArgs e)
+    {
+        OnValueChanged(key, (bool)e.Value! ? "true" : "false");
+    }
+
+    private static bool IsNumeric(string value)
+    {
+        return double.TryParse(value, out _) && value != "true" && value != "false";
+    }
+}
