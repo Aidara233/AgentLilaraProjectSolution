@@ -291,7 +291,8 @@ namespace AgentCoreProcessor
             app.MapRazorComponents<AgentCoreProcessor.WebUI.Components.App>()
                 .AddInteractiveServerRenderMode();
 
-            await adapterManager.StartAllAsync();
+            // 适配器后台启动（ConsoleAdapter.StartAsync 会阻塞，不能 await）
+            _ = Task.Run(() => adapterManager.StartAllAsync());
 
             FrameworkLogger.Log("Program", $"WebUI 已启动: http://localhost:{webConfig.Port}");
             Console.WriteLine($"[WebUI] 管理面板: http://localhost:{webConfig.Port}");
