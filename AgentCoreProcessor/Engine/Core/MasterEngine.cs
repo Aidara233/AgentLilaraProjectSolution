@@ -80,6 +80,7 @@ namespace AgentCoreProcessor.Engine
 
         /// <summary>静音模式：内部处理照常，但不产生对外输出。</summary>
         public bool MuteMode { get; set; } = false;
+        public McpServerManager? McpManager => mcpManager;
 
         // ---- 引擎注册表 ----
         private readonly List<IEngineSpawnCheck> spawnChecks = new();

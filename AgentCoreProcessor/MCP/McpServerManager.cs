@@ -21,6 +21,18 @@ namespace AgentCoreProcessor.MCP
 
         public async Task InitAsync()
         {
+            await ConnectAllAsync();
+        }
+
+        public async Task ReloadAsync()
+        {
+            FrameworkLogger.Log("MCP", "开始重载 MCP Server 配置...");
+            await DisconnectAllAsync();
+            await ConnectAllAsync();
+        }
+
+        private async Task ConnectAllAsync()
+        {
             var config = McpConfig.Load(_configPath);
             var enabled = config.Servers.Where(s => s.Enabled).ToList();
 
@@ -56,16 +68,20 @@ namespace AgentCoreProcessor.MCP
             FrameworkLogger.Log("MCP", $"已连接 {_connections.Count}/{enabled.Count} 个 Server，注册 {totalTools} 个工具");
         }
 
-        public async ValueTask DisposeAsync()
+        private async Task DisconnectAllAsync()
         {
             foreach (var conn in _connections)
             {
                 foreach (var tool in conn.Tools)
                     ToolRegistry.Unregister(tool.Name);
-
                 await conn.DisposeAsync();
             }
             _connections.Clear();
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await DisconnectAllAsync();
         }
     }
 }

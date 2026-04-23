@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Client;
 using AgentCoreProcessor.Database;
+using AgentCoreProcessor.MCP;
 using AgentCoreProcessor.Memory;
 
 namespace AgentCoreProcessor.Engine
@@ -84,5 +85,8 @@ namespace AgentCoreProcessor.Engine
 
         /// <summary>静音模式：内部处理照常，但不产生对外输出。</summary>
         bool MuteMode { get; set; }
+
+        /// <summary>MCP Server 管理器（可能为 null，如果 MCP 未初始化）。</summary>
+        McpServerManager? McpManager { get; }
     }
 }

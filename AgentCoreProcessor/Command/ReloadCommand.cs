@@ -1,25 +1,27 @@
+using System.Linq;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Database;
 
 namespace AgentCoreProcessor.Command
 {
-    /// <summary>热重载配置。用法: /reload adapter [平台名]</summary>
+    /// <summary>热重载配置。用法: /reload adapter|mcp</summary>
     internal class ReloadCommand : ICommand
     {
         public string Name => "reload";
-        public string Description => "热重载配置 (用法: /reload adapter [平台名])";
+        public string Description => "热重载配置 (用法: /reload adapter [平台名] | mcp)";
         public PermissionLevel RequiredPermission => PermissionLevel.Admin;
 
         public async Task<CommandResult> ExecuteAsync(string args, CommandContext context)
         {
             var parts = args.Split(' ', System.StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length == 0)
-                return CommandResult.Fail("用法: /reload adapter [平台名]");
+                return CommandResult.Fail("用法: /reload adapter [平台名] | mcp");
 
             return parts[0].ToLower() switch
             {
                 "adapter" => await ReloadAdapterAsync(parts, context),
-                _ => CommandResult.Fail($"未知重载目标: {parts[0]}，可选: adapter")
+                "mcp" => await ReloadMcpAsync(context),
+                _ => CommandResult.Fail($"未知重载目标: {parts[0]}，可选: adapter, mcp")
             };
         }
 
@@ -38,6 +40,18 @@ namespace AgentCoreProcessor.Command
             return success
                 ? CommandResult.Ok($"适配器 [{platform}] 配置已重载。")
                 : CommandResult.Fail($"未找到平台 [{platform}] 的适配器。");
+        }
+
+        private static async Task<CommandResult> ReloadMcpAsync(CommandContext context)
+        {
+            var mcpManager = context.SystemContext.McpManager;
+            if (mcpManager == null)
+                return CommandResult.Fail("MCP 管理器未初始化。");
+
+            await mcpManager.ReloadAsync();
+            var count = mcpManager.Connections.Count;
+            var toolCount = mcpManager.Connections.Sum(c => c.Tools.Count);
+            return CommandResult.Ok($"MCP 已重载：{count} 个 Server，{toolCount} 个工具。");
         }
     }
 }
