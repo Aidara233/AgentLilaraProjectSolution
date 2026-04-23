@@ -289,6 +289,7 @@ Storage/
 页面:
   Dashboard    — 系统状态/引擎摘要/活跃Worker表格/做梦状态/实时日志尾部
   Logs         — 实时日志流 + 来源过滤 + 关键词搜索 + 暂停/恢复
+  Console      — 频道选择/创建 + 聊天式消息流 + 模拟用户/替Bot说话/自定义发送者 + @提及/私聊模拟
   EngineControl — 引擎启停/静音模式开关
   DreamControl  — 睡眠许可/强制睡觉/睡意偏移/红色警报
   WorkerDetail  — 单频道Worker完整状态（冲动值/EMA/轮次/授权工具）
@@ -296,4 +297,9 @@ Storage/
   Memories     — 主记忆/临时记忆浏览 + 人物/关键词过滤
   People       — 人物目录 + 信任等级 + 关联账号展开
   ConfigEditor — JSON配置组编辑器（类型感知输入/敏感字段遮罩）
+
+启动行为:
+  默认启动 Web 服务器（所有模式），ConsoleAdapter 已移除（仅 --debug 保留纯控制台）
+  --debug / --test 模式不启动 Web 服务器
+  ASP.NET 日志压制到 Warning 级别，控制台输出干净
 ```
