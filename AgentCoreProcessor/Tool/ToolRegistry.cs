@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -11,7 +12,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal static class ToolRegistry
     {
-        private static readonly Dictionary<string, ITool> _tools;
+        private static readonly ConcurrentDictionary<string, ITool> _tools;
         private static readonly HashSet<string> _activeGroups = new();
 
         static ToolRegistry()
@@ -39,8 +40,12 @@ namespace AgentCoreProcessor.Tool
                 new RetainListTool(),
                 new ActivateToolGroupTool()
             };
-            _tools = toolList.ToDictionary(t => t.Name);
+            _tools = new ConcurrentDictionary<string, ITool>(toolList.ToDictionary(t => t.Name));
         }
+
+        public static bool Register(ITool tool) => _tools.TryAdd(tool.Name, tool);
+
+        public static bool Unregister(string toolName) => _tools.TryRemove(toolName, out _);
 
         public static ITool? Get(string toolName)
         {

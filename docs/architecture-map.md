@@ -16,6 +16,7 @@ AgentCoreProcessor/
 ├── Database/    实体 + Repository（SQLite，12张表）
 ├── Engine/      引擎生态（MasterEngine 内核 + 子引擎 + Worker闸门循环 + 内务模块）
 ├── Memory/      MemoryService 检索管线
+├── MCP/         MCP Client 桥接层（外部插件生态接入）
 ├── Tool/        工具接口 + 顺序执行器 + 工具折叠分组 + 全局/局部工具集
 ├── Util/        VectorUtil 向量操作
 ├── WebUI/       Blazor Server 管理面板（嵌入式，同进程）
@@ -212,6 +213,39 @@ Review专用工具 (ReviewEngine内部):
   更新快速记忆 / 调整好感度 / 标记复盘 / 请求增援 / 保存进度 / 完成
 ```
 
+## MCP 插件系统
+
+```
+MCP Client 集成（Model Context Protocol）:
+  外部 MCP Server 的工具动态注册为 ITool，模型调用时与内置工具完全一致
+
+架构:
+  McpConfig          — Storage/MCP/McpServers.json 配置（Server 列表+工具覆盖）
+  McpServerConnection — 单个 Server 连接生命周期（stdio/HTTP 传输）
+  McpBridgeTool      — ITool 包装器（MCP 工具 → 内部工具接口桥接）
+  McpServerManager   — 全局管理器（启动/停止/注册，MasterEngine.InitAsync 初始化）
+
+参数映射:
+  MCP: JSON Schema 命名参数 → ITool: 位置字符串数组
+  发现时: required 参数在前 + 其余按字母序 → ToolParameter 列表
+  调用时: 按索引映射回命名参数 Dictionary → MCP Server
+
+工具命名: {toolPrefix}_{mcpToolName}（前缀可配置，避免与内置中文工具名冲突）
+默认行为: ContinueLoop=true, RetainResult=true, 折叠组显示(DefaultExpanded=false)
+权限: 服务器级默认 + 单工具覆盖（Default/Elevated/Admin）
+传输: stdio（子进程）/ HTTP（Streamable HTTP/SSE）
+容错: 单个 Server 连接失败不阻塞其他，MCP 整体失败不阻塞核心功能
+
+配置: Storage/MCP/McpServers.json
+  servers[].id/name/enabled/transport/command/args/env/url
+  servers[].toolGroup/toolPrefix/permission/timeout
+  servers[].toolOverrides.{toolName}.permission/continueLoop/retainResult
+
+ToolRegistry 动态注册:
+  Register(ITool) / Unregister(string) — ConcurrentDictionary 线程安全
+  MCP 工具与内置工具共享 GenerateDescriptions/GenerateCapabilitySummary
+```
+
 ## 用户系统
 
 ```
@@ -266,6 +300,8 @@ Storage/
 │     └── OneBotAdapter.json  QQ适配器配置(WS地址/白名单/botNames)
 ├── Command/
 │     └── CommandConfig.json  指令前缀配置
+├── MCP/
+│     └── McpServers.json     MCP Server 声明配置(传输/工具组/权限/覆盖)
 ├── PersonaMemorySeed.txt     人设记忆种子（首次启动导入）
 ├── Database/lilara.db        SQLite数据库
 ├── Logs/                     framework日志 + Model调用日志

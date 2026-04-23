@@ -8,6 +8,7 @@ using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Client;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Database;
+using AgentCoreProcessor.MCP;
 using AgentCoreProcessor.Memory;
 using Newtonsoft.Json;
 
@@ -44,6 +45,7 @@ namespace AgentCoreProcessor.Engine
         private DbManager? db;
         private IEmbeddingProvider? embeddingProvider;
         private IVisionProvider? visionProvider;
+        private McpServerManager? mcpManager;
 
         // ---- ISystemContext 实现 ----
         public MemoryRepository Memories { get; private set; } = null!;
@@ -232,6 +234,18 @@ namespace AgentCoreProcessor.Engine
                     StartEngine(engine);
                     FrameworkLogger.Log("MasterEngine", $"自启动引擎: {type}");
                 }
+            }
+
+            // MCP Server 初始化
+            try
+            {
+                var mcpConfigPath = Path.Combine(PathConfig.StoragePath, "MCP", "McpServers.json");
+                mcpManager = new McpServerManager(mcpConfigPath);
+                await mcpManager.InitAsync();
+            }
+            catch (Exception ex)
+            {
+                FrameworkLogger.LogError("MasterEngine", ex, "MCP 初始化失败（不影响核心功能）");
             }
 
             FrameworkLogger.Log("MasterEngine", "内核初始化完成");
