@@ -1,0 +1,172 @@
+@page "/memories"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using AgentCoreProcessor.Engine
+@using AgentCoreProcessor.Database
+@inject MasterEngine Engine
+
+<h4 class="mb-3">记忆浏览器</h4>
+
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+        <button class="nav-link @(tab == "main" ? "active" : "")" @onclick='() => SwitchTab("main")'>
+            主记忆 <span class="badge bg-secondary ms-1">@mainCount</span>
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link @(tab == "temp" ? "active" : "")" @onclick='() => SwitchTab("temp")'>
+            临时记忆 <span class="badge bg-secondary ms-1">@tempMemories.Count</span>
+        </button>
+    </li>
+</ul>
+
+<div class="row g-2 mb-3">
+    <div class="col-md-3">
+        <select class="form-select form-select-sm" @bind="selectedPersonId" @bind:after="Refresh">
+            <option value="0">全部人物</option>
+            @foreach (var p in persons)
+            {
+                <option value="@p.Id">@p.Id - @(string.IsNullOrEmpty(p.FastMemory) ? "(无备注)" : Truncate(p.FastMemory, 20))</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-4">
+        <div class="input-group input-group-sm">
+            <input type="text" class="form-control" placeholder="搜索记忆内容..." @bind="keyword" />
+            <button class="btn btn-outline-primary" @onclick="Refresh">
+                <i class="bi bi-search"></i>
+            </button>
+        </div>
+    </div>
+</div>
+
+@if (tab == "main")
+{
+    <div class="card">
+        <div class="card-body p-0">
+            @if (mainMemories.Count == 0)
+            {
+                <div class="p-3 text-muted text-center">无记忆条目</div>
+            }
+            else
+            {
+                <div class="list-group list-group-flush" style="max-height:calc(100vh - 300px); overflow-y:auto">
+                    @foreach (var m in mainMemories)
+                    {
+                        <div class="list-group-item py-2">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    @if (m.PersonId > 0)
+                                    {
+                                        <span class="badge bg-info me-1">P:@m.PersonId</span>
+                                    }
+                                    @if (m.ChannelId > 0)
+                                    {
+                                        <span class="badge bg-secondary me-1">Ch:@m.ChannelId</span>
+                                    }
+                                    <span class="badge @(m.Importance >= 0.7f ? "bg-warning" : "bg-light text-dark") me-1">
+                                        重要度:@m.Importance.ToString("F1")
+                                    </span>
+                                    @if (m.Confidence == "low")
+                                    {
+                                        <span class="badge bg-danger me-1">低置信</span>
+                                    }
+                                </div>
+                                <small class="text-muted">@m.CreatedAt.ToString("MM-dd HH:mm")</small>
+                            </div>
+                            <div class="mt-1">@m.Content</div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+else
+{
+    <div class="card">
+        <div class="card-body p-0">
+            @if (tempMemories.Count == 0)
+            {
+                <div class="p-3 text-muted text-center">无临时记忆</div>
+            }
+            else
+            {
+                <div class="list-group list-group-flush" style="max-height:calc(100vh - 300px); overflow-y:auto">
+                    @foreach (var m in tempMemories)
+                    {
+                        <div class="list-group-item py-2">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    @if (m.PersonId > 0)
+                                    {
+                                        <span class="badge bg-info me-1">P:@m.PersonId</span>
+                                    }
+                                    @if (m.ChannelId > 0)
+                                    {
+                                        <span class="badge bg-secondary me-1">Ch:@m.ChannelId</span>
+                                    }
+                                </div>
+                                <small class="text-muted">@m.CreatedAt.ToString("MM-dd HH:mm")</small>
+                            </div>
+                            <div class="mt-1">@m.Content</div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private string tab = "main";
+    private List<Person> persons = new();
+    private List<MemoryEntry> mainMemories = new();
+    private List<TempMemoryEntry> tempMemories = new();
+    private int mainCount = 0;
+    private int selectedPersonId = 0;
+    private string keyword = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        persons = await Engine.Session.GetAllPersonsAsync();
+        mainCount = await Engine.Memories.GetCountAsync();
+        await Refresh();
+    }
+
+    private async Task SwitchTab(string newTab)
+    {
+        tab = newTab;
+        await Refresh();
+    }
+
+    private async Task Refresh()
+    {
+        if (tab == "main")
+        {
+            if (!string.IsNullOrWhiteSpace(keyword))
+            {
+                mainMemories = await Engine.Memories.SearchAsync(keyword.Trim(), 100);
+            }
+            else if (selectedPersonId > 0)
+            {
+                mainMemories = await Engine.Memories.GetByPersonAsync(selectedPersonId);
+            }
+            else
+            {
+                mainMemories = await Engine.Memories.GetRecentAsync(100);
+            }
+            mainCount = await Engine.Memories.GetCountAsync();
+        }
+        else
+        {
+            var all = await Engine.TempMemories.GetAllAsync();
+            tempMemories = all;
+            if (selectedPersonId > 0)
+                tempMemories = tempMemories.Where(t => t.PersonId == selectedPersonId).ToList();
+            if (!string.IsNullOrWhiteSpace(keyword))
+                tempMemories = tempMemories.Where(t => t.Content.Contains(keyword, StringComparison.OrdinalIgnoreCase)).ToList();
+        }
+    }
+
+    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "...";
+}

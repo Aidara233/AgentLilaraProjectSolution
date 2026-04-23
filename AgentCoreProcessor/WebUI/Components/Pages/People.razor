@@ -1,0 +1,158 @@
+@page "/people"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using AgentCoreProcessor.Engine
+@using AgentCoreProcessor.Database
+@inject MasterEngine Engine
+
+<h4 class="mb-3">人物目录</h4>
+
+<div class="card">
+    <div class="card-body p-0">
+        @if (persons.Count == 0)
+        {
+            <div class="p-3 text-muted text-center">无人物数据</div>
+        }
+        else
+        {
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>ID</th>
+                        <th>信任等级</th>
+                        <th>好感度</th>
+                        <th>快速记忆</th>
+                        <th>警报</th>
+                        <th>创建时间</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var p in persons)
+                    {
+                        <tr>
+                            <td>@p.Id</td>
+                            <td>
+                                <span class="badge @TrustBadgeClass(p.TrustLevel)">
+                                    @p.TrustLevel
+                                </span>
+                            </td>
+                            <td>@p.TrustProgress.ToString("F1")</td>
+                            <td>
+                                <span title="@p.FastMemory">
+                                    @(string.IsNullOrEmpty(p.FastMemory) ? "-" : Truncate(p.FastMemory, 30))
+                                </span>
+                            </td>
+                            <td>
+                                @if (p.AlertLevel > 0)
+                                {
+                                    <span class="badge bg-warning">Lv@(p.AlertLevel)</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">-</span>
+                                }
+                            </td>
+                            <td>@p.CreatedAt.ToString("yyyy-MM-dd")</td>
+                            <td>
+                                <button class="btn btn-outline-primary btn-sm"
+                                        @onclick="() => ToggleDetail(p.Id)">
+                                    <i class="bi @(expandedId == p.Id ? "bi-chevron-up" : "bi-chevron-down")"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        @if (expandedId == p.Id)
+                        {
+                            <tr>
+                                <td colspan="7" class="bg-light">
+                                    <div class="p-2">
+                                        <h6>关联账号</h6>
+                                        @if (linkedUsers.Count == 0)
+                                        {
+                                            <span class="text-muted">无关联账号</span>
+                                        }
+                                        else
+                                        {
+                                            <table class="table table-sm table-bordered mb-0">
+                                                <thead>
+                                                    <tr>
+                                                        <th>平台</th>
+                                                        <th>平台ID</th>
+                                                        <th>显示名</th>
+                                                        <th>权限</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    @foreach (var u in linkedUsers)
+                                                    {
+                                                        <tr>
+                                                            <td>@u.Platform</td>
+                                                            <td><code>@u.PlatformId</code></td>
+                                                            <td>@u.DisplayName</td>
+                                                            <td>
+                                                                <span class="badge @PermBadgeClass(u.PermissionLevel)">
+                                                                    @u.PermissionLevel
+                                                                </span>
+                                                            </td>
+                                                        </tr>
+                                                    }
+                                                </tbody>
+                                            </table>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+@code {
+    private List<Person> persons = new();
+    private List<User> linkedUsers = new();
+    private int expandedId = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        persons = await Engine.Session.GetAllPersonsAsync();
+    }
+
+    private async Task ToggleDetail(int personId)
+    {
+        if (expandedId == personId)
+        {
+            expandedId = 0;
+            linkedUsers.Clear();
+            return;
+        }
+        expandedId = personId;
+        linkedUsers = await Engine.Session.GetUsersByPersonIdAsync(personId);
+    }
+
+    private static string TrustBadgeClass(TrustLevel level) => level switch
+    {
+        TrustLevel.Hostile => "bg-danger",
+        TrustLevel.Wary => "bg-warning text-dark",
+        TrustLevel.Unknown => "bg-secondary",
+        TrustLevel.Stranger => "bg-light text-dark",
+        TrustLevel.Understanding => "bg-info",
+        TrustLevel.Familiarity => "bg-primary",
+        TrustLevel.Trust => "bg-success",
+        TrustLevel.AbsoluteTrust => "bg-success",
+        _ => "bg-secondary"
+    };
+
+    private static string PermBadgeClass(PermissionLevel level) => level switch
+    {
+        PermissionLevel.Admin => "bg-danger",
+        PermissionLevel.Elevated => "bg-warning text-dark",
+        PermissionLevel.Default => "bg-secondary",
+        PermissionLevel.Restricted => "bg-dark",
+        PermissionLevel.Blocked => "bg-dark",
+        _ => "bg-secondary"
+    };
+
+    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "...";
+}

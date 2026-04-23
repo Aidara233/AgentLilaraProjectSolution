@@ -68,5 +68,29 @@ namespace AgentCoreProcessor.Database
             result.AddRange(after);
             return result;
         }
+
+        /// <summary>分页查询频道消息，支持关键词搜索。</summary>
+        public Task<List<UserMessage>> SearchByChannelAsync(int channelId, string? keyword, int offset, int limit)
+        {
+            if (string.IsNullOrEmpty(keyword))
+            {
+                return db.QueryAsync<UserMessage>(
+                    "SELECT * FROM UserMessages WHERE ChannelId = ? ORDER BY Time DESC LIMIT ? OFFSET ?",
+                    channelId, limit, offset);
+            }
+            return db.QueryAsync<UserMessage>(
+                "SELECT * FROM UserMessages WHERE ChannelId = ? AND Content LIKE ? ORDER BY Time DESC LIMIT ? OFFSET ?",
+                channelId, $"%{keyword}%", limit, offset);
+        }
+
+        /// <summary>获取频道消息总数。</summary>
+        public async Task<int> GetCountByChannelAsync(int channelId)
+        {
+            var result = await db.QueryAsync<CountResult>(
+                "SELECT COUNT(*) AS Value FROM UserMessages WHERE ChannelId = ?", channelId);
+            return result.Count > 0 ? result[0].Value : 0;
+        }
     }
+
+    internal class CountResult { public int Value { get; set; } }
 }

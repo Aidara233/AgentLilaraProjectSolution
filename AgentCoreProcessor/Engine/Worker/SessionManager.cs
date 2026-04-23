@@ -158,5 +158,14 @@ namespace AgentCoreProcessor.Engine
         /// <summary>以某条消息为锚点，取前后各 radius 条消息作为上下文。</summary>
         public Task<List<UserMessage>> GetContextAroundAsync(int messageId, int channelId, int radius = 3)
             => messages.GetContextAroundAsync(messageId, channelId, radius);
+
+        public Task<List<UserMessage>> SearchMessagesByChannelAsync(int channelId, string? keyword, int offset, int limit)
+            => messages.SearchByChannelAsync(channelId, keyword, offset, limit);
+
+        public Task<int> GetMessageCountByChannelAsync(int channelId)
+            => messages.GetCountByChannelAsync(channelId);
+
+        public Task<List<User>> GetUsersByPersonIdAsync(int personId)
+            => users.GetByPersonIdAsync(personId);
     }
 }
