@@ -1,0 +1,240 @@
+@page "/"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using AgentCoreProcessor.WebUI.Services
+@inject SystemMonitor Monitor
+@inject LogStreamService LogStream
+@implements IDisposable
+
+<h4 class="mb-3">仪表盘</h4>
+
+<!-- 系统状态卡片 -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card card-stat @(snap.IsIdle ? "idle" : "busy")">
+            <div class="card-body py-2">
+                <div class="text-muted small">系统状态</div>
+                <div class="fw-bold @(snap.IsIdle ? "text-success" : "text-danger")">
+                    @(snap.IsIdle ? "空闲" : "忙碌")
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card card-stat info">
+            <div class="card-body py-2">
+                <div class="text-muted small">空闲时长</div>
+                <div class="fw-bold">@FormatDuration(snap.IdleDuration)</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card card-stat info">
+            <div class="card-body py-2">
+                <div class="text-muted small">上次消息</div>
+                <div class="fw-bold">@snap.LastMessageTime.ToString("HH:mm:ss")</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card card-stat @(snap.MuteMode ? "muted" : "idle")">
+            <div class="card-body py-2">
+                <div class="text-muted small">静音模式</div>
+                <div class="fw-bold">@(snap.MuteMode ? "开启" : "关闭")</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 引擎摘要 -->
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header py-2 fw-semibold">
+                <i class="bi bi-cpu me-1"></i> 引擎摘要
+            </div>
+            <div class="card-body py-2">
+                @if (snap.EngineSummary.Count == 0)
+                {
+                    <span class="text-muted">无活跃引擎</span>
+                }
+                else
+                {
+                    @foreach (var (type, count) in snap.EngineSummary)
+                    {
+                        <span class="badge bg-secondary me-2">@type: @count</span>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header py-2 fw-semibold">
+                <i class="bi bi-moon-stars me-1"></i> 做梦状态
+            </div>
+            <div class="card-body py-2">
+                @if (snap.DreamState == null)
+                {
+                    <span class="text-muted">未加载</span>
+                }
+                else
+                {
+                    var d = snap.DreamState;
+                    <div class="d-flex flex-wrap gap-3">
+                        <div>
+                            <small class="text-muted">状态</small><br/>
+                            <span class="fw-bold @(d.HasActiveDream ? "text-primary" : "")">
+                                @(d.HasActiveDream ? "做梦中" : "清醒")
+                            </span>
+                        </div>
+                        <div>
+                            <small class="text-muted">上次大睡</small><br/>
+                            @(d.LastDeepSleepTime?.ToString("MM-dd HH:mm") ?? "从未")
+                        </div>
+                        <div>
+                            <small class="text-muted">上次走神</small><br/>
+                            @(d.LastDaydreamTime?.ToString("HH:mm:ss") ?? "从未")
+                        </div>
+                        <div>
+                            <small class="text-muted">许可</small><br/>
+                            @(d.DreamPermission ? "已授予" : d.PermissionRequestTime != null ? "等待中" : "未请求")
+                        </div>
+                        @if (d.CustomRedAlert)
+                        {
+                            <div><span class="badge bg-danger">红色警报</span></div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 活跃 Worker -->
+<div class="card mb-4">
+    <div class="card-header py-2 fw-semibold">
+        <i class="bi bi-diagram-3 me-1"></i> 活跃 Worker
+    </div>
+    <div class="card-body p-0">
+        @if (snap.Workers.Count == 0)
+        {
+            <div class="p-3 text-muted">无活跃 Worker</div>
+        }
+        else
+        {
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>频道</th>
+                        <th>模式</th>
+                        <th>状态</th>
+                        <th>冲动值</th>
+                        <th>消息速率</th>
+                        <th>轮次</th>
+                        <th>参与者</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var w in snap.Workers)
+                    {
+                        <tr style="cursor:pointer" @onclick="() => NavToWorker(w.ChannelId)">
+                            <td>
+                                #@w.ChannelId
+                                @if (!string.IsNullOrEmpty(w.ChannelName))
+                                {
+                                    <small class="text-muted ms-1">@w.ChannelName</small>
+                                }
+                            </td>
+                            <td>
+                                <span class="badge @(w.IsWorkingMode ? "badge-working" : "badge-express")">
+                                    @(w.IsWorkingMode ? "Working" : "Express")
+                                </span>
+                            </td>
+                            <td>
+                                @if (w.IsBusy)
+                                {
+                                    <span class="text-danger">处理中</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">等待</span>
+                                }
+                            </td>
+                            <td>@w.Impulse.ToString("F2")</td>
+                            <td>@w.MessageRate.ToString("F2")</td>
+                            <td>@w.TotalRounds</td>
+                            <td>@w.ParticipantCount</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+<!-- 实时日志 -->
+<div class="card">
+    <div class="card-header py-2 fw-semibold">
+        <i class="bi bi-terminal me-1"></i> 实时日志
+        <small class="text-muted ms-2">(最近 30 条)</small>
+    </div>
+    <div class="card-body p-0">
+        <div class="log-container p-2" id="logContainer">
+            @foreach (var entry in recentLogs)
+            {
+                <div class="log-entry @(entry.IsError ? "text-danger" : "")">
+                    <span class="text-muted">@entry.Time.ToString("HH:mm:ss.fff")</span>
+                    <span class="log-source ms-1">[@entry.Source]</span>
+                    <span class="ms-1">@entry.Message</span>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private SystemSnapshot snap = new();
+    private List<LogEntry> recentLogs = new();
+
+    [Inject] private NavigationManager Nav { get; set; } = default!;
+
+    protected override void OnInitialized()
+    {
+        snap = Monitor.Current;
+        recentLogs = LogStream.GetRecent(30);
+        Monitor.OnStateChanged += OnStateChanged;
+        LogStream.OnNewEntry += OnNewLog;
+    }
+
+    private void OnStateChanged()
+    {
+        snap = Monitor.Current;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnNewLog(LogEntry entry)
+    {
+        recentLogs.Add(entry);
+        if (recentLogs.Count > 30)
+            recentLogs.RemoveAt(0);
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void NavToWorker(int channelId)
+    {
+        Nav.NavigateTo($"/worker/{channelId}");
+    }
+
+    private static string FormatDuration(TimeSpan ts)
+    {
+        if (ts.TotalHours >= 1) return $"{ts.Hours}h {ts.Minutes}m";
+        if (ts.TotalMinutes >= 1) return $"{ts.Minutes}m {ts.Seconds}s";
+        return $"{ts.Seconds}s";
+    }
+
+    public void Dispose()
+    {
+        Monitor.OnStateChanged -= OnStateChanged;
+        LogStream.OnNewEntry -= OnNewLog;
+    }
+}

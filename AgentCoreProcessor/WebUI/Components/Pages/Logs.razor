@@ -1,0 +1,131 @@
+@page "/logs"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using AgentCoreProcessor.WebUI.Services
+@inject LogStreamService LogStream
+@implements IDisposable
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0">日志查看器</h4>
+    <div class="d-flex gap-2 align-items-center">
+        <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" @bind="autoScroll" id="autoScrollCheck" />
+            <label class="form-check-label small" for="autoScrollCheck">自动滚动</label>
+        </div>
+        <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" @bind="paused" id="pauseCheck" />
+            <label class="form-check-label small" for="pauseCheck">暂停</label>
+        </div>
+        <button class="btn btn-outline-secondary btn-sm" @onclick="ClearLogs">
+            <i class="bi bi-trash me-1"></i>清空
+        </button>
+    </div>
+</div>
+
+<!-- 过滤器 -->
+<div class="row g-2 mb-3">
+    <div class="col-md-3">
+        <select class="form-select form-select-sm" @bind="sourceFilter">
+            <option value="">全部来源</option>
+            @foreach (var src in knownSources)
+            {
+                <option value="@src">@src</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-4">
+        <input type="text" class="form-control form-control-sm" placeholder="关键词搜索..."
+               @bind="keywordFilter" @bind:event="oninput" />
+    </div>
+    <div class="col-md-2">
+        <div class="form-check mt-1">
+            <input class="form-check-input" type="checkbox" @bind="errorsOnly" id="errorsOnlyCheck" />
+            <label class="form-check-label small" for="errorsOnlyCheck">仅错误</label>
+        </div>
+    </div>
+    <div class="col-md-3 text-end">
+        <small class="text-muted">显示 @filteredLogs.Count / @allLogs.Count 条</small>
+    </div>
+</div>
+
+<!-- 日志内容 -->
+<div class="card">
+    <div class="card-body p-0">
+        <div class="log-container p-2" style="max-height:calc(100vh - 260px)">
+            @foreach (var entry in filteredLogs)
+            {
+                <div class="log-entry @(entry.IsError ? "text-danger bg-danger bg-opacity-10" : "")">
+                    <span class="text-muted">@entry.Time.ToString("HH:mm:ss.fff")</span>
+                    <span class="log-source ms-1">[@entry.Source]</span>
+                    <span class="ms-1">@entry.Message</span>
+                </div>
+            }
+            @if (filteredLogs.Count == 0)
+            {
+                <div class="p-3 text-muted text-center">无日志条目</div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<LogEntry> allLogs = new();
+    private List<LogEntry> filteredLogs = new();
+    private bool autoScroll = true;
+    private bool paused = false;
+    private string sourceFilter = "";
+    private string keywordFilter = "";
+    private bool errorsOnly = false;
+
+    private static readonly string[] knownSources = new[]
+    {
+        "MasterEngine", "WorkerEngine", "DreamEngine", "DreamSpawnCheck",
+        "EventBus", "ToolExecutor", "MemoryService", "SessionManager",
+        "SystemMonitor", "Program", "WebConfig"
+    };
+
+    protected override void OnInitialized()
+    {
+        allLogs = LogStream.GetRecent(500);
+        ApplyFilter();
+        LogStream.OnNewEntry += OnNewLog;
+    }
+
+    private void OnNewLog(LogEntry entry)
+    {
+        if (paused) return;
+
+        allLogs.Add(entry);
+        if (allLogs.Count > 2000)
+            allLogs.RemoveAt(0);
+
+        ApplyFilter();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void ApplyFilter()
+    {
+        var items = allLogs.AsEnumerable();
+
+        if (!string.IsNullOrEmpty(sourceFilter))
+            items = items.Where(e => e.Source.Equals(sourceFilter, StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrEmpty(keywordFilter))
+            items = items.Where(e => e.Message.Contains(keywordFilter, StringComparison.OrdinalIgnoreCase));
+
+        if (errorsOnly)
+            items = items.Where(e => e.IsError);
+
+        filteredLogs = items.ToList();
+    }
+
+    private void ClearLogs()
+    {
+        allLogs.Clear();
+        filteredLogs.Clear();
+    }
+
+    public void Dispose()
+    {
+        LogStream.OnNewEntry -= OnNewLog;
+    }
+}

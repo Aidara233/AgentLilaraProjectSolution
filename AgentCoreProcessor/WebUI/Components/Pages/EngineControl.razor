@@ -1,0 +1,127 @@
+@page "/engine"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using AgentCoreProcessor.WebUI.Services
+@using AgentCoreProcessor.Engine
+@inject SystemMonitor Monitor
+@inject MasterEngine Engine
+@implements IDisposable
+
+<h4 class="mb-3">引擎控制</h4>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body py-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-muted small">静音模式</div>
+                        <div class="fw-bold">@(snap.MuteMode ? "已开启" : "已关闭")</div>
+                    </div>
+                    <button class="btn @(snap.MuteMode ? "btn-warning" : "btn-outline-secondary") btn-sm"
+                            @onclick="ToggleMute">
+                        <i class="bi @(snap.MuteMode ? "bi-volume-mute" : "bi-volume-up") me-1"></i>
+                        @(snap.MuteMode ? "关闭静音" : "开启静音")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body py-3">
+                <div class="text-muted small">系统状态</div>
+                <div class="fw-bold @(snap.IsIdle ? "text-success" : "text-danger")">
+                    @(snap.IsIdle ? "空闲" : "忙碌") — @FormatDuration(snap.IdleDuration)
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header py-2 fw-semibold">
+        <i class="bi bi-cpu me-1"></i> 活跃引擎
+    </div>
+    <div class="card-body p-0">
+        @if (snap.EngineSummary.Count == 0)
+        {
+            <div class="p-3 text-muted">无活跃引擎</div>
+        }
+        else
+        {
+            <table class="table table-sm mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>引擎类型</th>
+                        <th>数量</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var (type, count) in snap.EngineSummary)
+                    {
+                        <tr>
+                            <td>@type</td>
+                            <td>@count</td>
+                            <td>
+                                <button class="btn btn-outline-danger btn-sm"
+                                        @onclick="() => StopEngines(type)">
+                                    <i class="bi bi-stop-circle me-1"></i>停止
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(statusMessage))
+{
+    <div class="alert alert-info alert-dismissible fade show">
+        @statusMessage
+        <button type="button" class="btn-close" @onclick="() => statusMessage = null"></button>
+    </div>
+}
+
+@code {
+    private SystemSnapshot snap = new();
+    private string? statusMessage;
+
+    protected override void OnInitialized()
+    {
+        snap = Monitor.Current;
+        Monitor.OnStateChanged += OnStateChanged;
+    }
+
+    private void OnStateChanged()
+    {
+        snap = Monitor.Current;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void ToggleMute()
+    {
+        Engine.MuteMode = !Engine.MuteMode;
+        statusMessage = Engine.MuteMode ? "静音模式已开启" : "静音模式已关闭";
+    }
+
+    private void StopEngines(string type)
+    {
+        Engine.RequestStopEnginesByType(type);
+        statusMessage = $"已请求停止所有 {type} 引擎";
+    }
+
+    private static string FormatDuration(TimeSpan ts)
+    {
+        if (ts.TotalHours >= 1) return $"{ts.Hours}h {ts.Minutes}m";
+        if (ts.TotalMinutes >= 1) return $"{ts.Minutes}m {ts.Seconds}s";
+        return $"{ts.Seconds}s";
+    }
+
+    public void Dispose()
+    {
+        Monitor.OnStateChanged -= OnStateChanged;
+    }
+}

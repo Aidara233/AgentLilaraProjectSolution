@@ -5,6 +5,13 @@ using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Engine;
+using AgentCoreProcessor.WebUI.Services;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace AgentCoreProcessor
 {
@@ -219,12 +226,62 @@ namespace AgentCoreProcessor
                 return timedOut ? 1 : 0;
             }
 
-            // 正常模式：适配器消息已通过 EventBus 自动路由到 MasterEngine
+            // 正常模式：启动 Web 服务器 + 适配器
+            var webConfig = WebConfig.Load();
+            var builder = WebApplication.CreateBuilder(args);
+
+            builder.WebHost.UseUrls($"http://0.0.0.0:{webConfig.Port}");
+
+            // 注册服务
+            builder.Services.AddSingleton(eventBus);
+            builder.Services.AddSingleton(engine);
+            builder.Services.AddSingleton(adapterManager);
+            builder.Services.AddSingleton(webConfig);
+            builder.Services.AddSingleton<WebAuthService>();
+            builder.Services.AddSingleton<SystemMonitor>();
+            builder.Services.AddSingleton<LogStreamService>();
+
+            builder.Services.AddRazorComponents()
+                .AddInteractiveServerComponents();
+
+            builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+                .AddCookie(options =>
+                {
+                    options.LoginPath = "/login";
+                    options.ExpireTimeSpan = TimeSpan.FromDays(7);
+                });
+
+            var app = builder.Build();
+
+            app.UseStaticFiles();
+            app.UseAuthentication();
+            app.UseAuthorization();
+            app.UseAntiforgery();
+
+            // 登录端点（GET，由 Login.razor 验证后跳转）
+            app.MapGet("/api/auth/login", async (HttpContext http, string username, WebAuthService auth) =>
+            {
+                var principal = auth.CreatePrincipal(username);
+                await http.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal);
+                http.Response.Redirect("/");
+            });
+
+            // 登出端点
+            app.MapPost("/api/auth/logout", async (HttpContext http) =>
+            {
+                await http.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                http.Response.Redirect("/login");
+            });
+
+            app.MapRazorComponents<AgentCoreProcessor.WebUI.Components.App>()
+                .AddInteractiveServerRenderMode();
+
             await adapterManager.StartAllAsync();
 
-            // --qq 模式：StartAsync 不阻塞，需要显式等待接收循环保持进程活跃
-            if (qqMode && oneBotAdapter != null)
-                await oneBotAdapter.WaitAsync();
+            FrameworkLogger.Log("Program", $"WebUI 已启动: http://localhost:{webConfig.Port}");
+            Console.WriteLine($"[WebUI] 管理面板: http://localhost:{webConfig.Port}");
+
+            await app.RunAsync();
 
             return 0;
         }

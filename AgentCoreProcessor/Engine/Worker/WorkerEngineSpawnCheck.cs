@@ -81,5 +81,7 @@ namespace AgentCoreProcessor.Engine
             activeChannels[sc.Channel.Id] = engine;
             return engine;
         }
+
+        internal IReadOnlyDictionary<int, WorkerEngine> GetActiveChannels() => activeChannels;
     }
 }

@@ -562,6 +562,27 @@ namespace AgentCoreProcessor.Engine
             IsAlive = false;
         }
 
+        internal WebUI.Services.WorkerSnapshot GetSnapshot() => new()
+        {
+            ChannelId = channelId,
+            IsAlive = IsAlive,
+            IsBusy = IsBusy,
+            IsWorkingMode = isWorkingMode,
+            IsInWorkingSession = isInWorkingSession,
+            Impulse = impulse,
+            MessageRate = messageRate,
+            Expectation = expectation,
+            Reality = reality,
+            ChannelAffinity = channelAffinity,
+            ConsecutiveExternalTriggers = consecutiveExternalTriggers,
+            LastCompletionTime = LastCompletionTime,
+            TotalRounds = loopControlModule.TotalRounds,
+            SilentRounds = loopControlModule.SilentRounds,
+            AuthorizedToolCount = authorizedTools.Count,
+            ParticipantCount = recentParticipants.Count,
+            ProcessedMessageCount = processedMessageCount
+        };
+
 
         // ---- 冲动值决策 ----
 

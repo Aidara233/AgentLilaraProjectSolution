@@ -207,6 +207,19 @@ namespace AgentCoreProcessor.Engine
 
         internal DreamConfig GetConfig() => cfg;
 
+        internal WebUI.Services.DreamStateSnapshot GetDreamSnapshot(bool hasActiveDream) => new()
+        {
+            ScoreOffset = scoreOffset,
+            CustomRedAlert = customRedAlert,
+            ForceFlag = forceFlag,
+            DreamPermission = dreamPermission,
+            PermissionRequestTime = permissionRequestTime,
+            LastDaydreamTime = lastDaydreamTime,
+            LastDeepSleepTime = lastDeepSleepTime,
+            PendingLevel = pendingLevel,
+            HasActiveDream = hasActiveDream
+        };
+
         // ---- 供 DreamEngine 实例回调 ----
 
         internal void OnDreamCompleted(SleepLevel level, int processed)

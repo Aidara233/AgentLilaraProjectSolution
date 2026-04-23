@@ -1,0 +1,128 @@
+@page "/worker/{ChannelId:int}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using AgentCoreProcessor.WebUI.Services
+@inject SystemMonitor Monitor
+@inject NavigationManager Nav
+@implements IDisposable
+
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="/">仪表盘</a></li>
+        <li class="breadcrumb-item active">Worker #@ChannelId</li>
+    </ol>
+</nav>
+
+@if (worker == null)
+{
+    <div class="alert alert-warning">该频道无活跃 Worker</div>
+}
+else
+{
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header py-2 fw-semibold">基本信息</div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-5">频道 ID</dt>
+                        <dd class="col-7">#@worker.ChannelId</dd>
+                        <dt class="col-5">模式</dt>
+                        <dd class="col-7">
+                            <span class="badge @(worker.IsWorkingMode ? "badge-working" : "badge-express")">
+                                @(worker.IsWorkingMode ? "Working" : "Express")
+                            </span>
+                        </dd>
+                        <dt class="col-5">状态</dt>
+                        <dd class="col-7">@(worker.IsBusy ? "处理中" : "等待")</dd>
+                        <dt class="col-5">会话中</dt>
+                        <dd class="col-7">@(worker.IsInWorkingSession ? "是" : "否")</dd>
+                        <dt class="col-5">外部触发</dt>
+                        <dd class="col-7">@worker.ConsecutiveExternalTriggers 次</dd>
+                        <dt class="col-5">上次完成</dt>
+                        <dd class="col-7">@(worker.LastCompletionTime?.ToString("HH:mm:ss") ?? "-")</dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header py-2 fw-semibold">冲动值</div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-6">当前值</dt>
+                        <dd class="col-6">@worker.Impulse.ToString("F2")</dd>
+                        <dt class="col-6">消息速率</dt>
+                        <dd class="col-6">@worker.MessageRate.ToString("F2")</dd>
+                        <dt class="col-6">频道亲和度</dt>
+                        <dd class="col-6">@worker.ChannelAffinity.ToString("F2")</dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header py-2 fw-semibold">社交满足度 (EMA)</div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-6">期望值</dt>
+                        <dd class="col-6">@worker.Expectation.ToString("F3")</dd>
+                        <dt class="col-6">现实值</dt>
+                        <dd class="col-6">@worker.Reality.ToString("F3")</dd>
+                        <dt class="col-6">比率</dt>
+                        <dd class="col-6">@(worker.Expectation > 0.001f ? (worker.Reality / worker.Expectation).ToString("F2") : "-")</dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header py-2 fw-semibold">循环状态</div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-6">总轮次</dt>
+                        <dd class="col-6">@worker.TotalRounds</dd>
+                        <dt class="col-6">静默轮次</dt>
+                        <dd class="col-6">@worker.SilentRounds</dd>
+                        <dt class="col-6">已授权工具</dt>
+                        <dd class="col-6">@worker.AuthorizedToolCount</dd>
+                        <dt class="col-6">参与者</dt>
+                        <dd class="col-6">@worker.ParticipantCount</dd>
+                        <dt class="col-6">已处理消息</dt>
+                        <dd class="col-6">@worker.ProcessedMessageCount</dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int ChannelId { get; set; }
+
+    private WorkerSnapshot? worker;
+
+    protected override void OnInitialized()
+    {
+        UpdateWorker();
+        Monitor.OnStateChanged += OnStateChanged;
+    }
+
+    private void UpdateWorker()
+    {
+        worker = Monitor.Current.Workers.FirstOrDefault(w => w.ChannelId == ChannelId);
+    }
+
+    private void OnStateChanged()
+    {
+        UpdateWorker();
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Monitor.OnStateChanged -= OnStateChanged;
+    }
+}

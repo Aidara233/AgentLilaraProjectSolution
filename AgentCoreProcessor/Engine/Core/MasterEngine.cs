@@ -140,6 +140,16 @@ namespace AgentCoreProcessor.Engine
             }
         }
 
+        internal T? GetSpawnCheck<T>() where T : class, IEngineSpawnCheck
+        {
+            lock (engineLock) { return spawnChecks.OfType<T>().FirstOrDefault(); }
+        }
+
+        internal List<ISubEngine> GetActiveEnginesSnapshot()
+        {
+            lock (engineLock) { return activeEngines.Where(e => e.IsAlive).ToList(); }
+        }
+
         // ---- 初始化 ----
 
         public async Task InitAsync()

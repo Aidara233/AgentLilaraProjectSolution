@@ -16,6 +16,9 @@ namespace AgentCoreProcessor.Engine
         /// <summary>是否同时输出到控制台（--test 模式启用）。</summary>
         public static bool MirrorToConsole { get; set; } = false;
 
+        /// <summary>日志写入后触发（source, fullLine, isError）。WebUI LogStreamService 订阅此事件。</summary>
+        public static event Action<string, string, bool>? OnLogWritten;
+
         private static string LogPath
         {
             get
@@ -37,6 +40,7 @@ namespace AgentCoreProcessor.Engine
                 }
                 if (MirrorToConsole)
                     Console.WriteLine($"[log] {line}");
+                OnLogWritten?.Invoke(source, line, false);
             }
             catch
             {
@@ -72,6 +76,7 @@ namespace AgentCoreProcessor.Engine
                 }
                 if (MirrorToConsole)
                     Console.WriteLine($"[error] {line}");
+                OnLogWritten?.Invoke(source, line, true);
             }
             catch
             {

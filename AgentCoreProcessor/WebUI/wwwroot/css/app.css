@@ -1,0 +1,44 @@
+.sidebar {
+    width: 220px;
+    min-height: 100vh;
+}
+
+.nav-link.active {
+    background-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+.nav-link:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.card-stat {
+    border-left: 4px solid;
+}
+
+.card-stat.idle { border-left-color: #198754; }
+.card-stat.busy { border-left-color: #dc3545; }
+.card-stat.muted { border-left-color: #6c757d; }
+.card-stat.info { border-left-color: #0d6efd; }
+
+.log-container {
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.log-entry {
+    padding: 1px 4px;
+    border-bottom: 1px solid #f0f0f0;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.log-source {
+    color: #6c757d;
+    font-weight: 600;
+}
+
+.badge-express { background-color: #198754; }
+.badge-working { background-color: #dc3545; }
