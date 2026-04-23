@@ -262,7 +262,7 @@ namespace AgentCoreProcessor.Engine
         private void WireModuleCallbacks()
         {
             // 回调在每次 RunAsync 启动时绑定，生命周期 = 引擎实例
-            // 实际的 lastMsg/lastSc 在 PrepareNewBatchAsync 中更新
+            // 实际的 lastMsg/lastSc 在 PrepareContextAsync 中更新
             speakModule.OnSpeak = async (rawText) =>
             {
                 if (currentLastMsg == null || currentLastSc == null || currentParticipantSnapshot == null) return;
@@ -390,6 +390,11 @@ namespace AgentCoreProcessor.Engine
             {
                 return false;
             }
+            else
+            {
+                FrameworkLogger.Log("WorkerEngine",
+                    $"Working 续轮: channelId={channelId}, round={loopControlModule.TotalRounds}");
+            }
 
             // 每轮统一重建上下文
             if (currentLastMsg == null || currentLastSc == null) return false;
@@ -493,6 +498,10 @@ namespace AgentCoreProcessor.Engine
                 lastRoundCalls = toolCalls;
                 lastRoundResults = results;
                 loopControlModule.AdvanceRound(speakModule.HadSpeakThisRound);
+
+                FrameworkLogger.Log("WorkerEngine",
+                    $"Working 执行: channelId={channelId}, 工具数={toolCalls.Count}, " +
+                    $"spoke={speakModule.HadSpeakThisRound}, round={loopControlModule.TotalRounds}");
             }
         }
 
@@ -518,6 +527,8 @@ namespace AgentCoreProcessor.Engine
 
                 if (hasContinue && !loopControlModule.IsMaxSilentReached && !loopControlModule.IsMaxRoundsReached)
                 {
+                    FrameworkLogger.Log("WorkerEngine",
+                        $"ContinueLoop 自唤醒: channelId={channelId}, round={loopControlModule.TotalRounds}");
                     gate.Signal();
                 }
                 else
