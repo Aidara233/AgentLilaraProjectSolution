@@ -59,12 +59,6 @@ namespace AgentCoreProcessor
                 adapterManager.RegisterAdapter(oneBotAdapter);
             }
 
-            if (!fileMode && !testMode && !qqMode)
-            {
-                var consoleAdapter = new ConsoleAdapter();
-                adapterManager.RegisterAdapter(consoleAdapter);
-            }
-
             // 主引擎
             var engine = new MasterEngine(adapterManager, eventBus);
             if (muteMode)
@@ -235,6 +229,7 @@ namespace AgentCoreProcessor
             });
 
             builder.WebHost.UseUrls($"http://0.0.0.0:{webConfig.Port}");
+            builder.Logging.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Warning);
 
             // 注册服务
             builder.Services.AddSingleton(eventBus);

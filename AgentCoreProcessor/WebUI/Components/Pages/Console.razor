@@ -1,0 +1,333 @@
+@page "/console"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using AgentCoreProcessor.Engine
+@using AgentCoreProcessor.Database
+@using AgentCoreProcessor.Adapter
+@inject MasterEngine Engine
+@inject EventBus Bus
+@implements IDisposable
+
+<h4 class="mb-3">控制台</h4>
+
+<div class="row g-3">
+    <!-- 左侧：频道选择 + 操作 -->
+    <div class="col-md-3">
+        <div class="card mb-3">
+            <div class="card-header py-2 fw-semibold">频道</div>
+            <div class="card-body">
+                <select class="form-select form-select-sm mb-2" @bind="selectedChannelId" @bind:after="OnChannelChanged">
+                    <option value="0">选择频道...</option>
+                    @foreach (var ch in channels)
+                    {
+                        <option value="@ch.Id">#@ch.Id @ch.Name</option>
+                    }
+                </select>
+                <div class="input-group input-group-sm">
+                    <input type="text" class="form-control" placeholder="新频道名..." @bind="newChannelName" />
+                    <button class="btn btn-outline-primary" @onclick="CreateChannel">
+                        <i class="bi bi-plus"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header py-2 fw-semibold">发送模式</div>
+            <div class="card-body">
+                <div class="form-check mb-1">
+                    <input class="form-check-input" type="radio" name="sendMode" id="modeUser"
+                           checked="@(sendMode == "user")" @onchange='() => sendMode = "user"' />
+                    <label class="form-check-label" for="modeUser">模拟用户</label>
+                </div>
+                <div class="form-check mb-1">
+                    <input class="form-check-input" type="radio" name="sendMode" id="modeBot"
+                           checked="@(sendMode == "bot")" @onchange='() => sendMode = "bot"' />
+                    <label class="form-check-label" for="modeBot">替 Bot 说话</label>
+                </div>
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="radio" name="sendMode" id="modeCustom"
+                           checked="@(sendMode == "custom")" @onchange='() => sendMode = "custom"' />
+                    <label class="form-check-label" for="modeCustom">自定义发送者</label>
+                </div>
+                @if (sendMode == "user")
+                {
+                    <div class="form-check form-switch mb-1">
+                        <input class="form-check-input" type="checkbox" @bind="simulateMention" id="mentionCheck" />
+                        <label class="form-check-label small" for="mentionCheck">模拟 @@提及</label>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" @bind="simulatePrivate" id="privateCheck" />
+                        <label class="form-check-label small" for="privateCheck">模拟私聊</label>
+                    </div>
+                }
+                @if (sendMode == "custom")
+                {
+                    <input type="text" class="form-control form-control-sm mt-1" placeholder="发送者名称"
+                           @bind="customSenderName" />
+                }
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(statusMessage))
+        {
+            <div class="alert alert-info py-1 small">@statusMessage</div>
+        }
+    </div>
+
+    <!-- 右侧：消息流 + 输入 -->
+    <div class="col-md-9">
+        <div class="card" style="height: calc(100vh - 140px); display: flex; flex-direction: column;">
+            <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                <span class="fw-semibold">
+                    @if (selectedChannelId > 0)
+                    {
+                        <span>#@selectedChannelId @selectedChannelName</span>
+                    }
+                    else
+                    {
+                        <span class="text-muted">选择一个频道开始</span>
+                    }
+                </span>
+                <button class="btn btn-outline-secondary btn-sm" @onclick="RefreshMessages" disabled="@(selectedChannelId == 0)">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </button>
+            </div>
+
+            <!-- 消息流 -->
+            <div class="card-body p-2 flex-grow-1" style="overflow-y: auto;">
+                @if (selectedChannelId == 0)
+                {
+                    <div class="text-muted text-center mt-5">选择左侧频道查看消息</div>
+                }
+                else if (messages.Count == 0)
+                {
+                    <div class="text-muted text-center mt-5">暂无消息</div>
+                }
+                else
+                {
+                    @foreach (var m in messages)
+                    {
+                        <div class="d-flex mb-2 @(m.IsFromBot ? "justify-content-end" : "justify-content-start")">
+                            <div class="px-3 py-2 rounded-3 @(m.IsFromBot ? "bg-primary text-white" : "bg-white border")"
+                                 style="max-width: 75%; word-break: break-all;">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <small class="fw-semibold @(m.IsFromBot ? "text-white-50" : "text-primary")">
+                                        @(m.IsFromBot ? "Lilara" : (string.IsNullOrEmpty(m.SenderName) ? "用户" : m.SenderName))
+                                    </small>
+                                    <small class="@(m.IsFromBot ? "text-white-50" : "text-muted") ms-2">
+                                        @m.Time.ToString("HH:mm:ss")
+                                    </small>
+                                </div>
+                                <div style="white-space: pre-wrap;">@m.Content</div>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+
+            <!-- 输入框 -->
+            <div class="card-footer py-2">
+                <div class="input-group">
+                    <input type="text" class="form-control" placeholder="@InputPlaceholder"
+                           @bind="inputText" @bind:event="oninput"
+                           @onkeydown="HandleKeyDown"
+                           disabled="@(selectedChannelId == 0)" />
+                    <button class="btn @SendButtonClass" @onclick="SendMessage"
+                            disabled="@(selectedChannelId == 0 || string.IsNullOrWhiteSpace(inputText))">
+                        <i class="bi bi-send"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<Channel> channels = new();
+    private List<UserMessage> messages = new();
+    private int selectedChannelId = 0;
+    private string selectedChannelName = "";
+    private string newChannelName = "";
+    private string inputText = "";
+    private string sendMode = "user";
+    private bool simulateMention = false;
+    private bool simulatePrivate = false;
+    private string customSenderName = "TestUser";
+    private string? statusMessage;
+    private System.Threading.Timer? pollTimer;
+    private int lastMessageCount = 0;
+
+    private string InputPlaceholder => sendMode switch
+    {
+        "bot" => "替 Lilara 说话...",
+        "custom" => $"以 {customSenderName} 身份发送...",
+        _ => "发送消息..."
+    };
+
+    private string SendButtonClass => sendMode switch
+    {
+        "bot" => "btn-primary",
+        "custom" => "btn-warning",
+        _ => "btn-success"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        channels = await Engine.Session.GetAllChannelsAsync();
+    }
+
+    private async Task OnChannelChanged()
+    {
+        StopPolling();
+        if (selectedChannelId > 0)
+        {
+            var ch = channels.FirstOrDefault(c => c.Id == selectedChannelId);
+            selectedChannelName = ch?.Name ?? "";
+            await RefreshMessages();
+            StartPolling();
+        }
+        else
+        {
+            selectedChannelName = "";
+            messages.Clear();
+        }
+    }
+
+    private async Task RefreshMessages()
+    {
+        if (selectedChannelId <= 0) return;
+        messages = await Engine.Session.GetContextByChannelAsync(selectedChannelId, 50);
+        lastMessageCount = messages.Count;
+    }
+
+    private void StartPolling()
+    {
+        pollTimer = new System.Threading.Timer(async _ =>
+        {
+            try
+            {
+                var latest = await Engine.Session.GetContextByChannelAsync(selectedChannelId, 50);
+                if (latest.Count != lastMessageCount)
+                {
+                    messages = latest;
+                    lastMessageCount = latest.Count;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+            catch { }
+        }, null, 2000, 2000);
+    }
+
+    private void StopPolling()
+    {
+        pollTimer?.Dispose();
+        pollTimer = null;
+    }
+
+    private async Task HandleKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(inputText))
+            await SendMessage();
+    }
+
+    private async Task SendMessage()
+    {
+        if (selectedChannelId <= 0 || string.IsNullOrWhiteSpace(inputText)) return;
+        var text = inputText.Trim();
+        inputText = "";
+
+        switch (sendMode)
+        {
+            case "user":
+                await SendAsUser(text);
+                break;
+            case "bot":
+                await SendAsBot(text);
+                break;
+            case "custom":
+                await SendAsCustom(text);
+                break;
+        }
+
+        await Task.Delay(500);
+        await RefreshMessages();
+    }
+
+    private Task SendAsUser(string text)
+    {
+        var ch = channels.FirstOrDefault(c => c.Id == selectedChannelId);
+        var channelName = ch?.Name ?? $"web_{selectedChannelId}";
+
+        var msg = new IncomingMessage
+        {
+            Platform = "WebConsole",
+            PlatformUserId = "web-admin",
+            ChannelId = channelName,
+            Content = text,
+            DisplayName = "WebAdmin",
+            Time = DateTime.Now,
+            IsPrivate = simulatePrivate,
+            IsMentioned = simulateMention
+        };
+
+        Bus.PublishMessage(msg);
+        statusMessage = "消息已发送";
+        return Task.CompletedTask;
+    }
+
+    private async Task SendAsBot(string text)
+    {
+        await Engine.Session.SaveBotMessageAsync(selectedChannelId, text, null);
+        statusMessage = "Bot 消息已注入";
+    }
+
+    private Task SendAsCustom(string text)
+    {
+        var ch = channels.FirstOrDefault(c => c.Id == selectedChannelId);
+        var channelName = ch?.Name ?? $"web_{selectedChannelId}";
+
+        var msg = new IncomingMessage
+        {
+            Platform = "WebConsole",
+            PlatformUserId = $"custom-{customSenderName.ToLowerInvariant()}",
+            ChannelId = channelName,
+            Content = text,
+            DisplayName = customSenderName,
+            Time = DateTime.Now,
+            IsPrivate = false,
+            IsMentioned = false
+        };
+
+        Bus.PublishMessage(msg);
+        statusMessage = $"以 {customSenderName} 身份发送";
+        return Task.CompletedTask;
+    }
+
+    private async Task CreateChannel()
+    {
+        if (string.IsNullOrWhiteSpace(newChannelName)) return;
+        var name = newChannelName.Trim();
+        newChannelName = "";
+
+        var msg = new IncomingMessage
+        {
+            Platform = "WebConsole",
+            PlatformUserId = "web-admin",
+            ChannelId = name,
+            Content = "(频道已创建)",
+            DisplayName = "WebAdmin",
+            Time = DateTime.Now,
+            IsPrivate = false
+        };
+
+        Bus.PublishMessage(msg);
+        await Task.Delay(1000);
+        channels = await Engine.Session.GetAllChannelsAsync();
+        statusMessage = $"频道 {name} 已创建";
+    }
+
+    public void Dispose()
+    {
+        StopPolling();
+    }
+}
