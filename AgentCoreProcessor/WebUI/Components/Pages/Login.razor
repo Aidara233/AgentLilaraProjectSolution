@@ -1,9 +1,6 @@
 @page "/login"
 @layout LoginLayout
 @using Microsoft.AspNetCore.Components.Forms
-@using AgentCoreProcessor.WebUI.Services
-@inject NavigationManager Nav
-@inject WebAuthService Auth
 
 <div class="d-flex justify-content-center align-items-center vh-100 bg-light">
     <div class="card shadow-sm" style="width: 360px;">
@@ -12,50 +9,26 @@
                 <i class="bi bi-robot fs-1 text-primary"></i>
                 <h4 class="mt-2">Lilara 管理面板</h4>
             </div>
-            <EditForm Model="model" OnValidSubmit="HandleLogin" FormName="login">
+            <form method="post" action="/api/auth/login">
                 <div class="mb-3">
                     <label class="form-label">用户名</label>
-                    <InputText @bind-Value="model.Username" class="form-control" />
+                    <input type="text" name="username" class="form-control" required />
                 </div>
                 <div class="mb-3">
                     <label class="form-label">密码</label>
-                    <InputText @bind-Value="model.Password" type="password" class="form-control" />
+                    <input type="password" name="password" class="form-control" required />
                 </div>
-                @if (!string.IsNullOrEmpty(errorMessage))
+                @if (Failed)
                 {
-                    <div class="alert alert-danger py-2">@errorMessage</div>
+                    <div class="alert alert-danger py-2">用户名或密码错误</div>
                 }
                 <button type="submit" class="btn btn-primary w-100">登录</button>
-            </EditForm>
+            </form>
         </div>
     </div>
 </div>
 
 @code {
-    private LoginModel model = new();
-    private string? errorMessage;
-
-    [SupplyParameterFromForm]
-    private LoginModel FormModel { get => model; set => model = value; }
-
-    private class LoginModel
-    {
-        public string Username { get; set; } = "";
-        public string Password { get; set; } = "";
-    }
-
-    private async Task HandleLogin()
-    {
-        errorMessage = null;
-        // Blazor Server 不能直接设 cookie，需要走 HTTP POST
-        // 这里验证凭据，然后通过 JS 跳转到登录端点
-        if (Auth.ValidateCredentials(model.Username, model.Password))
-        {
-            Nav.NavigateTo($"/api/auth/login?username={Uri.EscapeDataString(model.Username)}", forceLoad: true);
-        }
-        else
-        {
-            errorMessage = "用户名或密码错误";
-        }
-    }
+    [SupplyParameterFromQuery]
+    public bool Failed { get; set; }
 }

@@ -262,12 +262,23 @@ namespace AgentCoreProcessor
             app.UseAuthorization();
             app.UseAntiforgery();
 
-            // 登录端点（GET，由 Login.razor 验证后跳转）
-            app.MapGet("/api/auth/login", async (HttpContext http, string username, WebAuthService auth) =>
+            // 登录端点（POST，表单提交用户名密码）
+            app.MapPost("/api/auth/login", async (HttpContext http, WebAuthService auth) =>
             {
-                var principal = auth.CreatePrincipal(username);
-                await http.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal);
-                http.Response.Redirect("/");
+                var form = await http.Request.ReadFormAsync();
+                var username = form["username"].ToString();
+                var password = form["password"].ToString();
+
+                if (auth.ValidateCredentials(username, password))
+                {
+                    var principal = auth.CreatePrincipal(username);
+                    await http.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal);
+                    http.Response.Redirect("/");
+                }
+                else
+                {
+                    http.Response.Redirect("/login?failed=true");
+                }
             });
 
             // 登出端点
