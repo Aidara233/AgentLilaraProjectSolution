@@ -228,7 +228,11 @@ namespace AgentCoreProcessor
 
             // 正常模式：启动 Web 服务器 + 适配器
             var webConfig = WebConfig.Load();
-            var builder = WebApplication.CreateBuilder(args);
+            var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+            {
+                Args = args,
+                WebRootPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "WebUI", "wwwroot")
+            });
 
             builder.WebHost.UseUrls($"http://0.0.0.0:{webConfig.Port}");
 
