@@ -72,14 +72,32 @@ namespace AgentCoreProcessor.Adapter
 
             cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
-            // 首次连接
-            await ConnectAsync(cts.Token);
+            // 首次连接：失败不崩溃，交给重连循环处理
+            try
+            {
+                await ConnectAsync(cts.Token);
+            }
+            catch (Exception ex)
+            {
+                FrameworkLogger.Log("OneBotAdapter", $"首次连接失败（将在后台重连）: {ex.Message}");
+            }
 
-            // 先启动接收循环（后台），再查询 selfId（需要接收循环读取响应）
+            // 启动接收+重连循环（后台）
             receiveTask = RunReceiveLoopWithReconnectAsync(cts.Token);
 
-            selfId = await GetSelfIdAsync();
-            FrameworkLogger.Log("OneBotAdapter", $"已连接，selfId={selfId}");
+            // 连接成功时查询 selfId
+            if (ws?.State == WebSocketState.Open)
+            {
+                try
+                {
+                    selfId = await GetSelfIdAsync();
+                    FrameworkLogger.Log("OneBotAdapter", $"已连接，selfId={selfId}");
+                }
+                catch (Exception ex)
+                {
+                    FrameworkLogger.Log("OneBotAdapter", $"获取 selfId 失败: {ex.Message}");
+                }
+            }
         }
 
         /// <summary>等待适配器运行结束（用于保持进程活跃）。</summary>
@@ -294,9 +312,16 @@ namespace AgentCoreProcessor.Adapter
                 try
                 {
                     await ConnectAsync(ct);
-                    selfId = await GetSelfIdAsync();
+                    try
+                    {
+                        selfId = await GetSelfIdAsync();
+                    }
+                    catch
+                    {
+                        selfId = 0;
+                    }
                     FrameworkLogger.Log("OneBotAdapter", $"重连成功，selfId={selfId}");
-                    reconnectDelayMs = 1000; // 重置退避
+                    reconnectDelayMs = 1000;
                 }
                 catch (OperationCanceledException) { break; }
                 catch (Exception ex)
