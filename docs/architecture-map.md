@@ -18,7 +18,11 @@ AgentCoreProcessor/
 ├── Memory/      MemoryService 检索管线
 ├── Tool/        工具接口 + 顺序执行器 + 工具折叠分组 + 全局/局部工具集
 ├── Util/        VectorUtil 向量操作
-└── Program.cs   入口（--qq / --file / --test / --mute / 默认 Console）
+├── WebUI/       Blazor Server 管理面板（嵌入式，同进程）
+│     ├── Services/    SystemMonitor(快照采集) + LogStreamService(日志流) + WebConfig + WebAuthService
+│     ├── Components/  Razor 页面（Dashboard/Logs/EngineControl/DreamControl/WorkerDetail/Messages/Memories/People/ConfigEditor/Login）
+│     └── wwwroot/     静态资源（Bootstrap 5 CSS）
+└── Program.cs   入口（WebApplication 宿主，默认启动 Web 服务器 + 适配器）
 ```
 
 ## 引擎生态
@@ -264,5 +268,32 @@ Storage/
 │     └── CommandConfig.json  指令前缀配置
 ├── PersonaMemorySeed.txt     人设记忆种子（首次启动导入）
 ├── Database/lilara.db        SQLite数据库
-└── Logs/                     framework日志 + Model调用日志
+├── Logs/                     framework日志 + Model调用日志
+└── WebUI/
+      └── WebConfig.json      Web管理面板配置(端口/管理员账号)
+```
+
+## WebUI 管理面板
+
+```
+嵌入式 Blazor Server，同进程运行，默认启动。
+端口配置: Storage/WebUI/WebConfig.json (默认 5000)
+认证: Cookie Authentication，SHA256 密码哈希
+
+数据桥接:
+  SystemMonitor — 2s 周期采集 SystemSnapshot（引擎摘要/Worker快照/Dream状态）
+  LogStreamService — FrameworkLogger.OnLogWritten 事件 → 环形缓冲(2000条) → 实时推送
+  快照方法: WorkerEngine.GetSnapshot() / DreamEngineSpawnCheck.GetDreamSnapshot()
+           MasterEngine.GetSpawnCheck<T>() / GetActiveEnginesSnapshot()
+
+页面:
+  Dashboard    — 系统状态/引擎摘要/活跃Worker表格/做梦状态/实时日志尾部
+  Logs         — 实时日志流 + 来源过滤 + 关键词搜索 + 暂停/恢复
+  EngineControl — 引擎启停/静音模式开关
+  DreamControl  — 睡眠许可/强制睡觉/睡意偏移/红色警报
+  WorkerDetail  — 单频道Worker完整状态（冲动值/EMA/轮次/授权工具）
+  Messages     — 频道消息历史分页浏览 + 搜索
+  Memories     — 主记忆/临时记忆浏览 + 人物/关键词过滤
+  People       — 人物目录 + 信任等级 + 关联账号展开
+  ConfigEditor — JSON配置组编辑器（类型感知输入/敏感字段遮罩）
 ```
