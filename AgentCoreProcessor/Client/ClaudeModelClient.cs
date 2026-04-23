@@ -1,5 +1,6 @@
 using AgentCoreProcessor.Models;
 using Anthropic.SDK;
+using Anthropic.SDK.Common;
 using Anthropic.SDK.Messaging;
 using System;
 using System.Collections.Generic;
@@ -101,6 +102,15 @@ namespace AgentCoreProcessor.Client
                 }
             }
 
+            // Web Search（Claude server tool）
+            if (apiClientCfg.WebSearch && apiClientCfg.Provider is "claude" or "anthropic")
+            {
+                var webSearchFunc = new Function("web_search", ServerTools.WebSearchVersionLegacy, new Dictionary<string, object>());
+                var webSearchTool = new Anthropic.SDK.Common.Tool(webSearchFunc);
+                parameters.Tools ??= new List<Anthropic.SDK.Common.Tool>();
+                parameters.Tools.Add(webSearchTool);
+            }
+
             var fullContent = new System.Text.StringBuilder();
             int inputTokens = 0, outputTokens = 0;
 
@@ -125,6 +135,12 @@ namespace AgentCoreProcessor.Client
                     if (thinking != null)
                         onDelta(BuildSyntheticResponse(null, thinking));
                 }
+
+                // web search 活动日志
+                if (resp.ContentBlock?.Type == "server_tool_use" && resp.ContentBlock?.Name == "web_search")
+                    Engine.FrameworkLogger.Log("WebSearch", "Claude 发起搜索...");
+                if (resp.ContentBlock?.Type == "web_search_tool_result")
+                    Engine.FrameworkLogger.Log("WebSearch", "搜索结果已返回");
             }
 
             // 最终 usage

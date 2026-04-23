@@ -61,6 +61,10 @@ namespace AgentCoreProcessor.Client
         [JsonProperty("anthropicVersion")]
         public string? AnthropicVersion { get; set; } = null;
 
+        // Claude 专用：启用原生 Web Search（server tool）
+        [JsonProperty("webSearch")]
+        public bool WebSearch { get; set; } = true;
+
         // 预设消息模板（从配置文件加载，system prompt + few-shot 示例）
         [JsonProperty("conversationHistory")]
         public List<Message> PresetMessages { get; set; } = new List<Message>();
