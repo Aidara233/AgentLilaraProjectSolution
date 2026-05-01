@@ -359,6 +359,13 @@ namespace AgentCoreProcessor.Engine
                 authorizedTools.Clear();
                 foreach (var t in granted) authorizedTools.Add(t);
 
+                // 设置 DelegateTaskTool 的上下文
+                var delegateTool = ToolRegistry.Get("委派任务") as DelegateTaskTool;
+                if (delegateTool != null)
+                {
+                    delegateTool.SetContext(currentLastSc.Channel.Id, currentLastSc.Person.Id);
+                }
+
                 // 冲动值扣减 + expectation 更新
                 bool triggeredByMention = batch.Any(b => b.Message.IsMentioned || b.Message.IsPrivate);
                 impulseTracker.ApplyPostResponseUpdate(triggeredByMention);
@@ -411,9 +418,36 @@ namespace AgentCoreProcessor.Engine
         private List<Models.Message> BuildPromptMessages()
         {
             var mode = isWorkingMode ? EngineMode.Working : EngineMode.Express;
-            var toolDescs = isWorkingMode
-                ? ToolRegistry.GenerateDescriptions(authorizedTools: authorizedTools)
-                : ToolRegistry.GenerateCapabilitySummary();
+
+            // Working 模式：使用工具白名单过滤
+            string toolDescs;
+            if (isWorkingMode)
+            {
+                var channelToolFilter = new Func<ITool, bool>(tool =>
+                {
+                    var allowedTools = new HashSet<string>
+                    {
+                        "说话", "思考笔记", "记忆", "便签板", "缓存管理", "任务管理",
+                        "标记复盘", "报警", "继续", "文件读取", "委派任务"
+                    };
+                    return allowedTools.Contains(tool.Name);
+                });
+                toolDescs = ToolRegistry.GenerateDescriptions(authorizedTools: authorizedTools, filter: channelToolFilter);
+            }
+            else
+            {
+                // Express 模式：使用能力摘要（也应用过滤器）
+                var channelToolFilter = new Func<ITool, bool>(tool =>
+                {
+                    var allowedTools = new HashSet<string>
+                    {
+                        "说话", "思考笔记", "记忆", "便签板", "缓存管理", "任务管理",
+                        "标记复盘", "报警", "继续", "文件读取", "委派任务"
+                    };
+                    return allowedTools.Contains(tool.Name);
+                });
+                toolDescs = ToolRegistry.GenerateCapabilitySummary(filter: channelToolFilter);
+            }
 
             var messages = promptBuilder.BuildRoundMessages(
                 toolDescs, currentContextXml!, modules, mode,
