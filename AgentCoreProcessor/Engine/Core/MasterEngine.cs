@@ -225,9 +225,13 @@ namespace AgentCoreProcessor.Engine
             TaskBridge = new TaskBridge(systemLoopPath);
             FrameworkLogger.Log("MasterEngine", "TaskBridge 已初始化");
 
-            // 注册 DelegateTaskTool（需要 TaskBridge，所以在这里动态注册）
+            // 注册需要 ISystemContext 的工具（动态注册）
             Tool.ToolRegistry.Register(new Tool.DelegateTaskTool(this));
-            FrameworkLogger.Log("MasterEngine", "DelegateTaskTool 已注册");
+            Tool.ToolRegistry.Register(new Tool.SendToChannelTool(this));
+            Tool.ToolRegistry.Register(new Tool.ChannelInfoTool(this));
+            Tool.ToolRegistry.Register(new Tool.EngineManagementTool(this));
+            Tool.ToolRegistry.Register(new Tool.CheckNotificationsTool(this));
+            FrameworkLogger.Log("MasterEngine", "系统循环工具已注册");
 
             // 注册所有 SpawnCheck
             foreach (var (_, factory) in SpawnCheckFactory)

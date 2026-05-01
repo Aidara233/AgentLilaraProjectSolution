@@ -38,7 +38,10 @@ namespace AgentCoreProcessor.Tool
                 new ContinueTool(),
                 new PinboardTool(),
                 new RetainListTool(),
-                new ActivateToolGroupTool()
+                new ActivateToolGroupTool(),
+                // Phase 4: 系统循环工具（不需要 ISystemContext 的）
+                new SystemStateTool(),
+                new TaskQueueTool()
             };
             _tools = new ConcurrentDictionary<string, ITool>(toolList.ToDictionary(t => t.Name));
         }
