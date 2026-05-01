@@ -4,7 +4,7 @@ using SQLite;
 namespace AgentCoreProcessor.Database
 {
     /// <summary>
-    /// 复盘标记。WorkerEngine 工作时记录"值得复盘关注"的内容，
+    /// 复盘标记。ChannelEngine 工作时记录"值得复盘关注"的内容，
     /// ReviewEngine 启动时消费这些标记作为方向参考。
     /// </summary>
     [Table("ReviewHints")]

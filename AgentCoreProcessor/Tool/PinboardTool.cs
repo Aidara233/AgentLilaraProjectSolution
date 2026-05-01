@@ -8,7 +8,7 @@ namespace AgentCoreProcessor.Tool
     /// <summary>
     /// 便签板工具：会话级上下文注入，Express/Working 共享。
     /// 内容全量展示在 prompt 中，不像 retain 只显示摘要。
-    /// 实际数据由 WorkerEngine 维护，工具只做参数验证和信号传递。
+    /// 实际数据由 ChannelEngine 维护，工具只做参数验证和信号传递。
     /// </summary>
     internal class PinboardTool : ITool
     {

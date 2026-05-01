@@ -10,7 +10,7 @@ namespace AgentCoreProcessor.Tool
 {
     /// <summary>
     /// 设置关注规则工具。允许系统循环为频道会话配置关注规则。
-    /// Phase 6 实现：直接操作 WorkerEngine 的 watchRules 字段。
+    /// Phase 6 实现：直接操作 ChannelEngine 的 watchRules 字段。
     /// </summary>
     internal class SetWatchRuleTool : ITool
     {
@@ -112,9 +112,9 @@ namespace AgentCoreProcessor.Tool
                 AutoResponse = autoResponse
             };
 
-            // 查找目标频道的 WorkerEngine
+            // 查找目标频道的 ChannelEngine
             var engines = ctx.GetActiveEnginesSnapshot();
-            var worker = engines.OfType<WorkerEngine>()
+            var worker = engines.OfType<ChannelEngine>()
                 .FirstOrDefault(w => w.ChannelId == channelId && w.IsAlive);
 
             if (worker == null)

@@ -8,7 +8,7 @@ namespace AgentCoreProcessor.Engine
     /// </summary>
     public enum AgentSessionType
     {
-        /// <summary>频道会话（长期运行，对应 WorkerEngine）。</summary>
+        /// <summary>频道会话（长期运行，对应 ChannelEngine）。</summary>
         Channel,
 
         /// <summary>任务会话（一次性，用完销毁）。</summary>

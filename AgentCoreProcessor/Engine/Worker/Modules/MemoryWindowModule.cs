@@ -7,7 +7,7 @@ namespace AgentCoreProcessor.Engine.Modules
 {
     /// <summary>
     /// 记忆窗口模块。持有当前活跃记忆，注入 prompt。
-    /// 记忆检索仍由 WorkerEngine 驱动（依赖 MemoryService），本模块只负责格式化注入。
+    /// 记忆检索仍由 ChannelEngine 驱动（依赖 MemoryService），本模块只负责格式化注入。
     /// </summary>
     internal class MemoryWindowModule : EngineModule
     {
@@ -16,7 +16,7 @@ namespace AgentCoreProcessor.Engine.Modules
 
         private List<ScoredMemory>? activeMemories;
 
-        /// <summary>由 WorkerEngine 在每轮准备阶段设置。</summary>
+        /// <summary>由 ChannelEngine 在每轮准备阶段设置。</summary>
         public void SetMemories(List<ScoredMemory>? memories)
         {
             activeMemories = memories;

@@ -4,7 +4,7 @@ using AgentCoreProcessor.Database;
 namespace AgentCoreProcessor.Engine
 {
     /// <summary>
-    /// 频道参与者信息。WorkerEngine 维护。
+    /// 频道参与者信息。ChannelEngine 维护。
     /// </summary>
     internal sealed class ParticipantInfo
     {

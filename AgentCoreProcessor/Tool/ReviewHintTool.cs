@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 namespace AgentCoreProcessor.Tool
 {
     /// <summary>
-    /// 标记复盘工具。WorkerEngine 工作时记录"值得复盘关注"的内容。
+    /// 标记复盘工具。ChannelEngine 工作时记录"值得复盘关注"的内容。
     /// 信号工具——返回内容作为 Data，由 Agent 循环处理实际写入。
     /// </summary>
     internal class ReviewHintTool : ITool

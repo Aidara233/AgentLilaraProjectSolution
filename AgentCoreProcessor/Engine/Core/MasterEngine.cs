@@ -90,13 +90,13 @@ namespace AgentCoreProcessor.Engine
         private readonly SemaphoreSlim eventLock = new(1, 1);
         private SystemEngine? systemEngine; // Phase 5: 保存 SystemEngine 引用用于工具注册
 
-        // SpawnCheck 工厂（有序列表，Command 在 Worker 之前拦截命令消息）
+        // SpawnCheck 工厂（有序列表，Command 在 Channel 之前拦截命令消息）
         private static readonly List<(string Name, Func<IEngineSpawnCheck> Factory)> SpawnCheckFactory =
         [
             ("Command", () => new CommandSpawnCheck()),
             ("Timer",   () => new TimerEngineSpawnCheck()),
             ("System",  () => new SystemEngineSpawnCheck()),
-            ("Worker",  () => new WorkerEngineSpawnCheck()),
+            ("Channel",  () => new ChannelEngineSpawnCheck()),
             ("Dream",   () => new DreamEngineSpawnCheck()),
         ];
 
@@ -115,10 +115,10 @@ namespace AgentCoreProcessor.Engine
             lock (engineLock) { return activeEngines.Any(e => e.EngineType == engineType && e.IsAlive); }
         }
 
-        /// <summary>是否有正在处理消息的 WorkerEngine（常驻 Worker 忙碌中）。</summary>
+        /// <summary>是否有正在处理消息的 ChannelEngine（常驻 Channel 忙碌中）。</summary>
         public bool HasBusyWorker()
         {
-            lock (engineLock) { return activeEngines.Any(e => e is WorkerEngine w && w.IsAlive && w.IsBusy); }
+            lock (engineLock) { return activeEngines.Any(e => e is ChannelEngine w && w.IsAlive && w.IsBusy); }
         }
 
         public int GetActiveEngineCount(string engineType)

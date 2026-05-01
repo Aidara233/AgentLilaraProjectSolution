@@ -8,7 +8,7 @@ namespace AgentCoreProcessor.Tool
 {
     /// <summary>
     /// 睡眠许可工具：授予大睡许可。
-    /// 信号工具——实际处理由 WorkerEngine 通过 EventBus 发布 SignalEvent。
+    /// 信号工具——实际处理由 ChannelEngine 通过 EventBus 发布 SignalEvent。
     /// </summary>
     internal class DreamPermissionTool : ITool
     {

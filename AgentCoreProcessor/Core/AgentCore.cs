@@ -81,7 +81,7 @@ namespace AgentCoreProcessor.Core
         }
 
         /// <summary>
-        /// 设置对话历史（供 WorkerEngine 在每轮准备阶段调用）。
+        /// 设置对话历史（供 ChannelEngine 在每轮准备阶段调用）。
         /// </summary>
         public void SetConversationHistory(List<Message> messages)
         {

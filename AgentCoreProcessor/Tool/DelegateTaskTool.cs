@@ -33,7 +33,7 @@ namespace AgentCoreProcessor.Tool
         }
 
         /// <summary>
-        /// 设置当前上下文（由 WorkerEngine 在每轮开始时调用）。
+        /// 设置当前上下文（由 ChannelEngine 在每轮开始时调用）。
         /// </summary>
         public void SetContext(int channelId, int personId)
         {

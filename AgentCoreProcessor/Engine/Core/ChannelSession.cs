@@ -4,19 +4,19 @@ using System.Threading.Tasks;
 namespace AgentCoreProcessor.Engine
 {
     /// <summary>
-    /// 频道会话。包装现有 WorkerEngine，实现 IAgentSession。
+    /// 频道会话。包装现有 ChannelEngine，实现 IAgentSession。
     /// Phase 5: 基础包装，Phase 6 添加 WatchRules 支持。
     /// </summary>
     internal class ChannelSession : IAgentSession
     {
-        private readonly WorkerEngine workerEngine;
+        private readonly ChannelEngine workerEngine;
         private readonly int channelId;
 
         public string SessionId => $"channel-{channelId}";
         public AgentSessionType Type => AgentSessionType.Channel;
         public bool IsAlive => workerEngine.IsAlive;
 
-        public ChannelSession(WorkerEngine workerEngine, int channelId)
+        public ChannelSession(ChannelEngine workerEngine, int channelId)
         {
             this.workerEngine = workerEngine;
             this.channelId = channelId;

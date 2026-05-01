@@ -10,7 +10,7 @@ namespace AgentCoreProcessor.Engine.Modules
     {
         public override string Name => "说话";
 
-        /// <summary>由 WorkerEngine 注入：发送消息到频道。</summary>
+        /// <summary>由 ChannelEngine 注入：发送消息到频道。</summary>
         public Func<string, Task>? OnSpeak { get; set; }
 
         /// <summary>本轮是否有说话动作（供 LoopControlModule 判断静默）。</summary>

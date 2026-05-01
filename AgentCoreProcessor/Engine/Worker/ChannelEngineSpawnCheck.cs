@@ -7,18 +7,18 @@ using AgentCoreProcessor.Database;
 namespace AgentCoreProcessor.Engine
 {
     /// <summary>
-    /// WorkerEngine 的创建条件检查。接管 SessionManager 调用和频道路由。
+    /// ChannelEngine 的创建条件检查。接管 SessionManager 调用和频道路由。
     /// 维护活跃频道引擎表，按 ChannelId 路由消息。
     /// </summary>
-    internal class WorkerEngineSpawnCheck : IEngineSpawnCheck
+    internal class ChannelEngineSpawnCheck : IEngineSpawnCheck
     {
-        public string EngineType => "Worker";
+        public string EngineType => "Channel";
 
         private SessionContext? pendingContext;
         private IncomingMessage? pendingMessage;
 
-        /// <summary>活跃频道引擎表（ChannelId → WorkerEngine）。</summary>
-        private readonly Dictionary<int, WorkerEngine> activeChannels = new();
+        /// <summary>活跃频道引擎表（ChannelId → ChannelEngine）。</summary>
+        private readonly Dictionary<int, ChannelEngine> activeChannels = new();
 
         public Task OnEventAsync(EngineEvent e, ISystemContext ctx)
         {
@@ -77,11 +77,11 @@ namespace AgentCoreProcessor.Engine
             pendingContext = null;
             pendingMessage = null;
 
-            var engine = new WorkerEngine(ctx, sc, msg);
+            var engine = new ChannelEngine(ctx, sc, msg);
             activeChannels[sc.Channel.Id] = engine;
             return engine;
         }
 
-        internal IReadOnlyDictionary<int, WorkerEngine> GetActiveChannels() => activeChannels;
+        internal IReadOnlyDictionary<int, ChannelEngine> GetActiveChannels() => activeChannels;
     }
 }

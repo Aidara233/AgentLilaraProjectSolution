@@ -24,7 +24,7 @@ namespace AgentCoreProcessor.WebUI.Services
         {
             try
             {
-                var workerCheck = engine.GetSpawnCheck<WorkerEngineSpawnCheck>();
+                var workerCheck = engine.GetSpawnCheck<ChannelEngineSpawnCheck>();
                 var dreamCheck = engine.GetSpawnCheck<DreamEngineSpawnCheck>();
 
                 var workers = new List<WorkerSnapshot>();

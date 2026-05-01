@@ -1,0 +1,14 @@
+platform=test
+channelId=1001
+userId=user_test
+content=你好，我想测试一下关注规则功能
+---
+platform=test
+channelId=1001
+userId=user_test
+content=紧急：服务器出现问题了
+---
+platform=test
+channelId=1001
+userId=user_test
+content=这是一条普通消息
