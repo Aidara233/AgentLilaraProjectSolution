@@ -2,7 +2,7 @@
 
 ## 项目状态
 
-**当前阶段**：Phase 1-7 已完成（双循环架构 + 子agent系统 + 关注列表）
+**当前阶段**：Phase 0-8 已完成（双循环架构完整实现）
 
 **已完成**：
 - Phase 0: ContextBuilder/ImpulseTracker 提取，WorkerEngine 重构
@@ -13,17 +13,16 @@
 - Phase 5: IAgentSession + 子agent系统
 - Phase 6: WatchRules 关注列表系统
 - Phase 7: WorkerEngine → ChannelEngine 重命名
-
-**可选优化**：
-- Phase 8: 睡觉迁移（DreamEngine 迁移到 SystemEngine 管理）
+- Phase 8: 睡觉系统重构（SystemEngine 负责大睡决策，DreamEngineSpawnCheck 负责执行 + 小睡/走神）
 
 **核心特性**：
 - 双循环架构：频道循环（用户交互）+ 系统循环（任务调度）
 - TaskBridge 异步通信：任务队列 + 通知队列
 - 子agent系统：TaskSession 被动执行，工具白名单，禁止套娃
 - 上下文持久化：SystemContext.json WAL 模式
-- 上下文压缩：超过 50 条触发，保留最近 10 条 + 摘要
+- 上下文压缩：超过 80k tokens 触发，保留最近 5 轮 + 摘要
 - 关注列表：系统循环下发规则，频道循环语义匹配
+- 睡觉系统：SystemEngine 定期评估大睡需求（需管理员许可），DreamEngineSpawnCheck 自动处理小睡/走神
 
 ## 冷启动
 
