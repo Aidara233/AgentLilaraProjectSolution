@@ -7,7 +7,8 @@ using Newtonsoft.Json;
 namespace AgentCoreProcessor.Engine
 {
     /// <summary>
-    /// DreamEngine 的创建条件检查。持有所有跨睡眠周期的状态和做梦调度逻辑。
+    /// DreamEngine 的创建条件检查。
+    /// Phase 8: 简化为信号驱动 + 小睡/走神。大睡决策由 SystemEngine 负责。
     /// </summary>
     internal class DreamEngineSpawnCheck : IEngineSpawnCheck
     {
@@ -15,57 +16,28 @@ namespace AgentCoreProcessor.Engine
 
         private static string DreamConfigPath =>
             Path.Combine(PathConfig.StoragePath, "Dream", "DreamConfig.json");
-        private static string DreamStatsPath =>
-            Path.Combine(PathConfig.StoragePath, "Dream", "DreamStats.json");
 
         // ---- 跨周期状态 ----
         private DreamConfig cfg = DreamConfig.Load(
             Path.Combine(PathConfig.StoragePath, "Dream", "DreamConfig.json"));
-        private DreamStats stats = DreamStats.Load(
-            Path.Combine(PathConfig.StoragePath, "Dream", "DreamStats.json"));
 
-        private volatile float scoreOffset = 0f;
-        private volatile bool customRedAlert = false;
         private volatile bool forceFlag = false;
-        private bool dreamPermission = false;
-        private DateTime? permissionRequestTime;
         private DateTime? lastDaydreamTime;
-        private DateTime? lastDeepSleepTime;
 
         // ShouldSpawn 决定的睡眠级别，供 Create 读取
         private SleepLevel pendingLevel;
         private int pendingMaxFragments;
 
 
-        public async Task OnEventAsync(EngineEvent e, ISystemContext ctx)
+        public Task OnEventAsync(EngineEvent e, ISystemContext ctx)
         {
             if (e is SignalEvent signal)
             {
                 switch (signal.SignalName)
                 {
-                    case "dream-permission":
-                        dreamPermission = true;
-                        FrameworkLogger.Log("DreamSpawnCheck", "睡眠许可已授予");
-                        break;
                     case "force-sleep":
                         forceFlag = true;
-                        FrameworkLogger.Log("DreamSpawnCheck", "强制睡觉");
-                        break;
-                    case "sleep-score-offset":
-                        if (signal.Payload is string s && float.TryParse(s, out var v))
-                        {
-                            scoreOffset = v;
-                            FrameworkLogger.Log("DreamSpawnCheck", $"睡意偏移: {v}");
-                            if (v < 0 && permissionRequestTime != null)
-                            {
-                                permissionRequestTime = null;
-                                FrameworkLogger.Log("DreamSpawnCheck", "负偏移，解除锁定");
-                            }
-                        }
-                        break;
-                    case "red-alert":
-                        customRedAlert = true;
-                        FrameworkLogger.Log("DreamSpawnCheck", "红色警报");
+                        FrameworkLogger.Log("DreamSpawnCheck", "强制睡觉信号");
                         break;
                     case "dream-config":
                         if (signal.Payload is string json)
@@ -84,122 +56,50 @@ namespace AgentCoreProcessor.Engine
                 }
             }
 
-            // TickEvent 时更新统计快照
-            if (e is TimerEvent timer && timer.TimerName == "tick")
-            {
-                await UpdateSnapshotAsync(ctx);
-            }
+            return Task.CompletedTask;
         }
 
-        private async Task UpdateSnapshotAsync(ISystemContext ctx)
+        public Task<bool> ShouldSpawnAsync(EngineEvent e, ISystemContext ctx)
         {
-            try
+            // ① 强制睡觉（来自 SystemEngine 或 /sleep 命令）
+            if (forceFlag)
             {
-                var tempCount = (await ctx.TempMemories.GetAllAsync()).Count;
-                var undreamed = (await ctx.Memories.GetUndreamedAsync(100)).Count;
-                stats.UpdateSnapshot(tempCount, undreamed);
+                forceFlag = false;
+                pendingLevel = SleepLevel.DeepSleep;
+                pendingMaxFragments = cfg.MaxFragmentsPerDeepSleep;
+                return Task.FromResult(!ctx.HasActiveEngine("Dream"));
             }
-            catch { }
-        }
 
-        public async Task<bool> ShouldSpawnAsync(EngineEvent e, ISystemContext ctx)
-        {
-            // 只在 TickEvent 时评估（避免每个事件都跑）
+            // 只在 TickEvent 时评估小睡/走神
             if (e is not TimerEvent timer || timer.TimerName != "tick")
-            {
-                // 但 force-sleep 需要立即响应
-                if (forceFlag)
-                {
-                    forceFlag = false;
-                    pendingLevel = SleepLevel.DeepSleep;
-                    pendingMaxFragments = cfg.MaxFragmentsPerDeepSleep;
-                    return !ctx.HasActiveEngine("Dream");
-                }
-                return false;
-            }
+                return Task.FromResult(false);
 
-            if (!ctx.IsIdle || ctx.HasActiveEngine("Dream")) return false;
+            if (!ctx.IsIdle || ctx.HasActiveEngine("Dream")) return Task.FromResult(false);
 
-            // 许可超时自动授予
-            if (permissionRequestTime != null && !dreamPermission &&
-                (DateTime.Now - permissionRequestTime.Value).TotalSeconds > cfg.PermissionTimeout)
-            {
-                dreamPermission = true;
-                FrameworkLogger.Log("DreamSpawnCheck", "许可超时自动授予");
-            }
-
-            // ① 已锁定 → 只等许可
-            if (permissionRequestTime != null)
-            {
-                if (dreamPermission)
-                {
-                    pendingLevel = SleepLevel.DeepSleep;
-                    pendingMaxFragments = cfg.MaxFragmentsPerDeepSleep;
-                    return true;
-                }
-                return false;
-            }
-
-            // ② 红色评估
-            if (await EvaluateRedAsync(ctx))
-            {
-                permissionRequestTime = DateTime.Now;
-                FrameworkLogger.Log("DreamSpawnCheck", "红色触发，锁定，等待许可");
-                HandleRedStats();
-                if (dreamPermission)
-                {
-                    pendingLevel = SleepLevel.DeepSleep;
-                    pendingMaxFragments = cfg.MaxFragmentsPerDeepSleep;
-                    return true;
-                }
-                return false;
-            }
-
-            // ③ 黄色评估
-            var score = await EvaluateYellowAsync(ctx);
-            if (score >= cfg.YellowThreshold)
-            {
-                permissionRequestTime = DateTime.Now;
-                FrameworkLogger.Log("DreamSpawnCheck",
-                    $"黄色 {score:F2} >= {cfg.YellowThreshold}，锁定，等待许可");
-                if (dreamPermission)
-                {
-                    pendingLevel = SleepLevel.DeepSleep;
-                    pendingMaxFragments = cfg.MaxFragmentsPerDeepSleep;
-                    return true;
-                }
-                return false;
-            }
-
-            // ④ 小睡
+            // ② 小睡（空闲时间足够长）
             if (ctx.IdleDuration.TotalSeconds > cfg.NapIdleThreshold)
             {
                 pendingLevel = SleepLevel.Nap;
                 pendingMaxFragments = cfg.MaxFragmentsPerNap;
-                return true;
+                FrameworkLogger.Log("DreamSpawnCheck", $"小睡触发（空闲 {ctx.IdleDuration.TotalSeconds:F0}s）");
+                return Task.FromResult(true);
             }
 
-            // ⑤ 走神
+            // ③ 走神（冷却期已过）
             if (lastDaydreamTime == null ||
                 (DateTime.Now - lastDaydreamTime.Value).TotalSeconds > cfg.DaydreamCooldown)
             {
                 pendingLevel = SleepLevel.Daydream;
                 pendingMaxFragments = 1;
-                return true;
+                FrameworkLogger.Log("DreamSpawnCheck", "走神触发");
+                return Task.FromResult(true);
             }
 
-            return false;
+            return Task.FromResult(false);
         }
 
         public ISubEngine Create(ISystemContext ctx)
         {
-            // 大睡开始时消耗许可
-            if (pendingLevel == SleepLevel.DeepSleep)
-            {
-                dreamPermission = false;
-                customRedAlert = false;
-            }
-
             return new DreamEngine(ctx, pendingLevel, pendingMaxFragments, this);
         }
 
@@ -209,13 +109,8 @@ namespace AgentCoreProcessor.Engine
 
         internal WebUI.Services.DreamStateSnapshot GetDreamSnapshot(bool hasActiveDream) => new()
         {
-            ScoreOffset = scoreOffset,
-            CustomRedAlert = customRedAlert,
             ForceFlag = forceFlag,
-            DreamPermission = dreamPermission,
-            PermissionRequestTime = permissionRequestTime,
             LastDaydreamTime = lastDaydreamTime,
-            LastDeepSleepTime = lastDeepSleepTime,
             PendingLevel = pendingLevel,
             HasActiveDream = hasActiveDream
         };
@@ -225,79 +120,18 @@ namespace AgentCoreProcessor.Engine
         internal void OnDreamCompleted(SleepLevel level, int processed)
         {
             if (level == SleepLevel.Daydream)
+            {
                 lastDaydreamTime = DateTime.Now;
+                FrameworkLogger.Log("DreamSpawnCheck", "走神完成");
+            }
+            else if (level == SleepLevel.Nap)
+            {
+                FrameworkLogger.Log("DreamSpawnCheck", $"小睡完成，处理 {processed} 个片段");
+            }
             else if (level == SleepLevel.DeepSleep)
             {
-                lastDeepSleepTime = DateTime.Now;
-                stats.RecordProcessed(processed);
-                stats.PruneAndRecalcBaseline();
-                stats.ResetRedDays();
-                stats.Save(DreamStatsPath);
-                permissionRequestTime = null;
-                scoreOffset = 0f;
-                FrameworkLogger.Log("DreamSpawnCheck", "大睡完成，统计更新，状态重置");
+                FrameworkLogger.Log("DreamSpawnCheck", $"大睡完成，处理 {processed} 个片段");
             }
-        }
-
-        // ---- 红/黄评估 ----
-
-        private async Task<bool> EvaluateRedAsync(ISystemContext ctx)
-        {
-            if (customRedAlert) return true;
-
-            var tempCount = (await ctx.TempMemories.GetAllAsync()).Count;
-            var baseline = stats.GetBaselineAvg();
-            if (tempCount > cfg.RedTempMultiplier * baseline) return true;
-
-            if (lastDeepSleepTime != null &&
-                (DateTime.Now - lastDeepSleepTime.Value).TotalHours > cfg.RedMaxSleepGapHours)
-                return true;
-
-            return false;
-        }
-
-        private async Task<float> EvaluateYellowAsync(ISystemContext ctx)
-        {
-            float total = cfg.ScoreBase + scoreOffset;
-            total += LinearScore((float)ctx.IdleDuration.TotalSeconds,
-                600f, cfg.DeepSleepIdleThreshold, 3f);
-
-            if (lastDeepSleepTime != null)
-                total += LinearScore((float)(DateTime.Now - lastDeepSleepTime.Value).TotalHours,
-                    12f, 48f, 3f);
-
-            var tempCount = (await ctx.TempMemories.GetAllAsync()).Count;
-            var baseline = stats.GetBaselineAvg();
-            if (baseline > 0)
-                total += LinearScore(tempCount / baseline, 1f, 3f, 3f);
-
-            var undreamed = (await ctx.Memories.GetUndreamedAsync(100)).Count;
-            total += LinearScore(undreamed, 0f, 40f, 1f);
-
-            total += cfg.CalcTimeWindowScore(3f);
-
-            FrameworkLogger.Log("DreamSpawnCheck",
-                $"黄色评分: {total:F2} (base={cfg.ScoreBase}, offset={scoreOffset})");
-            return total;
-        }
-
-        private void HandleRedStats()
-        {
-            stats.IncrementRedDays();
-            if (stats.ConsecutiveRedDays >= 3)
-            {
-                stats.Baseline.AvgDailyTempIntake *= 1.2f;
-                FrameworkLogger.Log("DreamSpawnCheck",
-                    $"连续 {stats.ConsecutiveRedDays} 天红色，基线上调至 {stats.Baseline.AvgDailyTempIntake:F1}");
-                stats.ResetRedDays();
-            }
-            stats.Save(DreamStatsPath);
-        }
-
-        private static float LinearScore(float value, float min, float max, float maxScore)
-        {
-            if (max <= min) return 0f;
-            return Math.Clamp((value - min) / (max - min), 0f, 1f) * maxScore;
         }
     }
 }

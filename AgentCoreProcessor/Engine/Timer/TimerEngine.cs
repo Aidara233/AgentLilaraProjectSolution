@@ -15,7 +15,7 @@ namespace AgentCoreProcessor.Engine
 
     /// <summary>
     /// 心跳引擎。定期发布 TimerEvent("tick")，驱动其他引擎的周期性检查。
-    /// Phase 8: 兜底机制 - 检查 SystemEngine 心跳，超时则强制触发睡觉。
+    /// Phase 8: 监控 SystemEngine 心跳，超时则报警（不触发睡觉）。
     /// </summary>
     internal class TimerEngine : ISubEngine
     {
@@ -26,6 +26,7 @@ namespace AgentCoreProcessor.Engine
         private readonly ISystemContext ctx;
         private int intervalSeconds = 30;
         private System.DateTime lastSystemHeartbeat = System.DateTime.Now;
+        private bool alarmSent = false;
 
         public TimerEngine(ISystemContext ctx)
         {
@@ -47,23 +48,65 @@ namespace AgentCoreProcessor.Engine
                 if (ctx.HasActiveEngine("System"))
                 {
                     lastSystemHeartbeat = System.DateTime.Now;
+                    alarmSent = false; // 恢复后重置报警标志
                 }
                 else
                 {
-                    // SystemEngine 不存在，检查是否需要兜底
+                    // SystemEngine 不存在，检查是否需要报警
                     var elapsed = (System.DateTime.Now - lastSystemHeartbeat).TotalHours;
-                    if (elapsed > 1.0)
+                    if (elapsed > 1.0 && !alarmSent)
                     {
                         FrameworkLogger.Log("TimerEngine",
-                            $"[WARNING] SystemEngine 心跳超时 {elapsed:F1} 小时，触发兜底睡觉");
+                            $"[CRITICAL] SystemEngine 心跳超时 {elapsed:F1} 小时！系统循环已挂，需要人工介入！");
 
-                        // 强制启动 DreamEngine
-                        ctx.EventBus.PublishSignal("force-sleep", "deepsleep");
-                        lastSystemHeartbeat = System.DateTime.Now; // 重置，避免重复触发
+                        // 发送报警通知到所有管理员频道
+                        await SendSystemCrashAlarmAsync();
+                        alarmSent = true; // 避免重复报警
                     }
                 }
             }
             FrameworkLogger.Log("TimerEngine", "心跳停止");
+        }
+
+        private async Task SendSystemCrashAlarmAsync()
+        {
+            try
+            {
+                var allUsers = await ctx.Session.GetAllUsersAsync();
+                var admins = allUsers.Where(u => u.PermissionLevel == Database.PermissionLevel.Admin).ToList();
+
+                if (admins.Count == 0) return;
+
+                var allChannels = await ctx.Session.GetAllChannelsAsync();
+                var message = "[系统严重故障]\n" +
+                              "SystemEngine（系统循环）已停止响应超过 1 小时。\n" +
+                              "这是严重事故，需要立即人工介入检查。\n" +
+                              "可能原因：崩溃、死锁、资源耗尽。\n\n" +
+                              "建议操作：\n" +
+                              "1. 检查日志文件\n" +
+                              "2. 重启系统\n" +
+                              "3. 联系技术支持";
+
+                foreach (var channel in allChannels)
+                {
+                    try
+                    {
+                        var parts = channel.Name.Split(':', 2);
+                        if (parts.Length != 2) continue;
+
+                        await ctx.Adapters.SendMessageAsync(parts[0], new Adapter.OutgoingMessage
+                        {
+                            ChannelId = parts[1],
+                            Content = message
+                        });
+                    }
+                    catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                FrameworkLogger.Log("TimerEngine", $"发送系统崩溃报警失败: {ex.Message}");
+            }
         }
 
         public void OnEvent(EngineEvent e)
