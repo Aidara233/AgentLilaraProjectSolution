@@ -15,6 +15,7 @@ namespace AgentCoreProcessor.Engine
 
     /// <summary>
     /// 心跳引擎。定期发布 TimerEvent("tick")，驱动其他引擎的周期性检查。
+    /// Phase 8: 兜底机制 - 检查 SystemEngine 心跳，超时则强制触发睡觉。
     /// </summary>
     internal class TimerEngine : ISubEngine
     {
@@ -24,6 +25,7 @@ namespace AgentCoreProcessor.Engine
 
         private readonly ISystemContext ctx;
         private int intervalSeconds = 30;
+        private System.DateTime lastSystemHeartbeat = System.DateTime.Now;
 
         public TimerEngine(ISystemContext ctx)
         {
@@ -37,7 +39,29 @@ namespace AgentCoreProcessor.Engine
             {
                 await Task.Delay(intervalSeconds * 1000);
                 if (!IsAlive) break;
+
+                // 发布定时器事件
                 ctx.EventBus.Publish(new TimerEvent { TimerName = "tick" });
+
+                // Phase 8: 检查 SystemEngine 心跳
+                if (ctx.HasActiveEngine("System"))
+                {
+                    lastSystemHeartbeat = System.DateTime.Now;
+                }
+                else
+                {
+                    // SystemEngine 不存在，检查是否需要兜底
+                    var elapsed = (System.DateTime.Now - lastSystemHeartbeat).TotalHours;
+                    if (elapsed > 1.0)
+                    {
+                        FrameworkLogger.Log("TimerEngine",
+                            $"[WARNING] SystemEngine 心跳超时 {elapsed:F1} 小时，触发兜底睡觉");
+
+                        // 强制启动 DreamEngine
+                        ctx.EventBus.PublishSignal("force-sleep", "deepsleep");
+                        lastSystemHeartbeat = System.DateTime.Now; // 重置，避免重复触发
+                    }
+                }
             }
             FrameworkLogger.Log("TimerEngine", "心跳停止");
         }
