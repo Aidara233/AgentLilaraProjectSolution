@@ -32,10 +32,14 @@ AgentCoreProcessor/
 MasterEngine (内核，实现 ISystemContext)
   ├── SpawnCheck 注册表 (IEngineSpawnCheck)
   │     Timer   → TimerEngine (心跳30s，IsInfrastructure=true)
-  │     Worker  → WorkerEngine (每活跃频道一个，常驻)
+  │     Channel → ChannelEngine (每活跃频道一个，常驻，频道循环)
+  │     System  → SystemEngine (单例，系统循环，纯调度者)
   │     Dream   → DreamEngine (走神/小睡/大睡)
   │     Command → CommandSpawnCheck (指令拦截)
   ├── 活跃引擎表 (List<ISubEngine>)
+  ├── TaskBridge (频道循环 ↔ 系统循环异步通信)
+  │     TaskQueue (重量请求: DelegateTask/RequestApproval/Escalate)
+  │     NotificationQueue (轻量信号: Notify/ProgressUpdate/WatchHit)
   └── 事件流水线: EventBus → HandleEventAsync
         ① 内核更新 (lastMessageTime)
         ② SpawnCheck: OnEventAsync → ShouldSpawnAsync → Create → StartEngine
@@ -44,17 +48,18 @@ MasterEngine (内核，实现 ISystemContext)
 ```
 
 ISubEngine: EngineType / RunAsync / OnEvent / IsAlive / RequestStop / IsInfrastructure(默认false)
-ISystemContext: 数据访问 + 适配器 + EventBus + 引擎查询 + StartEngine/RequestStopEngine
+ISystemContext: 数据访问 + 适配器 + EventBus + 引擎查询 + StartEngine/RequestStopEngine + TaskBridge
+IAgentSession: 统一会话接口 (ChannelSession/TaskSession/MonitorSession)
 
 ## 消息处理流
 
 ```
-Adapter → EventBus(MessageEvent) → WorkerEngineSpawnCheck
+Adapter → EventBus(MessageEvent) → ChannelEngineSpawnCheck
   ① SessionManager.OnMessageAsync (用户映射 + 频道映射 + 消息入库)
   ② 权限检查 (Blocked/Restricted 拦截)
-  ③ 按 ChannelId 路由: 有活跃 Worker → EnqueueMessage / 无 → 创建新 Worker
+  ③ 按 ChannelId 路由: 有活跃 ChannelEngine → EnqueueMessage / 无 → 创建新 ChannelEngine
 
-WorkerEngine (常驻，一个活跃频道一个):
+ChannelEngine (频道循环，常驻，一个活跃频道一个):
   闸门驱动循环 (LoopGate, auto-reset):
     gate.WaitAsync(coldTimeout) → 放行后立即重置 → 收集 → 执行 → 回到等待
     触发源: 缓冲定时器(新消息) / ContinueLoop自唤醒 / ESCALATE切模式
@@ -62,9 +67,15 @@ WorkerEngine (常驻，一个活跃频道一个):
 
   内务模块体系 (EngineModule + LoopBus):
     SpeakModule / ThinkingNotesModule / TaskListModule / PinboardModule
-    RetainListModule / MemoryWindowModule / LoopControlModule / SignalDispatchModule
+    RetainListModule / MemoryWindowModule / LoopControlModule / SignalDispatchModule / WatchRulesModule
     模块通过 LoopBus 订阅 ToolExecutedEvent 处理副作用
     模块通过 BuildPromptSection 注入 prompt（按 PromptPriority 排序）
+  
+  关注列表 (WatchRules):
+    系统循环通过 SetWatchRuleTool 下发规则到频道循环
+    规则含自主权级别: NotifyOnly / AutoRespond / Escalate
+    频道循环在 Express prompt 注入规则，模型语义匹配
+    命中后通过 TaskBridge.SendNotification 上报系统循环
 
   统一管线（主循环零分叉，每步根据 EngineMode 走不同实现）:
   ① WaitGate → 闸门放行
@@ -82,6 +93,43 @@ WorkerEngine (常驻，一个活跃频道一个):
   ⑧ ParseBotOutput 解析 <at/>/<reply/> 标签 → OutgoingMessage
   ⑨ MemoryExtractionCore 异步提取记忆 (每3条触发)
   ⑩ TrustProgress 每日自动增长 (per-person 日上限)
+```
+
+SystemEngine (系统循环，单例，纯调度者):
+  闸门驱动循环 (LoopGate, auto-reset):
+    gate.WaitAsync(coldTimeout) → 放行后立即重置 → 收集 → 执行 → 回到等待
+    触发源: TaskBridge 任务/通知 / ContinueLoop自唤醒 / 定时器
+    超时 → 冷却退出
+  
+  统一管线 (每轮重建上下文):
+  ① WaitGate → 闸门放行
+  ② CollectTasks → drain TaskBridge 任务队列和通知队列
+  ③ PrepareContext → 重建上下文（活跃子agent/频道列表/任务队列/通知摘要）
+  ④ BuildPrompt → PromptBuilder（注入工具描述+上下文+便签板+思考笔记）
+  ⑤ CallModel → AgentCore.InvokeAsync（返回工具调用）
+  ⑥ ProcessResponse → 执行工具+发布事件
+  ⑦ DecideNext → ContinueLoop(signal) / idle
+  
+  上下文持久化:
+    每轮结束写入 Storage/SystemContext.json（WAL 模式）
+    重启时恢复上下文（便签板/思考笔记/任务队列）
+  
+  上下文压缩:
+    超过 MaxContextMessages(50) 触发压缩
+    保留最近 10 条 + 压缩摘要（模型生成）
+    压缩后写入持久化文件
+  
+  子 agent 管理:
+    通过 CreateSubAgentTool 创建 TaskSession
+    通过 SendToSubAgentTool 发送指令（子agent 被动执行一轮）
+    通过 StopSubAgentTool 停止子agent
+    禁止套娃（子agent 不能创建子agent）
+  
+  工具集 (纯调度+轻量执行):
+    调度类: CreateSubAgent / SendToSubAgent / StopSubAgent / DeleteSubAgent
+    通信类: SendToChannel / CheckNotifications / SetWatchRule / CheckTaskQueue
+    自用类: 便签板 / 思考笔记 / 继续
+    轻量执行: 文件只读 / 记忆读写（"看一眼就完事"的操作）
 ```
 
 ## 冲动值决策 (per Channel, ImpulseConfig.json 全参数可配置)
@@ -199,7 +247,16 @@ Express/Working 自适应切换:
   自由工具(Default): 说话 / 思考笔记 / 记忆 / 标记复盘 / 任务管理 / 报警 / 读取文件 / 便签板 / 缓存管理 / 继续
   受限工具(Elevated): 睡眠许可 / 强制睡觉 / 调整睡意 / 远程终端 / 写入文件 / 文件传输
   受限工具(Admin): 修改睡眠配置 / 触发红色警报
-  已禁用: 委派任务 / 查看子agent (代码已删除)
+
+系统循环专用工具:
+  调度类: 创建子agent / 发送给子agent / 停止子agent / 删除子agent
+  通信类: 发送到频道 / 检查通知 / 设置关注规则 / 检查任务队列
+  自用类: 便签板 / 思考笔记 / 继续
+  轻量执行: 读取文件 / 记忆读写
+
+子 agent 工具集:
+  根据创建时指定的工具白名单动态注册
+  敏感操作需要系统循环确认（子agent 阻塞等待审批）
 
 文件系统沙盒:
   Storage/Workspace/ — 自由工作区（500MB上限）

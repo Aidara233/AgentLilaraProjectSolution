@@ -1,5 +1,30 @@
 # Agent Lilara — AI 协作指引
 
+## 项目状态
+
+**当前阶段**：Phase 1-7 已完成（双循环架构 + 子agent系统 + 关注列表）
+
+**已完成**：
+- Phase 0: ContextBuilder/ImpulseTracker 提取，WorkerEngine 重构
+- Phase 1: TaskBridge + SystemEngine 骨架
+- Phase 2: SystemEngine 完整 agent 循环 + 上下文持久化 + 压缩
+- Phase 3: DelegateTaskTool + 频道工具过滤
+- Phase 4: 系统循环通信和管理工具
+- Phase 5: IAgentSession + 子agent系统
+- Phase 6: WatchRules 关注列表系统
+- Phase 7: WorkerEngine → ChannelEngine 重命名
+
+**可选优化**：
+- Phase 8: 睡觉迁移（DreamEngine 迁移到 SystemEngine 管理）
+
+**核心特性**：
+- 双循环架构：频道循环（用户交互）+ 系统循环（任务调度）
+- TaskBridge 异步通信：任务队列 + 通知队列
+- 子agent系统：TaskSession 被动执行，工具白名单，禁止套娃
+- 上下文持久化：SystemContext.json WAL 模式
+- 上下文压缩：超过 50 条触发，保留最近 10 条 + 摘要
+- 关注列表：系统循环下发规则，频道循环语义匹配
+
 ## 冷启动
 
 如果你刚进入对话或经历了上下文压缩，按以下顺序恢复上下文：
@@ -37,8 +62,11 @@
 
 ## 关键路径
 
-- 入口：Program.cs（--file / --debug / 默认 Console）
+- 入口：Program.cs（--file / --debug / 默认 Web 服务器）
 - 引擎内核：Engine/MasterEngine.cs
+- 频道循环：Engine/Worker/ChannelEngine.cs
+- 系统循环：Engine/System/SystemEngine.cs
+- 通信桥梁：Engine/Core/TaskBridge.cs
 - Agent 循环：Core/WorkingCore.cs
 - 记忆检索：Memory/MemoryService.cs
 - 做梦调度：Engine/DreamEngineSpawnCheck.cs
