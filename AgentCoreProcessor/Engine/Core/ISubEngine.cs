@@ -88,5 +88,8 @@ namespace AgentCoreProcessor.Engine
 
         /// <summary>MCP Server 管理器（可能为 null，如果 MCP 未初始化）。</summary>
         McpServerManager? McpManager { get; }
+
+        /// <summary>任务桥梁：频道循环 ↔ 系统循环异步通信。</summary>
+        TaskBridge TaskBridge { get; }
     }
 }

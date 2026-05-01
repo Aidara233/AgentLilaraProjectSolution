@@ -81,6 +81,7 @@ namespace AgentCoreProcessor.Engine
         /// <summary>静音模式：内部处理照常，但不产生对外输出。</summary>
         public bool MuteMode { get; set; } = false;
         public McpServerManager? McpManager => mcpManager;
+        public TaskBridge TaskBridge { get; private set; } = null!;
 
         // ---- 引擎注册表 ----
         private readonly List<IEngineSpawnCheck> spawnChecks = new();
@@ -93,6 +94,7 @@ namespace AgentCoreProcessor.Engine
         [
             ("Command", () => new CommandSpawnCheck()),
             ("Timer",   () => new TimerEngineSpawnCheck()),
+            ("System",  () => new SystemEngineSpawnCheck()),
             ("Worker",  () => new WorkerEngineSpawnCheck()),
             ("Dream",   () => new DreamEngineSpawnCheck()),
         ];
@@ -216,6 +218,12 @@ namespace AgentCoreProcessor.Engine
 
             // 人设记忆种子加载（表空时从文件导入）
             await LoadPersonaMemorySeedAsync();
+
+            // 创建 TaskBridge
+            var systemLoopPath = Path.Combine(PathConfig.StoragePath, "SystemLoop");
+            Directory.CreateDirectory(systemLoopPath);
+            TaskBridge = new TaskBridge(systemLoopPath);
+            FrameworkLogger.Log("MasterEngine", "TaskBridge 已初始化");
 
             // 注册所有 SpawnCheck
             foreach (var (_, factory) in SpawnCheckFactory)
