@@ -72,9 +72,11 @@ namespace AgentCoreProcessor.Tool
         /// </summary>
         public static string GenerateDescriptions(
             IEnumerable<ITool>? tools = null,
-            HashSet<string>? authorizedTools = null)
+            HashSet<string>? authorizedTools = null,
+            Func<ITool, bool>? filter = null)
         {
             var source = (tools ?? _tools.Values).ToList();
+            if (filter != null) source = source.Where(filter).ToList();
             var sb = new StringBuilder();
             int i = 1;
 
@@ -121,9 +123,12 @@ namespace AgentCoreProcessor.Tool
         /// <summary>
         /// 生成能力摘要列表，注入 Express prompt 让模型知道可升级到 Working 模式的能力。
         /// </summary>
-        public static string GenerateCapabilitySummary()
+        public static string GenerateCapabilitySummary(Func<ITool, bool>? filter = null)
         {
-            var capabilities = _tools.Values
+            var source = filter != null
+                ? _tools.Values.Where(filter)
+                : _tools.Values;
+            var capabilities = source
                 .Where(t => t.CapabilitySummary != null)
                 .Select(t => t.CapabilitySummary!)
                 .Distinct()
