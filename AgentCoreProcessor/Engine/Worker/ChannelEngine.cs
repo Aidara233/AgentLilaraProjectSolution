@@ -172,7 +172,7 @@ namespace AgentCoreProcessor.Engine
             ScheduleBufferSignal();
 
             // Phase 6: 检查关注规则
-            _ = CheckWatchRulesAsync(msg, sc);
+            CheckWatchRulesAsync(msg, sc);
         }
 
         /// <summary>缓冲窗口到期后 Signal 闸门。每次新消息重置定时器。</summary>
@@ -854,7 +854,7 @@ namespace AgentCoreProcessor.Engine
         }
 
         /// <summary>检查消息是否命中关注规则。</summary>
-        private async Task CheckWatchRulesAsync(IncomingMessage msg, SessionContext sc)
+        private void CheckWatchRulesAsync(IncomingMessage msg, SessionContext sc)
         {
             List<WatchRule> rules;
             lock (watchRulesLock)
