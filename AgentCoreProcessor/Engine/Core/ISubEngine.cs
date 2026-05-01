@@ -83,6 +83,9 @@ namespace AgentCoreProcessor.Engine
         List<(string Type, int Count)> GetActiveEngineSummary();
         void RequestStopEnginesByType(string engineType);
 
+        /// <summary>获取所有活跃引擎的快照（用于工具查询）。</summary>
+        List<ISubEngine> GetActiveEnginesSnapshot();
+
         /// <summary>静音模式：内部处理照常，但不产生对外输出。</summary>
         bool MuteMode { get; set; }
 

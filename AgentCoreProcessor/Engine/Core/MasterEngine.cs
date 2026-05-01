@@ -151,7 +151,7 @@ namespace AgentCoreProcessor.Engine
             lock (engineLock) { return spawnChecks.OfType<T>().FirstOrDefault(); }
         }
 
-        internal List<ISubEngine> GetActiveEnginesSnapshot()
+        public List<ISubEngine> GetActiveEnginesSnapshot()
         {
             lock (engineLock) { return activeEngines.Where(e => e.IsAlive).ToList(); }
         }
@@ -232,6 +232,12 @@ namespace AgentCoreProcessor.Engine
             Tool.ToolRegistry.Register(new Tool.ChannelInfoTool(this));
             Tool.ToolRegistry.Register(new Tool.EngineManagementTool(this));
             Tool.ToolRegistry.Register(new Tool.CheckNotificationsTool(this));
+
+            // Phase 6: 注册关注规则工具
+            var watchRuleTool = new Tool.SetWatchRuleTool();
+            watchRuleTool.SetContext(this);
+            Tool.ToolRegistry.Register(watchRuleTool);
+
             FrameworkLogger.Log("MasterEngine", "系统循环工具已注册");
 
             // 注册所有 SpawnCheck

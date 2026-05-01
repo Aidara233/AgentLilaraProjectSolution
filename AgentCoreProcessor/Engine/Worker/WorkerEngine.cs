@@ -25,6 +25,9 @@ namespace AgentCoreProcessor.Engine
         public string EngineType => "Worker";
         public bool IsAlive { get; private set; } = true;
 
+        /// <summary>频道 ID（公开，供 SetWatchRuleTool 查找）。</summary>
+        public int ChannelId => channelId;
+
         /// <summary>是否正在处理消息。</summary>
         public bool IsBusy => Interlocked.Read(ref _busyFlag) == 1;
 
@@ -116,6 +119,10 @@ namespace AgentCoreProcessor.Engine
         // 未消费的图片路径
         private readonly List<string> pendingImagePaths = new();
 
+        // Phase 6: 关注规则
+        private readonly object watchRulesLock = new();
+        private List<WatchRule> watchRules = new();
+
 
         /// <summary>由 SpawnCheck 创建，传入初始消息。</summary>
         public WorkerEngine(ISystemContext ctx, SessionContext initialContext, IncomingMessage initialMessage)
@@ -163,6 +170,9 @@ namespace AgentCoreProcessor.Engine
                 (_, _) => ParticipantInfo.From(sc.User, sc.Person, msg));
             impulseTracker.Accumulate(msg, recentParticipants.Count, sc);
             ScheduleBufferSignal();
+
+            // Phase 6: 检查关注规则
+            _ = CheckWatchRulesAsync(msg, sc);
         }
 
         /// <summary>缓冲窗口到期后 Signal 闸门。每次新消息重置定时器。</summary>
@@ -447,6 +457,28 @@ namespace AgentCoreProcessor.Engine
                     return allowedTools.Contains(tool.Name);
                 });
                 toolDescs = ToolRegistry.GenerateCapabilitySummary(filter: channelToolFilter);
+            }
+
+            // Phase 6: 注入关注规则（仅 Express 模式）
+            if (!isWorkingMode)
+            {
+                List<WatchRule> rules;
+                lock (watchRulesLock)
+                {
+                    rules = new List<WatchRule>(watchRules);
+                }
+
+                if (rules.Count > 0)
+                {
+                    var sb = new StringBuilder();
+                    sb.AppendLine("\n[关注规则]");
+                    sb.AppendLine("以下规则已激活，当消息匹配时会自动触发相应动作：");
+                    foreach (var rule in rules)
+                    {
+                        sb.AppendLine($"- {rule.Description}（模式：{rule.Pattern}，动作：{rule.Action}）");
+                    }
+                    toolDescs += "\n" + sb.ToString();
+                }
             }
 
             var messages = promptBuilder.BuildRoundMessages(
@@ -796,6 +828,93 @@ namespace AgentCoreProcessor.Engine
             {
                 if (a.Type == AttachmentType.Image && !string.IsNullOrEmpty(a.LocalPath))
                     pendingImagePaths.Add(a.LocalPath!);
+            }
+        }
+
+        // ---- Phase 6: 关注规则管理 ----
+
+        /// <summary>获取当前关注规则列表（副本）。</summary>
+        public List<WatchRule> GetWatchRules()
+        {
+            lock (watchRulesLock)
+            {
+                return new List<WatchRule>(watchRules);
+            }
+        }
+
+        /// <summary>更新关注规则列表。</summary>
+        public void UpdateWatchRules(List<WatchRule> rules)
+        {
+            lock (watchRulesLock)
+            {
+                watchRules = new List<WatchRule>(rules);
+            }
+            FrameworkLogger.Log("WorkerEngine",
+                $"关注规则已更新: channelId={channelId}, 规则数={rules.Count}");
+        }
+
+        /// <summary>检查消息是否命中关注规则。</summary>
+        private async Task CheckWatchRulesAsync(IncomingMessage msg, SessionContext sc)
+        {
+            List<WatchRule> rules;
+            lock (watchRulesLock)
+            {
+                if (watchRules.Count == 0) return;
+                rules = new List<WatchRule>(watchRules);
+            }
+
+            foreach (var rule in rules)
+            {
+                bool matched = false;
+
+                // 简单关键词匹配（后续可扩展为正则表达式）
+                if (msg.Content.Contains(rule.Pattern, StringComparison.OrdinalIgnoreCase))
+                {
+                    matched = true;
+                }
+
+                if (!matched) continue;
+
+                FrameworkLogger.Log("WorkerEngine",
+                    $"关注规则命中: channelId={channelId}, ruleId={rule.RuleId}, pattern={rule.Pattern}");
+
+                // 发送通知
+                ctx.TaskBridge.PostNotification(new Notification
+                {
+                    Type = NotificationType.WatchHit,
+                    SourceId = $"channel_{channelId}",
+                    Summary = $"规则「{rule.RuleId}」命中：{rule.Description}\n" +
+                              $"消息：{msg.Content.Substring(0, Math.Min(50, msg.Content.Length))}..."
+                });
+
+                // 根据动作执行
+                switch (rule.Action)
+                {
+                    case WatchAction.Notify:
+                        // 仅通知，不打断
+                        break;
+
+                    case WatchAction.Interrupt:
+                        // 打断当前任务，立即响应
+                        if (rule.AutoResponse)
+                        {
+                            gate.Signal();
+                        }
+                        break;
+
+                    case WatchAction.Escalate:
+                        // 升级到系统循环
+                        var task = new SystemTask
+                        {
+                            SourceChannelId = channelId,
+                            Description = $"关注规则「{rule.RuleId}」触发：{rule.Description}",
+                            ContextSummary = msg.Content,
+                            RequestingPersonId = sc.Person.Id,
+                            Priority = 5
+                        };
+                        _ = ctx.TaskBridge.SubmitTaskAsync(task, TimeSpan.FromMinutes(5));
+                        break;
+                }
             }
         }
     }
