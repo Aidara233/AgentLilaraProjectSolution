@@ -88,6 +88,7 @@ namespace AgentCoreProcessor.Engine
         private readonly List<ISubEngine> activeEngines = new();
         private readonly object engineLock = new();
         private readonly SemaphoreSlim eventLock = new(1, 1);
+        private SystemEngine? systemEngine; // Phase 5: 保存 SystemEngine 引用用于工具注册
 
         // SpawnCheck 工厂（有序列表，Command 在 Worker 之前拦截命令消息）
         private static readonly List<(string Name, Func<IEngineSpawnCheck> Factory)> SpawnCheckFactory =
@@ -250,7 +251,22 @@ namespace AgentCoreProcessor.Engine
                     var engine = check.Create(this);
                     StartEngine(engine);
                     FrameworkLogger.Log("MasterEngine", $"自启动引擎: {type}");
+
+                    // Phase 5: 保存 SystemEngine 引用
+                    if (engine is SystemEngine sysEngine)
+                    {
+                        systemEngine = sysEngine;
+                    }
                 }
+            }
+
+            // Phase 5: 注册子 agent 管理工具（需要 SystemEngine 引用）
+            if (systemEngine != null)
+            {
+                Tool.ToolRegistry.Register(new Tool.CreateSubAgentTool(() => systemEngine.CreateSubAgent()));
+                Tool.ToolRegistry.Register(new Tool.SendToSubAgentTool(sessionId => systemEngine.GetSubAgent(sessionId)));
+                Tool.ToolRegistry.Register(new Tool.StopSubAgentTool(sessionId => systemEngine.GetSubAgent(sessionId)));
+                FrameworkLogger.Log("MasterEngine", "子 agent 管理工具已注册");
             }
 
             // MCP Server 初始化

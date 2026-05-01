@@ -37,13 +37,17 @@ namespace AgentCoreProcessor.Engine
         private readonly ContextCompressionModule compressionModule;
         private List<EngineModule> modules = null!;
 
+        // 子 agent 管理
+        private readonly Dictionary<string, IAgentSession> subAgents = new();
+        private readonly object subAgentLock = new();
+
         public SystemEngine(ISystemContext ctx)
         {
             this.ctx = ctx;
 
             // 初始化模块
             taskQueueModule = new TaskQueueModule(ctx);
-            systemStatusModule = new SystemStatusModule(ctx);
+            systemStatusModule = new SystemStatusModule(ctx, () => GetActiveSubAgents());
 
             var systemLoopPath = System.IO.Path.Combine(PathConfig.StoragePath, "SystemLoop");
             persistence = new ContextPersistence(systemLoopPath);
@@ -216,6 +220,43 @@ namespace AgentCoreProcessor.Engine
         {
             FrameworkLogger.Log("SystemEngine", "收到停止请求");
             stopCts?.Cancel();
+        }
+
+        // ---- 子 agent 管理 ----
+
+        /// <summary>创建子 agent（TaskSession）。</summary>
+        public IAgentSession CreateSubAgent()
+        {
+            var session = new TaskSession(ctx);
+            lock (subAgentLock)
+            {
+                subAgents[session.SessionId] = session;
+            }
+            FrameworkLogger.Log("SystemEngine", $"子 agent 已创建: {session.SessionId}");
+            return session;
+        }
+
+        /// <summary>获取子 agent。</summary>
+        public IAgentSession? GetSubAgent(string sessionId)
+        {
+            lock (subAgentLock)
+            {
+                subAgents.TryGetValue(sessionId, out var session);
+                return session;
+            }
+        }
+
+        /// <summary>获取所有活跃子 agent。</summary>
+        public List<IAgentSession> GetActiveSubAgents()
+        {
+            lock (subAgentLock)
+            {
+                // 清理已死亡的
+                var dead = subAgents.Where(kv => !kv.Value.IsAlive).Select(kv => kv.Key).ToList();
+                foreach (var key in dead) subAgents.Remove(key);
+
+                return subAgents.Values.ToList();
+            }
         }
     }
 }
