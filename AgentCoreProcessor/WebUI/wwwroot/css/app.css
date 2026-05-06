@@ -98,6 +98,7 @@ body {
     overflow-y: auto;
     background: var(--bg-primary);
     padding: 1.5rem 2rem;
+    position: relative;
 }
 
 /* ===== Sidebar ===== */
@@ -849,4 +850,239 @@ body {
     --card-bg: #10131c;
     --card-border: #1a2038;
     --card-shadow: 0 2px 12px rgba(0, 100, 180, 0.15);
+
+    /* --- Tech-specific geometry --- */
+    --radius-sm: 0px;
+    --radius-md: 0px;
+    --radius-lg: 0px;
+    --glass-bg: rgba(8, 14, 28, 0.7);
+    --glass-border: rgba(0, 200, 255, 0.15);
+    --corner-size: 8px;
+    --corner-thickness: 2px;
+}
+
+/* ===== Tech Theme — Component Overrides ===== */
+
+/* Background layers */
+[data-theme="tech"] .app-main {
+    background:
+        radial-gradient(ellipse at 20% 50%, rgba(0, 100, 200, 0.06) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 20%, rgba(0, 200, 255, 0.04) 0%, transparent 40%),
+        radial-gradient(ellipse at 50% 80%, rgba(80, 0, 200, 0.03) 0%, transparent 50%),
+        var(--bg-primary);
+}
+
+[data-theme="tech"] .app-main::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+        linear-gradient(rgba(0, 200, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 200, 255, 0.02) 1px, transparent 1px);
+    background-size: 40px 40px;
+    z-index: 0;
+}
+
+[data-theme="tech"] .app-main > * {
+    position: relative;
+    z-index: 1;
+}
+
+/* Sidebar — left-border active instead of background */
+[data-theme="tech"] .sidebar-nav .nav-link.active {
+    background: transparent !important;
+    border-left: 2px solid var(--accent);
+    padding-left: calc(0.75rem - 2px);
+}
+
+/* Cards — glass + corner frame */
+[data-theme="tech"] .card {
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: none;
+    position: relative;
+}
+
+[data-theme="tech"] .card::before,
+[data-theme="tech"] .card::after {
+    content: '';
+    position: absolute;
+    width: var(--corner-size);
+    height: var(--corner-size);
+    border-color: var(--accent);
+    border-style: solid;
+    pointer-events: none;
+    z-index: 2;
+}
+
+[data-theme="tech"] .card::before {
+    top: 0; left: 0;
+    border-width: var(--corner-thickness) 0 0 var(--corner-thickness);
+}
+
+[data-theme="tech"] .card::after {
+    top: 0; right: 0;
+    border-width: var(--corner-thickness) var(--corner-thickness) 0 0;
+}
+
+/* Stat cards — corner frame all four */
+[data-theme="tech"] .card-stat {
+    border-left: none;
+}
+
+/* Alert panel — endcap bar style */
+[data-theme="tech"] .alert-panel {
+    border: none;
+    border-top: 1px solid var(--accent);
+    border-bottom: 1px solid var(--accent);
+    position: relative;
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px);
+}
+
+[data-theme="tech"] .alert-panel::before,
+[data-theme="tech"] .alert-panel::after {
+    content: '';
+    position: absolute;
+    top: -1px; bottom: -1px;
+    width: 4px;
+    background: var(--accent);
+}
+
+[data-theme="tech"] .alert-panel::before { left: 0; }
+[data-theme="tech"] .alert-panel::after { right: 0; }
+
+[data-theme="tech"] .alert-panel-header {
+    background: rgba(0, 212, 255, 0.06);
+    color: var(--accent);
+}
+
+/* Tables — accent header border */
+[data-theme="tech"] .table-dark-custom thead th {
+    background: rgba(0, 200, 255, 0.04);
+    border-bottom: 1px solid var(--accent);
+    color: var(--text-secondary);
+}
+
+[data-theme="tech"] .table-dark-custom tbody tr {
+    border-bottom: 1px solid rgba(0, 200, 255, 0.06);
+}
+
+[data-theme="tech"] .table-dark-custom tbody tr:hover {
+    background: rgba(0, 200, 255, 0.04);
+}
+
+/* Log container — clip-path diagonal corners */
+[data-theme="tech"] .log-container {
+    clip-path: polygon(
+        8px 0%, calc(100% - 8px) 0%,
+        100% 8px, 100% calc(100% - 8px),
+        calc(100% - 8px) 100%, 8px 100%,
+        0% calc(100% - 8px), 0% 8px
+    );
+    background: rgba(6, 8, 18, 0.8);
+}
+
+/* Primary button — D style (corner marks) */
+[data-theme="tech"] .btn-accent {
+    background: transparent;
+    border: none;
+    color: var(--accent);
+    padding: 0.5rem 1.2rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    position: relative;
+}
+
+[data-theme="tech"] .btn-accent::before,
+[data-theme="tech"] .btn-accent::after {
+    content: '';
+    position: absolute;
+    width: 6px; height: 6px;
+    border-color: var(--accent);
+    border-style: solid;
+}
+
+[data-theme="tech"] .btn-accent::before {
+    top: 0; left: 0;
+    border-width: 1.5px 0 0 1.5px;
+}
+
+[data-theme="tech"] .btn-accent::after {
+    bottom: 0; right: 0;
+    border-width: 0 1.5px 1.5px 0;
+}
+
+[data-theme="tech"] .btn-accent:hover {
+    background: var(--accent-dim);
+    box-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
+}
+
+/* Ghost/secondary button — C style (bottom heavy line) */
+[data-theme="tech"] .btn-ghost {
+    background: rgba(0, 212, 255, 0.03);
+    border: none;
+    border-top: 1px solid rgba(0, 200, 255, 0.2);
+    border-bottom: 2px solid var(--accent);
+    color: var(--text-secondary);
+    padding: 0.4rem 1rem;
+    font-weight: 500;
+}
+
+[data-theme="tech"] .btn-ghost:hover {
+    background: var(--accent-dim);
+    border-top-color: rgba(0, 200, 255, 0.5);
+    color: var(--accent);
+}
+
+/* Tab bar — C style underline */
+[data-theme="tech"] .tab-item {
+    border-bottom: 2px solid transparent;
+}
+
+[data-theme="tech"] .tab-item.active {
+    border-bottom: 2.5px solid var(--accent);
+    color: var(--accent);
+}
+
+[data-theme="tech"] .tab-item:hover {
+    border-bottom-color: rgba(0, 200, 255, 0.4);
+}
+
+/* Form controls */
+[data-theme="tech"] .form-control,
+[data-theme="tech"] .form-select {
+    background: rgba(8, 14, 28, 0.6);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(8px);
+}
+
+[data-theme="tech"] .form-control:focus,
+[data-theme="tech"] .form-select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent-dim), 0 0 8px rgba(0, 212, 255, 0.2);
+}
+
+/* Sidebar brand */
+[data-theme="tech"] .sidebar-brand span {
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-size: 0.95rem;
+}
+
+/* Theme toggle button */
+[data-theme="tech"] .sidebar-footer .btn-theme-toggle {
+    border-color: var(--glass-border);
+}
+
+/* Scrollbar */
+[data-theme="tech"] ::-webkit-scrollbar-thumb {
+    background: rgba(0, 200, 255, 0.2);
+}
+
+[data-theme="tech"] ::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 200, 255, 0.4);
 }
