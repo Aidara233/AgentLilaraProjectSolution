@@ -1,4 +1,6 @@
 @using AgentCoreProcessor.WebUI.Navigation
+@inject NavigationManager Nav
+@implements IDisposable
 
 <li class="nav-item mt-1">
     <a class="nav-link text-white d-flex align-items-center nav-section-toggle @(expanded ? "" : "collapsed")"
@@ -43,8 +45,52 @@
 
     private bool expanded = false;
 
+    protected override void OnInitialized()
+    {
+        expanded = ShouldExpand();
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        var shouldExpand = ShouldExpand();
+        if (shouldExpand != expanded)
+        {
+            expanded = shouldExpand;
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private bool ShouldExpand()
+    {
+        var uri = Nav.ToBaseRelativePath(Nav.Uri);
+        var path = "/" + uri;
+        return ContainsActivePath(Item, path);
+    }
+
+    private static bool ContainsActivePath(NavItem item, string currentPath)
+    {
+        if (item.Href != null && currentPath.Equals(item.Href, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        foreach (var child in item.Children)
+        {
+            if (child.Href != null && currentPath.Equals(child.Href, StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (child.Children.Count > 0 && ContainsActivePath(child, currentPath))
+                return true;
+        }
+
+        return false;
+    }
+
     private void Toggle()
     {
         expanded = !expanded;
+    }
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
     }
 }
