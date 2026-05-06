@@ -11,31 +11,28 @@
         <i class="bi bi-chevron-down nav-chevron ms-auto"></i>
     </a>
 
-    @if (IsExpanded)
-    {
-        <ul class="nav flex-column ms-3 mt-1">
-            @foreach (var child in Item.Children)
+    <ul class="nav flex-column ms-3 mt-1" style="@(IsExpanded ? "" : "display:none")">
+        @foreach (var child in Item.Children)
+        {
+            @if (child.Children.Count == 0)
             {
-                @if (child.Children.Count == 0)
-                {
-                    <li class="nav-item">
-                        <NavLink class="nav-link text-white py-1" href="@child.Href"
-                                 Match="NavLinkMatch.All">
-                            @if (!string.IsNullOrEmpty(child.Icon))
-                            {
-                                <i class="bi @child.Icon me-2"></i>
-                            }
-                            @child.Title
-                        </NavLink>
-                    </li>
-                }
-                else
-                {
-                    <NavSection Item="child" ExpandedSet="ExpandedSet" />
-                }
+                <li class="nav-item">
+                    <NavLink class="nav-link text-white py-1" href="@child.Href"
+                             Match="NavLinkMatch.All">
+                        @if (!string.IsNullOrEmpty(child.Icon))
+                        {
+                            <i class="bi @child.Icon me-2"></i>
+                        }
+                        @child.Title
+                    </NavLink>
+                </li>
             }
-        </ul>
-    }
+            else
+            {
+                <NavSection Item="child" ExpandedSet="ExpandedSet" />
+            }
+        }
+    </ul>
 </li>
 
 @code {
