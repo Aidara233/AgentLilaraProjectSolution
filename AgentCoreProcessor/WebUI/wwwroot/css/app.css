@@ -211,6 +211,29 @@ body {
     padding-top: 0.5rem;
 }
 
+.sidebar-footer .btn-theme-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    width: 100%;
+    padding: 0.4rem;
+    margin-bottom: 0.4rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.sidebar-footer .btn-theme-toggle:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-dim);
+}
+
 .sidebar-footer .btn-logout {
     display: flex;
     align-items: center;
@@ -753,15 +776,34 @@ body {
     --bg-secondary: #ffffff;
     --bg-tertiary: #f0f2f5;
     --bg-elevated: #ffffff;
-    --bg-hover: #eef0f4;
+    --bg-hover: #eaecf0;
+
     --sidebar-bg: #1a1d28;
     --sidebar-border: #2a2e3d;
+    --sidebar-hover: rgba(255, 255, 255, 0.08);
+    --sidebar-active: rgba(212, 175, 55, 0.15);
+
     --text-primary: #1a1d28;
     --text-secondary: #4a5068;
-    --text-muted: #8890a4;
+    --text-muted: #7c8298;
+    --text-accent: #b8941e;
+
+    --accent: #b8941e;
+    --accent-dim: rgba(184, 148, 30, 0.1);
+    --accent-hover: #d4a820;
+
+    --status-ok: #16a34a;
+    --status-ok-dim: rgba(22, 163, 74, 0.08);
+    --status-warn: #d97706;
+    --status-warn-dim: rgba(217, 119, 6, 0.08);
+    --status-error: #dc2626;
+    --status-error-dim: rgba(220, 38, 38, 0.08);
+    --status-info: #2563eb;
+    --status-info-dim: rgba(37, 99, 235, 0.08);
+
+    --border: #e2e5ec;
+    --border-subtle: #f0f2f5;
     --card-bg: #ffffff;
     --card-border: #e2e5ec;
     --card-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
-    --border: #e2e5ec;
-    --border-subtle: #f0f2f5;
 }

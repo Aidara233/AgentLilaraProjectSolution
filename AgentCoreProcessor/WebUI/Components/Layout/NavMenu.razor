@@ -1,5 +1,7 @@
 @using AgentCoreProcessor.WebUI.Navigation
+@using Microsoft.JSInterop
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 @implements IDisposable
 
 <nav class="app-sidebar">
@@ -28,6 +30,10 @@
     </ul>
     <hr class="sidebar-divider" />
     <div class="sidebar-footer">
+        <button class="btn-theme-toggle" @onclick="ToggleTheme" title="切换主题">
+            <i class="bi @themeIcon"></i>
+            <span>@themeLabel</span>
+        </button>
         <form method="post" action="/api/auth/logout">
             <button type="submit" class="btn-logout">
                 <i class="bi bi-box-arrow-left"></i> 退出
@@ -39,6 +45,24 @@
 @code {
     private HashSet<string> expandedSet = new();
     private int version = 0;
+    private string currentTheme = "dark";
+
+    private string themeIcon => currentTheme == "dark" ? "bi-sun" : "bi-moon";
+    private string themeLabel => currentTheme == "dark" ? "亮色" : "暗色";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            currentTheme = await JS.InvokeAsync<string>("getTheme");
+            StateHasChanged();
+        }
+    }
+
+    private async Task ToggleTheme()
+    {
+        currentTheme = await JS.InvokeAsync<string>("toggleTheme");
+    }
 
     protected override void OnInitialized()
     {
