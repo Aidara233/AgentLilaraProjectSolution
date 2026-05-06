@@ -23,7 +23,7 @@
             }
             else
             {
-                <NavSection @key="item.Title" Item="item" ExpandedSet="expandedSet" />
+                <NavSection @key="item.Title" Item="item" ExpandedSet="expandedSet" Version="version" />
             }
         }
     </ul>
@@ -37,6 +37,7 @@
 
 @code {
     private HashSet<string> expandedSet = new();
+    private int version = 0;
 
     protected override void OnInitialized()
     {
@@ -47,6 +48,7 @@
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
         ExpandForCurrentPath();
+        version++;
         InvokeAsync(StateHasChanged);
     }
 

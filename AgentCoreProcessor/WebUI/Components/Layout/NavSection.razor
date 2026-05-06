@@ -29,7 +29,7 @@
             }
             else
             {
-                <NavSection @key="child.Title" Item="child" ExpandedSet="ExpandedSet" />
+                <NavSection @key="child.Title" Item="child" ExpandedSet="ExpandedSet" Version="Version" />
             }
         }
     </ul>
@@ -38,6 +38,7 @@
 @code {
     [Parameter] public NavItem Item { get; set; } = new();
     [Parameter] public HashSet<string> ExpandedSet { get; set; } = new();
+    [Parameter] public int Version { get; set; }
 
     private bool IsExpanded => ExpandedSet.Contains(Item.Title);
 
