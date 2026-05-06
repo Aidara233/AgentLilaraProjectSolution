@@ -1,0 +1,144 @@
+@typeparam T
+@using AgentCoreProcessor.WebUI.Components.Shared
+
+<div class="card">
+    @if (ShowFilter)
+    {
+        <div class="card-header py-2">
+            <input type="text" class="form-control form-control-sm"
+                   placeholder="搜索..." @bind="filterText" @bind:event="oninput" />
+        </div>
+    }
+    <div class="card-body p-0">
+        <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    @foreach (var col in Columns)
+                    {
+                        <th style="@(col.Sortable ? "cursor:pointer" : "")"
+                            @onclick="() => { if (col.Sortable) SortBy(col); }">
+                            @col.Header
+                            @if (sortColumn == col)
+                            {
+                                <i class="bi @(sortAsc ? "bi-caret-up-fill" : "bi-caret-down-fill") ms-1 small"></i>
+                            }
+                        </th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @if (!PagedItems.Any())
+                {
+                    <tr><td colspan="@Columns.Count" class="text-center text-muted py-3">无数据</td></tr>
+                }
+                else
+                {
+                    @foreach (var item in PagedItems)
+                    {
+                        <tr style="@(OnRowClick.HasDelegate ? "cursor:pointer" : "")"
+                            @onclick="() => OnRowClick.InvokeAsync(item)">
+                            @foreach (var col in Columns)
+                            {
+                                <td>
+                                    @if (col.Template != null)
+                                    {
+                                        @col.Template(item)
+                                    }
+                                    else if (col.Value != null)
+                                    {
+                                        @col.Value(item)?.ToString()
+                                    }
+                                </td>
+                            }
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+    @if (TotalPages > 1)
+    {
+        <div class="card-footer py-2 d-flex justify-content-between align-items-center">
+            <small class="text-muted">共 @FilteredItems.Count() 条</small>
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    <li class="page-item @(currentPage <= 1 ? "disabled" : "")">
+                        <a class="page-link" @onclick="() => GoToPage(currentPage - 1)" @onclick:preventDefault>上一页</a>
+                    </li>
+                    @for (int i = 1; i <= TotalPages; i++)
+                    {
+                        var pageNum = i;
+                        <li class="page-item @(pageNum == currentPage ? "active" : "")">
+                            <a class="page-link" @onclick="() => GoToPage(pageNum)" @onclick:preventDefault>@pageNum</a>
+                        </li>
+                    }
+                    <li class="page-item @(currentPage >= TotalPages ? "disabled" : "")">
+                        <a class="page-link" @onclick="() => GoToPage(currentPage + 1)" @onclick:preventDefault>下一页</a>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public List<T> Items { get; set; } = new();
+    [Parameter] public List<DataColumn<T>> Columns { get; set; } = new();
+    [Parameter] public int PageSize { get; set; } = 20;
+    [Parameter] public bool ShowFilter { get; set; } = true;
+    [Parameter] public EventCallback<T> OnRowClick { get; set; }
+
+    private string filterText = "";
+    private DataColumn<T>? sortColumn;
+    private bool sortAsc = true;
+    private int currentPage = 1;
+
+    private IEnumerable<T> FilteredItems
+    {
+        get
+        {
+            var items = Items.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(filterText))
+            {
+                var lower = filterText.ToLower();
+                items = items.Where(item =>
+                    Columns.Any(col =>
+                        col.Value?.Invoke(item)?.ToString()?.ToLower().Contains(lower) == true));
+            }
+
+            if (sortColumn?.Value != null)
+            {
+                items = sortAsc
+                    ? items.OrderBy(x => sortColumn.Value(x)?.ToString() ?? "")
+                    : items.OrderByDescending(x => sortColumn.Value(x)?.ToString() ?? "");
+            }
+
+            return items;
+        }
+    }
+
+    private IEnumerable<T> PagedItems =>
+        FilteredItems.Skip((currentPage - 1) * PageSize).Take(PageSize);
+
+    private int TotalPages =>
+        Math.Max(1, (int)Math.Ceiling(FilteredItems.Count() / (double)PageSize));
+
+    private void SortBy(DataColumn<T> col)
+    {
+        if (sortColumn == col)
+            sortAsc = !sortAsc;
+        else
+        {
+            sortColumn = col;
+            sortAsc = true;
+        }
+        currentPage = 1;
+    }
+
+    private void GoToPage(int page)
+    {
+        if (page >= 1 && page <= TotalPages)
+            currentPage = page;
+    }
+}

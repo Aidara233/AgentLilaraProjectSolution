@@ -1,0 +1,80 @@
+@page "/engine/channels"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using AgentCoreProcessor.WebUI.Services
+@inject SystemMonitor Monitor
+@inject NavigationManager Nav
+@implements IDisposable
+
+<h4 class="mb-3">频道循环 — 频道列表</h4>
+
+@if (snap.Workers.Count == 0)
+{
+    <div class="alert alert-secondary">当前无活跃频道</div>
+}
+else
+{
+    <div class="card">
+        <div class="card-body p-0">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>频道</th>
+                        <th>模式</th>
+                        <th>状态</th>
+                        <th>冲动值</th>
+                        <th>消息速率</th>
+                        <th>轮次</th>
+                        <th>参与者</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var w in snap.Workers)
+                    {
+                        <tr style="cursor:pointer" @onclick="() => NavToChannel(w.ChannelId)">
+                            <td>
+                                #@w.ChannelId
+                                @if (!string.IsNullOrEmpty(w.ChannelName))
+                                {
+                                    <small class="text-muted ms-1">@w.ChannelName</small>
+                                }
+                            </td>
+                            <td>
+                                <span class="badge @(w.IsWorkingMode ? "bg-warning" : "bg-info")">
+                                    @(w.IsWorkingMode ? "Working" : "Express")
+                                </span>
+                            </td>
+                            <td>@(w.IsBusy ? "处理中" : "等待")</td>
+                            <td>@w.Impulse.ToString("F2")</td>
+                            <td>@w.MessageRate.ToString("F2")</td>
+                            <td>@w.TotalRounds</td>
+                            <td>@w.ParticipantCount</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private SystemSnapshot snap = new();
+
+    protected override void OnInitialized()
+    {
+        snap = Monitor.Current;
+        Monitor.OnStateChanged += OnStateChanged;
+    }
+
+    private void OnStateChanged()
+    {
+        snap = Monitor.Current;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void NavToChannel(int channelId)
+    {
+        Nav.NavigateTo($"/engine/channels/{channelId}");
+    }
+
+    public void Dispose() => Monitor.OnStateChanged -= OnStateChanged;
+}

@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 
 namespace AgentCoreProcessor.Engine
@@ -44,6 +45,16 @@ namespace AgentCoreProcessor.Engine
             var engine = new SystemEngine(ctx);
             activeInstance = engine;
             return engine;
+        }
+
+        internal WebUI.Services.SystemEngineSnapshot GetSystemSnapshot()
+        {
+            if (activeInstance == null || !activeInstance.IsAlive)
+            {
+                return new WebUI.Services.SystemEngineSnapshot { IsAlive = false };
+            }
+
+            return activeInstance.GetSnapshot();
         }
     }
 }

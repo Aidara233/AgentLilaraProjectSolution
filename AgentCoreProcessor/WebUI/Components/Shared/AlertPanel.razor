@@ -1,0 +1,49 @@
+@using AgentCoreProcessor.WebUI.Components.Shared
+
+@if (Alerts.Any())
+{
+    <div class="card mb-4">
+        <div class="card-header py-2 fw-semibold">
+            <i class="bi bi-exclamation-triangle me-1"></i> 警告
+            <span class="badge bg-danger ms-2">@Alerts.Count</span>
+        </div>
+        <div class="card-body p-0">
+            <ul class="list-group list-group-flush">
+                @foreach (var alert in Alerts.OrderByDescending(a => a.Level))
+                {
+                    <li class="list-group-item d-flex align-items-center py-2">
+                        <i class="bi @GetIcon(alert.Level) me-2 @GetColor(alert.Level)"></i>
+                        <span class="flex-grow-1">
+                            <small class="text-muted">[@alert.Source]</small>
+                            @alert.Message
+                        </span>
+                        @if (alert.LinkHref != null)
+                        {
+                            <a href="@alert.LinkHref" class="btn btn-sm btn-outline-secondary ms-2">
+                                <i class="bi bi-arrow-right"></i>
+                            </a>
+                        }
+                    </li>
+                }
+            </ul>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public List<AlertItem> Alerts { get; set; } = new();
+
+    private static string GetIcon(AlertLevel level) => level switch
+    {
+        AlertLevel.Error => "bi-x-circle-fill",
+        AlertLevel.Warning => "bi-exclamation-triangle-fill",
+        _ => "bi-info-circle-fill"
+    };
+
+    private static string GetColor(AlertLevel level) => level switch
+    {
+        AlertLevel.Error => "text-danger",
+        AlertLevel.Warning => "text-warning",
+        _ => "text-info"
+    };
+}

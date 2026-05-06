@@ -1,0 +1,13 @@
+<div class="card card-stat @CssClass">
+    <div class="card-body py-2">
+        <div class="text-muted small">@Label</div>
+        <div class="fw-bold @ValueClass">@Value</div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public string Value { get; set; } = "";
+    [Parameter] public string CssClass { get; set; } = "";
+    [Parameter] public string ValueClass { get; set; } = "";
+}

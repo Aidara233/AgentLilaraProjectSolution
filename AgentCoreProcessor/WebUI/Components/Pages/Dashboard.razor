@@ -5,7 +5,10 @@
 @inject LogStreamService LogStream
 @implements IDisposable
 
-<h4 class="mb-3">仪表盘</h4>
+<h4 class="mb-3">总览</h4>
+
+<!-- 警告面板 -->
+<AlertPanel Alerts="snap.Alerts" />
 
 <!-- 系统状态卡片 -->
 <div class="row g-3 mb-4">
@@ -88,21 +91,13 @@
                             </span>
                         </div>
                         <div>
-                            <small class="text-muted">上次大睡</small><br/>
-                            @(d.LastDeepSleepTime?.ToString("MM-dd HH:mm") ?? "从未")
-                        </div>
-                        <div>
                             <small class="text-muted">上次走神</small><br/>
                             @(d.LastDaydreamTime?.ToString("HH:mm:ss") ?? "从未")
                         </div>
                         <div>
-                            <small class="text-muted">许可</small><br/>
-                            @(d.DreamPermission ? "已授予" : d.PermissionRequestTime != null ? "等待中" : "未请求")
+                            <small class="text-muted">待执行</small><br/>
+                            @d.PendingLevel
                         </div>
-                        @if (d.CustomRedAlert)
-                        {
-                            <div><span class="badge bg-danger">红色警报</span></div>
-                        }
                     </div>
                 }
             </div>

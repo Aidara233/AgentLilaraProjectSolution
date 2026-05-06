@@ -237,7 +237,14 @@ namespace AgentCoreProcessor
             builder.Services.AddSingleton(adapterManager);
             builder.Services.AddSingleton(webConfig);
             builder.Services.AddSingleton<WebAuthService>();
-            builder.Services.AddSingleton<SystemMonitor>();
+            builder.Services.AddSingleton(sp =>
+            {
+                var alertService = new WebUI.Services.AlertService();
+                alertService.Register(new WebUI.Services.Alerts.EngineAlertProvider());
+                alertService.Register(new WebUI.Services.Alerts.MemoryAlertProvider());
+                return alertService;
+            });
+            builder.Services.AddSingleton<WebUI.Services.SystemMonitor>();
             builder.Services.AddSingleton<LogStreamService>();
 
             builder.Services.AddRazorComponents()

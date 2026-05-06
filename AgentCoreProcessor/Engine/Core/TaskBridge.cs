@@ -24,6 +24,7 @@ namespace AgentCoreProcessor.Engine
 
         public ChannelReader<SystemTask> TaskReader => taskQueue.Reader;
         public ChannelReader<Notification> NotificationReader => notificationQueue.Reader;
+        public int PendingTaskCount => pendingTasks.Count;
 
         public TaskBridge(string storagePath)
         {

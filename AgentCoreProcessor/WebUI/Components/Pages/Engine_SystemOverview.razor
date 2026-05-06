@@ -1,0 +1,56 @@
+@page "/engine/system"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using AgentCoreProcessor.WebUI.Services
+@inject SystemMonitor Monitor
+@implements IDisposable
+
+<h4 class="mb-3">系统循环 — 概览</h4>
+
+@if (sys == null || !sys.IsAlive)
+{
+    <div class="alert alert-danger">SystemEngine 未运行</div>
+}
+else
+{
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <StatCard Label="状态" Value="运行中" CssClass="idle" ValueClass="text-success" />
+        </div>
+        <div class="col-md-3">
+            <StatCard Label="任务队列" Value="@sys.TaskQueueDepth.ToString()" />
+        </div>
+        <div class="col-md-3">
+            <StatCard Label="活跃子agent" Value="@sys.ActiveSubAgentCount.ToString()" />
+        </div>
+        <div class="col-md-3">
+            <StatCard Label="上次健康检查" Value="@sys.LastHealthCheck.ToString("HH:mm:ss")" />
+        </div>
+    </div>
+
+    @if (sys.HasPendingSleepRequest)
+    {
+        <div class="alert alert-warning">
+            <i class="bi bi-moon me-1"></i>
+            睡觉请求待审批 (ID: @sys.SleepRequestId, 评分: @sys.SleepScore?.ToString("F1"))
+            <a href="/engine/system/sleep" class="alert-link ms-2">查看详情</a>
+        </div>
+    }
+}
+
+@code {
+    private SystemEngineSnapshot? sys;
+
+    protected override void OnInitialized()
+    {
+        sys = Monitor.Current.SystemEngine;
+        Monitor.OnStateChanged += OnStateChanged;
+    }
+
+    private void OnStateChanged()
+    {
+        sys = Monitor.Current.SystemEngine;
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose() => Monitor.OnStateChanged -= OnStateChanged;
+}

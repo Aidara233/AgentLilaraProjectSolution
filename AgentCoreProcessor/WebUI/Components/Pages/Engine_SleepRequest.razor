@@ -1,0 +1,103 @@
+@page "/engine/system/sleep"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using AgentCoreProcessor.WebUI.Services
+@using AgentCoreProcessor.Engine
+@inject SystemMonitor Monitor
+@inject EventBus Bus
+@implements IDisposable
+
+<h4 class="mb-3">系统循环 — 睡觉请求</h4>
+
+@if (sys == null || !sys.IsAlive)
+{
+    <div class="alert alert-secondary">SystemEngine 未运行，无法评估睡觉需求</div>
+}
+else if (!sys.HasPendingSleepRequest)
+{
+    <div class="alert alert-info">当前无待审批的睡觉请求</div>
+}
+else
+{
+    <div class="card mb-4">
+        <div class="card-header py-2 fw-semibold">
+            <i class="bi bi-moon-stars me-1"></i> 睡觉请求 @sys.SleepRequestId
+        </div>
+        <div class="card-body">
+            <div class="row g-3 mb-3">
+                <div class="col-md-3">
+                    <div class="text-muted small">评分</div>
+                    <div class="fw-bold fs-4">@sys.SleepScore?.ToString("F1") <small class="text-muted">/ 100</small></div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small">请求时间</div>
+                    <div class="fw-bold">@sys.SleepRequestTime?.ToString("HH:mm:ss")</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small">等待时长</div>
+                    <div class="fw-bold">
+                        @if (sys.SleepRequestTime.HasValue)
+                        {
+                            @((DateTime.Now - sys.SleepRequestTime.Value).TotalMinutes.ToString("F0"))
+                            <small>分钟</small>
+                        }
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted small">自动批准</div>
+                    <div class="fw-bold">10 分钟后</div>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button class="btn btn-success" @onclick="Approve">
+                    <i class="bi bi-check-circle me-1"></i> 批准
+                </button>
+                <button class="btn btn-danger" @onclick="Deny">
+                    <i class="bi bi-x-circle me-1"></i> 拒绝
+                </button>
+            </div>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(statusMessage))
+    {
+        <div class="alert alert-info">@statusMessage</div>
+    }
+}
+
+@code {
+    private SystemEngineSnapshot? sys;
+    private string? statusMessage;
+
+    protected override void OnInitialized()
+    {
+        sys = Monitor.Current.SystemEngine;
+        Monitor.OnStateChanged += OnStateChanged;
+    }
+
+    private void OnStateChanged()
+    {
+        sys = Monitor.Current.SystemEngine;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void Approve()
+    {
+        if (sys?.SleepRequestId != null)
+        {
+            Bus.PublishSignal("sleep-approve", sys.SleepRequestId);
+            statusMessage = $"已批准睡觉请求 {sys.SleepRequestId}";
+        }
+    }
+
+    private void Deny()
+    {
+        if (sys?.SleepRequestId != null)
+        {
+            Bus.PublishSignal("sleep-deny", sys.SleepRequestId);
+            statusMessage = $"已拒绝睡觉请求 {sys.SleepRequestId}";
+        }
+    }
+
+    public void Dispose() => Monitor.OnStateChanged -= OnStateChanged;
+}

@@ -301,6 +301,29 @@ namespace AgentCoreProcessor.Engine
             }
         }
 
+        // ---- WebUI 状态暴露 ----
+
+        internal WebUI.Services.SystemEngineSnapshot GetSnapshot()
+        {
+            int subAgentCount;
+            lock (subAgentLock)
+            {
+                subAgentCount = subAgents.Count(kv => kv.Value.IsAlive);
+            }
+
+            return new WebUI.Services.SystemEngineSnapshot
+            {
+                IsAlive = IsAlive,
+                TaskQueueDepth = ctx.TaskBridge.PendingTaskCount,
+                ActiveSubAgentCount = subAgentCount,
+                HasPendingSleepRequest = pendingSleepRequest != null,
+                SleepRequestId = pendingSleepRequest?.RequestId,
+                SleepScore = pendingSleepRequest?.Score,
+                SleepRequestTime = pendingSleepRequest?.RequestTime,
+                LastHealthCheck = lastSleepCheck
+            };
+        }
+
         // ---- Phase 8: 睡觉评估和许可管理 ----
 
         /// <summary>定期健康检查（每 5 分钟）。</summary>

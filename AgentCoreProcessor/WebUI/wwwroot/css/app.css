@@ -42,3 +42,26 @@
 
 .badge-express { background-color: #198754; }
 .badge-working { background-color: #dc3545; }
+
+.nav-section-toggle {
+    cursor: pointer;
+    user-select: none;
+}
+
+.nav-section-toggle .nav-chevron {
+    transition: transform 0.2s;
+    font-size: 0.7rem;
+}
+
+.nav-section-toggle.collapsed .nav-chevron {
+    transform: rotate(-90deg);
+}
+
+.sidebar .nav .nav .nav-link {
+    font-size: 0.85rem;
+    padding: 0.2rem 0.5rem;
+}
+
+.sidebar {
+    overflow-y: auto;
+}
