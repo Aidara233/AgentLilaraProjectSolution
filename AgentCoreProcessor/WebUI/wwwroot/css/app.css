@@ -807,3 +807,46 @@ body {
     --card-border: #e2e5ec;
     --card-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
+
+[data-theme="tech"] {
+    /* --- Base palette (deeper, more saturated) --- */
+    --bg-primary: #0a0c12;
+    --bg-secondary: #10131c;
+    --bg-tertiary: #151a26;
+    --bg-elevated: #1a2030;
+    --bg-hover: #1f2840;
+
+    /* --- Sidebar --- */
+    --sidebar-bg: #080a10;
+    --sidebar-border: #1a2038;
+    --sidebar-hover: rgba(100, 200, 255, 0.05);
+    --sidebar-active: rgba(0, 200, 255, 0.1);
+
+    /* --- Text --- */
+    --text-primary: #e8ecf4;
+    --text-secondary: #a8b4c8;
+    --text-muted: #6878a0;
+    --text-accent: #00d4ff;
+
+    /* --- Accent (cyan/electric blue) --- */
+    --accent: #00d4ff;
+    --accent-dim: rgba(0, 212, 255, 0.1);
+    --accent-hover: #40e0ff;
+
+    /* --- Status --- */
+    --status-ok: #00e676;
+    --status-ok-dim: rgba(0, 230, 118, 0.1);
+    --status-warn: #ffab00;
+    --status-warn-dim: rgba(255, 171, 0, 0.1);
+    --status-error: #ff1744;
+    --status-error-dim: rgba(255, 23, 68, 0.1);
+    --status-info: #448aff;
+    --status-info-dim: rgba(68, 138, 255, 0.1);
+
+    /* --- Borders & Surfaces --- */
+    --border: #1a2038;
+    --border-subtle: #10131c;
+    --card-bg: #10131c;
+    --card-border: #1a2038;
+    --card-shadow: 0 2px 12px rgba(0, 100, 180, 0.15);
+}

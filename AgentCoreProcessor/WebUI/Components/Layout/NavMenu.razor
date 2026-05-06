@@ -47,8 +47,20 @@
     private int version = 0;
     private string currentTheme = "dark";
 
-    private string themeIcon => currentTheme == "dark" ? "bi-sun" : "bi-moon";
-    private string themeLabel => currentTheme == "dark" ? "亮色" : "暗色";
+    private string themeIcon => currentTheme switch
+    {
+        "dark" => "bi-moon-stars",
+        "tech" => "bi-lightning",
+        "light" => "bi-sun",
+        _ => "bi-circle-half"
+    };
+    private string themeLabel => currentTheme switch
+    {
+        "dark" => "暗色",
+        "tech" => "科技",
+        "light" => "亮色",
+        _ => "主题"
+    };
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {

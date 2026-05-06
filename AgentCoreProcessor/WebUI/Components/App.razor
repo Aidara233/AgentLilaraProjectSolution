@@ -24,7 +24,9 @@
         window.toggleTheme = function() {
             var html = document.documentElement;
             var current = html.getAttribute('data-theme') || 'dark';
-            var next = current === 'dark' ? 'light' : 'dark';
+            var order = ['dark', 'tech', 'light'];
+            var idx = order.indexOf(current);
+            var next = order[(idx + 1) % order.length];
             html.setAttribute('data-theme', next);
             localStorage.setItem('lilara-theme', next);
             return next;
