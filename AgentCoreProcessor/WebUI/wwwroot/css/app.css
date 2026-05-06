@@ -1,8 +1,16 @@
-.sidebar {
+.sidebar-wrapper {
     width: 220px;
     min-width: 220px;
-    min-height: 100vh;
+    max-width: 220px;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.sidebar {
+    width: 100%;
+    height: 100vh;
     overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .nav-link.active {
