@@ -778,10 +778,10 @@ body {
     --bg-elevated: #ffffff;
     --bg-hover: #eaecf0;
 
-    --sidebar-bg: #1a1d28;
-    --sidebar-border: #2a2e3d;
-    --sidebar-hover: rgba(255, 255, 255, 0.08);
-    --sidebar-active: rgba(212, 175, 55, 0.15);
+    --sidebar-bg: #ffffff;
+    --sidebar-border: #e2e5ec;
+    --sidebar-hover: rgba(0, 0, 0, 0.04);
+    --sidebar-active: rgba(184, 148, 30, 0.1);
 
     --text-primary: #1a1d28;
     --text-secondary: #4a5068;
