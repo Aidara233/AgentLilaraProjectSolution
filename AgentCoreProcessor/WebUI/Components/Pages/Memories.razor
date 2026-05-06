@@ -4,20 +4,18 @@
 @using AgentCoreProcessor.Database
 @inject MasterEngine Engine
 
-<h4 class="mb-3">记忆浏览器</h4>
+<div class="page-title">
+    <i class="bi bi-database"></i> 记忆浏览器
+</div>
 
-<ul class="nav nav-tabs mb-3">
-    <li class="nav-item">
-        <button class="nav-link @(tab == "main" ? "active" : "")" @onclick='() => SwitchTab("main")'>
-            主记忆 <span class="badge bg-secondary ms-1">@mainCount</span>
-        </button>
-    </li>
-    <li class="nav-item">
-        <button class="nav-link @(tab == "temp" ? "active" : "")" @onclick='() => SwitchTab("temp")'>
-            临时记忆 <span class="badge bg-secondary ms-1">@tempMemories.Count</span>
-        </button>
-    </li>
-</ul>
+<div class="tab-bar mb-3">
+    <button class="tab-item @(tab == "main" ? "active" : "")" @onclick='() => SwitchTab("main")'>
+        主记忆 <span class="tab-badge">@mainCount</span>
+    </button>
+    <button class="tab-item @(tab == "temp" ? "active" : "")" @onclick='() => SwitchTab("temp")'>
+        临时记忆 <span class="tab-badge">@tempMemories.Count</span>
+    </button>
+</div>
 
 <div class="row g-2 mb-3">
     <div class="col-md-3">
@@ -30,9 +28,9 @@
         </select>
     </div>
     <div class="col-md-4">
-        <div class="input-group input-group-sm">
-            <input type="text" class="form-control" placeholder="搜索记忆内容..." @bind="keyword" />
-            <button class="btn btn-outline-primary" @onclick="Refresh">
+        <div class="d-flex gap-1">
+            <input type="text" class="form-control form-control-sm" placeholder="搜索记忆内容..." @bind="keyword" />
+            <button class="btn-ghost" @onclick="Refresh">
                 <i class="bi bi-search"></i>
             </button>
         </div>
@@ -45,35 +43,35 @@
         <div class="card-body p-0">
             @if (mainMemories.Count == 0)
             {
-                <div class="p-3 text-muted text-center">无记忆条目</div>
+                <div class="p-3 text-muted-custom" style="text-align:center;">无记忆条目</div>
             }
             else
             {
-                <div class="list-group list-group-flush" style="max-height:calc(100vh - 300px); overflow-y:auto">
+                <div style="max-height:calc(100vh - 300px); overflow-y:auto">
                     @foreach (var m in mainMemories)
                     {
-                        <div class="list-group-item py-2">
+                        <div class="msg-item">
                             <div class="d-flex justify-content-between">
-                                <div>
+                                <div class="d-flex gap-1 flex-wrap">
                                     @if (m.PersonId > 0)
                                     {
-                                        <span class="badge bg-info me-1">P:@m.PersonId</span>
+                                        <span class="badge-status badge-info">P:@m.PersonId</span>
                                     }
                                     @if (m.ChannelId > 0)
                                     {
-                                        <span class="badge bg-secondary me-1">Ch:@m.ChannelId</span>
+                                        <span class="badge-status" style="background:var(--bg-elevated); color:var(--text-secondary);">Ch:@m.ChannelId</span>
                                     }
-                                    <span class="badge @(m.Importance >= 0.7f ? "bg-warning" : "bg-light text-dark") me-1">
+                                    <span class="badge-status @(m.Importance >= 0.7f ? "badge-working" : "")" style="@(m.Importance < 0.7f ? "background:var(--bg-elevated); color:var(--text-secondary);" : "")">
                                         重要度:@m.Importance.ToString("F1")
                                     </span>
                                     @if (m.Confidence == "low")
                                     {
-                                        <span class="badge bg-danger me-1">低置信</span>
+                                        <span class="badge-status badge-working">低置信</span>
                                     }
                                 </div>
-                                <small class="text-muted">@m.CreatedAt.ToString("MM-dd HH:mm")</small>
+                                <small class="text-muted-custom">@m.CreatedAt.ToString("MM-dd HH:mm")</small>
                             </div>
-                            <div class="mt-1">@m.Content</div>
+                            <div class="mt-1" style="color:var(--text-primary);">@m.Content</div>
                         </div>
                     }
                 </div>
@@ -87,28 +85,28 @@ else
         <div class="card-body p-0">
             @if (tempMemories.Count == 0)
             {
-                <div class="p-3 text-muted text-center">无临时记忆</div>
+                <div class="p-3 text-muted-custom" style="text-align:center;">无临时记忆</div>
             }
             else
             {
-                <div class="list-group list-group-flush" style="max-height:calc(100vh - 300px); overflow-y:auto">
+                <div style="max-height:calc(100vh - 300px); overflow-y:auto">
                     @foreach (var m in tempMemories)
                     {
-                        <div class="list-group-item py-2">
+                        <div class="msg-item">
                             <div class="d-flex justify-content-between">
-                                <div>
+                                <div class="d-flex gap-1">
                                     @if (m.PersonId > 0)
                                     {
-                                        <span class="badge bg-info me-1">P:@m.PersonId</span>
+                                        <span class="badge-status badge-info">P:@m.PersonId</span>
                                     }
                                     @if (m.ChannelId > 0)
                                     {
-                                        <span class="badge bg-secondary me-1">Ch:@m.ChannelId</span>
+                                        <span class="badge-status" style="background:var(--bg-elevated); color:var(--text-secondary);">Ch:@m.ChannelId</span>
                                     }
                                 </div>
-                                <small class="text-muted">@m.CreatedAt.ToString("MM-dd HH:mm")</small>
+                                <small class="text-muted-custom">@m.CreatedAt.ToString("MM-dd HH:mm")</small>
                             </div>
-                            <div class="mt-1">@m.Content</div>
+                            <div class="mt-1" style="color:var(--text-primary);">@m.Content</div>
                         </div>
                     }
                 </div>

@@ -6,72 +6,74 @@
 @inject NavigationManager Nav
 @implements IDisposable
 
-<nav aria-label="breadcrumb" class="mb-3">
-    <ol class="breadcrumb">
-        <li class="breadcrumb-item"><a href="/">仪表盘</a></li>
-        <li class="breadcrumb-item active">Worker #@ChannelId</li>
-    </ol>
-</nav>
+<div class="d-flex align-items-center gap-2 mb-4">
+    <a href="/engine/channels" class="btn-ghost" style="padding:0.3rem 0.6rem;">
+        <i class="bi bi-arrow-left"></i>
+    </a>
+    <div class="page-title" style="margin-bottom:0;">
+        <i class="bi bi-diagram-3"></i> Worker #@ChannelId
+    </div>
+</div>
 
 @if (worker == null)
 {
-    <div class="alert alert-warning">该频道无活跃 Worker</div>
+    <div style="background:var(--status-warn-dim); color:var(--status-warn); padding:0.75rem 1rem; border-radius:var(--radius-md);">
+        该频道无活跃 Worker
+    </div>
 }
 else
 {
     <div class="row g-3 mb-4">
         <div class="col-md-4">
             <div class="card">
-                <div class="card-header py-2 fw-semibold">基本信息</div>
+                <div class="card-header">基本信息</div>
                 <div class="card-body">
-                    <dl class="row mb-0">
-                        <dt class="col-5">频道 ID</dt>
-                        <dd class="col-7">#@worker.ChannelId</dd>
-                        <dt class="col-5">模式</dt>
-                        <dd class="col-7">
-                            <span class="badge @(worker.IsWorkingMode ? "badge-working" : "badge-express")">
-                                @(worker.IsWorkingMode ? "Working" : "Express")
-                            </span>
-                        </dd>
-                        <dt class="col-5">状态</dt>
-                        <dd class="col-7">@(worker.IsBusy ? "处理中" : "等待")</dd>
-                        <dt class="col-5">会话中</dt>
-                        <dd class="col-7">@(worker.IsInWorkingSession ? "是" : "否")</dd>
-                        <dt class="col-5">外部触发</dt>
-                        <dd class="col-7">@worker.ConsecutiveExternalTriggers 次</dd>
-                        <dt class="col-5">上次完成</dt>
-                        <dd class="col-7">@(worker.LastCompletionTime?.ToString("HH:mm:ss") ?? "-")</dd>
-                    </dl>
+                    <div class="detail-grid">
+                        <span class="detail-label">频道 ID</span>
+                        <span class="text-accent">#@worker.ChannelId</span>
+                        <span class="detail-label">模式</span>
+                        <span class="badge-status @(worker.IsWorkingMode ? "badge-working" : "badge-express")">
+                            @(worker.IsWorkingMode ? "Working" : "Express")
+                        </span>
+                        <span class="detail-label">状态</span>
+                        <span class="@(worker.IsBusy ? "text-error" : "text-muted-custom")">@(worker.IsBusy ? "处理中" : "等待")</span>
+                        <span class="detail-label">会话中</span>
+                        <span>@(worker.IsInWorkingSession ? "是" : "否")</span>
+                        <span class="detail-label">外部触发</span>
+                        <span>@worker.ConsecutiveExternalTriggers 次</span>
+                        <span class="detail-label">上次完成</span>
+                        <span>@(worker.LastCompletionTime?.ToString("HH:mm:ss") ?? "-")</span>
+                    </div>
                 </div>
             </div>
         </div>
         <div class="col-md-4">
             <div class="card">
-                <div class="card-header py-2 fw-semibold">冲动值</div>
+                <div class="card-header">冲动值</div>
                 <div class="card-body">
-                    <dl class="row mb-0">
-                        <dt class="col-6">当前值</dt>
-                        <dd class="col-6">@worker.Impulse.ToString("F2")</dd>
-                        <dt class="col-6">消息速率</dt>
-                        <dd class="col-6">@worker.MessageRate.ToString("F2")</dd>
-                        <dt class="col-6">频道亲和度</dt>
-                        <dd class="col-6">@worker.ChannelAffinity.ToString("F2")</dd>
-                    </dl>
+                    <div class="detail-grid">
+                        <span class="detail-label">当前值</span>
+                        <span>@worker.Impulse.ToString("F2")</span>
+                        <span class="detail-label">消息速率</span>
+                        <span>@worker.MessageRate.ToString("F2")</span>
+                        <span class="detail-label">频道亲和度</span>
+                        <span>@worker.ChannelAffinity.ToString("F2")</span>
+                    </div>
                 </div>
             </div>
         </div>
         <div class="col-md-4">
             <div class="card">
-                <div class="card-header py-2 fw-semibold">社交满足度 (EMA)</div>
+                <div class="card-header">社交满足度 (EMA)</div>
                 <div class="card-body">
-                    <dl class="row mb-0">
-                        <dt class="col-6">期望值</dt>
-                        <dd class="col-6">@worker.Expectation.ToString("F3")</dd>
-                        <dt class="col-6">现实值</dt>
-                        <dd class="col-6">@worker.Reality.ToString("F3")</dd>
-                        <dt class="col-6">比率</dt>
-                        <dd class="col-6">@(worker.Expectation > 0.001f ? (worker.Reality / worker.Expectation).ToString("F2") : "-")</dd>
-                    </dl>
+                    <div class="detail-grid">
+                        <span class="detail-label">期望值</span>
+                        <span>@worker.Expectation.ToString("F3")</span>
+                        <span class="detail-label">现实值</span>
+                        <span>@worker.Reality.ToString("F3")</span>
+                        <span class="detail-label">比率</span>
+                        <span>@(worker.Expectation > 0.001f ? (worker.Reality / worker.Expectation).ToString("F2") : "-")</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -80,20 +82,20 @@ else
     <div class="row g-3">
         <div class="col-md-6">
             <div class="card">
-                <div class="card-header py-2 fw-semibold">循环状态</div>
+                <div class="card-header">循环状态</div>
                 <div class="card-body">
-                    <dl class="row mb-0">
-                        <dt class="col-6">总轮次</dt>
-                        <dd class="col-6">@worker.TotalRounds</dd>
-                        <dt class="col-6">静默轮次</dt>
-                        <dd class="col-6">@worker.SilentRounds</dd>
-                        <dt class="col-6">已授权工具</dt>
-                        <dd class="col-6">@worker.AuthorizedToolCount</dd>
-                        <dt class="col-6">参与者</dt>
-                        <dd class="col-6">@worker.ParticipantCount</dd>
-                        <dt class="col-6">已处理消息</dt>
-                        <dd class="col-6">@worker.ProcessedMessageCount</dd>
-                    </dl>
+                    <div class="detail-grid">
+                        <span class="detail-label">总轮次</span>
+                        <span>@worker.TotalRounds</span>
+                        <span class="detail-label">静默轮次</span>
+                        <span>@worker.SilentRounds</span>
+                        <span class="detail-label">已授权工具</span>
+                        <span>@worker.AuthorizedToolCount</span>
+                        <span class="detail-label">参与者</span>
+                        <span>@worker.ParticipantCount</span>
+                        <span class="detail-label">已处理消息</span>
+                        <span>@worker.ProcessedMessageCount</span>
+                    </div>
                 </div>
             </div>
         </div>

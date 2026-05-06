@@ -4,35 +4,39 @@
 @inject SystemMonitor Monitor
 @implements IDisposable
 
-<h4 class="mb-3">系统循环 — 概览</h4>
+<div class="page-title">
+    <i class="bi bi-arrow-repeat"></i> 系统循环 — 概览
+</div>
 
 @if (sys == null || !sys.IsAlive)
 {
-    <div class="alert alert-danger">SystemEngine 未运行</div>
+    <div style="background:var(--status-error-dim); color:var(--status-error); padding:0.75rem 1rem; border-radius:var(--radius-md); margin-bottom:1rem;">
+        <i class="bi bi-x-circle me-1"></i> SystemEngine 未运行
+    </div>
 }
 else
 {
     <div class="row g-3 mb-4">
         <div class="col-md-3">
-            <StatCard Label="状态" Value="运行中" CssClass="idle" ValueClass="text-success" />
+            <StatCard Label="状态" Value="运行中" CssClass="idle" ValueClass="ok" />
         </div>
         <div class="col-md-3">
-            <StatCard Label="任务队列" Value="@sys.TaskQueueDepth.ToString()" />
+            <StatCard Label="任务队列" Value="@sys.TaskQueueDepth.ToString()" CssClass="info" />
         </div>
         <div class="col-md-3">
-            <StatCard Label="活跃子agent" Value="@sys.ActiveSubAgentCount.ToString()" />
+            <StatCard Label="活跃子agent" Value="@sys.ActiveSubAgentCount.ToString()" CssClass="info" />
         </div>
         <div class="col-md-3">
-            <StatCard Label="上次健康检查" Value="@sys.LastHealthCheck.ToString("HH:mm:ss")" />
+            <StatCard Label="上次健康检查" Value="@sys.LastHealthCheck.ToString("HH:mm:ss")" CssClass="info" />
         </div>
     </div>
 
     @if (sys.HasPendingSleepRequest)
     {
-        <div class="alert alert-warning">
-            <i class="bi bi-moon me-1"></i>
-            睡觉请求待审批 (ID: @sys.SleepRequestId, 评分: @sys.SleepScore?.ToString("F1"))
-            <a href="/engine/system/sleep" class="alert-link ms-2">查看详情</a>
+        <div style="background:var(--status-warn-dim); color:var(--status-warn); padding:0.75rem 1rem; border-radius:var(--radius-md); margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem;">
+            <i class="bi bi-moon"></i>
+            <span>睡觉请求待审批 (ID: @sys.SleepRequestId, 评分: @sys.SleepScore?.ToString("F1"))</span>
+            <a href="/engine/system/sleep" class="alert-link ms-auto">查看详情</a>
         </div>
     }
 }

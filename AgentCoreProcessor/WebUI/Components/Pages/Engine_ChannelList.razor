@@ -5,18 +5,23 @@
 @inject NavigationManager Nav
 @implements IDisposable
 
-<h4 class="mb-3">频道循环 — 频道列表</h4>
+<div class="page-title">
+    <i class="bi bi-chat-dots"></i> 频道循环 — 频道列表
+</div>
 
 @if (snap.Workers.Count == 0)
 {
-    <div class="alert alert-secondary">当前无活跃频道</div>
+    <div class="page-placeholder">
+        <i class="bi bi-chat-dots"></i>
+        <span>当前无活跃频道</span>
+    </div>
 }
 else
 {
-    <div class="card">
+    <div class="card" style="background: var(--card-bg); border-color: var(--border-color);">
         <div class="card-body p-0">
-            <table class="table table-sm table-hover mb-0">
-                <thead class="table-light">
+            <table class="table table-sm table-hover mb-0" style="color: var(--text-primary); --bs-table-hover-bg: var(--hover-bg);">
+                <thead style="background: var(--bg-tertiary);">
                     <tr>
                         <th>频道</th>
                         <th>模式</th>

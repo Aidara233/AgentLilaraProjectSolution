@@ -4,21 +4,23 @@
 @using AgentCoreProcessor.MCP
 @inject MasterEngine Engine
 
-<h4 class="mb-3">MCP 插件管理</h4>
+<div class="page-title">
+    <i class="bi bi-plug"></i> MCP 插件管理
+</div>
 
 <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
         @if (manager != null)
         {
-            <span class="badge bg-info me-2">@manager.Connections.Count 个 Server</span>
-            <span class="badge bg-secondary">@totalTools 个工具</span>
+            <span class="badge-status badge-info me-2">@manager.Connections.Count 个 Server</span>
+            <span class="badge-status">@totalTools 个工具</span>
         }
         else
         {
-            <span class="text-muted">MCP 管理器未初始化</span>
+            <span class="text-muted-custom">MCP 管理器未初始化</span>
         }
     </div>
-    <button class="btn btn-outline-primary btn-sm" @onclick="ReloadMcp" disabled="@(manager == null || isReloading)">
+    <button class="btn-ghost" @onclick="ReloadMcp" disabled="@(manager == null || isReloading)">
         <i class="bi bi-arrow-clockwise me-1"></i>
         @(isReloading ? "重载中..." : "重载配置")
     </button>
@@ -26,20 +28,20 @@
 
 @if (!string.IsNullOrEmpty(statusMessage))
 {
-    <div class="alert @statusClass alert-dismissible py-2 small">
-        @statusMessage
-        <button type="button" class="btn-close btn-close-sm" @onclick='() => statusMessage = ""'></button>
+    <div style="background:@statusBg; color:@statusColor; padding:0.6rem 1rem; border-radius:var(--radius-md); margin-bottom:1rem; display:flex; align-items:center; justify-content:space-between; font-size:var(--font-size-sm);">
+        <span>@statusMessage</span>
+        <button class="btn-ghost" style="padding:0.2rem 0.5rem;" @onclick='() => statusMessage = ""'>
+            <i class="bi bi-x"></i>
+        </button>
     </div>
 }
 
 @if (manager == null || manager.Connections.Count == 0)
 {
-    <div class="card">
-        <div class="card-body text-center text-muted py-5">
-            <i class="bi bi-plug fs-1 d-block mb-2"></i>
-            <p>暂无 MCP Server 连接</p>
-            <small>编辑 Storage/MCP/McpServers.json 添加 Server 配置，然后点击"重载配置"</small>
-        </div>
+    <div class="page-placeholder">
+        <i class="bi bi-plug"></i>
+        <span>暂无 MCP Server 连接</span>
+        <small class="text-muted-custom" style="margin-top:0.5rem;">编辑 Storage/MCP/McpServers.json 添加 Server 配置，然后点击"重载配置"</small>
     </div>
 }
 else
@@ -47,30 +49,30 @@ else
     @foreach (var conn in manager.Connections)
     {
         <div class="card mb-3">
-            <div class="card-header py-2 d-flex justify-content-between align-items-center">
+            <div class="card-header d-flex justify-content-between align-items-center">
                 <div>
-                    <i class="bi bi-plug me-1"></i>
-                    <span class="fw-semibold">@conn.ServerName</span>
-                    <small class="text-muted ms-2">(@conn.ServerId)</small>
+                    <i class="bi bi-plug me-1 text-accent"></i>
+                    <span>@conn.ServerName</span>
+                    <small class="text-muted-custom ms-2">(@conn.ServerId)</small>
                 </div>
-                <div>
+                <div class="d-flex gap-1">
                     @if (conn.IsConnected)
                     {
-                        <span class="badge bg-success">已连接</span>
+                        <span class="badge-status badge-express">已连接</span>
                     }
                     else
                     {
-                        <span class="badge bg-danger">未连接</span>
+                        <span class="badge-status badge-working">未连接</span>
                     }
-                    <span class="badge bg-secondary ms-1">@conn.Tools.Count 个工具</span>
+                    <span class="badge-status">@conn.Tools.Count 个工具</span>
                 </div>
             </div>
 
             @if (conn.Tools.Count > 0)
             {
                 <div class="card-body p-0">
-                    <table class="table table-sm table-hover mb-0">
-                        <thead class="table-light">
+                    <table class="table-dark-custom">
+                        <thead>
                             <tr>
                                 <th>工具名</th>
                                 <th>描述</th>
@@ -84,14 +86,14 @@ else
                             @foreach (var tool in conn.Tools)
                             {
                                 <tr>
-                                    <td class="fw-semibold text-nowrap">@tool.Name</td>
-                                    <td class="small">@Truncate(tool.Description, 60)</td>
+                                    <td style="font-weight:600; white-space:nowrap;">@tool.Name</td>
+                                    <td style="font-size:var(--font-size-sm);">@Truncate(tool.Description, 60)</td>
                                     <td>
-                                        <span class="badge @PermBadge(tool.RequiredPermission)">
+                                        <span class="badge-status @PermBadge(tool.RequiredPermission)">
                                             @tool.RequiredPermission
                                         </span>
                                     </td>
-                                    <td class="small text-muted">@tool.Parameters.Count</td>
+                                    <td class="text-muted-custom">@tool.Parameters.Count</td>
                                     <td>@BoolIcon(tool.ContinueLoop)</td>
                                     <td>@BoolIcon(tool.RetainResult)</td>
                                 </tr>
@@ -109,7 +111,8 @@ else
     private int totalTools;
     private bool isReloading;
     private string? statusMessage;
-    private string statusClass = "alert-info";
+    private string statusBg = "var(--status-info-dim)";
+    private string statusColor = "var(--status-info)";
 
     protected override void OnInitialized()
     {
@@ -134,12 +137,14 @@ else
             await manager.ReloadAsync();
             RefreshCounts();
             statusMessage = $"重载成功：{manager.Connections.Count} 个 Server，{totalTools} 个工具";
-            statusClass = "alert-success";
+            statusBg = "var(--status-ok-dim)";
+            statusColor = "var(--status-ok)";
         }
         catch (Exception ex)
         {
             statusMessage = $"重载失败：{ex.Message}";
-            statusClass = "alert-danger";
+            statusBg = "var(--status-error-dim)";
+            statusColor = "var(--status-error)";
         }
         finally
         {
@@ -152,11 +157,11 @@ else
 
     private static string PermBadge(Database.PermissionLevel level) => level switch
     {
-        Database.PermissionLevel.Admin => "bg-danger",
-        Database.PermissionLevel.Elevated => "bg-warning text-dark",
-        _ => "bg-secondary"
+        Database.PermissionLevel.Admin => "badge-working",
+        Database.PermissionLevel.Elevated => "badge-info",
+        _ => ""
     };
 
     private static MarkupString BoolIcon(bool v) =>
-        new(v ? "<i class=\"bi bi-check-circle text-success\"></i>" : "<i class=\"bi bi-dash text-muted\"></i>");
+        new(v ? "<i class=\"bi bi-check-circle text-ok\"></i>" : "<i class=\"bi bi-dash text-muted-custom\"></i>");
 }

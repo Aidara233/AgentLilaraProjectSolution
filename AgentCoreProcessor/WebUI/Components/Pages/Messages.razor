@@ -4,7 +4,9 @@
 @using AgentCoreProcessor.Database
 @inject MasterEngine Engine
 
-<h4 class="mb-3">消息历史</h4>
+<div class="page-title">
+    <i class="bi bi-chat-left-text"></i> 消息历史
+</div>
 
 <div class="row g-2 mb-3">
     <div class="col-md-3">
@@ -17,16 +19,16 @@
         </select>
     </div>
     <div class="col-md-4">
-        <div class="input-group input-group-sm">
-            <input type="text" class="form-control" placeholder="搜索消息内容..."
+        <div class="d-flex gap-1">
+            <input type="text" class="form-control form-control-sm" placeholder="搜索消息内容..."
                    @bind="keyword" @bind:event="oninput" />
-            <button class="btn btn-outline-primary" @onclick="LoadMessages">
+            <button class="btn-ghost" @onclick="LoadMessages">
                 <i class="bi bi-search"></i>
             </button>
         </div>
     </div>
     <div class="col-md-2">
-        <small class="text-muted">共 @totalCount 条</small>
+        <small class="text-muted-custom">共 @totalCount 条</small>
     </div>
 </div>
 
@@ -36,27 +38,27 @@
         <div class="card-body p-0">
             @if (messages.Count == 0)
             {
-                <div class="p-3 text-muted text-center">无消息</div>
+                <div class="p-3 text-muted-custom" style="text-align:center;">无消息</div>
             }
             else
             {
-                <div class="list-group list-group-flush" style="max-height:calc(100vh - 280px); overflow-y:auto">
+                <div style="max-height:calc(100vh - 280px); overflow-y:auto">
                     @foreach (var m in messages)
                     {
-                        <div class="list-group-item py-2 @(m.IsFromBot ? "bg-light" : "")">
+                        <div class="msg-item @(m.IsFromBot ? "msg-bot" : "")">
                             <div class="d-flex justify-content-between">
                                 <div>
-                                    <span class="fw-semibold @(m.IsFromBot ? "text-primary" : "")">
+                                    <span class="fw-semibold @(m.IsFromBot ? "text-accent" : "")">
                                         @(m.IsFromBot ? "Lilara" : (string.IsNullOrEmpty(m.SenderName) ? "用户" : m.SenderName))
                                     </span>
                                     @if (m.IsFromBot)
                                     {
-                                        <span class="badge bg-primary ms-1">Bot</span>
+                                        <span class="badge-status badge-info ms-1">Bot</span>
                                     }
                                 </div>
-                                <small class="text-muted">@m.Time.ToString("MM-dd HH:mm:ss")</small>
+                                <small class="text-muted-custom">@m.Time.ToString("MM-dd HH:mm:ss")</small>
                             </div>
-                            <div class="mt-1" style="white-space:pre-wrap; word-break:break-all">@m.Content</div>
+                            <div class="mt-1" style="white-space:pre-wrap; word-break:break-all; color:var(--text-primary);">@m.Content</div>
                         </div>
                     }
                 </div>
@@ -66,19 +68,11 @@
 
     @if (totalCount > pageSize)
     {
-        <nav class="mt-3">
-            <ul class="pagination pagination-sm justify-content-center">
-                <li class="page-item @(currentPage <= 1 ? "disabled" : "")">
-                    <button class="page-link" @onclick="() => GoToPage(currentPage - 1)">上一页</button>
-                </li>
-                <li class="page-item disabled">
-                    <span class="page-link">@currentPage / @totalPages</span>
-                </li>
-                <li class="page-item @(currentPage >= totalPages ? "disabled" : "")">
-                    <button class="page-link" @onclick="() => GoToPage(currentPage + 1)">下一页</button>
-                </li>
-            </ul>
-        </nav>
+        <div class="d-flex justify-content-center gap-2 mt-3">
+            <button class="btn-ghost" disabled="@(currentPage <= 1)" @onclick="() => GoToPage(currentPage - 1)">上一页</button>
+            <span style="color:var(--text-muted); padding:0.4rem 0.5rem; font-size:var(--font-size-sm);">@currentPage / @totalPages</span>
+            <button class="btn-ghost" disabled="@(currentPage >= totalPages)" @onclick="() => GoToPage(currentPage + 1)">下一页</button>
+        </div>
     }
 }
 

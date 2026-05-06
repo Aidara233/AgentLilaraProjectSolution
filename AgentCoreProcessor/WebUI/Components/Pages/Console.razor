@@ -7,13 +7,15 @@
 @inject EventBus Bus
 @implements IDisposable
 
-<h4 class="mb-3">控制台</h4>
+<div class="page-title">
+    <i class="bi bi-terminal"></i> 控制台
+</div>
 
 <div class="row g-3">
     <!-- 左侧：频道选择 + 操作 -->
     <div class="col-md-3">
         <div class="card mb-3">
-            <div class="card-header py-2 fw-semibold">频道</div>
+            <div class="card-header">频道</div>
             <div class="card-body">
                 <select class="form-select form-select-sm mb-2" @bind="selectedChannelId" @bind:after="OnChannelChanged">
                     <option value="0">选择频道...</option>
@@ -22,9 +24,9 @@
                         <option value="@ch.Id">#@ch.Id @ch.Name</option>
                     }
                 </select>
-                <div class="input-group input-group-sm">
-                    <input type="text" class="form-control" placeholder="新频道名..." @bind="newChannelName" />
-                    <button class="btn btn-outline-primary" @onclick="CreateChannel">
+                <div class="d-flex gap-1">
+                    <input type="text" class="form-control form-control-sm" placeholder="新频道名..." @bind="newChannelName" />
+                    <button class="btn-ghost" style="padding:0.3rem 0.6rem;" @onclick="CreateChannel">
                         <i class="bi bi-plus"></i>
                     </button>
                 </div>
@@ -32,37 +34,34 @@
         </div>
 
         <div class="card mb-3">
-            <div class="card-header py-2 fw-semibold">发送模式</div>
+            <div class="card-header">发送模式</div>
             <div class="card-body">
-                <div class="form-check mb-1">
-                    <input class="form-check-input" type="radio" name="sendMode" id="modeUser"
-                           checked="@(sendMode == "user")" @onchange='() => sendMode = "user"' />
-                    <label class="form-check-label" for="modeUser">模拟用户</label>
-                </div>
-                <div class="form-check mb-1">
-                    <input class="form-check-input" type="radio" name="sendMode" id="modeBot"
-                           checked="@(sendMode == "bot")" @onchange='() => sendMode = "bot"' />
-                    <label class="form-check-label" for="modeBot">替 Bot 说话</label>
-                </div>
-                <div class="form-check mb-2">
-                    <input class="form-check-input" type="radio" name="sendMode" id="modeCustom"
-                           checked="@(sendMode == "custom")" @onchange='() => sendMode = "custom"' />
-                    <label class="form-check-label" for="modeCustom">自定义发送者</label>
-                </div>
+                <label class="console-radio">
+                    <input type="radio" name="sendMode" checked="@(sendMode == "user")" @onchange='() => sendMode = "user"' />
+                    <span>模拟用户</span>
+                </label>
+                <label class="console-radio">
+                    <input type="radio" name="sendMode" checked="@(sendMode == "bot")" @onchange='() => sendMode = "bot"' />
+                    <span>替 Bot 说话</span>
+                </label>
+                <label class="console-radio">
+                    <input type="radio" name="sendMode" checked="@(sendMode == "custom")" @onchange='() => sendMode = "custom"' />
+                    <span>自定义发送者</span>
+                </label>
                 @if (sendMode == "user")
                 {
-                    <div class="form-check form-switch mb-1">
-                        <input class="form-check-input" type="checkbox" @bind="simulateMention" id="mentionCheck" />
-                        <label class="form-check-label small" for="mentionCheck">模拟 @@提及</label>
-                    </div>
-                    <div class="form-check form-switch">
-                        <input class="form-check-input" type="checkbox" @bind="simulatePrivate" id="privateCheck" />
-                        <label class="form-check-label small" for="privateCheck">模拟私聊</label>
+                    <div class="mt-2" style="padding-left:0.2rem;">
+                        <label class="console-check">
+                            <input type="checkbox" @bind="simulateMention" /> 模拟 @@提及
+                        </label>
+                        <label class="console-check">
+                            <input type="checkbox" @bind="simulatePrivate" /> 模拟私聊
+                        </label>
                     </div>
                 }
                 @if (sendMode == "custom")
                 {
-                    <input type="text" class="form-control form-control-sm mt-1" placeholder="发送者名称"
+                    <input type="text" class="form-control form-control-sm mt-2" placeholder="发送者名称"
                            @bind="customSenderName" />
                 }
             </div>
@@ -70,69 +69,68 @@
 
         @if (!string.IsNullOrEmpty(statusMessage))
         {
-            <div class="alert alert-info py-1 small">@statusMessage</div>
+            <div style="background:var(--status-info-dim); color:var(--status-info); padding:0.5rem 0.75rem; border-radius:var(--radius-sm); font-size:var(--font-size-sm);">
+                @statusMessage
+            </div>
         }
     </div>
 
     <!-- 右侧：消息流 + 输入 -->
     <div class="col-md-9">
-        <div class="card" style="height: calc(100vh - 140px); display: flex; flex-direction: column;">
-            <div class="card-header py-2 d-flex justify-content-between align-items-center">
-                <span class="fw-semibold">
+        <div class="card" style="height:calc(100vh - 140px); display:flex; flex-direction:column;">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>
                     @if (selectedChannelId > 0)
                     {
-                        <span>#@selectedChannelId @selectedChannelName</span>
+                        <span class="text-accent">#@selectedChannelId</span>
+                        <span class="ms-1">@selectedChannelName</span>
                     }
                     else
                     {
-                        <span class="text-muted">选择一个频道开始</span>
+                        <span class="text-muted-custom">选择一个频道开始</span>
                     }
                 </span>
-                <button class="btn btn-outline-secondary btn-sm" @onclick="RefreshMessages" disabled="@(selectedChannelId == 0)">
+                <button class="btn-ghost" style="padding:0.3rem 0.5rem;" @onclick="RefreshMessages" disabled="@(selectedChannelId == 0)">
                     <i class="bi bi-arrow-clockwise"></i>
                 </button>
             </div>
 
             <!-- 消息流 -->
-            <div class="card-body p-2 flex-grow-1" style="overflow-y: auto;">
+            <div class="card-body flex-grow-1" style="overflow-y:auto; padding:0.75rem;">
                 @if (selectedChannelId == 0)
                 {
-                    <div class="text-muted text-center mt-5">选择左侧频道查看消息</div>
+                    <div class="text-muted-custom" style="text-align:center; margin-top:3rem;">选择左侧频道查看消息</div>
                 }
                 else if (messages.Count == 0)
                 {
-                    <div class="text-muted text-center mt-5">暂无消息</div>
+                    <div class="text-muted-custom" style="text-align:center; margin-top:3rem;">暂无消息</div>
                 }
                 else
                 {
                     @foreach (var m in messages)
                     {
-                        <div class="d-flex mb-2 @(m.IsFromBot ? "justify-content-end" : "justify-content-start")">
-                            <div class="px-3 py-2 rounded-3 @(m.IsFromBot ? "bg-primary text-white" : "bg-white border")"
-                                 style="max-width: 75%; word-break: break-all;">
-                                <div class="d-flex justify-content-between align-items-center mb-1">
-                                    <small class="fw-semibold @(m.IsFromBot ? "text-white-50" : "text-primary")">
-                                        @(m.IsFromBot ? "Lilara" : (string.IsNullOrEmpty(m.SenderName) ? "用户" : m.SenderName))
-                                    </small>
-                                    <small class="@(m.IsFromBot ? "text-white-50" : "text-muted") ms-2">
-                                        @m.Time.ToString("HH:mm:ss")
-                                    </small>
-                                </div>
-                                <div style="white-space: pre-wrap;">@m.Content</div>
+                        <div class="chat-bubble @(m.IsFromBot ? "chat-bot" : "chat-user")">
+                            <div class="chat-meta">
+                                <span class="chat-sender">
+                                    @(m.IsFromBot ? "Lilara" : (string.IsNullOrEmpty(m.SenderName) ? "用户" : m.SenderName))
+                                </span>
+                                <span class="chat-time">@m.Time.ToString("HH:mm:ss")</span>
                             </div>
+                            <div class="chat-content">@m.Content</div>
                         </div>
                     }
                 }
             </div>
 
             <!-- 输入框 -->
-            <div class="card-footer py-2">
-                <div class="input-group">
+            <div style="padding:0.75rem; border-top:1px solid var(--border);">
+                <div class="d-flex gap-1">
                     <input type="text" class="form-control" placeholder="@InputPlaceholder"
                            @bind="inputText" @bind:event="oninput"
                            @onkeydown="HandleKeyDown"
                            disabled="@(selectedChannelId == 0)" />
-                    <button class="btn @SendButtonClass" @onclick="SendMessage"
+                    <button class="btn-accent" style="padding:0.4rem 0.8rem;"
+                            @onclick="SendMessage"
                             disabled="@(selectedChannelId == 0 || string.IsNullOrWhiteSpace(inputText))">
                         <i class="bi bi-send"></i>
                     </button>
@@ -162,13 +160,6 @@
         "bot" => "替 Lilara 说话...",
         "custom" => $"以 {customSenderName} 身份发送...",
         _ => "发送消息..."
-    };
-
-    private string SendButtonClass => sendMode switch
-    {
-        "bot" => "btn-primary",
-        "custom" => "btn-warning",
-        _ => "btn-success"
     };
 
     protected override async Task OnInitializedAsync()

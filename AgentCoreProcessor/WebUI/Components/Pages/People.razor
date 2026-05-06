@@ -4,18 +4,20 @@
 @using AgentCoreProcessor.Database
 @inject MasterEngine Engine
 
-<h4 class="mb-3">人物目录</h4>
+<div class="page-title">
+    <i class="bi bi-people"></i> 人物目录
+</div>
 
 <div class="card">
     <div class="card-body p-0">
         @if (persons.Count == 0)
         {
-            <div class="p-3 text-muted text-center">无人物数据</div>
+            <div class="p-3 text-muted-custom" style="text-align:center;">无人物数据</div>
         }
         else
         {
-            <table class="table table-sm table-hover mb-0">
-                <thead class="table-light">
+            <table class="table-dark-custom">
+                <thead>
                     <tr>
                         <th>ID</th>
                         <th>信任等级</th>
@@ -32,7 +34,7 @@
                         <tr>
                             <td>@p.Id</td>
                             <td>
-                                <span class="badge @TrustBadgeClass(p.TrustLevel)">
+                                <span class="badge-status @TrustBadgeClass(p.TrustLevel)">
                                     @p.TrustLevel
                                 </span>
                             </td>
@@ -45,16 +47,16 @@
                             <td>
                                 @if (p.AlertLevel > 0)
                                 {
-                                    <span class="badge bg-warning">Lv@(p.AlertLevel)</span>
+                                    <span class="badge-status badge-working">Lv@(p.AlertLevel)</span>
                                 }
                                 else
                                 {
-                                    <span class="text-muted">-</span>
+                                    <span class="text-muted-custom">-</span>
                                 }
                             </td>
                             <td>@p.CreatedAt.ToString("yyyy-MM-dd")</td>
                             <td>
-                                <button class="btn btn-outline-primary btn-sm"
+                                <button class="btn-ghost" style="padding:0.2rem 0.5rem;"
                                         @onclick="() => ToggleDetail(p.Id)">
                                     <i class="bi @(expandedId == p.Id ? "bi-chevron-up" : "bi-chevron-down")"></i>
                                 </button>
@@ -63,42 +65,40 @@
                         @if (expandedId == p.Id)
                         {
                             <tr>
-                                <td colspan="7" class="bg-light">
-                                    <div class="p-2">
-                                        <h6>关联账号</h6>
-                                        @if (linkedUsers.Count == 0)
-                                        {
-                                            <span class="text-muted">无关联账号</span>
-                                        }
-                                        else
-                                        {
-                                            <table class="table table-sm table-bordered mb-0">
-                                                <thead>
+                                <td colspan="7" style="background:var(--bg-tertiary); padding:1rem;">
+                                    <div class="stat-label" style="margin-bottom:0.5rem;">关联账号</div>
+                                    @if (linkedUsers.Count == 0)
+                                    {
+                                        <span class="text-muted-custom">无关联账号</span>
+                                    }
+                                    else
+                                    {
+                                        <table class="table-dark-custom" style="font-size:var(--font-size-sm);">
+                                            <thead>
+                                                <tr>
+                                                    <th>平台</th>
+                                                    <th>平台ID</th>
+                                                    <th>显示名</th>
+                                                    <th>权限</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var u in linkedUsers)
+                                                {
                                                     <tr>
-                                                        <th>平台</th>
-                                                        <th>平台ID</th>
-                                                        <th>显示名</th>
-                                                        <th>权限</th>
+                                                        <td>@u.Platform</td>
+                                                        <td><code style="color:var(--accent);">@u.PlatformId</code></td>
+                                                        <td>@u.DisplayName</td>
+                                                        <td>
+                                                            <span class="badge-status @PermBadgeClass(u.PermissionLevel)">
+                                                                @u.PermissionLevel
+                                                            </span>
+                                                        </td>
                                                     </tr>
-                                                </thead>
-                                                <tbody>
-                                                    @foreach (var u in linkedUsers)
-                                                    {
-                                                        <tr>
-                                                            <td>@u.Platform</td>
-                                                            <td><code>@u.PlatformId</code></td>
-                                                            <td>@u.DisplayName</td>
-                                                            <td>
-                                                                <span class="badge @PermBadgeClass(u.PermissionLevel)">
-                                                                    @u.PermissionLevel
-                                                                </span>
-                                                            </td>
-                                                        </tr>
-                                                    }
-                                                </tbody>
-                                            </table>
-                                        }
-                                    </div>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    }
                                 </td>
                             </tr>
                         }
@@ -133,25 +133,25 @@
 
     private static string TrustBadgeClass(TrustLevel level) => level switch
     {
-        TrustLevel.Hostile => "bg-danger",
-        TrustLevel.Wary => "bg-warning text-dark",
-        TrustLevel.Unknown => "bg-secondary",
-        TrustLevel.Stranger => "bg-light text-dark",
-        TrustLevel.Understanding => "bg-info",
-        TrustLevel.Familiarity => "bg-primary",
-        TrustLevel.Trust => "bg-success",
-        TrustLevel.AbsoluteTrust => "bg-success",
-        _ => "bg-secondary"
+        TrustLevel.Hostile => "badge-working",
+        TrustLevel.Wary => "badge-working",
+        TrustLevel.Unknown => "",
+        TrustLevel.Stranger => "",
+        TrustLevel.Understanding => "badge-info",
+        TrustLevel.Familiarity => "badge-info",
+        TrustLevel.Trust => "badge-express",
+        TrustLevel.AbsoluteTrust => "badge-express",
+        _ => ""
     };
 
     private static string PermBadgeClass(PermissionLevel level) => level switch
     {
-        PermissionLevel.Admin => "bg-danger",
-        PermissionLevel.Elevated => "bg-warning text-dark",
-        PermissionLevel.Default => "bg-secondary",
-        PermissionLevel.Restricted => "bg-dark",
-        PermissionLevel.Blocked => "bg-dark",
-        _ => "bg-secondary"
+        PermissionLevel.Admin => "badge-working",
+        PermissionLevel.Elevated => "badge-info",
+        PermissionLevel.Default => "",
+        PermissionLevel.Restricted => "",
+        PermissionLevel.Blocked => "badge-working",
+        _ => ""
     };
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "...";

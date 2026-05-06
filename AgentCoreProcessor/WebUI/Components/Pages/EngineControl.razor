@@ -7,18 +7,20 @@
 @inject MasterEngine Engine
 @implements IDisposable
 
-<h4 class="mb-3">引擎控制</h4>
+<div class="page-title">
+    <i class="bi bi-cpu"></i> 引擎控制
+</div>
 
 <div class="row g-3 mb-4">
     <div class="col-md-4">
         <div class="card">
-            <div class="card-body py-3">
+            <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <div class="text-muted small">静音模式</div>
-                        <div class="fw-bold">@(snap.MuteMode ? "已开启" : "已关闭")</div>
+                        <div class="stat-label">静音模式</div>
+                        <div class="stat-value">@(snap.MuteMode ? "已开启" : "已关闭")</div>
                     </div>
-                    <button class="btn @(snap.MuteMode ? "btn-warning" : "btn-outline-secondary") btn-sm"
+                    <button class="@(snap.MuteMode ? "btn-accent" : "btn-ghost")"
                             @onclick="ToggleMute">
                         <i class="bi @(snap.MuteMode ? "bi-volume-mute" : "bi-volume-up") me-1"></i>
                         @(snap.MuteMode ? "关闭静音" : "开启静音")
@@ -29,9 +31,9 @@
     </div>
     <div class="col-md-4">
         <div class="card">
-            <div class="card-body py-3">
-                <div class="text-muted small">系统状态</div>
-                <div class="fw-bold @(snap.IsIdle ? "text-success" : "text-danger")">
+            <div class="card-body">
+                <div class="stat-label">系统状态</div>
+                <div class="stat-value @(snap.IsIdle ? "ok" : "error")">
                     @(snap.IsIdle ? "空闲" : "忙碌") — @FormatDuration(snap.IdleDuration)
                 </div>
             </div>
@@ -40,18 +42,18 @@
 </div>
 
 <div class="card mb-4">
-    <div class="card-header py-2 fw-semibold">
-        <i class="bi bi-cpu me-1"></i> 活跃引擎
+    <div class="card-header">
+        <i class="bi bi-cpu me-1 text-accent"></i> 活跃引擎
     </div>
     <div class="card-body p-0">
         @if (snap.EngineSummary.Count == 0)
         {
-            <div class="p-3 text-muted">无活跃引擎</div>
+            <div class="p-3 text-muted-custom">无活跃引擎</div>
         }
         else
         {
-            <table class="table table-sm mb-0">
-                <thead class="table-light">
+            <table class="table-dark-custom">
+                <thead>
                     <tr>
                         <th>引擎类型</th>
                         <th>数量</th>
@@ -65,7 +67,7 @@
                             <td>@type</td>
                             <td>@count</td>
                             <td>
-                                <button class="btn btn-outline-danger btn-sm"
+                                <button class="btn-ghost" style="color:var(--status-error); border-color:var(--status-error);"
                                         @onclick="() => StopEngines(type)">
                                     <i class="bi bi-stop-circle me-1"></i>停止
                                 </button>
@@ -80,9 +82,11 @@
 
 @if (!string.IsNullOrEmpty(statusMessage))
 {
-    <div class="alert alert-info alert-dismissible fade show">
-        @statusMessage
-        <button type="button" class="btn-close" @onclick="() => statusMessage = null"></button>
+    <div style="background:var(--status-info-dim); color:var(--status-info); padding:0.75rem 1rem; border-radius:var(--radius-md); display:flex; align-items:center; justify-content:space-between;">
+        <span>@statusMessage</span>
+        <button class="btn-ghost" style="padding:0.2rem 0.5rem;" @onclick="() => statusMessage = null">
+            <i class="bi bi-x"></i>
+        </button>
     </div>
 }
 

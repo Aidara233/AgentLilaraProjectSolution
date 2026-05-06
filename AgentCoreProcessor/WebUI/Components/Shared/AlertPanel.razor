@@ -2,31 +2,26 @@
 
 @if (Alerts.Any())
 {
-    <div class="card mb-4">
-        <div class="card-header py-2 fw-semibold">
-            <i class="bi bi-exclamation-triangle me-1"></i> 警告
-            <span class="badge bg-danger ms-2">@Alerts.Count</span>
+    <div class="alert-panel">
+        <div class="alert-panel-header">
+            <i class="bi bi-exclamation-triangle"></i>
+            <span>警告</span>
+            <span class="badge">@Alerts.Count</span>
         </div>
-        <div class="card-body p-0">
-            <ul class="list-group list-group-flush">
-                @foreach (var alert in Alerts.OrderByDescending(a => a.Level))
+        @foreach (var alert in Alerts.OrderByDescending(a => a.Level))
+        {
+            <div class="alert-item">
+                <i class="bi @GetIcon(alert.Level) @GetColorClass(alert.Level)"></i>
+                <span class="alert-source">[@alert.Source]</span>
+                <span>@alert.Message</span>
+                @if (alert.LinkHref != null)
                 {
-                    <li class="list-group-item d-flex align-items-center py-2">
-                        <i class="bi @GetIcon(alert.Level) me-2 @GetColor(alert.Level)"></i>
-                        <span class="flex-grow-1">
-                            <small class="text-muted">[@alert.Source]</small>
-                            @alert.Message
-                        </span>
-                        @if (alert.LinkHref != null)
-                        {
-                            <a href="@alert.LinkHref" class="btn btn-sm btn-outline-secondary ms-2">
-                                <i class="bi bi-arrow-right"></i>
-                            </a>
-                        }
-                    </li>
+                    <a href="@alert.LinkHref" class="alert-link">
+                        <i class="bi bi-arrow-right"></i>
+                    </a>
                 }
-            </ul>
-        </div>
+            </div>
+        }
     </div>
 }
 
@@ -40,10 +35,10 @@
         _ => "bi-info-circle-fill"
     };
 
-    private static string GetColor(AlertLevel level) => level switch
+    private static string GetColorClass(AlertLevel level) => level switch
     {
-        AlertLevel.Error => "text-danger",
-        AlertLevel.Warning => "text-warning",
-        _ => "text-info"
+        AlertLevel.Error => "alert-icon-error",
+        AlertLevel.Warning => "alert-icon-warn",
+        _ => "alert-icon-info"
     };
 }

@@ -2,27 +2,29 @@
 @layout LoginLayout
 @using Microsoft.AspNetCore.Components.Forms
 
-<div class="d-flex justify-content-center align-items-center vh-100 bg-light">
-    <div class="card shadow-sm" style="width: 360px;">
-        <div class="card-body p-4">
-            <div class="text-center mb-4">
-                <i class="bi bi-robot fs-1 text-primary"></i>
-                <h4 class="mt-2">Lilara 管理面板</h4>
+<div style="display:flex; justify-content:center; align-items:center; height:100vh; background:var(--bg-primary);">
+    <div class="card" style="width:360px;">
+        <div class="card-body" style="padding:2rem;">
+            <div style="text-align:center; margin-bottom:1.5rem;">
+                <i class="bi bi-robot" style="font-size:2.5rem; color:var(--accent);"></i>
+                <h4 style="margin-top:0.75rem; color:var(--text-primary); font-weight:700;">Lilara 管理面板</h4>
             </div>
             <form method="post" action="/api/auth/login">
                 <div class="mb-3">
-                    <label class="form-label">用户名</label>
+                    <label class="form-label" style="color:var(--text-secondary); font-size:var(--font-size-sm);">用户名</label>
                     <input type="text" name="username" class="form-control" required />
                 </div>
                 <div class="mb-3">
-                    <label class="form-label">密码</label>
+                    <label class="form-label" style="color:var(--text-secondary); font-size:var(--font-size-sm);">密码</label>
                     <input type="password" name="password" class="form-control" required />
                 </div>
                 @if (Failed)
                 {
-                    <div class="alert alert-danger py-2">用户名或密码错误</div>
+                    <div style="background:var(--status-error-dim); color:var(--status-error); padding:0.5rem 0.75rem; border-radius:var(--radius-sm); margin-bottom:1rem; font-size:var(--font-size-sm);">
+                        用户名或密码错误
+                    </div>
                 }
-                <button type="submit" class="btn btn-primary w-100">登录</button>
+                <button type="submit" class="btn-accent" style="width:100%; padding:0.6rem;">登录</button>
             </form>
         </div>
     </div>

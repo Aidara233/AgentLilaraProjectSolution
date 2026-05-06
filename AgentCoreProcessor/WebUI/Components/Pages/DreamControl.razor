@@ -6,67 +6,56 @@
 @inject EventBus Bus
 @implements IDisposable
 
-<h4 class="mb-3">做梦状态</h4>
+<div class="page-title">
+    <i class="bi bi-moon-stars"></i> 做梦状态
+</div>
 
 @if (dream == null)
 {
-    <div class="alert alert-secondary">做梦系统未加载</div>
+    <div style="background:var(--bg-tertiary); color:var(--text-muted); padding:0.75rem 1rem; border-radius:var(--radius-md);">
+        做梦系统未加载
+    </div>
 }
 else
 {
     <div class="row g-3 mb-4">
         <div class="col-md-3">
-            <div class="card">
-                <div class="card-body py-2">
-                    <div class="text-muted small">当前状态</div>
-                    <div class="fw-bold @(dream.HasActiveDream ? "text-primary" : "")">
-                        @(dream.HasActiveDream ? "做梦中" : "清醒")
-                    </div>
-                </div>
-            </div>
+            <StatCard Label="当前状态"
+                      Value="@(dream.HasActiveDream ? "做梦中" : "清醒")"
+                      CssClass="@(dream.HasActiveDream ? "info" : "idle")"
+                      ValueClass="@(dream.HasActiveDream ? "" : "ok")" />
         </div>
         <div class="col-md-3">
-            <div class="card">
-                <div class="card-body py-2">
-                    <div class="text-muted small">待执行级别</div>
-                    <div class="fw-bold">@dream.PendingLevel</div>
-                </div>
-            </div>
+            <StatCard Label="待执行级别"
+                      Value="@dream.PendingLevel.ToString()"
+                      CssClass="info" />
         </div>
         <div class="col-md-3">
-            <div class="card">
-                <div class="card-body py-2">
-                    <div class="text-muted small">上次走神</div>
-                    <div class="fw-bold">@(dream.LastDaydreamTime?.ToString("HH:mm:ss") ?? "从未")</div>
-                </div>
-            </div>
+            <StatCard Label="上次走神"
+                      Value="@(dream.LastDaydreamTime?.ToString("HH:mm:ss") ?? "从未")"
+                      CssClass="info" />
         </div>
         <div class="col-md-3">
-            <div class="card">
-                <div class="card-body py-2">
-                    <div class="text-muted small">强制标志</div>
-                    <div class="fw-bold @(dream.ForceFlag ? "text-warning" : "")">
-                        @(dream.ForceFlag ? "已设置" : "无")
-                    </div>
-                </div>
-            </div>
+            <StatCard Label="强制标志"
+                      Value="@(dream.ForceFlag ? "已设置" : "无")"
+                      CssClass="@(dream.ForceFlag ? "busy" : "idle")"
+                      ValueClass="@(dream.ForceFlag ? "warn" : "")" />
         </div>
     </div>
 
-    <!-- 控制按钮 -->
     <div class="card">
-        <div class="card-header py-2 fw-semibold">
-            <i class="bi bi-sliders me-1"></i> 操作
+        <div class="card-header">
+            <i class="bi bi-sliders me-1 text-accent"></i> 操作
         </div>
         <div class="card-body">
             <div class="d-flex flex-wrap gap-2">
-                <button class="btn btn-warning btn-sm" @onclick="ForceSleep">
+                <button class="btn-accent" @onclick="ForceSleep">
                     <i class="bi bi-moon me-1"></i> 强制睡觉
                 </button>
-                <button class="btn btn-outline-secondary btn-sm" @onclick="ForceNap">
+                <button class="btn-ghost" @onclick="ForceNap">
                     <i class="bi bi-cloud me-1"></i> 强制小睡
                 </button>
-                <button class="btn btn-outline-secondary btn-sm" @onclick="ForceDaydream">
+                <button class="btn-ghost" @onclick="ForceDaydream">
                     <i class="bi bi-cloud-haze me-1"></i> 强制走神
                 </button>
             </div>
@@ -75,9 +64,11 @@ else
 
     @if (!string.IsNullOrEmpty(statusMessage))
     {
-        <div class="alert alert-info mt-3 alert-dismissible fade show">
-            @statusMessage
-            <button type="button" class="btn-close" @onclick="() => statusMessage = null"></button>
+        <div style="background:var(--status-info-dim); color:var(--status-info); padding:0.75rem 1rem; border-radius:var(--radius-md); margin-top:1rem; display:flex; align-items:center; justify-content:space-between;">
+            <span>@statusMessage</span>
+            <button class="btn-ghost" style="padding:0.2rem 0.5rem;" @onclick="() => statusMessage = null">
+                <i class="bi bi-x"></i>
+            </button>
         </div>
     }
 }

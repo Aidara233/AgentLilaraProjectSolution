@@ -1,27 +1,27 @@
 @using AgentCoreProcessor.WebUI.Navigation
 
-<li class="nav-item mt-1">
-    <a class="nav-link text-white d-flex align-items-center nav-section-toggle @(IsExpanded ? "" : "collapsed")"
+<li>
+    <a class="nav-link nav-section-toggle @(IsExpanded ? "" : "collapsed")"
        @onclick="Toggle" @onclick:preventDefault role="button">
         @if (!string.IsNullOrEmpty(Item.Icon))
         {
-            <i class="bi @Item.Icon me-2"></i>
+            <i class="bi @Item.Icon"></i>
         }
         <span class="flex-grow-1">@Item.Title</span>
-        <i class="bi bi-chevron-down nav-chevron ms-auto"></i>
+        <i class="bi bi-chevron-down nav-chevron"></i>
     </a>
 
-    <ul class="nav flex-column ms-3 mt-1" style="@(IsExpanded ? "" : "display:none")">
+    <ul class="nav-section-children" style="@(IsExpanded ? "" : "display:none")">
         @foreach (var child in Item.Children)
         {
             @if (child.Children.Count == 0)
             {
-                <li class="nav-item" @key="child.Href">
-                    <NavLink class="nav-link text-white py-1" href="@child.Href"
+                <li @key="child.Href">
+                    <NavLink class="nav-link" href="@child.Href"
                              Match="NavLinkMatch.All">
                         @if (!string.IsNullOrEmpty(child.Icon))
                         {
-                            <i class="bi @child.Icon me-2"></i>
+                            <i class="bi @child.Icon"></i>
                         }
                         @child.Title
                     </NavLink>

@@ -4,18 +4,18 @@
 @inject LogStreamService LogStream
 @implements IDisposable
 
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0">日志查看器</h4>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="page-title" style="margin-bottom:0;">
+        <i class="bi bi-terminal"></i> 日志查看器
+    </div>
     <div class="d-flex gap-2 align-items-center">
-        <div class="form-check form-switch">
-            <input class="form-check-input" type="checkbox" @bind="autoScroll" id="autoScrollCheck" />
-            <label class="form-check-label small" for="autoScrollCheck">自动滚动</label>
-        </div>
-        <div class="form-check form-switch">
-            <input class="form-check-input" type="checkbox" @bind="paused" id="pauseCheck" />
-            <label class="form-check-label small" for="pauseCheck">暂停</label>
-        </div>
-        <button class="btn btn-outline-secondary btn-sm" @onclick="ClearLogs">
+        <label class="d-flex align-items-center gap-1" style="color:var(--text-secondary); font-size:var(--font-size-sm); cursor:pointer;">
+            <input type="checkbox" @bind="autoScroll" style="accent-color:var(--accent);" /> 自动滚动
+        </label>
+        <label class="d-flex align-items-center gap-1" style="color:var(--text-secondary); font-size:var(--font-size-sm); cursor:pointer;">
+            <input type="checkbox" @bind="paused" style="accent-color:var(--accent);" /> 暂停
+        </label>
+        <button class="btn-ghost" @onclick="ClearLogs">
             <i class="bi bi-trash me-1"></i>清空
         </button>
     </div>
@@ -37,13 +37,12 @@
                @bind="keywordFilter" @bind:event="oninput" />
     </div>
     <div class="col-md-2">
-        <div class="form-check mt-1">
-            <input class="form-check-input" type="checkbox" @bind="errorsOnly" id="errorsOnlyCheck" />
-            <label class="form-check-label small" for="errorsOnlyCheck">仅错误</label>
-        </div>
+        <label class="d-flex align-items-center gap-1" style="color:var(--text-secondary); font-size:var(--font-size-sm); cursor:pointer; margin-top:0.3rem;">
+            <input type="checkbox" @bind="errorsOnly" style="accent-color:var(--accent);" /> 仅错误
+        </label>
     </div>
     <div class="col-md-3 text-end">
-        <small class="text-muted">显示 @filteredLogs.Count / @allLogs.Count 条</small>
+        <small class="text-muted-custom">显示 @filteredLogs.Count / @allLogs.Count 条</small>
     </div>
 </div>
 
@@ -53,15 +52,15 @@
         <div class="log-container p-2" style="max-height:calc(100vh - 260px)">
             @foreach (var entry in filteredLogs)
             {
-                <div class="log-entry @(entry.IsError ? "text-danger bg-danger bg-opacity-10" : "")">
-                    <span class="text-muted">@entry.Time.ToString("HH:mm:ss.fff")</span>
+                <div class="log-entry @(entry.IsError ? "log-error" : "")">
+                    <span class="log-time">@entry.Time.ToString("HH:mm:ss.fff")</span>
                     <span class="log-source ms-1">[@entry.Source]</span>
                     <span class="ms-1">@entry.Message</span>
                 </div>
             }
             @if (filteredLogs.Count == 0)
             {
-                <div class="p-3 text-muted text-center">无日志条目</div>
+                <div class="p-3 text-muted-custom" style="text-align:center;">无日志条目</div>
             }
         </div>
     </div>

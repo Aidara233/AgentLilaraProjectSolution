@@ -4,14 +4,14 @@
 <div class="card">
     @if (ShowFilter)
     {
-        <div class="card-header py-2">
+        <div class="card-header">
             <input type="text" class="form-control form-control-sm"
                    placeholder="搜索..." @bind="filterText" @bind:event="oninput" />
         </div>
     }
     <div class="card-body p-0">
-        <table class="table table-sm table-hover mb-0">
-            <thead class="table-light">
+        <table class="table-dark-custom">
+            <thead>
                 <tr>
                     @foreach (var col in Columns)
                     {
@@ -20,7 +20,7 @@
                             @col.Header
                             @if (sortColumn == col)
                             {
-                                <i class="bi @(sortAsc ? "bi-caret-up-fill" : "bi-caret-down-fill") ms-1 small"></i>
+                                <i class="bi @(sortAsc ? "bi-caret-up-fill" : "bi-caret-down-fill") ms-1"></i>
                             }
                         </th>
                     }
@@ -29,7 +29,7 @@
             <tbody>
                 @if (!PagedItems.Any())
                 {
-                    <tr><td colspan="@Columns.Count" class="text-center text-muted py-3">无数据</td></tr>
+                    <tr><td colspan="@Columns.Count" class="text-center text-muted-custom" style="padding:1.5rem">无数据</td></tr>
                 }
                 else
                 {
@@ -58,25 +58,20 @@
     </div>
     @if (TotalPages > 1)
     {
-        <div class="card-footer py-2 d-flex justify-content-between align-items-center">
-            <small class="text-muted">共 @FilteredItems.Count() 条</small>
-            <nav>
-                <ul class="pagination pagination-sm mb-0">
-                    <li class="page-item @(currentPage <= 1 ? "disabled" : "")">
-                        <a class="page-link" @onclick="() => GoToPage(currentPage - 1)" @onclick:preventDefault>上一页</a>
-                    </li>
-                    @for (int i = 1; i <= TotalPages; i++)
-                    {
-                        var pageNum = i;
-                        <li class="page-item @(pageNum == currentPage ? "active" : "")">
-                            <a class="page-link" @onclick="() => GoToPage(pageNum)" @onclick:preventDefault>@pageNum</a>
-                        </li>
-                    }
-                    <li class="page-item @(currentPage >= TotalPages ? "disabled" : "")">
-                        <a class="page-link" @onclick="() => GoToPage(currentPage + 1)" @onclick:preventDefault>下一页</a>
-                    </li>
-                </ul>
-            </nav>
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <small class="text-muted-custom">共 @FilteredItems.Count() 条</small>
+            <div class="d-flex gap-1">
+                <button class="btn-ghost" disabled="@(currentPage <= 1)"
+                        @onclick="() => GoToPage(currentPage - 1)">上一页</button>
+                @for (int i = 1; i <= TotalPages; i++)
+                {
+                    var pageNum = i;
+                    <button class="@(pageNum == currentPage ? "btn-accent" : "btn-ghost")"
+                            @onclick="() => GoToPage(pageNum)">@pageNum</button>
+                }
+                <button class="btn-ghost" disabled="@(currentPage >= TotalPages)"
+                        @onclick="() => GoToPage(currentPage + 1)">下一页</button>
+            </div>
         </div>
     }
 </div>
