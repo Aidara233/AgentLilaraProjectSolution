@@ -896,35 +896,50 @@ body {
     padding-left: calc(0.75rem - 2px);
 }
 
-/* Cards — glass + corner frame */
+/* Cards — glass + corner frame (all 4 corners via background gradients) */
 [data-theme="tech"] .card {
     background: var(--glass-bg);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border: none;
     position: relative;
+    background-image:
+        /* top-left horizontal */
+        linear-gradient(to right, var(--accent) var(--corner-size), transparent var(--corner-size)),
+        /* top-left vertical */
+        linear-gradient(to bottom, var(--accent) var(--corner-size), transparent var(--corner-size)),
+        /* top-right horizontal */
+        linear-gradient(to left, var(--accent) var(--corner-size), transparent var(--corner-size)),
+        /* top-right vertical */
+        linear-gradient(to bottom, var(--accent) var(--corner-size), transparent var(--corner-size)),
+        /* bottom-left horizontal */
+        linear-gradient(to right, var(--accent) var(--corner-size), transparent var(--corner-size)),
+        /* bottom-left vertical */
+        linear-gradient(to top, var(--accent) var(--corner-size), transparent var(--corner-size)),
+        /* bottom-right horizontal */
+        linear-gradient(to left, var(--accent) var(--corner-size), transparent var(--corner-size)),
+        /* bottom-right vertical */
+        linear-gradient(to top, var(--accent) var(--corner-size), transparent var(--corner-size));
+    background-size:
+        var(--corner-size) var(--corner-thickness),
+        var(--corner-thickness) var(--corner-size),
+        var(--corner-size) var(--corner-thickness),
+        var(--corner-thickness) var(--corner-size),
+        var(--corner-size) var(--corner-thickness),
+        var(--corner-thickness) var(--corner-size),
+        var(--corner-size) var(--corner-thickness),
+        var(--corner-thickness) var(--corner-size);
+    background-position:
+        top left, top left,
+        top right, top right,
+        bottom left, bottom left,
+        bottom right, bottom right;
+    background-repeat: no-repeat;
 }
 
 [data-theme="tech"] .card::before,
 [data-theme="tech"] .card::after {
-    content: '';
-    position: absolute;
-    width: var(--corner-size);
-    height: var(--corner-size);
-    border-color: var(--accent);
-    border-style: solid;
-    pointer-events: none;
-    z-index: 2;
-}
-
-[data-theme="tech"] .card::before {
-    top: 0; left: 0;
-    border-width: var(--corner-thickness) 0 0 var(--corner-thickness);
-}
-
-[data-theme="tech"] .card::after {
-    top: 0; right: 0;
-    border-width: var(--corner-thickness) var(--corner-thickness) 0 0;
+    display: none;
 }
 
 /* Stat cards — corner frame all four */
@@ -1021,21 +1036,40 @@ body {
     box-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
 }
 
-/* Ghost/secondary button — C style (bottom heavy line) */
+/* Ghost/secondary button — C style (subtle underline, expands on hover) */
 [data-theme="tech"] .btn-ghost {
     background: rgba(0, 212, 255, 0.03);
     border: none;
-    border-top: 1px solid rgba(0, 200, 255, 0.2);
-    border-bottom: 2px solid var(--accent);
+    border-top: 1px solid rgba(0, 200, 255, 0.15);
+    border-bottom: 1px solid rgba(0, 200, 255, 0.15);
     color: var(--text-secondary);
     padding: 0.4rem 1rem;
     font-weight: 500;
+    position: relative;
+    overflow: hidden;
+}
+
+[data-theme="tech"] .btn-ghost::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 50%;
+    width: 0;
+    height: 2px;
+    background: var(--accent);
+    transition: width 0.25s ease, left 0.25s ease;
 }
 
 [data-theme="tech"] .btn-ghost:hover {
     background: var(--accent-dim);
-    border-top-color: rgba(0, 200, 255, 0.5);
+    border-top-color: rgba(0, 200, 255, 0.3);
+    border-bottom-color: transparent;
     color: var(--accent);
+}
+
+[data-theme="tech"] .btn-ghost:hover::after {
+    width: 100%;
+    left: 0;
 }
 
 /* Tab bar — C style underline */
