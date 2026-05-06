@@ -1,8 +1,8 @@
 @inherits LayoutComponentBase
 
-<div class="page-layout">
+<div style="display:flex; height:100vh; overflow:hidden;">
     <NavMenu />
-    <main class="page-content">
+    <main style="flex:1; overflow-y:auto; background:#f8f9fa;">
         <div class="container-fluid p-4">
             @Body
         </div>
