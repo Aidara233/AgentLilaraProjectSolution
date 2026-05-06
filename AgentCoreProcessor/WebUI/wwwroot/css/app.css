@@ -1,6 +1,8 @@
 .sidebar {
     width: 220px;
+    min-width: 220px;
     min-height: 100vh;
+    overflow-y: auto;
 }
 
 .nav-link.active {
@@ -60,8 +62,4 @@
 .sidebar .nav .nav .nav-link {
     font-size: 0.85rem;
     padding: 0.2rem 0.5rem;
-}
-
-.sidebar {
-    overflow-y: auto;
 }
