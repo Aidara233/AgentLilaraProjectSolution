@@ -1,16 +1,20 @@
-.sidebar-wrapper {
-    width: 220px;
-    min-width: 220px;
-    max-width: 220px;
-    flex-shrink: 0;
+.page-layout {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    height: 100vh;
     overflow: hidden;
 }
 
 .sidebar {
-    width: 100%;
+    width: 220px;
     height: 100vh;
     overflow-y: auto;
     overflow-x: hidden;
+}
+
+.page-content {
+    overflow-y: auto;
+    background-color: #f8f9fa;
 }
 
 .nav-link.active {
