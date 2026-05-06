@@ -14,7 +14,7 @@
         {
             @if (item.Children.Count == 0)
             {
-                <li class="nav-item">
+                <li class="nav-item" @key="item.Href">
                     <NavLink class="nav-link text-white" href="@item.Href"
                              Match="@(item.Href == "/" ? NavLinkMatch.All : NavLinkMatch.Prefix)">
                         <i class="bi @item.Icon me-2"></i> @item.Title
@@ -23,7 +23,7 @@
             }
             else
             {
-                <NavSection Item="item" ExpandedSet="expandedSet" />
+                <NavSection @key="item.Title" Item="item" ExpandedSet="expandedSet" />
             }
         }
     </ul>

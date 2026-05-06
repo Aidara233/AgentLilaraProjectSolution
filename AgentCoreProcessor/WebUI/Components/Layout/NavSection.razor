@@ -16,7 +16,7 @@
         {
             @if (child.Children.Count == 0)
             {
-                <li class="nav-item">
+                <li class="nav-item" @key="child.Href">
                     <NavLink class="nav-link text-white py-1" href="@child.Href"
                              Match="NavLinkMatch.All">
                         @if (!string.IsNullOrEmpty(child.Icon))
@@ -29,7 +29,7 @@
             }
             else
             {
-                <NavSection Item="child" ExpandedSet="ExpandedSet" />
+                <NavSection @key="child.Title" Item="child" ExpandedSet="ExpandedSet" />
             }
         }
     </ul>
