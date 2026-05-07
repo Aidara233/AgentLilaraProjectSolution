@@ -8,7 +8,10 @@
 
 ```
 AgentCoreProcessor/
-├── Adapter/     平台适配（Console/File/OneBot QQ），消息收发
+├── Adapter/     平台适配（File/OneBot QQ），消息收发，通用操作接口
+│     ├── OneBot/  OneBotAdapter(协议层) + OneBotMessageParser(解析层) + OneBotActions(操作层) + OneBotConfig
+│     ├── File/    FileAdapter（文件轮询，测试用）
+│     └── 通用:    IAdapter / AdapterManager / AdapterFactory / AdapterStatus / AdapterAction
 ├── Client/      IModelClient 抽象层（Claude/OpenAI 双协议）+ Embedding 接口
 ├── Command/     框架指令系统（/help /status /config 等）
 ├── Config/      PathConfig 绝对路径管理
@@ -354,7 +357,8 @@ Storage/
 │     ├── ImpulseConfig.json         冲动值全参数配置
 │     └── TrustProgressionConfig.json 信任升降阈值+警报冷却配置
 ├── Adapter/
-│     └── OneBotAdapter.json  QQ适配器配置(WS地址/白名单/botNames)
+│     └── *.json  适配器实例配置（多实例，config-driven）
+│         qq-main.json: OneBotAdapter 配置(WS地址/token/白名单/botNames)
 ├── Command/
 │     └── CommandConfig.json  指令前缀配置
 ├── MCP/
