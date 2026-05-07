@@ -232,6 +232,7 @@ namespace AgentCoreProcessor.Engine
             Tool.ToolRegistry.Register(new Tool.ChannelInfoTool(this));
             Tool.ToolRegistry.Register(new Tool.EngineManagementTool(this));
             Tool.ToolRegistry.Register(new Tool.CheckNotificationsTool(this));
+            Tool.ToolRegistry.Register(new Tool.AdapterActionTool(this));
 
             // Phase 6: 注册关注规则工具
             var watchRuleTool = new Tool.SetWatchRuleTool();
