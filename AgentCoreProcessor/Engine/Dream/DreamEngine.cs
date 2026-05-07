@@ -53,6 +53,7 @@ namespace AgentCoreProcessor.Engine
         public async Task RunAsync()
         {
             FrameworkLogger.Log("DreamEngine", $"开始做梦: level={level} max={maxFragments}");
+            var startTime = DateTime.Now;
 
             int executed;
             if (level == SleepLevel.DeepSleep)
@@ -63,6 +64,16 @@ namespace AgentCoreProcessor.Engine
             // 通知 SpawnCheck 更新跨周期状态
             int processed = level == SleepLevel.DeepSleep ? executed : 0;
             spawnCheck.OnDreamCompleted(level, processed);
+
+            // 记录历史
+            DreamHistory.Append(new DreamHistoryEntry
+            {
+                StartTime = startTime,
+                EndTime = DateTime.Now,
+                Level = level.ToString(),
+                FragmentsExecuted = executed,
+                WasInterrupted = shouldWake
+            });
 
             FrameworkLogger.Log("DreamEngine", $"做梦结束: level={level} executed={executed}");
             IsAlive = false;

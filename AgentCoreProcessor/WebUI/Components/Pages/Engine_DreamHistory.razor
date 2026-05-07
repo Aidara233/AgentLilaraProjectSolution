@@ -1,11 +1,163 @@
 @page "/dream/history"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using AgentCoreProcessor.Config
+@using AgentCoreProcessor.Engine
+@using Newtonsoft.Json
+@using System.IO
 
 <div class="page-title">
     <i class="bi bi-clock-history"></i> 做梦 — 历史
 </div>
 
-<div class="page-placeholder">
-    <i class="bi bi-clock-history"></i>
-    <span>睡觉历史记录页（开发中）</span>
+<div class="d-flex gap-2 mb-4">
+    <button class="btn-ghost" @onclick="Reload">
+        <i class="bi bi-arrow-clockwise"></i> 刷新
+    </button>
 </div>
+
+<!-- 近期会话 -->
+<div class="card mb-4">
+    <div class="card-header">
+        <i class="bi bi-list-ul me-1 text-accent"></i> 近期睡觉会话
+    </div>
+    <div class="card-body p-0">
+        @if (history.Count == 0)
+        {
+            <div class="p-3 text-muted-custom">暂无历史记录</div>
+        }
+        else
+        {
+            <table class="table-dark-custom">
+                <thead>
+                    <tr>
+                        <th>时间</th>
+                        <th>级别</th>
+                        <th>时长</th>
+                        <th>片段数</th>
+                        <th>状态</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var entry in history.OrderByDescending(e => e.StartTime))
+                    {
+                        <tr>
+                            <td>@entry.StartTime.ToString("MM-dd HH:mm")</td>
+                            <td>
+                                <span class="badge-status @LevelBadge(entry.Level)">@LevelLabel(entry.Level)</span>
+                            </td>
+                            <td>@FormatDuration(entry.EndTime - entry.StartTime)</td>
+                            <td>@entry.FragmentsExecuted</td>
+                            <td>
+                                @if (entry.WasInterrupted)
+                                {
+                                    <span class="text-warning-custom">被打断</span>
+                                }
+                                else
+                                {
+                                    <span class="text-ok">完成</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+<!-- 每日统计 -->
+<div class="card mb-4">
+    <div class="card-header">
+        <i class="bi bi-bar-chart me-1 text-accent"></i> 每日统计（近 7 天）
+    </div>
+    <div class="card-body p-0">
+        @if (stats.DailyRecords.Count == 0)
+        {
+            <div class="p-3 text-muted-custom">暂无统计数据</div>
+        }
+        else
+        {
+            <table class="table-dark-custom">
+                <thead>
+                    <tr>
+                        <th>日期</th>
+                        <th>临时记忆峰值</th>
+                        <th>已处理</th>
+                        <th>未做梦峰值</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var record in stats.DailyRecords.OrderByDescending(r => r.Date))
+                    {
+                        <tr>
+                            <td>@record.Date</td>
+                            <td>@record.TempPeak</td>
+                            <td class="text-accent">@record.Processed</td>
+                            <td>@record.UndreamedPeak</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+<!-- 基线信息 -->
+<div class="row g-3">
+    <div class="col-md-4">
+        <StatCard Label="基线均值" Value="@stats.Baseline.AvgDailyTempIntake.ToString("F1")" />
+    </div>
+    <div class="col-md-4">
+        <StatCard Label="基线更新" Value="@(string.IsNullOrEmpty(stats.Baseline.LastUpdate) ? "—" : stats.Baseline.LastUpdate)" />
+    </div>
+    <div class="col-md-4">
+        <StatCard Label="连续红色天数" Value="@stats.ConsecutiveRedDays.ToString()"
+                  ValueClass="@(stats.ConsecutiveRedDays > 0 ? "error" : "")" />
+    </div>
+</div>
+
+@code {
+    private List<DreamHistoryEntry> history = new();
+    private DreamStats stats = new();
+
+    protected override void OnInitialized()
+    {
+        LoadData();
+    }
+
+    private void LoadData()
+    {
+        history = DreamHistory.Load();
+
+        var statsPath = Path.Combine(PathConfig.StoragePath, "Dream", "DreamStats.json");
+        stats = DreamStats.Load(statsPath);
+    }
+
+    private void Reload()
+    {
+        LoadData();
+    }
+
+    private static string LevelBadge(string level) => level switch
+    {
+        "DeepSleep" => "badge-working",
+        "Nap" => "badge-info",
+        "Daydream" => "badge-express",
+        _ => "badge-info"
+    };
+
+    private static string LevelLabel(string level) => level switch
+    {
+        "DeepSleep" => "大睡",
+        "Nap" => "小睡",
+        "Daydream" => "走神",
+        _ => level
+    };
+
+    private static string FormatDuration(TimeSpan ts)
+    {
+        if (ts.TotalHours >= 1) return $"{(int)ts.TotalHours}h {ts.Minutes}m";
+        if (ts.TotalMinutes >= 1) return $"{ts.Minutes}m {ts.Seconds}s";
+        return $"{ts.Seconds}s";
+    }
+}
