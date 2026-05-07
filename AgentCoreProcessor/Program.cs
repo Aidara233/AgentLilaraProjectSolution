@@ -51,9 +51,9 @@ namespace AgentCoreProcessor
                 adapterManager.RegisterAdapter(fileAdapter);
             }
 
-            if (qqMode)
+            // 从配置目录加载适配器（--qq 保留为兼容，但正常模式也加载）
+            if (!debug)
             {
-                // --qq 模式：从配置目录加载（兼容旧格式自动迁移）
                 adapterManager.LoadFromConfig();
             }
 
