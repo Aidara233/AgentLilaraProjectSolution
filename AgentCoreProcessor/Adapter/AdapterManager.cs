@@ -15,8 +15,11 @@ namespace AgentCoreProcessor.Adapter
     {
         private readonly ConcurrentDictionary<string, IAdapter> adapters = new();
         private readonly ConcurrentDictionary<string, bool> enabledMap = new();
+        private readonly ConcurrentDictionary<string, AdapterInstanceConfig> configs = new();
         private readonly EventBus? eventBus;
         private readonly string configDirectory;
+
+        public event Action? OnAdaptersChanged;
 
         public AdapterManager(EventBus? eventBus = null)
         {
@@ -42,6 +45,7 @@ namespace AgentCoreProcessor.Adapter
                     if (config == null || string.IsNullOrEmpty(config.Id) || string.IsNullOrEmpty(config.Type))
                         continue;
 
+                    configs[config.Id] = config;
                     var adapter = AdapterFactory.Create(config);
                     RegisterAdapter(adapter, config.Enabled);
                 }
@@ -101,6 +105,7 @@ namespace AgentCoreProcessor.Adapter
         {
             if (adapters.ContainsKey(config.Id)) return false;
 
+            configs[config.Id] = config;
             var adapter = AdapterFactory.Create(config);
             RegisterAdapter(adapter, config.Enabled);
             SaveConfig(config);
@@ -108,6 +113,7 @@ namespace AgentCoreProcessor.Adapter
             if (config.Enabled)
                 await adapter.StartAsync();
 
+            OnAdaptersChanged?.Invoke();
             return true;
         }
 
@@ -115,12 +121,14 @@ namespace AgentCoreProcessor.Adapter
         {
             if (!adapters.TryRemove(id, out var adapter)) return false;
             enabledMap.TryRemove(id, out _);
+            configs.TryRemove(id, out _);
 
             await adapter.StopAsync();
 
             var configFile = Path.Combine(configDirectory, $"{id}.json");
             if (File.Exists(configFile)) File.Delete(configFile);
 
+            OnAdaptersChanged?.Invoke();
             return true;
         }
 
@@ -142,10 +150,17 @@ namespace AgentCoreProcessor.Adapter
             return true;
         }
 
-        public async Task StartAllAsync(CancellationToken ct = default)
+        public async Task StartAllAsync(bool debugMode = false, CancellationToken ct = default)
         {
             var tasks = adapters
-                .Where(kv => enabledMap.GetValueOrDefault(kv.Key, true))
+                .Where(kv =>
+                {
+                    if (!enabledMap.GetValueOrDefault(kv.Key, true)) return false;
+                    if (!configs.TryGetValue(kv.Key, out var cfg)) return true;
+                    if (!cfg.AutoStart) return false;
+                    if (debugMode && !cfg.AutoStartDebug) return false;
+                    return true;
+                })
                 .Select(kv => kv.Value.StartAsync(ct));
             await Task.WhenAll(tasks).ConfigureAwait(false);
         }
@@ -219,6 +234,14 @@ namespace AgentCoreProcessor.Adapter
         public List<AdapterStatus> GetAllStatuses() => adapters.Values.Select(a => a.GetStatus()).ToList();
         public List<string> GetRegisteredPlatforms() => adapters.Values.Select(a => a.Platform).Distinct().ToList();
         public bool IsEnabled(string id) => enabledMap.GetValueOrDefault(id, false);
+        public AdapterInstanceConfig? GetConfigById(string id) => configs.GetValueOrDefault(id);
+        public List<AdapterInstanceConfig> GetAllConfigs() => configs.Values.ToList();
+
+        public void UpdateConfig(AdapterInstanceConfig config)
+        {
+            configs[config.Id] = config;
+            SaveConfig(config);
+        }
 
         // ── 重载 ──
 

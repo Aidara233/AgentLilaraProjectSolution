@@ -7,6 +7,8 @@ namespace AgentCoreProcessor.Adapter
         public string Id { get; set; } = "";
         public string Type { get; set; } = "";
         public bool Enabled { get; set; } = true;
+        public bool AutoStart { get; set; } = true;
+        public bool AutoStartDebug { get; set; } = false;
         public JObject Settings { get; set; } = new();
     }
 }

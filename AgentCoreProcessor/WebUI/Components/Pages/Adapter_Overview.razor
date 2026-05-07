@@ -2,6 +2,7 @@
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using AgentCoreProcessor.Adapter
 @inject AdapterManager Adapters
+@inject NavigationManager Nav
 @implements IDisposable
 
 <div class="page-title">
@@ -30,7 +31,7 @@
 </div>
 
 <!-- 适配器列表 -->
-<div class="card">
+<div class="card mb-4">
     <div class="card-header">
         <i class="bi bi-diagram-3 me-1 text-accent"></i> 实例列表
     </div>
@@ -50,8 +51,6 @@
                         <th>启用</th>
                         <th>收到</th>
                         <th>发送</th>
-                        <th>重连</th>
-                        <th>最后错误</th>
                         <th>操作</th>
                     </tr>
                 </thead>
@@ -59,36 +58,21 @@
                     @foreach (var s in statuses)
                     {
                         <tr>
-                            <td><code>@s.Id</code></td>
-                            <td>@s.Platform</td>
                             <td>
-                                <span class="@StateClass(s.State)">@StateLabel(s.State)</span>
+                                <a href="/adapters/@(s.Platform.ToLower())?id=@s.Id" class="text-accent">
+                                    <code>@s.Id</code>
+                                </a>
                             </td>
+                            <td>@s.Platform</td>
+                            <td><span class="@StateClass(s.State)">@StateLabel(s.State)</span></td>
                             <td>
                                 @if (s.Enabled)
-                                {
-                                    <span class="text-ok">是</span>
-                                }
+                                { <span class="text-ok">是</span> }
                                 else
-                                {
-                                    <span class="text-muted-custom">否</span>
-                                }
+                                { <span class="text-muted-custom">否</span> }
                             </td>
                             <td>@s.MessagesReceived</td>
                             <td>@s.MessagesSent</td>
-                            <td>@s.ReconnectCount</td>
-                            <td>
-                                @if (s.LastError != null)
-                                {
-                                    <span class="text-error" title="@s.LastErrorAt?.ToString("MM-dd HH:mm")">
-                                        @Truncate(s.LastError, 30)
-                                    </span>
-                                }
-                                else
-                                {
-                                    <span class="text-muted-custom">—</span>
-                                }
-                            </td>
                             <td>
                                 @if (s.Enabled)
                                 {
@@ -100,6 +84,8 @@
                                     <button class="btn-ghost" style="padding:0.2rem 0.5rem; font-size:0.75rem;"
                                             @onclick="() => Enable(s.Id)">启用</button>
                                 }
+                                <button class="btn-ghost" style="padding:0.2rem 0.5rem; font-size:0.75rem; color:var(--status-error);"
+                                        @onclick="() => Remove(s.Id)">删除</button>
                             </td>
                         </tr>
                     }
@@ -109,9 +95,49 @@
     </div>
 </div>
 
+<!-- 创建适配器 -->
+<div class="card">
+    <div class="card-header" style="cursor:pointer;" @onclick="() => showCreate = !showCreate">
+        <i class="bi bi-plus-circle me-1 text-accent"></i> 创建新适配器
+        <i class="bi @(showCreate ? "bi-chevron-up" : "bi-chevron-down")" style="float:right;"></i>
+    </div>
+    @if (showCreate)
+    {
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="config-label">模板</label>
+                    <select class="config-input" @bind="newType">
+                        <option value="onebot">OneBot QQ</option>
+                        <option value="file">File</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="config-label">ID</label>
+                    <input class="config-input" @bind="newId" placeholder="如 qq-test" />
+                </div>
+                <div class="col-md-4 d-flex align-items-end">
+                    <button class="btn-primary-custom" @onclick="Create" disabled="@creating">
+                        @(creating ? "创建中..." : "创建")
+                    </button>
+                </div>
+            </div>
+            @if (!string.IsNullOrEmpty(createError))
+            {
+                <div class="alert-bar mt-2" style="--alert-color: var(--status-error);">@createError</div>
+            }
+        </div>
+    }
+</div>
+
 @code {
     private List<AdapterStatus> statuses = new();
     private System.Threading.Timer? refreshTimer;
+    private bool showCreate;
+    private string newType = "onebot";
+    private string newId = "";
+    private string? createError;
+    private bool creating;
 
     protected override void OnInitialized()
     {
@@ -140,6 +166,64 @@
         Refresh();
     }
 
+    private async Task Remove(string id)
+    {
+        await Adapters.RemoveAsync(id);
+        Refresh();
+    }
+
+    private async Task Create()
+    {
+        createError = null;
+        if (string.IsNullOrWhiteSpace(newId))
+        {
+            createError = "ID 不能为空";
+            return;
+        }
+        if (!System.Text.RegularExpressions.Regex.IsMatch(newId, @"^[a-zA-Z0-9_\-]+$"))
+        {
+            createError = "ID 只能包含字母、数字、下划线和连字符";
+            return;
+        }
+
+        creating = true;
+        var config = new AdapterInstanceConfig
+        {
+            Id = newId,
+            Type = newType,
+            Enabled = false,
+            AutoStart = true,
+            AutoStartDebug = false,
+            Settings = new Newtonsoft.Json.Linq.JObject()
+        };
+
+        if (newType == "onebot")
+        {
+            config.Settings["wsUrl"] = "ws://localhost:3001";
+            config.Settings["token"] = "";
+            config.Settings["filterMode"] = "whitelist";
+            config.Settings["whitelist"] = new Newtonsoft.Json.Linq.JArray();
+            config.Settings["blacklist"] = new Newtonsoft.Json.Linq.JArray();
+            config.Settings["botNames"] = new Newtonsoft.Json.Linq.JArray();
+        }
+        else if (newType == "file")
+        {
+            config.Settings["baseDir"] = "";
+            config.Settings["pollIntervalMs"] = 2000;
+        }
+
+        var ok = await Adapters.AddAsync(config);
+        if (!ok)
+            createError = $"ID '{newId}' 已存在";
+        else
+        {
+            newId = "";
+            Refresh();
+            Nav.NavigateTo($"/adapters/{newType}?id={config.Id}");
+        }
+        creating = false;
+    }
+
     private static string StateClass(AdapterConnectionState state) => state switch
     {
         AdapterConnectionState.Connected => "text-ok",
@@ -158,8 +242,6 @@
         AdapterConnectionState.Stopped => "已停止",
         _ => "未知"
     };
-
-    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "...";
 
     public void Dispose() => refreshTimer?.Dispose();
 }

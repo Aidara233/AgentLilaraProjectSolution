@@ -83,7 +83,14 @@ namespace AgentCoreProcessor
                 var tsContent = (tsIdx + 2 < args.Length && !args[tsIdx + 2].StartsWith("--"))
                     ? args[tsIdx + 2] : "Lilara 已上线，连接测试成功。";
 
-                await adapterManager.StartAllAsync();
+                var qqAdapter = adapterManager.GetAdapter("qq");
+                if (qqAdapter != null)
+                    await qqAdapter.StartAsync();
+                else
+                {
+                    Console.WriteLine("[test-send] 未找到 qq 平台适配器");
+                    return 1;
+                }
                 await adapterManager.SendMessageAsync("qq", new OutgoingMessage
                 {
                     ChannelId = tsChannel,
@@ -292,7 +299,7 @@ namespace AgentCoreProcessor
                 .AddInteractiveServerRenderMode();
 
             // 适配器后台启动（ConsoleAdapter.StartAsync 会阻塞，不能 await）
-            _ = Task.Run(() => adapterManager.StartAllAsync());
+            _ = Task.Run(() => adapterManager.StartAllAsync(debugMode: false));
 
             FrameworkLogger.Log("Program", $"WebUI 已启动: http://localhost:{webConfig.Port}");
             Console.WriteLine($"[WebUI] 管理面板: http://localhost:{webConfig.Port}");
