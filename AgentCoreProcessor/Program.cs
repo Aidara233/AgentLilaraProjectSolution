@@ -43,7 +43,6 @@ namespace AgentCoreProcessor
 
             // 适配器
             FileAdapter? fileAdapter = null;
-            OneBotAdapter? oneBotAdapter = null;
 
             if (fileMode || testMode)
             {
@@ -54,9 +53,8 @@ namespace AgentCoreProcessor
 
             if (qqMode)
             {
-                var configPath = Path.Combine(PathConfig.StoragePath, "Adapter", "OneBotAdapter.json");
-                oneBotAdapter = new OneBotAdapter(configPath);
-                adapterManager.RegisterAdapter(oneBotAdapter);
+                // --qq 模式：从配置目录加载（兼容旧格式自动迁移）
+                adapterManager.LoadFromConfig();
             }
 
             // 主引擎
