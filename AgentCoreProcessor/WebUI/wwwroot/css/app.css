@@ -628,6 +628,67 @@ select.config-input option {
     color: var(--text-primary);
 }
 
+/* ===== Reconnect Modal ===== */
+
+#components-reconnect-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    background: var(--bg-primary);
+    align-items: center;
+    justify-content: center;
+}
+
+#components-reconnect-modal.components-reconnect-show,
+#components-reconnect-modal.components-reconnect-failed,
+#components-reconnect-modal.components-reconnect-refused {
+    display: flex;
+}
+
+#components-reconnect-modal .show-when-reconnecting,
+#components-reconnect-modal .show-when-failed,
+#components-reconnect-modal .show-when-refused {
+    display: none;
+}
+
+#components-reconnect-modal.components-reconnect-show .show-when-reconnecting { display: block; }
+#components-reconnect-modal.components-reconnect-failed .show-when-failed { display: block; }
+#components-reconnect-modal.components-reconnect-refused .show-when-refused { display: block; }
+
+.reconnect-content {
+    text-align: center;
+    padding: 2rem;
+}
+
+.reconnect-icon {
+    font-size: 3rem;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+    opacity: 0.7;
+}
+
+.reconnect-title {
+    font-size: 1.2rem;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+
+.reconnect-message {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+}
+
+#components-reconnect-modal.components-reconnect-show .reconnect-icon {
+    animation: reconnect-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes reconnect-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+}
+
 /* ===== Alert Bar ===== */
 
 .alert-bar {
