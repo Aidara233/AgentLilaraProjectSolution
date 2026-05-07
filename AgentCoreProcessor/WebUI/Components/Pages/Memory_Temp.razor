@@ -1,11 +1,160 @@
 @page "/memories/temp"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using AgentCoreProcessor.Engine
+@using AgentCoreProcessor.Database
+@inject MasterEngine Engine
 
 <div class="page-title">
-    <i class="bi bi-hourglass"></i> 临时记忆
+    <i class="bi bi-hourglass"></i> 临时记忆库
 </div>
 
-<div class="page-placeholder">
-    <i class="bi bi-hourglass"></i>
-    <span>临时记忆浏览页（开发中）</span>
+<!-- 统计卡片 -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <StatCard Label="总条数" Value="@allMemories.Count.ToString()"
+                  ValueClass="@(allMemories.Count > 30 ? "error" : allMemories.Count > 0 ? "accent" : "")" />
+    </div>
+    <div class="col-md-3">
+        <StatCard Label="高置信" Value="@allMemories.Count(m => m.Confidence == "high").ToString()" />
+    </div>
+    <div class="col-md-3">
+        <StatCard Label="低置信" Value="@allMemories.Count(m => m.Confidence == "low").ToString()"
+                  ValueClass="@(allMemories.Any(m => m.Confidence == "low") ? "warning" : "")" />
+    </div>
+    <div class="col-md-3">
+        <StatCard Label="关联人物数"
+                  Value="@allMemories.Where(m => m.PersonId != null).Select(m => m.PersonId).Distinct().Count().ToString()" />
+    </div>
 </div>
+
+<!-- 过滤器 -->
+<div class="row g-2 mb-3">
+    <div class="col-md-2">
+        <select class="form-select form-select-sm" @bind="filterConfidence" @bind:after="ApplyFilter">
+            <option value="">全部置信度</option>
+            <option value="high">高置信</option>
+            <option value="low">低置信</option>
+        </select>
+    </div>
+    <div class="col-md-2">
+        <select class="form-select form-select-sm" @bind="filterPersonId" @bind:after="ApplyFilter">
+            <option value="0">全部人物</option>
+            @foreach (var pid in personIds)
+            {
+                <option value="@pid">P:@pid</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-4">
+        <div class="d-flex gap-1">
+            <input type="text" class="form-control form-control-sm" placeholder="搜索内容..."
+                   @bind="keyword" @bind:event="oninput" @bind:after="ApplyFilter" />
+        </div>
+    </div>
+    <div class="col-md-4 d-flex justify-content-end gap-2">
+        <button class="btn-ghost" @onclick="Reload">
+            <i class="bi bi-arrow-clockwise"></i> 刷新
+        </button>
+    </div>
+</div>
+
+<!-- 记忆列表 -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-list-ul me-1 text-accent"></i> 记忆条目</span>
+        <span class="text-muted-custom" style="font-size:var(--font-size-sm);">显示 @filtered.Count / @allMemories.Count</span>
+    </div>
+    <div class="card-body p-0">
+        @if (filtered.Count == 0)
+        {
+            <div class="p-3 text-muted-custom" style="text-align:center;">无匹配条目</div>
+        }
+        else
+        {
+            <div style="max-height:calc(100vh - 380px); overflow-y:auto;">
+                @foreach (var m in filtered)
+                {
+                    <div class="msg-item">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="d-flex gap-1 flex-wrap">
+                                @if (m.PersonId != null)
+                                {
+                                    <span class="badge-status badge-info">P:@m.PersonId</span>
+                                }
+                                @if (m.ChannelId != null)
+                                {
+                                    <span class="badge-status" style="background:var(--bg-elevated); color:var(--text-secondary);">Ch:@m.ChannelId</span>
+                                }
+                                <span class="badge-status @(m.Confidence == "low" ? "badge-working" : "badge-express")">
+                                    @m.Confidence
+                                </span>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                <small class="text-muted-custom">@m.CreatedAt.ToString("MM-dd HH:mm")</small>
+                                <button class="btn-ghost" style="padding:0.15rem 0.4rem; font-size:0.7rem; color:var(--status-error);"
+                                        @onclick="() => Delete(m)">
+                                    <i class="bi bi-trash3"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mt-1" style="color:var(--text-primary);">@m.Content</div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<TempMemoryEntry> allMemories = new();
+    private List<TempMemoryEntry> filtered = new();
+    private List<int> personIds = new();
+    private string filterConfidence = "";
+    private int filterPersonId = 0;
+    private string keyword = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAll();
+    }
+
+    private async Task LoadAll()
+    {
+        allMemories = await Engine.TempMemories.GetAllAsync();
+        personIds = allMemories
+            .Where(m => m.PersonId != null)
+            .Select(m => m.PersonId!.Value)
+            .Distinct()
+            .OrderBy(x => x)
+            .ToList();
+        ApplyFilter();
+    }
+
+    private void ApplyFilter()
+    {
+        var q = allMemories.AsEnumerable();
+
+        if (!string.IsNullOrEmpty(filterConfidence))
+            q = q.Where(m => m.Confidence == filterConfidence);
+
+        if (filterPersonId > 0)
+            q = q.Where(m => m.PersonId == filterPersonId);
+
+        if (!string.IsNullOrWhiteSpace(keyword))
+            q = q.Where(m => m.Content.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+
+        filtered = q.OrderByDescending(m => m.CreatedAt).ToList();
+    }
+
+    private async Task Reload()
+    {
+        await LoadAll();
+    }
+
+    private async Task Delete(TempMemoryEntry entry)
+    {
+        await Engine.TempMemories.DeleteAsync(entry);
+        allMemories.Remove(entry);
+        ApplyFilter();
+    }
+}
