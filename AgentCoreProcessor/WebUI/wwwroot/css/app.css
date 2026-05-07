@@ -582,6 +582,52 @@ body {
     box-shadow: 0 0 0 2px var(--accent-dim);
 }
 
+/* ===== Form Controls ===== */
+
+.config-label {
+    display: block;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    margin-bottom: 0.25rem;
+}
+
+.config-input {
+    display: block;
+    width: 100%;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+    padding: 0.4rem 0.6rem;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.config-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.config-input::placeholder {
+    color: var(--text-muted);
+    opacity: 0.7;
+}
+
+select.config-input {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.5rem center;
+    padding-right: 1.8rem;
+    cursor: pointer;
+}
+
+select.config-input option {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
 /* ===== Alert Bar ===== */
 
 .alert-bar {
@@ -1250,6 +1296,16 @@ body {
 }
 
 [data-theme="tech"] .config-field input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent-dim), 0 0 8px rgba(0, 212, 255, 0.2);
+}
+
+[data-theme="tech"] .config-input {
+    background: rgba(8, 14, 28, 0.6);
+    border: 1px solid var(--glass-border);
+}
+
+[data-theme="tech"] .config-input:focus {
     border-color: var(--accent);
     box-shadow: 0 0 0 1px var(--accent-dim), 0 0 8px rgba(0, 212, 255, 0.2);
 }
