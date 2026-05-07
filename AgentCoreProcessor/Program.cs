@@ -74,8 +74,8 @@ namespace AgentCoreProcessor
                 return 1;
             }
 
-            // --qq --test-send [channelId] [message]：连接 NapCat 并发送一条测试消息
-            if (qqMode && testSend)
+            // --test-send [channelId] [message]：连接适配器并发送一条测试消息
+            if (testSend)
             {
                 var tsIdx = Array.FindIndex(args, a => a == "--test-send");
                 var tsChannel = (tsIdx + 1 < args.Length && !args[tsIdx + 1].StartsWith("--"))
