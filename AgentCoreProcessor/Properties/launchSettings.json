@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "AgentCoreProcessor": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:4487;http://localhost:4488"
+    }
+  }
+}

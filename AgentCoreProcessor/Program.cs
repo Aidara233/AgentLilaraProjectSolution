@@ -48,7 +48,7 @@ namespace AgentCoreProcessor
             if (fileMode || testMode)
             {
                 var fileDir = Path.Combine(PathConfig.StoragePath, "FileAdapter");
-                fileAdapter = new FileAdapter(fileDir, pollIntervalMs: 2000);
+                fileAdapter = new FileAdapter("file-test", fileDir, pollIntervalMs: 2000);
                 adapterManager.RegisterAdapter(fileAdapter);
             }
 

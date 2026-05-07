@@ -15,6 +15,7 @@ namespace AgentCoreProcessor.Adapter
     /// </summary>
     public class FileAdapter : IAdapter
     {
+        public string Id { get; }
         public string Platform => "File";
 
         public event Action<IncomingMessage>? OnMessageReceived;
@@ -25,8 +26,14 @@ namespace AgentCoreProcessor.Adapter
         private CancellationTokenSource? cts;
         private int outputSeq = 0;
 
-        public FileAdapter(string baseDir, int pollIntervalMs = 2000)
+        private AdapterConnectionState state = AdapterConnectionState.Stopped;
+        private DateTime? startedAt;
+        private long messagesSent;
+        private long messagesReceived;
+
+        public FileAdapter(string id, string baseDir, int pollIntervalMs = 2000)
         {
+            Id = id;
             this.inputDir = Path.Combine(baseDir, "input");
             this.outputDir = Path.Combine(baseDir, "output");
             this.pollIntervalMs = pollIntervalMs;
@@ -40,11 +47,14 @@ namespace AgentCoreProcessor.Adapter
             var fileName = $"{seq:D3}_{safeChannel}_{ts}.txt";
             var content = $"[{DateTime.Now:HH:mm:ss}] channelId={message.ChannelId}\n{message.Content}\n";
             File.WriteAllText(Path.Combine(outputDir, fileName), content);
+            Interlocked.Increment(ref messagesSent);
             return Task.FromResult<string?>(null);
         }
 
         public async Task StartAsync(CancellationToken ct = default)
         {
+            state = AdapterConnectionState.Connected;
+            startedAt = DateTime.Now;
             cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
             Directory.CreateDirectory(inputDir);
@@ -114,6 +124,7 @@ namespace AgentCoreProcessor.Adapter
 
                     File.Delete(file);
                     OnMessageReceived?.Invoke(msg);
+                    Interlocked.Increment(ref messagesReceived);
                     count++;
                 }
                 catch (Exception ex)
@@ -151,6 +162,7 @@ namespace AgentCoreProcessor.Adapter
 
                     File.Delete(file);
                     OnMessageReceived?.Invoke(msg);
+                    Interlocked.Increment(ref messagesReceived);
                     count++;
                 }
                 catch (Exception ex)
@@ -258,7 +270,19 @@ namespace AgentCoreProcessor.Adapter
         public Task StopAsync()
         {
             cts?.Cancel();
+            state = AdapterConnectionState.Stopped;
             return Task.CompletedTask;
         }
+
+        public AdapterStatus GetStatus() => new()
+        {
+            Id = Id,
+            Platform = Platform,
+            Enabled = state != AdapterConnectionState.Stopped,
+            State = state,
+            StartedAt = startedAt,
+            MessagesSent = Interlocked.Read(ref messagesSent),
+            MessagesReceived = Interlocked.Read(ref messagesReceived)
+        };
     }
 }

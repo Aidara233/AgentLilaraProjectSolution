@@ -9,6 +9,7 @@ namespace AgentCoreProcessor.Adapter
         public required string PlatformUserId { get; set; }
         public required string ChannelId { get; set; }
         public required string Content { get; set; }
+        public string? AdapterId { get; set; }
 
         /// <summary>发言人显示名（群名片优先，昵称兜底）。适配器层填充。</summary>
         public string? DisplayName { get; set; }

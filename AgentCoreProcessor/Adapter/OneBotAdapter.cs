@@ -26,11 +26,12 @@ namespace AgentCoreProcessor.Adapter
 
     public class OneBotAdapter : IAdapter
     {
+        public string Id { get; }
         public string Platform => "qq";
         public event Action<IncomingMessage>? OnMessageReceived;
 
-        private readonly string configPath;
-        private OneBotConfig config = new();
+        private readonly string? configPath;
+        private OneBotConfig config;
         private ClientWebSocket? ws;
         private CancellationTokenSource? cts;
         private long selfId;
@@ -49,9 +50,30 @@ namespace AgentCoreProcessor.Adapter
         // 重连退避
         private const int MaxReconnectDelayMs = 30000;
 
+        // 状态跟踪
+        private AdapterConnectionState connectionState = AdapterConnectionState.Stopped;
+        private DateTime? startedAt;
+        private DateTime? lastMessageSentAt;
+        private DateTime? lastMessageReceivedAt;
+        private long messagesSent;
+        private long messagesReceived;
+        private int reconnectCount;
+        private string? lastError;
+        private DateTime? lastErrorAt;
+
+        public OneBotAdapter(string id, OneBotConfig config)
+        {
+            Id = id;
+            this.config = config;
+            this.configPath = null;
+        }
+
+        /// <summary>旧构造函数，兼容迁移期间使用。</summary>
         public OneBotAdapter(string configPath)
         {
+            Id = "qq-legacy";
             this.configPath = configPath;
+            this.config = new OneBotConfig();
         }
 
         // 接收循环任务，可供外部 await 以保持进程活跃
@@ -59,26 +81,28 @@ namespace AgentCoreProcessor.Adapter
 
         public async Task StartAsync(CancellationToken ct = default)
         {
-            // 加载配置
-            if (File.Exists(configPath))
+            // 旧构造函数路径：从文件加载配置
+            if (configPath != null && File.Exists(configPath))
             {
                 var json = File.ReadAllText(configPath);
                 config = JsonConvert.DeserializeObject<OneBotConfig>(json) ?? new OneBotConfig();
             }
-            else
-            {
-                FrameworkLogger.Log("OneBotAdapter", $"配置文件不存在: {configPath}，使用默认配置");
-            }
 
+            startedAt = DateTime.Now;
+            connectionState = AdapterConnectionState.Connecting;
             cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
             // 首次连接：失败不崩溃，交给重连循环处理
             try
             {
                 await ConnectAsync(cts.Token);
+                connectionState = AdapterConnectionState.Connected;
             }
             catch (Exception ex)
             {
+                connectionState = AdapterConnectionState.Reconnecting;
+                lastError = ex.Message;
+                lastErrorAt = DateTime.Now;
                 FrameworkLogger.Log("OneBotAdapter", $"首次连接失败（将在后台重连）: {ex.Message}");
             }
 
@@ -125,21 +149,18 @@ namespace AgentCoreProcessor.Adapter
             httpClient?.Dispose();
             ws = null;
 
+            connectionState = AdapterConnectionState.Stopped;
             FrameworkLogger.Log("OneBotAdapter", "已停止");
         }
 
         public Task ReloadConfigAsync()
         {
-            if (!File.Exists(configPath))
-            {
-                FrameworkLogger.Log("OneBotAdapter", $"配置文件不存在: {configPath}，跳过重载");
+            if (configPath == null || !File.Exists(configPath))
                 return Task.CompletedTask;
-            }
 
             var json = File.ReadAllText(configPath);
             var newConfig = JsonConvert.DeserializeObject<OneBotConfig>(json) ?? new OneBotConfig();
 
-            // 检查连接参数是否变化
             bool connectionChanged = newConfig.WsUrl != config.WsUrl || newConfig.Token != config.Token;
 
             config = newConfig;
@@ -151,6 +172,24 @@ namespace AgentCoreProcessor.Adapter
 
             return Task.CompletedTask;
         }
+
+        public AdapterStatus GetStatus() => new()
+        {
+            Id = Id,
+            Platform = Platform,
+            Enabled = connectionState != AdapterConnectionState.Stopped,
+            State = connectionState,
+            StartedAt = startedAt,
+            LastMessageSentAt = lastMessageSentAt,
+            LastMessageReceivedAt = lastMessageReceivedAt,
+            MessagesSent = Interlocked.Read(ref messagesSent),
+            MessagesReceived = Interlocked.Read(ref messagesReceived),
+            ReconnectCount = reconnectCount,
+            LastError = lastError,
+            LastErrorAt = lastErrorAt
+        };
+
+        internal OneBotConfig GetConfig() => config;
 
         public async Task<string?> SendMessageAsync(OutgoingMessage message)
         {
@@ -260,6 +299,8 @@ namespace AgentCoreProcessor.Adapter
                                 sentMessageIds.Clear();
                             sentMessageIds.Add(sentId);
                         }
+                        Interlocked.Increment(ref messagesSent);
+                        lastMessageSentAt = DateTime.Now;
                         return sentId.ToString();
                     }
                 }
@@ -302,6 +343,7 @@ namespace AgentCoreProcessor.Adapter
                 if (ct.IsCancellationRequested) break;
 
                 // 重连
+                connectionState = AdapterConnectionState.Reconnecting;
                 FrameworkLogger.Log("OneBotAdapter", $"将在 {reconnectDelayMs}ms 后重连...");
                 try
                 {
@@ -320,12 +362,16 @@ namespace AgentCoreProcessor.Adapter
                     {
                         selfId = 0;
                     }
+                    connectionState = AdapterConnectionState.Connected;
+                    reconnectCount++;
                     FrameworkLogger.Log("OneBotAdapter", $"重连成功，selfId={selfId}");
                     reconnectDelayMs = 1000;
                 }
                 catch (OperationCanceledException) { break; }
                 catch (Exception ex)
                 {
+                    lastError = ex.Message;
+                    lastErrorAt = DateTime.Now;
                     FrameworkLogger.Log("OneBotAdapter", $"重连失败: {ex.Message}");
                     reconnectDelayMs = Math.Min(reconnectDelayMs * 2, MaxReconnectDelayMs);
                 }
@@ -399,7 +445,11 @@ namespace AgentCoreProcessor.Adapter
 
             var msg = await ParseMessageEventAsync(data);
             if (msg != null)
+            {
+                Interlocked.Increment(ref messagesReceived);
+                lastMessageReceivedAt = DateTime.Now;
                 OnMessageReceived?.Invoke(msg);
+            }
         }
 
         private async Task<IncomingMessage?> ParseMessageEventAsync(JObject data)

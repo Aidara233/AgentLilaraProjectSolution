@@ -6,11 +6,17 @@ namespace AgentCoreProcessor.Adapter
 {
     public class ConsoleAdapter : IAdapter
     {
+        public string Id { get; }
         public string Platform => "Console";
 
         public event Action<IncomingMessage>? OnMessageReceived;
 
         private CancellationTokenSource? cts;
+
+        public ConsoleAdapter(string id = "console")
+        {
+            Id = id;
+        }
 
         public Task<string?> SendMessageAsync(OutgoingMessage message)
         {
@@ -57,5 +63,15 @@ namespace AgentCoreProcessor.Adapter
             cts?.Cancel();
             return Task.CompletedTask;
         }
+
+        public AdapterStatus GetStatus() => new()
+        {
+            Id = Id,
+            Platform = Platform,
+            Enabled = true,
+            State = cts != null && !cts.IsCancellationRequested
+                ? AdapterConnectionState.Connected
+                : AdapterConnectionState.Stopped
+        };
     }
 }
