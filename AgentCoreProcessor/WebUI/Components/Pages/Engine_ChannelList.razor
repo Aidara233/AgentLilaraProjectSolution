@@ -9,19 +9,44 @@
     <i class="bi bi-chat-dots"></i> 频道循环 — 频道列表
 </div>
 
+<!-- 统计卡片 -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <StatCard Label="活跃频道" Value="@snap.Workers.Count.ToString()"
+                  ValueClass="@(snap.Workers.Count > 0 ? "accent" : "")" />
+    </div>
+    <div class="col-md-3">
+        <StatCard Label="处理中"
+                  Value="@snap.Workers.Count(w => w.IsBusy).ToString()"
+                  ValueClass="@(snap.Workers.Any(w => w.IsBusy) ? "error" : "")" />
+    </div>
+    <div class="col-md-3">
+        <StatCard Label="总消息速率"
+                  Value="@snap.Workers.Sum(w => w.MessageRate).ToString("F1")"
+                  ValueClass="accent" />
+    </div>
+    <div class="col-md-3">
+        <StatCard Label="Working 模式"
+                  Value="@snap.Workers.Count(w => w.IsWorkingMode).ToString()" />
+    </div>
+</div>
+
+<!-- 频道表格 -->
 @if (snap.Workers.Count == 0)
 {
-    <div class="page-placeholder">
-        <i class="bi bi-chat-dots"></i>
-        <span>当前无活跃频道</span>
+    <div class="card">
+        <div class="card-body text-muted-custom">当前无活跃频道</div>
     </div>
 }
 else
 {
-    <div class="card" style="background: var(--card-bg); border-color: var(--border-color);">
+    <div class="card">
+        <div class="card-header">
+            <i class="bi bi-diagram-3 me-1 text-accent"></i> 活跃频道
+        </div>
         <div class="card-body p-0">
-            <table class="table table-sm table-hover mb-0" style="color: var(--text-primary); --bs-table-hover-bg: var(--hover-bg);">
-                <thead style="background: var(--bg-tertiary);">
+            <table class="table-dark-custom">
+                <thead>
                     <tr>
                         <th>频道</th>
                         <th>模式</th>
@@ -30,29 +55,42 @@ else
                         <th>消息速率</th>
                         <th>轮次</th>
                         <th>参与者</th>
+                        <th>已处理</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var w in snap.Workers)
+                    @foreach (var w in snap.Workers.OrderByDescending(w => w.Impulse))
                     {
                         <tr style="cursor:pointer" @onclick="() => NavToChannel(w.ChannelId)">
                             <td>
-                                #@w.ChannelId
+                                <span class="text-accent">#@w.ChannelId</span>
                                 @if (!string.IsNullOrEmpty(w.ChannelName))
                                 {
-                                    <small class="text-muted ms-1">@w.ChannelName</small>
+                                    <span class="text-muted-custom ms-1">@w.ChannelName</span>
                                 }
                             </td>
                             <td>
-                                <span class="badge @(w.IsWorkingMode ? "bg-warning" : "bg-info")">
+                                <span class="badge-status @(w.IsWorkingMode ? "badge-working" : "badge-express")">
                                     @(w.IsWorkingMode ? "Working" : "Express")
                                 </span>
                             </td>
-                            <td>@(w.IsBusy ? "处理中" : "等待")</td>
-                            <td>@w.Impulse.ToString("F2")</td>
-                            <td>@w.MessageRate.ToString("F2")</td>
+                            <td>
+                                @if (w.IsBusy)
+                                {
+                                    <span class="text-error">处理中</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted-custom">等待</span>
+                                }
+                            </td>
+                            <td>
+                                <span class="@ImpulseClass(w.Impulse)">@w.Impulse.ToString("F2")</span>
+                            </td>
+                            <td>@w.MessageRate.ToString("F1")</td>
                             <td>@w.TotalRounds</td>
                             <td>@w.ParticipantCount</td>
+                            <td>@w.ProcessedMessageCount</td>
                         </tr>
                     }
                 </tbody>
@@ -80,6 +118,13 @@ else
     {
         Nav.NavigateTo($"/engine/channels/{channelId}");
     }
+
+    private static string ImpulseClass(float impulse) => impulse switch
+    {
+        >= 0.8f => "text-error",
+        >= 0.5f => "text-warning-custom",
+        _ => ""
+    };
 
     public void Dispose() => Monitor.OnStateChanged -= OnStateChanged;
 }

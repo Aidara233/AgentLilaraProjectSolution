@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace AgentCoreProcessor.WebUI.Services
 {
@@ -12,5 +13,17 @@ namespace AgentCoreProcessor.WebUI.Services
         public float? SleepScore { get; init; }
         public DateTime? SleepRequestTime { get; init; }
         public DateTime LastHealthCheck { get; init; }
+        public List<SubAgentInfo> SubAgents { get; init; } = new();
+        public Dictionary<string, string> PinboardEntries { get; init; } = new();
+        public Dictionary<string, string> ThinkingNotes { get; init; } = new();
+        public int ContextRoundCount { get; init; }
+        public bool HasContextSummary { get; init; }
+    }
+
+    internal class SubAgentInfo
+    {
+        public string SessionId { get; init; } = "";
+        public string Type { get; init; } = "";
+        public bool IsAlive { get; init; }
     }
 }

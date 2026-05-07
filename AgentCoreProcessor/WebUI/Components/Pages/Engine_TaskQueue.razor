@@ -1,11 +1,133 @@
 @page "/engine/system/tasks"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using AgentCoreProcessor.WebUI.Services
+@inject SystemMonitor Monitor
+@implements IDisposable
 
 <div class="page-title">
     <i class="bi bi-list-task"></i> 系统循环 — 任务队列
 </div>
 
-<div class="page-placeholder">
-    <i class="bi bi-list-task"></i>
-    <span>任务队列详情页（开发中）</span>
+<!-- 状态卡片 -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <StatCard Label="系统循环"
+                  Value="@(sysSnap.IsAlive ? "运行中" : "未启动")"
+                  ValueClass="@(sysSnap.IsAlive ? "ok" : "error")" />
+    </div>
+    <div class="col-md-3">
+        <StatCard Label="队列深度"
+                  Value="@sysSnap.TaskQueueDepth.ToString()"
+                  ValueClass="@(sysSnap.TaskQueueDepth > 0 ? "accent" : "")" />
+    </div>
+    <div class="col-md-3">
+        <StatCard Label="活跃子agent"
+                  Value="@sysSnap.ActiveSubAgentCount.ToString()" />
+    </div>
+    <div class="col-md-3">
+        <StatCard Label="上次健康检查"
+                  Value="@(sysSnap.LastHealthCheck == default ? "—" : sysSnap.LastHealthCheck.ToString("HH:mm:ss"))" />
+    </div>
 </div>
+
+<!-- 睡觉请求 -->
+<div class="card mb-4">
+    <div class="card-header">
+        <i class="bi bi-moon me-1 text-accent"></i> 睡觉请求
+    </div>
+    <div class="card-body">
+        @if (!sysSnap.HasPendingSleepRequest)
+        {
+            <span class="text-muted-custom">当前无待处理的睡觉请求</span>
+        }
+        else
+        {
+            <div class="d-flex flex-wrap gap-4">
+                <div>
+                    <div class="stat-label">请求 ID</div>
+                    <span class="text-accent">@sysSnap.SleepRequestId</span>
+                </div>
+                <div>
+                    <div class="stat-label">评分</div>
+                    <span class="@ScoreClass(sysSnap.SleepScore)">@(sysSnap.SleepScore?.ToString("F1") ?? "—")</span>
+                </div>
+                <div>
+                    <div class="stat-label">提交时间</div>
+                    <span>@(sysSnap.SleepRequestTime?.ToString("HH:mm:ss") ?? "—")</span>
+                </div>
+                <div>
+                    <div class="stat-label">等待时长</div>
+                    <span>@FormatWait(sysSnap.SleepRequestTime)</span>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<!-- 队列说明 -->
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-info-circle me-1 text-accent"></i> 任务队列机制
+    </div>
+    <div class="card-body">
+        <p class="text-secondary-custom mb-2">
+            任务队列是频道循环与系统循环之间的异步通信桥梁。频道循环通过 TaskBridge 提交重量级请求（如跨频道操作、全局状态变更），
+            系统循环按优先级消费并分配给子 agent 执行。
+        </p>
+        <div class="d-flex flex-wrap gap-4">
+            <div>
+                <div class="stat-label">通信方式</div>
+                <span>Channel&lt;SystemTask&gt;</span>
+            </div>
+            <div>
+                <div class="stat-label">持久化</div>
+                <span>task_queue.json</span>
+            </div>
+            <div>
+                <div class="stat-label">超时策略</div>
+                <span>提交方等待超时后返回失败</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private SystemEngineSnapshot sysSnap = new();
+
+    protected override void OnInitialized()
+    {
+        UpdateSnapshot();
+        Monitor.OnStateChanged += OnStateChanged;
+    }
+
+    private void OnStateChanged()
+    {
+        UpdateSnapshot();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void UpdateSnapshot()
+    {
+        sysSnap = Monitor.Current.SystemEngine ?? new SystemEngineSnapshot();
+    }
+
+    private static string ScoreClass(float? score) => score switch
+    {
+        >= 80 => "text-error",
+        >= 60 => "text-warning-custom",
+        _ => "text-secondary-custom"
+    };
+
+    private static string FormatWait(DateTime? time)
+    {
+        if (time == null) return "—";
+        var elapsed = DateTime.Now - time.Value;
+        if (elapsed.TotalMinutes >= 1) return $"{elapsed.Minutes}m {elapsed.Seconds}s";
+        return $"{elapsed.Seconds}s";
+    }
+
+    public void Dispose()
+    {
+        Monitor.OnStateChanged -= OnStateChanged;
+    }
+}

@@ -13,6 +13,9 @@ namespace AgentCoreProcessor.Engine.Modules
 
         private readonly Dictionary<string, string> notes = new();
 
+        /// <summary>获取思考笔记引用（供快照读取）。</summary>
+        public Dictionary<string, string> Notes => notes;
+
         public override void Attach(ILoopBus bus)
         {
             bus.Subscribe<ToolExecutedEvent>(e =>

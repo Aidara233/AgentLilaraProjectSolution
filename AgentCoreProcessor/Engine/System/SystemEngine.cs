@@ -305,22 +305,37 @@ namespace AgentCoreProcessor.Engine
 
         internal WebUI.Services.SystemEngineSnapshot GetSnapshot()
         {
-            int subAgentCount;
+            var agentInfos = new System.Collections.Generic.List<WebUI.Services.SubAgentInfo>();
             lock (subAgentLock)
             {
-                subAgentCount = subAgents.Count(kv => kv.Value.IsAlive);
+                foreach (var kv in subAgents)
+                {
+                    agentInfos.Add(new WebUI.Services.SubAgentInfo
+                    {
+                        SessionId = kv.Value.SessionId,
+                        Type = kv.Value.Type.ToString(),
+                        IsAlive = kv.Value.IsAlive
+                    });
+                }
             }
+
+            var (summary, rounds) = persistence.LoadContext();
 
             return new WebUI.Services.SystemEngineSnapshot
             {
                 IsAlive = IsAlive,
                 TaskQueueDepth = ctx.TaskBridge.PendingTaskCount,
-                ActiveSubAgentCount = subAgentCount,
+                ActiveSubAgentCount = agentInfos.Count(a => a.IsAlive),
                 HasPendingSleepRequest = pendingSleepRequest != null,
                 SleepRequestId = pendingSleepRequest?.RequestId,
                 SleepScore = pendingSleepRequest?.Score,
                 SleepRequestTime = pendingSleepRequest?.RequestTime,
-                LastHealthCheck = lastSleepCheck
+                LastHealthCheck = lastSleepCheck,
+                SubAgents = agentInfos,
+                PinboardEntries = new(pinboardModule.Entries),
+                ThinkingNotes = new(thinkingNotesModule.Notes),
+                ContextRoundCount = rounds.Count,
+                HasContextSummary = summary != null
             };
         }
 

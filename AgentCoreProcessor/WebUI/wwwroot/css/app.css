@@ -527,6 +527,129 @@ body {
     background: var(--bg-hover);
 }
 
+.btn-primary-custom {
+    background: var(--accent);
+    color: var(--bg-primary);
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 0.4rem 1rem;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.btn-primary-custom:hover {
+    opacity: 0.85;
+    box-shadow: 0 0 8px var(--accent-dim);
+}
+
+/* ===== Config Form ===== */
+
+.config-field {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.config-field:last-child {
+    border-bottom: none;
+}
+
+.config-field label {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.config-field input {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+    padding: 0.3rem 0.6rem;
+    width: 120px;
+    text-align: right;
+}
+
+.config-field input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+/* ===== Alert Bar ===== */
+
+.alert-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.8rem;
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+}
+
+.alert-bar.alert-ok {
+    background: rgba(0, 200, 100, 0.1);
+    border: 1px solid rgba(0, 200, 100, 0.3);
+    color: var(--status-ok);
+}
+
+.alert-bar.alert-error {
+    background: rgba(255, 80, 80, 0.1);
+    border: 1px solid rgba(255, 80, 80, 0.3);
+    color: var(--status-error);
+}
+
+/* ===== Pinboard ===== */
+
+.pinboard-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.pinboard-item {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.35rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: var(--font-size-sm);
+}
+
+.pinboard-item:last-child {
+    border-bottom: none;
+}
+
+.pinboard-label {
+    color: var(--accent);
+    font-weight: 600;
+    white-space: nowrap;
+    min-width: 80px;
+}
+
+.pinboard-content {
+    color: var(--text-secondary);
+}
+
+/* ===== Quick Link Card ===== */
+
+.quick-link-card {
+    text-decoration: none;
+    color: inherit;
+    transition: all var(--transition-fast);
+}
+
+.quick-link-card:hover {
+    border-color: var(--accent);
+    background: var(--bg-hover);
+    color: inherit;
+}
+
 /* ===== Scrollbar ===== */
 
 ::-webkit-scrollbar {
@@ -1056,15 +1179,14 @@ body {
     left: 50%;
     width: 0;
     height: 2px;
-    background: var(--accent);
+    background: currentColor;
     transition: width 0.25s ease, left 0.25s ease;
 }
 
 [data-theme="tech"] .btn-ghost:hover {
-    background: var(--accent-dim);
-    border-top-color: rgba(0, 200, 255, 0.3);
+    background: color-mix(in srgb, currentColor 6%, transparent);
+    border-top-color: color-mix(in srgb, currentColor 30%, transparent);
     border-bottom-color: transparent;
-    color: var(--accent);
 }
 
 [data-theme="tech"] .btn-ghost:hover::after {
@@ -1119,4 +1241,69 @@ body {
 
 [data-theme="tech"] ::-webkit-scrollbar-thumb:hover {
     background: rgba(0, 200, 255, 0.4);
+}
+
+/* Config field — tech */
+[data-theme="tech"] .config-field input {
+    background: rgba(8, 14, 28, 0.6);
+    border: 1px solid var(--glass-border);
+}
+
+[data-theme="tech"] .config-field input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent-dim), 0 0 8px rgba(0, 212, 255, 0.2);
+}
+
+/* Primary button — tech (D-style corner marks) */
+[data-theme="tech"] .btn-primary-custom {
+    background: transparent;
+    color: var(--accent);
+    border: none;
+    position: relative;
+    padding: 0.5rem 1.2rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+[data-theme="tech"] .btn-primary-custom::before,
+[data-theme="tech"] .btn-primary-custom::after {
+    content: '';
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    border-color: var(--accent);
+    border-style: solid;
+}
+
+[data-theme="tech"] .btn-primary-custom::before {
+    top: 0; left: 0;
+    border-width: 1.5px 0 0 1.5px;
+}
+
+[data-theme="tech"] .btn-primary-custom::after {
+    bottom: 0; right: 0;
+    border-width: 0 1.5px 1.5px 0;
+}
+
+[data-theme="tech"] .btn-primary-custom:hover {
+    background: var(--accent-dim);
+    box-shadow: var(--accent-glow);
+}
+
+/* Alert bar — tech */
+[data-theme="tech"] .alert-bar {
+    border-radius: 0;
+    border: none;
+    border-left: 3px solid;
+    background: var(--glass-bg);
+    backdrop-filter: blur(8px);
+}
+
+[data-theme="tech"] .alert-bar.alert-ok {
+    border-left-color: var(--status-ok);
+}
+
+[data-theme="tech"] .alert-bar.alert-error {
+    border-left-color: var(--status-error);
 }

@@ -1,11 +1,133 @@
 @page "/engine/system/agents"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using AgentCoreProcessor.WebUI.Services
+@inject SystemMonitor Monitor
+@implements IDisposable
 
 <div class="page-title">
     <i class="bi bi-people"></i> 系统循环 — 子agent
 </div>
 
-<div class="page-placeholder">
-    <i class="bi bi-people"></i>
-    <span>子agent管理页（开发中）</span>
+<!-- 状态卡片 -->
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <StatCard Label="活跃会话"
+                  Value="@agents.Count(a => a.IsAlive).ToString()"
+                  ValueClass="@(agents.Any(a => a.IsAlive) ? "accent" : "")" />
+    </div>
+    <div class="col-md-4">
+        <StatCard Label="任务类型"
+                  Value="@agents.Count(a => a.Type == "Task").ToString()" />
+    </div>
+    <div class="col-md-4">
+        <StatCard Label="监控类型"
+                  Value="@agents.Count(a => a.Type == "Monitor").ToString()" />
+    </div>
 </div>
+
+<!-- 会话列表 -->
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-diagram-3 me-1 text-accent"></i> 会话列表
+    </div>
+    <div class="card-body p-0">
+        @if (agents.Count == 0)
+        {
+            <div class="p-3 text-muted-custom">当前无活跃子agent</div>
+        }
+        else
+        {
+            <table class="table-dark-custom">
+                <thead>
+                    <tr>
+                        <th>会话 ID</th>
+                        <th>类型</th>
+                        <th>状态</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var agent in agents)
+                    {
+                        <tr>
+                            <td><code>@agent.SessionId</code></td>
+                            <td>
+                                <span class="badge-status @TypeBadge(agent.Type)">@agent.Type</span>
+                            </td>
+                            <td>
+                                @if (agent.IsAlive)
+                                {
+                                    <span class="text-ok">运行中</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted-custom">已停止</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+<!-- 说明 -->
+<div class="card mt-4">
+    <div class="card-header">
+        <i class="bi bi-info-circle me-1 text-accent"></i> 子agent 机制
+    </div>
+    <div class="card-body">
+        <p class="text-secondary-custom mb-2">
+            子agent 由系统循环按需创建，用于执行跨频道任务或后台监控。任务类型为一次性执行后销毁，监控类型长期运行。
+            所有子agent 共享工具白名单，禁止嵌套创建子agent。
+        </p>
+        <div class="d-flex flex-wrap gap-4">
+            <div>
+                <div class="stat-label">会话类型</div>
+                <span>Task / Monitor / Channel</span>
+            </div>
+            <div>
+                <div class="stat-label">生命周期</div>
+                <span>Task 用完即毁，Monitor 长期驻留</span>
+            </div>
+            <div>
+                <div class="stat-label">通信方式</div>
+                <span>SendInstructionAsync 单向指令</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<SubAgentInfo> agents = new();
+
+    protected override void OnInitialized()
+    {
+        UpdateAgents();
+        Monitor.OnStateChanged += OnStateChanged;
+    }
+
+    private void OnStateChanged()
+    {
+        UpdateAgents();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void UpdateAgents()
+    {
+        agents = Monitor.Current.SystemEngine?.SubAgents ?? new();
+    }
+
+    private static string TypeBadge(string type) => type switch
+    {
+        "Task" => "badge-working",
+        "Monitor" => "badge-info",
+        "Channel" => "badge-express",
+        _ => "badge-info"
+    };
+
+    public void Dispose()
+    {
+        Monitor.OnStateChanged -= OnStateChanged;
+    }
+}
