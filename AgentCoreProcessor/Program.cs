@@ -85,18 +85,35 @@ namespace AgentCoreProcessor
 
                 var qqAdapter = adapterManager.GetAdapter("qq");
                 if (qqAdapter != null)
+                {
                     await qqAdapter.StartAsync();
+                    await Task.Delay(2000);
+                    var status = qqAdapter.GetStatus();
+                    if (status.State != AdapterConnectionState.Connected)
+                    {
+                        Console.WriteLine($"[test-send] 适配器未能连接 (状态: {status.State}, 错误: {status.LastError})");
+                        await adapterManager.StopAllAsync();
+                        return 1;
+                    }
+                }
                 else
                 {
                     Console.WriteLine("[test-send] 未找到 qq 平台适配器");
                     return 1;
                 }
-                await adapterManager.SendMessageAsync("qq", new OutgoingMessage
+                var sendResult = await adapterManager.SendMessageAsync("qq", new OutgoingMessage
                 {
                     ChannelId = tsChannel,
                     Content = tsContent
                 });
-                Console.WriteLine($"[test-send] 测试消息已发送 → {tsChannel}");
+                if (sendResult != null)
+                    Console.WriteLine($"[test-send] 测试消息已发送 → {tsChannel} (msgId={sendResult})");
+                else
+                {
+                    Console.WriteLine($"[test-send] 发送失败 → {tsChannel}（连接超时或 API 返回错误）");
+                    await adapterManager.StopAllAsync();
+                    return 1;
+                }
                 await adapterManager.StopAllAsync();
                 return 0;
             }
