@@ -1,11 +1,165 @@
 @page "/adapters"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using AgentCoreProcessor.Adapter
+@inject AdapterManager Adapters
+@implements IDisposable
 
 <div class="page-title">
     <i class="bi bi-plug"></i> 适配器 — 概览
 </div>
 
-<div class="page-placeholder">
-    <i class="bi bi-plug"></i>
-    <span>适配器状态概览页（开发中）</span>
+<!-- 统计卡片 -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <StatCard Label="已注册" Value="@statuses.Count.ToString()" />
+    </div>
+    <div class="col-md-3">
+        <StatCard Label="已启用"
+                  Value="@statuses.Count(s => s.Enabled).ToString()"
+                  ValueClass="@(statuses.Any(s => s.Enabled) ? "accent" : "")" />
+    </div>
+    <div class="col-md-3">
+        <StatCard Label="已连接"
+                  Value="@statuses.Count(s => s.State == AdapterConnectionState.Connected).ToString()"
+                  ValueClass="ok" />
+    </div>
+    <div class="col-md-3">
+        <StatCard Label="总收发"
+                  Value="@($"{statuses.Sum(s => s.MessagesReceived)}↓ / {statuses.Sum(s => s.MessagesSent)}↑")" />
+    </div>
 </div>
+
+<!-- 适配器列表 -->
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-diagram-3 me-1 text-accent"></i> 实例列表
+    </div>
+    <div class="card-body p-0">
+        @if (statuses.Count == 0)
+        {
+            <div class="p-3 text-muted-custom">无已注册的适配器</div>
+        }
+        else
+        {
+            <table class="table-dark-custom">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>平台</th>
+                        <th>状态</th>
+                        <th>启用</th>
+                        <th>收到</th>
+                        <th>发送</th>
+                        <th>重连</th>
+                        <th>最后错误</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var s in statuses)
+                    {
+                        <tr>
+                            <td><code>@s.Id</code></td>
+                            <td>@s.Platform</td>
+                            <td>
+                                <span class="@StateClass(s.State)">@StateLabel(s.State)</span>
+                            </td>
+                            <td>
+                                @if (s.Enabled)
+                                {
+                                    <span class="text-ok">是</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted-custom">否</span>
+                                }
+                            </td>
+                            <td>@s.MessagesReceived</td>
+                            <td>@s.MessagesSent</td>
+                            <td>@s.ReconnectCount</td>
+                            <td>
+                                @if (s.LastError != null)
+                                {
+                                    <span class="text-error" title="@s.LastErrorAt?.ToString("MM-dd HH:mm")">
+                                        @Truncate(s.LastError, 30)
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted-custom">—</span>
+                                }
+                            </td>
+                            <td>
+                                @if (s.Enabled)
+                                {
+                                    <button class="btn-ghost" style="padding:0.2rem 0.5rem; font-size:0.75rem; color:var(--status-error);"
+                                            @onclick="() => Disable(s.Id)">禁用</button>
+                                }
+                                else
+                                {
+                                    <button class="btn-ghost" style="padding:0.2rem 0.5rem; font-size:0.75rem;"
+                                            @onclick="() => Enable(s.Id)">启用</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+@code {
+    private List<AdapterStatus> statuses = new();
+    private System.Threading.Timer? refreshTimer;
+
+    protected override void OnInitialized()
+    {
+        Refresh();
+        refreshTimer = new System.Threading.Timer(_ =>
+        {
+            Refresh();
+            InvokeAsync(StateHasChanged);
+        }, null, 2000, 2000);
+    }
+
+    private void Refresh()
+    {
+        statuses = Adapters.GetAllStatuses();
+    }
+
+    private async Task Enable(string id)
+    {
+        await Adapters.EnableAsync(id);
+        Refresh();
+    }
+
+    private async Task Disable(string id)
+    {
+        await Adapters.DisableAsync(id);
+        Refresh();
+    }
+
+    private static string StateClass(AdapterConnectionState state) => state switch
+    {
+        AdapterConnectionState.Connected => "text-ok",
+        AdapterConnectionState.Reconnecting => "text-warning-custom",
+        AdapterConnectionState.Error => "text-error",
+        AdapterConnectionState.Connecting => "text-accent",
+        _ => "text-muted-custom"
+    };
+
+    private static string StateLabel(AdapterConnectionState state) => state switch
+    {
+        AdapterConnectionState.Connected => "已连接",
+        AdapterConnectionState.Reconnecting => "重连中",
+        AdapterConnectionState.Error => "错误",
+        AdapterConnectionState.Connecting => "连接中",
+        AdapterConnectionState.Stopped => "已停止",
+        _ => "未知"
+    };
+
+    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "...";
+
+    public void Dispose() => refreshTimer?.Dispose();
+}
