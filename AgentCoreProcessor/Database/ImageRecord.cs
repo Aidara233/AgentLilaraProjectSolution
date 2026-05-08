@@ -12,6 +12,9 @@ namespace AgentCoreProcessor.Database
         public string Hash { get; set; } = "";
         public string LocalPath { get; set; } = "";
         public string? SourceUrl { get; set; }
+        public string? Category { get; set; }
+        public string? Description { get; set; }
+        public int SeenCount { get; set; } = 0;
         public DateTime CreatedAt { get; set; }
     }
 }

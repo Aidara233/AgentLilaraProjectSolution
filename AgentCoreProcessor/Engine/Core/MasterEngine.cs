@@ -174,6 +174,21 @@ namespace AgentCoreProcessor.Engine
                 FrameworkLogger.Log("MasterEngine", "记忆表已重建（schema v2）");
             }
 
+            // ImageRecord 扩展（v3: 加 Category/Description/SeenCount）
+            var schemaV3 = Path.Combine(databaseDirectory, ".image_schema_v3");
+            if (!File.Exists(schemaV3))
+            {
+                try
+                {
+                    await db.ExecuteAsync("ALTER TABLE ImageRecords ADD COLUMN Category TEXT");
+                    await db.ExecuteAsync("ALTER TABLE ImageRecords ADD COLUMN Description TEXT");
+                    await db.ExecuteAsync("ALTER TABLE ImageRecords ADD COLUMN SeenCount INTEGER DEFAULT 0");
+                }
+                catch { }
+                await File.WriteAllTextAsync(schemaV3, "migrated");
+                FrameworkLogger.Log("MasterEngine", "ImageRecords 已迁移（schema v3）");
+            }
+
             // Repository
             var persons = new PersonRepository(db);
             var users = new UserRepository(db, persons);

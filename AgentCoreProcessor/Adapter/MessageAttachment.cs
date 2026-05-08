@@ -28,6 +28,9 @@ namespace AgentCoreProcessor.Adapter
         /// <summary>内容哈希（用于去重和数据库关联）</summary>
         public string? Hash { get; set; }
 
+        /// <summary>图片分类：sticker(表情包) / image(普通图片)</summary>
+        public string? Category { get; set; }
+
         /// <summary>文件大小（字节）</summary>
         public long? FileSize { get; set; }
     }

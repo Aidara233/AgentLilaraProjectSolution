@@ -130,6 +130,16 @@ namespace AgentCoreProcessor.Adapter
                             try
                             {
                                 var (localPath, imgHash) = await ImageStorage.DownloadAndSaveAsync(imageUrl, adapter.HttpClient);
+
+                                // 表情包识别：sub_type=1 或有 emoji_id → sticker
+                                var subType = segData["sub_type"]?.Value<int>() ?? 0;
+                                var emojiId = segData["emoji_id"]?.ToString();
+                                var imgCategory = (subType == 1 || !string.IsNullOrEmpty(emojiId))
+                                    ? "sticker" : "image";
+
+                                // 更新 ImageRecord 的 category
+                                await ImageStorage.SetCategoryAsync(imgHash, imgCategory);
+
                                 attachments ??= new List<MessageAttachment>();
                                 attachments.Add(new MessageAttachment
                                 {
@@ -137,7 +147,8 @@ namespace AgentCoreProcessor.Adapter
                                     SourceUrl = imageUrl,
                                     LocalPath = localPath,
                                     FileName = Path.GetFileName(localPath),
-                                    Hash = imgHash
+                                    Hash = imgHash,
+                                    Category = imgCategory
                                 });
                             }
                             catch (Exception ex)

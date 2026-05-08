@@ -114,6 +114,7 @@ namespace AgentCoreProcessor.Engine
         // Working 会话状态（跨闸门轮次保持）
         private string? currentContextXml;
         private List<string>? currentImagePaths;
+        private List<string>? currentImageDescriptions;
         private Dictionary<int, ParticipantInfo>? currentParticipantSnapshot;
         private IncomingMessage? currentLastMsg;
         private SessionContext? currentLastSc;
@@ -125,7 +126,7 @@ namespace AgentCoreProcessor.Engine
         private CancellationTokenSource? _bufferTimerCts;
 
         // 未消费的图片路径
-        private readonly List<string> pendingImagePaths = new();
+        private readonly List<(string Path, string? Hash, string? Category)> pendingImageInfos = new();
 
         // Phase 6: 关注规则
         private readonly object watchRulesLock = new();
@@ -345,13 +346,18 @@ namespace AgentCoreProcessor.Engine
                 }
                 if (!impulseTracker.ShouldRespond(batch, LastCompletionTime)) return false;
 
-                // 消费 pending 图片
+                // 消费 pending 图片，检查描述缓存
+                List<(string Path, string? Hash, string? Category)> pendingCopy;
                 lock (bufferLock)
                 {
-                    currentImagePaths = pendingImagePaths.Count > 0
-                        ? new List<string>(pendingImagePaths) : null;
-                    pendingImagePaths.Clear();
+                    pendingCopy = pendingImageInfos.Count > 0
+                        ? new List<(string, string?, string?)>(pendingImageInfos) : new();
+                    pendingImageInfos.Clear();
                 }
+                currentImagePaths = null;
+            currentImageDescriptions = null;
+                if (pendingCopy.Count > 0)
+                    currentImagePaths = await ResolveImagePresentationAsync(pendingCopy);
 
                 // 标记已处理
                 foreach (var (msg, _) in batch)
@@ -420,13 +426,18 @@ namespace AgentCoreProcessor.Engine
                 currentImagePaths ??= new List<string>();
                 currentImagePaths.AddRange(quotedImagePaths);
             }
+
+            // 注入图片信息到上下文
+            var imageNotes = new List<string>();
+            if (currentImageDescriptions?.Count > 0)
+                imageNotes.AddRange(currentImageDescriptions);
             if (currentImagePaths?.Count > 0)
             {
-                var prefix = currentImagePaths.Count == 1
-                    ? "（用户发送了一张图片）"
-                    : $"（用户发送了{currentImagePaths.Count}张图片）";
-                xml += $"\n\n{prefix}";
+                var rawCount = currentImagePaths.Count;
+                imageNotes.Add(rawCount == 1 ? "（用户发送了一张图片）" : $"（用户发送了{rawCount}张图片）");
             }
+            if (imageNotes.Count > 0)
+                xml += "\n\n" + string.Join("\n", imageNotes);
             currentContextXml = xml;
 
             // 刷新记忆
@@ -500,6 +511,7 @@ namespace AgentCoreProcessor.Engine
 
             // 图片只在首次使用后清除
             currentImagePaths = null;
+            currentImageDescriptions = null;
             return messages;
         }
 
@@ -1001,7 +1013,57 @@ namespace AgentCoreProcessor.Engine
             foreach (var a in msg.Attachments)
             {
                 if (a.Type == AttachmentType.Image && !string.IsNullOrEmpty(a.LocalPath))
-                    pendingImagePaths.Add(a.LocalPath!);
+                    pendingImageInfos.Add((a.LocalPath!, a.Hash, a.Category));
+            }
+        }
+
+        private async Task<List<string>?> ResolveImagePresentationAsync(
+            List<(string Path, string? Hash, string? Category)> images)
+        {
+            var rawPaths = new List<string>();
+            currentImageDescriptions = new List<string>();
+
+            foreach (var (path, hash, category) in images)
+            {
+                if (!string.IsNullOrEmpty(hash))
+                    _ = ImageStorage.IncrementSeenCountAsync(hash);
+
+                // 检查缓存描述
+                string? desc = null;
+                if (!string.IsNullOrEmpty(hash))
+                    desc = await ImageStorage.GetDescriptionAsync(hash);
+
+                if (!string.IsNullOrEmpty(desc))
+                {
+                    var label = category == "sticker" ? "表情包" : "图片";
+                    currentImageDescriptions.Add($"（{label}：{desc}）");
+                }
+                else
+                {
+                    rawPaths.Add(path);
+                    if (!string.IsNullOrEmpty(hash))
+                        _ = GenerateDescriptionAsync(path, hash, category);
+                }
+            }
+
+            return rawPaths.Count > 0 ? rawPaths : null;
+        }
+
+        private async Task GenerateDescriptionAsync(string path, string hash, string? category)
+        {
+            if (ctx.Vision == null) return;
+            try
+            {
+                var hint = category == "sticker"
+                    ? "这是一张聊天表情包，用10字以内描述其表达的情绪或动作"
+                    : null;
+                var desc = await ctx.Vision.DescribeImageAsync(path, hint);
+                if (!string.IsNullOrEmpty(desc))
+                    await ImageStorage.UpdateDescriptionAsync(hash, desc);
+            }
+            catch (Exception ex)
+            {
+                FrameworkLogger.Log("ChannelEngine", $"图片描述生成失败: {ex.Message}");
             }
         }
 

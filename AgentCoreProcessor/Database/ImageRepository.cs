@@ -34,5 +34,26 @@ namespace AgentCoreProcessor.Database
         }
 
         public Task UpdateAsync(ImageRecord record) => db.UpdateAsync(record);
+
+        public async Task IncrementSeenCountAsync(string hash)
+        {
+            var record = await GetByHashAsync(hash);
+            if (record != null)
+            {
+                record.SeenCount++;
+                await db.UpdateAsync(record);
+            }
+        }
+
+        public async Task UpdateDescriptionAsync(string hash, string description, string? category = null)
+        {
+            var record = await GetByHashAsync(hash);
+            if (record != null)
+            {
+                record.Description = description;
+                if (category != null) record.Category = category;
+                await db.UpdateAsync(record);
+            }
+        }
     }
 }

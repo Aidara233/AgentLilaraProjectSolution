@@ -125,6 +125,43 @@ namespace AgentCoreProcessor.Adapter
             return paths;
         }
 
+        public static async Task SetCategoryAsync(string hash, string category)
+        {
+            if (_repo == null) return;
+            var record = await _repo.GetByHashAsync(hash);
+            if (record != null && record.Category == null)
+            {
+                record.Category = category;
+                await _repo.UpdateAsync(record);
+            }
+        }
+
+        public static async Task<string?> GetDescriptionAsync(string hash)
+        {
+            if (_repo == null) return null;
+            var record = await _repo.GetByHashAsync(hash);
+            return record?.Description;
+        }
+
+        public static async Task UpdateDescriptionAsync(string hash, string description)
+        {
+            if (_repo == null) return;
+            await _repo.UpdateDescriptionAsync(hash, description);
+        }
+
+        public static async Task IncrementSeenCountAsync(string hash)
+        {
+            if (_repo == null) return;
+            await _repo.IncrementSeenCountAsync(hash);
+        }
+
+        public static async Task<string?> GetCategoryAsync(string hash)
+        {
+            if (_repo == null) return null;
+            var record = await _repo.GetByHashAsync(hash);
+            return record?.Category;
+        }
+
         private static string ComputeHash(byte[] data)
         {
             var hashBytes = MD5.HashData(data);
