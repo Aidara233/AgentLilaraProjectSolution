@@ -132,7 +132,8 @@ namespace AgentCoreProcessor.Engine
         public void ApplyPostResponseUpdate(bool wasMentionTriggered)
         {
             float dynamicThreshold = config.BaseThreshold + messageRate * config.MessageRateScaleFactor;
-            impulse = Math.Max(0f, impulse - dynamicThreshold);
+            // 回复后将冲动值压到阈值以下，防止堆积导致连续触发
+            impulse = Math.Max(0f, Math.Min(impulse - dynamicThreshold, dynamicThreshold * 0.5f));
             if (wasMentionTriggered)
                 expectation += config.ExpectationOnMentionTriggered;
             else
