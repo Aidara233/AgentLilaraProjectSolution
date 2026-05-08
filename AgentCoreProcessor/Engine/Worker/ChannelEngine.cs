@@ -696,19 +696,26 @@ namespace AgentCoreProcessor.Engine
                 var core = new MemoryExtractionCore();
                 var results = await core.ExtractAsync(lines);
 
-                int factCount = 0, feedbackCount = 0;
+                int factCount = 0, feedbackCount = 0, knowledgeCount = 0;
                 foreach (var item in results)
                 {
-                    int personId = ResolveAboutToPersonId(item.About) ?? context.Person.Id;
-
-                    if (item.Type == "feedback" && item.Sentiment != null)
+                    if (item.Type == "knowledge")
                     {
+                        await ctx.MemorySvc.StoreAsync(item.Content,
+                            personId: null, channelId: null,
+                            confidence: item.Confidence);
+                        knowledgeCount++;
+                    }
+                    else if (item.Type == "feedback" && item.Sentiment != null)
+                    {
+                        int personId = ResolveAboutToPersonId(item.About) ?? context.Person.Id;
                         await ctx.MemorySvc.ApplyFeedbackAsync(
                             personId, item.Content, item.Sentiment, item.Correction);
                         feedbackCount++;
                     }
                     else
                     {
+                        int personId = ResolveAboutToPersonId(item.About) ?? context.Person.Id;
                         await ctx.MemorySvc.StoreAsync(item.Content,
                             personId, context.Channel.Id,
                             confidence: item.Confidence);
@@ -716,9 +723,9 @@ namespace AgentCoreProcessor.Engine
                     }
                 }
 
-                if (factCount + feedbackCount > 0)
+                if (factCount + feedbackCount + knowledgeCount > 0)
                     FrameworkLogger.Log("ChannelEngine",
-                        $"记忆提取: channelId={channelId}, 事实{factCount}条, 反馈{feedbackCount}条");
+                        $"记忆提取: channelId={channelId}, 事实{factCount}条, 反馈{feedbackCount}条, 知识{knowledgeCount}条");
             }
             catch (Exception ex)
             {

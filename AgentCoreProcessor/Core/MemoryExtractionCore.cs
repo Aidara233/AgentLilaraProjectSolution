@@ -60,6 +60,9 @@ namespace AgentCoreProcessor.Core
             var trimmed = output.Trim();
             if (trimmed == "无" || trimmed == "无。" || trimmed == "[]") return new();
 
+            // 剥掉 markdown 代码围栏（```json ... ``` 或 ``` ... ```）
+            trimmed = StripMarkdownCodeFence(trimmed);
+
             // 尝试 JSON 解析
             try
             {
@@ -69,6 +72,10 @@ namespace AgentCoreProcessor.Core
             }
             catch { }
 
+            // 如果内容看起来像 JSON 但解析失败，不要 fallback 到按行拆分（会产生碎片）
+            if (trimmed.TrimStart().StartsWith("[") || trimmed.TrimStart().StartsWith("{"))
+                return new();
+
             // fallback：按行解析，全部标为 high confidence fact
             return trimmed
                 .Split('\n', StringSplitOptions.RemoveEmptyEntries)
@@ -76,6 +83,18 @@ namespace AgentCoreProcessor.Core
                 .Where(line => !string.IsNullOrWhiteSpace(line) && line != "无" && line != "无。")
                 .Select(line => new ExtractionResult { Content = line })
                 .ToList();
+        }
+
+        private static string StripMarkdownCodeFence(string text)
+        {
+            var lines = text.Split('\n');
+            if (lines.Length >= 2
+                && lines[0].TrimStart().StartsWith("```")
+                && lines[^1].Trim() == "```")
+            {
+                return string.Join('\n', lines[1..^1]).Trim();
+            }
+            return text;
         }
     }
 }
