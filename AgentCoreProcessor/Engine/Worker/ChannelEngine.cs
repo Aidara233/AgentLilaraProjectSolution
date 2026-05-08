@@ -45,6 +45,7 @@ namespace AgentCoreProcessor.Engine
 
         private readonly ISystemContext ctx;
         private readonly int channelId;
+        private readonly string channelName;
         private long _busyFlag = 0;
         private long _completionTicks = 0;
 
@@ -134,6 +135,7 @@ namespace AgentCoreProcessor.Engine
         {
             this.ctx = ctx;
             this.channelId = initialContext.Channel.Id;
+            this.channelName = initialContext.Channel.Name;
             this.impulseTracker = new ImpulseTracker(ctx.ImpulseConfig, initialContext.Channel.Affinity, channelId);
             var now = DateTime.Now;
             this.lastBufferTime = now;
@@ -618,6 +620,7 @@ namespace AgentCoreProcessor.Engine
         internal WebUI.Services.WorkerSnapshot GetSnapshot() => new()
         {
             ChannelId = channelId,
+            ChannelName = channelName,
             IsAlive = IsAlive,
             IsBusy = IsBusy,
             IsWorkingMode = isWorkingMode,
@@ -665,29 +668,43 @@ namespace AgentCoreProcessor.Engine
 
             try
             {
-                // 尝试用 MemoryQueryCore 提取检索意图
-                var intent = await GetCachedQueryIntentAsync();
+                // 整体 15s 超时保护，防止 API 调用拖慢回复
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                var task = FetchMemoryAsync(personId, context.Channel.Id, query);
+                var completed = await Task.WhenAny(task, Task.Delay(15000, cts.Token));
 
-                List<ScoredMemory> results;
-                if (intent != null && (intent.Keywords.Count > 0 || intent.Subjects.Count > 0))
+                if (completed == task)
                 {
-                    results = await ctx.MemorySvc.RecallAsync(
-                        personId, context.Channel.Id,
-                        query, intent, topK: 10, includeLinks: true, includePersona: true);
-                }
-                else
-                {
-                    results = await ctx.MemorySvc.RecallAsync(
-                        personId, context.Channel.Id,
-                        query, topK: 10, includeLinks: true, includePersona: true);
+                    cts.Cancel();
+                    var results = await task;
+                    memoryCache[personId] = (results, DateTime.Now);
+                    return results;
                 }
 
-                memoryCache[personId] = (results, DateTime.Now);
-                return results;
+                FrameworkLogger.Log("ChannelEngine", $"记忆检索超时(15s)，跳过: personId={personId}");
+                return new List<ScoredMemory>();
             }
             catch
             {
                 return new List<ScoredMemory>();
+            }
+        }
+
+        private async Task<List<ScoredMemory>> FetchMemoryAsync(int personId, int channelId, string query)
+        {
+            var intent = await GetCachedQueryIntentAsync();
+
+            if (intent != null && (intent.Keywords.Count > 0 || intent.Subjects.Count > 0))
+            {
+                return await ctx.MemorySvc.RecallAsync(
+                    personId, channelId,
+                    query, intent, topK: 10, includeLinks: true, includePersona: true);
+            }
+            else
+            {
+                return await ctx.MemorySvc.RecallAsync(
+                    personId, channelId,
+                    query, topK: 10, includeLinks: true, includePersona: true);
             }
         }
 
@@ -711,10 +728,21 @@ namespace AgentCoreProcessor.Engine
                 }).ToList();
 
                 var core = new MemoryQueryCore();
-                var intent = await core.ExtractIntentAsync(lines);
-                cachedQueryIntent = intent;
-                cachedQueryIntentTime = DateTime.Now;
-                return intent;
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                var intentTask = core.ExtractIntentAsync(lines);
+                var completed = await Task.WhenAny(intentTask, Task.Delay(5000, cts.Token));
+
+                if (completed == intentTask)
+                {
+                    cts.Cancel();
+                    var intent = await intentTask;
+                    cachedQueryIntent = intent;
+                    cachedQueryIntentTime = DateTime.Now;
+                    return intent;
+                }
+
+                FrameworkLogger.Log("ChannelEngine", "MemoryQueryCore 超时(5s)，跳过意图提取");
+                return null;
             }
             catch
             {

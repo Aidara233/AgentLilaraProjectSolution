@@ -27,7 +27,7 @@ namespace AgentCoreProcessor.Client
             this.apiKey = apiKey;
             this.endpoint = endpoint;
             this.model = model;
-            httpClient = new HttpClient();
+            httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
         }
 
         public async Task<float[]> GetEmbeddingAsync(string text)
