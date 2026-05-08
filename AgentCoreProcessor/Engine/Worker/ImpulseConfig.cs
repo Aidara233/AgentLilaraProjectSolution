@@ -1,54 +1,38 @@
 using System.IO;
-using AgentCoreProcessor.Database;
 using Newtonsoft.Json;
 
 namespace AgentCoreProcessor.Engine
 {
     internal class ImpulseConfig
     {
-        public float BaseMessageScore { get; set; } = 1f;
-        public float MentionScore { get; set; } = 8f;
-        public float PrivateScore { get; set; } = 8f;
+        // --- 累积（加法） ---
+        public float BaseScore { get; set; } = 10f;
+        public float AffinityBonusMax { get; set; } = 5f;
+        public float MentionBonus { get; set; } = 30f;
+        public float ParticipantDiscount2 { get; set; } = 2f;
+        public float ParticipantDiscount3 { get; set; } = 4f;
+        public float ParticipantDiscount4Plus { get; set; } = 6f;
 
-        public float DecayPerSecond { get; set; } = 0.05f;
+        // --- 衰减（指数） ---
+        public float DecayHalfLifeSeconds { get; set; } = 30f;
 
-        public float BaseThreshold { get; set; } = 1.5f;
-        public float MessageRateScaleFactor { get; set; } = 0.5f;
+        // --- 阈值 ---
+        public float Threshold { get; set; } = 100f;
 
-        public float EmaDecayRate { get; set; } = 0.995f;
-        public float BaseExpectation { get; set; } = 0.5f;
-        public float ExpectationOnProactive { get; set; } = 2.0f;
-        public float ExpectationOnMentionTriggered { get; set; } = 2.0f;
-        public float RealityOnEngagement { get; set; } = 2.0f;
-        public float RatioFactorLower { get; set; } = 0.7f;
-        public float RatioFactorUpper { get; set; } = 2.0f;
-
+        // --- 回复后 ---
+        public float PostResponseCap { get; set; } = 20f;
         public float PostResponseCooldownSeconds { get; set; } = 3f;
+
+        // --- 闸门 ---
         public float BufferWindowSeconds { get; set; } = 2.5f;
         public float ColdTimeoutSeconds { get; set; } = 600f;
 
-        public float MessageRateEmaAlpha { get; set; } = 0.1f;
-
-        public float TrustMultiplierHostile { get; set; } = 0.1f;
-        public float TrustMultiplierWary { get; set; } = 0.3f;
-        public float TrustMultiplierUnknown { get; set; } = 0.5f;
-        public float TrustMultiplierStranger { get; set; } = 0.7f;
-        public float TrustMultiplierUnderstanding { get; set; } = 1.0f;
-        public float TrustMultiplierFamiliarity { get; set; } = 1.3f;
-        public float TrustMultiplierTrust { get; set; } = 1.6f;
-        public float TrustMultiplierAbsoluteTrust { get; set; } = 2.0f;
-
-        public float GetTrustMultiplier(TrustLevel level) => level switch
+        public float GetParticipantDiscount(int participantCount) => participantCount switch
         {
-            TrustLevel.Hostile => TrustMultiplierHostile,
-            TrustLevel.Wary => TrustMultiplierWary,
-            TrustLevel.Unknown => TrustMultiplierUnknown,
-            TrustLevel.Stranger => TrustMultiplierStranger,
-            TrustLevel.Understanding => TrustMultiplierUnderstanding,
-            TrustLevel.Familiarity => TrustMultiplierFamiliarity,
-            TrustLevel.Trust => TrustMultiplierTrust,
-            TrustLevel.AbsoluteTrust => TrustMultiplierAbsoluteTrust,
-            _ => 1.0f
+            <= 1 => 0f,
+            2 => ParticipantDiscount2,
+            3 => ParticipantDiscount3,
+            _ => ParticipantDiscount4Plus
         };
 
         public static ImpulseConfig Load(string path)

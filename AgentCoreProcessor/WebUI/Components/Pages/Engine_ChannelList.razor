@@ -21,8 +21,8 @@
                   ValueClass="@(snap.Workers.Any(w => w.IsBusy) ? "error" : "")" />
     </div>
     <div class="col-md-3">
-        <StatCard Label="总消息速率"
-                  Value="@snap.Workers.Sum(w => w.MessageRate).ToString("F1")"
+        <StatCard Label="活跃频道"
+                  Value="@snap.Workers.Count(w => w.IsAlive).ToString()"
                   ValueClass="accent" />
     </div>
     <div class="col-md-3">
@@ -52,7 +52,7 @@ else
                         <th>模式</th>
                         <th>状态</th>
                         <th>冲动值</th>
-                        <th>消息速率</th>
+                        <th>阈值</th>
                         <th>轮次</th>
                         <th>参与者</th>
                         <th>已处理</th>
@@ -85,9 +85,9 @@ else
                                 }
                             </td>
                             <td>
-                                <span class="@ImpulseClass(w.Impulse)">@w.Impulse.ToString("F2")</span>
+                                <span class="@ImpulseClass(w.Impulse)">@w.Impulse.ToString("F1")</span>
                             </td>
-                            <td>@w.MessageRate.ToString("F1")</td>
+                            <td>@w.Threshold.ToString("F0")</td>
                             <td>@w.TotalRounds</td>
                             <td>@w.ParticipantCount</td>
                             <td>@w.ProcessedMessageCount</td>
@@ -121,8 +121,8 @@ else
 
     private static string ImpulseClass(float impulse) => impulse switch
     {
-        >= 0.8f => "text-error",
-        >= 0.5f => "text-warning-custom",
+        >= 80f => "text-error",
+        >= 50f => "text-warning-custom",
         _ => ""
     };
 

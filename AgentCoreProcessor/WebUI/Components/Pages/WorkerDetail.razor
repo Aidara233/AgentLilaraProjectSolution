@@ -55,9 +55,9 @@ else
                 <div class="card-body">
                     <div class="detail-grid">
                         <span class="detail-label">当前值</span>
-                        <span>@worker.Impulse.ToString("F2")</span>
-                        <span class="detail-label">消息速率</span>
-                        <span>@worker.MessageRate.ToString("F2")</span>
+                        <span>@worker.Impulse.ToString("F1")</span>
+                        <span class="detail-label">阈值</span>
+                        <span>@worker.Threshold.ToString("F0")</span>
                         <span class="detail-label">频道亲和度</span>
                         <span>@worker.ChannelAffinity.ToString("F2")</span>
                     </div>
@@ -66,15 +66,15 @@ else
         </div>
         <div class="col-md-4">
             <div class="card">
-                <div class="card-header">社交满足度 (EMA)</div>
+                <div class="card-header">频道配置</div>
                 <div class="card-body">
                     <div class="detail-grid">
-                        <span class="detail-label">期望值</span>
-                        <span>@worker.Expectation.ToString("F3")</span>
-                        <span class="detail-label">现实值</span>
-                        <span>@worker.Reality.ToString("F3")</span>
-                        <span class="detail-label">比率</span>
-                        <span>@(worker.Expectation > 0.001f ? (worker.Reality / worker.Expectation).ToString("F2") : "-")</span>
+                        <span class="detail-label">重要度</span>
+                        <span>@worker.Importance</span>
+                        <span class="detail-label">提取间隔</span>
+                        <span>@worker.ExtractionInterval 条</span>
+                        <span class="detail-label">未回复消息</span>
+                        <span>@worker.UnrespondedMessageCount</span>
                     </div>
                 </div>
             </div>

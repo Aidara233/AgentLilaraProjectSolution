@@ -11,9 +11,7 @@ namespace AgentCoreProcessor.WebUI.Services
         public bool IsWorkingMode { get; init; }
         public bool IsInWorkingSession { get; init; }
         public float Impulse { get; init; }
-        public float MessageRate { get; init; }
-        public float Expectation { get; init; }
-        public float Reality { get; init; }
+        public float Threshold { get; init; }
         public float ChannelAffinity { get; init; }
         public string Importance { get; init; } = "normal";
         public int ExtractionInterval { get; init; }

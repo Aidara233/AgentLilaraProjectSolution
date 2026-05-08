@@ -113,7 +113,7 @@
                         <th>模式</th>
                         <th>状态</th>
                         <th>冲动值</th>
-                        <th>消息速率</th>
+                        <th>阈值</th>
                         <th>轮次</th>
                         <th>参与者</th>
                     </tr>
@@ -144,8 +144,8 @@
                                     <span class="text-muted-custom">等待</span>
                                 }
                             </td>
-                            <td>@w.Impulse.ToString("F2")</td>
-                            <td>@w.MessageRate.ToString("F2")</td>
+                            <td>@w.Impulse.ToString("F1")</td>
+                            <td>@w.Threshold.ToString("F0")</td>
                             <td>@w.TotalRounds</td>
                             <td>@w.ParticipantCount</td>
                         </tr>

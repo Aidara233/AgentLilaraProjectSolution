@@ -2,13 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using AgentCoreProcessor.Adapter;
-using AgentCoreProcessor.Database;
 
 namespace AgentCoreProcessor.Engine
 {
-    /// <summary>
-    /// 冲动值追踪器。管理消息响应决策的冲动值计算、EMA 衰减和阈值判断。
-    /// </summary>
     internal class ImpulseTracker
     {
         private readonly ImpulseConfig config;
@@ -16,19 +12,9 @@ namespace AgentCoreProcessor.Engine
         private readonly int channelId;
 
         private float impulse = 0f;
-        private DateTime lastImpulseDecay;
-
-        private float expectation = 0f;
-        private float reality = 0f;
-        private DateTime lastEmaDecay;
-
-        private float messageRate = 0f;
-        private DateTime lastMessageRateUpdate;
+        private DateTime lastDecayTime;
 
         public float Impulse => impulse;
-        public float MessageRate => messageRate;
-        public float Expectation => expectation;
-        public float Reality => reality;
         public float ChannelAffinity => channelAffinity;
 
         public ImpulseTracker(ImpulseConfig config, float channelAffinity, int channelId)
@@ -36,11 +22,7 @@ namespace AgentCoreProcessor.Engine
             this.config = config;
             this.channelAffinity = channelAffinity;
             this.channelId = channelId;
-
-            var now = DateTime.Now;
-            this.lastImpulseDecay = now;
-            this.lastEmaDecay = now;
-            this.lastMessageRateUpdate = now;
+            this.lastDecayTime = DateTime.Now;
         }
 
         public bool ShouldRespond(
@@ -67,84 +49,46 @@ namespace AgentCoreProcessor.Engine
                 return false;
             }
 
-            float dynamicThreshold = config.BaseThreshold
-                + messageRate * config.MessageRateScaleFactor;
-            bool respond = impulse >= dynamicThreshold;
+            bool respond = impulse >= config.Threshold;
             FrameworkLogger.Log("ImpulseTracker",
-                $"决策: impulse={impulse:F2}, threshold={dynamicThreshold:F1}" +
-                $"(base={config.BaseThreshold}+rate={messageRate:F2}x{config.MessageRateScaleFactor}), " +
-                $"ratio={ComputeRatioFactor():F2}(E={expectation:F2}/R={reality:F2}), " +
+                $"决策: impulse={impulse:F1}, threshold={config.Threshold}, " +
                 $"respond={respond}, channelId={channelId}");
             return respond;
         }
 
-        public void Accumulate(IncomingMessage msg, int participantCount, SessionContext? sc = null)
+        public void Accumulate(IncomingMessage msg, int participantCount)
         {
-            float participantFactor = participantCount switch
-            {
-                <= 1 => 1.0f,
-                2 => 0.9f,
-                3 => 0.8f,
-                _ => 0.6f
-            };
-            float ratioFactor = ComputeRatioFactor();
-            float added = config.BaseMessageScore * channelAffinity * participantFactor * ratioFactor;
-            if (msg.IsMentioned) added += config.MentionScore;
-            if (msg.IsPrivate) added += config.PrivateScore;
+            ApplyDecay();
+
+            float added = config.BaseScore
+                + config.AffinityBonusMax * channelAffinity
+                - config.GetParticipantDiscount(participantCount);
+            if (msg.IsMentioned) added += config.MentionBonus;
+            added = Math.Max(0f, added);
             impulse += added;
 
-            var now = DateTime.Now;
-            var elapsed = (float)(now - lastMessageRateUpdate).TotalSeconds;
-            if (elapsed > 0)
-            {
-                float instantRate = 1f / Math.Max(elapsed, 0.1f);
-                messageRate = config.MessageRateEmaAlpha * instantRate
-                    + (1 - config.MessageRateEmaAlpha) * messageRate;
-                lastMessageRateUpdate = now;
-            }
-
-            if (sc != null && msg.IsMentioned)
-            {
-                float trustMult = config.GetTrustMultiplier(sc.Person.TrustLevel);
-                reality += config.RealityOnEngagement * trustMult;
-            }
-
             FrameworkLogger.Log("ImpulseTracker",
-                $"冲动值+{added:F2}: impulse={impulse:F2}, ratio={ratioFactor:F2}, " +
+                $"冲动值+{added:F1}: impulse={impulse:F1}, " +
                 $"affinity={channelAffinity:F2}, participants={participantCount}, " +
-                $"msgRate={messageRate:F2}, mentioned={msg.IsMentioned}, channelId={channelId}");
+                $"mentioned={msg.IsMentioned}, channelId={channelId}");
         }
 
-        public void Decay()
+        public void ApplyPostResponseUpdate()
+        {
+            impulse = Math.Min(impulse, config.PostResponseCap);
+            FrameworkLogger.Log("ImpulseTracker",
+                $"回复后压低: impulse={impulse:F1}, cap={config.PostResponseCap}, channelId={channelId}");
+        }
+
+        private void ApplyDecay()
         {
             var now = DateTime.Now;
-            var elapsed = (float)(now - lastImpulseDecay).TotalSeconds;
-            lastImpulseDecay = now;
-            impulse = Math.Max(0f, impulse - config.DecayPerSecond * elapsed);
+            var elapsed = (float)(now - lastDecayTime).TotalSeconds;
+            lastDecayTime = now;
+            if (elapsed <= 0) return;
 
-            var emaElapsed = (float)(now - lastEmaDecay).TotalSeconds;
-            lastEmaDecay = now;
-            float decayFactor = MathF.Pow(config.EmaDecayRate, emaElapsed);
-            expectation *= decayFactor;
-            reality *= decayFactor;
-        }
-
-        public void ApplyPostResponseUpdate(bool wasMentionTriggered)
-        {
-            float dynamicThreshold = config.BaseThreshold + messageRate * config.MessageRateScaleFactor;
-            // 回复后将冲动值压到阈值以下，防止堆积导致连续触发
-            impulse = Math.Max(0f, Math.Min(impulse - dynamicThreshold, dynamicThreshold * 0.5f));
-            if (wasMentionTriggered)
-                expectation += config.ExpectationOnMentionTriggered;
-            else
-                expectation += config.ExpectationOnProactive;
-        }
-
-        private float ComputeRatioFactor()
-        {
-            float effectiveExpectation = Math.Max(expectation, config.BaseExpectation);
-            float ratio = reality / effectiveExpectation;
-            return Math.Clamp(ratio, config.RatioFactorLower, config.RatioFactorUpper);
+            float lambda = 0.693f / config.DecayHalfLifeSeconds;
+            impulse *= MathF.Exp(-lambda * elapsed);
         }
     }
 }

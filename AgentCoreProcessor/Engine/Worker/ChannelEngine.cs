@@ -149,7 +149,7 @@ namespace AgentCoreProcessor.Engine
             buffer.Add((initialMessage, initialContext));
             CollectImagePaths(initialMessage);
             recentParticipants.TryAdd(initialContext.User.Id, ParticipantInfo.From(initialContext.User, initialContext.Person, initialMessage));
-            impulseTracker.Accumulate(initialMessage, recentParticipants.Count, initialContext);
+            impulseTracker.Accumulate(initialMessage, recentParticipants.Count);
             InitModules();
             ScheduleBufferSignal();
 
@@ -179,7 +179,7 @@ namespace AgentCoreProcessor.Engine
                 sc.User.Id,
                 ParticipantInfo.From(sc.User, sc.Person, msg),
                 (_, _) => ParticipantInfo.From(sc.User, sc.Person, msg));
-            impulseTracker.Accumulate(msg, recentParticipants.Count, sc);
+            impulseTracker.Accumulate(msg, recentParticipants.Count);
             ScheduleBufferSignal();
 
             // Phase 6: 检查关注规则
@@ -217,7 +217,6 @@ namespace AgentCoreProcessor.Engine
                     break;
                 }
 
-                impulseTracker.Decay();
 
                 // ② CollectBuffer
                 var batch = CollectBuffer();
@@ -394,9 +393,8 @@ namespace AgentCoreProcessor.Engine
                     delegateTool.SetContext(currentLastSc.Channel.Id, currentLastSc.Person.Id);
                 }
 
-                // 冲动值扣减 + expectation 更新
-                bool triggeredByMention = batch.Any(b => b.Message.IsMentioned || b.Message.IsPrivate);
-                impulseTracker.ApplyPostResponseUpdate(triggeredByMention);
+                // 冲动值扣减
+                impulseTracker.ApplyPostResponseUpdate();
 
                 // 记忆提取 + 信任增长
                 TrackMemoryExtraction(batch, currentLastSc);
@@ -642,9 +640,7 @@ namespace AgentCoreProcessor.Engine
             IsWorkingMode = isWorkingMode,
             IsInWorkingSession = isInWorkingSession,
             Impulse = impulseTracker.Impulse,
-            MessageRate = impulseTracker.MessageRate,
-            Expectation = impulseTracker.Expectation,
-            Reality = impulseTracker.Reality,
+            Threshold = ctx.ImpulseConfig.Threshold,
             ChannelAffinity = channelConfig.Affinity,
             Importance = channelConfig.Importance,
             ExtractionInterval = channelConfig.ExtractionInterval,
