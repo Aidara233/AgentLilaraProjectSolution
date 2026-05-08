@@ -340,7 +340,8 @@ namespace AgentCoreProcessor.Engine
                         case "keep":
                             await ctx.Memories.CreateAsync(temp.Content, temp.Embedding,
                                 temp.PersonId, temp.ChannelId, temp.SourceMessageId,
-                                confidence: temp.Confidence);
+                                confidence: temp.Confidence,
+                                type: temp.Type, subject: temp.Subject);
                             await ctx.TempMemories.DeleteAsync(temp);
                             break;
                         case "merge":
@@ -351,7 +352,8 @@ namespace AgentCoreProcessor.Engine
                             var mergeConfidence = temp.Confidence;
                             await ctx.Memories.CreateAsync(content, emb,
                                 temp.PersonId, temp.ChannelId,
-                                confidence: mergeConfidence);
+                                confidence: mergeConfidence,
+                                type: temp.Type, subject: temp.Subject);
                             await ctx.TempMemories.DeleteAsync(temp);
                             var mergeWith = item["mergeWith"] as JArray;
                             if (mergeWith != null)
