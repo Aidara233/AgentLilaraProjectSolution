@@ -56,21 +56,29 @@ namespace AgentCoreProcessor.Engine
             return respond;
         }
 
-        public void Accumulate(IncomingMessage msg, int participantCount)
+        public void Accumulate(IncomingMessage msg, int participantCount, bool isSystemEvent = false)
         {
             ApplyDecay();
 
-            float added = config.BaseScore
-                + config.AffinityBonusMax * channelAffinity
-                - config.GetParticipantDiscount(participantCount);
-            if (msg.IsMentioned) added += config.MentionBonus;
-            added = Math.Max(0f, added);
+            float added;
+            if (isSystemEvent)
+            {
+                added = msg.IsMentioned ? config.MentionBonus : 0f;
+            }
+            else
+            {
+                added = config.BaseScore
+                    + config.AffinityBonusMax * channelAffinity
+                    - config.GetParticipantDiscount(participantCount);
+                if (msg.IsMentioned) added += config.MentionBonus;
+                added = Math.Max(0f, added);
+            }
             impulse += added;
 
             FrameworkLogger.Log("ImpulseTracker",
                 $"冲动值+{added:F1}: impulse={impulse:F1}, " +
                 $"affinity={channelAffinity:F2}, participants={participantCount}, " +
-                $"mentioned={msg.IsMentioned}, channelId={channelId}");
+                $"mentioned={msg.IsMentioned}, sysEvent={isSystemEvent}, channelId={channelId}");
         }
 
         public void ApplyPostResponseUpdate()

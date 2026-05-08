@@ -101,6 +101,41 @@ namespace AgentCoreProcessor.Adapter
             }
             p["message"] = segments;
 
+            // 处理附件
+            if (message.Attachments is { Count: > 0 })
+            {
+                foreach (var att in message.Attachments)
+                {
+                    switch (att.Type)
+                    {
+                        case AttachmentType.Image:
+                            var imgFile = att.LocalPath != null
+                                ? $"file:///{att.LocalPath.Replace('\\', '/')}"
+                                : att.SourceUrl ?? "";
+                            segments.Add(new JObject
+                            {
+                                ["type"] = "image",
+                                ["data"] = new JObject { ["file"] = imgFile }
+                            });
+                            break;
+                        case AttachmentType.Audio:
+                            var audioFile = att.LocalPath != null
+                                ? $"file:///{att.LocalPath.Replace('\\', '/')}"
+                                : att.SourceUrl ?? "";
+                            segments.Add(new JObject
+                            {
+                                ["type"] = "record",
+                                ["data"] = new JObject { ["file"] = audioFile }
+                            });
+                            break;
+                        case AttachmentType.File:
+                            // 文件上传走单独 API，不走 message segment
+                            _ = SendFileAsync(message.ChannelId, att);
+                            break;
+                    }
+                }
+            }
+
             var resp = await adapter.CallApiAsync(action, p);
             if (resp != null)
             {
@@ -188,6 +223,35 @@ namespace AgentCoreProcessor.Adapter
             var resp = await adapter.CallApiAsync("send_group_forward_msg",
                 new JObject { ["group_id"] = groupId, ["messages"] = messages });
             return resp?["retcode"]?.Value<int>() == 0;
+        }
+
+        private async Task SendFileAsync(string channelId, MessageAttachment att)
+        {
+            var filePath = att.LocalPath ?? att.SourceUrl;
+            if (string.IsNullOrEmpty(filePath)) return;
+
+            var fileName = att.FileName ?? System.IO.Path.GetFileName(filePath);
+
+            if (channelId.StartsWith("group_"))
+            {
+                var groupId = long.Parse(channelId[6..]);
+                await adapter.CallApiAsync("upload_group_file", new JObject
+                {
+                    ["group_id"] = groupId,
+                    ["file"] = filePath,
+                    ["name"] = fileName
+                });
+            }
+            else if (channelId.StartsWith("private_"))
+            {
+                var userId = long.Parse(channelId[8..]);
+                await adapter.CallApiAsync("upload_private_file", new JObject
+                {
+                    ["user_id"] = userId,
+                    ["file"] = filePath,
+                    ["name"] = fileName
+                });
+            }
         }
     }
 }

@@ -36,5 +36,8 @@ namespace AgentCoreProcessor.Adapter
 
         /// <summary>被@的平台用户ID列表（包括非bot用户）。</summary>
         public List<string>? MentionedPlatformIds { get; set; }
+
+        /// <summary>是否为系统事件（戳一戳、禁言等 notice 转换而来）。</summary>
+        public bool IsSystemEvent { get; set; } = false;
     }
 }

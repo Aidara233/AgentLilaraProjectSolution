@@ -40,6 +40,7 @@ namespace AgentCoreProcessor.Tool
                 new RetainListTool(),
                 new ActivateToolGroupTool(),
                 new SelfKnowledgeTool(),
+                new SendMediaTool(),
                 // Phase 4: 系统循环工具（不需要 ISystemContext 的）
                 new SystemStateTool(),
                 new TaskQueueTool()

@@ -25,47 +25,57 @@ namespace AgentCoreProcessor.Adapter
         public IncomingMessage? HandleEvent(JObject data)
         {
             var postType = data["post_type"]?.ToString();
-            if (postType != "message") return null;
-
-            var messageId = data["message_id"]?.Value<long>() ?? 0;
-            if (messageId != 0)
+            if (postType == "message")
             {
-                lock (recentMessageIds)
+                var messageId = data["message_id"]?.Value<long>() ?? 0;
+                if (messageId != 0)
                 {
-                    if ((DateTime.Now - lastMessageIdCleanup).TotalSeconds > 60)
+                    lock (recentMessageIds)
                     {
-                        recentMessageIds.Clear();
-                        lastMessageIdCleanup = DateTime.Now;
+                        if ((DateTime.Now - lastMessageIdCleanup).TotalSeconds > 60)
+                        {
+                            recentMessageIds.Clear();
+                            lastMessageIdCleanup = DateTime.Now;
+                        }
+                        if (!recentMessageIds.Add(messageId))
+                            return null;
                     }
-                    if (!recentMessageIds.Add(messageId))
-                        return null;
                 }
+                return ParseMessageEventAsync(data).GetAwaiter().GetResult();
             }
-
-            return ParseMessageEventAsync(data).GetAwaiter().GetResult();
+            if (postType == "notice")
+            {
+                return ParseNoticeEvent(data);
+            }
+            return null;
         }
 
         public async Task<IncomingMessage?> HandleEventAsync(JObject data)
         {
             var postType = data["post_type"]?.ToString();
-            if (postType != "message") return null;
-
-            var messageId = data["message_id"]?.Value<long>() ?? 0;
-            if (messageId != 0)
+            if (postType == "message")
             {
-                lock (recentMessageIds)
+                var messageId = data["message_id"]?.Value<long>() ?? 0;
+                if (messageId != 0)
                 {
-                    if ((DateTime.Now - lastMessageIdCleanup).TotalSeconds > 60)
+                    lock (recentMessageIds)
                     {
-                        recentMessageIds.Clear();
-                        lastMessageIdCleanup = DateTime.Now;
+                        if ((DateTime.Now - lastMessageIdCleanup).TotalSeconds > 60)
+                        {
+                            recentMessageIds.Clear();
+                            lastMessageIdCleanup = DateTime.Now;
+                        }
+                        if (!recentMessageIds.Add(messageId))
+                            return null;
                     }
-                    if (!recentMessageIds.Add(messageId))
-                        return null;
                 }
+                return await ParseMessageEventAsync(data);
             }
-
-            return await ParseMessageEventAsync(data);
+            if (postType == "notice")
+            {
+                return ParseNoticeEvent(data);
+            }
+            return null;
         }
 
         private async Task<IncomingMessage?> ParseMessageEventAsync(JObject data)
@@ -157,6 +167,38 @@ namespace AgentCoreProcessor.Adapter
                             }
                         }
                         break;
+                    case "record":
+                        textBuilder.Append("[语音消息]");
+                        attachments ??= new List<MessageAttachment>();
+                        attachments.Add(new MessageAttachment
+                        {
+                            Type = AttachmentType.Audio,
+                            SourceUrl = segData["url"]?.ToString(),
+                            FileName = segData["file"]?.ToString()
+                        });
+                        break;
+                    case "video":
+                        textBuilder.Append("[视频消息]");
+                        attachments ??= new List<MessageAttachment>();
+                        attachments.Add(new MessageAttachment
+                        {
+                            Type = AttachmentType.Video,
+                            SourceUrl = segData["url"]?.ToString(),
+                            FileName = segData["file"]?.ToString()
+                        });
+                        break;
+                    case "file":
+                        var fName = segData["name"]?.ToString() ?? segData["file"]?.ToString() ?? "未知文件";
+                        textBuilder.Append($"[文件: {fName}]");
+                        attachments ??= new List<MessageAttachment>();
+                        attachments.Add(new MessageAttachment
+                        {
+                            Type = AttachmentType.File,
+                            SourceUrl = segData["url"]?.ToString(),
+                            FileName = fName,
+                            FileSize = segData["size"]?.Value<long>()
+                        });
+                        break;
                 }
             }
 
@@ -233,6 +275,93 @@ namespace AgentCoreProcessor.Adapter
                 "blacklist" => !config.Blacklist.Contains(channelId, StringComparer.OrdinalIgnoreCase),
                 _ => true
             };
+        }
+
+        private IncomingMessage? ParseNoticeEvent(JObject data)
+        {
+            var noticeType = data["notice_type"]?.ToString();
+            var subType = data["sub_type"]?.ToString();
+            var selfId = adapter.SelfId;
+            var groupId = data["group_id"]?.Value<long>() ?? 0;
+            var userId = data["user_id"]?.Value<long>() ?? 0;
+
+            string? channelId = groupId > 0 ? $"group_{groupId}" : null;
+            if (channelId == null) return null;
+            if (!PassesFilter(channelId)) return null;
+
+            string content;
+            bool isMentioned = false;
+
+            switch (noticeType)
+            {
+                case "notify" when subType == "poke":
+                    var targetId = data["target_id"]?.Value<long>() ?? 0;
+                    if (targetId == selfId)
+                    {
+                        content = $"【系统】{GetUserLabel(data, userId)} 戳了你";
+                        isMentioned = true;
+                    }
+                    else
+                    {
+                        content = $"【系统】{GetUserLabel(data, userId)} 戳了 {targetId}";
+                    }
+                    break;
+
+                case "group_ban":
+                    var banUserId = data["user_id"]?.Value<long>() ?? 0;
+                    var duration = data["duration"]?.Value<long>() ?? 0;
+                    var operatorId = data["operator_id"]?.Value<long>() ?? 0;
+                    if (banUserId == selfId)
+                    {
+                        content = duration > 0
+                            ? $"【系统】你被 {operatorId} 禁言了 {duration} 秒"
+                            : $"【系统】你被 {operatorId} 解除了禁言";
+                        isMentioned = true;
+                    }
+                    else
+                    {
+                        content = duration > 0
+                            ? $"【系统】{banUserId} 被 {operatorId} 禁言了 {duration} 秒"
+                            : $"【系统】{banUserId} 被 {operatorId} 解除了禁言";
+                    }
+                    break;
+
+                case "group_recall":
+                    var recallOperator = data["operator_id"]?.Value<long>() ?? 0;
+                    content = $"【系统】{recallOperator} 撤回了一条消息";
+                    break;
+
+                case "group_upload":
+                    var file = data["file"] as JObject;
+                    var fileName = file?["name"]?.ToString() ?? "未知文件";
+                    content = $"【系统】{GetUserLabel(data, userId)} 上传了文件: {fileName}";
+                    break;
+
+                default:
+                    return null;
+            }
+
+            return new IncomingMessage
+            {
+                Platform = adapter.Platform,
+                PlatformUserId = userId.ToString(),
+                ChannelId = channelId,
+                Content = content,
+                IsPrivate = false,
+                IsMentioned = isMentioned,
+                IsSystemEvent = true,
+                Time = DateTime.Now
+            };
+        }
+
+        private static string GetUserLabel(JObject data, long userId)
+        {
+            var sender = data["sender"] as JObject;
+            var card = sender?["card"]?.ToString();
+            var nickname = sender?["nickname"]?.ToString();
+            if (!string.IsNullOrWhiteSpace(card)) return card;
+            if (!string.IsNullOrWhiteSpace(nickname)) return nickname;
+            return userId.ToString();
         }
     }
 }

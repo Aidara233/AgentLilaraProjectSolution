@@ -149,7 +149,7 @@ namespace AgentCoreProcessor.Engine
             buffer.Add((initialMessage, initialContext));
             CollectImagePaths(initialMessage);
             recentParticipants.TryAdd(initialContext.User.Id, ParticipantInfo.From(initialContext.User, initialContext.Person, initialMessage));
-            impulseTracker.Accumulate(initialMessage, recentParticipants.Count);
+            impulseTracker.Accumulate(initialMessage, recentParticipants.Count, initialMessage.IsSystemEvent);
             InitModules();
             ScheduleBufferSignal();
 
@@ -179,7 +179,7 @@ namespace AgentCoreProcessor.Engine
                 sc.User.Id,
                 ParticipantInfo.From(sc.User, sc.Person, msg),
                 (_, _) => ParticipantInfo.From(sc.User, sc.Person, msg));
-            impulseTracker.Accumulate(msg, recentParticipants.Count);
+            impulseTracker.Accumulate(msg, recentParticipants.Count, msg.IsSystemEvent);
             ScheduleBufferSignal();
 
             // Phase 6: 检查关注规则
@@ -282,6 +282,19 @@ namespace AgentCoreProcessor.Engine
                     Mentions = mentions
                 });
                 await ctx.Session.SaveBotMessageAsync(currentLastSc.Channel.Id, content, sentId);
+            };
+            speakModule.OnSendMedia = async (type, text, attachments) =>
+            {
+                if (currentLastMsg == null || currentLastSc == null) return;
+                unrespondedMessageCount = 0;
+                var sentId = await ctx.Adapters.SendMessageAsync(currentLastMsg.Platform, new OutgoingMessage
+                {
+                    ChannelId = currentLastMsg.ChannelId,
+                    Content = text ?? "",
+                    Attachments = attachments
+                });
+                var desc = $"[发送{type}]" + (string.IsNullOrEmpty(text) ? "" : $" {text}");
+                await ctx.Session.SaveBotMessageAsync(currentLastSc.Channel.Id, desc, sentId);
             };
             signalDispatchModule.OnMemory = async (content) =>
             {
@@ -458,8 +471,8 @@ namespace AgentCoreProcessor.Engine
                 {
                     var allowedTools = new HashSet<string>
                     {
-                        "说话", "思考笔记", "记忆", "便签板", "缓存管理", "任务管理",
-                        "标记复盘", "报警", "继续", "文件读取", "委派任务"
+                        "说话", "发送媒体", "思考笔记", "记忆", "便签板", "缓存管理", "任务管理",
+                        "标记复盘", "报警", "继续", "文件读取", "委派任务", "适配器操作"
                     };
                     return allowedTools.Contains(tool.Name);
                 });
@@ -472,8 +485,8 @@ namespace AgentCoreProcessor.Engine
                 {
                     var allowedTools = new HashSet<string>
                     {
-                        "说话", "思考笔记", "记忆", "便签板", "缓存管理", "任务管理",
-                        "标记复盘", "报警", "继续", "文件读取", "委派任务"
+                        "说话", "发送媒体", "思考笔记", "记忆", "便签板", "缓存管理", "任务管理",
+                        "标记复盘", "报警", "继续", "文件读取", "委派任务", "适配器操作"
                     };
                     return allowedTools.Contains(tool.Name);
                 });
