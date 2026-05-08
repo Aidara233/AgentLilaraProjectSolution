@@ -39,6 +39,7 @@ namespace AgentCoreProcessor.Tool
                 new PinboardTool(),
                 new RetainListTool(),
                 new ActivateToolGroupTool(),
+                new SelfKnowledgeTool(),
                 // Phase 4: 系统循环工具（不需要 ISystemContext 的）
                 new SystemStateTool(),
                 new TaskQueueTool()
