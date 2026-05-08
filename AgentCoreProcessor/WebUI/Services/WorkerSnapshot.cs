@@ -15,6 +15,9 @@ namespace AgentCoreProcessor.WebUI.Services
         public float Expectation { get; init; }
         public float Reality { get; init; }
         public float ChannelAffinity { get; init; }
+        public string Importance { get; init; } = "normal";
+        public int ExtractionInterval { get; init; }
+        public int UnrespondedMessageCount { get; init; }
         public int ConsecutiveExternalTriggers { get; init; }
         public DateTime? LastCompletionTime { get; init; }
         public int TotalRounds { get; init; }

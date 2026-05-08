@@ -53,6 +53,7 @@ namespace AgentCoreProcessor.WebUI.Navigation
             new() { Title = "系统", Icon = "bi-wrench", Children = new()
             {
                 new() { Title = "日志", Href = "/logs" },
+                new() { Title = "模型日志", Href = "/logs/model" },
                 new() { Title = "配置", Href = "/config" },
                 new() { Title = "MCP", Href = "/mcp" },
             }},

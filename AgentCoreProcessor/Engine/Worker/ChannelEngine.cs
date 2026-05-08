@@ -46,6 +46,7 @@ namespace AgentCoreProcessor.Engine
         private readonly ISystemContext ctx;
         private readonly int channelId;
         private readonly string channelName;
+        private readonly ChannelConfig channelConfig;
         private long _busyFlag = 0;
         private long _completionTicks = 0;
 
@@ -95,6 +96,8 @@ namespace AgentCoreProcessor.Engine
 
         // 记忆提取计数（用于退出时判断是否需要收尾提取）
         private int processedMessageCount = 0;
+        private int unrespondedMessageCount = 0;
+        private bool lurkingExtractionRunning = false;
         private SessionContext? lastContext;
 
         // TrustProgress 每日自动增长跟踪
@@ -135,7 +138,8 @@ namespace AgentCoreProcessor.Engine
             this.ctx = ctx;
             this.channelId = initialContext.Channel.Id;
             this.channelName = initialContext.Channel.Name;
-            this.impulseTracker = new ImpulseTracker(ctx.ImpulseConfig, initialContext.Channel.Affinity, channelId);
+            this.channelConfig = ChannelStateManager.LoadConfig(channelId, initialContext.Channel.Affinity);
+            this.impulseTracker = new ImpulseTracker(ctx.ImpulseConfig, channelConfig.Affinity, channelId);
             var now = DateTime.Now;
             this.lastBufferTime = now;
             this.preprocessingCore = new PreprocessingCore(ctx.Embedding);
@@ -268,6 +272,7 @@ namespace AgentCoreProcessor.Engine
             speakModule.OnSpeak = async (rawText) =>
             {
                 if (currentLastMsg == null || currentLastSc == null || currentParticipantSnapshot == null) return;
+                unrespondedMessageCount = 0;
                 var (content, replyTo, mentions) = ParseBotOutput(rawText, currentParticipantSnapshot);
                 var sentId = await ctx.Adapters.SendMessageAsync(currentLastMsg.Platform, new OutgoingMessage
                 {
@@ -628,7 +633,10 @@ namespace AgentCoreProcessor.Engine
             MessageRate = impulseTracker.MessageRate,
             Expectation = impulseTracker.Expectation,
             Reality = impulseTracker.Reality,
-            ChannelAffinity = impulseTracker.ChannelAffinity,
+            ChannelAffinity = channelConfig.Affinity,
+            Importance = channelConfig.Importance,
+            ExtractionInterval = channelConfig.ExtractionInterval,
+            UnrespondedMessageCount = unrespondedMessageCount,
             ConsecutiveExternalTriggers = consecutiveExternalTriggers,
             LastCompletionTime = LastCompletionTime,
             TotalRounds = loopControlModule.TotalRounds,
@@ -647,8 +655,13 @@ namespace AgentCoreProcessor.Engine
         {
             this.lastContext = sc;
             processedMessageCount += messages.Count;
-            // 活跃对话不再定时提取——由 Lilara 通过 [REMEMBER] 信号自主决定记什么
-            // 批量提取留给潜水模式（频道配置统一后实现）
+            unrespondedMessageCount += messages.Count;
+
+            if (unrespondedMessageCount >= channelConfig.ExtractionInterval && !lurkingExtractionRunning)
+            {
+                _ = RunLurkingExtractionAsync(sc);
+                unrespondedMessageCount = 0;
+            }
         }
 
         private async Task<List<ScoredMemory>> GetCachedMemoryAsync(SessionContext context, string query)
@@ -743,6 +756,82 @@ namespace AgentCoreProcessor.Engine
             catch
             {
                 return null;
+            }
+        }
+
+        public async Task TriggerLurkingExtractionAsync()
+        {
+            if (lastContext == null) return;
+            await RunLurkingExtractionAsync(lastContext);
+        }
+
+        private async Task RunLurkingExtractionAsync(SessionContext context)
+        {
+            if (lurkingExtractionRunning) return;
+            lurkingExtractionRunning = true;
+            try
+            {
+                var limit = Math.Min(channelConfig.ExtractionInterval, 50);
+                var recent = await ctx.Session.GetContextByChannelAsync(channelId, limit: limit);
+                if (recent.Count < 3) return;
+
+                var lines = recent.Select(m =>
+                {
+                    var name = m.IsFromBot ? "Lilara"
+                             : !string.IsNullOrEmpty(m.SenderName) ? m.SenderName
+                             : "用户";
+                    return $"{name}: {m.Content}";
+                }).ToList();
+
+                var participantNames = recentParticipants.Values
+                    .Select(p => p.DisplayName)
+                    .Where(n => !string.IsNullOrEmpty(n))
+                    .Distinct().ToList();
+                if (participantNames.Count > 0)
+                    lines.Insert(0, $"[群聊参与者: {string.Join("、", participantNames)}]");
+
+                var core = new MemoryExtractionCore();
+                var results = await core.ExtractAsync(lines);
+
+                int count = 0;
+                foreach (var item in results)
+                {
+                    if (item.Type == "knowledge")
+                    {
+                        await ctx.MemorySvc.StoreAsync(item.Content,
+                            personId: null, channelId: null,
+                            confidence: item.Confidence,
+                            type: MemoryType.Knowledge, subject: item.Subject);
+                    }
+                    else if (item.Type == "feedback" && item.Sentiment != null)
+                    {
+                        int personId = ResolveAboutToPersonId(item.About) ?? context.Person.Id;
+                        await ctx.MemorySvc.ApplyFeedbackAsync(
+                            personId, item.Content, item.Sentiment, item.Correction);
+                    }
+                    else
+                    {
+                        int personId = ResolveAboutToPersonId(item.About) ?? context.Person.Id;
+                        string memType = item.Type ?? MemoryType.Fact;
+                        await ctx.MemorySvc.StoreAsync(item.Content,
+                            personId, context.Channel.Id,
+                            confidence: item.Confidence,
+                            type: memType, subject: item.Subject);
+                    }
+                    count++;
+                }
+
+                if (count > 0)
+                    FrameworkLogger.Log("ChannelEngine",
+                        $"潜水提取完成: channelId={channelId}, 提取{count}条");
+            }
+            catch (Exception ex)
+            {
+                FrameworkLogger.Log("ChannelEngine", $"潜水提取失败: {ex.Message}");
+            }
+            finally
+            {
+                lurkingExtractionRunning = false;
             }
         }
 

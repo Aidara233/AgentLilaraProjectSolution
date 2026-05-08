@@ -268,6 +268,7 @@ namespace AgentCoreProcessor
             });
             builder.Services.AddSingleton<WebUI.Services.SystemMonitor>();
             builder.Services.AddSingleton<LogStreamService>();
+            builder.Services.AddSingleton<WebUI.Services.ModelLogService>();
 
             builder.Services.AddRazorComponents()
                 .AddInteractiveServerComponents();
