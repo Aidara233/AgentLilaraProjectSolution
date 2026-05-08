@@ -93,9 +93,8 @@ namespace AgentCoreProcessor.Engine
         private DateTime cachedQueryIntentTime = DateTime.MinValue;
         private const float QueryIntentCacheTtlSeconds = 30f;
 
-        // 记忆提取计数
+        // 记忆提取计数（用于退出时判断是否需要收尾提取）
         private int processedMessageCount = 0;
-        private const int MemoryExtractionInterval = 3;
         private SessionContext? lastContext;
 
         // TrustProgress 每日自动增长跟踪
@@ -648,11 +647,8 @@ namespace AgentCoreProcessor.Engine
         {
             this.lastContext = sc;
             processedMessageCount += messages.Count;
-            if (processedMessageCount >= MemoryExtractionInterval)
-            {
-                processedMessageCount = 0;
-                _ = ExtractMemoryAsync(sc);
-            }
+            // 活跃对话不再定时提取——由 Lilara 通过 [REMEMBER] 信号自主决定记什么
+            // 批量提取留给潜水模式（频道配置统一后实现）
         }
 
         private async Task<List<ScoredMemory>> GetCachedMemoryAsync(SessionContext context, string query)
