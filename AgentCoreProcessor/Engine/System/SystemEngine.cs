@@ -20,6 +20,8 @@ namespace AgentCoreProcessor.Engine
         public string EngineType => "System";
         public bool IsAlive { get; private set; } = true;
         public bool IsInfrastructure => false;
+        public bool IsBusy => Interlocked.Read(ref _busyFlag) == 1;
+        private long _busyFlag = 0;
 
         private readonly ISystemContext ctx;
         private readonly AgentCore agentCore = new();
@@ -111,36 +113,43 @@ namespace AgentCoreProcessor.Engine
                     }
 
                     FrameworkLogger.Log("SystemEngine", $"处理任务: {task.TaskId} - {task.Description}");
-
-                    // ④ 构建 prompt
-                    var messages = BuildPromptMessages(task);
-
-                    // ⑤ 调用模型
-                    var output = await agentCore.InvokeAsync(messages, EngineMode.Working);
-
-                    // ⑥ 处理响应（Phase 2: 暂时只记录，Phase 3+ 会处理工具调用）
-                    var result = ProcessResponse(output, task);
-
-                    // ⑦ 完成任务
-                    ctx.TaskBridge.CompleteTask(task.TaskId, result);
-
-                    // ⑦ 持久化
-                    var userMessages = messages.Where(m => m.Role == "user").ToList();
-                    var assistantMessage = new Message
+                    Interlocked.Exchange(ref _busyFlag, 1);
+                    try
                     {
-                        Role = "assistant",
-                        Content = output.Text ?? string.Join("\n", output.ToolCalls?.Select(c => $"{c.Tool}({string.Join(", ", c.Inputs)})") ?? new List<string>())
-                    };
-                    persistence.AppendRound(userMessages, new List<Message> { assistantMessage });
+                        // ④ 构建 prompt
+                        var messages = BuildPromptMessages(task);
 
-                    // ⑧ 发布 RoundCompletedEvent（触发压缩检查）
-                    var allMessages = new List<Message>();
-                    allMessages.AddRange(userMessages);
-                    allMessages.Add(assistantMessage);
-                    bus.Publish(new RoundCompletedEvent { Messages = allMessages });
+                        // ⑤ 调用模型
+                        var output = await agentCore.InvokeAsync(messages, EngineMode.Working);
 
-                    // ⑨ 保存模块状态
-                    SaveModuleState();
+                        // ⑥ 处理响应（Phase 2: 暂时只记录，Phase 3+ 会处理工具调用）
+                        var result = ProcessResponse(output, task);
+
+                        // ⑦ 完成任务
+                        ctx.TaskBridge.CompleteTask(task.TaskId, result);
+
+                        // ⑦ 持久化
+                        var userMessages = messages.Where(m => m.Role == "user").ToList();
+                        var assistantMessage = new Message
+                        {
+                            Role = "assistant",
+                            Content = output.Text ?? string.Join("\n", output.ToolCalls?.Select(c => $"{c.Tool}({string.Join(", ", c.Inputs)})") ?? new List<string>())
+                        };
+                        persistence.AppendRound(userMessages, new List<Message> { assistantMessage });
+
+                        // ⑧ 发布 RoundCompletedEvent（触发压缩检查）
+                        var allMessages = new List<Message>();
+                        allMessages.AddRange(userMessages);
+                        allMessages.Add(assistantMessage);
+                        bus.Publish(new RoundCompletedEvent { Messages = allMessages });
+
+                        // ⑨ 保存模块状态
+                        SaveModuleState();
+                    }
+                    finally
+                    {
+                        Interlocked.Exchange(ref _busyFlag, 0);
+                    }
                 }
             }
             catch (OperationCanceledException)

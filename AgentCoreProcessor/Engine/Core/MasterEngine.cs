@@ -65,14 +65,14 @@ namespace AgentCoreProcessor.Engine
         // 内核级状态
         private DateTime lastMessageTime = DateTime.Now;
         public DateTime LastMessageTime => lastMessageTime;
-        /// <summary>是否空闲。排除基础设施引擎（IsInfrastructure=true）。</summary>
+        /// <summary>是否空闲。检查所有非基础设施引擎的 IsBusy 状态。</summary>
         public bool IsIdle
         {
             get
             {
                 lock (engineLock)
                 {
-                    return !activeEngines.Any(e => e.IsAlive && !e.IsInfrastructure);
+                    return !activeEngines.Any(e => !e.IsInfrastructure && e.IsBusy);
                 }
             }
         }

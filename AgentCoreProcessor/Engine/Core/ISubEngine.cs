@@ -24,6 +24,13 @@ namespace AgentCoreProcessor.Engine
         /// 默认 false。
         /// </summary>
         bool IsInfrastructure => false;
+
+        /// <summary>
+        /// 是否正在主动处理任务（调用模型、执行工具等）。
+        /// 默认等于 IsAlive（短生命周期引擎活着就是在忙）。
+        /// 常驻引擎应覆盖此属性，仅在实际工作时返回 true。
+        /// </summary>
+        bool IsBusy => IsAlive;
     }
 
     /// <summary>
