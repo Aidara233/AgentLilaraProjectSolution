@@ -87,6 +87,11 @@ namespace AgentCoreProcessor.Engine
         private readonly Dictionary<int, (List<ScoredMemory> Results, DateTime Time)> memoryCache = new();
         private const float MemoryCacheTtlSeconds = 60f;
 
+        // 记忆检索意图缓存（同一轮对话内不重复调用 MemoryQueryCore）
+        private MemoryQueryIntent? cachedQueryIntent;
+        private DateTime cachedQueryIntentTime = DateTime.MinValue;
+        private const float QueryIntentCacheTtlSeconds = 30f;
+
         // 记忆提取计数
         private int processedMessageCount = 0;
         private const int MemoryExtractionInterval = 3;
@@ -660,15 +665,60 @@ namespace AgentCoreProcessor.Engine
 
             try
             {
-                var results = await ctx.MemorySvc.RecallAsync(
-                    personId, context.Channel.Id,
-                    query, topK: 10, includeLinks: true, includePersona: true);
+                // 尝试用 MemoryQueryCore 提取检索意图
+                var intent = await GetCachedQueryIntentAsync();
+
+                List<ScoredMemory> results;
+                if (intent != null && (intent.Keywords.Count > 0 || intent.Subjects.Count > 0))
+                {
+                    results = await ctx.MemorySvc.RecallAsync(
+                        personId, context.Channel.Id,
+                        query, intent, topK: 10, includeLinks: true, includePersona: true);
+                }
+                else
+                {
+                    results = await ctx.MemorySvc.RecallAsync(
+                        personId, context.Channel.Id,
+                        query, topK: 10, includeLinks: true, includePersona: true);
+                }
+
                 memoryCache[personId] = (results, DateTime.Now);
                 return results;
             }
             catch
             {
                 return new List<ScoredMemory>();
+            }
+        }
+
+        private async Task<MemoryQueryIntent?> GetCachedQueryIntentAsync()
+        {
+            if (cachedQueryIntent != null &&
+                (DateTime.Now - cachedQueryIntentTime).TotalSeconds < QueryIntentCacheTtlSeconds)
+            {
+                return cachedQueryIntent;
+            }
+
+            try
+            {
+                var recent = await ctx.Session.GetContextByChannelAsync(channelId, limit: 5);
+                if (recent.Count < 1) return null;
+
+                var lines = recent.Select(m =>
+                {
+                    var name = m.IsFromBot ? "Lilara" : (m.SenderName ?? $"User{m.UserId}");
+                    return $"{name}: {m.Content}";
+                }).ToList();
+
+                var core = new MemoryQueryCore();
+                var intent = await core.ExtractIntentAsync(lines);
+                cachedQueryIntent = intent;
+                cachedQueryIntentTime = DateTime.Now;
+                return intent;
+            }
+            catch
+            {
+                return null;
             }
         }
 

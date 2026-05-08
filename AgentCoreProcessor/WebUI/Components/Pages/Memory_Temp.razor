@@ -30,6 +30,16 @@
 <!-- 过滤器 -->
 <div class="row g-2 mb-3">
     <div class="col-md-2">
+        <select class="form-select form-select-sm" @bind="filterType" @bind:after="ApplyFilter">
+            <option value="">全部类型</option>
+            <option value="knowledge">knowledge</option>
+            <option value="fact">fact</option>
+            <option value="feedback">feedback</option>
+            <option value="inference">inference</option>
+            <option value="event">event</option>
+        </select>
+    </div>
+    <div class="col-md-2">
         <select class="form-select form-select-sm" @bind="filterConfidence" @bind:after="ApplyFilter">
             <option value="">全部置信度</option>
             <option value="high">高置信</option>
@@ -77,6 +87,11 @@
                     <div class="msg-item">
                         <div class="d-flex justify-content-between align-items-start">
                             <div class="d-flex gap-1 flex-wrap">
+                                <span class="badge-status badge-express">@m.Type</span>
+                                @if (!string.IsNullOrEmpty(m.Subject))
+                                {
+                                    <span class="badge-status" style="background:var(--accent-color); color:#fff;">@m.Subject</span>
+                                }
                                 @if (m.PersonId != null)
                                 {
                                     <span class="badge-status badge-info">P:@m.PersonId</span>
@@ -109,6 +124,7 @@
     private List<TempMemoryEntry> allMemories = new();
     private List<TempMemoryEntry> filtered = new();
     private List<int> personIds = new();
+    private string filterType = "";
     private string filterConfidence = "";
     private int filterPersonId = 0;
     private string keyword = "";
@@ -133,6 +149,9 @@
     private void ApplyFilter()
     {
         var q = allMemories.AsEnumerable();
+
+        if (!string.IsNullOrEmpty(filterType))
+            q = q.Where(m => m.Type == filterType);
 
         if (!string.IsNullOrEmpty(filterConfidence))
             q = q.Where(m => m.Confidence == filterConfidence);

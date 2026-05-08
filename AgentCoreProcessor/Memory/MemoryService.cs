@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Client;
+using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Util;
 
@@ -25,6 +26,8 @@ namespace AgentCoreProcessor.Memory
         private const float LinkWeight = 0.2f;
         private const float TempBoost = 0.1f; // 临时库偏置
         private const float TagMatchBoost = 0.1f; // 每个匹配标签的额外加权
+        private const float KeywordBoost = 0.15f; // 关键词命中加分
+        private const float SubjectBoost = 0.2f; // Subject 精确匹配加分
         private const float MinRecallScore = 0.25f; // 召回最低分数门槛，低于此值不返回
         private const float PersonaPenalty = 0.05f; // 人设记忆降权，确保真记忆优先
         private const float PersonaMinScore = 0.12f; // 人设记忆独立门槛（低于主门槛，因为没有标签/重要性加成）
@@ -96,6 +99,7 @@ namespace AgentCoreProcessor.Memory
                 {
                     Id = t.Id,
                     Content = t.Content,
+                    Subject = t.Subject,
                     Score = sim * SimilarityWeight + TempBoost + matchCount * TagMatchBoost,
                     IsTemp = true,
                     Confidence = t.Confidence
@@ -122,6 +126,7 @@ namespace AgentCoreProcessor.Memory
                 {
                     Id = x.Entry.Id,
                     Content = x.Entry.Content,
+                    Subject = x.Entry.Subject,
                     Score = x.Similarity * SimilarityWeight
                         + x.Entry.Importance * ImportanceWeight
                         + x.MatchCount * TagMatchBoost,
@@ -212,6 +217,59 @@ namespace AgentCoreProcessor.Memory
             return result;
         }
 
+        /// <summary>
+        /// 增强检索：使用 MemoryQueryIntent 提供的关键词和主题做额外加分。
+        /// </summary>
+        public async Task<List<ScoredMemory>> RecallAsync(
+            int personId, int channelId,
+            string query, MemoryQueryIntent intent,
+            int topK = 10, bool includeLinks = true, bool includePersona = false)
+        {
+            var results = await RecallAsync(personId, channelId, query, topK * 2, includeLinks, includePersona);
+
+            // 对结果做关键词/主题加分后重排
+            foreach (var item in results)
+            {
+                float bonus = ComputeIntentBonus(item, intent);
+                item.Score += bonus;
+            }
+
+            return results
+                .Where(s => s.Score >= (s.IsPersona ? PersonaMinScore : MinRecallScore))
+                .OrderByDescending(s => s.Score)
+                .Take(topK)
+                .ToList();
+        }
+
+        private float ComputeIntentBonus(ScoredMemory item, MemoryQueryIntent intent)
+        {
+            float bonus = 0f;
+            var contentLower = item.Content.ToLowerInvariant();
+
+            foreach (var kw in intent.Keywords)
+            {
+                if (contentLower.Contains(kw.ToLowerInvariant()))
+                    bonus += KeywordBoost;
+            }
+
+            if (!string.IsNullOrEmpty(item.Subject))
+            {
+                var subjectLower = item.Subject.ToLowerInvariant();
+                foreach (var s in intent.Subjects)
+                {
+                    if (subjectLower.Contains(s.ToLowerInvariant()) || s.ToLowerInvariant().Contains(subjectLower))
+                        bonus += SubjectBoost;
+                }
+                foreach (var kw in intent.Keywords)
+                {
+                    if (subjectLower.Contains(kw.ToLowerInvariant()))
+                        bonus += SubjectBoost;
+                }
+            }
+
+            return bonus;
+        }
+
         /// <summary>删除指定记忆。</summary>
         public async Task ForgetAsync(int memoryId)
         {
@@ -296,6 +354,7 @@ namespace AgentCoreProcessor.Memory
     {
         public int Id { get; set; }
         public string Content { get; set; } = "";
+        public string? Subject { get; set; }
         public float Score { get; set; }
         public bool IsTemp { get; set; }
         public string Confidence { get; set; } = "high";

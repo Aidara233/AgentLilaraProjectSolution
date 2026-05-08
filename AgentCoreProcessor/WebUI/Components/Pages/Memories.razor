@@ -53,6 +53,11 @@
                         <div class="msg-item">
                             <div class="d-flex justify-content-between">
                                 <div class="d-flex gap-1 flex-wrap">
+                                    <span class="badge-status badge-express">@m.Type</span>
+                                    @if (!string.IsNullOrEmpty(m.Subject))
+                                    {
+                                        <span class="badge-status" style="background:var(--accent-color); color:#fff;">@m.Subject</span>
+                                    }
                                     @if (m.PersonId > 0)
                                     {
                                         <span class="badge-status badge-info">P:@m.PersonId</span>
