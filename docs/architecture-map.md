@@ -15,7 +15,7 @@ AgentCoreProcessor/
 ├── Client/      IModelClient 抽象层（Claude/OpenAI 双协议）+ Embedding 接口
 ├── Command/     框架指令系统（/help /status /config 等）
 ├── Config/      PathConfig 绝对路径管理
-├── Core/        业务核心（AgentCore统一+PreprocessingCore+MemoryExtractionCore等），继承 CoreBase，各自 JSON 配置
+├── Core/        业务核心（AgentCore统一+PreprocessingCore+MemoryExtractionCore+MemoryQueryCore等），继承 CoreBase，各自 JSON 配置
 ├── Database/    实体 + Repository（SQLite，12张表）
 ├── Engine/      引擎生态（MasterEngine 内核 + 子引擎 + Worker闸门循环 + 内务模块）
 ├── Memory/      MemoryService 检索管线
@@ -182,14 +182,22 @@ ReviewEngine (由DreamEngine孵化，不注册SpawnCheck):
 ## 记忆系统
 
 ```
-写入: MemoryExtractionCore 自动提取 / 工具"记忆"手动写入 → TempMemory (自动生成embedding)
+写入: MemoryExtractionCore 自动提取 / 工具"记忆"手动写入 / [REMEMBER]信号 → TempMemory (自动生成embedding)
+  每条记忆含: Type(knowledge/fact/feedback/inference/event) + Subject(主题关键词) + PersonId/ChannelId(软标签)
+
 检索: MemoryService.RecallAsync
   ① TempMemory 全量扫描 (小库，快)
-  ② Memory 标签 OR 过滤 (Person/Channel，任一匹配即召回)
+  ② Memory 全量扫描 (person/channel 软加分，不做硬过滤)
   ③ 向量精排 (cosine similarity, MinRecallScore=0.25)
   ④ 关联扩展 (MemoryLink)
-  ⑤ 综合排序: Similarity×0.5 + Importance×0.3 + Link×0.2 + TempBoost×0.1
+  ⑤ 综合排序: Similarity×0.5 + Importance×0.3 + Link×0.2 + TempBoost×0.1 + TagMatch×0.1
   ⑥ PersonaMemory 独立召回 (PersonaPenalty=0.05, PersonaMinScore=0.12, 仅聊天路径)
+  
+  增强检索 (MemoryQueryCore):
+    轻量模型调用提取检索意图 (keywords + subjects)
+    关键词命中加分 (KeywordBoost=0.15) + Subject匹配加分 (SubjectBoost=0.2)
+    30s 意图缓存，同一轮对话内不重复调用
+
 整合: TempMemory → Consolidation(做梦) → Memory
 标记: ReviewHint表 (工作时标记 → 复盘时消费)
 低置信: Confidence(high/low) + Feedback(positive/negative)，低置信记忆标注"不太确定"
