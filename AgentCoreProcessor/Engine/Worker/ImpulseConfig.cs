@@ -10,9 +10,9 @@ namespace AgentCoreProcessor.Engine
         public float MentionScore { get; set; } = 8f;
         public float PrivateScore { get; set; } = 8f;
 
-        public float DecayPerSecond { get; set; } = 0.1f;
+        public float DecayPerSecond { get; set; } = 0.05f;
 
-        public float BaseThreshold { get; set; } = 3f;
+        public float BaseThreshold { get; set; } = 1.5f;
         public float MessageRateScaleFactor { get; set; } = 0.5f;
 
         public float EmaDecayRate { get; set; } = 0.995f;
@@ -20,7 +20,7 @@ namespace AgentCoreProcessor.Engine
         public float ExpectationOnProactive { get; set; } = 2.0f;
         public float ExpectationOnMentionTriggered { get; set; } = 0.5f;
         public float RealityOnEngagement { get; set; } = 2.0f;
-        public float RatioFactorLower { get; set; } = 0.3f;
+        public float RatioFactorLower { get; set; } = 0.7f;
         public float RatioFactorUpper { get; set; } = 2.0f;
 
         public float PostResponseCooldownSeconds { get; set; } = 3f;
