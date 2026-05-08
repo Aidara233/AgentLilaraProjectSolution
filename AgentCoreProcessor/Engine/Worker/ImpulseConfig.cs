@@ -18,7 +18,7 @@ namespace AgentCoreProcessor.Engine
         public float EmaDecayRate { get; set; } = 0.995f;
         public float BaseExpectation { get; set; } = 0.5f;
         public float ExpectationOnProactive { get; set; } = 2.0f;
-        public float ExpectationOnMentionTriggered { get; set; } = 0.5f;
+        public float ExpectationOnMentionTriggered { get; set; } = 2.0f;
         public float RealityOnEngagement { get; set; } = 2.0f;
         public float RatioFactorLower { get; set; } = 0.7f;
         public float RatioFactorUpper { get; set; } = 2.0f;
