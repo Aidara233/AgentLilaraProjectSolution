@@ -40,6 +40,19 @@ namespace AgentCoreProcessor.Database
             await db.CreateTableAsync<ImageRecord>();
         }
 
+        /// <summary>
+        /// 重建记忆相关表（DROP + CREATE）。用于结构变更后清除不兼容数据。
+        /// </summary>
+        public async Task RebuildMemoryTablesAsync()
+        {
+            await db.ExecuteAsync("DROP TABLE IF EXISTS TempMemories");
+            await db.ExecuteAsync("DROP TABLE IF EXISTS Memories");
+            await db.ExecuteAsync("DROP TABLE IF EXISTS MemoryLinks");
+            await db.CreateTableAsync<TempMemoryEntry>();
+            await db.CreateTableAsync<MemoryEntry>();
+            await db.CreateTableAsync<MemoryLink>();
+        }
+
         /// <summary>插入一条记录，返回受影响的行数。</summary>
         public Task<int> InsertAsync<T>(T entity) where T : new()
             => db.InsertAsync(entity);
@@ -72,5 +85,9 @@ namespace AgentCoreProcessor.Database
         /// </summary>
         public AsyncTableQuery<T> Table<T>() where T : new()
             => db.Table<T>();
+
+        /// <summary>执行原始 SQL（无返回值）。</summary>
+        public Task ExecuteAsync(string sql, params object[] args)
+            => db.ExecuteAsync(sql, args);
     }
 }

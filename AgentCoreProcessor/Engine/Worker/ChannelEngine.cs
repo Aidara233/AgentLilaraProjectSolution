@@ -275,7 +275,8 @@ namespace AgentCoreProcessor.Engine
             signalDispatchModule.OnMemory = async (content) =>
             {
                 if (currentLastSc == null) return;
-                await ctx.MemorySvc.StoreAsync(content, currentLastSc.Person.Id, currentLastSc.Channel.Id);
+                await ctx.MemorySvc.StoreAsync(content, currentLastSc.Person.Id, currentLastSc.Channel.Id,
+                    type: MemoryType.Fact);
             };
             signalDispatchModule.OnSignal = async (signalName, payload) =>
             {
@@ -703,7 +704,8 @@ namespace AgentCoreProcessor.Engine
                     {
                         await ctx.MemorySvc.StoreAsync(item.Content,
                             personId: null, channelId: null,
-                            confidence: item.Confidence);
+                            confidence: item.Confidence,
+                            type: MemoryType.Knowledge, subject: item.Subject);
                         knowledgeCount++;
                     }
                     else if (item.Type == "feedback" && item.Sentiment != null)
@@ -716,9 +718,11 @@ namespace AgentCoreProcessor.Engine
                     else
                     {
                         int personId = ResolveAboutToPersonId(item.About) ?? context.Person.Id;
+                        string memType = item.Type ?? MemoryType.Fact;
                         await ctx.MemorySvc.StoreAsync(item.Content,
                             personId, context.Channel.Id,
-                            confidence: item.Confidence);
+                            confidence: item.Confidence,
+                            type: memType, subject: item.Subject);
                         factCount++;
                     }
                 }

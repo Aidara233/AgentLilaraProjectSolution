@@ -17,7 +17,8 @@ namespace AgentCoreProcessor.Database
         public async Task<TempMemoryEntry> CreateAsync(
             string content, byte[]? embedding,
             int? personId = null, int? channelId = null,
-            int? sourceMessageId = null, string confidence = "high")
+            int? sourceMessageId = null, string confidence = "high",
+            string type = MemoryType.Fact, string? subject = null)
         {
             var entry = new TempMemoryEntry
             {
@@ -27,6 +28,8 @@ namespace AgentCoreProcessor.Database
                 Embedding = embedding,
                 SourceMessageId = sourceMessageId,
                 Confidence = confidence,
+                Type = type,
+                Subject = subject,
                 CreatedAt = DateTime.Now
             };
             await db.InsertAsync(entry);
@@ -39,8 +42,11 @@ namespace AgentCoreProcessor.Database
             return db.GetAllAsync<TempMemoryEntry>();
         }
 
-        /// <summary>按多维标签过滤临时记忆（OR 模式：任一标签匹配即召回，返回匹配标签数）。</summary>
-        public async Task<List<(TempMemoryEntry Entry, int MatchCount)>> GetByTagsAsync(
+        /// <summary>
+        /// 获取全部临时记忆并计算标签匹配分。
+        /// 不做硬过滤：所有记忆都返回，person/channel 匹配作为加分项。
+        /// </summary>
+        public async Task<List<(TempMemoryEntry Entry, int MatchCount)>> GetAllWithMatchScoreAsync(
             int? personId, int? channelId)
         {
             var all = await GetAllAsync();
@@ -51,11 +57,9 @@ namespace AgentCoreProcessor.Database
                 int matchCount = 0;
                 if (m.PersonId != null && m.PersonId == personId) matchCount++;
                 if (m.ChannelId != null && m.ChannelId == channelId) matchCount++;
+                if (m.Type == MemoryType.Knowledge) matchCount++;
 
-                // 全局记忆（全 null）或至少一个标签匹配
-                bool isGlobal = m.PersonId == null && m.ChannelId == null;
-                if (isGlobal || matchCount > 0)
-                    results.Add((m, isGlobal ? 1 : matchCount));
+                results.Add((m, matchCount));
             }
 
             return results;

@@ -13,10 +13,13 @@ namespace AgentCoreProcessor.Core
     internal class ExtractionResult
     {
         [JsonProperty("type")]
-        public string Type { get; set; } = "fact"; // fact | feedback
+        public string Type { get; set; } = "fact"; // knowledge | fact | feedback | inference | event
 
         [JsonProperty("content")]
         public string Content { get; set; } = "";
+
+        [JsonProperty("subject")]
+        public string? Subject { get; set; }
 
         [JsonProperty("confidence")]
         public string Confidence { get; set; } = "high"; // high | low

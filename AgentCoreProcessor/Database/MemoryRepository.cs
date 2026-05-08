@@ -15,13 +15,10 @@ namespace AgentCoreProcessor.Database
         public MemoryRepository(DbManager db) => this.db = db;
 
         /// <summary>
-        /// 按多维标签并集过滤记忆。
-        /// 返回 PersonId/ChannelId 任一匹配 或 对应标签为 null（不限）的记忆。
+        /// 获取全部记忆并计算标签匹配分。
+        /// 不做硬过滤：所有记忆都返回，person/channel 匹配作为加分项。
         /// </summary>
-        /// <summary>
-        /// 按多维标签过滤记忆（OR 模式：任一标签匹配即召回，返回匹配标签数）。
-        /// </summary>
-        public async Task<List<(MemoryEntry Entry, int MatchCount)>> GetByTagsAsync(
+        public async Task<List<(MemoryEntry Entry, int MatchCount)>> GetAllWithMatchScoreAsync(
             int? personId, int? channelId)
         {
             var all = await db.GetAllAsync<MemoryEntry>();
@@ -36,10 +33,9 @@ namespace AgentCoreProcessor.Database
                 int matchCount = 0;
                 if (m.PersonId != null && m.PersonId == personId) matchCount++;
                 if (m.ChannelId != null && m.ChannelId == channelId) matchCount++;
+                if (m.Type == MemoryType.Knowledge) matchCount++;
 
-                bool isGlobal = m.PersonId == null && m.ChannelId == null;
-                if (isGlobal || matchCount > 0)
-                    results.Add((m, isGlobal ? 1 : matchCount));
+                results.Add((m, matchCount));
             }
 
             return results;
@@ -76,7 +72,8 @@ namespace AgentCoreProcessor.Database
         public async Task<MemoryEntry> CreateAsync(
             string content, byte[]? embedding,
             int? personId = null, int? channelId = null,
-            int? sourceMessageId = null, float importance = 0.5f, string confidence = "high")
+            int? sourceMessageId = null, float importance = 0.5f, string confidence = "high",
+            string type = MemoryType.Fact, string? subject = null)
         {
             var memory = new MemoryEntry
             {
@@ -86,6 +83,8 @@ namespace AgentCoreProcessor.Database
                 Embedding = embedding,
                 Importance = importance,
                 Confidence = confidence,
+                Type = type,
+                Subject = subject,
                 SourceMessageId = sourceMessageId,
                 IsPersistent = true,
                 CreatedAt = DateTime.Now,

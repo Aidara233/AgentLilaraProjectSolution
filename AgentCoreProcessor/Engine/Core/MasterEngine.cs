@@ -165,6 +165,15 @@ namespace AgentCoreProcessor.Engine
             db = new DbManager(dbPath);
             await db.InitAsync();
 
+            // 记忆表结构变更（v2: 加 Type/Subject，移除 TopicId），一次性重建
+            var schemaMarker = Path.Combine(databaseDirectory, ".memory_schema_v2");
+            if (!File.Exists(schemaMarker))
+            {
+                await db.RebuildMemoryTablesAsync();
+                await File.WriteAllTextAsync(schemaMarker, "rebuilt");
+                FrameworkLogger.Log("MasterEngine", "记忆表已重建（schema v2）");
+            }
+
             // Repository
             var persons = new PersonRepository(db);
             var users = new UserRepository(db, persons);

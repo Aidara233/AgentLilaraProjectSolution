@@ -13,14 +13,17 @@ namespace AgentCoreProcessor.Database
         [PrimaryKey, AutoIncrement]
         public int Id { get; set; }
 
-        /// <summary>关联的自然人</summary>
+        /// <summary>关联的自然人（软匹配加分，不做硬过滤）</summary>
         public int? PersonId { get; set; }
 
-        /// <summary>关联的频道</summary>
+        /// <summary>关联的频道（软匹配加分，不做硬过滤）</summary>
         public int? ChannelId { get; set; }
 
-        /// <summary>关联的话题</summary>
-        public int? TopicId { get; set; }
+        /// <summary>记忆类型：knowledge/fact/feedback/inference/event</summary>
+        public string Type { get; set; } = MemoryType.Fact;
+
+        /// <summary>记忆主题（如"Kimi 1.5"、"小明"、"rope扩展"），用于主题匹配</summary>
+        public string? Subject { get; set; }
 
         /// <summary>记忆内容</summary>
         public string Content { get; set; } = "";
