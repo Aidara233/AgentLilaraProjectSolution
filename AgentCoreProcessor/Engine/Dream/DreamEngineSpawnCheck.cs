@@ -22,6 +22,7 @@ namespace AgentCoreProcessor.Engine
             Path.Combine(PathConfig.StoragePath, "Dream", "DreamConfig.json"));
 
         private volatile bool forceFlag = false;
+        private volatile SleepLevel forcedLevel = SleepLevel.DeepSleep;
         private DateTime? lastDaydreamTime;
 
         // ShouldSpawn 决定的睡眠级别，供 Create 读取
@@ -37,7 +38,13 @@ namespace AgentCoreProcessor.Engine
                 {
                     case "force-sleep":
                         forceFlag = true;
-                        FrameworkLogger.Log("DreamSpawnCheck", "强制睡觉信号");
+                        forcedLevel = (signal.Payload as string) switch
+                        {
+                            "nap" => SleepLevel.Nap,
+                            "daydream" => SleepLevel.Daydream,
+                            _ => SleepLevel.DeepSleep
+                        };
+                        FrameworkLogger.Log("DreamSpawnCheck", $"强制睡觉信号: level={forcedLevel}");
                         break;
                     case "dream-config":
                         if (signal.Payload is string json)
@@ -61,12 +68,17 @@ namespace AgentCoreProcessor.Engine
 
         public Task<bool> ShouldSpawnAsync(EngineEvent e, ISystemContext ctx)
         {
-            // ① 强制睡觉（来自 SystemEngine 或 /sleep 命令）
+            // ① 强制睡觉（来自 SystemEngine 或 WebUI）
             if (forceFlag)
             {
                 forceFlag = false;
-                pendingLevel = SleepLevel.DeepSleep;
-                pendingMaxFragments = cfg.MaxFragmentsPerDeepSleep;
+                pendingLevel = forcedLevel;
+                pendingMaxFragments = forcedLevel switch
+                {
+                    SleepLevel.Daydream => 1,
+                    SleepLevel.Nap => cfg.MaxFragmentsPerNap,
+                    _ => cfg.MaxFragmentsPerDeepSleep
+                };
                 return Task.FromResult(!ctx.HasActiveEngine("Dream"));
             }
 
