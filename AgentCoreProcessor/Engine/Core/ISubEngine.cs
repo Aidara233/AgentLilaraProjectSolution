@@ -73,6 +73,12 @@ namespace AgentCoreProcessor.Engine
         // 复盘标记
         ReviewHintRepository ReviewHints { get; }
 
+        // 做梦日志
+        DreamLogRepository DreamLogs { get; }
+
+        // 定时任务
+        ScheduledTaskRepository ScheduledTasks { get; }
+
         // 配置
         ImpulseConfig ImpulseConfig { get; }
         TrustProgressionConfig TrustConfig { get; }

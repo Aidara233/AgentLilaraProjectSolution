@@ -10,6 +10,7 @@ using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.MCP;
 using AgentCoreProcessor.Memory;
+using AgentCoreProcessor.Engine.Modules;
 using Newtonsoft.Json;
 
 namespace AgentCoreProcessor.Engine
@@ -53,6 +54,8 @@ namespace AgentCoreProcessor.Engine
         public MemoryLinkRepository MemoryLinks { get; private set; } = null!;
         public PersonaMemoryRepository PersonaMemories { get; private set; } = null!;
         public ReviewHintRepository ReviewHints { get; private set; } = null!;
+        public DreamLogRepository DreamLogs { get; private set; } = null!;
+        public ScheduledTaskRepository ScheduledTasks { get; private set; } = null!;
         public MemoryService MemorySvc { get; private set; } = null!;
         public SessionManager Session { get; private set; } = null!;
         public IEmbeddingProvider Embedding => embeddingProvider!;
@@ -199,6 +202,8 @@ namespace AgentCoreProcessor.Engine
             MemoryLinks = new MemoryLinkRepository(db);
             PersonaMemories = new PersonaMemoryRepository(db);
             ReviewHints = new ReviewHintRepository(db);
+            DreamLogs = new DreamLogRepository(db);
+            ScheduledTasks = new ScheduledTaskRepository(db);
             var images = new ImageRepository(db);
             ImageStorage.Init(images);
 
@@ -257,6 +262,8 @@ namespace AgentCoreProcessor.Engine
             Tool.ToolRegistry.Register(new Tool.EngineManagementTool(this));
             Tool.ToolRegistry.Register(new Tool.CheckNotificationsTool(this));
             Tool.ToolRegistry.Register(new Tool.AdapterActionTool(this));
+            Tool.ToolRegistry.Register(new Tool.ScheduledTaskTool(this));
+            Tool.ToolRegistry.Register(new Tool.CancelScheduledTaskTool(this));
 
             // Phase 6: 注册关注规则工具
             var watchRuleTool = new Tool.SetWatchRuleTool();
@@ -294,10 +301,11 @@ namespace AgentCoreProcessor.Engine
             // Phase 5: 注册子 agent 管理工具（需要 SystemEngine 引用）
             if (systemEngine != null)
             {
-                Tool.ToolRegistry.Register(new Tool.CreateSubAgentTool(() => systemEngine.CreateSubAgent()));
+                Tool.ToolRegistry.Register(new Tool.CreateSubAgentTool(instruction => systemEngine.CreateSubAgent(instruction)));
                 Tool.ToolRegistry.Register(new Tool.SendToSubAgentTool(sessionId => systemEngine.GetSubAgent(sessionId)));
                 Tool.ToolRegistry.Register(new Tool.StopSubAgentTool(sessionId => systemEngine.GetSubAgent(sessionId)));
-                FrameworkLogger.Log("MasterEngine", "子 agent 管理工具已注册");
+                Tool.ToolRegistry.Register(new Tool.WaitTool());
+                FrameworkLogger.Log("MasterEngine", "系统循环工具已注册");
             }
 
             // MCP Server 初始化
@@ -337,6 +345,10 @@ namespace AgentCoreProcessor.Engine
             if (e is MessageEvent msgEvent)
                 lastMessageTime = msgEvent.Time;
 
+            // ①b 定时任务检查（每次 tick 时）
+            if (e is TimerEvent timerEvt && timerEvt.TimerName == "tick")
+                await CheckScheduledTasksAsync();
+
             // ② SpawnCheck：OnEvent + ShouldSpawn
             // 复制列表避免遍历时修改
             var checks = spawnChecks.ToList();
@@ -375,6 +387,50 @@ namespace AgentCoreProcessor.Engine
 
             // ④ 清理已死亡的实例
             lock (engineLock) { activeEngines.RemoveAll(e => !e.IsAlive); }
+        }
+
+        /// <summary>检查到期的定时任务并投递给对应 owner。</summary>
+        private async Task CheckScheduledTasksAsync()
+        {
+            if (ScheduledTasks == null) return;
+
+            List<Database.ScheduledTask> dueTasks;
+            try
+            {
+                dueTasks = await ScheduledTasks.GetDueTasksAsync(DateTime.Now);
+            }
+            catch { return; }
+
+            foreach (var task in dueTasks)
+            {
+                var evt = new Modules.ScheduledTaskFiredEvent
+                {
+                    TaskId = task.Id,
+                    Description = task.Description,
+                    Payload = task.Payload
+                };
+
+                if (task.OwnerType == "system")
+                {
+                    // 投递给 SystemEngine
+                    systemEngine?.EnqueueScheduledEvent(evt);
+                }
+                else
+                {
+                    // 投递给频道循环（作为通知）
+                    TaskBridge.PostNotification(new Notification
+                    {
+                        Type = NotificationType.Notify,
+                        SourceId = $"scheduled-{task.Id}",
+                        Summary = $"[定时任务] {task.Description}" + (task.Payload != null ? $"\n{task.Payload}" : ""),
+                        Timestamp = DateTime.Now
+                    });
+                }
+
+                // 计算下次触发
+                var nextFire = Tool.ScheduleParser.ComputeNextFire(task);
+                await ScheduledTasks.MarkFiredAsync(task.Id, nextFire);
+            }
         }
 
         // ---- 引擎管理 ----

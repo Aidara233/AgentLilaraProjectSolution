@@ -1,165 +1,198 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
+using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Core;
+using AgentCoreProcessor.Engine.Modules;
 using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Tool;
 
 namespace AgentCoreProcessor.Engine
 {
     /// <summary>
-    /// 任务会话（一次性子 agent）。
-    /// 接收指令，调用模型，执行工具，返回结果。用完销毁。
+    /// 异步任务会话（子 agent）。
+    /// 后台运行 Agent 循环，支持追加指令，完成后通知系统循环。
     /// </summary>
     internal class TaskSession : IAgentSession
     {
         public string SessionId { get; }
         public AgentSessionType Type => AgentSessionType.Task;
         public bool IsAlive { get; private set; } = true;
+        public string? CurrentInstruction { get; private set; }
+        public string? LastResult { get; private set; }
 
         private readonly ISystemContext ctx;
         private readonly AgentCore agentCore = new();
+        private readonly Channel<string> instructionQueue = Channel.CreateUnbounded<string>();
+        private readonly List<Message> conversationHistory = new();
+        private readonly HashSet<string>? toolWhitelist;
+        private CancellationTokenSource? stopCts;
+        private Task? backgroundTask;
 
-        public TaskSession(ISystemContext ctx)
+        private const int MaxRoundsPerInstruction = 15;
+
+        public TaskSession(ISystemContext ctx, HashSet<string>? toolWhitelist = null)
         {
             this.ctx = ctx;
-            this.SessionId = $"task-{Guid.NewGuid()}";
+            this.toolWhitelist = toolWhitelist;
+            this.SessionId = $"task-{Guid.NewGuid().ToString("N")[..8]}";
         }
 
-        /// <summary>
-        /// 发送指令给任务会话。
-        /// 构建 prompt（系统状态 + 指令），调用模型，执行工具，返回结果文本。
-        /// </summary>
-        public async Task<bool> SendInstructionAsync(string instruction)
+        /// <summary>启动后台 Agent 循环。</summary>
+        public void Start(string initialInstruction)
         {
-            if (!IsAlive) return false;
-
-            try
-            {
-                // ① 构建 prompt
-                var messages = BuildPromptMessages(instruction);
-
-                // ② 调用模型（Working 模式）
-                var output = await agentCore.InvokeAsync(messages, EngineMode.Working);
-
-                // ③ 执行工具调用
-                if (output.ToolCalls != null && output.ToolCalls.Count > 0)
-                {
-                    var executor = new ToolExecutor();
-                    var results = await executor.ExecuteAsync(output.ToolCalls);
-
-                    // ④ 返回结果文本
-                    var resultText = string.Join("\n", results.Select(r =>
-                    {
-                        if (r.IsSuccess)
-                            return $"[{r.Status}] {r.Data ?? "(无数据)"}";
-                        else
-                            return $"[{r.Status}] {r.Error ?? "(未知错误)"}";
-                    }));
-
-                    FrameworkLogger.Log("TaskSession",
-                        $"任务完成: sessionId={SessionId}, 工具数={output.ToolCalls.Count}");
-
-                    return true;
-                }
-
-                // 如果模型返回文本（不应该发生，但容错处理）
-                if (output.IsText)
-                {
-                    var textPreview = output.Text != null && output.Text.Length > 100
-                        ? output.Text.Substring(0, 100)
-                        : output.Text ?? "";
-                    FrameworkLogger.Log("TaskSession",
-                        $"任务返回文本: sessionId={SessionId}, text={textPreview}");
-                    return true;
-                }
-
-                return false;
-            }
-            catch (Exception ex)
-            {
-                FrameworkLogger.LogError("TaskSession", ex, $"任务执行失败: sessionId={SessionId}");
-                return false;
-            }
+            stopCts = new CancellationTokenSource();
+            instructionQueue.Writer.TryWrite(initialInstruction);
+            backgroundTask = Task.Run(() => RunLoopAsync(stopCts.Token));
+            FrameworkLogger.Log("TaskSession", $"启动: {SessionId}, 指令: {initialInstruction.Truncate(80)}");
         }
 
-        /// <summary>
-        /// 任务会话不支持更新关注规则。
-        /// </summary>
+        /// <summary>追加指令到队列（子 agent 空闲时处理）。</summary>
+        public Task<bool> SendInstructionAsync(string instruction)
+        {
+            if (!IsAlive) return Task.FromResult(false);
+            instructionQueue.Writer.TryWrite(instruction);
+            FrameworkLogger.Log("TaskSession", $"追加指令: {SessionId}");
+            return Task.FromResult(true);
+        }
+
         public Task<bool> UpdateWatchRulesAsync(List<WatchRule> rules)
-        {
-            return Task.FromResult(false);
-        }
+            => Task.FromResult(false);
 
-        /// <summary>
-        /// 请求停止会话。
-        /// </summary>
         public void RequestStop()
         {
-            IsAlive = false;
+            FrameworkLogger.Log("TaskSession", $"停止请求: {SessionId}");
+            stopCts?.Cancel();
+            instructionQueue.Writer.TryComplete();
         }
 
-        /// <summary>
-        /// 构建 prompt 消息列表。
-        /// 包含系统状态摘要 + 当前指令。
-        /// </summary>
-        private List<Message> BuildPromptMessages(string instruction)
+        private async Task RunLoopAsync(CancellationToken ct)
+        {
+            try
+            {
+                await foreach (var instruction in instructionQueue.Reader.ReadAllAsync(ct))
+                {
+                    CurrentInstruction = instruction;
+                    await ProcessInstructionAsync(instruction, ct);
+                    CurrentInstruction = null;
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                FrameworkLogger.LogError("TaskSession", ex, $"子 agent 异常: {SessionId}");
+                LastResult = $"异常终止: {ex.Message}";
+            }
+            finally
+            {
+                IsAlive = false;
+                NotifyCompletion();
+            }
+        }
+
+        private async Task ProcessInstructionAsync(string instruction, CancellationToken ct)
+        {
+            // 将指令加入对话历史
+            conversationHistory.Add(new Message { Role = "user", Content = $"[指令] {instruction}" });
+
+            List<ToolCall>? lastCalls = null;
+            List<ToolResult>? lastResults = null;
+
+            for (int round = 0; round < MaxRoundsPerInstruction && !ct.IsCancellationRequested; round++)
+            {
+                var messages = BuildMessages(lastCalls, lastResults);
+                var output = await agentCore.InvokeAsync(messages, EngineMode.Working);
+
+                if (output.IsText || output.ToolCalls == null || output.ToolCalls.Count == 0)
+                {
+                    // 模型返回文本 = 任务完成
+                    LastResult = output.Text ?? "(完成，无输出)";
+                    conversationHistory.Add(new Message { Role = "assistant", Content = LastResult });
+                    FrameworkLogger.Log("TaskSession",
+                        $"指令完成: {SessionId}, rounds={round + 1}, result={LastResult.Truncate(100)}");
+                    return;
+                }
+
+                // 执行工具
+                var executor = new ToolExecutor(authorizedTools: toolWhitelist);
+                var results = await executor.ExecuteAsync(output.ToolCalls);
+
+                lastCalls = output.ToolCalls;
+                lastResults = results;
+
+                // 记录到对话历史
+                var callSummary = string.Join("\n", output.ToolCalls.Select(c => $"{c.Tool}(...)"));
+                conversationHistory.Add(new Message { Role = "assistant", Content = callSummary });
+            }
+
+            LastResult = "达到最大轮次限制";
+            FrameworkLogger.Log("TaskSession", $"指令达到轮次上限: {SessionId}");
+        }
+
+        private List<Message> BuildMessages(List<ToolCall>? lastCalls, List<ToolResult>? lastResults)
         {
             var messages = new List<Message>();
 
-            // 系统状态摘要
-            var statusSummary = BuildSystemStatusSummary();
-            if (!string.IsNullOrEmpty(statusSummary))
+            // 系统状态
+            messages.Add(new Message
             {
-                messages.Add(new Message
-                {
-                    Role = "user",
-                    Content = statusSummary
-                });
+                Role = "user",
+                Content = BuildSystemStatus()
+            });
+
+            // 工具描述
+            var toolDescs = ToolRegistry.GenerateDescriptions(authorizedTools: toolWhitelist);
+            if (!string.IsNullOrEmpty(toolDescs))
+                messages.Add(new Message { Role = "user", Content = toolDescs });
+
+            // 对话历史（最近 10 轮）
+            var recentHistory = conversationHistory.TakeLast(20).ToList();
+            if (recentHistory.Count > 0)
+            {
+                var historyText = string.Join("\n", recentHistory.Select(m => $"[{m.Role}] {m.Content}"));
+                messages.Add(new Message { Role = "user", Content = $"[对话历史]\n{historyText}" });
             }
 
-            // 工具描述（全量工具）
-            var toolDescs = ToolRegistry.GenerateDescriptions();
-            messages.Add(new Message
+            // 上一轮工具结果
+            if (lastCalls != null && lastResults != null)
             {
-                Role = "user",
-                Content = $"[可用工具]\n{toolDescs}"
-            });
-
-            // 当前指令
-            messages.Add(new Message
-            {
-                Role = "user",
-                Content = $"[任务指令]\n{instruction}"
-            });
+                var sb = new StringBuilder("[上一轮工具结果]\n");
+                for (int i = 0; i < lastCalls.Count && i < lastResults.Count; i++)
+                {
+                    var call = lastCalls[i];
+                    var result = lastResults[i];
+                    sb.AppendLine(result.IsSuccess
+                        ? $"[{call.Tool}]: {result.Data ?? "成功"}"
+                        : $"[{call.Tool}]: 失败 - {result.Error}");
+                }
+                messages.Add(new Message { Role = "user", Content = sb.ToString() });
+            }
 
             return messages;
         }
 
-        /// <summary>
-        /// 构建系统状态摘要。
-        /// 包含引擎状态、空闲时长等关键信息。
-        /// </summary>
-        private string BuildSystemStatusSummary()
+        private string BuildSystemStatus()
         {
-            var summary = "[系统状态]\n";
-            summary += $"- 空闲状态: {(ctx.IsIdle ? "是" : "否")}\n";
-            summary += $"- 空闲时长: {ctx.IdleDuration.TotalMinutes:F1} 分钟\n";
-            summary += $"- 最后消息时间: {ctx.LastMessageTime:yyyy-MM-dd HH:mm:ss}\n";
+            var sb = new StringBuilder("[子 agent 状态]\n");
+            sb.AppendLine($"会话 ID: {SessionId}");
+            sb.AppendLine($"当前时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"系统空闲: {(ctx.IsIdle ? "是" : "否")}");
+            sb.AppendLine("提示: 完成任务后直接输出结果文本（不调用工具），循环会自动结束。");
+            return sb.ToString();
+        }
 
-            var engineSummary = ctx.GetActiveEngineSummary();
-            if (engineSummary.Count > 0)
+        private void NotifyCompletion()
+        {
+            ctx.TaskBridge.PostNotification(new Notification
             {
-                summary += "- 活跃引擎:\n";
-                foreach (var (type, count) in engineSummary)
-                {
-                    summary += $"  - {type}: {count} 个实例\n";
-                }
-            }
-
-            return summary;
+                Type = NotificationType.ProgressUpdate,
+                SourceId = SessionId,
+                Summary = $"子 agent 完成: {LastResult?.Truncate(100) ?? "(无结果)"}",
+                Timestamp = DateTime.Now
+            });
         }
     }
 }
-

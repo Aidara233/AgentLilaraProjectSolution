@@ -26,6 +26,9 @@ namespace AgentCoreProcessor.Engine
         public ChannelReader<Notification> NotificationReader => notificationQueue.Reader;
         public int PendingTaskCount => pendingTasks.Count;
 
+        /// <summary>任务提交后的回调（用于唤醒系统循环闸门）。</summary>
+        public Action? OnTaskSubmitted { get; set; }
+
         public TaskBridge(string storagePath)
         {
             taskQueue = Channel.CreateUnbounded<SystemTask>();
@@ -51,6 +54,7 @@ namespace AgentCoreProcessor.Engine
             // 入队并持久化
             await taskQueue.Writer.WriteAsync(task);
             PersistQueue();
+            OnTaskSubmitted?.Invoke();
 
             FrameworkLogger.Log("TaskBridge", $"任务已提交: {task.TaskId} from channel {task.SourceChannelId}");
 
@@ -85,6 +89,17 @@ namespace AgentCoreProcessor.Engine
                     Error = $"任务异常: {ex.Message}"
                 };
             }
+        }
+
+        /// <summary>
+        /// 异步提交任务（不等待结果）。系统循环处理完后通过其他方式回传。
+        /// </summary>
+        public async Task SubmitTaskFireAndForgetAsync(SystemTask task)
+        {
+            await taskQueue.Writer.WriteAsync(task);
+            PersistQueue();
+            OnTaskSubmitted?.Invoke();
+            FrameworkLogger.Log("TaskBridge", $"任务已异步提交: {task.TaskId} from channel {task.SourceChannelId}");
         }
 
         /// <summary>
