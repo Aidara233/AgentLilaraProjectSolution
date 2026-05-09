@@ -143,6 +143,25 @@
             </div>
         </div>
     </div>
+
+    <!-- 整合配置 -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-funnel me-1 text-accent"></i> 记忆整合
+            </div>
+            <div class="card-body">
+                <div class="config-field">
+                    <label>第一轮每批最大条数</label>
+                    <input type="number" @bind="cfg.ConsolidationBatchSize" />
+                </div>
+                <div class="config-field">
+                    <label>小组合并阈值（低于此值归入杂项）</label>
+                    <input type="number" @bind="cfg.ConsolidationSmallGroupThreshold" />
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- 保存按钮 -->
@@ -230,5 +249,7 @@
         public int ReviewTokenBudget { get; set; } = 50000;
         public int ReviewReserveBudget { get; set; } = 15000;
         public int DeepSleepMaxMinutes { get; set; } = 120;
+        public int ConsolidationBatchSize { get; set; } = 50;
+        public int ConsolidationSmallGroupThreshold { get; set; } = 5;
     }
 }

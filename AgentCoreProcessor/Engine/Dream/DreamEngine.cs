@@ -31,6 +31,7 @@ namespace AgentCoreProcessor.Engine
         private readonly DreamEngineSpawnCheck spawnCheck;
 
         private readonly ConsolidationCore consolidationCore = new();
+        private readonly ConsolidationFinalCore consolidationFinalCore = new();
         private readonly WeightCore weightCore = new();
         private readonly LinkCore linkCore = new();
         private readonly CombineCore combineCore = new();
@@ -322,8 +323,114 @@ namespace AgentCoreProcessor.Engine
         {
             var temps = await ctx.TempMemories.GetAllAsync();
             if (temps.Count == 0) return;
-            var existing = await ctx.Memories.GetRecentAsync(20);
-            var result = await consolidationCore.ConsolidateAsync(temps, existing);
+
+            var cfg = spawnCheck.GetConfig();
+            var batchSize = cfg.ConsolidationBatchSize;
+            var smallThreshold = cfg.ConsolidationSmallGroupThreshold;
+
+            // ---- 分组 ----
+            var batches = BuildBatches(temps, batchSize, smallThreshold);
+            FrameworkLogger.Log("DreamEngine",
+                $"整合开始: 临时记忆={temps.Count}, 批次={batches.Count}");
+
+            // ---- 第一轮：逐批初筛 ----
+            var candidates = new List<ConsolidationCandidate>();
+
+            foreach (var batch in batches)
+            {
+                if (shouldWake)
+                {
+                    FrameworkLogger.Log("DreamEngine", "整合被打断（第一轮）");
+                    return;
+                }
+
+                var result = await consolidationCore.ConsolidateAsync(batch, []);
+                var batchCandidates = ParseFirstRoundResult(result, batch);
+                candidates.AddRange(batchCandidates);
+            }
+
+            FrameworkLogger.Log("DreamEngine",
+                $"第一轮完成: 输入={temps.Count}, 产出={candidates.Count}");
+
+            if (candidates.Count == 0)
+            {
+                foreach (var t in temps)
+                    await ctx.TempMemories.DeleteAsync(t);
+                return;
+            }
+
+            // ---- 第二轮：全局精筛 ----
+            if (shouldWake)
+            {
+                FrameworkLogger.Log("DreamEngine", "整合被打断（第二轮前）");
+                return;
+            }
+
+            var existing = await ctx.Memories.GetRecentAsync(30);
+            var finalResult = await consolidationFinalCore.FinalizeAsync(candidates, existing);
+
+            // ---- 入库 ----
+            await ApplyFinalResult(finalResult, candidates);
+
+            // ---- 清空临时记忆 ----
+            foreach (var t in temps)
+                await ctx.TempMemories.DeleteAsync(t);
+
+            FrameworkLogger.Log("DreamEngine", "整合完成，临时记忆已清空");
+        }
+
+        private static List<List<TempMemoryEntry>> BuildBatches(
+            List<TempMemoryEntry> temps, int batchSize, int smallThreshold)
+        {
+            var groups = temps.GroupBy(t => t.Subject ?? "misc")
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            var largeBatches = new List<List<TempMemoryEntry>>();
+            var miscPool = new List<TempMemoryEntry>();
+
+            foreach (var (subject, entries) in groups)
+            {
+                if (entries.Count < smallThreshold)
+                {
+                    miscPool.AddRange(entries);
+                }
+                else if (entries.Count <= batchSize)
+                {
+                    largeBatches.Add(entries);
+                }
+                else
+                {
+                    // 均衡拆分：尽可能少的组，每组尽可能均衡
+                    var numBatches = (int)Math.Ceiling((double)entries.Count / batchSize);
+                    var perBatch = (int)Math.Ceiling((double)entries.Count / numBatches);
+                    for (int i = 0; i < entries.Count; i += perBatch)
+                        largeBatches.Add(entries.GetRange(i, Math.Min(perBatch, entries.Count - i)));
+                }
+            }
+
+            // 杂项池也做均衡拆分
+            if (miscPool.Count > 0)
+            {
+                if (miscPool.Count <= batchSize)
+                {
+                    largeBatches.Add(miscPool);
+                }
+                else
+                {
+                    var numBatches = (int)Math.Ceiling((double)miscPool.Count / batchSize);
+                    var perBatch = (int)Math.Ceiling((double)miscPool.Count / numBatches);
+                    for (int i = 0; i < miscPool.Count; i += perBatch)
+                        largeBatches.Add(miscPool.GetRange(i, Math.Min(perBatch, miscPool.Count - i)));
+                }
+            }
+
+            return largeBatches;
+        }
+
+        private static List<ConsolidationCandidate> ParseFirstRoundResult(
+            string result, List<TempMemoryEntry> batch)
+        {
+            var candidates = new List<ConsolidationCandidate>();
             try
             {
                 var actions = JArray.Parse(result);
@@ -332,45 +439,96 @@ namespace AgentCoreProcessor.Engine
                 {
                     var index = item["index"]?.Value<int>() ?? -1;
                     var action = item["action"]?.Value<string>() ?? "";
-                    if (index < 0 || index >= temps.Count) continue;
+                    if (index < 0 || index >= batch.Count || processed.Contains(index)) continue;
                     processed.Add(index);
-                    var temp = temps[index];
+                    var temp = batch[index];
+
                     switch (action)
                     {
                         case "keep":
-                            await ctx.Memories.CreateAsync(temp.Content, temp.Embedding,
-                                temp.PersonId, temp.ChannelId, temp.SourceMessageId,
-                                confidence: temp.Confidence,
-                                type: temp.Type, subject: temp.Subject);
-                            await ctx.TempMemories.DeleteAsync(temp);
+                            candidates.Add(new ConsolidationCandidate
+                            {
+                                Content = temp.Content,
+                                PersonId = temp.PersonId,
+                                ChannelId = temp.ChannelId,
+                                Type = temp.Type,
+                                Subject = temp.Subject,
+                                Confidence = temp.Confidence
+                            });
                             break;
                         case "merge":
                             var content = item["content"]?.Value<string>() ?? temp.Content;
-                            byte[]? emb = null;
-                            try { emb = VectorUtil.FloatsToBytes(await ctx.Embedding.GetEmbeddingAsync(content)); }
-                            catch { }
-                            var mergeConfidence = temp.Confidence;
-                            await ctx.Memories.CreateAsync(content, emb,
-                                temp.PersonId, temp.ChannelId,
-                                confidence: mergeConfidence,
-                                type: temp.Type, subject: temp.Subject);
-                            await ctx.TempMemories.DeleteAsync(temp);
+                            candidates.Add(new ConsolidationCandidate
+                            {
+                                Content = content,
+                                PersonId = temp.PersonId,
+                                ChannelId = temp.ChannelId,
+                                Type = temp.Type,
+                                Subject = temp.Subject,
+                                Confidence = temp.Confidence
+                            });
                             var mergeWith = item["mergeWith"] as JArray;
                             if (mergeWith != null)
                                 foreach (var mi in mergeWith)
-                                {
-                                    var mIdx = mi.Value<int>();
-                                    if (mIdx >= 0 && mIdx < temps.Count && !processed.Contains(mIdx))
-                                    { processed.Add(mIdx); await ctx.TempMemories.DeleteAsync(temps[mIdx]); }
-                                }
-                            break;
-                        case "discard":
-                            await ctx.TempMemories.DeleteAsync(temp);
+                                    processed.Add(mi.Value<int>());
                             break;
                     }
                 }
             }
-            catch (Exception ex) { FrameworkLogger.Log("DreamEngine", $"整合解析失败: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                FrameworkLogger.Log("DreamEngine", $"第一轮解析失败: {ex.Message}");
+            }
+            return candidates;
+        }
+
+        private async Task ApplyFinalResult(string result, List<ConsolidationCandidate> candidates)
+        {
+            try
+            {
+                var actions = JArray.Parse(result);
+                var processed = new HashSet<int>();
+                foreach (var item in actions)
+                {
+                    var index = item["index"]?.Value<int>() ?? -1;
+                    var action = item["action"]?.Value<string>() ?? "";
+                    if (index < 0 || index >= candidates.Count || processed.Contains(index)) continue;
+                    processed.Add(index);
+
+                    switch (action)
+                    {
+                        case "keep":
+                            var c = candidates[index];
+                            byte[]? emb = null;
+                            try { emb = VectorUtil.FloatsToBytes(await ctx.Embedding.GetEmbeddingAsync(c.Content)); }
+                            catch { }
+                            await ctx.Memories.CreateAsync(c.Content, emb,
+                                c.PersonId, c.ChannelId,
+                                confidence: c.Confidence,
+                                type: c.Type, subject: c.Subject);
+                            break;
+                        case "merge":
+                            var content = item["content"]?.Value<string>() ?? candidates[index].Content;
+                            var mc = candidates[index];
+                            byte[]? memb = null;
+                            try { memb = VectorUtil.FloatsToBytes(await ctx.Embedding.GetEmbeddingAsync(content)); }
+                            catch { }
+                            await ctx.Memories.CreateAsync(content, memb,
+                                mc.PersonId, mc.ChannelId,
+                                confidence: mc.Confidence,
+                                type: mc.Type, subject: mc.Subject);
+                            var mergeWith = item["mergeWith"] as JArray;
+                            if (mergeWith != null)
+                                foreach (var mi in mergeWith)
+                                    processed.Add(mi.Value<int>());
+                            break;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                FrameworkLogger.Log("DreamEngine", $"第二轮解析失败: {ex.Message}");
+            }
         }
 
         private async Task ExecuteWeight()

@@ -10,6 +10,7 @@ namespace AgentCoreProcessor.Core
     /// </summary>
     internal class WeightCore : CoreBase
     {
+        protected override bool UsePersona => false;
         /// <summary>
         /// 模型评估一批记忆的重要性。
         /// 输出：JSON 数组，每条记忆的新 Importance 值 (0.0-1.0)。

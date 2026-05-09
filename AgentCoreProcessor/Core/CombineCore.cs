@@ -10,6 +10,7 @@ namespace AgentCoreProcessor.Core
     /// </summary>
     internal class CombineCore : CoreBase
     {
+        protected override bool UsePersona => false;
         /// <summary>
         /// 模型从一组关联记忆中提炼出新的洞察/结论。
         /// 输出：衍生记忆的内容文本，或 "none" 表示无法产生有价值的组合。

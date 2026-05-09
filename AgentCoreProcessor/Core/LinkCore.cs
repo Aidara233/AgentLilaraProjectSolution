@@ -10,6 +10,7 @@ namespace AgentCoreProcessor.Core
     /// </summary>
     internal class LinkCore : CoreBase
     {
+        protected override bool UsePersona => false;
         /// <summary>
         /// 模型分析一条新记忆与候选记忆之间的关联关系。
         /// 输出：JSON 数组，关联的候选记忆索引 + 关联类型 + 强度。

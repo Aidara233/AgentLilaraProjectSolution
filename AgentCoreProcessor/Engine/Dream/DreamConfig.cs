@@ -67,6 +67,14 @@ namespace AgentCoreProcessor.Engine
         /// <summary>大睡硬性时间上限（分钟）</summary>
         public int DeepSleepMaxMinutes { get; set; } = 120;
 
+        // ---- 整合配置 ----
+
+        /// <summary>整合第一轮每批最大条数</summary>
+        public int ConsolidationBatchSize { get; set; } = 50;
+
+        /// <summary>小组合并阈值：subject 条数低于此值时归入杂项批</summary>
+        public int ConsolidationSmallGroupThreshold { get; set; } = 5;
+
         /// <summary>判断当前时间是否在大睡时间段内。</summary>
         public bool IsInDeepSleepWindow()
         {

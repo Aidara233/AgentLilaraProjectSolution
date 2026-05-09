@@ -11,6 +11,7 @@ namespace AgentCoreProcessor.Core
     /// </summary>
     internal class ConsolidationCore : CoreBase
     {
+        protected override bool UsePersona => false;
         /// <summary>
         /// 模型判断临时记忆应如何处理。
         /// 输入：临时记忆列表 + 已有主库记忆（用于去重参考）。
