@@ -186,6 +186,14 @@ namespace AgentCoreProcessor.Adapter
             return await adapter.SendMessageAsync(message);
         }
 
+        public async Task<ActionResult> ExecuteActionAsync(string platform, string channelId, string action, Dictionary<string, string> parameters)
+        {
+            var adapter = ResolveForChannel(platform, channelId);
+            if (adapter == null)
+                return new ActionResult { Success = false, Error = "无可用适配器" };
+            return await adapter.ExecuteActionAsync(action, parameters);
+        }
+
         private IAdapter? ResolveForChannel(string platform, string channelId)
         {
             var candidates = adapters.Values

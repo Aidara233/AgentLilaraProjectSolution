@@ -302,6 +302,13 @@ namespace AgentCoreProcessor.Adapter
 
         private async void HandleEvent(JObject data)
         {
+            var postType = data["post_type"]?.ToString();
+            if (postType != null && postType != "meta_event")
+            {
+                var raw = data.ToString(Formatting.None);
+                FrameworkLogger.Log("OneBotAdapter", $"收到事件: post_type={postType}, {raw[..Math.Min(200, raw.Length)]}");
+            }
+
             var msg = await parser.HandleEventAsync(data);
             if (msg != null)
             {

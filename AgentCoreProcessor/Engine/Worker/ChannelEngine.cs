@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
@@ -491,6 +492,7 @@ namespace AgentCoreProcessor.Engine
                     return allowedTools.Contains(tool.Name);
                 });
                 toolDescs = ToolRegistry.GenerateCapabilitySummary(filter: channelToolFilter);
+                toolDescs += "\n\n轻量动作（直接在回复中使用，不需要切换模式）：\n- [POKE:对方QQ号] 戳一戳对方";
             }
 
             // Phase 6: 注入关注规则（仅 Express 模式）
@@ -549,6 +551,9 @@ namespace AgentCoreProcessor.Engine
                 var sendText = text.Contains("[ESCALATE]")
                     ? text.Split("[ESCALATE]")[0].Trim()
                     : text;
+
+                // [POKE:uid] 轻量动作：提取并执行戳一戳
+                sendText = await ProcessPokeMarkers(sendText, currentLastMsg);
 
                 if (!string.IsNullOrEmpty(sendText))
                     await SendSegmentsAsync(sendText, currentLastMsg, currentLastSc, currentParticipantSnapshot);
@@ -951,6 +956,33 @@ namespace AgentCoreProcessor.Engine
             return sb.ToString().TrimEnd();
         }
 
+
+        // ---- Express 轻量动作 ----
+
+        private static readonly Regex PokeRegex = new(@"\[POKE:(\d+)\]", RegexOptions.Compiled);
+
+        private async Task<string> ProcessPokeMarkers(string text, IncomingMessage lastMsg)
+        {
+            var matches = PokeRegex.Matches(text);
+            if (matches.Count == 0) return text;
+
+            foreach (Match match in matches)
+            {
+                var targetUid = match.Groups[1].Value;
+                long? groupId = lastMsg.ChannelId.StartsWith("group_")
+                    ? long.Parse(lastMsg.ChannelId[6..])
+                    : null;
+
+                var parameters = new Dictionary<string, string> { ["user_id"] = targetUid };
+                if (groupId.HasValue) parameters["group_id"] = groupId.Value.ToString();
+
+                var result = await ctx.Adapters.ExecuteActionAsync(lastMsg.Platform, lastMsg.ChannelId, "poke", parameters);
+                FrameworkLogger.Log("ChannelEngine",
+                    $"Express POKE: target={targetUid}, group={groupId}, success={result.Success}");
+            }
+
+            return PokeRegex.Replace(text, "").Trim();
+        }
 
         // ---- 消息分条发送 ----
 
