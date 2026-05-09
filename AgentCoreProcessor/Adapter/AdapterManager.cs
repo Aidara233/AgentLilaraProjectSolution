@@ -240,6 +240,13 @@ namespace AgentCoreProcessor.Adapter
         public IAdapter? GetAdapterById(string id) => adapters.GetValueOrDefault(id);
         public List<IAdapter> GetAllAdapters() => adapters.Values.ToList();
         public List<AdapterStatus> GetAllStatuses() => adapters.Values.Select(a => a.GetStatus()).ToList();
+
+        public string? GetBotPlatformId(string platform)
+        {
+            var adapter = adapters.Values.FirstOrDefault(a =>
+                a.Platform.Equals(platform, StringComparison.OrdinalIgnoreCase));
+            return adapter?.BotPlatformId;
+        }
         public List<string> GetRegisteredPlatforms() => adapters.Values.Select(a => a.Platform).Distinct().ToList();
         public bool IsEnabled(string id) => enabledMap.GetValueOrDefault(id, false);
         public AdapterInstanceConfig? GetConfigById(string id) => configs.GetValueOrDefault(id);

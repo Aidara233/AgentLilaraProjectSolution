@@ -17,6 +17,7 @@ namespace AgentCoreProcessor.Adapter
     {
         public string Id { get; }
         public string Platform => "qq";
+        public string? BotPlatformId => selfId > 0 ? selfId.ToString() : null;
         public event Action<IncomingMessage>? OnMessageReceived;
 
         private readonly string? configPath;

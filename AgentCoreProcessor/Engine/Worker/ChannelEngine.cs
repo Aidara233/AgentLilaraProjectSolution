@@ -492,7 +492,11 @@ namespace AgentCoreProcessor.Engine
                     return allowedTools.Contains(tool.Name);
                 });
                 toolDescs = ToolRegistry.GenerateCapabilitySummary(filter: channelToolFilter);
-                toolDescs += "\n\n轻量动作（直接在回复中使用，不需要切换模式）：\n- [POKE:对方QQ号] 戳一戳对方";
+                var botId = ctx.Adapters.GetBotPlatformId("qq");
+                var pokeHint = "\n\n轻量动作（直接在回复中使用，不需要切换模式）：\n- [POKE:对方QQ号] 戳一戳对方";
+                if (!string.IsNullOrEmpty(botId))
+                    pokeHint += $"\n\n身份信息：你的QQ号是 {botId}，不要把自己的号当成别人的。";
+                toolDescs += pokeHint;
             }
 
             // Phase 6: 注入关注规则（仅 Express 模式）

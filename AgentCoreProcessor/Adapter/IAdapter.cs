@@ -9,6 +9,7 @@ namespace AgentCoreProcessor.Adapter
     {
         string Id { get; }
         string Platform { get; }
+        string? BotPlatformId => null;
         event Action<IncomingMessage> OnMessageReceived;
         Task<string?> SendMessageAsync(OutgoingMessage message);
         Task StartAsync(CancellationToken ct = default);
