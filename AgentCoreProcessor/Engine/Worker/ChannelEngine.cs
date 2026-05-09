@@ -605,8 +605,8 @@ namespace AgentCoreProcessor.Engine
                 {
                     FrameworkLogger.Log("ChannelEngine", $"Express→Working 升级: channelId={channelId}");
                     isWorkingMode = true;
+                    isInWorkingSession = true;
                     consecutiveExternalTriggers = 0;
-                    isInWorkingSession = false;
                     gate.Signal();
                 }
             }
