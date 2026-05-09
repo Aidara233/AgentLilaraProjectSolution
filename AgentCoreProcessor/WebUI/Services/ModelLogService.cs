@@ -50,10 +50,11 @@ namespace AgentCoreProcessor.WebUI.Services
             if (!File.Exists(path)) return null;
 
             var info = new FileInfo(path);
-            if (info.Length > 512 * 1024)
-                return File.ReadAllText(path)[..(512 * 1024)] + "\n\n[... 截断，文件过大]";
+            var content = File.ReadAllText(path);
+            if (content.Length > 512 * 1024)
+                return content[..(512 * 1024)] + "\n\n[... 截断，文件过大]";
 
-            return File.ReadAllText(path);
+            return content;
         }
 
         public List<string> GetCoreNames()
