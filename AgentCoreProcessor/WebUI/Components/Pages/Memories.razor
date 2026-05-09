@@ -163,7 +163,7 @@ else
         else
         {
             var all = await Engine.TempMemories.GetAllAsync();
-            tempMemories = all;
+            tempMemories = all.OrderByDescending(t => t.CreatedAt).ToList();
             if (selectedPersonId > 0)
                 tempMemories = tempMemories.Where(t => t.PersonId == selectedPersonId).ToList();
             if (!string.IsNullOrWhiteSpace(keyword))

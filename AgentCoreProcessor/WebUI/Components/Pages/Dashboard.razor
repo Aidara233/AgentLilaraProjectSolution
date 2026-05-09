@@ -198,9 +198,9 @@
 
     private void OnNewLog(LogEntry entry)
     {
-        recentLogs.Add(entry);
+        recentLogs.Insert(0, entry);
         if (recentLogs.Count > 30)
-            recentLogs.RemoveAt(0);
+            recentLogs.RemoveAt(recentLogs.Count - 1);
         InvokeAsync(StateHasChanged);
     }
 

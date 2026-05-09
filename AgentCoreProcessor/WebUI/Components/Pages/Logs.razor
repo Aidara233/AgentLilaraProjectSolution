@@ -85,6 +85,7 @@
     protected override void OnInitialized()
     {
         allLogs = LogStream.GetRecent(500);
+        allLogs.Reverse();
         ApplyFilter();
         LogStream.OnNewEntry += OnNewLog;
     }
@@ -93,9 +94,9 @@
     {
         if (paused) return;
 
-        allLogs.Add(entry);
+        allLogs.Insert(0, entry);
         if (allLogs.Count > 2000)
-            allLogs.RemoveAt(0);
+            allLogs.RemoveAt(allLogs.Count - 1);
 
         ApplyFilter();
         InvokeAsync(StateHasChanged);
