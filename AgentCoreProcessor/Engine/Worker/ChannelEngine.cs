@@ -831,7 +831,7 @@ namespace AgentCoreProcessor.Engine
 
                 // 取旧消息做参考上下文
                 var contextMessages = lastExtractedMessageId > 0
-                    ? await ctx.Session.GetMessagesBeforeIdAsync(channelId, lastExtractedMessageId, limit: 10)
+                    ? await ctx.Session.GetMessagesBeforeIdAsync(channelId, lastExtractedMessageId, limit: 20)
                     : new List<UserMessage>();
 
                 // 取近期记忆做去重
@@ -910,67 +910,7 @@ namespace AgentCoreProcessor.Engine
 
         private async Task ExtractMemoryAsync(SessionContext context)
         {
-            try
-            {
-                var recent = await ctx.Session.GetContextByChannelAsync(channelId, limit: 10);
-                if (recent.Count < 2) return;
-
-                var lines = recent.Select(m =>
-                {
-                    var name = m.IsFromBot ? "Lilara"
-                             : !string.IsNullOrEmpty(m.SenderName) ? m.SenderName
-                             : "用户";
-                    return $"{name}: {m.Content}";
-                }).ToList();
-
-                var participantNames = recentParticipants.Values
-                    .Select(p => p.DisplayName)
-                    .Where(n => !string.IsNullOrEmpty(n))
-                    .Distinct().ToList();
-                if (participantNames.Count > 0)
-                    lines.Insert(0, $"[群聊参与者: {string.Join("、", participantNames)}]");
-
-                var core = new MemoryExtractionCore();
-                var results = await core.ExtractAsync(lines);
-
-                int factCount = 0, feedbackCount = 0, knowledgeCount = 0;
-                foreach (var item in results)
-                {
-                    if (item.Type == "knowledge")
-                    {
-                        await ctx.MemorySvc.StoreAsync(item.Content,
-                            personId: null, channelId: null,
-                            confidence: item.Confidence,
-                            type: MemoryType.Knowledge, subject: item.Subject);
-                        knowledgeCount++;
-                    }
-                    else if (item.Type == "feedback" && item.Sentiment != null)
-                    {
-                        int personId = ResolveAboutToPersonId(item.About) ?? context.Person.Id;
-                        await ctx.MemorySvc.ApplyFeedbackAsync(
-                            personId, item.Content, item.Sentiment, item.Correction);
-                        feedbackCount++;
-                    }
-                    else
-                    {
-                        int personId = ResolveAboutToPersonId(item.About) ?? context.Person.Id;
-                        string memType = item.Type ?? MemoryType.Fact;
-                        await ctx.MemorySvc.StoreAsync(item.Content,
-                            personId, context.Channel.Id,
-                            confidence: item.Confidence,
-                            type: memType, subject: item.Subject);
-                        factCount++;
-                    }
-                }
-
-                if (factCount + feedbackCount + knowledgeCount > 0)
-                    FrameworkLogger.Log("ChannelEngine",
-                        $"记忆提取: channelId={channelId}, 事实{factCount}条, 反馈{feedbackCount}条, 知识{knowledgeCount}条");
-            }
-            catch (Exception ex)
-            {
-                FrameworkLogger.Log("ChannelEngine", $"记忆提取失败: {ex.Message}");
-            }
+            await RunExtractionAsync(context);
         }
 
         private int? ResolveAboutToPersonId(string? aboutName)
