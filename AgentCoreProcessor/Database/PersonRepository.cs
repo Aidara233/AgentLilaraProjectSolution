@@ -15,10 +15,11 @@ namespace AgentCoreProcessor.Database
         public PersonRepository(DbManager db) => this.db = db;
 
         /// <summary>创建新 Person（默认 TrustLevel=Unknown）。</summary>
-        public async Task<Person> CreateAsync()
+        public async Task<Person> CreateAsync(string name = "")
         {
             var person = new Person
             {
+                Name = name,
                 TrustLevel = TrustLevel.Unknown,
                 TrustProgress = 0f,
                 CreatedAt = DateTime.Now

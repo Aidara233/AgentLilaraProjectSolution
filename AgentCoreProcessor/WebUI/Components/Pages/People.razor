@@ -20,6 +20,7 @@
                 <thead>
                     <tr>
                         <th>ID</th>
+                        <th>名称</th>
                         <th>信任等级</th>
                         <th>好感度</th>
                         <th>快速记忆</th>
@@ -33,6 +34,7 @@
                     {
                         <tr>
                             <td>@p.Id</td>
+                            <td style="font-weight:500;">@(string.IsNullOrEmpty(p.Name) ? "-" : p.Name)</td>
                             <td>
                                 <span class="badge-status @TrustBadgeClass(p.TrustLevel)">
                                     @p.TrustLevel
@@ -65,7 +67,7 @@
                         @if (expandedId == p.Id)
                         {
                             <tr>
-                                <td colspan="7" style="background:var(--bg-tertiary); padding:1rem;">
+                                <td colspan="8" style="background:var(--bg-tertiary); padding:1rem;">
                                     <div class="stat-label" style="margin-bottom:0.5rem;">关联账号</div>
                                     @if (linkedUsers.Count == 0)
                                     {

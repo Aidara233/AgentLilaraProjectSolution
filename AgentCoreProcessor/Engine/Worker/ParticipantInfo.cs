@@ -17,7 +17,8 @@ namespace AgentCoreProcessor.Engine
 
         public static ParticipantInfo From(User user, Person person, IncomingMessage msg)
         {
-            var display = !string.IsNullOrEmpty(user.DisplayName) ? user.DisplayName
+            var display = !string.IsNullOrEmpty(person.Name) ? person.Name
+                        : !string.IsNullOrEmpty(user.DisplayName) ? user.DisplayName
                         : !string.IsNullOrEmpty(msg.DisplayName) ? msg.DisplayName
                         : msg.PlatformUserId;
             return new ParticipantInfo
