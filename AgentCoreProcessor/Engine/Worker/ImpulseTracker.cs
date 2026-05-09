@@ -34,7 +34,7 @@ namespace AgentCoreProcessor.Engine
                 FrameworkLogger.Log("ImpulseTracker", $"决策: 私聊必回, channelId={channelId}");
                 return true;
             }
-            if (batch.Any(b => b.Message.IsMentioned))
+            if (batch.Any(b => b.Message.IsMentioned && !b.Message.IsSystemEvent))
             {
                 FrameworkLogger.Log("ImpulseTracker", $"决策: @提及必回, channelId={channelId}");
                 return true;
