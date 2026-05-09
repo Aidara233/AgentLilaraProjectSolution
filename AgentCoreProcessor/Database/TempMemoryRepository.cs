@@ -85,7 +85,7 @@ namespace AgentCoreProcessor.Database
         public Task<List<TempMemoryEntry>> GetRecentByChannelAsync(int channelId, int limit = 10)
         {
             return db.QueryAsync<TempMemoryEntry>(
-                "SELECT * FROM TempMemoryEntry WHERE ChannelId = ? ORDER BY CreatedAt DESC LIMIT ?",
+                "SELECT * FROM TempMemories WHERE ChannelId = ? ORDER BY CreatedAt DESC LIMIT ?",
                 channelId, limit);
         }
     }
