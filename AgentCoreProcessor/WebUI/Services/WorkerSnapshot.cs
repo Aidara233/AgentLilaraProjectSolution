@@ -14,7 +14,9 @@ namespace AgentCoreProcessor.WebUI.Services
         public float Threshold { get; init; }
         public float ChannelAffinity { get; init; }
         public string Importance { get; init; } = "normal";
-        public int ExtractionInterval { get; init; }
+        public int ActiveExtractionThreshold { get; init; }
+        public int LurkingExtractionThreshold { get; init; }
+        public int LastExtractedMessageId { get; init; }
         public int UnrespondedMessageCount { get; init; }
         public int ConsecutiveExternalTriggers { get; init; }
         public DateTime? LastCompletionTime { get; init; }

@@ -66,13 +66,15 @@ else
         </div>
         <div class="col-md-4">
             <div class="card">
-                <div class="card-header">频道配置</div>
+                <div class="card-header">记忆提取</div>
                 <div class="card-body">
                     <div class="detail-grid">
-                        <span class="detail-label">重要度</span>
-                        <span>@worker.Importance</span>
-                        <span class="detail-label">提取间隔</span>
-                        <span>@worker.ExtractionInterval 条</span>
+                        <span class="detail-label">活跃阈值</span>
+                        <span>@worker.ActiveExtractionThreshold 条</span>
+                        <span class="detail-label">潜水阈值</span>
+                        <span>@worker.LurkingExtractionThreshold 条</span>
+                        <span class="detail-label">提取进度</span>
+                        <span>msgId @worker.LastExtractedMessageId</span>
                         <span class="detail-label">未回复消息</span>
                         <span>@worker.UnrespondedMessageCount</span>
                     </div>
@@ -103,13 +105,13 @@ else
         </div>
         <div class="col-md-6">
             <div class="card">
-                <div class="card-header">记忆提取</div>
+                <div class="card-header">记忆提取（详细）</div>
                 <div class="card-body">
                     <div class="detail-grid">
+                        <span class="detail-label">提取进度</span>
+                        <span>msgId @worker.LastExtractedMessageId</span>
                         <span class="detail-label">未回复消息</span>
-                        <span class="@(worker.UnrespondedMessageCount >= worker.ExtractionInterval * 0.8 ? "text-warning-custom" : "")">
-                            @worker.UnrespondedMessageCount / @worker.ExtractionInterval
-                        </span>
+                        <span>@worker.UnrespondedMessageCount</span>
                         <span class="detail-label">重要性</span>
                         <span>@worker.Importance</span>
                     </div>
