@@ -583,8 +583,8 @@ namespace AgentCoreProcessor.Engine
                             catch { }
                             await ctx.Memories.CreateAsync(c.Content, emb,
                                 c.PersonId, c.ChannelId,
-                                confidence: c.Confidence,
-                                type: c.Type, subject: c.Subject);
+                                confidence: c.Confidence ?? "high",
+                                type: c.Type ?? MemoryType.Fact, subject: c.Subject);
                             break;
                         case "merge":
                             var content = item["content"]?.Value<string>() ?? candidates[index].Content;
@@ -594,8 +594,8 @@ namespace AgentCoreProcessor.Engine
                             catch { }
                             await ctx.Memories.CreateAsync(content, memb,
                                 mc.PersonId, mc.ChannelId,
-                                confidence: mc.Confidence,
-                                type: mc.Type, subject: mc.Subject);
+                                confidence: mc.Confidence ?? "high",
+                                type: mc.Type ?? MemoryType.Fact, subject: mc.Subject);
                             var mergeWith = item["mergeWith"] as JArray;
                             if (mergeWith != null)
                                 foreach (var mi in mergeWith)
