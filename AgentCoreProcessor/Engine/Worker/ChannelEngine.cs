@@ -899,10 +899,9 @@ namespace AgentCoreProcessor.Engine
 
         private static string FormatMessageLine(UserMessage m)
         {
-            var name = m.IsFromBot ? "Lilara"
-                     : !string.IsNullOrEmpty(m.SenderName) ? m.SenderName
-                     : "用户";
-            return $"{name}: {m.Content}";
+            if (m.IsFromBot) return $"Lilara: {m.Content}";
+            var name = !string.IsNullOrEmpty(m.SenderName) ? m.SenderName : "用户";
+            return $"{name}(#{m.UserId}): {m.Content}";
         }
 
         private async Task ExtractMemoryAsync(SessionContext context)
@@ -910,18 +909,30 @@ namespace AgentCoreProcessor.Engine
             await RunExtractionAsync(context);
         }
 
-        private int? ResolveAboutToPersonId(string? aboutName)
+        private int? ResolveAboutToPersonId(string? about)
         {
-            if (string.IsNullOrEmpty(aboutName)) return null;
+            if (string.IsNullOrEmpty(about)) return null;
 
-            foreach (var (_, info) in recentParticipants)
-                if (info.DisplayName.Equals(aboutName, StringComparison.OrdinalIgnoreCase))
+            // 优先解析 #userId 格式
+            if (about.StartsWith('#') && int.TryParse(about[1..], out var userId))
+            {
+                if (recentParticipants.TryGetValue(userId, out var info))
                     return info.PersonId;
+            }
 
-            foreach (var (_, info) in recentParticipants)
-                if (info.DisplayName.Contains(aboutName, StringComparison.OrdinalIgnoreCase)
-                    || aboutName.Contains(info.DisplayName, StringComparison.OrdinalIgnoreCase))
-                    return info.PersonId;
+            // 内容中可能包含 "名字(#id)" 格式，提取 id
+            var hashIdx = about.IndexOf('#');
+            if (hashIdx >= 0)
+            {
+                var idPart = about[(hashIdx + 1)..].TrimEnd(')');
+                if (int.TryParse(idPart, out var uid) && recentParticipants.TryGetValue(uid, out var info2))
+                    return info2.PersonId;
+            }
+
+            // fallback: 名字匹配
+            foreach (var (_, p) in recentParticipants)
+                if (p.DisplayName.Equals(about, StringComparison.OrdinalIgnoreCase))
+                    return p.PersonId;
 
             return null;
         }
