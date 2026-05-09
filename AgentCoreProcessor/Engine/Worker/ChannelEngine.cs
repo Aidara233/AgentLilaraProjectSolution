@@ -98,7 +98,6 @@ namespace AgentCoreProcessor.Engine
         // 记忆提取计数（用于退出时判断是否需要收尾提取）
         private int processedMessageCount = 0;
         private int unrespondedMessageCount = 0;
-        private int newMessagesSinceExtraction = 0;
         private int lastExtractedMessageId = 0;
         private bool extractionRunning = false;
         private SessionContext? lastContext;
@@ -698,23 +697,10 @@ namespace AgentCoreProcessor.Engine
         {
             this.lastContext = sc;
             processedMessageCount += messages.Count;
-            newMessagesSinceExtraction += messages.Count;
             unrespondedMessageCount += messages.Count;
 
             if (extractionRunning) return;
-
-            if (newMessagesSinceExtraction >= channelConfig.ActiveExtractionThreshold)
-            {
-                _ = RunExtractionAsync(sc);
-                newMessagesSinceExtraction = 0;
-                unrespondedMessageCount = 0;
-            }
-            else if (unrespondedMessageCount >= channelConfig.LurkingExtractionThreshold)
-            {
-                _ = RunExtractionAsync(sc);
-                newMessagesSinceExtraction = 0;
-                unrespondedMessageCount = 0;
-            }
+            _ = RunExtractionAsync(sc);
         }
 
         private async Task<List<ScoredMemory>> GetCachedMemoryAsync(SessionContext context, string query)
@@ -828,6 +814,15 @@ namespace AgentCoreProcessor.Engine
                 var newMessages = await ctx.Session.GetMessagesAfterIdAsync(
                     channelId, lastExtractedMessageId, limit: 50);
                 if (newMessages.Count < 2) return;
+
+                // 根据上次回复时间判断活跃/潜水阈值
+                bool isActive = LastCompletionTime != null
+                    && (DateTime.Now - LastCompletionTime.Value).TotalMinutes < 5;
+                int threshold = isActive
+                    ? channelConfig.ActiveExtractionThreshold
+                    : channelConfig.LurkingExtractionThreshold;
+
+                if (newMessages.Count < threshold) return;
 
                 // 取旧消息做参考上下文
                 var contextMessages = lastExtractedMessageId > 0
