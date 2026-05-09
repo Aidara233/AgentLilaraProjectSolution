@@ -98,7 +98,9 @@ namespace AgentCoreProcessor.Engine
         // 记忆提取计数（用于退出时判断是否需要收尾提取）
         private int processedMessageCount = 0;
         private int unrespondedMessageCount = 0;
-        private bool lurkingExtractionRunning = false;
+        private int newMessagesSinceExtraction = 0;
+        private int lastExtractedMessageId = 0;
+        private bool extractionRunning = false;
         private SessionContext? lastContext;
 
         // TrustProgress 每日自动增长跟踪
@@ -676,7 +678,7 @@ namespace AgentCoreProcessor.Engine
             Threshold = ctx.ImpulseConfig.Threshold,
             ChannelAffinity = channelConfig.Affinity,
             Importance = channelConfig.Importance,
-            ExtractionInterval = channelConfig.ExtractionInterval,
+            ExtractionInterval = channelConfig.LurkingExtractionThreshold,
             UnrespondedMessageCount = unrespondedMessageCount,
             ConsecutiveExternalTriggers = consecutiveExternalTriggers,
             LastCompletionTime = LastCompletionTime,
@@ -696,11 +698,21 @@ namespace AgentCoreProcessor.Engine
         {
             this.lastContext = sc;
             processedMessageCount += messages.Count;
+            newMessagesSinceExtraction += messages.Count;
             unrespondedMessageCount += messages.Count;
 
-            if (unrespondedMessageCount >= channelConfig.ExtractionInterval && !lurkingExtractionRunning)
+            if (extractionRunning) return;
+
+            if (newMessagesSinceExtraction >= channelConfig.ActiveExtractionThreshold)
             {
-                _ = RunLurkingExtractionAsync(sc);
+                _ = RunExtractionAsync(sc);
+                newMessagesSinceExtraction = 0;
+                unrespondedMessageCount = 0;
+            }
+            else if (unrespondedMessageCount >= channelConfig.LurkingExtractionThreshold)
+            {
+                _ = RunExtractionAsync(sc);
+                newMessagesSinceExtraction = 0;
                 unrespondedMessageCount = 0;
             }
         }
@@ -803,36 +815,45 @@ namespace AgentCoreProcessor.Engine
         public async Task TriggerLurkingExtractionAsync()
         {
             if (lastContext == null) return;
-            await RunLurkingExtractionAsync(lastContext);
+            await RunExtractionAsync(lastContext);
         }
 
-        private async Task RunLurkingExtractionAsync(SessionContext context)
+        private async Task RunExtractionAsync(SessionContext context)
         {
-            if (lurkingExtractionRunning) return;
-            lurkingExtractionRunning = true;
+            if (extractionRunning) return;
+            extractionRunning = true;
             try
             {
-                var limit = Math.Min(channelConfig.ExtractionInterval, 50);
-                var recent = await ctx.Session.GetContextByChannelAsync(channelId, limit: limit);
-                if (recent.Count < 3) return;
+                // 取新消息（上次提取之后的）
+                var newMessages = await ctx.Session.GetMessagesAfterIdAsync(
+                    channelId, lastExtractedMessageId, limit: 50);
+                if (newMessages.Count < 2) return;
 
-                var lines = recent.Select(m =>
-                {
-                    var name = m.IsFromBot ? "Lilara"
-                             : !string.IsNullOrEmpty(m.SenderName) ? m.SenderName
-                             : "用户";
-                    return $"{name}: {m.Content}";
-                }).ToList();
+                // 取旧消息做参考上下文
+                var contextMessages = lastExtractedMessageId > 0
+                    ? await ctx.Session.GetMessagesBeforeIdAsync(channelId, lastExtractedMessageId, limit: 10)
+                    : new List<UserMessage>();
+
+                // 取近期记忆做去重
+                var recentMems = await ctx.TempMemories.GetRecentByChannelAsync(channelId, 10);
+                var recentMemContents = recentMems.Count > 0
+                    ? recentMems.ConvertAll(m => m.Content)
+                    : null;
+
+                // 构造对话行
+                var contextLines = contextMessages.Select(FormatMessageLine).ToList();
+                var newLines = newMessages.Select(FormatMessageLine).ToList();
 
                 var participantNames = recentParticipants.Values
                     .Select(p => p.DisplayName)
                     .Where(n => !string.IsNullOrEmpty(n))
                     .Distinct().ToList();
                 if (participantNames.Count > 0)
-                    lines.Insert(0, $"[群聊参与者: {string.Join("、", participantNames)}]");
+                    contextLines.Insert(0, $"[群聊参与者: {string.Join("、", participantNames)}]");
 
+                // 调用提取
                 var core = new MemoryExtractionCore();
-                var results = await core.ExtractAsync(lines);
+                var results = await core.ExtractAsync(contextLines, newLines, recentMemContents);
 
                 int count = 0;
                 foreach (var item in results)
@@ -862,18 +883,29 @@ namespace AgentCoreProcessor.Engine
                     count++;
                 }
 
+                // 更新进度标记
+                lastExtractedMessageId = newMessages[^1].Id;
+
                 if (count > 0)
                     FrameworkLogger.Log("ChannelEngine",
-                        $"潜水提取完成: channelId={channelId}, 提取{count}条");
+                        $"记忆提取完成: channelId={channelId}, 提取{count}条, lastId={lastExtractedMessageId}");
             }
             catch (Exception ex)
             {
-                FrameworkLogger.Log("ChannelEngine", $"潜水提取失败: {ex.Message}");
+                FrameworkLogger.Log("ChannelEngine", $"记忆提取失败: {ex.Message}");
             }
             finally
             {
-                lurkingExtractionRunning = false;
+                extractionRunning = false;
             }
+        }
+
+        private static string FormatMessageLine(UserMessage m)
+        {
+            var name = m.IsFromBot ? "Lilara"
+                     : !string.IsNullOrEmpty(m.SenderName) ? m.SenderName
+                     : "用户";
+            return $"{name}: {m.Content}";
         }
 
         private async Task ExtractMemoryAsync(SessionContext context)

@@ -151,6 +151,14 @@ namespace AgentCoreProcessor.Engine
             return msgs;
         }
 
+        /// <summary>获取指定频道中 Id > afterId 的消息（升序）。</summary>
+        public Task<List<UserMessage>> GetMessagesAfterIdAsync(int channelId, int afterId, int limit = 50)
+            => messages.GetAfterIdAsync(channelId, afterId, limit);
+
+        /// <summary>获取指定频道中 Id <= beforeId 的最近 N 条消息（升序）。</summary>
+        public Task<List<UserMessage>> GetMessagesBeforeIdAsync(int channelId, int beforeId, int limit = 10)
+            => messages.GetBeforeIdAsync(channelId, beforeId, limit);
+
         /// <summary>按平台消息ID查找消息（用于引用上下文）。</summary>
         public Task<UserMessage?> GetByPlatformMessageIdAsync(int channelId, string platformMessageId)
             => messages.GetByPlatformMessageIdAsync(channelId, platformMessageId);

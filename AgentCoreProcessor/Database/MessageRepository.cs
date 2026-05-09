@@ -90,6 +90,24 @@ namespace AgentCoreProcessor.Database
                 "SELECT COUNT(*) AS Value FROM UserMessages WHERE ChannelId = ?", channelId);
             return result.Count > 0 ? result[0].Value : 0;
         }
+
+        /// <summary>获取指定频道中 Id > afterId 的消息（按 Id 升序，最多 limit 条）。</summary>
+        public Task<List<UserMessage>> GetAfterIdAsync(int channelId, int afterId, int limit = 50)
+        {
+            return db.QueryAsync<UserMessage>(
+                "SELECT * FROM UserMessages WHERE ChannelId = ? AND Id > ? ORDER BY Id ASC LIMIT ?",
+                channelId, afterId, limit);
+        }
+
+        /// <summary>获取指定频道中 Id <= beforeId 的最近 N 条消息（按 Id 升序返回）。</summary>
+        public async Task<List<UserMessage>> GetBeforeIdAsync(int channelId, int beforeId, int limit = 10)
+        {
+            var results = await db.QueryAsync<UserMessage>(
+                "SELECT * FROM UserMessages WHERE ChannelId = ? AND Id <= ? ORDER BY Id DESC LIMIT ?",
+                channelId, beforeId, limit);
+            results.Reverse();
+            return results;
+        }
     }
 
     internal class CountResult { public int Value { get; set; } }

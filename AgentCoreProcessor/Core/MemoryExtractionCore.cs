@@ -55,6 +55,41 @@ namespace AgentCoreProcessor.Core
             return ParseResults(result);
         }
 
+        /// <summary>
+        /// 双段提取：旧消息做参考，只从新消息中提取，注入近期记忆防重复。
+        /// </summary>
+        public async Task<List<ExtractionResult>> ExtractAsync(
+            List<string> contextLines,
+            List<string> newLines,
+            List<string>? recentMemories)
+        {
+            ResetProcessor();
+            var sb = new StringBuilder();
+
+            if (contextLines.Count > 0)
+            {
+                sb.AppendLine("[参考上下文（仅供理解背景，不要从中提取）]");
+                foreach (var line in contextLines)
+                    sb.AppendLine(line);
+                sb.AppendLine();
+            }
+
+            if (recentMemories != null && recentMemories.Count > 0)
+            {
+                sb.AppendLine("[已记录的信息（不要重复提取）]");
+                foreach (var mem in recentMemories)
+                    sb.AppendLine($"- {mem}");
+                sb.AppendLine();
+            }
+
+            sb.AppendLine("[新消息（从这部分提取值得记住的信息）]");
+            foreach (var line in newLines)
+                sb.AppendLine(line);
+
+            var result = await GenerateOnceAsync(sb.ToString());
+            return ParseResults(result);
+        }
+
         /// <summary>解析模型输出。优先 JSON，fallback 为旧的按行解析。</summary>
         private static List<ExtractionResult> ParseResults(string output)
         {

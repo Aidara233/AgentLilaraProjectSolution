@@ -80,5 +80,13 @@ namespace AgentCoreProcessor.Database
                 count += await db.DeleteAsync(entry);
             return count;
         }
+
+        /// <summary>获取指定频道最近 N 条临时记忆（按时间降序）。</summary>
+        public Task<List<TempMemoryEntry>> GetRecentByChannelAsync(int channelId, int limit = 10)
+        {
+            return db.QueryAsync<TempMemoryEntry>(
+                "SELECT * FROM TempMemoryEntry WHERE ChannelId = ? ORDER BY CreatedAt DESC LIMIT ?",
+                channelId, limit);
+        }
     }
 }
