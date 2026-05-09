@@ -52,7 +52,11 @@
 - 文档相关
 
 每轮代码改动完成后，必须立即执行：
-1. `dotnet build` 确认编译通过
+1. 编译：先杀进程再 build 再启动，一气呵成避免 exe 锁定问题
+   ```bash
+   taskkill /IM AgentCoreProcessor.exe /F 2>/dev/null; dotnet build && dotnet run
+   ```
+   杀进程不会造成数据损坏（SQLite WAL 模式 + 配置文件原子写入）。
 2. `git commit` 提交改动，仓库在 solution 内而非工作目录内
 3. `--test` 模式试运行验证（需要模拟对话节奏时加 `--delay N`）
 4. 更新文档，方便下次冷启动
