@@ -329,14 +329,13 @@ namespace AgentCoreProcessor.Engine
 
         private void PersistRound(List<Message> promptMessages, ModelOutput output)
         {
-            var userMessages = promptMessages.Where(m => m.Role == "user").ToList();
+            // 只持久化模型输出，不持久化每轮重新生成的 prompt（工具描述、模块状态等）
             var assistantContent = output.Text ?? FormatToolCallsAsText(output.ToolCalls);
             var assistantMessage = new Message { Role = "assistant", Content = assistantContent };
 
-            persistence.AppendRound(userMessages, new List<Message> { assistantMessage });
+            persistence.AppendRound(new List<Message>(), new List<Message> { assistantMessage });
 
-            var allMessages = new List<Message>(userMessages) { assistantMessage };
-            bus.Publish(new RoundCompletedEvent { Messages = allMessages });
+            bus.Publish(new RoundCompletedEvent { Messages = new List<Message> { assistantMessage } });
         }
 
         private static string FormatToolCallsAsText(List<ToolCall>? calls)
