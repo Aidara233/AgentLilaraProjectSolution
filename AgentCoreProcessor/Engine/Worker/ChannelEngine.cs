@@ -122,6 +122,7 @@ namespace AgentCoreProcessor.Engine
         private List<ToolCall>? lastRoundCalls;
         private List<ToolResult>? lastRoundResults;
         private bool isInWorkingSession = false;
+        private string? escalationReason;
 
         // 缓冲定时器
         private CancellationTokenSource? _bufferTimerCts;
@@ -478,6 +479,14 @@ namespace AgentCoreProcessor.Engine
                     return allowedTools.Contains(tool.Name);
                 });
                 toolDescs = ToolRegistry.GenerateDescriptions(authorizedTools: authorizedTools, filter: channelToolFilter);
+                if (!string.IsNullOrEmpty(escalationReason))
+                {
+                    toolDescs += $"\n\n[升级任务] {escalationReason}";
+                    escalationReason = null;
+                }
+                var botIdW = ctx.Adapters.GetBotPlatformId("qq");
+                if (!string.IsNullOrEmpty(botIdW))
+                    toolDescs += $"\n\n身份信息：你的QQ号是 {botIdW}。";
             }
             else
             {
@@ -603,7 +612,9 @@ namespace AgentCoreProcessor.Engine
             {
                 if (output.Text!.Contains("[ESCALATE]"))
                 {
-                    FrameworkLogger.Log("ChannelEngine", $"Express→Working 升级: channelId={channelId}");
+                    var parts = output.Text!.Split("[ESCALATE]", 2);
+                    escalationReason = parts.Length > 1 ? parts[1].Trim() : null;
+                    FrameworkLogger.Log("ChannelEngine", $"Express→Working 升级: channelId={channelId}, reason={escalationReason ?? "(无)"}");
                     isWorkingMode = true;
                     isInWorkingSession = true;
                     consecutiveExternalTriggers = 0;
