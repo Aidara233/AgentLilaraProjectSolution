@@ -285,8 +285,18 @@ namespace AgentCoreProcessor.Adapter
             var groupId = data["group_id"]?.Value<long>() ?? 0;
             var userId = data["user_id"]?.Value<long>() ?? 0;
 
-            string? channelId = groupId > 0 ? $"group_{groupId}" : null;
-            if (channelId == null) return null;
+            string channelId;
+            bool isPrivate;
+            if (groupId > 0)
+            {
+                channelId = $"group_{groupId}";
+                isPrivate = false;
+            }
+            else
+            {
+                channelId = $"private_{userId}";
+                isPrivate = true;
+            }
             if (!PassesFilter(channelId)) return null;
 
             string content;
@@ -347,7 +357,7 @@ namespace AgentCoreProcessor.Adapter
                 PlatformUserId = userId.ToString(),
                 ChannelId = channelId,
                 Content = content,
-                IsPrivate = false,
+                IsPrivate = isPrivate,
                 IsMentioned = isMentioned,
                 IsSystemEvent = true,
                 Time = DateTime.Now
