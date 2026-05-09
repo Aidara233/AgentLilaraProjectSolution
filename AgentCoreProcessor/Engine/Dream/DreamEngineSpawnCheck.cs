@@ -112,25 +112,38 @@ namespace AgentCoreProcessor.Engine
 
         public ISubEngine Create(ISystemContext ctx)
         {
-            return new DreamEngine(ctx, pendingLevel, pendingMaxFragments, this);
+            var engine = new DreamEngine(ctx, pendingLevel, pendingMaxFragments, this);
+            activeDreamEngine = engine;
+            return engine;
         }
 
         // ---- 供 DreamEngine 实例访问 ----
 
+        private DreamEngine? activeDreamEngine;
+
         internal DreamConfig GetConfig() => cfg;
 
-        internal WebUI.Services.DreamStateSnapshot GetDreamSnapshot(bool hasActiveDream) => new()
+        internal WebUI.Services.DreamStateSnapshot GetDreamSnapshot(bool hasActiveDream)
         {
-            ForceFlag = forceFlag,
-            LastDaydreamTime = lastDaydreamTime,
-            PendingLevel = pendingLevel,
-            HasActiveDream = hasActiveDream
-        };
+            var active = hasActiveDream ? activeDreamEngine : null;
+            return new()
+            {
+                ForceFlag = forceFlag,
+                LastDaydreamTime = lastDaydreamTime,
+                PendingLevel = pendingLevel,
+                HasActiveDream = hasActiveDream,
+                CurrentFragment = active?.CurrentFragment,
+                FragmentsCompleted = active?.FragmentsCompleted ?? 0,
+                FragmentsTotal = active?.FragmentsTotal ?? 0,
+                CurrentFragmentStartTime = active?.CurrentFragmentStartTime
+            };
+        }
 
         // ---- 供 DreamEngine 实例回调 ----
 
         internal void OnDreamCompleted(SleepLevel level, int processed)
         {
+            activeDreamEngine = null;
             if (level == SleepLevel.Daydream)
             {
                 lastDaydreamTime = DateTime.Now;

@@ -39,6 +39,15 @@ namespace AgentCoreProcessor.Engine
         private volatile bool shouldWake = false;
         private static readonly Random rng = new();
 
+        // 实时进度（供 WebUI 读取）
+        internal string? CurrentFragment { get; private set; }
+        internal int FragmentsCompleted { get; private set; }
+        internal int FragmentsTotal { get; private set; }
+        internal DateTime? CurrentFragmentStartTime { get; private set; }
+
+        // 片段执行记录
+        private readonly List<FragmentRecord> fragmentRecords = new();
+
         /// <summary>每个片段的估算 token 消耗（粗略值，用于预算控制）。</summary>
         private const int EstimatedTokensPerFragment = 2000;
 
@@ -73,7 +82,8 @@ namespace AgentCoreProcessor.Engine
                 EndTime = DateTime.Now,
                 Level = level.ToString(),
                 FragmentsExecuted = executed,
-                WasInterrupted = shouldWake
+                WasInterrupted = shouldWake,
+                Fragments = fragmentRecords
             });
 
             FrameworkLogger.Log("DreamEngine", $"做梦结束: level={level} executed={executed}");
@@ -92,6 +102,7 @@ namespace AgentCoreProcessor.Engine
         private async Task<int> RunLightSleepAsync()
         {
             int executed = 0;
+            FragmentsTotal = maxFragments;
             for (int i = 0; i < maxFragments; i++)
             {
                 if (shouldWake) { FrameworkLogger.Log("DreamEngine", "被叫醒"); break; }
@@ -99,15 +110,36 @@ namespace AgentCoreProcessor.Engine
                 if (fragment == null) { FrameworkLogger.Log("DreamEngine", "无可执行片段"); break; }
                 try
                 {
+                    CurrentFragment = fragment.ToString();
+                    CurrentFragmentStartTime = DateTime.Now;
                     FrameworkLogger.Log("DreamEngine", $"执行片段: {fragment}");
-                    await ExecuteFragment(fragment.Value);
+                    var summary = await ExecuteFragment(fragment.Value);
+                    var duration = (DateTime.Now - CurrentFragmentStartTime.Value).TotalSeconds;
+                    fragmentRecords.Add(new FragmentRecord
+                    {
+                        Type = fragment.ToString()!,
+                        StartTime = CurrentFragmentStartTime.Value,
+                        DurationSeconds = duration,
+                        Success = true,
+                        Summary = summary
+                    });
                     executed++;
+                    FragmentsCompleted = executed;
                 }
                 catch (Exception ex)
                 {
                     FrameworkLogger.Log("DreamEngine", $"片段异常: {fragment} - {ex.Message}");
+                    fragmentRecords.Add(new FragmentRecord
+                    {
+                        Type = fragment.ToString()!,
+                        StartTime = CurrentFragmentStartTime ?? DateTime.Now,
+                        DurationSeconds = 0,
+                        Success = false,
+                        Summary = ex.Message
+                    });
                 }
             }
+            CurrentFragment = null;
             return executed;
         }
 
@@ -141,14 +173,34 @@ namespace AgentCoreProcessor.Engine
 
                 try
                 {
+                    CurrentFragment = fragment.ToString();
+                    CurrentFragmentStartTime = DateTime.Now;
                     FrameworkLogger.Log("DreamEngine", $"[Phase1] 执行片段: {fragment}");
-                    await ExecuteFragment(fragment.Value);
+                    var summary = await ExecuteFragment(fragment.Value);
+                    var duration = (DateTime.Now - CurrentFragmentStartTime.Value).TotalSeconds;
+                    fragmentRecords.Add(new FragmentRecord
+                    {
+                        Type = fragment.ToString()!,
+                        StartTime = CurrentFragmentStartTime.Value,
+                        DurationSeconds = duration,
+                        Success = true,
+                        Summary = summary
+                    });
                     tokensUsed += EstimatedTokensPerFragment;
                     executed++;
+                    FragmentsCompleted = executed;
                 }
                 catch (Exception ex)
                 {
                     FrameworkLogger.Log("DreamEngine", $"[Phase1] 片段异常: {fragment} - {ex.Message}");
+                    fragmentRecords.Add(new FragmentRecord
+                    {
+                        Type = fragment.ToString()!,
+                        StartTime = CurrentFragmentStartTime ?? DateTime.Now,
+                        DurationSeconds = 0,
+                        Success = false,
+                        Summary = ex.Message
+                    });
                 }
             }
 
@@ -204,15 +256,35 @@ namespace AgentCoreProcessor.Engine
                             nullCount = 0;
                             try
                             {
+                                CurrentFragment = fragment.ToString();
+                                CurrentFragmentStartTime = DateTime.Now;
                                 FrameworkLogger.Log("DreamEngine", $"[Phase2] 执行片段: {fragment}");
-                                await ExecuteFragment(fragment.Value);
+                                var summary = await ExecuteFragment(fragment.Value);
+                                var duration = (DateTime.Now - CurrentFragmentStartTime.Value).TotalSeconds;
+                                fragmentRecords.Add(new FragmentRecord
+                                {
+                                    Type = fragment.ToString()!,
+                                    StartTime = CurrentFragmentStartTime.Value,
+                                    DurationSeconds = duration,
+                                    Success = true,
+                                    Summary = summary
+                                });
                                 tokensUsed += EstimatedTokensPerFragment;
                                 executed++;
+                                FragmentsCompleted = executed;
                             }
                             catch (Exception ex)
                             {
                                 FrameworkLogger.Log("DreamEngine",
                                     $"[Phase2] 片段异常: {fragment} - {ex.Message}");
+                                fragmentRecords.Add(new FragmentRecord
+                                {
+                                    Type = fragment.ToString()!,
+                                    StartTime = CurrentFragmentStartTime ?? DateTime.Now,
+                                    DurationSeconds = 0,
+                                    Success = false,
+                                    Summary = ex.Message
+                                });
                             }
                         }
                         else
@@ -306,18 +378,25 @@ namespace AgentCoreProcessor.Engine
             return weights;
         }
 
-        private async Task ExecuteFragment(FragmentType type)
+        private async Task<string?> ExecuteFragment(FragmentType type)
         {
-            switch (type)
+            return type switch
             {
-                case FragmentType.Consolidation: await ExecuteConsolidation(); break;
-                case FragmentType.Weight: await ExecuteWeight(); break;
-                case FragmentType.Link: await ExecuteLink(); break;
-                case FragmentType.Combine: await ExecuteCombine(); break;
-            }
+                FragmentType.Consolidation => await ExecuteConsolidationWithSummary(),
+                FragmentType.Weight => await ExecuteWeightWithSummary(),
+                FragmentType.Link => await ExecuteLinkWithSummary(),
+                FragmentType.Combine => await ExecuteCombineWithSummary(),
+                _ => null
+            };
         }
 
-        // ---- 片段执行（保持不变）----
+        // ---- 片段执行 ----
+
+        private async Task<string?> ExecuteConsolidationWithSummary()
+        {
+            await ExecuteConsolidation();
+            return null; // 整合自身有详细日志
+        }
 
         private async Task ExecuteConsolidation()
         {
@@ -531,12 +610,13 @@ namespace AgentCoreProcessor.Engine
             }
         }
 
-        private async Task ExecuteWeight()
+        private async Task<string?> ExecuteWeightWithSummary()
         {
             var batch = await ctx.Memories.GetUndreamedAsync(10);
             if (batch.Count < 5) batch.AddRange(await ctx.Memories.GetOldestDreamedAsync(10 - batch.Count));
-            if (batch.Count == 0) return;
+            if (batch.Count == 0) return "无记忆可评估";
             var result = await weightCore.EvaluateAsync(batch);
+            int adjusted = 0;
             try
             {
                 var evals = JArray.Parse(result);
@@ -550,17 +630,20 @@ namespace AgentCoreProcessor.Engine
                     m.LastDreamTime = DateTime.Now;
                     if (imp <= 0.05f) { m.IsPersistent = false; m.ExpiresAt = DateTime.Now.AddDays(7); }
                     await ctx.Memories.UpdateAsync(m);
+                    adjusted++;
                 }
             }
             catch (Exception ex) { FrameworkLogger.Log("DreamEngine", $"权重解析失败: {ex.Message}"); }
+            return $"评估{batch.Count}条，调整{adjusted}条";
         }
 
-        private async Task ExecuteLink()
+        private async Task<string?> ExecuteLinkWithSummary()
         {
             var targets = await ctx.Memories.GetUndreamedAsync(3);
             if (targets.Count == 0) targets = await ctx.Memories.GetOldestDreamedAsync(3);
-            if (targets.Count == 0) return;
+            if (targets.Count == 0) return "无记忆可关联";
             var candidates = await ctx.Memories.GetRecentAsync(20);
+            int linksCreated = 0;
             foreach (var target in targets)
             {
                 if (shouldWake) break;
@@ -586,36 +669,38 @@ namespace AgentCoreProcessor.Engine
                         var lt = item["linkType"]?.Value<string>() ?? "semantic";
                         var st = item["strength"]?.Value<float>() ?? 0f;
                         if (ci >= 0 && ci < filtered.Count && st >= 0.3f)
-                            await ctx.MemoryLinks.CreateOrUpdateAsync(target.Id, filtered[ci].Id, st, lt);
+                        { await ctx.MemoryLinks.CreateOrUpdateAsync(target.Id, filtered[ci].Id, st, lt); linksCreated++; }
                     }
                 }
                 catch (Exception ex) { FrameworkLogger.Log("DreamEngine", $"关联解析失败: {ex.Message}"); }
                 target.LastDreamTime = DateTime.Now;
                 await ctx.Memories.UpdateAsync(target);
             }
+            return $"分析{targets.Count}条，建立{linksCreated}个关联";
         }
 
-        private async Task ExecuteCombine()
+        private async Task<string?> ExecuteCombineWithSummary()
         {
             var recent = await ctx.Memories.GetRecentAsync(30);
-            if (recent.Count < 2) return;
+            if (recent.Count < 2) return "记忆不足";
             var ids = recent.Select(m => m.Id).ToList();
             var links = await ctx.MemoryLinks.GetLinksForAsync(ids, 0.7f);
-            if (links.Count == 0) return;
+            if (links.Count == 0) return "无强关联";
             var best = links.OrderByDescending(l => l.Strength).First();
             var src = recent.FirstOrDefault(m => m.Id == best.SourceId);
             var tgt = recent.FirstOrDefault(m => m.Id == best.TargetId);
-            if (src == null || tgt == null) return;
+            if (src == null || tgt == null) return "源记忆缺失";
             var sids = new List<int> { src.Id, tgt.Id }; sids.Sort();
             var hash = ComputeHash(string.Join(",", sids));
-            if (await ctx.Memories.GetBySourceHashAsync(hash) != null) return;
+            if (await ctx.Memories.GetBySourceHashAsync(hash) != null) return "已组合过";
             var result = await combineCore.CombineAsync([src, tgt]);
-            if (result.Trim().Equals("none", StringComparison.OrdinalIgnoreCase)) return;
+            if (result.Trim().Equals("none", StringComparison.OrdinalIgnoreCase)) return "无有价值组合";
             byte[]? emb = null;
             try { emb = VectorUtil.FloatsToBytes(await ctx.Embedding.GetEmbeddingAsync(result)); } catch { }
             await ctx.Memories.CreateDerivedAsync(result, emb,
                 System.Text.Json.JsonSerializer.Serialize(sids), hash,
                 src.PersonId ?? tgt.PersonId, src.ChannelId ?? tgt.ChannelId);
+            return $"生成衍生记忆";
         }
 
         private static string ComputeHash(string input)

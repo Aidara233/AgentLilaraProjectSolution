@@ -43,6 +43,29 @@ else
         </div>
     </div>
 
+    @if (dream.HasActiveDream && dream.CurrentFragment != null)
+    {
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-activity me-1 text-accent"></i> 实时进度
+            </div>
+            <div class="card-body">
+                <div class="d-flex align-items-center gap-3">
+                    <span class="badge-status badge-info">@dream.CurrentFragment</span>
+                    <span class="text-muted-custom">
+                        片段 @(dream.FragmentsCompleted + 1) / @dream.FragmentsTotal
+                    </span>
+                    @if (dream.CurrentFragmentStartTime.HasValue)
+                    {
+                        <span class="text-muted-custom">
+                            已耗时 @((int)(DateTime.Now - dream.CurrentFragmentStartTime.Value).TotalSeconds)s
+                        </span>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
     <div class="card">
         <div class="card-header">
             <i class="bi bi-sliders me-1 text-accent"></i> 操作

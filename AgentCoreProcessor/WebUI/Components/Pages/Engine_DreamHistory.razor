@@ -58,6 +58,22 @@
                                 }
                             </td>
                         </tr>
+                        @if (entry.Fragments.Count > 0)
+                        {
+                            <tr>
+                                <td colspan="5" style="padding:0 1rem 0.75rem 2rem; background:var(--bg-secondary);">
+                                    <div style="display:flex; flex-wrap:wrap; gap:0.5rem; padding-top:0.5rem;">
+                                        @foreach (var f in entry.Fragments)
+                                        {
+                                            <span class="badge-status @(f.Success ? "badge-info" : "badge-error")"
+                                                  title="@(f.Summary ?? "")">
+                                                @f.Type @($"{f.DurationSeconds:F0}s")
+                                            </span>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
                     }
                 </tbody>
             </table>

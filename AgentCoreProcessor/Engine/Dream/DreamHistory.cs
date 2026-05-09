@@ -7,6 +7,15 @@ using Newtonsoft.Json;
 
 namespace AgentCoreProcessor.Engine
 {
+    internal class FragmentRecord
+    {
+        public string Type { get; set; } = "";
+        public DateTime StartTime { get; set; }
+        public double DurationSeconds { get; set; }
+        public bool Success { get; set; } = true;
+        public string? Summary { get; set; }
+    }
+
     internal class DreamHistoryEntry
     {
         public DateTime StartTime { get; set; }
@@ -14,6 +23,7 @@ namespace AgentCoreProcessor.Engine
         public string Level { get; set; } = "";
         public int FragmentsExecuted { get; set; }
         public bool WasInterrupted { get; set; }
+        public List<FragmentRecord> Fragments { get; set; } = new();
     }
 
     internal static class DreamHistory
@@ -28,7 +38,6 @@ namespace AgentCoreProcessor.Engine
                 var entries = Load();
                 entries.Add(entry);
 
-                // 保留最近 100 条
                 if (entries.Count > 100)
                     entries = entries.Skip(entries.Count - 100).ToList();
 
