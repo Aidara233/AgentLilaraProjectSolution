@@ -13,14 +13,22 @@ namespace AgentCoreProcessor.Core
     internal class AgentCore : CoreBase
     {
         private string currentMode = "WorkingCore";
+        private readonly bool fixedMode;
 
         public AgentCore() : base("WorkingCore")
         {
         }
 
-        /// <summary>切换模式配置（Express/Working 用不同 LLM 配置）。</summary>
+        public AgentCore(string cfgName) : base(cfgName)
+        {
+            currentMode = cfgName;
+            fixedMode = true;
+        }
+
+        /// <summary>切换模式配置（Express/Working 用不同 LLM 配置）。固定模式时不切换。</summary>
         public void SwitchMode(Engine.EngineMode mode)
         {
+            if (fixedMode) return;
             var target = mode == Engine.EngineMode.Express ? "ExpressCore" : "WorkingCore";
             if (target == currentMode) return;
             currentMode = target;

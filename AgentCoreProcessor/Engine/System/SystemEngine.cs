@@ -26,7 +26,7 @@ namespace AgentCoreProcessor.Engine
         private long _busyFlag = 0;
 
         private readonly ISystemContext ctx;
-        private readonly AgentCore agentCore = new();
+        private readonly AgentCore agentCore;
         private readonly LoopGate gate = new();
         private readonly LoopBus bus = new();
         private CancellationTokenSource? stopCts;
@@ -72,6 +72,7 @@ namespace AgentCoreProcessor.Engine
         public SystemEngine(ISystemContext ctx)
         {
             this.ctx = ctx;
+            this.agentCore = new AgentCore("SystemCore");
 
             // 初始化模块
             systemStatusModule = new SystemStatusModule(ctx, () => GetActiveSubAgents());
