@@ -14,15 +14,21 @@ namespace AgentCoreProcessor.Core
     {
         private string currentMode = "WorkingCore";
         private readonly bool fixedMode;
+        private readonly bool noPersona;
+
+        protected override bool UsePersona => !noPersona;
 
         public AgentCore() : base("WorkingCore")
         {
         }
 
-        public AgentCore(string cfgName) : base(cfgName)
+        public AgentCore(string cfgName, bool usePersona = true) : base(cfgName)
         {
             currentMode = cfgName;
             fixedMode = true;
+            noPersona = !usePersona;
+            if (!usePersona)
+                processor = new Processor(cfgName, usePersona: false);
         }
 
         /// <summary>切换模式配置（Express/Working 用不同 LLM 配置）。固定模式时不切换。</summary>

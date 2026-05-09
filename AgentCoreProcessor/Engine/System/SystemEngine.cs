@@ -72,7 +72,7 @@ namespace AgentCoreProcessor.Engine
         public SystemEngine(ISystemContext ctx)
         {
             this.ctx = ctx;
-            this.agentCore = new AgentCore("SystemCore");
+            this.agentCore = new AgentCore("SystemCore", usePersona: false);
 
             // 初始化模块
             systemStatusModule = new SystemStatusModule(ctx, () => GetActiveSubAgents());
@@ -272,8 +272,9 @@ namespace AgentCoreProcessor.Engine
             // 压缩后的历史上下文
             messages.AddRange(compressionModule.GetContext());
 
-            // 工具描述
-            var toolDescs = ToolRegistry.GenerateDescriptions(authorizedTools: GetAuthorizedTools());
+            // 工具描述（只注入白名单内的工具）
+            var allowed = GetAuthorizedTools();
+            var toolDescs = ToolRegistry.GenerateDescriptions(filter: t => allowed.Contains(t.Name));
             if (!string.IsNullOrEmpty(toolDescs))
                 messages.Add(new Message { Role = "user", Content = toolDescs });
 
