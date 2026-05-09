@@ -197,8 +197,20 @@ namespace AgentCoreProcessor.Engine
             if (person != null)
             {
                 sb.AppendLine($"信任等级: {person.TrustLevel}, 好感度: {person.TrustProgress:F2}, 警报等级: {person.AlertLevel}");
+                sb.AppendLine($"当前称呼: {(string.IsNullOrEmpty(person.Name) ? "（未设置）" : person.Name)}");
+                sb.AppendLine($"别称: {(string.IsNullOrEmpty(person.Aliases) ? "（无）" : person.Aliases)}");
                 sb.AppendLine($"快速记忆: {(string.IsNullOrEmpty(person.FastMemory) ? "（空）" : person.FastMemory)}");
                 sb.AppendLine();
+
+                // 展示关联账号的平台名
+                var users = await ctx.Session.GetUsersByPersonIdAsync(targetPersonId.Value);
+                if (users.Count > 0)
+                {
+                    sb.AppendLine("### 关联账号");
+                    foreach (var u in users)
+                        sb.AppendLine($"- {u.Platform}: {u.DisplayName} (ID: {u.PlatformId})");
+                    sb.AppendLine();
+                }
             }
 
             var personMemories = await ctx.Memories.GetByPersonAsync(targetPersonId.Value);
@@ -212,6 +224,7 @@ namespace AgentCoreProcessor.Engine
             sb.AppendLine();
             sb.AppendLine("### 人物回顾指引");
             sb.AppendLine("回顾完成后：");
+            sb.AppendLine("- 如果「当前称呼」为空或不合适（如平台ID、不雅昵称），用「更新人物称呼」工具选一个自然、适合日常对话的称呼，并记录已知别称");
             sb.AppendLine("- 用「更新快速记忆」工具更新此人的一句话概括（简明扼要，关键信息）");
             sb.AppendLine("- 用「调整好感度」工具根据互动质量调整好感度（正值=好感增加，负值=降低）");
             sb.AppendLine("- 将深入发现写入临时记忆");

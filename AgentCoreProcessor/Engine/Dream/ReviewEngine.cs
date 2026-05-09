@@ -399,6 +399,7 @@ namespace AgentCoreProcessor.Engine
                 new ReviewReadMessagesTool(ctx),
                 new ReviewUpdateAffinityTool(ctx),
                 new ReviewUpdateFastMemoryTool(ctx),
+                new ReviewUpdatePersonNameTool(ctx),
                 new ReviewUpdateTrustProgressTool(ctx),
                 new ReviewWriteTempMemoryTool(),
                 new ReviewThinkingNotesTool(),

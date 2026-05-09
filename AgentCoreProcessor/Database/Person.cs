@@ -13,8 +13,11 @@ namespace AgentCoreProcessor.Database
         [PrimaryKey, AutoIncrement]
         public int Id { get; set; }
 
-        /// <summary>主要称呼（跨平台统一名称，由框架自动维护或手动设置）</summary>
+        /// <summary>主要称呼（跨平台统一名称，由做梦时选定）</summary>
         public string Name { get; set; } = "";
+
+        /// <summary>别称列表（逗号分隔，用于识别同一人的不同称呼）</summary>
+        public string Aliases { get; set; } = "";
 
         /// <summary>信任等级，影响框架前置路由行为</summary>
         public TrustLevel TrustLevel { get; set; } = TrustLevel.Unknown;

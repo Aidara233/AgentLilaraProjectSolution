@@ -276,6 +276,40 @@ namespace AgentCoreProcessor.Tool
         }
     }
 
+    internal class ReviewUpdatePersonNameTool : ITool
+    {
+        private readonly ISystemContext ctx;
+        public ReviewUpdatePersonNameTool(ISystemContext ctx) { this.ctx = ctx; }
+
+        public string Name => "更新人物称呼";
+        public string Description => "设置人物的主称呼和别称。主称呼是 Lilara 用来叫对方的名字，别称用于识别同一人的不同叫法";
+        public IReadOnlyList<ToolParameter> Parameters =>
+        [
+            new("人物ID", "目标人物ID", 0),
+            new("主称呼", "最合适的称呼（简短自然，适合日常对话使用）", 1),
+            new("别称", "其他已知称呼，逗号分隔（如 牢A,管理员,Aidara）", 2)
+        ];
+        public TimeSpan Timeout => TimeSpan.FromSeconds(10);
+
+        public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
+        {
+            if (!int.TryParse(resolvedInputs.ElementAtOrDefault(0), out var personId))
+                return new ToolResult { Status = "failed", Error = "人物ID必须是整数" };
+            var name = resolvedInputs.ElementAtOrDefault(1) ?? "";
+            if (string.IsNullOrWhiteSpace(name))
+                return new ToolResult { Status = "failed", Error = "主称呼不能为空" };
+
+            var person = await ctx.Session.GetPersonByIdAsync(personId);
+            if (person == null)
+                return new ToolResult { Status = "failed", Error = $"Person [{personId}] 不存在" };
+
+            person.Name = name.Trim();
+            person.Aliases = resolvedInputs.ElementAtOrDefault(2)?.Trim() ?? "";
+            await ctx.Session.UpdatePersonAsync(person);
+            return new ToolResult { Status = "success", Data = $"已更新 Person [{personId}] 称呼: {person.Name} (别称: {person.Aliases})" };
+        }
+    }
+
     internal class ReviewUpdateTrustProgressTool : ITool
     {
         private readonly ISystemContext ctx;

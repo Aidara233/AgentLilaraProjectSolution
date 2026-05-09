@@ -62,13 +62,6 @@ namespace AgentCoreProcessor.Engine
                 await users.UpdateAsync(user);
             }
 
-            // 2b. Person.Name 为空时自动从 DisplayName 填充
-            if (string.IsNullOrEmpty(person.Name) && !string.IsNullOrEmpty(user.DisplayName))
-            {
-                person.Name = user.DisplayName;
-                await persons.UpdateAsync(person);
-            }
-
             // 3. 频道映射
             var channel = await channels.FindOrCreateAsync(msg.ChannelId);
 

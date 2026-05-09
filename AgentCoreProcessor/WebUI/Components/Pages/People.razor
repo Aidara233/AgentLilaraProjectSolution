@@ -34,7 +34,13 @@
                     {
                         <tr>
                             <td>@p.Id</td>
-                            <td style="font-weight:500;">@(string.IsNullOrEmpty(p.Name) ? "-" : p.Name)</td>
+                            <td style="font-weight:500;">
+                                @(string.IsNullOrEmpty(p.Name) ? "-" : p.Name)
+                                @if (!string.IsNullOrEmpty(p.Aliases))
+                                {
+                                    <small class="text-muted-custom ms-1">(@p.Aliases)</small>
+                                }
+                            </td>
                             <td>
                                 <span class="badge-status @TrustBadgeClass(p.TrustLevel)">
                                     @p.TrustLevel
