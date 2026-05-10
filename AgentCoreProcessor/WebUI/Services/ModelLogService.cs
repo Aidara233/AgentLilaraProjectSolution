@@ -21,6 +21,35 @@ namespace AgentCoreProcessor.WebUI.Services
         public bool IsJson { get; init; }
     }
 
+    internal class ModelLogDetail
+    {
+        public string? CoreName { get; init; }
+        public string? Model { get; init; }
+        public string? Provider { get; init; }
+        public string? Timestamp { get; init; }
+        public List<ModelLogMessage> Input { get; init; } = new();
+        public string? DynamicInput { get; init; }
+        public string? Output { get; init; }
+        public string? Thinking { get; init; }
+        public ModelLogUsage? Usage { get; init; }
+    }
+
+    internal class ModelLogMessage
+    {
+        public string Role { get; init; } = "";
+        public string Content { get; init; } = "";
+    }
+
+    internal class ModelLogUsage
+    {
+        public int InputTokens { get; init; }
+        public int OutputTokens { get; init; }
+        public int TotalTokens { get; init; }
+        public int CacheCreationTokens { get; init; }
+        public int CacheReadTokens { get; init; }
+        public int CacheHitTokens { get; init; }
+    }
+
     internal class ModelLogService
     {
         public List<ModelLogEntry> ListRecent(int count = 100, string? coreFilter = null)
@@ -52,6 +81,63 @@ namespace AgentCoreProcessor.WebUI.Services
                 return content[..(512 * 1024)] + "\n\n[... 截断，文件过大]";
 
             return content;
+        }
+
+        public ModelLogDetail? ReadStructured(string fileName)
+        {
+            if (fileName.Contains("..") || fileName.Contains('/') || fileName.Contains('\\'))
+                return null;
+
+            var path = Path.Combine(PathConfig.LogPath, "Model", fileName);
+            if (!File.Exists(path) || !fileName.EndsWith(".json")) return null;
+
+            try
+            {
+                var obj = JObject.Parse(File.ReadAllText(path));
+                var input = new List<ModelLogMessage>();
+                if (obj["input"] is JArray arr)
+                {
+                    foreach (var item in arr)
+                    {
+                        input.Add(new ModelLogMessage
+                        {
+                            Role = item["role"]?.ToString() ?? "",
+                            Content = item["content"]?.ToString() ?? ""
+                        });
+                    }
+                }
+
+                ModelLogUsage? usage = null;
+                if (obj["usage"] is JObject u)
+                {
+                    usage = new ModelLogUsage
+                    {
+                        InputTokens = u["inputTokens"]?.Value<int>() ?? 0,
+                        OutputTokens = u["outputTokens"]?.Value<int>() ?? 0,
+                        TotalTokens = u["totalTokens"]?.Value<int>() ?? 0,
+                        CacheCreationTokens = u["cacheCreationInputTokens"]?.Value<int>() ?? 0,
+                        CacheReadTokens = u["cacheReadTokens"]?.Value<int>() ?? 0,
+                        CacheHitTokens = u["cacheHitTokens"]?.Value<int>() ?? 0
+                    };
+                }
+
+                return new ModelLogDetail
+                {
+                    CoreName = obj["coreName"]?.ToString(),
+                    Model = obj["model"]?.ToString(),
+                    Provider = obj["provider"]?.ToString(),
+                    Timestamp = obj["timestamp"]?.ToString(),
+                    Input = input,
+                    DynamicInput = obj["dynamicInput"]?.ToString(),
+                    Output = obj["output"]?.ToString(),
+                    Thinking = obj["thinking"]?.ToString(),
+                    Usage = usage
+                };
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         public List<string> GetCoreNames()

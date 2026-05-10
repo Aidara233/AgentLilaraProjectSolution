@@ -70,12 +70,94 @@
                 @(string.IsNullOrEmpty(selectedFile) ? "选择一个日志文件" : selectedFile)
             </div>
             <div class="card-body p-0" style="max-height:calc(100vh - 240px); overflow-y:auto;">
-                @if (string.IsNullOrEmpty(content))
+                @if (string.IsNullOrEmpty(selectedFile))
                 {
                     <div class="p-3 text-muted-custom" style="text-align:center;">点击左侧文件查看内容</div>
                 }
+                else if (detail != null)
+                {
+                    <!-- 结构化 JSON 渲染 -->
+                    <div style="padding:0.8rem;">
+                        <!-- 元信息 -->
+                        <div class="d-flex flex-wrap gap-2 mb-3" style="font-size:var(--font-size-sm);">
+                            <span class="badge-status badge-express">@detail.CoreName</span>
+                            @if (!string.IsNullOrEmpty(detail.Model))
+                            {
+                                <span class="badge-status badge-info">@detail.Model</span>
+                            }
+                            @if (!string.IsNullOrEmpty(detail.Provider))
+                            {
+                                <span class="badge-status" style="background:var(--bg-elevated); color:var(--text-secondary);">@detail.Provider</span>
+                            }
+                            @if (!string.IsNullOrEmpty(detail.Timestamp))
+                            {
+                                <span class="text-muted-custom">@detail.Timestamp</span>
+                            }
+                        </div>
+
+                        <!-- Usage -->
+                        @if (detail.Usage != null)
+                        {
+                            <div class="mb-3" style="padding:0.5rem 0.8rem; background:var(--bg-tertiary); border-radius:var(--radius-sm); font-size:var(--font-size-sm);">
+                                <span style="color:var(--text-muted);">Token:</span>
+                                <span style="color:var(--text-primary); margin-left:0.3rem;">@detail.Usage.InputTokens in / @detail.Usage.OutputTokens out</span>
+                                @if (detail.Usage.CacheReadTokens > 0 || detail.Usage.CacheHitTokens > 0)
+                                {
+                                    <span style="color:var(--accent-color); margin-left:0.8rem;">cache read: @(detail.Usage.CacheReadTokens + detail.Usage.CacheHitTokens)</span>
+                                }
+                                @if (detail.Usage.CacheCreationTokens > 0)
+                                {
+                                    <span style="color:var(--text-muted); margin-left:0.8rem;">cache create: @detail.Usage.CacheCreationTokens</span>
+                                }
+                            </div>
+                        }
+
+                        <!-- Input 消息 -->
+                        @if (detail.Input.Count > 0)
+                        {
+                            <div class="mb-3">
+                                <div style="font-size:var(--font-size-sm); color:var(--text-muted); margin-bottom:0.3rem; font-weight:600;">Input (@detail.Input.Count 条消息)</div>
+                                @foreach (var msg in detail.Input)
+                                {
+                                    <div style="margin-bottom:0.5rem; border-left:2px solid var(--border); padding-left:0.6rem;">
+                                        <div style="font-size:0.7rem; color:var(--accent-color); margin-bottom:0.15rem;">@msg.Role</div>
+                                        <pre style="margin:0; font-size:var(--font-size-sm); white-space:pre-wrap; word-break:break-all; color:var(--text-primary); background:transparent; max-height:200px; overflow-y:auto;">@msg.Content</pre>
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        <!-- Dynamic Input -->
+                        @if (!string.IsNullOrEmpty(detail.DynamicInput))
+                        {
+                            <div class="mb-3">
+                                <div style="font-size:var(--font-size-sm); color:var(--text-muted); margin-bottom:0.3rem; font-weight:600;">Dynamic Input</div>
+                                <pre style="margin:0; padding:0.5rem; font-size:var(--font-size-sm); white-space:pre-wrap; word-break:break-all; color:var(--text-primary); background:var(--bg-tertiary); border-radius:var(--radius-sm); max-height:200px; overflow-y:auto;">@detail.DynamicInput</pre>
+                            </div>
+                        }
+
+                        <!-- Thinking -->
+                        @if (!string.IsNullOrEmpty(detail.Thinking))
+                        {
+                            <div class="mb-3">
+                                <div style="font-size:var(--font-size-sm); color:var(--text-muted); margin-bottom:0.3rem; font-weight:600;">Thinking</div>
+                                <pre style="margin:0; padding:0.5rem; font-size:var(--font-size-sm); white-space:pre-wrap; word-break:break-all; color:var(--text-secondary); background:var(--bg-tertiary); border-radius:var(--radius-sm); max-height:300px; overflow-y:auto;">@detail.Thinking</pre>
+                            </div>
+                        }
+
+                        <!-- Output -->
+                        @if (!string.IsNullOrEmpty(detail.Output))
+                        {
+                            <div class="mb-3">
+                                <div style="font-size:var(--font-size-sm); color:var(--text-muted); margin-bottom:0.3rem; font-weight:600;">Output</div>
+                                <pre style="margin:0; padding:0.5rem; font-size:var(--font-size-sm); white-space:pre-wrap; word-break:break-all; color:var(--text-primary); background:var(--bg-tertiary); border-radius:var(--radius-sm); max-height:400px; overflow-y:auto;">@detail.Output</pre>
+                            </div>
+                        }
+                    </div>
+                }
                 else
                 {
+                    <!-- 旧格式 .log 或解析失败，原样显示 -->
                     <pre style="margin:0; padding:1rem; font-size:var(--font-size-sm); white-space:pre-wrap; word-break:break-all; color:var(--text-primary); background:transparent;">@content</pre>
                 }
             </div>
@@ -89,6 +171,7 @@
     private string coreFilter = "";
     private string selectedFile = "";
     private string content = "";
+    private ModelLogDetail? detail;
 
     protected override void OnInitialized()
     {
@@ -103,13 +186,18 @@
         {
             selectedFile = "";
             content = "";
+            detail = null;
         }
     }
 
     private void SelectFile(string fileName)
     {
         selectedFile = fileName;
-        content = LogService.ReadContent(fileName) ?? "无法读取文件";
+        detail = LogService.ReadStructured(fileName);
+        if (detail == null)
+            content = LogService.ReadContent(fileName) ?? "无法读取文件";
+        else
+            content = "";
     }
 
     private static string FormatSize(long bytes)
