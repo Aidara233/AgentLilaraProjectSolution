@@ -16,6 +16,7 @@ namespace AgentCoreProcessor.Engine
     /// <summary>
     /// 系统循环引擎。单例，长期运行，纯调度者。
     /// 闸门模型：任何人可升闸（唤醒），只有模型调 Wait 才落闸。
+    /// 追加式上下文：固定前缀 + 持续增长的对话历史 + 每轮新增的状态/事件。
     /// </summary>
     internal class SystemEngine : ISubEngine
     {
@@ -30,6 +31,7 @@ namespace AgentCoreProcessor.Engine
         private readonly LoopGate gate = new();
         private readonly LoopBus bus = new();
         private CancellationTokenSource? stopCts;
+        private readonly DateTime startTime = DateTime.Now;
 
         // 模块
         private readonly ThinkingNotesModule thinkingNotesModule = new();
@@ -40,6 +42,17 @@ namespace AgentCoreProcessor.Engine
         private readonly ContextPersistence persistence;
         private readonly ContextCompressionModule compressionModule;
         private List<EngineModule> modules = null!;
+
+        // 追加式对话历史
+        private readonly List<Message> conversationHistory = new();
+        private string toolDescriptions = "";
+        private int estimatedTokens = 0;
+        private const int MaxContextTokens = 80000;
+        private const int SoftThresholdPercent = 60;
+        private const int HardThresholdPercent = 85;
+
+        // 系统状态（供频道循环感知）
+        public SystemLoopState CurrentState { get; private set; } = SystemLoopState.Active;
 
         // Agent 循环状态
         private const int MaxRoundsPerWake = 20;
@@ -75,7 +88,7 @@ namespace AgentCoreProcessor.Engine
             this.agentCore = new AgentCore("SystemCore", usePersona: false);
 
             // 初始化模块
-            systemStatusModule = new SystemStatusModule(ctx, () => GetActiveSubAgents());
+            systemStatusModule = new SystemStatusModule(ctx, () => GetActiveSubAgents(), () => GetContextUsage());
 
             var systemLoopPath = Path.Combine(PathConfig.StoragePath, "SystemLoop");
             persistence = new ContextPersistence(systemLoopPath);
@@ -83,19 +96,59 @@ namespace AgentCoreProcessor.Engine
 
             modules = new List<EngineModule>
             {
-                systemStatusModule,      // 优先级 35
-                pendingEventsModule,     // 优先级 38
-                thinkingNotesModule,     // 优先级 45
-                pinboardModule,          // 优先级 55
-                loopControlModule,       // 优先级 60
-                compressionModule        // 优先级 100（不注入 prompt）
+                new ToolStatusModule(),      // 优先级 30
+                systemStatusModule,          // 优先级 35
+                pendingEventsModule,         // 优先级 38
+                thinkingNotesModule,         // 优先级 45
+                pinboardModule,              // 优先级 55
+                loopControlModule,           // 优先级 60
+                compressionModule            // 优先级 100（不注入 prompt）
             };
 
             foreach (var m in modules) m.Attach(bus);
-            compressionModule.LoadPersistedContext();
 
-            // 注册 TaskBridge 回调：任务提交时唤醒闸门
-            ctx.TaskBridge.OnTaskSubmitted = () => gate.Signal();
+            // 启动时生成工具描述（固定前缀，不再每轮重建）
+            var allowed = GetAuthorizedTools();
+            toolDescriptions = ToolRegistry.GenerateDescriptions(filter: t => allowed.Contains(t.Name));
+
+            // 恢复持久化的对话历史
+            RestoreContext();
+
+            // 注册 TaskBridge 回调：任务提交时唤醒闸门 + 强制唤醒 DreamEngine
+            ctx.TaskBridge.OnTaskSubmitted = () =>
+            {
+                gate.Signal();
+                if (ctx.CurrentSleepState != SleepState.None)
+                {
+                    ctx.EventBus.PublishSignal("force-wake", "task-submitted");
+                }
+            };
+        }
+
+        private void RestoreContext()
+        {
+            var (summary, rounds) = persistence.LoadContext();
+            compressionModule.SetSummary(summary);
+
+            foreach (var round in rounds)
+            {
+                conversationHistory.AddRange(round);
+            }
+
+            RecalculateTokens();
+
+            if (conversationHistory.Count > 0)
+                FrameworkLogger.Log("SystemEngine", $"已恢复 {conversationHistory.Count} 条历史消息, 估算 {estimatedTokens} tokens");
+        }
+
+        private void RecalculateTokens()
+        {
+            estimatedTokens = conversationHistory.Sum(m => (m.Content?.Length ?? 0)) / 3;
+        }
+
+        private (int tokens, int percent) GetContextUsage()
+        {
+            return (estimatedTokens, (int)(estimatedTokens * 100.0 / MaxContextTokens));
         }
 
         public async Task RunAsync()
@@ -162,23 +215,34 @@ namespace AgentCoreProcessor.Engine
         {
             for (int round = 0; round < MaxRoundsPerWake && !ct.IsCancellationRequested; round++)
             {
-                // ① 构建 prompt
-                var messages = BuildPromptMessages();
+                // ① 检查是否需要压缩（硬阈值）
+                var usagePercent = (int)(estimatedTokens * 100.0 / MaxContextTokens);
+                if (usagePercent >= HardThresholdPercent)
+                {
+                    await CompressContextAsync();
+                }
 
-                // ② 调用模型
-                FrameworkLogger.Log("SystemEngine", $"Agent 循环 round {round + 1}");
-                var output = await agentCore.InvokeAsync(messages, EngineMode.Working);
+                // ② 构建当前轮的 user 消息（状态 + 事件 + 上轮工具结果）
+                var currentTurnContent = BuildCurrentTurnMessage();
+                var currentTurnMsg = new Message { Role = "user", Content = currentTurnContent };
 
-                // ③ 处理响应
+                // ③ 组装完整消息列表（固定前缀 + 历史 + 当前轮）
+                var messages = BuildFullMessages(currentTurnMsg);
+
+                // ④ 调用模型
+                FrameworkLogger.Log("SystemEngine", $"Agent 循环 round {round + 1}, 上下文 {estimatedTokens}/{MaxContextTokens} tokens ({usagePercent}%)");
+                var output = await agentCore.InvokeWithHistoryAsync(messages);
+
+                // ⑤ 处理响应
                 if (output.IsText || output.ToolCalls == null || output.ToolCalls.Count == 0)
                 {
-                    // 模型返回纯文本或空工具列表 → 不落闸，标记无操作，下轮提示
                     var text = output.Text ?? "";
                     FrameworkLogger.Log("SystemEngine", $"模型无工具调用: {text.Truncate(100)}");
                     lastRoundNoAction = true;
-                    PersistRound(messages, output);
-                    // 不 break — 下一轮会带"你上一轮没有操作"提示再问一次
-                    // 但如果连续两轮无操作，自动等待（防空转）
+
+                    // 追加到历史
+                    AppendToHistory(currentTurnMsg, new Message { Role = "assistant", Content = text });
+
                     if (round > 0 && lastRoundCalls == null)
                     {
                         FrameworkLogger.Log("SystemEngine", "连续无操作，自动进入等待");
@@ -189,7 +253,7 @@ namespace AgentCoreProcessor.Engine
                     continue;
                 }
 
-                // ④ 执行工具
+                // ⑥ 执行工具
                 lastRoundNoAction = false;
                 var toolCalls = output.ToolCalls;
                 var executor = new ToolExecutor(authorizedTools: GetAuthorizedTools());
@@ -198,7 +262,11 @@ namespace AgentCoreProcessor.Engine
                 lastRoundCalls = toolCalls;
                 lastRoundResults = results;
 
-                // ⑤ 检查是否调用了 Wait（落闸信号）
+                // ⑦ 追加到历史（assistant 响应）
+                var assistantContent = FormatToolCallsAsText(toolCalls);
+                AppendToHistory(currentTurnMsg, new Message { Role = "assistant", Content = assistantContent });
+
+                // ⑧ 检查是否调用了 Wait（落闸信号）
                 var waitCall = toolCalls.FirstOrDefault(c => c.Tool == "等待");
                 if (waitCall != null)
                 {
@@ -209,14 +277,10 @@ namespace AgentCoreProcessor.Engine
                         FrameworkLogger.Log("SystemEngine",
                             $"落闸: {waitTool.WaitReason}, 超时 {waitTimeoutMinutes}min");
                     }
-                    PersistRound(messages, output);
                     break;
                 }
 
-                // ⑥ 持久化本轮
-                PersistRound(messages, output);
-
-                // ⑦ 更新 PendingEventsModule（后续轮次无新事件）
+                // ⑨ 更新 PendingEventsModule（后续轮次无新事件）
                 pendingEventsModule.SetPendingEvents(
                     new List<SystemTask>(), new List<Notification>(),
                     new List<ScheduledTaskFiredEvent>(), false);
@@ -225,7 +289,122 @@ namespace AgentCoreProcessor.Engine
             SaveModuleState();
         }
 
-        // ---- 事件收集 ----
+        // ---- 追加式历史管理 ----
+
+        private void AppendToHistory(Message userMsg, Message assistantMsg)
+        {
+            conversationHistory.Add(userMsg);
+            conversationHistory.Add(assistantMsg);
+
+            var addedTokens = ((userMsg.Content?.Length ?? 0) + (assistantMsg.Content?.Length ?? 0)) / 3;
+            estimatedTokens += addedTokens;
+
+            // 持久化
+            persistence.AppendRound(
+                new List<Message> { userMsg },
+                new List<Message> { assistantMsg });
+
+            bus.Publish(new RoundCompletedEvent { Messages = new List<Message> { userMsg, assistantMsg } });
+        }
+
+        private async Task CompressContextAsync()
+        {
+            CurrentState = SystemLoopState.Compressing;
+            ctx.TaskBridge.SystemState = SystemLoopState.Compressing;
+            FrameworkLogger.Log("SystemEngine", $"触发上下文压缩: {estimatedTokens} tokens ({estimatedTokens * 100 / MaxContextTokens}%)");
+
+            try
+            {
+                await compressionModule.CompressAsync(conversationHistory);
+
+                // 压缩后更新历史
+                var kept = compressionModule.GetKeptMessages();
+                conversationHistory.Clear();
+                conversationHistory.AddRange(kept);
+                RecalculateTokens();
+
+                // 持久化压缩结果
+                persistence.SaveSummaryAndClearContext(compressionModule.GetSummary() ?? "");
+                foreach (var msg in conversationHistory)
+                {
+                    persistence.AppendRound(
+                        msg.Role == "user" ? new List<Message> { msg } : new List<Message>(),
+                        msg.Role == "assistant" ? new List<Message> { msg } : new List<Message>());
+                }
+
+                FrameworkLogger.Log("SystemEngine", $"压缩完成: → {estimatedTokens} tokens");
+            }
+            finally
+            {
+                CurrentState = SystemLoopState.Active;
+                ctx.TaskBridge.SystemState = SystemLoopState.Active;
+            }
+        }
+
+        // ---- Prompt 构建 ----
+
+        /// <summary>
+        /// 组装完整消息列表：固定前缀 + 摘要 + 历史 + 当前轮。
+        /// 前缀（工具描述）不变，历史只增不减（除压缩），缓存友好。
+        /// </summary>
+        private List<Message> BuildFullMessages(Message currentTurnMsg)
+        {
+            var messages = new List<Message>();
+
+            // [固定前缀] 工具描述（启动时生成，不变）
+            if (!string.IsNullOrEmpty(toolDescriptions))
+                messages.Add(new Message { Role = "user", Content = toolDescriptions });
+
+            // [摘要] 压缩后的旧轮次摘要
+            var summary = compressionModule.GetSummary();
+            if (!string.IsNullOrEmpty(summary))
+                messages.Add(new Message { Role = "user", Content = $"[上下文摘要]\n{summary}" });
+
+            // [历史] 已发生的 user/assistant 对（不再碰）
+            messages.AddRange(conversationHistory);
+
+            // [当前轮] 状态 + 事件 + 工具结果
+            messages.Add(currentTurnMsg);
+
+            return messages;
+        }
+
+        /// <summary>构建当前轮的 user 消息内容：仪表盘 + 模块注入 + 工具结果。</summary>
+        private string BuildCurrentTurnMessage()
+        {
+            var sb = new StringBuilder();
+
+            // 模块注入（状态仪表盘、待处理事件、思考笔记等）
+            var sections = modules
+                .OrderBy(m => m.PromptPriority)
+                .Select(m => m.BuildPromptSection(EngineMode.Working))
+                .Where(s => !string.IsNullOrEmpty(s))
+                .ToList();
+
+            if (sections.Any())
+                sb.AppendLine(string.Join("\n\n", sections));
+
+            // 上一轮工具结果
+            if (lastRoundResults != null && lastRoundCalls != null && lastRoundResults.Count > 0)
+            {
+                sb.AppendLine("\n[上一轮工具执行结果]");
+                for (int i = 0; i < lastRoundCalls.Count && i < lastRoundResults.Count; i++)
+                {
+                    var call = lastRoundCalls[i];
+                    var result = lastRoundResults[i];
+                    sb.Append($"[{call.Tool}");
+                    if (call.Inputs.Count > 0)
+                        sb.Append($"({string.Join(", ", call.Inputs).Truncate(80)})");
+                    sb.Append("]: ");
+                    if (result.IsSuccess)
+                        sb.AppendLine(result.Data ?? "成功");
+                    else
+                        sb.AppendLine($"失败 - {result.Error ?? result.Status}");
+                }
+            }
+
+            return sb.ToString();
+        }
 
         private List<SystemTask> DrainTasks()
         {
@@ -263,54 +442,6 @@ namespace AgentCoreProcessor.Engine
             gate.Signal();
         }
 
-        // ---- Prompt 构建 ----
-
-        private List<Message> BuildPromptMessages()
-        {
-            var messages = new List<Message>();
-
-            // 压缩后的历史上下文
-            messages.AddRange(compressionModule.GetContext());
-
-            // 工具描述（只注入白名单内的工具）
-            var allowed = GetAuthorizedTools();
-            var toolDescs = ToolRegistry.GenerateDescriptions(filter: t => allowed.Contains(t.Name));
-            if (!string.IsNullOrEmpty(toolDescs))
-                messages.Add(new Message { Role = "user", Content = toolDescs });
-
-            // 模块注入
-            var sections = modules
-                .OrderBy(m => m.PromptPriority)
-                .Select(m => m.BuildPromptSection(EngineMode.Working))
-                .Where(s => !string.IsNullOrEmpty(s))
-                .ToList();
-
-            if (sections.Any())
-                messages.Add(new Message { Role = "user", Content = string.Join("\n\n", sections) });
-
-            // 上一轮工具结果
-            if (lastRoundResults != null && lastRoundCalls != null && lastRoundResults.Count > 0)
-            {
-                var sb = new StringBuilder("[上一轮工具执行结果]\n");
-                for (int i = 0; i < lastRoundCalls.Count && i < lastRoundResults.Count; i++)
-                {
-                    var call = lastRoundCalls[i];
-                    var result = lastRoundResults[i];
-                    sb.Append($"[{call.Tool}");
-                    if (call.Inputs.Count > 0)
-                        sb.Append($"({string.Join(", ", call.Inputs).Truncate(80)})");
-                    sb.Append("]: ");
-                    if (result.IsSuccess)
-                        sb.AppendLine(result.Data ?? "成功");
-                    else
-                        sb.AppendLine($"失败 - {result.Error ?? result.Status}");
-                }
-                messages.Add(new Message { Role = "user", Content = sb.ToString() });
-            }
-
-            return messages;
-        }
-
         private HashSet<string> GetAuthorizedTools()
         {
             return new HashSet<string>
@@ -323,19 +454,6 @@ namespace AgentCoreProcessor.Engine
                 "创建定时任务", "取消定时任务",
                 "记忆读取", "记忆搜索"
             };
-        }
-
-        // ---- 持久化 ----
-
-        private void PersistRound(List<Message> promptMessages, ModelOutput output)
-        {
-            // 只持久化模型输出，不持久化每轮重新生成的 prompt（工具描述、模块状态等）
-            var assistantContent = output.Text ?? FormatToolCallsAsText(output.ToolCalls);
-            var assistantMessage = new Message { Role = "assistant", Content = assistantContent };
-
-            persistence.AppendRound(new List<Message>(), new List<Message> { assistantMessage });
-
-            bus.Publish(new RoundCompletedEvent { Messages = new List<Message> { assistantMessage } });
         }
 
         private static string FormatToolCallsAsText(List<ToolCall>? calls)
@@ -359,10 +477,7 @@ namespace AgentCoreProcessor.Engine
 
         public void OnEvent(EngineEvent e)
         {
-            if (e is TimerEvent)
-            {
-                gate.Signal();
-            }
+            // TimerEvent 不再唤醒闸门 — 由 gate 超时（waitTimeoutMinutes）控制周期
 
             if (e is SignalEvent signal)
             {
@@ -657,5 +772,12 @@ namespace AgentCoreProcessor.Engine
             FrameworkLogger.Log("SystemEngine", "已触发 DreamEngine 启动");
             return Task.CompletedTask;
         }
+    }
+
+    /// <summary>系统循环状态（供频道循环感知）。</summary>
+    public enum SystemLoopState
+    {
+        Active,
+        Compressing,
     }
 }

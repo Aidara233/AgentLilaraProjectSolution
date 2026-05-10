@@ -164,7 +164,8 @@ namespace AgentCoreProcessor.Engine
             modules = new List<EngineModule>
             {
                 speakModule, thinkingNotesModule, taskListModule, pinboardModule,
-                retainListModule, memoryWindowModule, loopControlModule, signalDispatchModule
+                retainListModule, memoryWindowModule, loopControlModule, signalDispatchModule,
+                new ToolStatusModule()
             };
             foreach (var m in modules) m.Attach(bus);
         }

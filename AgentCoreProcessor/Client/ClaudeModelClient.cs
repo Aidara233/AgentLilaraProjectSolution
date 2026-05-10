@@ -111,8 +111,32 @@ namespace AgentCoreProcessor.Client
                 parameters.Tools.Add(webSearchTool);
             }
 
+            // Prompt Caching（可配置，中转站可能不支持）
+            if (apiClientCfg.PromptCaching)
+            {
+                parameters.PromptCaching = PromptCacheType.FineGrained;
+
+                // 在 system 消息上设置 cache_control
+                if (parameters.System != null)
+                {
+                    foreach (var sysMsg in parameters.System)
+                        sysMsg.CacheControl = new CacheControl { TTL = CacheDuration.FiveMinutes };
+                }
+
+                // 在第一条 user 消息（通常是工具描述）上设置 cache_control
+                if (messages.Count > 0 && messages[0].Role == RoleType.User)
+                {
+                    var firstContent = messages[0].Content;
+                    if (firstContent != null && firstContent.Count > 0)
+                    {
+                        firstContent[^1].CacheControl = new CacheControl { TTL = CacheDuration.FiveMinutes };
+                    }
+                }
+            }
+
             var fullContent = new System.Text.StringBuilder();
             int inputTokens = 0, outputTokens = 0;
+            int cacheCreation = 0, cacheRead = 0;
 
             await foreach (var resp in client.Messages.StreamClaudeMessageAsync(parameters, ct))
             {
@@ -120,6 +144,8 @@ namespace AgentCoreProcessor.Client
                 {
                     if (resp.Usage.InputTokens > 0) inputTokens = resp.Usage.InputTokens;
                     if (resp.Usage.OutputTokens > 0) outputTokens = resp.Usage.OutputTokens;
+                    if (resp.Usage.CacheCreationInputTokens > 0) cacheCreation = resp.Usage.CacheCreationInputTokens;
+                    if (resp.Usage.CacheReadInputTokens > 0) cacheRead = resp.Usage.CacheReadInputTokens;
                 }
 
                 if (resp.Delta?.Text != null)
@@ -149,7 +175,9 @@ namespace AgentCoreProcessor.Client
             {
                 PromptTokens = inputTokens,
                 CompletionTokens = outputTokens,
-                TotalTokens = inputTokens + outputTokens
+                TotalTokens = inputTokens + outputTokens,
+                CacheCreationInputTokens = cacheCreation,
+                CacheReadInputTokens = cacheRead
             };
             onDelta(usageResp);
 

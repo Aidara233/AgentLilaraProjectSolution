@@ -1,6 +1,9 @@
 using AgentCoreProcessor.Config;
+using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine;
+using AgentCoreProcessor.Engine.Modules;
 using AgentCoreProcessor.Models;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -13,6 +16,9 @@ namespace AgentCoreProcessor.Core
     internal abstract class CoreBase
     {
         public string CoreName { get => GetType().Name; }
+
+        /// <summary>由 MasterEngine 初始化时设置，供所有 Core 写入调用日志。</summary>
+        internal static ModelCallLogRepository? CallLogRepo { get; set; }
 
         protected Processor processor;
 
@@ -105,7 +111,7 @@ namespace AgentCoreProcessor.Core
                 reasoningLog.Clear();
             });
 
-            LogOutput(fullContent.ToString(), reasoningLog.ToString());
+            LogOutput(fullContent.ToString(), reasoningLog.ToString(), usage);
             return usage;
         }
 
@@ -113,6 +119,7 @@ namespace AgentCoreProcessor.Core
         {
             var result = new StringBuilder();
             var reasoningLog = new StringBuilder();
+            Usage? usage = null;
 
             await processor.ProcessAsync((response) =>
             {
@@ -123,6 +130,8 @@ namespace AgentCoreProcessor.Core
                     result.Append(delta.Content);
                 if (delta.ReasoningContent != null)
                     reasoningLog.Append(delta.ReasoningContent);
+                if (response.Usage != null)
+                    usage = response.Usage;
             },
             default,
             onRetryReset: () =>
@@ -132,7 +141,7 @@ namespace AgentCoreProcessor.Core
             });
 
             var output = result.ToString();
-            LogOutput(output, reasoningLog.ToString());
+            LogOutput(output, reasoningLog.ToString(), usage);
             return output;
         }
 
@@ -157,37 +166,68 @@ namespace AgentCoreProcessor.Core
         /// 将模型输入和输出写入独立日志文件 Storage/Logs/Model/{timestamp}_{CoreName}.log。
         /// 返回日志文件名，供框架日志引用。
         /// </summary>
-        protected string LogOutput(string content, string reasoning = "")
+        protected string LogOutput(string content, string reasoning = "", Usage? usage = null)
         {
             string fileName = "";
             try
             {
                 var logDir = Path.Combine(PathConfig.LogPath, "Model");
                 Directory.CreateDirectory(logDir);
-                fileName = $"{DateTime.Now:yyyyMMdd_HHmmss_fff}_{CoreName}.log";
+                fileName = $"{DateTime.Now:yyyyMMdd_HHmmss_fff}_{CoreName}.json";
                 var logPath = Path.Combine(logDir, fileName);
 
-                var sb = new StringBuilder();
-                sb.AppendLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [{CoreName}]");
-
-                // 记录输入消息
-                sb.AppendLine("[Input]");
                 var history = processor.Client.GetConversationHistory();
-                foreach (var msg in history)
-                    sb.AppendLine($"  [{msg.Role}] {msg.Content}");
+                var cfg = processor.Client.Config;
 
-                if (!string.IsNullOrEmpty(reasoning))
-                    sb.AppendLine($"[Thinking] {reasoning}");
-                sb.AppendLine($"[Output] {content}");
+                var logEntry = new
+                {
+                    timestamp = DateTime.Now.ToString("o"),
+                    coreName = CoreName,
+                    model = cfg.Model,
+                    provider = cfg.Provider,
+                    inputMessages = history.Count,
+                    inputChars = history.Sum(m => m.Content?.Length ?? 0),
+                    tools = (string[]?)null,
+                    dynamicInput = history.LastOrDefault(m => m.Role == "user")?.Content?.Truncate(2000),
+                    output = content.Truncate(5000),
+                    thinking = string.IsNullOrEmpty(reasoning) ? null : reasoning.Truncate(3000),
+                    usage = usage == null ? null : new
+                    {
+                        inputTokens = usage.PromptTokens,
+                        outputTokens = usage.CompletionTokens,
+                        totalTokens = usage.TotalTokens,
+                        cacheCreationTokens = usage.CacheCreationInputTokens,
+                        cacheReadTokens = usage.CacheReadInputTokens,
+                        cacheHitTokens = usage.PromptCacheHitTokens,
+                        cacheMissTokens = usage.PromptCacheMissTokens
+                    }
+                };
 
-                File.WriteAllText(logPath, sb.ToString());
+                var json = JsonConvert.SerializeObject(logEntry, Formatting.Indented,
+                    new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
+                File.WriteAllText(logPath, json);
 
-                // 同时在框架日志中记录引用
                 FrameworkLogger.LogModelCall("CoreBase", CoreName, fileName);
+
+                if (CallLogRepo != null && usage != null)
+                {
+                    _ = CallLogRepo.InsertAsync(new ModelCallLog
+                    {
+                        Timestamp = DateTime.Now,
+                        CoreName = CoreName,
+                        Model = cfg.Model,
+                        Provider = cfg.Provider,
+                        InputTokens = usage.PromptTokens,
+                        OutputTokens = usage.CompletionTokens,
+                        CacheCreationTokens = usage.CacheCreationInputTokens,
+                        CacheReadTokens = usage.CacheReadInputTokens,
+                        CacheHitTokens = usage.PromptCacheHitTokens ?? 0,
+                        LogFileName = fileName
+                    });
+                }
             }
             catch
             {
-                // 日志写入不应影响主流程
             }
             return fileName;
         }

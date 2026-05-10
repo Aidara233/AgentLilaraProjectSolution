@@ -42,6 +42,7 @@ namespace AgentCoreProcessor.Database
             await db.CreateTableAsync<DreamFragment>();
             await db.CreateTableAsync<DreamFragmentDetail>();
             await db.CreateTableAsync<ScheduledTask>();
+            await db.CreateTableAsync<ModelCallLog>();
         }
 
         /// <summary>

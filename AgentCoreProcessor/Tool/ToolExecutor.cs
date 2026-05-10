@@ -51,6 +51,14 @@ namespace AgentCoreProcessor.Tool
                 return new ToolResult { Status = "failed", Error = $"未知工具: {call.Tool}" };
             }
 
+            // 禁用检查
+            if (ToolRegistry.IsDisabled(call.Tool))
+            {
+                var reason = ToolRegistry.GetDisableReason(call.Tool) ?? "未知原因";
+                FrameworkLogger.Log("ToolExecutor", $"工具已禁用: {call.Tool} ({reason})");
+                return new ToolResult { Status = "failed", Error = $"工具已禁用: {reason}" };
+            }
+
             // 预授权检查：只查权限表，不阻塞
             if (tool.RequiredPermission > PermissionLevel.Default
                 && authorizedTools != null

@@ -33,6 +33,7 @@ namespace AgentCoreProcessor.WebUI.Navigation
             new() { Title = "记忆", Icon = "bi-brain", Children = new()
             {
                 new() { Title = "主库浏览", Href = "/memories" },
+                new() { Title = "关联图谱", Href = "/memories/graph" },
                 new() { Title = "临时库", Href = "/memories/temp" },
                 new() { Title = "人物", Href = "/people" },
             }},
@@ -54,6 +55,8 @@ namespace AgentCoreProcessor.WebUI.Navigation
             {
                 new() { Title = "日志", Href = "/logs" },
                 new() { Title = "模型日志", Href = "/logs/model" },
+                new() { Title = "Token 统计", Href = "/logs/tokens" },
+                new() { Title = "工具管理", Href = "/config/tools" },
                 new() { Title = "配置", Href = "/config" },
                 new() { Title = "MCP", Href = "/mcp" },
             }},

@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Client;
 using AgentCoreProcessor.Config;
+using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.MCP;
 using AgentCoreProcessor.Memory;
@@ -56,6 +57,7 @@ namespace AgentCoreProcessor.Engine
         public ReviewHintRepository ReviewHints { get; private set; } = null!;
         public DreamLogRepository DreamLogs { get; private set; } = null!;
         public ScheduledTaskRepository ScheduledTasks { get; private set; } = null!;
+        public ModelCallLogRepository ModelCallLogs { get; private set; } = null!;
         public MemoryService MemorySvc { get; private set; } = null!;
         public SessionManager Session { get; private set; } = null!;
         public IEmbeddingProvider Embedding => embeddingProvider!;
@@ -83,6 +85,7 @@ namespace AgentCoreProcessor.Engine
 
         /// <summary>静音模式：内部处理照常，但不产生对外输出。</summary>
         public bool MuteMode { get; set; } = false;
+        public SleepState CurrentSleepState { get; set; } = SleepState.None;
         public McpServerManager? McpManager => mcpManager;
         public TaskBridge TaskBridge { get; private set; } = null!;
 
@@ -206,6 +209,8 @@ namespace AgentCoreProcessor.Engine
             ScheduledTasks = new ScheduledTaskRepository(db);
             var images = new ImageRepository(db);
             ImageStorage.Init(images);
+            ModelCallLogs = new ModelCallLogRepository(db);
+            CoreBase.CallLogRepo = ModelCallLogs;
 
             // Embedding
             var baseConfigPath = Path.Combine(PathConfig.CoreConfigPath, "Base.json");

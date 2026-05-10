@@ -1,7 +1,10 @@
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
+using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Database;
 using Newtonsoft.Json;
 
@@ -14,6 +17,17 @@ namespace AgentCoreProcessor.Tool
     {
         private static readonly ConcurrentDictionary<string, ITool> _tools;
         private static readonly HashSet<string> _activeGroups = new();
+        private static readonly ConcurrentDictionary<string, DisabledToolInfo> _disabledTools = new();
+
+        private static string ConfigPath => Path.Combine(PathConfig.StoragePath, "ToolConfig.json");
+
+        internal class DisabledToolInfo
+        {
+            [JsonProperty("reason")]
+            public string Reason { get; set; } = "";
+            [JsonProperty("disabledAt")]
+            public DateTime DisabledAt { get; set; }
+        }
 
         static ToolRegistry()
         {
@@ -158,6 +172,65 @@ namespace AgentCoreProcessor.Tool
                 inputs = tool.Parameters.Select(p => $"({p.Name})").ToArray()
             };
             return JsonConvert.SerializeObject(example, Formatting.None);
+        }
+
+        // ---- 工具禁用管理 ----
+
+        public static bool IsDisabled(string toolName) => _disabledTools.ContainsKey(toolName);
+
+        public static string? GetDisableReason(string toolName)
+            => _disabledTools.TryGetValue(toolName, out var info) ? info.Reason : null;
+
+        public static IReadOnlyDictionary<string, DisabledToolInfo> DisabledTools => _disabledTools;
+
+        public static void DisableTool(string name, string reason)
+        {
+            _disabledTools[name] = new DisabledToolInfo
+            {
+                Reason = reason,
+                DisabledAt = DateTime.Now
+            };
+            SaveConfig();
+        }
+
+        public static void EnableTool(string name)
+        {
+            _disabledTools.TryRemove(name, out _);
+            SaveConfig();
+        }
+
+        public static void LoadConfig()
+        {
+            if (!File.Exists(ConfigPath)) return;
+            try
+            {
+                var json = File.ReadAllText(ConfigPath);
+                var cfg = JsonConvert.DeserializeObject<ToolConfigFile>(json);
+                if (cfg?.Disabled != null)
+                {
+                    foreach (var (name, info) in cfg.Disabled)
+                        _disabledTools[name] = info;
+                }
+            }
+            catch { }
+        }
+
+        private static void SaveConfig()
+        {
+            try
+            {
+                var cfg = new ToolConfigFile { Disabled = new Dictionary<string, DisabledToolInfo>(_disabledTools) };
+                var json = JsonConvert.SerializeObject(cfg, Formatting.Indented);
+                Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath)!);
+                File.WriteAllText(ConfigPath, json);
+            }
+            catch { }
+        }
+
+        private class ToolConfigFile
+        {
+            [JsonProperty("disabled")]
+            public Dictionary<string, DisabledToolInfo> Disabled { get; set; } = new();
         }
     }
 }

@@ -23,6 +23,7 @@ namespace AgentCoreProcessor
             Console.OutputEncoding = Encoding.UTF8;
 
             PathConfig.Load();
+            AgentCoreProcessor.Tool.ToolRegistry.LoadConfig();
 
             var debug = Array.Exists(args, a => a == "--debug");
             var fileMode = Array.Exists(args, a => a == "--file");
@@ -269,6 +270,8 @@ namespace AgentCoreProcessor
             builder.Services.AddSingleton<WebUI.Services.SystemMonitor>();
             builder.Services.AddSingleton<LogStreamService>();
             builder.Services.AddSingleton<WebUI.Services.ModelLogService>();
+            builder.Services.AddSingleton(sp =>
+                new WebUI.Services.TokenStatsService(engine.ModelCallLogs));
 
             builder.Services.AddRazorComponents()
                 .AddInteractiveServerComponents();

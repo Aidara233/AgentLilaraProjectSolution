@@ -62,16 +62,22 @@ namespace AgentCoreProcessor.Models
         [JsonProperty("completion_tokens_details", NullValueHandling = NullValueHandling.Ignore)]
         public CompletionTokensDetails? CompletionTokensDetails { get; set; }
 
-        // 新增：支持 JSON 中的 prompt_tokens_details 子对象
         [JsonProperty("prompt_tokens_details", NullValueHandling = NullValueHandling.Ignore)]
         public PromptTokensDetails? PromptTokensDetails { get; set; }
 
-        // 新增：支持 JSON 中的 prompt_cache_hit_tokens 和 prompt_cache_miss_tokens
+        // DeepSeek 缓存
         [JsonProperty("prompt_cache_hit_tokens", NullValueHandling = NullValueHandling.Ignore)]
         public int? PromptCacheHitTokens { get; set; }
 
         [JsonProperty("prompt_cache_miss_tokens", NullValueHandling = NullValueHandling.Ignore)]
         public int? PromptCacheMissTokens { get; set; }
+
+        // Claude 缓存
+        [JsonProperty("cache_creation_input_tokens")]
+        public int CacheCreationInputTokens { get; set; }
+
+        [JsonProperty("cache_read_input_tokens")]
+        public int CacheReadInputTokens { get; set; }
     }
 
     public class ApiResponse
