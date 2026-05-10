@@ -627,6 +627,94 @@ select.config-input option {
     color: var(--text-primary);
 }
 
+/* ===== Inline Edit ===== */
+
+.inline-editable {
+    cursor: pointer;
+    padding: 0.15rem 0.4rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    transition: all var(--transition-fast);
+}
+
+.inline-editable:hover {
+    border-color: var(--border);
+    background: var(--bg-tertiary);
+}
+
+.inline-edit-input {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--accent);
+    color: var(--text-primary);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+    padding: 0.2rem 0.5rem;
+    outline: none;
+    box-shadow: 0 0 0 2px var(--accent-dim);
+    width: 100%;
+}
+
+.inline-edit-select {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--accent);
+    color: var(--text-primary);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-xs);
+    padding: 0.2rem 0.4rem;
+    outline: none;
+    box-shadow: 0 0 0 2px var(--accent-dim);
+    cursor: pointer;
+}
+
+.inline-edit-select option {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.inline-edit-actions {
+    display: inline-flex;
+    gap: 0.25rem;
+    margin-left: 0.3rem;
+}
+
+.inline-edit-actions button {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.1rem 0.35rem;
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    color: var(--text-secondary);
+}
+
+.inline-edit-actions button.save {
+    border-color: var(--status-ok);
+    color: var(--status-ok);
+}
+
+.inline-edit-actions button.save:hover {
+    background: var(--status-ok-dim);
+}
+
+.inline-edit-actions button.cancel {
+    border-color: var(--text-muted);
+    color: var(--text-muted);
+}
+
+.inline-edit-actions button.cancel:hover {
+    background: var(--bg-hover);
+}
+
+.save-flash {
+    animation: flash-ok 0.6s ease;
+}
+
+@keyframes flash-ok {
+    0% { background: var(--status-ok-dim); }
+    100% { background: transparent; }
+}
+
 /* ===== Reconnect Modal ===== */
 
 #components-reconnect-modal {

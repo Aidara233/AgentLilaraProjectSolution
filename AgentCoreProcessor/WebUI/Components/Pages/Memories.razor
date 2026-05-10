@@ -51,14 +51,49 @@
                 <div style="max-height:calc(100vh - 300px); overflow-y:auto">
                     @foreach (var m in mainMemories)
                     {
-                        <div class="msg-item" style="cursor:pointer;" @onclick="() => GoToDetail(m.Id)">
-                            <div class="d-flex justify-content-between">
+                        <div class="msg-item @(flashMemoryId == m.Id ? "save-flash" : "")">
+                            <div class="d-flex justify-content-between align-items-start">
                                 <div class="d-flex gap-1 flex-wrap">
-                                    <span class="badge-status badge-express">@m.Type</span>
-                                    @if (!string.IsNullOrEmpty(m.Subject))
+                                    @if (editingMemoryId == m.Id && editingField == "Type")
                                     {
-                                        <span class="badge-status" style="background:var(--accent-color); color:#fff;">@m.Subject</span>
+                                        <select class="inline-edit-select" @bind="editType">
+                                            <option value="knowledge">knowledge</option>
+                                            <option value="fact">fact</option>
+                                            <option value="feedback">feedback</option>
+                                            <option value="inference">inference</option>
+                                            <option value="event">event</option>
+                                        </select>
+                                        <span class="inline-edit-actions">
+                                            <button class="save" @onclick="SaveMemoryEdit"><i class="bi bi-check"></i></button>
+                                            <button class="cancel" @onclick="CancelEdit"><i class="bi bi-x"></i></button>
+                                        </span>
                                     }
+                                    else
+                                    {
+                                        <span class="inline-editable badge-status badge-express"
+                                              @onclick="@(() => StartEditMemory(m, FieldType))">@m.Type</span>
+                                    }
+
+                                    @if (editingMemoryId == m.Id && editingField == "Subject")
+                                    {
+                                        <input type="text" class="inline-edit-input" style="width:100px;"
+                                               @bind="editSubject" placeholder="主题" />
+                                        <span class="inline-edit-actions">
+                                            <button class="save" @onclick="SaveMemoryEdit"><i class="bi bi-check"></i></button>
+                                            <button class="cancel" @onclick="CancelEdit"><i class="bi bi-x"></i></button>
+                                        </span>
+                                    }
+                                    else if (!string.IsNullOrEmpty(m.Subject))
+                                    {
+                                        <span class="inline-editable badge-status" style="background:var(--accent-color); color:#fff;"
+                                              @onclick="@(() => StartEditMemory(m, FieldSubject))">@m.Subject</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="inline-editable badge-status" style="background:var(--bg-elevated); color:var(--text-muted); font-style:italic;"
+                                              @onclick="@(() => StartEditMemory(m, FieldSubject))">+主题</span>
+                                    }
+
                                     @if (m.PersonId > 0)
                                     {
                                         <span class="badge-status badge-info">P:@m.PersonId</span>
@@ -67,17 +102,58 @@
                                     {
                                         <span class="badge-status" style="background:var(--bg-elevated); color:var(--text-secondary);">Ch:@m.ChannelId</span>
                                     }
-                                    <span class="badge-status @(m.Importance >= 0.7f ? "badge-working" : "")" style="@(m.Importance < 0.7f ? "background:var(--bg-elevated); color:var(--text-secondary);" : "")">
-                                        重要度:@m.Importance.ToString("F1")
-                                    </span>
+
+                                    @if (editingMemoryId == m.Id && editingField == "Importance")
+                                    {
+                                        <input type="number" step="0.1" min="0" max="1" class="inline-edit-input" style="width:60px;"
+                                               @bind="editImportance" />
+                                        <span class="inline-edit-actions">
+                                            <button class="save" @onclick="SaveMemoryEdit"><i class="bi bi-check"></i></button>
+                                            <button class="cancel" @onclick="CancelEdit"><i class="bi bi-x"></i></button>
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="inline-editable badge-status @(m.Importance >= 0.7f ? "badge-working" : "")"
+                                              style="@(m.Importance < 0.7f ? "background:var(--bg-elevated); color:var(--text-secondary);" : "")"
+                                              @onclick="@(() => StartEditMemory(m, FieldImportance))">
+                                            重要度:@m.Importance.ToString("F1")
+                                        </span>
+                                    }
+
                                     @if (m.Confidence == "low")
                                     {
                                         <span class="badge-status badge-working">低置信</span>
                                     }
                                 </div>
-                                <small class="text-muted-custom">@m.CreatedAt.ToString("MM-dd HH:mm")</small>
+                                <div class="d-flex align-items-center gap-2">
+                                    <small class="text-muted-custom">@m.CreatedAt.ToString("MM-dd HH:mm")</small>
+                                    <button class="btn-ghost" style="padding:0.15rem 0.4rem; font-size:0.7rem;"
+                                            @onclick="() => GoToDetail(m.Id)" title="详情">
+                                        <i class="bi bi-box-arrow-up-right"></i>
+                                    </button>
+                                    <button class="btn-ghost" style="padding:0.15rem 0.4rem; font-size:0.7rem; color:var(--status-error);"
+                                            @onclick="() => DeleteMemory(m)" title="删除">
+                                        <i class="bi bi-trash3"></i>
+                                    </button>
+                                </div>
                             </div>
-                            <div class="mt-1" style="color:var(--text-primary);">@m.Content</div>
+                            @if (editingMemoryId == m.Id && editingField == "Content")
+                            {
+                                <div class="mt-1">
+                                    <textarea class="inline-edit-input" style="min-height:60px; resize:vertical;"
+                                              @bind="editContent"></textarea>
+                                    <span class="inline-edit-actions" style="margin-top:0.3rem;">
+                                        <button class="save" @onclick="SaveMemoryEdit"><i class="bi bi-check"></i></button>
+                                        <button class="cancel" @onclick="CancelEdit"><i class="bi bi-x"></i></button>
+                                    </span>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="mt-1 inline-editable" style="color:var(--text-primary); display:block;"
+                                     @onclick="@(() => StartEditMemory(m, FieldContent))">@m.Content</div>
+                            }
                         </div>
                     }
                 </div>
@@ -98,21 +174,45 @@ else
                 <div style="max-height:calc(100vh - 300px); overflow-y:auto">
                     @foreach (var m in tempMemories)
                     {
-                        <div class="msg-item">
-                            <div class="d-flex justify-content-between">
-                                <div class="d-flex gap-1">
-                                    @if (m.PersonId > 0)
+                        <div class="msg-item @(flashTempId == m.Id ? "save-flash" : "")">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div class="d-flex gap-1 flex-wrap">
+                                    @if (m.PersonId != null)
                                     {
                                         <span class="badge-status badge-info">P:@m.PersonId</span>
                                     }
-                                    @if (m.ChannelId > 0)
+                                    @if (m.ChannelId != null)
                                     {
                                         <span class="badge-status" style="background:var(--bg-elevated); color:var(--text-secondary);">Ch:@m.ChannelId</span>
                                     }
+                                    <span class="badge-status @(m.Confidence == "low" ? "badge-working" : "badge-express")">
+                                        @m.Confidence
+                                    </span>
                                 </div>
-                                <small class="text-muted-custom">@m.CreatedAt.ToString("MM-dd HH:mm")</small>
+                                <div class="d-flex align-items-center gap-2">
+                                    <small class="text-muted-custom">@m.CreatedAt.ToString("MM-dd HH:mm")</small>
+                                    <button class="btn-ghost" style="padding:0.15rem 0.4rem; font-size:0.7rem; color:var(--status-error);"
+                                            @onclick="() => DeleteTemp(m)" title="删除">
+                                        <i class="bi bi-trash3"></i>
+                                    </button>
+                                </div>
                             </div>
-                            <div class="mt-1" style="color:var(--text-primary);">@m.Content</div>
+                            @if (editingTempId == m.Id)
+                            {
+                                <div class="mt-1">
+                                    <textarea class="inline-edit-input" style="min-height:60px; resize:vertical;"
+                                              @bind="editContent"></textarea>
+                                    <span class="inline-edit-actions" style="margin-top:0.3rem;">
+                                        <button class="save" @onclick="SaveTempEdit"><i class="bi bi-check"></i></button>
+                                        <button class="cancel" @onclick="CancelEdit"><i class="bi bi-x"></i></button>
+                                    </span>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="mt-1 inline-editable" style="color:var(--text-primary); display:block;"
+                                     @onclick="() => StartEditTemp(m)">@m.Content</div>
+                            }
                         </div>
                     }
                 </div>
@@ -122,6 +222,11 @@ else
 }
 
 @code {
+    private const string FieldType = "Type";
+    private const string FieldSubject = "Subject";
+    private const string FieldImportance = "Importance";
+    private const string FieldContent = "Content";
+
     private string tab = "main";
     private List<Person> persons = new();
     private List<MemoryEntry> mainMemories = new();
@@ -129,6 +234,19 @@ else
     private int mainCount = 0;
     private int selectedPersonId = 0;
     private string keyword = "";
+
+    // 编辑状态
+    private int editingMemoryId = 0;
+    private int editingTempId = 0;
+    private string editingField = "";
+    private int flashMemoryId = 0;
+    private int flashTempId = 0;
+
+    // 编辑值
+    private string editContent = "";
+    private string editType = "";
+    private string editSubject = "";
+    private float editImportance;
 
     protected override async Task OnInitializedAsync()
     {
@@ -140,6 +258,7 @@ else
     private async Task SwitchTab(string newTab)
     {
         tab = newTab;
+        CancelEdit();
         await Refresh();
     }
 
@@ -170,6 +289,83 @@ else
             if (!string.IsNullOrWhiteSpace(keyword))
                 tempMemories = tempMemories.Where(t => t.Content.Contains(keyword, StringComparison.OrdinalIgnoreCase)).ToList();
         }
+    }
+
+    private void StartEditMemory(MemoryEntry m, string field)
+    {
+        CancelEdit();
+        editingMemoryId = m.Id;
+        editingField = field;
+        editContent = m.Content;
+        editType = m.Type;
+        editSubject = m.Subject ?? "";
+        editImportance = m.Importance;
+    }
+
+    private void StartEditTemp(TempMemoryEntry m)
+    {
+        CancelEdit();
+        editingTempId = m.Id;
+        editContent = m.Content;
+    }
+
+    private async Task SaveMemoryEdit()
+    {
+        var memory = mainMemories.FirstOrDefault(m => m.Id == editingMemoryId);
+        if (memory == null) return;
+
+        switch (editingField)
+        {
+            case "Content": memory.Content = editContent; break;
+            case "Type": memory.Type = editType; break;
+            case "Subject": memory.Subject = string.IsNullOrWhiteSpace(editSubject) ? null : editSubject.Trim(); break;
+            case "Importance": memory.Importance = editImportance; break;
+        }
+
+        await Engine.Memories.UpdateAsync(memory);
+        flashMemoryId = memory.Id;
+        editingMemoryId = 0;
+        editingField = "";
+        _ = ClearFlashAsync(() => flashMemoryId = 0);
+    }
+
+    private async Task SaveTempEdit()
+    {
+        var temp = tempMemories.FirstOrDefault(m => m.Id == editingTempId);
+        if (temp == null) return;
+
+        temp.Content = editContent;
+        await Engine.TempMemories.UpdateAsync(temp);
+        flashTempId = temp.Id;
+        editingTempId = 0;
+        _ = ClearFlashAsync(() => flashTempId = 0);
+    }
+
+    private async Task DeleteMemory(MemoryEntry m)
+    {
+        await Engine.Memories.DeleteAsync(m);
+        mainMemories.Remove(m);
+        mainCount--;
+    }
+
+    private async Task DeleteTemp(TempMemoryEntry m)
+    {
+        await Engine.TempMemories.DeleteAsync(m);
+        tempMemories.Remove(m);
+    }
+
+    private void CancelEdit()
+    {
+        editingMemoryId = 0;
+        editingTempId = 0;
+        editingField = "";
+    }
+
+    private async Task ClearFlashAsync(Action clear)
+    {
+        await Task.Delay(600);
+        clear();
+        await InvokeAsync(StateHasChanged);
     }
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "...";
