@@ -76,7 +76,7 @@
                             <td>
                                 @if (s.Enabled)
                                 {
-                                    <button class="btn-ghost" style="padding:0.2rem 0.5rem; font-size:0.75rem; color:var(--status-error);"
+                                    <button class="btn-ghost btn-ghost-danger" style="padding:0.2rem 0.5rem; font-size:0.75rem;"
                                             @onclick="() => Disable(s.Id)">禁用</button>
                                 }
                                 else
@@ -84,7 +84,7 @@
                                     <button class="btn-ghost" style="padding:0.2rem 0.5rem; font-size:0.75rem;"
                                             @onclick="() => Enable(s.Id)">启用</button>
                                 }
-                                <button class="btn-ghost" style="padding:0.2rem 0.5rem; font-size:0.75rem; color:var(--status-error);"
+                                <button class="btn-ghost btn-ghost-danger" style="padding:0.2rem 0.5rem; font-size:0.75rem;"
                                         @onclick="() => Remove(s.Id)">删除</button>
                             </td>
                         </tr>

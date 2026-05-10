@@ -526,6 +526,16 @@ body {
     background: var(--bg-hover);
 }
 
+.btn-ghost-danger {
+    color: var(--status-error, #ff4d4f);
+    border-color: var(--status-error, #ff4d4f);
+}
+
+.btn-ghost-danger:hover {
+    background: color-mix(in srgb, var(--status-error, #ff4d4f) 10%, transparent);
+    border-color: var(--status-error, #ff4d4f);
+}
+
 .btn-primary-custom {
     background: var(--accent);
     color: var(--bg-primary);
@@ -1267,6 +1277,7 @@ select.config-input option {
 
 /* Ghost/secondary button — C style (subtle underline, expands on hover) */
 [data-theme="tech"] .btn-ghost {
+    --btn-tint: var(--accent);
     background: rgba(0, 212, 255, 0.03);
     border: none;
     border-top: 1px solid rgba(0, 200, 255, 0.15);
@@ -1285,19 +1296,24 @@ select.config-input option {
     left: 50%;
     width: 0;
     height: 2px;
-    background: currentColor;
+    background: var(--btn-tint);
     transition: width 0.25s ease, left 0.25s ease;
 }
 
 [data-theme="tech"] .btn-ghost:hover {
-    background: color-mix(in srgb, currentColor 6%, transparent);
-    border-top-color: color-mix(in srgb, currentColor 30%, transparent);
+    background: color-mix(in srgb, var(--btn-tint) 8%, transparent);
+    border-top-color: color-mix(in srgb, var(--btn-tint) 30%, transparent);
     border-bottom-color: transparent;
 }
 
 [data-theme="tech"] .btn-ghost:hover::after {
     width: 100%;
     left: 0;
+}
+
+[data-theme="tech"] .btn-ghost-danger {
+    --btn-tint: var(--status-error, #ff4d4f);
+    color: var(--status-error, #ff4d4f);
 }
 
 /* Tab bar — C style underline */
