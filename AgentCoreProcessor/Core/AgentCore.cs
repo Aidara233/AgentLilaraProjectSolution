@@ -58,8 +58,8 @@ namespace AgentCoreProcessor.Core
             }
             else
             {
-                var calls = await GenerateToolCallsAsync();
-                return ModelOutput.FromTools(calls);
+                var (calls, thinking) = await GenerateToolCallsWithThinkingAsync();
+                return ModelOutput.FromTools(calls, thinking);
             }
         }
 
@@ -75,22 +75,57 @@ namespace AgentCoreProcessor.Core
 
         /// <summary>
         /// 工具调用解析（Working 模式）。解析模型输出中的 JSON 工具调用块。
+        /// 支持模型在 JSON 前输出思考文本（会被提取并保留）。
+        /// </summary>
+        public async Task<(List<ToolCall> Calls, string? Thinking)> GenerateToolCallsWithThinkingAsync()
+        {
+            var calls = new List<ToolCall>();
+            var thinkingParts = new List<string>();
+            await GenerateAsync(onBreak: block =>
+            {
+                var raw = block.Content.Trim();
+                if (string.IsNullOrEmpty(raw)) return;
+
+                var jsonStart = raw.IndexOf('{');
+                var jsonEnd = raw.LastIndexOf('}');
+
+                if (jsonStart >= 0 && jsonEnd > jsonStart)
+                {
+                    // 提取思考文本（JSON 之前的部分）
+                    if (jsonStart > 0)
+                    {
+                        var thinking = raw[..jsonStart].Trim();
+                        if (thinking.Length > 0)
+                            thinkingParts.Add(thinking);
+                    }
+
+                    // 提取并解析 JSON
+                    var json = raw[jsonStart..(jsonEnd + 1)];
+                    try
+                    {
+                        var call = ToolCall.FromJson(json);
+                        if (!call.Validate().Any())
+                            calls.Add(call);
+                    }
+                    catch { }
+                }
+                else
+                {
+                    // 整个 block 都是文本（无 JSON）
+                    if (raw.Length > 0)
+                        thinkingParts.Add(raw);
+                }
+            });
+            var thinking = thinkingParts.Count > 0 ? string.Join("\n", thinkingParts) : null;
+            return (calls, thinking);
+        }
+
+        /// <summary>
+        /// 工具调用解析（Working 模式）。兼容旧接口。
         /// </summary>
         public async Task<List<ToolCall>> GenerateToolCallsAsync()
         {
-            var calls = new List<ToolCall>();
-            await GenerateAsync(onBreak: block =>
-            {
-                var json = block.Content.Trim();
-                if (string.IsNullOrEmpty(json)) return;
-                try
-                {
-                    var call = ToolCall.FromJson(json);
-                    if (!call.Validate().Any())
-                        calls.Add(call);
-                }
-                catch { }
-            });
+            var (calls, _) = await GenerateToolCallsWithThinkingAsync();
             return calls;
         }
 
@@ -103,8 +138,8 @@ namespace AgentCoreProcessor.Core
             processor ??= new Processor(currentMode, usePersona: UsePersona);
             processor.Client.ClearConversationHistory();
             processor.Client.SetConversationHistory(messages);
-            var calls = await GenerateToolCallsAsync();
-            return ModelOutput.FromTools(calls);
+            var (calls, thinking) = await GenerateToolCallsWithThinkingAsync();
+            return ModelOutput.FromTools(calls, thinking);
         }
 
         /// <summary>

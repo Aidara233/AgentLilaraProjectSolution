@@ -110,5 +110,8 @@ namespace AgentCoreProcessor.Engine
 
         /// <summary>任务桥梁：频道循环 ↔ 系统循环异步通信。</summary>
         TaskBridge TaskBridge { get; }
+
+        /// <summary>委托注册表：频道循环 ↔ 系统循环的委托生命周期管理。</summary>
+        DelegationRegistry Delegations { get; }
     }
 }

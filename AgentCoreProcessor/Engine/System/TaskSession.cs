@@ -29,14 +29,16 @@ namespace AgentCoreProcessor.Engine
         private readonly Channel<string> instructionQueue = Channel.CreateUnbounded<string>();
         private readonly List<Message> conversationHistory = new();
         private readonly HashSet<string>? toolWhitelist;
+        private readonly string? delegationId;
         private CancellationTokenSource? stopCts;
         private Task? backgroundTask;
 
         private const int MaxRoundsPerInstruction = 15;
 
-        public TaskSession(ISystemContext ctx, HashSet<string>? toolWhitelist = null)
+        public TaskSession(ISystemContext ctx, string? delegationId = null, HashSet<string>? toolWhitelist = null)
         {
             this.ctx = ctx;
+            this.delegationId = delegationId;
             this.toolWhitelist = toolWhitelist;
             this.SessionId = $"task-{Guid.NewGuid().ToString("N")[..8]}";
         }
@@ -109,7 +111,7 @@ namespace AgentCoreProcessor.Engine
                 if (output.IsText || output.ToolCalls == null || output.ToolCalls.Count == 0)
                 {
                     // 模型返回文本 = 任务完成
-                    LastResult = output.Text ?? "(完成，无输出)";
+                    LastResult = output.Thinking ?? output.Text ?? "(完成，无输出)";
                     conversationHistory.Add(new Message { Role = "assistant", Content = LastResult });
                     FrameworkLogger.Log("TaskSession",
                         $"指令完成: {SessionId}, rounds={round + 1}, result={LastResult.Truncate(100)}");
@@ -186,6 +188,16 @@ namespace AgentCoreProcessor.Engine
 
         private void NotifyCompletion()
         {
+            // 如果关联了委托，更新委托状态
+            if (!string.IsNullOrEmpty(delegationId))
+            {
+                var result = LastResult ?? "(无结果)";
+                if (result.StartsWith("异常终止") || result == "达到最大轮次限制")
+                    ctx.Delegations.MarkFailed(delegationId, result);
+                else
+                    ctx.Delegations.MarkCompleted(delegationId, result);
+            }
+
             ctx.TaskBridge.PostNotification(new Notification
             {
                 Type = NotificationType.ProgressUpdate,

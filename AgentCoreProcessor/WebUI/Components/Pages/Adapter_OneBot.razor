@@ -52,7 +52,7 @@ else
             <div class="row g-3 align-items-center">
                 <div class="col-auto">
                     @if (selected.Enabled)
-                    { <button class="btn-ghost btn-ghost-danger" @onclick="() => Disable(selectedId)">禁用</button> }
+                    { <button class="btn-ghost" style="color:var(--status-error);" @onclick="() => Disable(selectedId)">禁用</button> }
                     else
                     { <button class="btn-ghost" @onclick="() => Enable(selectedId)">启用</button> }
                 </div>

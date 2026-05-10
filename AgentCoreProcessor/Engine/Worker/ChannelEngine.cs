@@ -165,7 +165,8 @@ namespace AgentCoreProcessor.Engine
             {
                 speakModule, thinkingNotesModule, taskListModule, pinboardModule,
                 retainListModule, memoryWindowModule, loopControlModule, signalDispatchModule,
-                new ToolStatusModule()
+                new ToolStatusModule(),
+                new Modules.DelegationModule(ctx.Delegations, channelId)
             };
             foreach (var m in modules) m.Attach(bus);
         }
@@ -476,7 +477,7 @@ namespace AgentCoreProcessor.Engine
                     var allowedTools = new HashSet<string>
                     {
                         "说话", "发送媒体", "思考笔记", "记忆", "便签板", "缓存管理", "任务管理",
-                        "标记复盘", "报警", "继续", "文件读取", "委派任务", "适配器操作"
+                        "标记复盘", "报警", "继续", "读取文件", "写入文件", "委派任务", "适配器操作"
                     };
                     return allowedTools.Contains(tool.Name);
                 });
@@ -498,7 +499,7 @@ namespace AgentCoreProcessor.Engine
                     var allowedTools = new HashSet<string>
                     {
                         "说话", "发送媒体", "思考笔记", "记忆", "便签板", "缓存管理", "任务管理",
-                        "标记复盘", "报警", "继续", "文件读取", "委派任务", "适配器操作"
+                        "标记复盘", "报警", "继续", "读取文件", "写入文件", "委派任务", "适配器操作"
                     };
                     return allowedTools.Contains(tool.Name);
                 });
@@ -659,7 +660,14 @@ namespace AgentCoreProcessor.Engine
                 consecutiveExternalTriggers = 0;
             }
         }
-        public void OnEvent(EngineEvent e) { }
+        public void OnEvent(EngineEvent e)
+        {
+            if (e is SignalEvent sig && sig.SignalName == "delegation-completed"
+                && sig.Payload?.ToString() == channelId.ToString())
+            {
+                gate.Signal();
+            }
+        }
 
         public void RequestStop()
         {

@@ -40,7 +40,8 @@ namespace AgentCoreProcessor.Tool
                 });
             }
 
-            var instruction = resolvedInputs[0];
+            // 模型可能把任务 ID 和描述分开传入多个参数，拼接所有非空参数作为完整指令
+            var instruction = string.Join("\n", resolvedInputs.Where(s => !string.IsNullOrWhiteSpace(s)));
 
             try
             {

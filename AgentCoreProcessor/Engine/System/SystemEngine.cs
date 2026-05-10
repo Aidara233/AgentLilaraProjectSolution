@@ -179,6 +179,7 @@ namespace AgentCoreProcessor.Engine
 
                     // 填充 PendingEventsModule
                     pendingEventsModule.SetPendingEvents(tasks, notifications, scheduledEvents, lastRoundNoAction);
+                    pendingEventsModule.SetPendingDelegations(ctx.Delegations.GetPendingForEvaluation());
 
                     // ═══ 内层：Agent 循环 ═══
                     Interlocked.Exchange(ref _busyFlag, 1);
@@ -236,7 +237,7 @@ namespace AgentCoreProcessor.Engine
                 // ⑤ 处理响应
                 if (output.IsText || output.ToolCalls == null || output.ToolCalls.Count == 0)
                 {
-                    var text = output.Text ?? "";
+                    var text = output.Thinking ?? output.Text ?? "";
                     FrameworkLogger.Log("SystemEngine", $"模型无工具调用: {text.Truncate(100)}");
                     lastRoundNoAction = true;
 
@@ -262,8 +263,8 @@ namespace AgentCoreProcessor.Engine
                 lastRoundCalls = toolCalls;
                 lastRoundResults = results;
 
-                // ⑦ 追加到历史（assistant 响应）
-                var assistantContent = FormatToolCallsAsText(toolCalls);
+                // ⑦ 追加到历史（assistant 响应，含思考文本）
+                var assistantContent = FormatToolCallsAsText(toolCalls, output.Thinking);
                 AppendToHistory(currentTurnMsg, new Message { Role = "assistant", Content = assistantContent });
 
                 // ⑧ 检查是否调用了 Wait（落闸信号）
@@ -452,15 +453,26 @@ namespace AgentCoreProcessor.Engine
                 "引擎管理", "适配器操作",
                 "便签板", "思考笔记",
                 "创建定时任务", "取消定时任务",
-                "记忆读取", "记忆搜索"
+                "记忆读取", "记忆搜索",
+                "评估委托"
             };
         }
 
-        private static string FormatToolCallsAsText(List<ToolCall>? calls)
+        private static string FormatToolCallsAsText(List<ToolCall>? calls, string? thinking = null)
         {
-            if (calls == null || calls.Count == 0) return "(无操作)";
-            return string.Join("\n", calls.Select(c =>
-                $"{c.Tool}({string.Join(", ", c.Inputs).Truncate(100)})"));
+            var parts = new List<string>();
+            if (!string.IsNullOrEmpty(thinking))
+                parts.Add(thinking);
+            if (calls == null || calls.Count == 0)
+            {
+                parts.Add("(无操作)");
+            }
+            else
+            {
+                parts.AddRange(calls.Select(c =>
+                    $"{c.Tool}({string.Join(", ", c.Inputs).Truncate(100)})"));
+            }
+            return string.Join("\n", parts);
         }
 
         private void SaveModuleState()
@@ -512,6 +524,9 @@ namespace AgentCoreProcessor.Engine
             stopCts?.Cancel();
         }
 
+        /// <summary>外部唤醒闸门（委托提交时调用）。</summary>
+        public void SignalGate() => gate.Signal();
+
         // ---- 子 agent 管理 ----
 
         /// <summary>创建并启动子 agent。</summary>
@@ -524,6 +539,19 @@ namespace AgentCoreProcessor.Engine
             }
             session.Start(instruction);
             FrameworkLogger.Log("SystemEngine", $"子 agent 已创建并启动: {session.SessionId}");
+            return session;
+        }
+
+        /// <summary>创建并启动子 agent（关联委托）。完成后自动更新委托状态。</summary>
+        public IAgentSession CreateSubAgentForDelegation(string instruction, string? delegationId)
+        {
+            var session = new TaskSession(ctx, delegationId);
+            lock (subAgentLock)
+            {
+                subAgents[session.SessionId] = session;
+            }
+            session.Start(instruction);
+            FrameworkLogger.Log("SystemEngine", $"子 agent 已创建（委托 {delegationId}）: {session.SessionId}");
             return session;
         }
 

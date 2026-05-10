@@ -88,6 +88,7 @@ namespace AgentCoreProcessor.Engine
         public SleepState CurrentSleepState { get; set; } = SleepState.None;
         public McpServerManager? McpManager => mcpManager;
         public TaskBridge TaskBridge { get; private set; } = null!;
+        public DelegationRegistry Delegations { get; private set; } = null!;
 
         // ---- 引擎注册表 ----
         private readonly List<IEngineSpawnCheck> spawnChecks = new();
@@ -260,6 +261,21 @@ namespace AgentCoreProcessor.Engine
             TaskBridge = new TaskBridge(systemLoopPath);
             FrameworkLogger.Log("MasterEngine", "TaskBridge 已初始化");
 
+            // 创建 DelegationRegistry
+            Delegations = new DelegationRegistry(systemLoopPath);
+            Delegations.OnDelegationSubmitted = () =>
+            {
+                // 委托提交时唤醒系统循环
+                if (systemEngine != null)
+                    systemEngine.SignalGate();
+            };
+            Delegations.OnDelegationCompleted = (channelId) =>
+            {
+                // 委托完成时唤醒对应频道循环
+                eventBus.PublishSignal("delegation-completed", channelId);
+            };
+            FrameworkLogger.Log("MasterEngine", "DelegationRegistry 已初始化");
+
             // 注册需要 ISystemContext 的工具（动态注册）
             Tool.ToolRegistry.Register(new Tool.DelegateTaskTool(this));
             Tool.ToolRegistry.Register(new Tool.SendToChannelTool(this));
@@ -310,6 +326,9 @@ namespace AgentCoreProcessor.Engine
                 Tool.ToolRegistry.Register(new Tool.SendToSubAgentTool(sessionId => systemEngine.GetSubAgent(sessionId)));
                 Tool.ToolRegistry.Register(new Tool.StopSubAgentTool(sessionId => systemEngine.GetSubAgent(sessionId)));
                 Tool.ToolRegistry.Register(new Tool.WaitTool());
+                Tool.ToolRegistry.Register(new Tool.EvaluateDelegationTool(
+                    Delegations,
+                    (instruction, delegationId) => systemEngine.CreateSubAgentForDelegation(instruction, delegationId)));
                 FrameworkLogger.Log("MasterEngine", "系统循环工具已注册");
             }
 
