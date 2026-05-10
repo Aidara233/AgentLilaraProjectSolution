@@ -51,16 +51,22 @@ MasterEngine (内核，实现 ISystemContext)
 ```
 
 ISubEngine: EngineType / RunAsync / OnEvent / IsAlive / RequestStop / IsInfrastructure(默认false)
-ISystemContext: 数据访问 + 适配器 + EventBus + 引擎查询 + StartEngine/RequestStopEngine + TaskBridge
+ISystemContext: 数据访问 + 适配器 + EventBus + 引擎查询 + StartEngine/RequestStopEngine + TaskBridge + CurrentSleepState + MuteMode
 IAgentSession: 统一会话接口 (ChannelSession/TaskSession/MonitorSession)
 
 ## 消息处理流
 
 ```
 Adapter → EventBus(MessageEvent) → ChannelEngineSpawnCheck
-  ① SessionManager.OnMessageAsync (用户映射 + 频道映射 + 消息入库)
+  ① SessionManager.OnMessageAsync (用户映射 + 频道映射 + 消息入库，无论是否睡眠都执行)
   ② 权限检查 (Blocked/Restricted 拦截)
-  ③ 按 ChannelId 路由: 有活跃 ChannelEngine → EnqueueMessage / 无 → 创建新 ChannelEngine
+  ③ 睡眠拦截 (CurrentSleepState != None 时):
+     走神: 被@ → 放行 (DreamEngine 自行打断)
+     小睡: 被@ + 叫醒关键词 → 放行; 仅被@ → DreamEngine 触发梦话，不放行
+     大睡: 管理员被@ → 发 force-wake 信号 + 放行; 其余 → 不放行
+     任务提交 → 强制唤醒 (TaskBridge.OnTaskSubmitted 发 force-wake)
+     拦截的消息已入库，醒来后频道引擎自动补提取记忆
+  ④ 按 ChannelId 路由: 有活跃 ChannelEngine → EnqueueMessage / 无 → 创建新 ChannelEngine
 
 ChannelEngine (频道循环，常驻，一个活跃频道一个):
   闸门驱动循环 (LoopGate, auto-reset):
@@ -167,10 +173,29 @@ EMA 社交满足度 (per Channel):
     Phase1(浅睡): 集中清临时记忆，Consolidation权重极高
     Phase2(深睡): 启动ReviewEngine + 并行跑Weight/Link/Combine
 
+睡眠状态管理 (SleepState 枚举，ISystemContext.CurrentSleepState):
+  DreamEngine 启动时设置，结束时重置为 None
+  所有引擎可感知当前睡眠状态
+
+分级打断 (DreamEngine.OnEvent):
+  走神: 被@ → shouldWake=true，立即打断
+  小睡: 被@ + 叫醒关键词("起床/醒醒/wake/起来/叫醒/别睡了/醒来") → 打断
+         仅被@ → 触发梦话(SleepTalkCore)，不打断
+  大睡: 消息不打断，仅 force-wake 信号可唤醒
+         管理员@: ChannelEngineSpawnCheck 发 force-wake 信号
+         任务提交: TaskBridge.OnTaskSubmitted 发 force-wake 信号
+
+梦话 (SleepTalkCore):
+  片段完成后概率触发: 大睡25% / 小睡15% / 走神不触发
+  小睡被@时必定触发一条梦话
+  内容: 基于当前片段 + 触发词生成梦幻呓语(≤50字)
+  尊重 MuteMode
+
 触发条件 (DreamEngineSpawnCheck):
   红色(任一触发): customRedAlert / 临时记忆爆仓 / 大睡间隔过长
   黄色(累计评分≥阈值): 空闲时长+距上次大睡+临时记忆比+未处理数+时间窗口
   → 决定锁定 → 许可闸门(管理员授权/超时自动) → 执行
+  信号: force-sleep(触发睡觉) / force-wake(强制唤醒) / dream-config(配置更新)
 
 四种片段: Consolidation / Weight / Link / Combine
 ReviewEngine (由DreamEngine孵化，不注册SpawnCheck):

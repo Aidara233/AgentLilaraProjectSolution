@@ -3,6 +3,7 @@
 @using AgentCoreProcessor.Engine
 @using AgentCoreProcessor.Database
 @inject MasterEngine Engine
+@inject NavigationManager Nav
 
 <div class="page-title">
     <i class="bi bi-database"></i> 记忆浏览器
@@ -50,7 +51,7 @@
                 <div style="max-height:calc(100vh - 300px); overflow-y:auto">
                     @foreach (var m in mainMemories)
                     {
-                        <div class="msg-item">
+                        <div class="msg-item" style="cursor:pointer;" @onclick="() => GoToDetail(m.Id)">
                             <div class="d-flex justify-content-between">
                                 <div class="d-flex gap-1 flex-wrap">
                                     <span class="badge-status badge-express">@m.Type</span>
@@ -172,4 +173,6 @@ else
     }
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "...";
+
+    private void GoToDetail(int id) => Nav.NavigateTo($"/memories/detail/{id}");
 }

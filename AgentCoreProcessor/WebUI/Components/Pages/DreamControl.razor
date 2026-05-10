@@ -50,7 +50,7 @@ else
                 <i class="bi bi-activity me-1 text-accent"></i> 实时进度
             </div>
             <div class="card-body">
-                <div class="d-flex align-items-center gap-3">
+                <div class="d-flex align-items-center gap-3 mb-2">
                     <span class="badge-status badge-info">@dream.CurrentFragment</span>
                     <span class="text-muted-custom">
                         片段 @(dream.FragmentsCompleted + 1) / @dream.FragmentsTotal
@@ -62,8 +62,39 @@ else
                         </span>
                     }
                 </div>
+                @if (!string.IsNullOrEmpty(dream.CurrentInputDescription))
+                {
+                    <div style="font-size:0.85rem; color:var(--text-secondary); padding:0.4rem 0.6rem; background:var(--bg-secondary); border-radius:4px;">
+                        @dream.CurrentInputDescription
+                    </div>
+                }
             </div>
         </div>
+
+        @if (dream.LastFragmentSummary != null)
+        {
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-check2-circle me-1 text-accent"></i> 上一片段结果
+                    <span class="badge-status badge-express ms-2">@dream.LastFragmentType</span>
+                    <span class="text-muted-custom ms-2">@dream.LastFragmentSummary</span>
+                </div>
+                @if (dream.LastFragmentDetails != null && dream.LastFragmentDetails.Count > 0)
+                {
+                    <div class="card-body p-0" style="max-height:200px; overflow-y:auto;">
+                        @foreach (var d in dream.LastFragmentDetails)
+                        {
+                            <div class="msg-item" style="padding:0.3rem 1rem; font-size:0.83rem;">
+                                <span class="badge-status badge-express">@d.Action</span>
+                                @if (d.MemoryId != null) { <span class="text-muted-custom">#@d.MemoryId</span> }
+                                @if (d.OldValue != null && d.NewValue != null) { <span>@d.OldValue → @d.NewValue</span> }
+                                @if (d.Note != null) { <span class="text-muted-custom">@d.Note</span> }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
     }
 
     <div class="card">

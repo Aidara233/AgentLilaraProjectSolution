@@ -1,0 +1,154 @@
+@page "/memories/detail/{Id:int}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using AgentCoreProcessor.Engine
+@using AgentCoreProcessor.Database
+@inject MasterEngine Engine
+@inject NavigationManager Nav
+
+<div class="page-title">
+    <i class="bi bi-file-earmark-text"></i> 记忆详情 #@Id
+</div>
+
+@if (memory == null)
+{
+    <div class="card"><div class="card-body text-muted-custom">记忆不存在</div></div>
+}
+else
+{
+    <div class="card mb-4">
+        <div class="card-header">
+            <div class="d-flex gap-2 align-items-center">
+                <span class="badge-status badge-express">@memory.Type</span>
+                @if (!string.IsNullOrEmpty(memory.Subject))
+                {
+                    <span class="badge-status" style="background:var(--accent-color);color:#fff;">@memory.Subject</span>
+                }
+                @if (memory.IsDerived) { <span class="badge-status badge-working">衍生</span> }
+                <span class="text-muted-custom ms-auto">@memory.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</span>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="mb-3" style="font-size:1.05rem; line-height:1.6;">@memory.Content</div>
+            <div class="row g-3">
+                <div class="col-md-3"><StatCard Label="重要度" Value="@memory.Importance.ToString("F2")" /></div>
+                <div class="col-md-3"><StatCard Label="置信度" Value="@memory.Confidence" /></div>
+                <div class="col-md-3"><StatCard Label="PersonId" Value="@(memory.PersonId?.ToString() ?? "—")" /></div>
+                <div class="col-md-3"><StatCard Label="ChannelId" Value="@(memory.ChannelId?.ToString() ?? "—")" /></div>
+            </div>
+            <div class="row g-3 mt-1">
+                <div class="col-md-3"><StatCard Label="最后做梦" Value="@(memory.LastDreamTime?.ToString("MM-dd HH:mm") ?? "未处理")" /></div>
+                <div class="col-md-3"><StatCard Label="最后访问" Value="@memory.LastAccessedAt.ToString("MM-dd HH:mm")" /></div>
+                <div class="col-md-3"><StatCard Label="持久" Value="@(memory.IsPersistent ? "是" : "否")" /></div>
+                <div class="col-md-3"><StatCard Label="过期" Value="@(memory.ExpiresAt?.ToString("MM-dd HH:mm") ?? "永不")" /></div>
+            </div>
+        </div>
+    </div>
+
+    @if (memory.IsDerived && !string.IsNullOrEmpty(memory.SourceMemoryIds))
+    {
+        <div class="card mb-4">
+            <div class="card-header"><i class="bi bi-diagram-2 me-1 text-accent"></i> 源记忆</div>
+            <div class="card-body p-0">
+<!-- PLACEHOLDER_SOURCE -->
+                @foreach (var src in sourceMemories)
+                {
+                    <div class="msg-item" style="cursor:pointer;" @onclick="() => GoTo(src.Id)">
+                        <div class="d-flex gap-2 align-items-center">
+                            <span class="text-muted-custom">#@src.Id</span>
+                            <span>@Truncate(src.Content, 80)</span>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    <div class="card">
+        <div class="card-header">
+            <i class="bi bi-link-45deg me-1 text-accent"></i> 关联记忆 (@linkedMemories.Count)
+        </div>
+        <div class="card-body p-0">
+            @if (linkedMemories.Count == 0)
+            {
+                <div class="p-3 text-muted-custom">暂无关联</div>
+            }
+            else
+            {
+<!-- PLACEHOLDER_LINKS -->
+                @foreach (var lm in linkedMemories)
+                {
+                    <div class="msg-item" style="cursor:pointer;" @onclick="() => GoTo(lm.Memory.Id)">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <span class="text-muted-custom me-1">#@lm.Memory.Id</span>
+                                <span class="badge-status badge-express">@lm.Memory.Type</span>
+                                <span class="badge-status badge-info">@lm.LinkType</span>
+                                <span class="badge-status" style="background:var(--bg-elevated);color:var(--text-secondary);">
+                                    强度:@lm.Strength.ToString("F2")
+                                </span>
+                            </div>
+                        </div>
+                        <div class="mt-1">@Truncate(lm.Memory.Content, 100)</div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private MemoryEntry? memory;
+    private List<LinkedMemoryView> linkedMemories = new();
+    private List<MemoryEntry> sourceMemories = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        memory = await Engine.Memories.GetByIdAsync(Id);
+        if (memory == null) return;
+
+        // 加载关联
+        var links = await Engine.MemoryLinks.GetByMemoryIdAsync(Id);
+        linkedMemories.Clear();
+        foreach (var link in links)
+        {
+            int otherId = link.SourceId == Id ? link.TargetId : link.SourceId;
+            var other = await Engine.Memories.GetByIdAsync(otherId);
+            if (other != null)
+            {
+                linkedMemories.Add(new LinkedMemoryView
+                {
+                    Memory = other,
+                    LinkType = link.LinkType,
+                    Strength = link.Strength
+                });
+            }
+        }
+        linkedMemories = linkedMemories.OrderByDescending(l => l.Strength).ToList();
+
+        // 加载源记忆（衍生记忆）
+        if (memory.IsDerived && !string.IsNullOrEmpty(memory.SourceMemoryIds))
+        {
+            try
+            {
+                var ids = System.Text.Json.JsonSerializer.Deserialize<List<int>>(memory.SourceMemoryIds);
+                if (ids != null)
+                    sourceMemories = await Engine.Memories.GetByIdsAsync(ids);
+            }
+            catch { }
+        }
+    }
+
+    private void GoTo(int id) => Nav.NavigateTo($"/memories/detail/{id}");
+
+    private static string Truncate(string s, int max)
+        => s.Length <= max ? s : s[..max] + "...";
+
+    private class LinkedMemoryView
+    {
+        public MemoryEntry Memory { get; set; } = null!;
+        public string LinkType { get; set; } = "";
+        public float Strength { get; set; }
+    }
+}

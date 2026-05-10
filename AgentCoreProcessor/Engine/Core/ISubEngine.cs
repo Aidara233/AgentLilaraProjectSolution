@@ -102,6 +102,9 @@ namespace AgentCoreProcessor.Engine
         /// <summary>静音模式：内部处理照常，但不产生对外输出。</summary>
         bool MuteMode { get; set; }
 
+        /// <summary>当前睡眠状态（None=清醒）。DreamEngine 启动/结束时设置。</summary>
+        SleepState CurrentSleepState { get; set; }
+
         /// <summary>MCP Server 管理器（可能为 null，如果 MCP 未初始化）。</summary>
         McpServerManager? McpManager { get; }
 

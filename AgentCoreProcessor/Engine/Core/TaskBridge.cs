@@ -29,6 +29,9 @@ namespace AgentCoreProcessor.Engine
         /// <summary>任务提交后的回调（用于唤醒系统循环闸门）。</summary>
         public Action? OnTaskSubmitted { get; set; }
 
+        /// <summary>系统循环当前状态（供频道循环感知起床气等）。</summary>
+        public SystemLoopState SystemState { get; set; } = SystemLoopState.Active;
+
         public TaskBridge(string storagePath)
         {
             taskQueue = Channel.CreateUnbounded<SystemTask>();

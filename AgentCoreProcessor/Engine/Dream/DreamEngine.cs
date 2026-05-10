@@ -5,6 +5,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Database;
@@ -35,6 +36,7 @@ namespace AgentCoreProcessor.Engine
         private readonly WeightCore weightCore = new();
         private readonly LinkCore linkCore = new();
         private readonly CombineCore combineCore = new();
+        private readonly SleepTalkCore sleepTalkCore = new();
 
         private volatile bool shouldWake = false;
         private static readonly Random rng = new();
@@ -44,9 +46,15 @@ namespace AgentCoreProcessor.Engine
         internal int FragmentsCompleted { get; private set; }
         internal int FragmentsTotal { get; private set; }
         internal DateTime? CurrentFragmentStartTime { get; private set; }
+        internal string? CurrentInputDescription { get; private set; }
+        internal FragmentRecord? LastCompletedRecord { get; private set; }
 
         // 片段执行记录
         private readonly List<FragmentRecord> fragmentRecords = new();
+        // 当前片段的详情收集器
+        private List<FragmentDetailRecord> currentDetails = new();
+        private string? currentInputIds;
+        private string? currentOutputRaw;
 
         /// <summary>每个片段的估算 token 消耗（粗略值，用于预算控制）。</summary>
         private const int EstimatedTokensPerFragment = 2000;
@@ -63,6 +71,13 @@ namespace AgentCoreProcessor.Engine
         public async Task RunAsync()
         {
             FrameworkLogger.Log("DreamEngine", $"开始做梦: level={level} max={maxFragments}");
+            ctx.CurrentSleepState = level switch
+            {
+                SleepLevel.Daydream => SleepState.Daydream,
+                SleepLevel.Nap => SleepState.Nap,
+                SleepLevel.DeepSleep => SleepState.DeepSleep,
+                _ => SleepState.None
+            };
             var startTime = DateTime.Now;
 
             int executed;
@@ -75,24 +90,97 @@ namespace AgentCoreProcessor.Engine
             int processed = level == SleepLevel.DeepSleep ? executed : 0;
             spawnCheck.OnDreamCompleted(level, processed);
 
-            // 记录历史
-            DreamHistory.Append(new DreamHistoryEntry
-            {
-                StartTime = startTime,
-                EndTime = DateTime.Now,
-                Level = level.ToString(),
-                FragmentsExecuted = executed,
-                WasInterrupted = shouldWake,
-                Fragments = fragmentRecords
-            });
+            // 持久化到数据库
+            await PersistSessionAsync(startTime, executed);
 
             FrameworkLogger.Log("DreamEngine", $"做梦结束: level={level} executed={executed}");
+            ctx.CurrentSleepState = SleepState.None;
             IsAlive = false;
         }
 
         public void OnEvent(EngineEvent e)
         {
-            if (e is MessageEvent) shouldWake = true;
+            if (e is not MessageEvent msgEvent) return;
+
+            var msg = msgEvent.Message;
+
+            switch (level)
+            {
+                case SleepLevel.Daydream:
+                    // 走神：被 @ 就醒
+                    if (msg.IsMentioned)
+                    {
+                        shouldWake = true;
+                        FrameworkLogger.Log("DreamEngine", "走神被 @ 打断");
+                    }
+                    break;
+
+                case SleepLevel.Nap:
+                    // 小睡：关键词叫醒（"起床""醒醒""wake"等）
+                    if (msg.IsMentioned && ContainsWakeKeyword(msg.Content))
+                    {
+                        shouldWake = true;
+                        FrameworkLogger.Log("DreamEngine", "小睡被叫醒");
+                    }
+                    else if (msg.IsMentioned)
+                    {
+                        // 仅 @ 不含关键词 → 触发梦话（不打断）
+                        _ = ForceSleepTalkAsync(msg.Content);
+                    }
+                    break;
+
+                case SleepLevel.DeepSleep:
+                    // 大睡：仅管理员可叫醒（通过 SignalEvent 处理，不在这里）
+                    break;
+            }
+        }
+
+        /// <summary>强制信号唤醒（管理员/任务桥）。无视 SleepLevel。</summary>
+        internal void ForceWake(string reason)
+        {
+            shouldWake = true;
+            FrameworkLogger.Log("DreamEngine", $"强制唤醒: {reason}");
+        }
+
+        private static readonly string[] WakeKeywords =
+            ["起床", "醒醒", "wake", "起来", "叫醒", "别睡了", "醒来"];
+
+        private static bool ContainsWakeKeyword(string content)
+        {
+            var lower = content.ToLowerInvariant();
+            return WakeKeywords.Any(k => lower.Contains(k));
+        }
+
+        /// <summary>被 @ 但不打断时，强制发一条梦话。</summary>
+        private async Task ForceSleepTalkAsync(string triggerContent)
+        {
+            try
+            {
+                var talk = await sleepTalkCore.GenerateAsync(
+                    CurrentFragment ?? "模糊的梦境",
+                    triggerContent.Length > 50 ? triggerContent[..50] : triggerContent);
+                if (string.IsNullOrWhiteSpace(talk)) return;
+                if (talk.Length > 50) talk = talk[..50];
+
+                var channels = await ctx.Session.GetAllChannelsAsync();
+                if (channels.Count == 0) return;
+
+                var targetChannel = channels[rng.Next(channels.Count)];
+                var parts = targetChannel.Name.Split(':', 2);
+                if (parts.Length != 2) return;
+
+                var sentId = await ctx.Adapters.SendMessageAsync(parts[0], new OutgoingMessage
+                {
+                    ChannelId = parts[1],
+                    Content = talk
+                });
+                await ctx.Session.SaveBotMessageAsync(targetChannel.Id, talk, sentId);
+                FrameworkLogger.Log("DreamEngine", $"被 @ 梦话: \"{talk}\"");
+            }
+            catch (Exception ex)
+            {
+                FrameworkLogger.Log("DreamEngine", $"被 @ 梦话失败: {ex.Message}");
+            }
         }
 
         public void RequestStop() => shouldWake = true;
@@ -112,6 +200,7 @@ namespace AgentCoreProcessor.Engine
                 {
                     CurrentFragment = fragment.ToString();
                     CurrentFragmentStartTime = DateTime.Now;
+                    currentDetails = new(); currentInputIds = null; currentOutputRaw = null;
                     FrameworkLogger.Log("DreamEngine", $"执行片段: {fragment}");
                     var summary = await ExecuteFragment(fragment.Value);
                     var duration = (DateTime.Now - CurrentFragmentStartTime.Value).TotalSeconds;
@@ -121,10 +210,15 @@ namespace AgentCoreProcessor.Engine
                         StartTime = CurrentFragmentStartTime.Value,
                         DurationSeconds = duration,
                         Success = true,
-                        Summary = summary
+                        Summary = summary,
+                        InputMemoryIds = currentInputIds,
+                        OutputRaw = currentOutputRaw,
+                        Details = currentDetails
                     });
                     executed++;
                     FragmentsCompleted = executed;
+                    LastCompletedRecord = fragmentRecords[^1];
+                    await MaybeSleepTalkAsync(summary);
                 }
                 catch (Exception ex)
                 {
@@ -135,7 +229,8 @@ namespace AgentCoreProcessor.Engine
                         StartTime = CurrentFragmentStartTime ?? DateTime.Now,
                         DurationSeconds = 0,
                         Success = false,
-                        Summary = ex.Message
+                        Summary = ex.Message,
+                        Details = currentDetails
                     });
                 }
             }
@@ -175,6 +270,7 @@ namespace AgentCoreProcessor.Engine
                 {
                     CurrentFragment = fragment.ToString();
                     CurrentFragmentStartTime = DateTime.Now;
+                    currentDetails = new();
                     FrameworkLogger.Log("DreamEngine", $"[Phase1] 执行片段: {fragment}");
                     var summary = await ExecuteFragment(fragment.Value);
                     var duration = (DateTime.Now - CurrentFragmentStartTime.Value).TotalSeconds;
@@ -184,11 +280,14 @@ namespace AgentCoreProcessor.Engine
                         StartTime = CurrentFragmentStartTime.Value,
                         DurationSeconds = duration,
                         Success = true,
-                        Summary = summary
+                        Summary = summary,
+                        Details = currentDetails
                     });
                     tokensUsed += EstimatedTokensPerFragment;
                     executed++;
                     FragmentsCompleted = executed;
+                    LastCompletedRecord = fragmentRecords[^1];
+                    await MaybeSleepTalkAsync(summary);
                 }
                 catch (Exception ex)
                 {
@@ -199,7 +298,8 @@ namespace AgentCoreProcessor.Engine
                         StartTime = CurrentFragmentStartTime ?? DateTime.Now,
                         DurationSeconds = 0,
                         Success = false,
-                        Summary = ex.Message
+                        Summary = ex.Message,
+                        Details = currentDetails
                     });
                 }
             }
@@ -258,6 +358,7 @@ namespace AgentCoreProcessor.Engine
                             {
                                 CurrentFragment = fragment.ToString();
                                 CurrentFragmentStartTime = DateTime.Now;
+                                currentDetails = new();
                                 FrameworkLogger.Log("DreamEngine", $"[Phase2] 执行片段: {fragment}");
                                 var summary = await ExecuteFragment(fragment.Value);
                                 var duration = (DateTime.Now - CurrentFragmentStartTime.Value).TotalSeconds;
@@ -267,11 +368,13 @@ namespace AgentCoreProcessor.Engine
                                     StartTime = CurrentFragmentStartTime.Value,
                                     DurationSeconds = duration,
                                     Success = true,
-                                    Summary = summary
+                                    Summary = summary,
+                                    Details = currentDetails
                                 });
                                 tokensUsed += EstimatedTokensPerFragment;
                                 executed++;
                                 FragmentsCompleted = executed;
+                                await MaybeSleepTalkAsync(summary);
                             }
                             catch (Exception ex)
                             {
@@ -283,7 +386,8 @@ namespace AgentCoreProcessor.Engine
                                     StartTime = CurrentFragmentStartTime ?? DateTime.Now,
                                     DurationSeconds = 0,
                                     Success = false,
-                                    Summary = ex.Message
+                                    Summary = ex.Message,
+                                    Details = currentDetails
                                 });
                             }
                         }
@@ -407,13 +511,17 @@ namespace AgentCoreProcessor.Engine
             var batchSize = cfg.ConsolidationBatchSize;
             var smallThreshold = cfg.ConsolidationSmallGroupThreshold;
 
+            currentInputIds = string.Join(",", temps.Select(t => t.Id));
+
             // ---- 分组 ----
             var batches = BuildBatches(temps, batchSize, smallThreshold);
+            CurrentInputDescription = $"整合 {temps.Count} 条临时记忆，分 {batches.Count} 批处理";
             FrameworkLogger.Log("DreamEngine",
                 $"整合开始: 临时记忆={temps.Count}, 批次={batches.Count}");
 
             // ---- 第一轮：逐批初筛 ----
             var candidates = new List<ConsolidationCandidate>();
+            var roundOutputs = new List<string>();
 
             foreach (var batch in batches)
             {
@@ -424,6 +532,7 @@ namespace AgentCoreProcessor.Engine
                 }
 
                 var result = await consolidationCore.ConsolidateAsync(batch, []);
+                roundOutputs.Add(result);
                 var batchCandidates = ParseFirstRoundResult(result, batch);
                 candidates.AddRange(batchCandidates);
             }
@@ -433,6 +542,7 @@ namespace AgentCoreProcessor.Engine
 
             if (candidates.Count == 0)
             {
+                currentOutputRaw = string.Join("\n---\n", roundOutputs);
                 foreach (var t in temps)
                     await ctx.TempMemories.DeleteAsync(t);
                 return;
@@ -447,6 +557,9 @@ namespace AgentCoreProcessor.Engine
 
             var existing = await ctx.Memories.GetRecentAsync(30);
             var finalResult = await consolidationFinalCore.FinalizeAsync(candidates, existing);
+            roundOutputs.Add("=== FINAL ===");
+            roundOutputs.Add(finalResult);
+            currentOutputRaw = string.Join("\n---\n", roundOutputs);
 
             // ---- 入库 ----
             await ApplyFinalResult(finalResult, candidates);
@@ -512,7 +625,7 @@ namespace AgentCoreProcessor.Engine
             var candidates = new List<ConsolidationCandidate>();
             try
             {
-                var actions = JArray.Parse(result);
+                var actions = JArray.Parse(TextUtil.StripMarkdownCodeFence(result));
                 var processed = new HashSet<int>();
                 foreach (var item in actions)
                 {
@@ -565,7 +678,7 @@ namespace AgentCoreProcessor.Engine
         {
             try
             {
-                var actions = JArray.Parse(result);
+                var actions = JArray.Parse(TextUtil.StripMarkdownCodeFence(result));
                 var processed = new HashSet<int>();
                 foreach (var item in actions)
                 {
@@ -612,25 +725,41 @@ namespace AgentCoreProcessor.Engine
 
         private async Task<string?> ExecuteWeightWithSummary()
         {
-            var batch = await ctx.Memories.GetUndreamedAsync(10);
-            if (batch.Count < 5) batch.AddRange(await ctx.Memories.GetOldestDreamedAsync(10 - batch.Count));
+            var cfg = spawnCheck.GetConfig();
+            var batchSize = cfg.WeightBatchSize;
+            var batch = await ctx.Memories.GetUndreamedAsync(batchSize);
+            if (batch.Count < batchSize / 2) batch.AddRange(await ctx.Memories.GetOldestDreamedAsync(batchSize - batch.Count));
             if (batch.Count == 0) return "无记忆可评估";
+            currentInputIds = string.Join(",", batch.Select(m => m.Id));
+            CurrentInputDescription = $"评估 {batch.Count} 条记忆权重: " +
+                string.Join("; ", batch.Take(3).Select(m => $"#{m.Id} {(m.Content.Length > 20 ? m.Content[..20] + "…" : m.Content)}")) +
+                (batch.Count > 3 ? $" 等{batch.Count}条" : "");
             var result = await weightCore.EvaluateAsync(batch);
+            currentOutputRaw = result;
             int adjusted = 0;
             try
             {
-                var evals = JArray.Parse(result);
+                var evals = JArray.Parse(TextUtil.StripMarkdownCodeFence(result));
                 foreach (var item in evals)
                 {
                     var idx = item["index"]?.Value<int>() ?? -1;
                     var imp = item["importance"]?.Value<float>() ?? -1;
                     if (idx < 0 || idx >= batch.Count || imp < 0) continue;
                     var m = batch[idx];
+                    var oldImp = m.Importance;
                     m.Importance = Math.Clamp(imp, 0f, 1f);
                     m.LastDreamTime = DateTime.Now;
                     if (imp <= 0.05f) { m.IsPersistent = false; m.ExpiresAt = DateTime.Now.AddDays(7); }
                     await ctx.Memories.UpdateAsync(m);
                     adjusted++;
+                    currentDetails.Add(new FragmentDetailRecord
+                    {
+                        Action = "weight_adjust",
+                        MemoryId = m.Id,
+                        OldValue = oldImp.ToString("F2"),
+                        NewValue = m.Importance.ToString("F2"),
+                        Note = m.Content.Length > 50 ? m.Content[..50] : m.Content
+                    });
                 }
             }
             catch (Exception ex) { FrameworkLogger.Log("DreamEngine", $"权重解析失败: {ex.Message}"); }
@@ -639,68 +768,103 @@ namespace AgentCoreProcessor.Engine
 
         private async Task<string?> ExecuteLinkWithSummary()
         {
-            var targets = await ctx.Memories.GetUndreamedAsync(3);
-            if (targets.Count == 0) targets = await ctx.Memories.GetOldestDreamedAsync(3);
+            var cfg = spawnCheck.GetConfig();
+            var targets = await ctx.Memories.GetUndreamedAsync(cfg.LinkTargetCount);
+            if (targets.Count == 0) targets = await ctx.Memories.GetOldestDreamedAsync(cfg.LinkTargetCount);
             if (targets.Count == 0) return "无记忆可关联";
-            var candidates = await ctx.Memories.GetRecentAsync(20);
             int linksCreated = 0;
+            var inputParts = new List<string>();
+            var outputParts = new List<string>();
+            CurrentInputDescription = $"关联重建: {targets.Count} 个目标";
             foreach (var target in targets)
             {
                 if (shouldWake) break;
-                var filtered = candidates.Where(c => c.Id != target.Id).ToList();
-                if (filtered.Count == 0) continue;
+                List<MemoryEntry> filtered;
                 if (target.Embedding != null)
                 {
-                    var tv = VectorUtil.BytesToFloats(target.Embedding);
-                    filtered = filtered.Where(c => c.Embedding != null)
-                        .Select(c => (e: c, s: VectorUtil.CosineSimilarity(tv, VectorUtil.BytesToFloats(c.Embedding!))))
-                        .Where(x => x.s > 0.3f).OrderByDescending(x => x.s).Take(10)
-                        .Select(x => x.e).ToList();
+                    filtered = await ctx.Memories.FindSimilarAsync(
+                        target.Embedding, cfg.LinkTopK, cfg.LinkCosineThreshold, excludeId: target.Id);
                 }
-                else filtered = filtered.Take(10).ToList();
+                else
+                {
+                    var candidates = await ctx.Memories.GetRecentAsync(cfg.LinkCandidatePoolSize);
+                    filtered = candidates.Where(c => c.Id != target.Id).Take(cfg.LinkTopK).ToList();
+                }
                 if (filtered.Count == 0) { target.LastDreamTime = DateTime.Now; await ctx.Memories.UpdateAsync(target); continue; }
-                var result = await linkCore.AnalyzeLinksAsync(target, filtered);
+                inputParts.Add($"{target.Id}:{string.Join(",", filtered.Select(f => f.Id))}");
+                CurrentInputDescription = $"分析 #{target.Id} 与 {filtered.Count} 个候选的关联: {(target.Content.Length > 30 ? target.Content[..30] + "…" : target.Content)}";                var result = await linkCore.AnalyzeLinksAsync(target, filtered);
+                outputParts.Add(result);
                 try
                 {
-                    var links = JArray.Parse(result);
+                    var links = JArray.Parse(TextUtil.StripMarkdownCodeFence(result));
                     foreach (var item in links)
                     {
                         var ci = item["candidateIndex"]?.Value<int>() ?? -1;
                         var lt = item["linkType"]?.Value<string>() ?? "semantic";
                         var st = item["strength"]?.Value<float>() ?? 0f;
                         if (ci >= 0 && ci < filtered.Count && st >= 0.3f)
-                        { await ctx.MemoryLinks.CreateOrUpdateAsync(target.Id, filtered[ci].Id, st, lt); linksCreated++; }
+                        {
+                            await ctx.MemoryLinks.CreateOrUpdateAsync(target.Id, filtered[ci].Id, st, lt);
+                            linksCreated++;
+                            currentDetails.Add(new FragmentDetailRecord
+                            {
+                                Action = "link_create",
+                                MemoryId = target.Id,
+                                Note = $"→#{filtered[ci].Id}, type={lt}, strength={st:F2}"
+                            });
+                        }
                     }
                 }
                 catch (Exception ex) { FrameworkLogger.Log("DreamEngine", $"关联解析失败: {ex.Message}"); }
                 target.LastDreamTime = DateTime.Now;
                 await ctx.Memories.UpdateAsync(target);
             }
+            currentInputIds = string.Join("|", inputParts);
+            currentOutputRaw = string.Join("\n---\n", outputParts);
             return $"分析{targets.Count}条，建立{linksCreated}个关联";
         }
 
         private async Task<string?> ExecuteCombineWithSummary()
         {
-            var recent = await ctx.Memories.GetRecentAsync(30);
+            var cfg = spawnCheck.GetConfig();
+            var recent = await ctx.Memories.GetRecentAsync(cfg.CombineRecentPoolSize);
             if (recent.Count < 2) return "记忆不足";
             var ids = recent.Select(m => m.Id).ToList();
-            var links = await ctx.MemoryLinks.GetLinksForAsync(ids, 0.7f);
+            var links = await ctx.MemoryLinks.GetLinksForAsync(ids, cfg.CombineStrengthThreshold);
             if (links.Count == 0) return "无强关联";
-            var best = links.OrderByDescending(l => l.Strength).First();
-            var src = recent.FirstOrDefault(m => m.Id == best.SourceId);
-            var tgt = recent.FirstOrDefault(m => m.Id == best.TargetId);
-            if (src == null || tgt == null) return "源记忆缺失";
-            var sids = new List<int> { src.Id, tgt.Id }; sids.Sort();
-            var hash = ComputeHash(string.Join(",", sids));
-            if (await ctx.Memories.GetBySourceHashAsync(hash) != null) return "已组合过";
-            var result = await combineCore.CombineAsync([src, tgt]);
-            if (result.Trim().Equals("none", StringComparison.OrdinalIgnoreCase)) return "无有价值组合";
-            byte[]? emb = null;
-            try { emb = VectorUtil.FloatsToBytes(await ctx.Embedding.GetEmbeddingAsync(result)); } catch { }
-            await ctx.Memories.CreateDerivedAsync(result, emb,
-                System.Text.Json.JsonSerializer.Serialize(sids), hash,
-                src.PersonId ?? tgt.PersonId, src.ChannelId ?? tgt.ChannelId);
-            return $"生成衍生记忆";
+
+            int derived = 0;
+            var topPairs = links.OrderByDescending(l => l.Strength).Take(cfg.CombineMaxPairs).ToList();
+            currentInputIds = string.Join("|", topPairs.Select(p => $"{p.SourceId},{p.TargetId}"));
+            CurrentInputDescription = $"尝试组合 {topPairs.Count} 对强关联记忆";
+            var outputParts = new List<string>();
+            foreach (var pair in topPairs)
+            {
+                if (shouldWake) break;
+                var src = recent.FirstOrDefault(m => m.Id == pair.SourceId);
+                var tgt = recent.FirstOrDefault(m => m.Id == pair.TargetId);
+                if (src == null || tgt == null) continue;
+                var sids = new List<int> { src.Id, tgt.Id }; sids.Sort();
+                var hash = ComputeHash(string.Join(",", sids));
+                if (await ctx.Memories.GetBySourceHashAsync(hash) != null) continue;
+                var result = await combineCore.CombineAsync([src, tgt]);
+                outputParts.Add(result);
+                if (result.Trim().Equals("none", StringComparison.OrdinalIgnoreCase)) continue;
+                byte[]? emb = null;
+                try { emb = VectorUtil.FloatsToBytes(await ctx.Embedding.GetEmbeddingAsync(result)); } catch { }
+                await ctx.Memories.CreateDerivedAsync(result, emb,
+                    System.Text.Json.JsonSerializer.Serialize(sids), hash,
+                    src.PersonId ?? tgt.PersonId, src.ChannelId ?? tgt.ChannelId);
+                derived++;
+                currentDetails.Add(new FragmentDetailRecord
+                {
+                    Action = "combine_derive",
+                    MemoryId = src.Id,
+                    Note = $"#{src.Id}+#{tgt.Id} → {(result.Length > 60 ? result[..60] : result)}"
+                });
+            }
+            currentOutputRaw = string.Join("\n---\n", outputParts);
+            return derived > 0 ? $"生成{derived}条衍生记忆" : "无有价值组合";
         }
 
         private static string ComputeHash(string input)
@@ -795,6 +959,108 @@ namespace AgentCoreProcessor.Engine
             catch (Exception ex)
             {
                 FrameworkLogger.Log("DreamEngine", $"信任评估异常: {ex.Message}");
+            }
+        }
+
+        // ---- 梦话 ----
+
+        /// <summary>概率性地说梦话。大睡 25%，小睡 15%，走神不说。</summary>
+        private async Task MaybeSleepTalkAsync(string? fragmentSummary)
+        {
+            if (ctx.MuteMode) return;
+            if (string.IsNullOrEmpty(fragmentSummary)) return;
+
+            var chance = level switch
+            {
+                SleepLevel.DeepSleep => 0.25,
+                SleepLevel.Nap => 0.15,
+                _ => 0.0
+            };
+            if (rng.NextDouble() >= chance) return;
+
+            try
+            {
+                // 找最近活跃的频道
+                var channels = await ctx.Session.GetAllChannelsAsync();
+                if (channels.Count == 0) return;
+
+                var targetChannel = channels[rng.Next(channels.Count)];
+                var parts = targetChannel.Name.Split(':', 2);
+                if (parts.Length != 2) return;
+
+                var talk = await sleepTalkCore.GenerateAsync(fragmentSummary);
+                if (string.IsNullOrWhiteSpace(talk)) return;
+
+                // 截断保护
+                if (talk.Length > 50) talk = talk[..50];
+
+                var platform = parts[0];
+                var platformChannelId = parts[1];
+
+                var sentId = await ctx.Adapters.SendMessageAsync(platform, new OutgoingMessage
+                {
+                    ChannelId = platformChannelId,
+                    Content = talk
+                });
+                await ctx.Session.SaveBotMessageAsync(targetChannel.Id, talk, sentId);
+
+                FrameworkLogger.Log("DreamEngine", $"梦话: \"{talk}\" → {targetChannel.Name}");
+            }
+            catch (Exception ex)
+            {
+                FrameworkLogger.Log("DreamEngine", $"梦话失败: {ex.Message}");
+            }
+        }
+
+        // ---- 持久化做梦日志 ----
+
+        private async Task PersistSessionAsync(DateTime startTime, int executed)
+        {
+            try
+            {
+                var session = await ctx.DreamLogs.CreateSessionAsync(new DreamSession
+                {
+                    Level = level.ToString(),
+                    StartTime = startTime,
+                    EndTime = DateTime.Now,
+                    FragmentsExecuted = executed,
+                    WasInterrupted = shouldWake
+                });
+
+                for (int i = 0; i < fragmentRecords.Count; i++)
+                {
+                    var rec = fragmentRecords[i];
+                    var fragment = await ctx.DreamLogs.CreateFragmentAsync(new DreamFragment
+                    {
+                        SessionId = session.Id,
+                        Type = rec.Type,
+                        SeqIndex = i,
+                        StartTime = rec.StartTime,
+                        DurationSeconds = rec.DurationSeconds,
+                        Success = rec.Success,
+                        Summary = rec.Summary ?? "",
+                        InputMemoryIds = rec.InputMemoryIds,
+                        OutputRaw = rec.OutputRaw
+                    });
+
+                    if (rec.Details.Count > 0)
+                    {
+                        var details = rec.Details.Select(d => new DreamFragmentDetail
+                        {
+                            FragmentId = fragment.Id,
+                            Action = d.Action,
+                            MemoryId = d.MemoryId,
+                            OldValue = d.OldValue,
+                            NewValue = d.NewValue,
+                            Note = d.Note
+                        }).ToList();
+                        await ctx.DreamLogs.CreateDetailsAsync(details);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                FrameworkLogger.Log("DreamEngine", $"持久化做梦日志失败: {ex.Message}");
             }
         }
     }

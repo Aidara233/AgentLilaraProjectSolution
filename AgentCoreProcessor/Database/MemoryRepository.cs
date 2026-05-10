@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Util;
 
 namespace AgentCoreProcessor.Database
 {
@@ -168,6 +169,26 @@ namespace AgentCoreProcessor.Database
             return await db.QueryAsync<MemoryEntry>(
                 "SELECT * FROM MemoryEntry WHERE Content LIKE ? ORDER BY CreatedAt DESC LIMIT ?",
                 $"%{keyword}%", limit);
+        }
+
+        /// <summary>
+        /// 按 embedding 相似度从全库搜索最相关的记忆。
+        /// 排除指定 ID，返回 top-k 且相似度高于阈值的结果。
+        /// </summary>
+        public async Task<List<MemoryEntry>> FindSimilarAsync(
+            byte[] targetEmbedding, int topK, float threshold, int excludeId = -1)
+        {
+            var targetVec = VectorUtil.BytesToFloats(targetEmbedding);
+            var all = await db.GetAllAsync<MemoryEntry>();
+
+            return all
+                .Where(m => m.Id != excludeId && m.Embedding != null)
+                .Select(m => (entry: m, sim: VectorUtil.CosineSimilarity(targetVec, VectorUtil.BytesToFloats(m.Embedding!))))
+                .Where(x => x.sim > threshold)
+                .OrderByDescending(x => x.sim)
+                .Take(topK)
+                .Select(x => x.entry)
+                .ToList();
         }
     }
 }

@@ -65,6 +65,10 @@ namespace AgentCoreProcessor.Client
         [JsonProperty("webSearch")]
         public bool WebSearch { get; set; } = false;
 
+        // Claude 专用：启用 prompt caching（在 system 和前缀消息上设置 cache_control）
+        [JsonProperty("promptCaching")]
+        public bool PromptCaching { get; set; } = false;
+
         // 预设消息模板（从配置文件加载，system prompt + few-shot 示例）
         [JsonProperty("conversationHistory")]
         public List<Message> PresetMessages { get; set; } = new List<Message>();

@@ -10,6 +10,8 @@
 - 上下文压缩：超过 80k tokens 触发，保留最近 5 轮 + 摘要
 - 关注列表：系统循环下发规则，频道循环语义匹配
 - 睡觉系统：SystemEngine 定期评估大睡需求（需管理员许可），DreamEngineSpawnCheck 自动处理小睡/走神
+- 睡眠打断分级：走神被@醒、小睡需@+关键词叫醒（仅@触发梦话）、大睡仅管理员/任务可唤醒
+- 睡眠期消息拦截：ChannelEngineSpawnCheck 按 CurrentSleepState 拦截，消息入库但不响应，醒来后自动补提取记忆
 
 ## 冷启动
 
@@ -75,5 +77,7 @@
 - 通信桥梁：Engine/Core/TaskBridge.cs
 - Agent 循环：Core/WorkingCore.cs
 - 记忆检索：Memory/MemoryService.cs
-- 做梦调度：Engine/DreamEngineSpawnCheck.cs
+- 做梦调度：Engine/Dream/DreamEngineSpawnCheck.cs
+- 做梦执行：Engine/Dream/DreamEngine.cs
+- 睡眠状态：Engine/Core/SleepState.cs
 - 配置文件：Storage/ 目录下

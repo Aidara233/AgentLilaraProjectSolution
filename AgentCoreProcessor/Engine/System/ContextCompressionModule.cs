@@ -7,21 +7,19 @@ using AgentCoreProcessor.Models;
 namespace AgentCoreProcessor.Engine.Modules
 {
     /// <summary>
-    /// 上下文压缩模块。监控 token 使用，触发压缩。
+    /// 上下文压缩模块。由 SystemEngine 主动调用压缩，不再被动监听。
     /// </summary>
     internal class ContextCompressionModule : EngineModule
     {
         public override string Name => "上下文压缩";
-        public override int PromptPriority => 100; // 最低优先级，不注入 prompt
+        public override int PromptPriority => 100;
 
-        private const int CompressionThreshold = 80000; // 80k tokens
-        private const int CompressionTarget = 30000;    // 压缩到 30k
-        private const int RecentRoundsToKeep = 5;
+        private const int RecentRoundsToKeep = 10;
 
         private readonly SummarizationCore summarizationCore = new();
         private readonly ContextPersistence persistence;
-        private List<Message> conversationHistory = new();
         private string? currentSummary;
+        private List<Message> keptMessages = new();
 
         public ContextCompressionModule(ContextPersistence persistence)
         {
@@ -30,109 +28,48 @@ namespace AgentCoreProcessor.Engine.Modules
 
         public override void Attach(ILoopBus bus)
         {
-            // 每轮结束后检查是否需要压缩
-            bus.Subscribe<RoundCompletedEvent>(async e =>
-            {
-                conversationHistory.AddRange(e.Messages);
-                await CheckAndCompressAsync();
-            });
+            // 不再被动订阅 — 由 SystemEngine 主动调用 CompressAsync
         }
 
-        /// <summary>
-        /// 添加消息到历史（供 SystemEngine 调用）。
-        /// </summary>
-        public void AddMessages(List<Message> messages)
+        public void SetSummary(string? summary)
         {
-            conversationHistory.AddRange(messages);
-        }
-
-        /// <summary>
-        /// 获取当前上下文（供 SystemEngine 构建 prompt）。
-        /// </summary>
-        public List<Message> GetContext()
-        {
-            var context = new List<Message>();
-
-            // 如果有摘要，添加到开头
-            if (!string.IsNullOrEmpty(currentSummary))
-            {
-                context.Add(new Message
-                {
-                    Role = "user",
-                    Content = $"[上下文摘要]\n{currentSummary}"
-                });
-            }
-
-            // 添加完整历史
-            context.AddRange(conversationHistory);
-
-            return context;
-        }
-
-        /// <summary>
-        /// 加载持久化的上下文。
-        /// </summary>
-        public void LoadPersistedContext()
-        {
-            var (summary, rounds) = persistence.LoadContext();
             currentSummary = summary;
-
-            foreach (var round in rounds)
-            {
-                conversationHistory.AddRange(round);
-            }
-
-            if (conversationHistory.Any())
-            {
-                FrameworkLogger.Log("ContextCompression", $"已恢复 {conversationHistory.Count} 条消息");
-            }
         }
 
-        private async Task CheckAndCompressAsync()
+        public string? GetSummary() => currentSummary;
+
+        public List<Message> GetKeptMessages() => keptMessages;
+
+        /// <summary>
+        /// 执行压缩：保留最近 N 条消息，其余压缩为摘要。
+        /// </summary>
+        public async Task CompressAsync(List<Message> fullHistory)
         {
-            // 粗略估算 token（字符数 / 3）
-            var totalChars = conversationHistory.Sum(m => m.Content?.Length ?? 0);
-            var estimatedTokens = totalChars / 3;
-
-            if (estimatedTokens < CompressionThreshold)
+            if (fullHistory.Count <= RecentRoundsToKeep)
             {
+                keptMessages = new List<Message>(fullHistory);
                 return;
             }
 
-            FrameworkLogger.Log("ContextCompression", $"触发压缩: 估算 {estimatedTokens} tokens");
+            var toCompress = fullHistory.Take(fullHistory.Count - RecentRoundsToKeep).ToList();
+            keptMessages = fullHistory.TakeLast(RecentRoundsToKeep).ToList();
 
-            // 保留最近 N 轮
-            var recentMessages = conversationHistory.TakeLast(RecentRoundsToKeep).ToList();
-            var toCompress = conversationHistory.Take(conversationHistory.Count - RecentRoundsToKeep).ToList();
+            FrameworkLogger.Log("ContextCompression",
+                $"压缩 {toCompress.Count} 条消息, 保留 {keptMessages.Count} 条");
 
-            if (toCompress.Count == 0)
-            {
-                FrameworkLogger.Log("ContextCompression", "无需压缩（历史太短）");
-                return;
-            }
-
-            // 调用摘要 Core
             currentSummary = await summarizationCore.SummarizeContextAsync(toCompress, currentSummary);
 
-            // 更新历史：只保留最近 N 轮
-            conversationHistory = recentMessages;
-
-            // 持久化
-            persistence.SaveSummaryAndClearContext(currentSummary);
-
-            var newEstimatedTokens = (currentSummary.Length + conversationHistory.Sum(m => m.Content?.Length ?? 0)) / 3;
-            FrameworkLogger.Log("ContextCompression", $"压缩完成: {estimatedTokens} → {newEstimatedTokens} tokens");
+            FrameworkLogger.Log("ContextCompression", "压缩完成");
         }
 
         public override string? BuildPromptSection(EngineMode mode)
         {
-            // 不注入 prompt，上下文通过 GetContext() 获取
             return null;
         }
     }
 
     /// <summary>
-    /// 一轮完成事件（供压缩模块订阅）。
+    /// 一轮完成事件（供其他模块订阅）。
     /// </summary>
     internal class RoundCompletedEvent
     {

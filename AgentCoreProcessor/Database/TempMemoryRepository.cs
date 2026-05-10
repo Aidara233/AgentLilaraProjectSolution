@@ -88,5 +88,14 @@ namespace AgentCoreProcessor.Database
                 "SELECT * FROM TempMemories WHERE ChannelId = ? ORDER BY CreatedAt DESC LIMIT ?",
                 channelId, limit);
         }
+
+        /// <summary>批量按 ID 查询。</summary>
+        public async Task<List<TempMemoryEntry>> GetByIdsAsync(List<int> ids)
+        {
+            if (ids.Count == 0) return new List<TempMemoryEntry>();
+            var idList = string.Join(",", ids);
+            return await db.QueryAsync<TempMemoryEntry>(
+                $"SELECT * FROM TempMemories WHERE Id IN ({idList})");
+        }
     }
 }

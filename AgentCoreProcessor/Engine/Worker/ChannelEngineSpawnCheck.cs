@@ -9,6 +9,7 @@ namespace AgentCoreProcessor.Engine
     /// <summary>
     /// ChannelEngine 的创建条件检查。接管 SessionManager 调用和频道路由。
     /// 维护活跃频道引擎表，按 ChannelId 路由消息。
+    /// 睡眠期间拦截消息：入库但不触发响应。
     /// </summary>
     internal class ChannelEngineSpawnCheck : IEngineSpawnCheck
     {
@@ -34,7 +35,7 @@ namespace AgentCoreProcessor.Engine
 
             var message = msgEvent.Message;
 
-            // SessionManager：用户映射、频道、消息入库
+            // SessionManager：用户映射、频道、消息入库（无论是否睡眠都要入库）
             var sessionContext = await ctx.Session.OnMessageAsync(message);
 
             // 权限检查
@@ -46,6 +47,41 @@ namespace AgentCoreProcessor.Engine
                 case PermissionLevel.Restricted:
                     FrameworkLogger.LogPermission("WorkerSpawnCheck", sessionContext.User.PlatformId, "Restricted", false);
                     return false;
+            }
+
+            // ═══ 睡眠拦截 ═══
+            var sleepState = ctx.CurrentSleepState;
+            if (sleepState != SleepState.None)
+            {
+                // 走神：被 @ 放行（DreamEngine 会自行打断）
+                if (sleepState == SleepState.Daydream && message.IsMentioned)
+                {
+                    // 放行，走正常流程
+                }
+                // 小睡：被 @ + 叫醒关键词 → 放行
+                else if (sleepState == SleepState.Nap
+                    && message.IsMentioned
+                    && ContainsWakeKeyword(message.Content))
+                {
+                    // 放行（DreamEngine 会自行打断）
+                }
+                // 大睡：仅管理员 + @ 放行
+                else if (sleepState == SleepState.DeepSleep
+                    && message.IsMentioned
+                    && sessionContext.User.PermissionLevel >= PermissionLevel.Admin)
+                {
+                    // 管理员叫醒 → 发信号唤醒 DreamEngine，放行消息
+                    ctx.EventBus.Publish(new SignalEvent
+                    {
+                        SignalName = "force-wake",
+                        Payload = "admin-wake"
+                    });
+                }
+                else
+                {
+                    // 其余情况：消息已入库，不触发响应
+                    return false;
+                }
             }
 
             // 信任等级：首次出现自动升为 Stranger
@@ -83,5 +119,14 @@ namespace AgentCoreProcessor.Engine
         }
 
         internal IReadOnlyDictionary<int, ChannelEngine> GetActiveChannels() => activeChannels;
+
+        private static readonly string[] WakeKeywords =
+            ["起床", "醒醒", "wake", "起来", "叫醒", "别睡了", "醒来"];
+
+        private static bool ContainsWakeKeyword(string content)
+        {
+            var lower = content.ToLowerInvariant();
+            return WakeKeywords.Any(k => lower.Contains(k));
+        }
     }
 }

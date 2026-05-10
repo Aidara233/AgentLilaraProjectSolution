@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Config;
 using Newtonsoft.Json;
@@ -45,6 +46,9 @@ namespace AgentCoreProcessor.Engine
                             _ => SleepLevel.DeepSleep
                         };
                         FrameworkLogger.Log("DreamSpawnCheck", $"强制睡觉信号: level={forcedLevel}");
+                        break;
+                    case "force-wake":
+                        activeDreamEngine?.ForceWake(signal.Payload as string ?? "signal");
                         break;
                     case "dream-config":
                         if (signal.Payload is string json)
@@ -126,6 +130,7 @@ namespace AgentCoreProcessor.Engine
         internal WebUI.Services.DreamStateSnapshot GetDreamSnapshot(bool hasActiveDream)
         {
             var active = hasActiveDream ? activeDreamEngine : null;
+            var lastRec = active?.LastCompletedRecord;
             return new()
             {
                 ForceFlag = forceFlag,
@@ -135,7 +140,18 @@ namespace AgentCoreProcessor.Engine
                 CurrentFragment = active?.CurrentFragment,
                 FragmentsCompleted = active?.FragmentsCompleted ?? 0,
                 FragmentsTotal = active?.FragmentsTotal ?? 0,
-                CurrentFragmentStartTime = active?.CurrentFragmentStartTime
+                CurrentFragmentStartTime = active?.CurrentFragmentStartTime,
+                CurrentInputDescription = active?.CurrentInputDescription,
+                LastFragmentType = lastRec?.Type,
+                LastFragmentSummary = lastRec?.Summary,
+                LastFragmentDetails = lastRec?.Details.Select(d => new WebUI.Services.FragmentDetailSnapshot
+                {
+                    Action = d.Action,
+                    MemoryId = d.MemoryId,
+                    OldValue = d.OldValue,
+                    NewValue = d.NewValue,
+                    Note = d.Note
+                }).ToList()
             };
         }
 

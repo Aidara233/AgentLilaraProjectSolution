@@ -68,5 +68,9 @@ namespace AgentCoreProcessor.Database
                 "SELECT * FROM MemoryLinks WHERE SourceId = ? OR TargetId = ?",
                 memoryId, memoryId);
         }
+
+        /// <summary>获取全部关联（供图谱页使用）。</summary>
+        public Task<List<MemoryLink>> GetAllLinksAsync()
+            => db.GetAllAsync<MemoryLink>();
     }
 }

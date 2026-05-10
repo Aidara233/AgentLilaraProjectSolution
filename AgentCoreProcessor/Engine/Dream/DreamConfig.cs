@@ -75,6 +75,32 @@ namespace AgentCoreProcessor.Engine
         /// <summary>小组合并阈值：subject 条数低于此值时归入杂项批</summary>
         public int ConsolidationSmallGroupThreshold { get; set; } = 5;
 
+        // ---- 片段参数配置 ----
+
+        /// <summary>权重评估每次处理的记忆条数</summary>
+        public int WeightBatchSize { get; set; } = 10;
+
+        /// <summary>关联重建每次处理的目标记忆数</summary>
+        public int LinkTargetCount { get; set; } = 3;
+
+        /// <summary>关联重建候选池大小（embedding 搜索返回数）</summary>
+        public int LinkCandidatePoolSize { get; set; } = 20;
+
+        /// <summary>关联重建 cosine 相似度最低阈值</summary>
+        public float LinkCosineThreshold { get; set; } = 0.3f;
+
+        /// <summary>关联重建过滤后取 top-k 候选</summary>
+        public int LinkTopK { get; set; } = 10;
+
+        /// <summary>记忆组合搜索的近期记忆池大小</summary>
+        public int CombineRecentPoolSize { get; set; } = 30;
+
+        /// <summary>记忆组合要求的最低关联强度</summary>
+        public float CombineStrengthThreshold { get; set; } = 0.7f;
+
+        /// <summary>记忆组合每次尝试的最大对数</summary>
+        public int CombineMaxPairs { get; set; } = 3;
+
         /// <summary>判断当前时间是否在大睡时间段内。</summary>
         public bool IsInDeepSleepWindow()
         {

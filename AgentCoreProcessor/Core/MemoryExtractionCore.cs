@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Util;
 using Newtonsoft.Json;
 
 namespace AgentCoreProcessor.Core
@@ -99,7 +100,7 @@ namespace AgentCoreProcessor.Core
             if (trimmed == "无" || trimmed == "无。" || trimmed == "[]") return new();
 
             // 剥掉 markdown 代码围栏（```json ... ``` 或 ``` ... ```）
-            trimmed = StripMarkdownCodeFence(trimmed);
+            trimmed = TextUtil.StripMarkdownCodeFence(trimmed);
 
             // 尝试 JSON 解析
             try
@@ -123,16 +124,5 @@ namespace AgentCoreProcessor.Core
                 .ToList();
         }
 
-        private static string StripMarkdownCodeFence(string text)
-        {
-            var lines = text.Split('\n');
-            if (lines.Length >= 2
-                && lines[0].TrimStart().StartsWith("```")
-                && lines[^1].Trim() == "```")
-            {
-                return string.Join('\n', lines[1..^1]).Trim();
-            }
-            return text;
-        }
     }
 }

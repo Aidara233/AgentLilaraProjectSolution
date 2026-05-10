@@ -162,6 +162,49 @@
             </div>
         </div>
     </div>
+
+    <!-- 片段参数 -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-sliders me-1 text-accent"></i> 片段参数
+            </div>
+            <div class="card-body">
+                <div class="config-field">
+                    <label>权重评估批量大小</label>
+                    <input type="number" @bind="cfg.WeightBatchSize" />
+                </div>
+                <div class="config-field">
+                    <label>关联重建目标数</label>
+                    <input type="number" @bind="cfg.LinkTargetCount" />
+                </div>
+                <div class="config-field">
+                    <label>关联重建候选池大小</label>
+                    <input type="number" @bind="cfg.LinkCandidatePoolSize" />
+                </div>
+                <div class="config-field">
+                    <label>关联重建 cosine 阈值</label>
+                    <input type="number" step="0.05" @bind="cfg.LinkCosineThreshold" />
+                </div>
+                <div class="config-field">
+                    <label>关联重建 top-k</label>
+                    <input type="number" @bind="cfg.LinkTopK" />
+                </div>
+                <div class="config-field">
+                    <label>组合搜索池大小</label>
+                    <input type="number" @bind="cfg.CombineRecentPoolSize" />
+                </div>
+                <div class="config-field">
+                    <label>组合最低关联强度</label>
+                    <input type="number" step="0.05" @bind="cfg.CombineStrengthThreshold" />
+                </div>
+                <div class="config-field">
+                    <label>组合每次最大对数</label>
+                    <input type="number" @bind="cfg.CombineMaxPairs" />
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- 保存按钮 -->
@@ -251,5 +294,13 @@
         public int DeepSleepMaxMinutes { get; set; } = 120;
         public int ConsolidationBatchSize { get; set; } = 50;
         public int ConsolidationSmallGroupThreshold { get; set; } = 5;
+        public int WeightBatchSize { get; set; } = 10;
+        public int LinkTargetCount { get; set; } = 3;
+        public int LinkCandidatePoolSize { get; set; } = 20;
+        public float LinkCosineThreshold { get; set; } = 0.3f;
+        public int LinkTopK { get; set; } = 10;
+        public int CombineRecentPoolSize { get; set; } = 30;
+        public float CombineStrengthThreshold { get; set; } = 0.7f;
+        public int CombineMaxPairs { get; set; } = 3;
     }
 }

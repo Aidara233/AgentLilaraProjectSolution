@@ -1,0 +1,117 @@
+@page "/memories/graph"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using AgentCoreProcessor.Engine
+@using AgentCoreProcessor.Database
+@using Microsoft.JSInterop
+@inject MasterEngine Engine
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@implements IDisposable
+
+<div class="page-title">
+    <i class="bi bi-diagram-3"></i> 记忆关联图谱
+</div>
+
+<div class="d-flex gap-2 mb-3 align-items-center flex-wrap">
+    <div class="d-flex gap-1 align-items-center">
+        <label class="text-muted-custom" style="font-size:0.8rem;">最低强度:</label>
+        <input type="range" min="0" max="100" @bind="minStrengthPct" @bind:after="RebuildGraph" style="width:100px;" />
+        <span class="text-muted-custom" style="font-size:0.8rem;">@((minStrengthPct / 100f).ToString("F2"))</span>
+    </div>
+    <div class="d-flex gap-1 align-items-center">
+        <label class="text-muted-custom" style="font-size:0.8rem;">最低重要度:</label>
+        <input type="range" min="0" max="100" @bind="minImportancePct" @bind:after="RebuildGraph" style="width:100px;" />
+        <span class="text-muted-custom" style="font-size:0.8rem;">@((minImportancePct / 100f).ToString("F2"))</span>
+    </div>
+    <span class="text-muted-custom" style="font-size:0.8rem;">节点: @nodeCount | 边: @edgeCount</span>
+</div>
+
+<div id="memory-graph-container" style="width:100%; height:calc(100vh - 200px); border:1px solid var(--bg-elevated); border-radius:8px; background:var(--bg-primary);"></div>
+<!-- PLACEHOLDER_CODE -->
+
+@code {
+    private int minStrengthPct = 30;
+    private int minImportancePct = 0;
+    private int nodeCount;
+    private int edgeCount;
+    private List<MemoryLink> allLinks = new();
+    private List<MemoryEntry> allMemories = new();
+    private DotNetObjectReference<Memory_Graph>? dotNetRef;
+    private bool rendered;
+
+    protected override async Task OnInitializedAsync()
+    {
+        allLinks = await Engine.MemoryLinks.GetAllLinksAsync();
+        var nodeIds = new HashSet<int>();
+        foreach (var l in allLinks) { nodeIds.Add(l.SourceId); nodeIds.Add(l.TargetId); }
+        if (nodeIds.Count > 0)
+            allMemories = await Engine.Memories.GetByIdsAsync(nodeIds.ToList());
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            rendered = true;
+            dotNetRef = DotNetObjectReference.Create(this);
+            await RenderGraph();
+        }
+    }
+
+    private async Task RebuildGraph()
+    {
+        if (rendered) await RenderGraph();
+    }
+
+    private async Task RenderGraph()
+    {
+        float minStr = minStrengthPct / 100f;
+        float minImp = minImportancePct / 100f;
+
+        var filteredLinks = allLinks.Where(l => l.Strength >= minStr).ToList();
+        var nodeIds = new HashSet<int>();
+        foreach (var l in filteredLinks) { nodeIds.Add(l.SourceId); nodeIds.Add(l.TargetId); }
+
+        var memDict = allMemories
+            .Where(m => nodeIds.Contains(m.Id) && m.Importance >= minImp)
+            .ToDictionary(m => m.Id);
+
+        var validNodeIds = memDict.Keys.ToHashSet();
+        filteredLinks = filteredLinks
+            .Where(l => validNodeIds.Contains(l.SourceId) && validNodeIds.Contains(l.TargetId))
+            .ToList();
+
+        var nodes = memDict.Values.Select(m => new {
+            id = m.Id,
+            label = m.Content.Length > 15 ? m.Content[..15] + "…" : m.Content,
+            group = m.Type ?? "fact",
+            title = $"#{m.Id} [{m.Type}] {m.Content}",
+            importance = m.Importance
+        }).ToArray();
+
+        var edges = filteredLinks.Select(l => new {
+            from = l.SourceId,
+            to = l.TargetId,
+            label = l.LinkType,
+            width = l.Strength * 3f
+        }).ToArray();
+
+        nodeCount = nodes.Length;
+        edgeCount = edges.Length;
+
+        var data = new { nodes, edges };
+        await JS.InvokeVoidAsync("initMemoryGraph", "memory-graph-container", data, dotNetRef);
+    }
+
+    [JSInvokable]
+    public void OnNodeClicked(int nodeId)
+    {
+        Nav.NavigateTo($"/memories/detail/{nodeId}");
+    }
+
+    public void Dispose()
+    {
+        JS.InvokeVoidAsync("destroyMemoryGraph");
+        dotNetRef?.Dispose();
+    }
+}

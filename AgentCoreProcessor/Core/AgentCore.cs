@@ -95,6 +95,19 @@ namespace AgentCoreProcessor.Core
         }
 
         /// <summary>
+        /// 系统循环专用：复用 Processor 实例，直接设置历史并调用。
+        /// 避免每轮重建 Processor（重读配置、重注入 persona）。
+        /// </summary>
+        public async Task<ModelOutput> InvokeWithHistoryAsync(List<Message> messages)
+        {
+            processor ??= new Processor(currentMode, usePersona: UsePersona);
+            processor.Client.ClearConversationHistory();
+            processor.Client.SetConversationHistory(messages);
+            var calls = await GenerateToolCallsAsync();
+            return ModelOutput.FromTools(calls);
+        }
+
+        /// <summary>
         /// 设置对话历史（供 ChannelEngine 在每轮准备阶段调用）。
         /// </summary>
         public void SetConversationHistory(List<Message> messages)
