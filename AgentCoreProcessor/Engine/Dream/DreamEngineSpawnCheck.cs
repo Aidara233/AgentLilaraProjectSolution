@@ -25,6 +25,7 @@ namespace AgentCoreProcessor.Engine
         private volatile bool forceFlag = false;
         private volatile SleepLevel forcedLevel = SleepLevel.DeepSleep;
         private DateTime? lastDaydreamTime;
+        private DateTime? lastNapTime;
 
         // ShouldSpawn 决定的睡眠级别，供 Create 读取
         private SleepLevel pendingLevel;
@@ -92,8 +93,9 @@ namespace AgentCoreProcessor.Engine
 
             if (!ctx.IsIdle || ctx.HasActiveEngine("Dream")) return Task.FromResult(false);
 
-            // ② 小睡（空闲时间足够长）
-            if (ctx.IdleDuration.TotalSeconds > cfg.NapIdleThreshold)
+            // ② 小睡（空闲时间足够长 + 冷却期已过）
+            if (ctx.IdleDuration.TotalSeconds > cfg.NapIdleThreshold
+                && (lastNapTime == null || (DateTime.Now - lastNapTime.Value).TotalSeconds > cfg.NapCooldown))
             {
                 pendingLevel = SleepLevel.Nap;
                 pendingMaxFragments = cfg.MaxFragmentsPerNap;
@@ -167,6 +169,7 @@ namespace AgentCoreProcessor.Engine
             }
             else if (level == SleepLevel.Nap)
             {
+                lastNapTime = DateTime.Now;
                 FrameworkLogger.Log("DreamSpawnCheck", $"小睡完成，处理 {processed} 个片段");
             }
             else if (level == SleepLevel.DeepSleep)

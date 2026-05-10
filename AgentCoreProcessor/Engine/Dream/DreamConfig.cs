@@ -15,6 +15,9 @@ namespace AgentCoreProcessor.Engine
         /// <summary>小睡空闲阈值（秒）</summary>
         public int NapIdleThreshold { get; set; } = 600;
 
+        /// <summary>小睡冷却期（秒），完成一次小睡后多久才能再次触发</summary>
+        public int NapCooldown { get; set; } = 600;
+
         /// <summary>大睡空闲阈值（秒）</summary>
         public int DeepSleepIdleThreshold { get; set; } = 1800;
 
