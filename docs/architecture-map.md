@@ -16,14 +16,14 @@ AgentCoreProcessor/
 ├── Command/     框架指令系统（/help /status /config 等）
 ├── Config/      PathConfig 绝对路径管理
 ├── Core/        业务核心（AgentCore统一+PreprocessingCore+MemoryExtractionCore+MemoryQueryCore等），继承 CoreBase，各自 JSON 配置
-├── Database/    实体 + Repository（SQLite，12张表）
+├── Database/    实体 + Repository（SQLite，13张表）
 ├── Engine/      引擎生态（MasterEngine 内核 + 子引擎 + Worker闸门循环 + 内务模块）
 ├── Memory/      MemoryService 检索管线
 ├── MCP/         MCP Client 桥接层（外部插件生态接入）
-├── Tool/        工具接口 + 顺序执行器 + 工具折叠分组 + 全局/局部工具集
+├── Tool/        工具接口 + 顺序执行器 + 工具折叠分组 + 全局禁用管理 + 全局/局部工具集
 ├── Util/        VectorUtil 向量操作
 ├── WebUI/       Blazor Server 管理面板（嵌入式，同进程）
-│     ├── Services/    SystemMonitor(快照采集) + LogStreamService(日志流) + WebConfig + WebAuthService
+│     ├── Services/    SystemMonitor(快照采集) + LogStreamService(日志流) + ModelLogService(模型日志) + TokenStatsService(token统计) + WebConfig + WebAuthService
 │     ├── Components/  Razor 页面（Dashboard/Logs/EngineControl/DreamControl/WorkerDetail/Messages/Memories/People/ConfigEditor/Login）
 │     └── wwwroot/     静态资源（Bootstrap 5 CSS）
 └── Program.cs   入口（WebApplication 宿主，默认启动 Web 服务器 + 适配器）

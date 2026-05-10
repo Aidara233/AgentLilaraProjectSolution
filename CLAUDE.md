@@ -12,6 +12,10 @@
 - 睡觉系统：SystemEngine 定期评估大睡需求（需管理员许可），DreamEngineSpawnCheck 自动处理小睡/走神
 - 睡眠打断分级：走神被@醒、小睡需@+关键词叫醒（仅@触发梦话）、大睡仅管理员/任务可唤醒
 - 睡眠期消息拦截：ChannelEngineSpawnCheck 按 CurrentSleepState 拦截，消息入库但不响应，醒来后自动补提取记忆
+- Prompt Caching：Claude 系 Core 启用 promptCaching，中转站已验证兼容
+- Token 统计：ModelCallLog 数据库表记录每次调用，WebUI /logs/tokens 按 Core/模型聚合 + 缓存命中率
+- 模型日志结构化：JSON 格式（含 usage），WebUI /logs/model 展示 token 摘要
+- 工具禁用管理：ToolRegistry.DisableTool/EnableTool + ToolConfig.json 持久化 + ToolStatusModule 动态注入 + WebUI /config/tools
 
 ## 冷启动
 
@@ -80,4 +84,6 @@
 - 做梦调度：Engine/Dream/DreamEngineSpawnCheck.cs
 - 做梦执行：Engine/Dream/DreamEngine.cs
 - 睡眠状态：Engine/Core/SleepState.cs
+- Token 统计：Database/ModelCallLog.cs + ModelCallLogRepository.cs
+- 工具管理：Tool/ToolRegistry.cs（禁用逻辑）+ Storage/ToolConfig.json
 - 配置文件：Storage/ 目录下
