@@ -4,8 +4,9 @@
 
 **核心特性**：
 - 双循环架构：频道循环（用户交互）+ 系统循环（任务调度）
+- 委托系统：频道循环提交委托 → 系统循环评估(accept/queue/reject) → 子agent执行 → 结果回传频道循环
 - TaskBridge 异步通信：任务队列 + 通知队列
-- 子agent系统：TaskSession 被动执行，工具白名单，禁止套娃
+- 子agent系统：TaskSession 被动执行，工具白名单，禁止套娃，支持 delegationId 自动回写结果
 - 上下文持久化：SystemContext.json WAL 模式
 - 上下文压缩：超过 80k tokens 触发，保留最近 5 轮 + 摘要
 - 关注列表：系统循环下发规则，频道循环语义匹配
@@ -79,6 +80,8 @@
 - 频道循环：Engine/Worker/ChannelEngine.cs
 - 系统循环：Engine/System/SystemEngine.cs
 - 通信桥梁：Engine/Core/TaskBridge.cs
+- 委托注册：Engine/Core/DelegationRegistry.cs
+- 子agent会话：Engine/System/TaskSession.cs
 - Agent 循环：Core/WorkingCore.cs
 - 记忆检索：Memory/MemoryService.cs
 - 做梦调度：Engine/Dream/DreamEngineSpawnCheck.cs

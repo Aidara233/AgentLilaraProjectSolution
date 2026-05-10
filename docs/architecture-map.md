@@ -43,6 +43,10 @@ MasterEngine (内核，实现 ISystemContext)
   ├── TaskBridge (频道循环 ↔ 系统循环异步通信)
   │     TaskQueue (重量请求: DelegateTask/RequestApproval/Escalate)
   │     NotificationQueue (轻量信号: Notify/ProgressUpdate/WatchHit)
+  ├── DelegationRegistry (频道循环 → 系统循环委托生命周期管理)
+  │     Submit → WaitForEvaluation → MarkExecuting → MarkCompleted/MarkFailed
+  │     OnDelegationSubmitted → 唤醒系统循环
+  │     OnDelegationCompleted → EventBus 信号唤醒源频道循环
   └── 事件流水线: EventBus → HandleEventAsync
         ① 内核更新 (lastMessageTime)
         ② SpawnCheck: OnEventAsync → ShouldSpawnAsync → Create → StartEngine
@@ -51,7 +55,7 @@ MasterEngine (内核，实现 ISystemContext)
 ```
 
 ISubEngine: EngineType / RunAsync / OnEvent / IsAlive / RequestStop / IsInfrastructure(默认false)
-ISystemContext: 数据访问 + 适配器 + EventBus + 引擎查询 + StartEngine/RequestStopEngine + TaskBridge + CurrentSleepState + MuteMode
+ISystemContext: 数据访问 + 适配器 + EventBus + 引擎查询 + StartEngine/RequestStopEngine + TaskBridge + Delegations + CurrentSleepState + MuteMode
 IAgentSession: 统一会话接口 (ChannelSession/TaskSession/MonitorSession)
 
 ## 消息处理流
@@ -76,7 +80,8 @@ ChannelEngine (频道循环，常驻，一个活跃频道一个):
 
   内务模块体系 (EngineModule + LoopBus):
     SpeakModule / ThinkingNotesModule / TaskListModule / PinboardModule
-    RetainListModule / MemoryWindowModule / LoopControlModule / SignalDispatchModule / WatchRulesModule
+    RetainListModule / MemoryWindowModule / LoopControlModule / SignalDispatchModule
+    WatchRulesModule / DelegationModule / ToolStatusModule
     模块通过 LoopBus 订阅 ToolExecutedEvent 处理副作用
     模块通过 BuildPromptSection 注入 prompt（按 PromptPriority 排序）
   
@@ -107,13 +112,13 @@ ChannelEngine (频道循环，常驻，一个活跃频道一个):
 SystemEngine (系统循环，单例，纯调度者):
   闸门驱动循环 (LoopGate, auto-reset):
     gate.WaitAsync(coldTimeout) → 放行后立即重置 → 收集 → 执行 → 回到等待
-    触发源: TaskBridge 任务/通知 / ContinueLoop自唤醒 / 定时器
+    触发源: TaskBridge 任务/通知 / 委托提交 / ContinueLoop自唤醒 / 定时器
     超时 → 冷却退出
   
   统一管线 (每轮重建上下文):
   ① WaitGate → 闸门放行
-  ② CollectTasks → drain TaskBridge 任务队列和通知队列
-  ③ PrepareContext → 重建上下文（活跃子agent/频道列表/任务队列/通知摘要）
+  ② CollectTasks → drain TaskBridge 任务队列和通知队列 + 待评估委托
+  ③ PrepareContext → 重建上下文（活跃子agent/频道列表/任务队列/通知摘要/委托列表）
   ④ BuildPrompt → PromptBuilder（注入工具描述+上下文+便签板+思考笔记）
   ⑤ CallModel → AgentCore.InvokeAsync（返回工具调用）
   ⑥ ProcessResponse → 执行工具+发布事件
@@ -128,6 +133,14 @@ SystemEngine (系统循环，单例，纯调度者):
     保留最近 10 条 + 压缩摘要（模型生成）
     压缩后写入持久化文件
   
+  委托系统 (DelegationRegistry):
+    频道循环 → DelegateTaskTool → 提交委托 → 唤醒系统循环
+    系统循环 → EvaluateDelegationTool → accept/queue/reject
+    accept → 创建 TaskSession(delegationId) → 执行 → MarkCompleted/MarkFailed
+    完成 → EventBus 发 delegation-completed 信号 → 唤醒源频道循环
+    频道循环 DelegationModule 注入结果到 prompt
+    DelegateTaskTool 同步等待评估结果(15s超时)，返回 verdict 给频道循环
+  
   子 agent 管理:
     通过 CreateSubAgentTool 创建 TaskSession
     通过 SendToSubAgentTool 发送指令（子agent 被动执行一轮）
@@ -137,6 +150,7 @@ SystemEngine (系统循环，单例，纯调度者):
   工具集 (纯调度+轻量执行):
     调度类: CreateSubAgent / SendToSubAgent / StopSubAgent / DeleteSubAgent
     通信类: SendToChannel / CheckNotifications / SetWatchRule / CheckTaskQueue
+    委托类: EvaluateDelegation（评估频道循环提交的委托）
     自用类: 便签板 / 思考笔记 / 继续
     轻量执行: 文件只读 / 记忆读写（"看一眼就完事"的操作）
 ```
