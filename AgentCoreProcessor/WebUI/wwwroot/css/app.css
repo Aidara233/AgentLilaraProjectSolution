@@ -1267,10 +1267,10 @@ select.config-input option {
 
 /* Ghost/secondary button — C style (subtle underline, expands on hover) */
 [data-theme="tech"] .btn-ghost {
-    background: rgba(0, 212, 255, 0.03);
+    background: color-mix(in srgb, currentColor 3%, transparent);
     border: none;
-    border-top: 1px solid rgba(0, 200, 255, 0.15);
-    border-bottom: 1px solid rgba(0, 200, 255, 0.15);
+    border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
     color: var(--accent);
     padding: 0.4rem 1rem;
     font-weight: 500;
