@@ -148,6 +148,7 @@ namespace AgentCoreProcessor.Engine
             this.lastBufferTime = now;
             this.preprocessingCore = new PreprocessingCore(ctx.Embedding);
             this.contextBuilder = new ContextBuilder(ctx.Session, initialContext.Channel.Id);
+            agentCore.CallerTag = $"Channel:{channelId}";
 
             buffer.Add((initialMessage, initialContext));
             CollectImagePaths(initialMessage);

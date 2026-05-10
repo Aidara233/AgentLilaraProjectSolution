@@ -41,6 +41,7 @@ namespace AgentCoreProcessor.Engine
             this.delegationId = delegationId;
             this.toolWhitelist = toolWhitelist;
             this.SessionId = $"task-{Guid.NewGuid().ToString("N")[..8]}";
+            agentCore.CallerTag = $"SubAgent:{SessionId}";
         }
 
         /// <summary>启动后台 Agent 循环。</summary>

@@ -86,6 +86,7 @@ namespace AgentCoreProcessor.Engine
         {
             this.ctx = ctx;
             this.agentCore = new AgentCore("SystemCore", usePersona: false);
+            agentCore.CallerTag = "System";
 
             // 初始化模块
             systemStatusModule = new SystemStatusModule(ctx, () => GetActiveSubAgents(), () => GetContextUsage());

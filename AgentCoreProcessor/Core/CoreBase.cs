@@ -20,6 +20,9 @@ namespace AgentCoreProcessor.Core
         /// <summary>由 MasterEngine 初始化时设置，供所有 Core 写入调用日志。</summary>
         internal static ModelCallLogRepository? CallLogRepo { get; set; }
 
+        /// <summary>调用来源标签（如 "Channel:2"、"System"、"SubAgent:3"），由调用方设置。</summary>
+        public string? CallerTag { get; set; }
+
         protected Processor processor;
 
         protected List<Message> extraMessage = [];
@@ -183,6 +186,7 @@ namespace AgentCoreProcessor.Core
                 {
                     timestamp = DateTime.Now.ToString("o"),
                     coreName = CoreName,
+                    caller = CallerTag,
                     model = cfg.Model,
                     provider = cfg.Provider,
                     inputMessages = history.Count,

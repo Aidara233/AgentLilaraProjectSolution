@@ -69,9 +69,13 @@ namespace AgentCoreProcessor.Engine
             var channelHints = hints.Count(h => h.ChannelId != null);
             weights[ReviewMode.ChannelDaily] = 3.0f + channelHints * 2.0f;
 
-            // PersonProfile — 基础权重，有人物相关 hint 加权
+            // PersonProfile — 基础权重，有人物相关 hint 加权，有未填充信息的人物额外加权
             var personHints = hints.Count(h => h.PersonId != null);
-            weights[ReviewMode.PersonProfile] = 2.0f + personHints * 2.0f;
+            var persons = await ctx.Session.GetAllPersonsAsync();
+            var incompletePersons = persons.Count(p =>
+                p.TrustLevel >= TrustLevel.Understanding
+                && (string.IsNullOrEmpty(p.Name) || string.IsNullOrEmpty(p.FastMemory)));
+            weights[ReviewMode.PersonProfile] = 2.0f + personHints * 2.0f + incompletePersons * 1.5f;
 
             // CrossDomain — 多频道多话题时权重高
             var channels = await ctx.Session.GetAllChannelsAsync();
@@ -216,9 +220,26 @@ namespace AgentCoreProcessor.Engine
             var personMemories = await ctx.Memories.GetByPersonAsync(targetPersonId.Value);
             if (personMemories.Count > 0)
             {
-                sb.AppendLine($"### 相关记忆 ({personMemories.Count}条，显示最近10条)");
-                foreach (var m in personMemories.TakeLast(10))
-                    sb.AppendLine($"- [ID:{m.Id}] {m.Content}");
+                // 混合展示：高重要度 + 最近的，去重后最多 20 条
+                var highImportance = personMemories
+                    .Where(m => m.Importance >= 0.6f)
+                    .OrderByDescending(m => m.Importance)
+                    .Take(10)
+                    .ToList();
+                var recent = personMemories
+                    .OrderByDescending(m => m.CreatedAt)
+                    .Take(10)
+                    .ToList();
+                var combined = highImportance
+                    .Union(recent)
+                    .DistinctBy(m => m.Id)
+                    .OrderByDescending(m => m.Importance)
+                    .Take(20)
+                    .ToList();
+
+                sb.AppendLine($"### 相关记忆 (共{personMemories.Count}条，展示{combined.Count}条: 高重要度+最近)");
+                foreach (var m in combined)
+                    sb.AppendLine($"- [ID:{m.Id}] (重要度:{m.Importance:F1}) {m.Content}");
             }
 
             sb.AppendLine();

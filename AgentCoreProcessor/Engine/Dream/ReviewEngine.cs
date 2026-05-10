@@ -56,6 +56,7 @@ namespace AgentCoreProcessor.Engine
             // 初始化工具集（不注册到全局 ToolRegistry）
             tools = BuildToolSet();
             toolDescriptions = GenerateToolDescriptions();
+            reviewCore.CallerTag = $"Review:{mode}";
         }
 
         public async Task RunAsync()
@@ -120,19 +121,27 @@ namespace AgentCoreProcessor.Engine
                 reviewCore.ResetProcessor();
                 reviewCore.SetConversation(messages);
 
-                // 2. 调用模型，解析工具调用
+                // 2. 调用模型，解析工具调用（与 AgentCore 相同的简单格式解析）
                 var toolCalls = new List<ToolCall>();
                 var usage = await reviewCore.GenerateAsync(onBreak: (block) =>
                 {
-                    var json = block.Content.Trim();
-                    if (string.IsNullOrEmpty(json)) return;
-                    try
+                    var raw = block.Content.Trim();
+                    if (string.IsNullOrEmpty(raw)) return;
+
+                    var jsonStart = raw.IndexOf('{');
+                    var jsonEnd = raw.LastIndexOf('}');
+
+                    if (jsonStart >= 0 && jsonEnd > jsonStart)
                     {
-                        var call = ToolCall.FromJson(json);
-                        if (call.Validate().Count() == 0)
-                            toolCalls.Add(call);
+                        var json = raw[jsonStart..(jsonEnd + 1)];
+                        try
+                        {
+                            var call = ToolCall.FromJson(json);
+                            if (!call.Validate().Any())
+                                toolCalls.Add(call);
+                        }
+                        catch { }
                     }
-                    catch { }
                 });
 
                 // 累加 token
