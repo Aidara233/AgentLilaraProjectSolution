@@ -512,7 +512,7 @@ namespace AgentCoreProcessor.Engine
                     {
                         "说话", "发送媒体", "思考笔记", "记忆", "便签板", "缓存管理", "任务管理",
                         "标记复盘", "报警", "继续", "读取文件", "写入文件", "委派任务", "适配器操作",
-                        "查看图片"
+                        "查看图片", "获取图片文字"
                     };
                     return allowedTools.Contains(tool.Name);
                 });
@@ -567,6 +567,9 @@ namespace AgentCoreProcessor.Engine
                     toolDescs += "\n" + sb.ToString();
                 }
             }
+
+            // 图片标记说明（Express/Working 通用）
+            toolDescs += "\n\n[图片标记说明]\n上下文中的 <img/> 标记表示用户发送的图片。其中 desc/text 属性为自动生成的摘要，仅供快速参考，可能存在误差或遗漏。涉及具体内容时请使用工具查看原图或获取完整文字。";
 
             var messages = promptBuilder.BuildRoundMessages(
                 toolDescs, currentContextXml!, modules, mode,

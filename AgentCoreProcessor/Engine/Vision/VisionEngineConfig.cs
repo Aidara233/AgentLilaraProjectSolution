@@ -26,6 +26,9 @@ namespace AgentCoreProcessor.Engine.Vision
         [JsonProperty("visionEnabled")]
         public bool VisionEnabled { get; set; } = true;
 
+        [JsonProperty("ocrRichTextThreshold")]
+        public int OcrRichTextThreshold { get; set; } = 80;
+
         private static string ConfigPath => Path.Combine(
             Config.PathConfig.StoragePath, "Engine", "VisionEngineConfig.json");
 

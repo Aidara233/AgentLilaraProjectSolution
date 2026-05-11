@@ -70,6 +70,20 @@ namespace AgentCoreProcessor.Database
                 limit);
         }
 
+        public async Task<List<ImageRecord>> GetOcrPendingAsync(int limit = 50)
+        {
+            return await db.QueryAsync<ImageRecord>(
+                "SELECT * FROM ImageRecords WHERE HasText IS NULL ORDER BY CreatedAt DESC LIMIT ?",
+                limit);
+        }
+
+        public async Task<List<ImageRecord>> GetVisionPendingAsync(int limit = 50)
+        {
+            return await db.QueryAsync<ImageRecord>(
+                "SELECT * FROM ImageRecords WHERE HasText IS NOT NULL AND Description IS NULL ORDER BY CreatedAt DESC LIMIT ?",
+                limit);
+        }
+
         public async Task UpdateOcrAsync(string hash, bool hasText, string? ocrText)
         {
             var record = await GetByHashAsync(hash);

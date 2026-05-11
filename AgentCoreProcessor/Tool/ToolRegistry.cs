@@ -56,6 +56,7 @@ namespace AgentCoreProcessor.Tool
                 new SelfKnowledgeTool(),
                 new SendMediaTool(),
                 new ViewImageTool(),
+                new GetImageTextTool(),
                 // Phase 4: 系统循环工具（不需要 ISystemContext 的）
                 new SystemStateTool(),
                 new TaskQueueTool()

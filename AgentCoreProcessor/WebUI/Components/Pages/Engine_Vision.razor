@@ -87,6 +87,10 @@ else
                     <label class="small text-muted-custom">重试次数</label>
                     <input type="number" class="form-control form-control-sm" min="0" max="5" @bind="cfgRetryCount" />
                 </div>
+                <div class="col-md-3">
+                    <label class="small text-muted-custom">OCR 跳过阈值(字)</label>
+                    <input type="number" class="form-control form-control-sm" min="10" max="500" @bind="cfgOcrRichThreshold" />
+                </div>
             </div>
             <div class="row g-2 mt-2">
                 <div class="col-md-3">
@@ -175,6 +179,7 @@ else
     private int cfgRetryCount;
     private bool cfgVisionEnabled;
     private bool cfgOcrEnabled;
+    private int cfgOcrRichThreshold;
 
     protected override async Task OnInitializedAsync()
     {
@@ -201,6 +206,7 @@ else
             cfgRetryCount = snap.Config.VisionRetryCount;
             cfgVisionEnabled = snap.Config.VisionEnabled;
             cfgOcrEnabled = snap.Config.OcrEnabled;
+            cfgOcrRichThreshold = snap.Config.OcrRichTextThreshold;
         }
     }
 
@@ -250,7 +256,8 @@ else
             VisionRetryCount = Math.Clamp(cfgRetryCount, 0, 5),
             VisionRetryDelayMs = snap?.Config.VisionRetryDelayMs ?? 3000,
             VisionEnabled = cfgVisionEnabled,
-            OcrEnabled = cfgOcrEnabled
+            OcrEnabled = cfgOcrEnabled,
+            OcrRichTextThreshold = Math.Clamp(cfgOcrRichThreshold, 10, 500)
         };
         instance.UpdateConfig(newCfg);
         statusMsg = "配置已保存";

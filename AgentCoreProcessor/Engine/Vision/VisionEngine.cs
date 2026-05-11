@@ -95,39 +95,58 @@ namespace AgentCoreProcessor.Engine.Vision
             _visionSuspended = false;
             _suspendReason = null;
 
+            // Phase 1: OCR（处理所有 HasText IS NULL 的图片）
             while (IsAlive)
             {
-                // 小批次拉取，每批处理完立即检查有无更新的图
-                var pending = await ImageStorage.GetPendingIndexAsync(config.BatchSize);
-                if (pending.Count == 0) break;
+                var ocrPending = await ImageStorage.GetOcrPendingAsync(config.BatchSize);
+                if (ocrPending.Count == 0) break;
 
-                FrameworkLogger.Log("VisionEngine", $"处理 {pending.Count} 张图片");
-                var tasks = pending.Select(ProcessSingleImageAsync);
+                FrameworkLogger.Log("VisionEngine", $"OCR 处理 {ocrPending.Count} 张图片");
+                var tasks = ocrPending.Select(r => ProcessOcrWrapperAsync(r));
+                await Task.WhenAll(tasks);
+            }
+
+            // Phase 2: Vision（处理 OCR 已完成但 Description IS NULL 的图片）
+            while (IsAlive)
+            {
+                var visionPending = await ImageStorage.GetVisionPendingAsync(config.BatchSize);
+                if (visionPending.Count == 0) break;
+
+                FrameworkLogger.Log("VisionEngine", $"Vision 处理 {visionPending.Count} 张图片");
+                var tasks = visionPending.Select(r => ProcessVisionWrapperAsync(r));
                 await Task.WhenAll(tasks);
 
                 if (_visionSuspended) break;
             }
         }
 
-        private async Task ProcessSingleImageAsync(Database.ImageRecord record)
+        private async Task ProcessOcrWrapperAsync(Database.ImageRecord record)
         {
             Interlocked.Increment(ref _activeTasks);
-            try
-            {
-                var visionTask = ProcessVisionAsync(record);
-                var ocrTask = ProcessOcrAsync(record);
-                await Task.WhenAll(visionTask, ocrTask);
-            }
-            finally
-            {
-                Interlocked.Decrement(ref _activeTasks);
-            }
+            try { await ProcessOcrAsync(record); }
+            finally { Interlocked.Decrement(ref _activeTasks); }
+        }
+
+        private async Task ProcessVisionWrapperAsync(Database.ImageRecord record)
+        {
+            Interlocked.Increment(ref _activeTasks);
+            try { await ProcessVisionAsync(record); }
+            finally { Interlocked.Decrement(ref _activeTasks); }
         }
 
         private async Task ProcessVisionAsync(Database.ImageRecord record)
         {
             if (!config.VisionEnabled || !_visionAvailable || _visionSuspended) return;
-            if (!string.IsNullOrEmpty(record.Description)) return;
+            if (record.Description != null) return; // 包括空字符串（已跳过）
+
+            // 跳过条件：表情包 或 OCR 文本足够丰富
+            if (record.Category == "sticker" ||
+                (record.OcrText != null && record.OcrText.Length >= config.OcrRichTextThreshold))
+            {
+                await ImageStorage.UpdateDescriptionAsync(record.Hash, "");
+                Interlocked.Increment(ref _totalProcessed);
+                return;
+            }
 
             await visionSemaphore!.WaitAsync();
             try
@@ -142,10 +161,7 @@ namespace AgentCoreProcessor.Engine.Vision
                 {
                     try
                     {
-                        var hint = record.Category == "sticker"
-                            ? "这是一张聊天表情包，用10字以内描述其表达的情绪或动作"
-                            : null;
-                        desc = await ctx.Vision!.DescribeImageAsync(path, hint);
+                        desc = await ctx.Vision!.DescribeImageAsync(path, null);
                         break;
                     }
                     catch (System.Net.Http.HttpRequestException ex) when (

@@ -326,14 +326,25 @@ namespace AgentCoreProcessor.Engine
             var desc = record.Description;
             var category = record.Category;
             var isSticker = category == "sticker";
+            var ocrText = record.OcrText;
 
-            // 规则：表情包有描述 → 始终用描述
-            if (isSticker && !string.IsNullOrEmpty(desc))
-                return $"<img id=\"{id}\" desc=\"{SanitizeAttr(desc)}\"/>";
+            // 规则：表情包 → 分类占位符（不需要描述）
+            if (isSticker)
+                return $"<img id=\"{id}\" type=\"sticker\"/>";
 
-            // 规则：有描述且不在 new 块 → 用描述
-            if (!isNewBlock && !string.IsNullOrEmpty(desc))
-                return $"<img id=\"{id}\" desc=\"{SanitizeAttr(desc)}\"/>";
+            // 规则：有丰富 OCR 文本 → 用 OCR 摘要
+            if (!string.IsNullOrEmpty(ocrText) && ocrText.Length >= 20)
+            {
+                var textPreview = ocrText.Length > 100 ? ocrText[..100] + "..." : ocrText;
+                return $"<img id=\"{id}\" type=\"text\" text=\"{SanitizeAttr(textPreview)}\"/>";
+            }
+
+            // 规则：有实质描述（非空字符串）→ 用描述
+            if (!string.IsNullOrEmpty(desc))
+            {
+                if (!isNewBlock)
+                    return $"<img id=\"{id}\" desc=\"{SanitizeAttr(desc)}\"/>";
+            }
 
             // 需要直传：检查大小限制
             var filePath = GetEmbedPath(record);

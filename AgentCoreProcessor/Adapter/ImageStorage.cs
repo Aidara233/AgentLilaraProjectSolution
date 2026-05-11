@@ -402,6 +402,20 @@ namespace AgentCoreProcessor.Adapter
             return await _repo.GetPendingIndexAsync(limit);
         }
 
+        /// <summary>获取待 OCR 图片（HasText IS NULL），按时间倒序。</summary>
+        public static async Task<List<ImageRecord>> GetOcrPendingAsync(int limit = 50)
+        {
+            if (_repo == null) return new List<ImageRecord>();
+            return await _repo.GetOcrPendingAsync(limit);
+        }
+
+        /// <summary>获取待 Vision 图片（OCR 已完成但 Description IS NULL），按时间倒序。</summary>
+        public static async Task<List<ImageRecord>> GetVisionPendingAsync(int limit = 50)
+        {
+            if (_repo == null) return new List<ImageRecord>();
+            return await _repo.GetVisionPendingAsync(limit);
+        }
+
         /// <summary>更新 OCR 结果。</summary>
         public static async Task UpdateOcrAsync(string hash, bool hasText, string? ocrText)
         {
