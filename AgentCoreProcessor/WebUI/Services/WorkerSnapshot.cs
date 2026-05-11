@@ -18,6 +18,7 @@ namespace AgentCoreProcessor.WebUI.Services
         public int LurkingExtractionThreshold { get; init; }
         public int LastExtractedMessageId { get; init; }
         public int LatestMessageId { get; init; }
+        public int TotalMessageCount { get; init; }
         public bool ExtractionRunning { get; init; }
         public bool AutoExtractionEnabled { get; init; }
         public int UnrespondedMessageCount { get; init; }

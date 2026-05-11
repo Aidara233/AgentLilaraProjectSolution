@@ -103,6 +103,7 @@ namespace AgentCoreProcessor.Engine
         private int unrespondedMessageCount = 0;
         private int lastExtractedMessageId = -1; // -1 表示未初始化，需从 DB 加载
         private int latestMessageId = 0;
+        private int totalMessageCount = 0;
         private bool extractionRunning = false;
         private CancellationTokenSource? extractionCts;
         private SessionContext? lastContext;
@@ -733,6 +734,7 @@ namespace AgentCoreProcessor.Engine
             LurkingExtractionThreshold = channelConfig.LurkingExtractionThreshold,
             LastExtractedMessageId = lastExtractedMessageId < 0 ? 0 : lastExtractedMessageId,
             LatestMessageId = latestMessageId,
+            TotalMessageCount = totalMessageCount,
             ExtractionRunning = extractionRunning,
             AutoExtractionEnabled = channelConfig.AutoExtractionEnabled,
             UnrespondedMessageCount = unrespondedMessageCount,
@@ -896,6 +898,8 @@ namespace AgentCoreProcessor.Engine
 
                 while (!ct.IsCancellationRequested)
                 {
+                    totalMessageCount = await ctx.Session.GetMessageCountByChannelAsync(channelId);
+
                     // 取新消息（上次提取之后的）
                     var newMessages = await ctx.Session.GetMessagesAfterIdAsync(
                         channelId, lastExtractedMessageId, limit: 50);
