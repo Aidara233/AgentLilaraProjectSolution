@@ -91,7 +91,7 @@ else
                     <div class="detail-grid">
                         <span class="detail-label">提取进度</span>
                         <span>
-                            @worker.LastExtractedMessageId / @worker.TotalMessageCount
+                            @worker.ExtractedMessageCount / @worker.TotalMessageCount
                             @if (worker.ExtractionRunning)
                             {
                                 <span class="badge-status badge-working" style="margin-left:0.3rem;">处理中</span>

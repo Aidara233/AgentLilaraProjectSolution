@@ -104,6 +104,7 @@ namespace AgentCoreProcessor.Engine
         private int lastExtractedMessageId = -1; // -1 表示未初始化，需从 DB 加载
         private int latestMessageId = 0;
         private int totalMessageCount = 0;
+        private int extractedMessageCount = 0;
         private bool extractionRunning = false;
         private CancellationTokenSource? extractionCts;
         private SessionContext? lastContext;
@@ -735,6 +736,7 @@ namespace AgentCoreProcessor.Engine
             LastExtractedMessageId = lastExtractedMessageId < 0 ? 0 : lastExtractedMessageId,
             LatestMessageId = latestMessageId,
             TotalMessageCount = totalMessageCount,
+            ExtractedMessageCount = extractedMessageCount,
             ExtractionRunning = extractionRunning,
             AutoExtractionEnabled = channelConfig.AutoExtractionEnabled,
             UnrespondedMessageCount = unrespondedMessageCount,
@@ -896,9 +898,15 @@ namespace AgentCoreProcessor.Engine
                     lastExtractedMessageId = channel?.LastExtractedMessageId ?? 0;
                 }
 
+                totalMessageCount = await ctx.Session.GetMessageCountByChannelAsync(channelId);
+                extractedMessageCount = await ctx.Session.GetMessageCountUpToAsync(
+                    channelId, lastExtractedMessageId);
+
                 while (!ct.IsCancellationRequested)
                 {
                     totalMessageCount = await ctx.Session.GetMessageCountByChannelAsync(channelId);
+                    extractedMessageCount = await ctx.Session.GetMessageCountUpToAsync(
+                        channelId, lastExtractedMessageId);
 
                     // 取新消息（上次提取之后的）
                     var newMessages = await ctx.Session.GetMessagesAfterIdAsync(
@@ -974,6 +982,8 @@ namespace AgentCoreProcessor.Engine
                     // 更新进度标记并持久化
                     lastExtractedMessageId = newMessages[^1].Id;
                     await ctx.Session.UpdateExtractionProgressAsync(channelId, lastExtractedMessageId);
+                    extractedMessageCount = await ctx.Session.GetMessageCountUpToAsync(
+                        channelId, lastExtractedMessageId);
 
                     if (count > 0)
                         FrameworkLogger.Log("ChannelEngine",

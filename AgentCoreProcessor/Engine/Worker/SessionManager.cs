@@ -185,6 +185,9 @@ namespace AgentCoreProcessor.Engine
         public Task<int> GetMessageCountByChannelAsync(int channelId)
             => messages.GetCountByChannelAsync(channelId);
 
+        public Task<int> GetMessageCountUpToAsync(int channelId, int upToId)
+            => messages.GetCountUpToAsync(channelId, upToId);
+
         public Task<List<User>> GetUsersByPersonIdAsync(int personId)
             => users.GetByPersonIdAsync(personId);
     }

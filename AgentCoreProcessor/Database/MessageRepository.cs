@@ -91,6 +91,15 @@ namespace AgentCoreProcessor.Database
             return result.Count > 0 ? result[0].Value : 0;
         }
 
+        /// <summary>获取指定频道中 Id <= upToId 的消息数量。</summary>
+        public async Task<int> GetCountUpToAsync(int channelId, int upToId)
+        {
+            var result = await db.QueryAsync<CountResult>(
+                "SELECT COUNT(*) AS Value FROM UserMessages WHERE ChannelId = ? AND Id <= ?",
+                channelId, upToId);
+            return result.Count > 0 ? result[0].Value : 0;
+        }
+
         /// <summary>获取指定频道中 Id > afterId 的消息（按 Id 升序，最多 limit 条）。</summary>
         public Task<List<UserMessage>> GetAfterIdAsync(int channelId, int afterId, int limit = 50)
         {
