@@ -13,6 +13,7 @@ using AgentCoreProcessor.MCP;
 using AgentCoreProcessor.Memory;
 using AgentCoreProcessor.Engine.Modules;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace AgentCoreProcessor.Engine
 {
@@ -246,15 +247,27 @@ namespace AgentCoreProcessor.Engine
             ModelCallLogs = new ModelCallLogRepository(db);
             CoreBase.CallLogRepo = ModelCallLogs;
 
-            // Embedding
-            var baseConfigPath = Path.Combine(PathConfig.CoreConfigPath, "Base.json");
-            var baseConfig = ApiClientCfg.FromJson(File.ReadAllText(baseConfigPath));
-            embeddingProvider = new SiliconFlowEmbeddingProvider(apiKey: baseConfig.ApiKey);
+            // Embedding（独立配置，不跟随 Base.json）
+            var embConfigPath = Path.Combine(PathConfig.CoreConfigPath, "EmbeddingProvider.json");
+            if (File.Exists(embConfigPath))
+            {
+                var embJson = JObject.Parse(File.ReadAllText(embConfigPath));
+                var embKey = embJson["apiKey"]?.ToString() ?? "";
+                var embEndpoint = embJson["endpoint"]?.ToString() ?? "https://api.siliconflow.cn/v1/embeddings";
+                var embModel = embJson["model"]?.ToString() ?? "BAAI/bge-large-zh-v1.5";
+                embeddingProvider = new SiliconFlowEmbeddingProvider(apiKey: embKey, endpoint: embEndpoint, model: embModel);
+            }
+            else
+            {
+                var baseConfigPath = Path.Combine(PathConfig.CoreConfigPath, "Base.json");
+                var baseConfig = ApiClientCfg.FromJson(File.ReadAllText(baseConfigPath));
+                embeddingProvider = new SiliconFlowEmbeddingProvider(apiKey: baseConfig.ApiKey);
+            }
 
-            // Vision（默认用 Base.json 的 apiKey，VisionProvider.json 可覆盖模型和端点）
+            // Vision（从 VisionProvider.json 读取，不依赖 Base.json）
             try
             {
-                var vApiKey = baseConfig.ApiKey;
+                var vApiKey = "";
                 var vEndpoint = "https://api.siliconflow.cn/v1/chat/completions";
                 var vModel = "Qwen/Qwen2.5-VL-72B-Instruct";
 
@@ -267,18 +280,25 @@ namespace AgentCoreProcessor.Engine
                     vModel = vjson["model"]?.ToString() ?? vModel;
                 }
 
-                visionProvider = new SiliconFlowVisionProvider(vApiKey, vEndpoint, vModel);
-                FrameworkLogger.Log("MasterEngine", $"视觉模型已加载: {vModel}");
+                if (!string.IsNullOrEmpty(vApiKey))
+                {
+                    visionProvider = new SiliconFlowVisionProvider(vApiKey, vEndpoint, vModel);
+                    FrameworkLogger.Log("MasterEngine", $"视觉模型已加载: {vModel}");
+                }
+                else
+                {
+                    FrameworkLogger.Log("MasterEngine", "警告: VisionProvider.json 未配置或缺少 apiKey，视觉功能不可用");
+                }
             }
             catch (Exception ex)
             {
                 FrameworkLogger.Log("MasterEngine", $"视觉模型初始化失败: {ex.Message}");
             }
 
-            // OCR（默认用 SiliconFlow DeepSeek-OCR，OcrProvider.json 可覆盖）
+            // OCR（从 OcrProvider.json 读取，不依赖 Base.json）
             try
             {
-                var ocrApiKey = baseConfig.ApiKey;
+                var ocrApiKey = "";
                 var ocrEndpoint = "https://api.siliconflow.cn/v1/chat/completions";
                 var ocrModel = "deepseek-ai/DeepSeek-OCR";
 
@@ -291,8 +311,15 @@ namespace AgentCoreProcessor.Engine
                     ocrModel = ojson["model"]?.ToString() ?? ocrModel;
                 }
 
-                ocrProvider = new SiliconFlowOcrProvider(ocrApiKey, ocrEndpoint, ocrModel);
-                FrameworkLogger.Log("MasterEngine", $"OCR 模型已加载: {ocrModel}");
+                if (!string.IsNullOrEmpty(ocrApiKey))
+                {
+                    ocrProvider = new SiliconFlowOcrProvider(ocrApiKey, ocrEndpoint, ocrModel);
+                    FrameworkLogger.Log("MasterEngine", $"OCR 模型已加载: {ocrModel}");
+                }
+                else
+                {
+                    FrameworkLogger.Log("MasterEngine", "警告: OcrProvider.json 未配置或缺少 apiKey，OCR 功能不可用");
+                }
             }
             catch (Exception ex)
             {
