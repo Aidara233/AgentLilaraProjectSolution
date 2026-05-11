@@ -15,7 +15,8 @@
 - 睡眠期消息拦截：ChannelEngineSpawnCheck 按 CurrentSleepState 拦截，消息入库但不响应，醒来后自动补提取记忆
 - Prompt Caching：Claude 系 Core 启用 promptCaching，中转站已验证兼容
 - Token 统计：ModelCallLog 数据库表记录每次调用，WebUI /logs/tokens 按 Core/模型聚合 + 缓存命中率
-- 模型日志结构化：JSON 格式（含 usage），WebUI /logs/model 展示 token 摘要
+- 模型日志结构化：JSON 格式（含 usage + caller tag），WebUI /logs/model 展示 token 摘要
+  - CallerTag 标识调用来源：Channel:{id} / System / SubAgent:{sessionId} / Review:{mode}
 - 工具禁用管理：ToolRegistry.DisableTool/EnableTool + ToolConfig.json 持久化 + ToolStatusModule 动态注入 + WebUI /config/tools
 
 ## 冷启动

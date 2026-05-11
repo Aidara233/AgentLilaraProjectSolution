@@ -214,6 +214,7 @@ EMA 社交满足度 (per Channel):
 四种片段: Consolidation / Weight / Link / Combine
 ReviewEngine (由DreamEngine孵化，不注册SpawnCheck):
   独立Agent循环 + 9个专用工具 + 4种复盘模式(频道日报/人物回顾/跨域关联/矛盾检测)
+  工具调用格式与频道循环统一: {"tool": "xxx", "inputs": ["a", "b"]}<over>
   Token预算制: 基础预算 + 显式请求备用 + 预算外收尾
   产出写临时记忆 → 下次Consolidation整合
 ```
@@ -317,7 +318,7 @@ Express/Working 自适应切换:
 
 Review专用工具 (ReviewEngine内部):
   检索记忆 / 查看关联 / 读取消息历史 / 更新亲和度 / 写入临时记忆 / 思考笔记
-  更新快速记忆 / 调整好感度 / 标记复盘 / 请求增援 / 保存进度 / 完成
+  更新人物称呼 / 更新快速记忆 / 调整好感度 / 标记复盘 / 请求增援 / 保存进度 / 完成
 ```
 
 ## MCP 插件系统
