@@ -83,14 +83,22 @@ else
                 <div class="card-header">记忆提取</div>
                 <div class="card-body">
                     <div class="detail-grid">
+                        <span class="detail-label">自动提取</span>
+                        <span class="@(worker.AutoExtractionEnabled ? "text-accent" : "")" style="@(!worker.AutoExtractionEnabled ? "color:var(--status-error)" : "")">
+                            @(worker.AutoExtractionEnabled ? "启用" : "已关闭")
+                        </span>
+                        <span class="detail-label">提取进度</span>
+                        <span>
+                            @worker.LastExtractedMessageId / @worker.LatestMessageId
+                            @if (worker.ExtractionRunning)
+                            {
+                                <span class="badge-status badge-working" style="margin-left:0.3rem;">处理中</span>
+                            }
+                        </span>
                         <span class="detail-label">活跃阈值</span>
                         <span>@worker.ActiveExtractionThreshold 条</span>
                         <span class="detail-label">潜水阈值</span>
                         <span>@worker.LurkingExtractionThreshold 条</span>
-                        <span class="detail-label">提取进度</span>
-                        <span>msgId @worker.LastExtractedMessageId</span>
-                        <span class="detail-label">未回复消息</span>
-                        <span>@worker.UnrespondedMessageCount</span>
                     </div>
                 </div>
             </div>
@@ -119,11 +127,9 @@ else
         </div>
         <div class="col-md-6">
             <div class="card">
-                <div class="card-header">记忆提取（详细）</div>
+                <div class="card-header">操作</div>
                 <div class="card-body">
                     <div class="detail-grid">
-                        <span class="detail-label">提取进度</span>
-                        <span>msgId @worker.LastExtractedMessageId</span>
                         <span class="detail-label">未回复消息</span>
                         <span>@worker.UnrespondedMessageCount</span>
                         <span class="detail-label">重要性</span>

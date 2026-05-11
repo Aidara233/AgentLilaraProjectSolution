@@ -65,6 +65,9 @@
         <button class="btn-ghost" @onclick="Reload">
             <i class="bi bi-arrow-clockwise"></i> 刷新
         </button>
+        <button class="btn-ghost" style="color:var(--status-error);" @onclick="ClearAll">
+            <i class="bi bi-trash3"></i> 清空全部
+        </button>
     </div>
 </div>
 
@@ -174,6 +177,13 @@
     {
         await Engine.TempMemories.DeleteAsync(entry);
         allMemories.Remove(entry);
+        ApplyFilter();
+    }
+
+    private async Task ClearAll()
+    {
+        await Engine.TempMemories.ClearAllAsync();
+        allMemories.Clear();
         ApplyFilter();
     }
 }

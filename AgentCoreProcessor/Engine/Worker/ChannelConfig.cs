@@ -10,6 +10,7 @@ namespace AgentCoreProcessor.Engine
 
         public int ActiveExtractionThreshold { get; set; } = 8;
         public int LurkingExtractionThreshold { get; set; } = 40;
+        public bool AutoExtractionEnabled { get; set; } = true;
 
         [JsonProperty("extractionInterval")]
         private int ExtractionIntervalCompat { set => LurkingExtractionThreshold = value; }

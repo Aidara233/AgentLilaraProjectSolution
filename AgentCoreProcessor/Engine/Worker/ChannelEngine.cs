@@ -102,6 +102,7 @@ namespace AgentCoreProcessor.Engine
         private int processedMessageCount = 0;
         private int unrespondedMessageCount = 0;
         private int lastExtractedMessageId = -1; // -1 表示未初始化，需从 DB 加载
+        private int latestMessageId = 0;
         private bool extractionRunning = false;
         private SessionContext? lastContext;
 
@@ -729,7 +730,10 @@ namespace AgentCoreProcessor.Engine
             Importance = channelConfig.Importance,
             ActiveExtractionThreshold = channelConfig.ActiveExtractionThreshold,
             LurkingExtractionThreshold = channelConfig.LurkingExtractionThreshold,
-            LastExtractedMessageId = lastExtractedMessageId,
+            LastExtractedMessageId = lastExtractedMessageId < 0 ? 0 : lastExtractedMessageId,
+            LatestMessageId = latestMessageId,
+            ExtractionRunning = extractionRunning,
+            AutoExtractionEnabled = channelConfig.AutoExtractionEnabled,
             UnrespondedMessageCount = unrespondedMessageCount,
             ConsecutiveExternalTriggers = consecutiveExternalTriggers,
             LastCompletionTime = LastCompletionTime,
@@ -755,6 +759,7 @@ namespace AgentCoreProcessor.Engine
             processedMessageCount += messages.Count;
             unrespondedMessageCount += messages.Count;
 
+            if (!channelConfig.AutoExtractionEnabled) return;
             if (extractionRunning) return;
             _ = RunExtractionAsync(sc);
         }
@@ -879,6 +884,9 @@ namespace AgentCoreProcessor.Engine
                     var newMessages = await ctx.Session.GetMessagesAfterIdAsync(
                         channelId, lastExtractedMessageId, limit: 50);
                     if (newMessages.Count < 2) break;
+
+                    // 更新最新消息 ID（用于 WebUI 进度显示）
+                    latestMessageId = newMessages[^1].Id;
 
                     // 根据上次回复时间判断活跃/潜水阈值
                     bool isActive = LastCompletionTime != null
