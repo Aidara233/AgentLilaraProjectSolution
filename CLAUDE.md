@@ -20,6 +20,7 @@
 - 模型日志结构化：JSON 格式（含 usage + caller tag），WebUI /logs/model 展示 token 摘要 + 按来源筛选
   - CallerTag 标识调用来源：Channel:{id} / System / SubAgent:{sessionId} / Review:{mode}
 - 工具禁用管理：ToolRegistry.DisableTool/EnableTool + ToolConfig.json 持久化 + ToolStatusModule 动态注入 + WebUI /config/tools
+- 多模态图片处理：ContentPart 支持 text/image(path或base64)、ContextBuilder 图片感知（<img id="N"/>标记+直传/描述分流）、ViewImageTool Working专用、SkiaSharp 缩略图
 
 ## 冷启动
 

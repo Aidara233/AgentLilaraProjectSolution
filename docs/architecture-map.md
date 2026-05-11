@@ -107,6 +107,15 @@ ChannelEngine (频道循环，常驻，一个活跃频道一个):
   ⑧ ParseBotOutput 解析 <at/>/<reply/> 标签 → OutgoingMessage
   ⑨ MemoryExtractionCore 异步提取记忆 (每3条触发)
   ⑩ TrustProgress 每日自动增长 (per-person 日上限)
+
+  图片处理 (ContextBuilder 图片感知):
+    适配器层: [IMG:N] 占位符保留图片在消息中的位置
+    ContextBuilder: 占位符 → <img id="N"/> 或 <img id="N" desc="..."/> 标记
+    规则: new块普通图→直传, 表情包有描述→描述, history有描述→描述, 无描述→直传(受限)
+    限制: 单张MaxDirectSendSize(1MB) / 总量MaxTotalDirectSendSize(3MB) / 数量MaxDirectSendCount(5)
+    PromptBuilder: 文本XML + #IMGN:标签 + image block 混排
+    "查看图片"工具: Working专用, 输入ImageRecord.Id, 返回原图
+    缩略图: SkiaSharp 缩放(长边≤1568px) + JPEG 85%, 存 Storage/Images/thumbs/
 ```
 
 SystemEngine (系统循环，单例，纯调度者):
