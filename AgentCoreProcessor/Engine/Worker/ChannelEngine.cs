@@ -104,6 +104,7 @@ namespace AgentCoreProcessor.Engine
         private int lastExtractedMessageId = -1; // -1 表示未初始化，需从 DB 加载
         private int latestMessageId = 0;
         private bool extractionRunning = false;
+        private CancellationTokenSource? extractionCts;
         private SessionContext? lastContext;
 
         // TrustProgress 每日自动增长跟踪
@@ -865,10 +866,25 @@ namespace AgentCoreProcessor.Engine
             await RunExtractionAsync(lastContext);
         }
 
+        public void SetAutoExtraction(bool enabled)
+        {
+            channelConfig.AutoExtractionEnabled = enabled;
+            ChannelStateManager.SaveConfig(channelId, channelConfig);
+            FrameworkLogger.Log("ChannelEngine", $"自动提取已{(enabled ? "启用" : "关闭")}: channelId={channelId}");
+        }
+
+        public void CancelExtraction()
+        {
+            extractionCts?.Cancel();
+            FrameworkLogger.Log("ChannelEngine", $"提取已取消: channelId={channelId}");
+        }
+
         private async Task RunExtractionAsync(SessionContext context)
         {
             if (extractionRunning) return;
             extractionRunning = true;
+            extractionCts = new CancellationTokenSource();
+            var ct = extractionCts.Token;
             try
             {
                 // 首次运行时从 DB 加载持久化进度
@@ -878,7 +894,7 @@ namespace AgentCoreProcessor.Engine
                     lastExtractedMessageId = channel?.LastExtractedMessageId ?? 0;
                 }
 
-                while (true)
+                while (!ct.IsCancellationRequested)
                 {
                     // 取新消息（上次提取之后的）
                     var newMessages = await ctx.Session.GetMessagesAfterIdAsync(

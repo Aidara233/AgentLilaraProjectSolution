@@ -80,13 +80,15 @@ else
         </div>
         <div class="col-md-4">
             <div class="card">
-                <div class="card-header">记忆提取</div>
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>记忆提取</span>
+                    <div class="form-check form-switch" style="margin:0;">
+                        <input class="form-check-input" type="checkbox" checked="@worker.AutoExtractionEnabled"
+                               @onchange="ToggleAutoExtraction" />
+                    </div>
+                </div>
                 <div class="card-body">
                     <div class="detail-grid">
-                        <span class="detail-label">自动提取</span>
-                        <span class="@(worker.AutoExtractionEnabled ? "text-accent" : "")" style="@(!worker.AutoExtractionEnabled ? "color:var(--status-error)" : "")">
-                            @(worker.AutoExtractionEnabled ? "启用" : "已关闭")
-                        </span>
                         <span class="detail-label">提取进度</span>
                         <span>
                             @worker.LastExtractedMessageId / @worker.LatestMessageId
@@ -99,6 +101,17 @@ else
                         <span>@worker.ActiveExtractionThreshold 条</span>
                         <span class="detail-label">潜水阈值</span>
                         <span>@worker.LurkingExtractionThreshold 条</span>
+                    </div>
+                    <div class="mt-3 d-flex gap-2">
+                        <button class="btn-accent" @onclick="TriggerExtraction" disabled="@extracting">
+                            <i class="bi bi-journal-text me-1"></i>@(extracting ? "整理中..." : "立即整理")
+                        </button>
+                        @if (worker.ExtractionRunning)
+                        {
+                            <button class="btn-ghost" style="color:var(--status-error);" @onclick="StopExtraction">
+                                <i class="bi bi-stop-circle me-1"></i>停止
+                            </button>
+                        }
                     </div>
                 </div>
             </div>
@@ -134,11 +147,6 @@ else
                         <span>@worker.UnrespondedMessageCount</span>
                         <span class="detail-label">重要性</span>
                         <span>@worker.Importance</span>
-                    </div>
-                    <div class="mt-3">
-                        <button class="btn-accent" @onclick="TriggerExtraction" disabled="@extracting">
-                            <i class="bi bi-journal-text me-1"></i>@(extracting ? "整理中..." : "立即整理")
-                        </button>
                     </div>
                 </div>
             </div>
@@ -185,6 +193,29 @@ else
         finally
         {
             extracting = false;
+        }
+    }
+
+    private void ToggleAutoExtraction(ChangeEventArgs e)
+    {
+        var enabled = (bool)(e.Value ?? true);
+        var spawnCheck = Engine.GetSpawnCheck<ChannelEngineSpawnCheck>();
+        if (spawnCheck != null)
+        {
+            var channels = spawnCheck.GetActiveChannels();
+            if (channels.TryGetValue(ChannelId, out var engine))
+                engine.SetAutoExtraction(enabled);
+        }
+    }
+
+    private void StopExtraction()
+    {
+        var spawnCheck = Engine.GetSpawnCheck<ChannelEngineSpawnCheck>();
+        if (spawnCheck != null)
+        {
+            var channels = spawnCheck.GetActiveChannels();
+            if (channels.TryGetValue(ChannelId, out var engine))
+                engine.CancelExtraction();
         }
     }
 
