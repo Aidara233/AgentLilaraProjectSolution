@@ -126,8 +126,7 @@ namespace AgentCoreProcessor.Engine
 
         // Working 会话状态（跨闸门轮次保持）
         private string? currentContextXml;
-        private List<string>? currentImagePaths;
-        private List<string>? currentImageDescriptions;
+        private List<ImageEmbed>? currentImageEmbeds;
         private Dictionary<int, ParticipantInfo>? currentParticipantSnapshot;
         private IncomingMessage? currentLastMsg;
         private SessionContext? currentLastSc;
@@ -415,10 +414,9 @@ namespace AgentCoreProcessor.Engine
                         ? new List<(string, string?, string?)>(pendingImageInfos) : new();
                     pendingImageInfos.Clear();
                 }
-                currentImagePaths = null;
-            currentImageDescriptions = null;
+                currentImageEmbeds = null;
                 if (pendingCopy.Count > 0)
-                    currentImagePaths = await ResolveImagePresentationAsync(pendingCopy);
+                    currentImageEmbeds = await ResolveImagePresentationAsync(pendingCopy);
 
                 // 标记已处理
                 foreach (var (msg, _) in batch)
@@ -478,26 +476,18 @@ namespace AgentCoreProcessor.Engine
 
             var recentMessages = await ctx.Session.GetContextByChannelAsync(channelId);
             var effectiveBatch = batch ?? new List<(IncomingMessage, SessionContext)>();
-            var (xml, quotedImagePaths) = await contextBuilder.BuildContextXmlAsync(
+            var (xml, imageEmbeds) = await contextBuilder.BuildContextXmlAsync(
                 effectiveBatch, recentMessages, currentParticipantSnapshot);
 
-            if (quotedImagePaths.Count > 0)
+            // 图片直传列表：ContextBuilder 已根据规则收集
+            if (imageEmbeds.Count > 0)
             {
-                currentImagePaths ??= new List<string>();
-                currentImagePaths.AddRange(quotedImagePaths);
+                currentImageEmbeds = imageEmbeds;
             }
-
-            // 注入图片信息到上下文
-            var imageNotes = new List<string>();
-            if (currentImageDescriptions?.Count > 0)
-                imageNotes.AddRange(currentImageDescriptions);
-            if (currentImagePaths?.Count > 0)
+            else
             {
-                var rawCount = currentImagePaths.Count;
-                imageNotes.Add(rawCount == 1 ? "（用户发送了一张图片）" : $"（用户发送了{rawCount}张图片）");
+                currentImageEmbeds = null;
             }
-            if (imageNotes.Count > 0)
-                xml += "\n\n" + string.Join("\n", imageNotes);
             currentContextXml = xml;
 
             // 刷新记忆
@@ -521,7 +511,8 @@ namespace AgentCoreProcessor.Engine
                     var allowedTools = new HashSet<string>
                     {
                         "说话", "发送媒体", "思考笔记", "记忆", "便签板", "缓存管理", "任务管理",
-                        "标记复盘", "报警", "继续", "读取文件", "写入文件", "委派任务", "适配器操作"
+                        "标记复盘", "报警", "继续", "读取文件", "写入文件", "委派任务", "适配器操作",
+                        "查看图片"
                     };
                     return allowedTools.Contains(tool.Name);
                 });
@@ -580,11 +571,10 @@ namespace AgentCoreProcessor.Engine
             var messages = promptBuilder.BuildRoundMessages(
                 toolDescs, currentContextXml!, modules, mode,
                 lastRoundResults, lastRoundCalls,
-                currentImagePaths);
+                currentImageEmbeds);
 
             // 图片只在首次使用后清除
-            currentImagePaths = null;
-            currentImageDescriptions = null;
+            currentImageEmbeds = null;
             return messages;
         }
 
@@ -1110,36 +1100,26 @@ namespace AgentCoreProcessor.Engine
             }
         }
 
-        private async Task<List<string>?> ResolveImagePresentationAsync(
+        private async Task<List<ImageEmbed>?> ResolveImagePresentationAsync(
             List<(string Path, string? Hash, string? Category)> images)
         {
-            var rawPaths = new List<string>();
-            currentImageDescriptions = new List<string>();
-
+            // ContextBuilder 现在负责决定直传/描述，这里只触发描述生成
             foreach (var (path, hash, category) in images)
             {
                 if (!string.IsNullOrEmpty(hash))
                     _ = ImageStorage.IncrementSeenCountAsync(hash);
 
-                // 检查缓存描述
-                string? desc = null;
+                // 无描述时触发异步生成
                 if (!string.IsNullOrEmpty(hash))
-                    desc = await ImageStorage.GetDescriptionAsync(hash);
-
-                if (!string.IsNullOrEmpty(desc))
                 {
-                    var label = category == "sticker" ? "表情包" : "图片";
-                    currentImageDescriptions.Add($"（{label}：{desc}）");
-                }
-                else
-                {
-                    rawPaths.Add(path);
-                    if (!string.IsNullOrEmpty(hash))
+                    var desc = await ImageStorage.GetDescriptionAsync(hash);
+                    if (string.IsNullOrEmpty(desc))
                         _ = GenerateDescriptionAsync(path, hash, category);
                 }
             }
 
-            return rawPaths.Count > 0 ? rawPaths : null;
+            // 实际的图片列表由 ContextBuilder.BuildContextXmlAsync 返回
+            return null;
         }
 
         private async Task GenerateDescriptionAsync(string path, string hash, string? category)

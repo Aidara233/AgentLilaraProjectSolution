@@ -129,9 +129,9 @@ namespace AgentCoreProcessor.Client
                 {
                     if (part.Type == "text" && part.Text != null)
                         parts.Add(ChatMessageContentPart.CreateTextPart(part.Text));
-                    else if (part.Type == "image" && !string.IsNullOrEmpty(part.ImagePath))
+                    else if (part.Type == "image")
                     {
-                        var imgPart = BuildImagePart(part.ImagePath);
+                        var imgPart = BuildImagePart(part);
                         if (imgPart != null) parts.Add(imgPart);
                     }
                 }
@@ -141,15 +141,29 @@ namespace AgentCoreProcessor.Client
             return new UserChatMessage(msg.Content);
         }
 
-        private static ChatMessageContentPart? BuildImagePart(string imagePath)
+        private static ChatMessageContentPart? BuildImagePart(Models.ContentPart part)
         {
             try
             {
-                if (!File.Exists(imagePath)) return null;
-                var bytes = File.ReadAllBytes(imagePath);
-                var mediaType = InferMediaType(imagePath);
-                return ChatMessageContentPart.CreateImagePart(
-                    BinaryData.FromBytes(bytes), mediaType);
+                // 优先使用已有的 base64 数据
+                if (!string.IsNullOrEmpty(part.ImageBase64))
+                {
+                    var bytes = Convert.FromBase64String(part.ImageBase64);
+                    var mediaType = part.MediaType ?? "image/png";
+                    return ChatMessageContentPart.CreateImagePart(
+                        BinaryData.FromBytes(bytes), mediaType);
+                }
+
+                // 从文件路径读取
+                if (!string.IsNullOrEmpty(part.ImagePath) && File.Exists(part.ImagePath))
+                {
+                    var bytes = File.ReadAllBytes(part.ImagePath);
+                    var mediaType = InferMediaType(part.ImagePath);
+                    return ChatMessageContentPart.CreateImagePart(
+                        BinaryData.FromBytes(bytes), mediaType);
+                }
+
+                return null;
             }
             catch { return null; }
         }

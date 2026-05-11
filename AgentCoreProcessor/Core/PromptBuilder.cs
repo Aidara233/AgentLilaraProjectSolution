@@ -22,23 +22,23 @@ namespace AgentCoreProcessor.Core
             EngineMode mode,
             List<ToolResult>? lastRoundResults,
             List<ToolCall>? lastRoundCalls,
-            List<string>? imagePaths = null)
+            List<ImageEmbed>? imageEmbeds = null)
         {
             var messages = new List<Message>();
 
             // 1. 工具描述
             messages.Add(new Message { Role = "user", Content = toolDescriptions });
 
-            // 2. 对话上下文 XML
+            // 2. 对话上下文 XML + 图片
             var contextMsg = new Message { Role = "user", Content = contextXml };
-            if (imagePaths != null && imagePaths.Count > 0)
+            if (imageEmbeds != null && imageEmbeds.Count > 0)
             {
-                var parts = new List<ContentPart>
+                var parts = new List<ContentPart> { ContentPart.FromText(contextXml) };
+                foreach (var embed in imageEmbeds)
                 {
-                    new() { Type = "text", Text = contextXml }
-                };
-                foreach (var path in imagePaths)
-                    parts.Add(new ContentPart { Type = "image", ImagePath = path });
+                    parts.Add(ContentPart.FromText($"#IMG{embed.ImageId}:"));
+                    parts.Add(ContentPart.FromImagePath(embed.Path));
+                }
                 contextMsg.ContentParts = parts;
             }
             messages.Add(contextMsg);
@@ -55,12 +55,25 @@ namespace AgentCoreProcessor.Core
             if (lastRoundResults != null && lastRoundCalls != null && lastRoundResults.Count > 0)
             {
                 var sb = new StringBuilder("上一轮工具执行结果：\n");
+                var resultAttachments = new List<ContentPart>();
                 for (int i = 0; i < lastRoundCalls.Count; i++)
                 {
                     if (i < lastRoundResults.Count)
+                    {
                         FormatSingleResult(sb, lastRoundCalls[i], lastRoundResults[i]);
+                        if (lastRoundResults[i].Attachments != null)
+                            resultAttachments.AddRange(lastRoundResults[i].Attachments!);
+                    }
                 }
-                messages.Add(new Message { Role = "user", Content = sb.ToString() });
+
+                var resultMsg = new Message { Role = "user", Content = sb.ToString() };
+                if (resultAttachments.Count > 0)
+                {
+                    var parts = new List<ContentPart> { ContentPart.FromText(sb.ToString()) };
+                    parts.AddRange(resultAttachments);
+                    resultMsg.ContentParts = parts;
+                }
+                messages.Add(resultMsg);
             }
 
             return messages;

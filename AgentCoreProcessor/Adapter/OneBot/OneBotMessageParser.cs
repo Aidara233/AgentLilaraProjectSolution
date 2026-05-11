@@ -151,6 +151,8 @@ namespace AgentCoreProcessor.Adapter
                                 await ImageStorage.SetCategoryAsync(imgHash, imgCategory);
 
                                 attachments ??= new List<MessageAttachment>();
+                                var imgIndex = attachments.Count(a => a.Type == AttachmentType.Image);
+                                textBuilder.Append($"[IMG:{imgIndex}]");
                                 attachments.Add(new MessageAttachment
                                 {
                                     Type = AttachmentType.Image,
@@ -158,7 +160,8 @@ namespace AgentCoreProcessor.Adapter
                                     LocalPath = localPath,
                                     FileName = Path.GetFileName(localPath),
                                     Hash = imgHash,
-                                    Category = imgCategory
+                                    Category = imgCategory,
+                                    SegmentIndex = imgIndex
                                 });
                             }
                             catch (Exception ex)

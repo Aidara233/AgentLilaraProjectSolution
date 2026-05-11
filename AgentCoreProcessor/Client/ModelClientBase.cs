@@ -57,9 +57,9 @@ namespace AgentCoreProcessor.Client
         {
             var parts = new List<ContentPart>();
             if (!string.IsNullOrEmpty(text))
-                parts.Add(new ContentPart { Type = "text", Text = text });
+                parts.Add(ContentPart.FromText(text));
             foreach (var path in imagePaths.Where(p => !string.IsNullOrEmpty(p)))
-                parts.Add(new ContentPart { Type = "image", ImagePath = path });
+                parts.Add(ContentPart.FromImagePath(path));
 
             apiClientCfg.ConversationHistory.Add(new Message
             {

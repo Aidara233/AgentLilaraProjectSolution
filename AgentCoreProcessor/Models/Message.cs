@@ -29,5 +29,22 @@ namespace AgentCoreProcessor.Models
 
         /// <summary>图片本地路径（type=image 时使用），由 ModelClient 转为 base64。</summary>
         public string? ImagePath { get; set; }
+
+        /// <summary>图片 base64 数据（type=image 时使用）。设置后优先于 ImagePath。</summary>
+        public string? ImageBase64 { get; set; }
+
+        /// <summary>图片 MIME 类型（与 ImageBase64 配合使用，如 "image/png"）。</summary>
+        public string? MediaType { get; set; }
+
+        // ── 工厂方法 ──
+
+        public static ContentPart FromText(string text)
+            => new() { Type = "text", Text = text };
+
+        public static ContentPart FromImagePath(string path)
+            => new() { Type = "image", ImagePath = path };
+
+        public static ContentPart FromImageBase64(string base64, string mediaType)
+            => new() { Type = "image", ImageBase64 = base64, MediaType = mediaType };
     }
 }

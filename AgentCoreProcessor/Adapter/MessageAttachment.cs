@@ -33,5 +33,8 @@ namespace AgentCoreProcessor.Adapter
 
         /// <summary>文件大小（字节）</summary>
         public long? FileSize { get; set; }
+
+        /// <summary>在消息文本中的占位符索引（图片专用，从 0 开始）</summary>
+        public int SegmentIndex { get; set; }
     }
 }

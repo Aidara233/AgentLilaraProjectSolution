@@ -5,16 +5,33 @@ using System.Security.Cryptography;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Database;
+using SkiaSharp;
 
 namespace AgentCoreProcessor.Adapter
 {
     /// <summary>
     /// 图片下载与本地存储。按日期分目录：Storage/Images/yyyy/MM/dd/{hash}.{ext}
     /// 通过 ImageRecord 去重：同哈希图片只存一份。
+    /// 缩略图存储：Storage/Images/thumbs/{hash}.jpg
     /// </summary>
     internal static class ImageStorage
     {
         private static ImageRepository? _repo;
+
+        /// <summary>缩略图长边最大像素（可配置）</summary>
+        public static int ThumbnailMaxEdge { get; set; } = 1568;
+
+        /// <summary>缩略图 JPEG 质量（0-100）</summary>
+        public static int ThumbnailQuality { get; set; } = 85;
+
+        /// <summary>单张图片直传大小上限（字节），超出则必须手动查看</summary>
+        public static long MaxDirectSendSize { get; set; } = 1024 * 1024; // 1MB
+
+        /// <summary>单轮图片直传总大小上限（字节）</summary>
+        public static long MaxTotalDirectSendSize { get; set; } = 3 * 1024 * 1024; // 3MB
+
+        /// <summary>单轮图片直传最大数量</summary>
+        public static int MaxDirectSendCount { get; set; } = 5;
 
         public static void Init(ImageRepository repo) => _repo = repo;
 
@@ -53,6 +70,7 @@ namespace AgentCoreProcessor.Adapter
                     Hash = hash,
                     LocalPath = localPath,
                     SourceUrl = url,
+                    FileSize = bytes.Length,
                     CreatedAt = DateTime.Now
                 });
             }
@@ -204,6 +222,119 @@ namespace AgentCoreProcessor.Adapter
             }
 
             return "bin";
+        }
+
+        // ── 缩略图 ──
+
+        private static string GetThumbDir()
+        {
+            var dir = Path.Combine(PathConfig.StoragePath, "Images", "thumbs");
+            Directory.CreateDirectory(dir);
+            return dir;
+        }
+
+        /// <summary>生成缩略图并存储，返回缩略图路径。已有缩略图时直接返回。</summary>
+        public static async Task<string?> EnsureThumbnailAsync(string hash)
+        {
+            if (_repo == null) return null;
+            var record = await _repo.GetByHashAsync(hash);
+            if (record == null) return null;
+
+            if (!string.IsNullOrEmpty(record.ThumbnailPath) && File.Exists(record.ThumbnailPath))
+                return record.ThumbnailPath;
+
+            if (!File.Exists(record.LocalPath)) return null;
+
+            var thumbPath = GenerateThumbnail(record.LocalPath, hash);
+            if (thumbPath != null)
+            {
+                record.ThumbnailPath = thumbPath;
+                await _repo.UpdateAsync(record);
+            }
+            return thumbPath;
+        }
+
+        /// <summary>生成缩略图：缩放到 MaxEdge 以内，输出 JPEG。</summary>
+        private static string? GenerateThumbnail(string sourcePath, string hash)
+        {
+            try
+            {
+                using var input = File.OpenRead(sourcePath);
+                using var codec = SKCodec.Create(input);
+                if (codec == null) return null;
+
+                var info = codec.Info;
+                var maxEdge = Math.Max(info.Width, info.Height);
+
+                // 不需要缩放的小图直接复制
+                if (maxEdge <= ThumbnailMaxEdge && sourcePath.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase))
+                    return null; // 原图即可作为缩略图使用
+
+                var scale = maxEdge > ThumbnailMaxEdge ? (float)ThumbnailMaxEdge / maxEdge : 1f;
+                var newWidth = (int)(info.Width * scale);
+                var newHeight = (int)(info.Height * scale);
+
+                using var bitmap = SKBitmap.Decode(codec);
+                if (bitmap == null) return null;
+
+                using var resized = bitmap.Resize(new SKImageInfo(newWidth, newHeight), SKSamplingOptions.Default);
+                if (resized == null) return null;
+
+                using var image = SKImage.FromBitmap(resized);
+                using var data = image.Encode(SKEncodedImageFormat.Jpeg, ThumbnailQuality);
+
+                var thumbPath = Path.Combine(GetThumbDir(), $"{hash}.jpg");
+                using var output = File.OpenWrite(thumbPath);
+                data.SaveTo(output);
+                return thumbPath;
+            }
+            catch (Exception ex)
+            {
+                Engine.FrameworkLogger.Log("ImageStorage", $"缩略图生成失败: {ex.Message}");
+                return null;
+            }
+        }
+
+        // ── 按 ID 查询 ──
+
+        /// <summary>按自增 ID 获取图片记录。</summary>
+        public static async Task<ImageRecord?> GetByIdAsync(int id)
+        {
+            if (_repo == null) return null;
+            return await _repo.GetByIdAsync(id);
+        }
+
+        /// <summary>按哈希获取图片记录。</summary>
+        public static async Task<ImageRecord?> GetByHashAsync(string hash)
+        {
+            if (_repo == null) return null;
+            return await _repo.GetByHashAsync(hash);
+        }
+
+        /// <summary>获取图片用于模型输入的路径（优先缩略图，fallback 原图）。</summary>
+        public static async Task<string?> GetModelInputPathAsync(string hash)
+        {
+            if (_repo == null) return null;
+            var record = await _repo.GetByHashAsync(hash);
+            if (record == null) return null;
+
+            // 有缩略图用缩略图
+            if (!string.IsNullOrEmpty(record.ThumbnailPath) && File.Exists(record.ThumbnailPath))
+                return record.ThumbnailPath;
+
+            // 原图存在就用原图
+            if (File.Exists(record.LocalPath))
+                return record.LocalPath;
+
+            return null;
+        }
+
+        /// <summary>获取图片 ID（通过哈希查询）。</summary>
+        public static async Task<int?> GetIdByHashAsync(string hash)
+        {
+            if (_repo == null) return null;
+            var record = await _repo.GetByHashAsync(hash);
+            return record?.Id;
         }
     }
 }

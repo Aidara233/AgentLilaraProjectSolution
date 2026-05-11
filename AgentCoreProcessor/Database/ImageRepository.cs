@@ -16,6 +16,13 @@ namespace AgentCoreProcessor.Database
             return results.Count > 0 ? results[0] : null;
         }
 
+        public async Task<ImageRecord?> GetByIdAsync(int id)
+        {
+            var results = await db.QueryAsync<ImageRecord>(
+                "SELECT * FROM ImageRecords WHERE Id = ? LIMIT 1", id);
+            return results.Count > 0 ? results[0] : null;
+        }
+
         public async Task<List<ImageRecord>> GetByHashesAsync(IEnumerable<string> hashes)
         {
             var result = new List<ImageRecord>();

@@ -193,9 +193,9 @@ namespace AgentCoreProcessor.Client
                 {
                     if (part.Type == "text" && part.Text != null)
                         blocks.Add(new TextContent { Text = part.Text });
-                    else if (part.Type == "image" && !string.IsNullOrEmpty(part.ImagePath))
+                    else if (part.Type == "image")
                     {
-                        var imgBlock = BuildImageContent(part.ImagePath);
+                        var imgBlock = BuildImageContent(part);
                         if (imgBlock != null) blocks.Add(imgBlock);
                     }
                 }
@@ -204,21 +204,38 @@ namespace AgentCoreProcessor.Client
             return [new TextContent { Text = msg.Content }];
         }
 
-        private static ImageContent? BuildImageContent(string imagePath)
+        private static ImageContent? BuildImageContent(Models.ContentPart part)
         {
             try
             {
-                if (!File.Exists(imagePath)) return null;
-                var bytes = File.ReadAllBytes(imagePath);
-                var base64 = Convert.ToBase64String(bytes);
-                return new ImageContent
+                // 优先使用已有的 base64 数据
+                if (!string.IsNullOrEmpty(part.ImageBase64))
                 {
-                    Source = new ImageSource
+                    return new ImageContent
                     {
-                        MediaType = InferMediaType(imagePath),
-                        Data = base64
-                    }
-                };
+                        Source = new ImageSource
+                        {
+                            MediaType = part.MediaType ?? "image/png",
+                            Data = part.ImageBase64
+                        }
+                    };
+                }
+
+                // 从文件路径读取
+                if (!string.IsNullOrEmpty(part.ImagePath) && File.Exists(part.ImagePath))
+                {
+                    var bytes = File.ReadAllBytes(part.ImagePath);
+                    return new ImageContent
+                    {
+                        Source = new ImageSource
+                        {
+                            MediaType = InferMediaType(part.ImagePath),
+                            Data = Convert.ToBase64String(bytes)
+                        }
+                    };
+                }
+
+                return null;
             }
             catch { return null; }
         }

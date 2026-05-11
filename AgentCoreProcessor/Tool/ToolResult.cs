@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using AgentCoreProcessor.Models;
 using Newtonsoft.Json;
 
 namespace AgentCoreProcessor.Tool
@@ -18,6 +20,10 @@ namespace AgentCoreProcessor.Tool
         /// <summary>失败时的错误信息。</summary>
         [JsonProperty("error")]
         public string? Error { get; set; }
+
+        /// <summary>附带的图片（工具返回图片时使用，如"查看图片"工具）。</summary>
+        [JsonIgnore]
+        public List<ContentPart>? Attachments { get; set; }
 
         [JsonIgnore]
         public bool IsSuccess => Status == "success";
