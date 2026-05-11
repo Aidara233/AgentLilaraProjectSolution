@@ -4,9 +4,11 @@
 
 **核心特性**：
 - 双循环架构：频道循环（用户交互）+ 系统循环（任务调度）
+- 系统循环不直接发消息：一律通过 NotifyChannel 注入频道循环，由频道循环自行决定回应方式
 - 委托系统：频道循环提交委托 → 系统循环评估(accept/queue/reject) → 子agent执行 → 结果回传频道循环
 - TaskBridge 异步通信：任务队列 + 通知队列
 - 子agent系统：TaskSession 被动执行，工具白名单，禁止套娃，支持 delegationId 自动回写结果
+- 引擎容错：API 调用失败不杀循环，连续失败 exponential backoff，SystemEngine 崩溃后 SpawnCheck 自动重启
 - 上下文持久化：SystemContext.json WAL 模式
 - 上下文压缩：超过 80k tokens 触发，保留最近 5 轮 + 摘要
 - 关注列表：系统循环下发规则，频道循环语义匹配
@@ -15,7 +17,7 @@
 - 睡眠期消息拦截：ChannelEngineSpawnCheck 按 CurrentSleepState 拦截，消息入库但不响应，醒来后自动补提取记忆
 - Prompt Caching：Claude 系 Core 启用 promptCaching，中转站已验证兼容
 - Token 统计：ModelCallLog 数据库表记录每次调用，WebUI /logs/tokens 按 Core/模型聚合 + 缓存命中率
-- 模型日志结构化：JSON 格式（含 usage + caller tag），WebUI /logs/model 展示 token 摘要
+- 模型日志结构化：JSON 格式（含 usage + caller tag），WebUI /logs/model 展示 token 摘要 + 按来源筛选
   - CallerTag 标识调用来源：Channel:{id} / System / SubAgent:{sessionId} / Review:{mode}
 - 工具禁用管理：ToolRegistry.DisableTool/EnableTool + ToolConfig.json 持久化 + ToolStatusModule 动态注入 + WebUI /config/tools
 

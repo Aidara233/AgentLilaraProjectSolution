@@ -55,7 +55,7 @@ MasterEngine (内核，实现 ISystemContext)
 ```
 
 ISubEngine: EngineType / RunAsync / OnEvent / IsAlive / RequestStop / IsInfrastructure(默认false)
-ISystemContext: 数据访问 + 适配器 + EventBus + 引擎查询 + StartEngine/RequestStopEngine + TaskBridge + Delegations + CurrentSleepState + MuteMode
+ISystemContext: 数据访问 + 适配器 + EventBus + 引擎查询 + StartEngine/RequestStopEngine + TaskBridge + Delegations + CurrentSleepState + MuteMode + NotifyChannel
 IAgentSession: 统一会话接口 (ChannelSession/TaskSession/MonitorSession)
 
 ## 消息处理流
@@ -81,7 +81,7 @@ ChannelEngine (频道循环，常驻，一个活跃频道一个):
   内务模块体系 (EngineModule + LoopBus):
     SpeakModule / ThinkingNotesModule / TaskListModule / PinboardModule
     RetainListModule / MemoryWindowModule / LoopControlModule / SignalDispatchModule
-    WatchRulesModule / DelegationModule / ToolStatusModule
+    WatchRulesModule / DelegationModule / ToolStatusModule / SystemNotificationModule
     模块通过 LoopBus 订阅 ToolExecutedEvent 处理副作用
     模块通过 BuildPromptSection 注入 prompt（按 PromptPriority 排序）
   
@@ -115,6 +115,12 @@ SystemEngine (系统循环，单例，纯调度者):
     触发源: TaskBridge 任务/通知 / 委托提交 / ContinueLoop自唤醒 / 定时器
     超时 → 冷却退出
   
+  容错与自愈:
+    内层 Agent 循环异常: catch → 记录错误 → 退出当前轮（不杀外层 while）
+    连续失败 ≥5 次: exponential backoff (10s→30s→60s→120s→300s)
+    外层致命异常: IsAlive=false → SpawnCheck 检测到死亡 → 10s 后自动重启
+    错误状态暴露: Snapshot 含 ConsecutiveFailures/TotalErrorCount/LastErrorMessage
+  
   统一管线 (每轮重建上下文):
   ① WaitGate → 闸门放行
   ② CollectTasks → drain TaskBridge 任务队列和通知队列 + 待评估委托
@@ -123,6 +129,12 @@ SystemEngine (系统循环，单例，纯调度者):
   ⑤ CallModel → AgentCore.InvokeAsync（返回工具调用）
   ⑥ ProcessResponse → 执行工具+发布事件
   ⑦ DecideNext → ContinueLoop(signal) / idle
+  
+  通信规则（不直接发消息）:
+    系统循环不持有发消息能力，一律通过频道循环间接实现
+    通知频道: NotifyChannel(channelId, content) → 注入频道循环 SystemNotificationModule
+    委托结果: 子agent完成 → MarkCompleted → delegation-completed 信号 → 频道循环自动感知
+    适配器操作: 拦截 send_* 类操作，仅允许查询类（获取群列表等）
   
   上下文持久化:
     每轮结束写入 Storage/SystemContext.json（WAL 模式）
@@ -149,10 +161,10 @@ SystemEngine (系统循环，单例，纯调度者):
   
   工具集 (纯调度+轻量执行):
     调度类: CreateSubAgent / SendToSubAgent / StopSubAgent / DeleteSubAgent
-    通信类: SendToChannel / CheckNotifications / SetWatchRule / CheckTaskQueue
+    通信类: 通知频道 / CheckNotifications / SetWatchRule / CheckTaskQueue
     委托类: EvaluateDelegation（评估频道循环提交的委托）
-    自用类: 便签板 / 思考笔记 / 继续
-    轻量执行: 文件只读 / 记忆读写（"看一眼就完事"的操作）
+    自用类: 便签板 / 思考笔记 / 继续 / 等待
+    轻量执行: 记忆读写 / 频道信息 / 引擎管理 / 适配器操作(仅查询)
 ```
 
 ## 冲动值决策 (per Channel, ImpulseConfig.json 全参数可配置)

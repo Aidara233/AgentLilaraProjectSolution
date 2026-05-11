@@ -25,6 +25,20 @@
 }
 else
 {
+    @if (worker.HasRecentError)
+    {
+        <div class="alert-bar mb-3" style="background:var(--status-warn-dim); border-left:3px solid var(--status-warn); color:var(--status-warn);">
+            <i class="bi bi-exclamation-triangle"></i>
+            <div>
+                <div>API 错误 — 连续失败 @worker.ConsecutiveFailures 次，累计 @worker.TotalErrorCount 次</div>
+                <div style="font-size:var(--font-size-sm); opacity:0.8; font-family:monospace; margin-top:0.2rem;">
+                    @worker.LastErrorMessage
+                    <span class="ms-2">(@FormatTimeAgo(worker.LastErrorTime!.Value))</span>
+                </div>
+            </div>
+        </div>
+    }
+
     <div class="row g-3 mb-4">
         <div class="col-md-4">
             <div class="card">
@@ -166,6 +180,14 @@ else
         {
             extracting = false;
         }
+    }
+
+    private static string FormatTimeAgo(DateTime time)
+    {
+        var elapsed = DateTime.Now - time;
+        if (elapsed.TotalSeconds < 60) return $"{elapsed.TotalSeconds:F0}s 前";
+        if (elapsed.TotalMinutes < 60) return $"{elapsed.TotalMinutes:F0}m 前";
+        return $"{elapsed.TotalHours:F1}h 前";
     }
 
     public void Dispose()

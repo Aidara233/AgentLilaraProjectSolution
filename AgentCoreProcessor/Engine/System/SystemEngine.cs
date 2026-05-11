@@ -65,6 +65,14 @@ namespace AgentCoreProcessor.Engine
         private readonly Dictionary<string, IAgentSession> subAgents = new();
         private readonly object subAgentLock = new();
 
+        // 错误追踪
+        private int consecutiveFailures = 0;
+        private DateTime? lastErrorTime = null;
+        private string? lastErrorMessage = null;
+        private int totalErrorCount = 0;
+        private const int MaxConsecutiveFailures = 5;
+        private static readonly int[] BackoffSeconds = { 10, 30, 60, 120, 300 };
+
         // 睡觉评估和许可管理
         private class SleepRequest
         {
@@ -188,6 +196,23 @@ namespace AgentCoreProcessor.Engine
                     try
                     {
                         await RunAgentLoopAsync(ct);
+                        consecutiveFailures = 0;
+                    }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex)
+                    {
+                        consecutiveFailures++;
+                        totalErrorCount++;
+                        lastErrorTime = DateTime.Now;
+                        lastErrorMessage = $"{ex.GetType().Name}: {ex.Message}";
+                        FrameworkLogger.LogError("SystemEngine", ex, $"Agent 循环异常 (连续第 {consecutiveFailures} 次)");
+
+                        if (consecutiveFailures >= MaxConsecutiveFailures)
+                        {
+                            var backoff = BackoffSeconds[Math.Min(consecutiveFailures - 1, BackoffSeconds.Length - 1)];
+                            FrameworkLogger.Log("SystemEngine", $"连续失败 {consecutiveFailures} 次，退避 {backoff}s");
+                            await Task.Delay(TimeSpan.FromSeconds(backoff), ct);
+                        }
                     }
                     finally
                     {
@@ -203,7 +228,11 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
-                FrameworkLogger.LogError("SystemEngine", ex, "系统循环异常");
+                FrameworkLogger.LogError("SystemEngine", ex, "系统循环致命异常，将自动重启");
+                // 致命异常兜底：标记死亡后由 SpawnCheck 重启
+                totalErrorCount++;
+                lastErrorTime = DateTime.Now;
+                lastErrorMessage = $"[致命] {ex.GetType().Name}: {ex.Message}";
             }
             finally
             {
@@ -450,12 +479,12 @@ namespace AgentCoreProcessor.Engine
             {
                 "等待", "继续",
                 "创建子agent", "发送指令给子agent", "停止子agent",
-                "发送消息到频道", "查看通知", "设置关注规则", "频道信息",
+                "查看通知", "设置关注规则", "频道信息",
                 "引擎管理", "适配器操作",
                 "便签板", "思考笔记",
                 "创建定时任务", "取消定时任务",
                 "记忆读取", "记忆搜索",
-                "评估委托"
+                "评估委托", "通知频道"
             };
         }
 
@@ -613,7 +642,11 @@ namespace AgentCoreProcessor.Engine
                 PinboardEntries = new(pinboardModule.Entries),
                 ThinkingNotes = new(thinkingNotesModule.Notes),
                 ContextRoundCount = rounds.Count,
-                HasContextSummary = summary != null
+                HasContextSummary = summary != null,
+                ConsecutiveFailures = consecutiveFailures,
+                TotalErrorCount = totalErrorCount,
+                LastErrorTime = lastErrorTime,
+                LastErrorMessage = lastErrorMessage
             };
         }
 
@@ -736,37 +769,14 @@ namespace AgentCoreProcessor.Engine
             var unprocessedHints = await ctx.ReviewHints.GetUnprocessedAsync();
             var hintCount = unprocessedHints.Count;
 
-            var message = $"[睡觉请求 {requestId}]\n" +
-                          $"评分: {score:F1}/100\n" +
-                          $"空闲时长: {ctx.IdleDuration.TotalMinutes:F0} 分钟\n" +
-                          $"待处理记忆: {undreamedCount} 条\n" +
-                          $"待复盘标记: {hintCount} 个\n\n" +
-                          $"回复 /sleep approve {requestId} 批准\n" +
-                          $"回复 /sleep deny {requestId} 拒绝";
+            var message = $"[系统内部·睡觉请求] 请转告管理员：我想睡觉整理记忆了（评分{score:F1}/100，" +
+                          $"空闲{ctx.IdleDuration.TotalMinutes:F0}分钟，{undreamedCount}条待处理记忆）。" +
+                          $"管理员可以用 /sleep approve {requestId} 批准，/sleep deny {requestId} 拒绝。";
 
-            // 发送到所有管理员频道
+            // 通知所有管理员频道
             foreach (var channelId in adminChannels)
             {
-                try
-                {
-                    var channel = await ctx.Session.GetChannelByIdAsync(channelId);
-                    if (channel == null) continue;
-
-                    var parts = channel.Name.Split(':', 2);
-                    if (parts.Length != 2) continue;
-
-                    await ctx.Adapters.SendMessageAsync(parts[0], new Adapter.OutgoingMessage
-                    {
-                        ChannelId = parts[1],
-                        Content = message
-                    });
-
-                    await ctx.Session.SaveBotMessageAsync(channelId, message, null);
-                }
-                catch (Exception ex)
-                {
-                    FrameworkLogger.LogError("SystemEngine", ex, $"发送睡觉请求到频道 {channelId} 失败");
-                }
+                ctx.NotifyChannel(channelId, message);
             }
 
             // 记录请求状态

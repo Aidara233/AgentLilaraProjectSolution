@@ -42,6 +42,9 @@ namespace AgentCoreProcessor.Tool
             if (string.IsNullOrEmpty(actionName))
                 return new ToolResult { Status = "failed", Error = "缺少操作名" };
 
+            if (actionName.StartsWith("send_", StringComparison.OrdinalIgnoreCase))
+                return new ToolResult { Status = "failed", Error = "不允许通过适配器操作直接发送消息，请通过频道循环发送" };
+
             var adapter = ctx.Adapters.GetAdapterById(adapterId);
             if (adapter == null)
                 return new ToolResult { Status = "failed", Error = $"适配器 '{adapterId}' 不存在" };

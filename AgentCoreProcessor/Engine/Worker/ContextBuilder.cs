@@ -39,7 +39,8 @@ namespace AgentCoreProcessor.Engine
                 var nick = SanitizeAttr(info.Nickname);
                 var memo = SanitizeAttr(string.IsNullOrEmpty(info.Memo) ? "还不太了解" : info.Memo);
                 var relation = TrustLevelToRelation(info.TrustLevel);
-                sb.AppendLine($"  <user name=\"{name}\" nickname=\"{nick}\" qq=\"{info.PlatformId}\" relation=\"{relation}\" memo=\"{memo}\"/>");
+                var roleAttr = info.PermissionLevel >= Database.PermissionLevel.Admin ? " role=\"管理员\"" : "";
+                sb.AppendLine($"  <user name=\"{name}\" nickname=\"{nick}\" qq=\"{info.PlatformId}\" relation=\"{relation}\"{roleAttr} memo=\"{memo}\"/>");
             }
             sb.AppendLine("</participants>");
 
@@ -85,13 +86,13 @@ namespace AgentCoreProcessor.Engine
             {
                 sb.AppendLine("<history>");
                 foreach (var m in historyMessages)
-                    sb.AppendLine(FormatDbMessage(m, shortNames, contextIds));
+                    sb.AppendLine(FormatDbMessage(m, shortNames, contextIds, participants));
                 sb.AppendLine("</history>");
             }
 
             sb.AppendLine("<new>");
             foreach (var m in unrespondedMessages)
-                sb.AppendLine(FormatDbMessage(m, shortNames, contextIds));
+                sb.AppendLine(FormatDbMessage(m, shortNames, contextIds, participants));
             foreach (var (msg, sc) in batch)
                 sb.AppendLine(FormatBatchMessage(msg, sc, shortNames, contextIds));
             sb.Append("</new>");
@@ -174,13 +175,16 @@ namespace AgentCoreProcessor.Engine
 
         // ---- 格式化方法 ----
 
-        public static string FormatDbMessage(UserMessage m, Dictionary<int, string> shortNames, HashSet<string> contextIds)
+        public static string FormatDbMessage(UserMessage m, Dictionary<int, string> shortNames,
+            HashSet<string> contextIds, Dictionary<int, ParticipantInfo>? participants = null)
         {
             var name = m.IsFromBot ? "Lilara" : ResolveHistoryShortName(m, shortNames);
             var attrs = new StringBuilder();
             if (!string.IsNullOrEmpty(m.PlatformMessageId))
                 attrs.Append($" id=\"{SanitizeAttr(m.PlatformMessageId)}\"");
             attrs.Append($" user=\"{SanitizeAttr(name)}\"");
+            if (!m.IsFromBot && participants != null && participants.TryGetValue(m.UserId, out var info))
+                attrs.Append($" qq=\"{SanitizeAttr(info.PlatformId)}\"");
             if (!string.IsNullOrEmpty(m.ReplyToPlatformMessageId))
                 attrs.Append($" reply=\"{SanitizeAttr(m.ReplyToPlatformMessageId)}\"");
             if (m.ImageCount > 0)
@@ -197,6 +201,7 @@ namespace AgentCoreProcessor.Engine
             if (!string.IsNullOrEmpty(msg.PlatformMessageId))
                 attrs.Append($" id=\"{SanitizeAttr(msg.PlatformMessageId)}\"");
             attrs.Append($" user=\"{SanitizeAttr(name)}\"");
+            attrs.Append($" qq=\"{SanitizeAttr(msg.PlatformUserId)}\"");
             if (!string.IsNullOrEmpty(msg.ReplyTo))
                 attrs.Append($" reply=\"{SanitizeAttr(msg.ReplyTo)}\"");
             if (msg.IsMentioned)

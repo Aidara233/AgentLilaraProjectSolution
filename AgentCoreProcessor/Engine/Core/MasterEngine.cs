@@ -158,6 +158,23 @@ namespace AgentCoreProcessor.Engine
             lock (engineLock) { return spawnChecks.OfType<T>().FirstOrDefault(); }
         }
 
+        public void NotifyChannel(int channelId, string content)
+        {
+            var check = GetSpawnCheck<ChannelEngineSpawnCheck>();
+            if (check == null) return;
+            var channels = check.GetActiveChannels();
+            if (channels.TryGetValue(channelId, out var engine) && engine.IsAlive)
+            {
+                engine.InjectNotification(content);
+            }
+            else
+            {
+                check.StashNotification(channelId, content);
+                FrameworkLogger.Log("MasterEngine",
+                    $"NotifyChannel: 频道 {channelId} 无活跃循环，通知已暂存");
+            }
+        }
+
         public List<ISubEngine> GetActiveEnginesSnapshot()
         {
             lock (engineLock) { return activeEngines.Where(e => e.IsAlive).ToList(); }

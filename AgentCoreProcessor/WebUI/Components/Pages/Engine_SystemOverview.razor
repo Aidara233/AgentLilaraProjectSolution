@@ -12,11 +12,32 @@
 {
     <div class="alert-bar alert-error mb-3">
         <i class="bi bi-x-circle"></i>
-        <span>SystemEngine 未运行</span>
+        <span>SystemEngine 未运行@(sys?.RestartCount > 0 ? $" (已重启 {sys.RestartCount} 次)" : "")</span>
     </div>
+    @if (sys?.LastErrorMessage != null)
+    {
+        <div class="alert-bar alert-error mb-3" style="border-left-color:var(--status-warn);">
+            <i class="bi bi-exclamation-triangle"></i>
+            <span style="font-family:monospace; font-size:var(--font-size-sm);">@sys.LastErrorMessage</span>
+        </div>
+    }
 }
 else
 {
+    <!-- 错误警告 -->
+    @if (sys.HasRecentError)
+    {
+        <div class="alert-bar mb-3" style="background:var(--status-warn-dim); border-left:3px solid var(--status-warn); color:var(--status-warn);">
+            <i class="bi bi-exclamation-triangle"></i>
+            <div>
+                <div>API 错误 — 连续失败 @sys.ConsecutiveFailures 次，累计 @sys.TotalErrorCount 次</div>
+                <div style="font-size:var(--font-size-sm); opacity:0.8; font-family:monospace; margin-top:0.2rem;">
+                    @sys.LastErrorMessage
+                    <span class="ms-2">(@FormatTimeAgo(sys.LastErrorTime!.Value))</span>
+                </div>
+            </div>
+        </div>
+    }
     <!-- 状态卡片 -->
     <div class="row g-3 mb-4">
         <div class="col-md-3">
@@ -157,6 +178,14 @@ else
     {
         sys = Monitor.Current.SystemEngine;
         InvokeAsync(StateHasChanged);
+    }
+
+    private static string FormatTimeAgo(DateTime time)
+    {
+        var elapsed = DateTime.Now - time;
+        if (elapsed.TotalSeconds < 60) return $"{elapsed.TotalSeconds:F0}s 前";
+        if (elapsed.TotalMinutes < 60) return $"{elapsed.TotalMinutes:F0}m 前";
+        return $"{elapsed.TotalHours:F1}h 前";
     }
 
     public void Dispose() => Monitor.OnStateChanged -= OnStateChanged;

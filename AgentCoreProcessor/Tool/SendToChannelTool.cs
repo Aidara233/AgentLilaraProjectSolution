@@ -1,28 +1,27 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Engine;
 
 namespace AgentCoreProcessor.Tool
 {
     /// <summary>
-    /// 发送到频道工具：系统循环发消息到任意频道。
-    /// 系统循环专用。
+    /// 通知频道循环工具：系统循环向频道循环注入通知，由频道循环自行决定如何回应。
+    /// 系统循环专用。不直接发送消息到适配器。
     /// </summary>
     internal class SendToChannelTool : ITool
     {
-        public string Name => "发送到频道";
-        public string Description => "向指定频道发送消息";
+        public string Name => "通知频道";
+        public string Description => "向指定频道循环注入通知。频道循环醒来后会看到通知内容，自行决定是否回应用户以及如何措辞。";
         public IReadOnlyList<ToolParameter> Parameters =>
         [
-            new("频道标识", "频道 ID（数字）或 platform:channelId 格式", 0),
-            new("消息内容", "要发送的消息文本", 1)
+            new("频道ID", "频道 ID（数字）", 0),
+            new("通知内容", "要传达给频道循环的信息（如任务结果、提醒内容等）", 1)
         ];
-        public TimeSpan Timeout => TimeSpan.FromSeconds(10);
+        public TimeSpan Timeout => TimeSpan.FromSeconds(5);
         public bool AllowSubAgent => false;
+        public bool ContinueLoop => true;
 
         private readonly ISystemContext ctx;
 
@@ -31,112 +30,36 @@ namespace AgentCoreProcessor.Tool
             this.ctx = ctx;
         }
 
-        public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
+        public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
             if (resolvedInputs.Count < 2 || string.IsNullOrWhiteSpace(resolvedInputs[0]) || string.IsNullOrWhiteSpace(resolvedInputs[1]))
             {
-                return new ToolResult
+                return Task.FromResult(new ToolResult
                 {
                     Status = "failed",
-                    Error = "频道标识和消息内容不能为空"
-                };
+                    Error = "频道ID和通知内容不能为空"
+                });
             }
 
-            var channelIdentifier = resolvedInputs[0].Trim();
+            var channelIdStr = resolvedInputs[0].Trim();
             var content = resolvedInputs[1];
 
-            try
+            if (!int.TryParse(channelIdStr, out var channelId))
             {
-                // 解析频道标识
-                int channelId;
-                if (int.TryParse(channelIdentifier, out channelId))
-                {
-                    // 数字 ID：从数据库查询
-                    var channel = await ctx.Session.GetChannelByIdAsync(channelId);
-                    if (channel == null)
-                    {
-                        return new ToolResult
-                        {
-                            Status = "failed",
-                            Error = $"频道 ID {channelId} 不存在"
-                        };
-                    }
-
-                    // Channel.Name 格式为 "platform:channelId"
-                    var parts = channel.Name.Split(':', 2);
-                    if (parts.Length != 2)
-                    {
-                        return new ToolResult
-                        {
-                            Status = "failed",
-                            Error = $"频道 {channelId} 的名称格式无效: {channel.Name}"
-                        };
-                    }
-
-                    var platform = parts[0];
-                    var platformChannelId = parts[1];
-
-                    // 发送消息
-                    var sentId = await ctx.Adapters.SendMessageAsync(platform, new OutgoingMessage
-                    {
-                        ChannelId = platformChannelId,
-                        Content = content
-                    });
-
-                    // 保存到数据库
-                    await ctx.Session.SaveBotMessageAsync(channelId, content, sentId);
-
-                    return new ToolResult
-                    {
-                        Status = "success",
-                        Data = $"消息已发送到频道 {channelId}（{channel.Name}）"
-                    };
-                }
-                else if (channelIdentifier.Contains(":"))
-                {
-                    // platform:channelId 格式
-                    var parts = channelIdentifier.Split(':', 2);
-                    var platform = parts[0];
-                    var platformChannelId = parts[1];
-
-                    // 发送消息
-                    var sentId = await ctx.Adapters.SendMessageAsync(platform, new OutgoingMessage
-                    {
-                        ChannelId = platformChannelId,
-                        Content = content
-                    });
-
-                    // 查询或创建频道记录
-                    var channel = await ctx.Session.GetAllChannelsAsync();
-                    var existingChannel = channel.FirstOrDefault(c => c.Name == channelIdentifier);
-                    if (existingChannel != null)
-                    {
-                        await ctx.Session.SaveBotMessageAsync(existingChannel.Id, content, sentId);
-                    }
-
-                    return new ToolResult
-                    {
-                        Status = "success",
-                        Data = $"消息已发送到频道 {platform}:{platformChannelId}"
-                    };
-                }
-                else
-                {
-                    return new ToolResult
-                    {
-                        Status = "failed",
-                        Error = "无效的频道标识格式。应为数字 ID 或 platform:channelId"
-                    };
-                }
-            }
-            catch (Exception ex)
-            {
-                return new ToolResult
+                return Task.FromResult(new ToolResult
                 {
                     Status = "failed",
-                    Error = $"发送消息失败: {ex.Message}"
-                };
+                    Error = "频道ID必须是数字"
+                });
             }
+
+            ctx.NotifyChannel(channelId, content);
+
+            return Task.FromResult(new ToolResult
+            {
+                Status = "success",
+                Data = $"通知已注入频道 {channelId}，频道循环将在下一轮处理"
+            });
         }
     }
 }

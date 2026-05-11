@@ -21,6 +21,9 @@ namespace AgentCoreProcessor.Engine
         /// <summary>活跃频道引擎表（ChannelId → ChannelEngine）。</summary>
         private readonly Dictionary<int, ChannelEngine> activeChannels = new();
 
+        /// <summary>暂存通知（频道循环不活跃时暂存，下次创建时注入）。</summary>
+        private readonly Dictionary<int, List<string>> pendingNotifications = new();
+
         public Task OnEventAsync(EngineEvent e, ISystemContext ctx)
         {
             // 清理已死亡的频道引擎
@@ -115,10 +118,30 @@ namespace AgentCoreProcessor.Engine
 
             var engine = new ChannelEngine(ctx, sc, msg);
             activeChannels[sc.Channel.Id] = engine;
+
+            // 注入暂存的系统通知
+            if (pendingNotifications.TryGetValue(sc.Channel.Id, out var notifications))
+            {
+                foreach (var n in notifications)
+                    engine.InjectNotification(n);
+                pendingNotifications.Remove(sc.Channel.Id);
+            }
+
             return engine;
         }
 
         internal IReadOnlyDictionary<int, ChannelEngine> GetActiveChannels() => activeChannels;
+
+        /// <summary>暂存通知（频道循环不活跃时调用）。</summary>
+        internal void StashNotification(int channelId, string content)
+        {
+            if (!pendingNotifications.TryGetValue(channelId, out var list))
+            {
+                list = new List<string>();
+                pendingNotifications[channelId] = list;
+            }
+            list.Add(content);
+        }
 
         private static readonly string[] WakeKeywords =
             ["起床", "醒醒", "wake", "起来", "叫醒", "别睡了", "醒来"];

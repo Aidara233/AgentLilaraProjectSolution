@@ -86,6 +86,9 @@ namespace AgentCoreProcessor.Engine
         private readonly LinkedList<long> processedTicks = new();
         private const int MaxProcessedTicksWindow = 50;
 
+        // 系统通知队列（系统循环注入，频道循环消费）
+        private readonly ConcurrentQueue<string> systemNotifications = new();
+
         // 记忆缓存：per-person
         private readonly Dictionary<int, (List<ScoredMemory> Results, DateTime Time)> memoryCache = new();
         private const float MemoryCacheTtlSeconds = 60f;
@@ -112,6 +115,14 @@ namespace AgentCoreProcessor.Engine
         private bool isWorkingMode = false;
         private int consecutiveExternalTriggers = 0;
         private const int WorkingToExpressThreshold = 3;
+
+        // 错误追踪
+        private int consecutiveFailures = 0;
+        private DateTime? lastErrorTime = null;
+        private string? lastErrorMessage = null;
+        private int totalErrorCount = 0;
+        private const int ChannelMaxConsecutiveBeforeBackoff = 3;
+        private const int ChannelBackoffSeconds = 30;
 
         // Working 会话状态（跨闸门轮次保持）
         private string? currentContextXml;
@@ -167,7 +178,8 @@ namespace AgentCoreProcessor.Engine
                 speakModule, thinkingNotesModule, taskListModule, pinboardModule,
                 retainListModule, memoryWindowModule, loopControlModule, signalDispatchModule,
                 new ToolStatusModule(),
-                new Modules.DelegationModule(ctx.Delegations, channelId)
+                new Modules.DelegationModule(ctx.Delegations, channelId),
+                new Modules.SystemNotificationModule(DrainSystemNotifications)
             };
             foreach (var m in modules) m.Attach(bus);
         }
@@ -200,6 +212,23 @@ namespace AgentCoreProcessor.Engine
             var cts = _bufferTimerCts;
             _ = Task.Delay(TimeSpan.FromSeconds(ctx.ImpulseConfig.BufferWindowSeconds), cts.Token)
                 .ContinueWith(_ => gate.Signal(), TaskContinuationOptions.NotOnCanceled);
+        }
+
+        /// <summary>系统循环注入通知到频道循环。唤醒闸门，下一轮 prompt 中展示。</summary>
+        public void InjectNotification(string content)
+        {
+            systemNotifications.Enqueue(content);
+            gate.Signal();
+            FrameworkLogger.Log("ChannelEngine", $"channelId={channelId} 收到系统通知: {content.Truncate(80)}");
+        }
+
+        /// <summary>Drain 系统通知队列。</summary>
+        internal List<string> DrainSystemNotifications()
+        {
+            var list = new List<string>();
+            while (systemNotifications.TryDequeue(out var n))
+                list.Add(n);
+            return list;
         }
 
 
@@ -239,11 +268,17 @@ namespace AgentCoreProcessor.Engine
                     var output = await agentCore.InvokeAsync(messages, mode);
                     await ProcessResponseAsync(output);
                     DecideNext(output);
+                    consecutiveFailures = 0;
                 }
                 catch (Exception ex)
                 {
-                    FrameworkLogger.LogError("ChannelEngine", ex, $"channelId={channelId}");
-                    if (currentLastMsg != null)
+                    consecutiveFailures++;
+                    totalErrorCount++;
+                    lastErrorTime = DateTime.Now;
+                    lastErrorMessage = $"{ex.GetType().Name}: {ex.Message}";
+                    FrameworkLogger.LogError("ChannelEngine", ex, $"channelId={channelId}, 连续第 {consecutiveFailures} 次");
+
+                    if (currentLastMsg != null && consecutiveFailures <= 1)
                     {
                         try
                         {
@@ -255,6 +290,14 @@ namespace AgentCoreProcessor.Engine
                         }
                         catch { }
                     }
+
+                    if (consecutiveFailures >= ChannelMaxConsecutiveBeforeBackoff)
+                    {
+                        FrameworkLogger.Log("ChannelEngine",
+                            $"channelId={channelId} 连续失败 {consecutiveFailures} 次，退避 {ChannelBackoffSeconds}s");
+                        await Task.Delay(TimeSpan.FromSeconds(ChannelBackoffSeconds));
+                    }
+
                     isInWorkingSession = false;
                 }
                 finally
@@ -697,7 +740,11 @@ namespace AgentCoreProcessor.Engine
             SilentRounds = loopControlModule.SilentRounds,
             AuthorizedToolCount = authorizedTools.Count,
             ParticipantCount = recentParticipants.Count,
-            ProcessedMessageCount = processedMessageCount
+            ProcessedMessageCount = processedMessageCount,
+            ConsecutiveFailures = consecutiveFailures,
+            TotalErrorCount = totalErrorCount,
+            LastErrorTime = lastErrorTime,
+            LastErrorMessage = lastErrorMessage
         };
 
 

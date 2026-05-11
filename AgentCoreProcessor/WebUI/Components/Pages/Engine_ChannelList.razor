@@ -79,6 +79,12 @@ else
                                 {
                                     <span class="text-error">处理中</span>
                                 }
+                                else if (w.HasRecentError)
+                                {
+                                    <span style="color:var(--status-warn);" title="@w.LastErrorMessage">
+                                        <i class="bi bi-exclamation-triangle"></i> 错误×@w.ConsecutiveFailures
+                                    </span>
+                                }
                                 else
                                 {
                                     <span class="text-muted-custom">等待</span>

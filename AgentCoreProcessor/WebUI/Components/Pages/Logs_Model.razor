@@ -17,6 +17,15 @@
             }
         </select>
     </div>
+    <div class="col-md-3">
+        <select class="form-select form-select-sm" @bind="callerFilter" @bind:after="Refresh">
+            <option value="">全部来源</option>
+            @foreach (var c in callerNames)
+            {
+                <option value="@c">@c</option>
+            }
+        </select>
+    </div>
     <div class="col-md-2">
         <button class="btn-ghost" @onclick="Refresh">
             <i class="bi bi-arrow-clockwise"></i> 刷新
@@ -40,14 +49,20 @@
                          @onclick="() => SelectFile(e.FileName)">
                         <div class="d-flex justify-content-between align-items-center">
                             <span class="badge-status badge-express">@e.CoreName</span>
-                            @if (e.InputTokens > 0)
-                            {
-                                <small class="text-muted-custom">@e.InputTokens+@e.OutputTokens t</small>
-                            }
-                            else
-                            {
-                                <small class="text-muted-custom">@FormatSize(e.FileSize)</small>
-                            }
+                            <span>
+                                @if (!string.IsNullOrEmpty(e.Caller))
+                                {
+                                    <small class="text-accent me-2">@e.Caller</small>
+                                }
+                                @if (e.InputTokens > 0)
+                                {
+                                    <small class="text-muted-custom">@e.InputTokens+@e.OutputTokens t</small>
+                                }
+                                else
+                                {
+                                    <small class="text-muted-custom">@FormatSize(e.FileSize)</small>
+                                }
+                            </span>
                         </div>
                         <div class="d-flex justify-content-between align-items-center">
                             <small class="text-muted-custom">@e.Timestamp.ToString("MM-dd HH:mm:ss")</small>
@@ -168,7 +183,9 @@
 @code {
     private List<ModelLogEntry> entries = new();
     private List<string> coreNames = new();
+    private List<string> callerNames = new();
     private string coreFilter = "";
+    private string callerFilter = "";
     private string selectedFile = "";
     private string content = "";
     private ModelLogDetail? detail;
@@ -176,12 +193,15 @@
     protected override void OnInitialized()
     {
         coreNames = LogService.GetCoreNames();
+        callerNames = LogService.GetCallers();
         Refresh();
     }
 
     private void Refresh()
     {
-        entries = LogService.ListRecent(100, string.IsNullOrEmpty(coreFilter) ? null : coreFilter);
+        entries = LogService.ListRecent(100,
+            string.IsNullOrEmpty(coreFilter) ? null : coreFilter,
+            string.IsNullOrEmpty(callerFilter) ? null : callerFilter);
         if (!string.IsNullOrEmpty(selectedFile) && !entries.Any(e => e.FileName == selectedFile))
         {
             selectedFile = "";

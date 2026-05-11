@@ -13,6 +13,7 @@ namespace AgentCoreProcessor.WebUI.Services
         public string FileName { get; init; } = "";
         public DateTime Timestamp { get; init; }
         public string CoreName { get; init; } = "";
+        public string? Caller { get; init; }
         public long FileSize { get; init; }
         public string? Model { get; init; }
         public int InputTokens { get; init; }
@@ -52,7 +53,7 @@ namespace AgentCoreProcessor.WebUI.Services
 
     internal class ModelLogService
     {
-        public List<ModelLogEntry> ListRecent(int count = 100, string? coreFilter = null)
+        public List<ModelLogEntry> ListRecent(int count = 100, string? coreFilter = null, string? callerFilter = null)
         {
             var dir = Path.Combine(PathConfig.LogPath, "Model");
             if (!Directory.Exists(dir)) return new();
@@ -65,7 +66,13 @@ namespace AgentCoreProcessor.WebUI.Services
             if (!string.IsNullOrEmpty(coreFilter))
                 files = files.Where(f => Path.GetFileName(f).Contains(coreFilter, StringComparison.OrdinalIgnoreCase));
 
-            return files.Take(count).Select(f => ParseEntry(f)).ToList();
+            var entries = files.Take(count * 3).Select(f => ParseEntry(f)).ToList();
+
+            if (!string.IsNullOrEmpty(callerFilter))
+                entries = entries.Where(e => e.Caller != null
+                    && e.Caller.Contains(callerFilter, StringComparison.OrdinalIgnoreCase)).ToList();
+
+            return entries.Take(count).ToList();
         }
 
         public string? ReadContent(string fileName)
@@ -154,6 +161,32 @@ namespace AgentCoreProcessor.WebUI.Services
                 .ToList();
         }
 
+        public List<string> GetCallers()
+        {
+            var dir = Path.Combine(PathConfig.LogPath, "Model");
+            if (!Directory.Exists(dir)) return new();
+
+            var callers = new HashSet<string>();
+            var files = Directory.GetFiles(dir, "*.json")
+                .OrderByDescending(f => Path.GetFileName(f))
+                .Take(200);
+
+            foreach (var f in files)
+            {
+                try
+                {
+                    var text = File.ReadAllText(f);
+                    var obj = JObject.Parse(text);
+                    var caller = obj["caller"]?.ToString();
+                    if (!string.IsNullOrEmpty(caller))
+                        callers.Add(caller);
+                }
+                catch { }
+            }
+
+            return callers.OrderBy(c => c).ToList();
+        }
+
         private static ModelLogEntry ParseEntry(string fullPath)
         {
             var name = Path.GetFileName(fullPath);
@@ -177,6 +210,7 @@ namespace AgentCoreProcessor.WebUI.Services
                     var partial = new string(firstChars, 0, read);
 
                     var obj = JObject.Parse(File.ReadAllText(fullPath));
+                    var caller = obj["caller"]?.ToString();
                     var usage = obj["usage"];
                     if (usage != null)
                     {
@@ -185,12 +219,26 @@ namespace AgentCoreProcessor.WebUI.Services
                             FileName = name,
                             Timestamp = entry.Timestamp,
                             CoreName = entry.CoreName,
+                            Caller = caller,
                             FileSize = entry.FileSize,
                             IsJson = true,
                             Model = obj["model"]?.ToString(),
                             InputTokens = usage["inputTokens"]?.Value<int>() ?? 0,
                             OutputTokens = usage["outputTokens"]?.Value<int>() ?? 0,
                             CacheReadTokens = usage["cacheReadTokens"]?.Value<int>() ?? 0
+                        };
+                    }
+                    else
+                    {
+                        return new ModelLogEntry
+                        {
+                            FileName = name,
+                            Timestamp = entry.Timestamp,
+                            CoreName = entry.CoreName,
+                            Caller = caller,
+                            FileSize = entry.FileSize,
+                            IsJson = true,
+                            Model = obj["model"]?.ToString()
                         };
                     }
                 }

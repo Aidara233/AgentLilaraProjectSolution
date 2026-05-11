@@ -91,17 +91,34 @@ namespace AgentCoreProcessor.Core
                     if (onBreak != null)
                     {
                         buffer.Append(delta.Content);
-                        var text = buffer.ToString();
 
-                        foreach (var breakStr in breakString)
+                        while (true)
                         {
-                            if (!text.Contains(breakStr)) continue;
+                            var text = buffer.ToString();
+                            string? matchedBreak = null;
+                            int breakIdx = -1;
 
-                            var block = new ResponseBlock(breakStr, text.Replace(breakStr, ""));
+                            foreach (var breakStr in breakString)
+                            {
+                                var idx = text.IndexOf(breakStr);
+                                if (idx >= 0 && (breakIdx < 0 || idx < breakIdx))
+                                {
+                                    breakIdx = idx;
+                                    matchedBreak = breakStr;
+                                }
+                            }
+
+                            if (matchedBreak == null) break;
+
+                            var blockContent = text[..breakIdx];
+                            var remainder = text[(breakIdx + matchedBreak.Length)..];
+
+                            var block = new ResponseBlock(matchedBreak, blockContent);
                             onBreak.Invoke(block);
                             OnBreak(block);
+
                             buffer.Clear();
-                            break;
+                            buffer.Append(remainder);
                         }
                     }
                 }

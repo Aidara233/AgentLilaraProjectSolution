@@ -14,6 +14,7 @@ namespace AgentCoreProcessor.Engine
         public required string PlatformId { get; init; }
         public required string Memo { get; init; }
         public TrustLevel TrustLevel { get; init; } = TrustLevel.Unknown;
+        public PermissionLevel PermissionLevel { get; init; } = PermissionLevel.Default;
 
         public static ParticipantInfo From(User user, Person person, IncomingMessage msg)
         {
@@ -28,7 +29,8 @@ namespace AgentCoreProcessor.Engine
                 Nickname = msg.Nickname ?? "",
                 PlatformId = msg.PlatformUserId,
                 Memo = person.FastMemory ?? "",
-                TrustLevel = person.TrustLevel
+                TrustLevel = person.TrustLevel,
+                PermissionLevel = user.PermissionLevel
             };
         }
     }

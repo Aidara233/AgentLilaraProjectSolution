@@ -113,5 +113,8 @@ namespace AgentCoreProcessor.Engine
 
         /// <summary>委托注册表：频道循环 ↔ 系统循环的委托生命周期管理。</summary>
         DelegationRegistry Delegations { get; }
+
+        /// <summary>向指定频道循环注入系统通知。频道循环醒来后自行决定如何回应。</summary>
+        void NotifyChannel(int channelId, string content);
     }
 }
