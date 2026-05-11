@@ -87,7 +87,7 @@ namespace AgentCoreProcessor.Client
             if (!string.IsNullOrEmpty(contextHint))
                 return contextHint;
 
-            return "用一两句中文简洁描述这张图片的内容。如果能识别出具体作品、品牌或人物请指出。不需要转录文字。";
+            return "用一两句中文描述这张图片中可见的内容。只描述你实际看到的视觉元素，不要推测含义、判断对错或补充图中没有的信息。如果有可见文字请提及。";
         }
 
         private static string GuessMimeType(string path)
