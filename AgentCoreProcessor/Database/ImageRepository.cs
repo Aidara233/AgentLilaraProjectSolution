@@ -154,5 +154,15 @@ namespace AgentCoreProcessor.Database
             var results = await db.QueryAsync<ImageRecord>(sql, args.ToArray());
             return results.Count > 0 ? results[0].Id : 0;
         }
+
+        public async Task ClearAllDescriptionsAsync()
+        {
+            await db.ExecuteAsync("UPDATE ImageRecords SET Description = NULL");
+        }
+
+        public async Task ClearAllOcrAsync()
+        {
+            await db.ExecuteAsync("UPDATE ImageRecords SET HasText = NULL, OcrText = NULL");
+        }
     }
 }

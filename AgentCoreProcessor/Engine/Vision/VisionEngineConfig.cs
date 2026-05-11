@@ -18,7 +18,7 @@ namespace AgentCoreProcessor.Engine.Vision
         public int VisionRetryDelayMs { get; set; } = 3000;
 
         [JsonProperty("batchSize")]
-        public int BatchSize { get; set; } = 50;
+        public int BatchSize { get; set; } = 10;
 
         [JsonProperty("ocrEnabled")]
         public bool OcrEnabled { get; set; } = true;

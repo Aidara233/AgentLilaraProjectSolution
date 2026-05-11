@@ -424,5 +424,19 @@ namespace AgentCoreProcessor.Adapter
             if (_repo == null) return 0;
             return await _repo.GetFilteredCountAsync(statusFilter, categoryFilter, keyword);
         }
+
+        /// <summary>清空所有图片的描述（触发全部重新生成）。</summary>
+        public static async Task ClearAllDescriptionsAsync()
+        {
+            if (_repo == null) return;
+            await _repo.ClearAllDescriptionsAsync();
+        }
+
+        /// <summary>清空所有图片的 OCR 结果（触发全部重新 OCR）。</summary>
+        public static async Task ClearAllOcrAsync()
+        {
+            if (_repo == null) return;
+            await _repo.ClearAllOcrAsync();
+        }
     }
 }

@@ -95,13 +95,18 @@ namespace AgentCoreProcessor.Engine.Vision
             _visionSuspended = false;
             _suspendReason = null;
 
-            var pending = await ImageStorage.GetPendingIndexAsync(config.BatchSize);
-            if (pending.Count == 0) return;
+            while (IsAlive)
+            {
+                // 小批次拉取，每批处理完立即检查有无更新的图
+                var pending = await ImageStorage.GetPendingIndexAsync(config.BatchSize);
+                if (pending.Count == 0) break;
 
-            FrameworkLogger.Log("VisionEngine", $"开始处理 {pending.Count} 张待索引图片");
-            var tasks = pending.Select(ProcessSingleImageAsync);
-            await Task.WhenAll(tasks);
-            FrameworkLogger.Log("VisionEngine", $"本轮处理完成");
+                FrameworkLogger.Log("VisionEngine", $"处理 {pending.Count} 张图片");
+                var tasks = pending.Select(ProcessSingleImageAsync);
+                await Task.WhenAll(tasks);
+
+                if (_visionSuspended) break;
+            }
         }
 
         private async Task ProcessSingleImageAsync(Database.ImageRecord record)
