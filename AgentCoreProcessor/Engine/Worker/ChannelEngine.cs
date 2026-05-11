@@ -404,7 +404,11 @@ namespace AgentCoreProcessor.Engine
                     TrackMemoryExtraction(batch, currentLastSc);
                     return false;
                 }
-                if (!impulseTracker.ShouldRespond(batch, LastCompletionTime)) return false;
+                if (!impulseTracker.ShouldRespond(batch, LastCompletionTime))
+                {
+                    TrackMemoryExtraction(batch, currentLastSc);
+                    return false;
+                }
 
                 // 消费 pending 图片，检查描述缓存
                 List<(string Path, string? Hash, string? Category)> pendingCopy;
