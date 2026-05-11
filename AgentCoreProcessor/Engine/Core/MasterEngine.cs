@@ -230,6 +230,18 @@ namespace AgentCoreProcessor.Engine
                 FrameworkLogger.Log("MasterEngine", "ImageRecords 已迁移（schema v4: OCR fields）");
             }
 
+            var schemaV5 = Path.Combine(databaseDirectory, ".channel_schema_v5");
+            if (!File.Exists(schemaV5))
+            {
+                try
+                {
+                    await db.ExecuteAsync("ALTER TABLE Channels ADD COLUMN LastExtractedMessageId INTEGER DEFAULT 0");
+                }
+                catch { }
+                await File.WriteAllTextAsync(schemaV5, "migrated");
+                FrameworkLogger.Log("MasterEngine", "Channels 已迁移（schema v5: extraction progress）");
+            }
+
             // Repository
             var persons = new PersonRepository(db);
             var users = new UserRepository(db, persons);

@@ -101,7 +101,7 @@ namespace AgentCoreProcessor.Engine
         // 记忆提取计数（用于退出时判断是否需要收尾提取）
         private int processedMessageCount = 0;
         private int unrespondedMessageCount = 0;
-        private int lastExtractedMessageId = 0;
+        private int lastExtractedMessageId = -1; // -1 表示未初始化，需从 DB 加载
         private bool extractionRunning = false;
         private SessionContext? lastContext;
 
@@ -866,6 +866,13 @@ namespace AgentCoreProcessor.Engine
             extractionRunning = true;
             try
             {
+                // 首次运行时从 DB 加载持久化进度
+                if (lastExtractedMessageId < 0)
+                {
+                    var channel = await ctx.Session.GetChannelAsync(channelId);
+                    lastExtractedMessageId = channel?.LastExtractedMessageId ?? 0;
+                }
+
                 while (true)
                 {
                     // 取新消息（上次提取之后的）
@@ -936,8 +943,9 @@ namespace AgentCoreProcessor.Engine
                         count++;
                     }
 
-                    // 更新进度标记
+                    // 更新进度标记并持久化
                     lastExtractedMessageId = newMessages[^1].Id;
+                    await ctx.Session.UpdateExtractionProgressAsync(channelId, lastExtractedMessageId);
 
                     if (count > 0)
                         FrameworkLogger.Log("ChannelEngine",

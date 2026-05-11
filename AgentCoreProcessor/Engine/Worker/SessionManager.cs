@@ -126,6 +126,18 @@ namespace AgentCoreProcessor.Engine
 
         public Task UpdateChannelAsync(Channel channel) => channels.UpdateAsync(channel);
 
+        public Task<Channel?> GetChannelAsync(int channelId) => channels.GetByIdAsync(channelId);
+
+        public async Task UpdateExtractionProgressAsync(int channelId, int lastMessageId)
+        {
+            var channel = await channels.GetByIdAsync(channelId);
+            if (channel != null)
+            {
+                channel.LastExtractedMessageId = lastMessageId;
+                await channels.UpdateAsync(channel);
+            }
+        }
+
         // ---- 用户管理代理 ----
 
         public Task<List<User>> GetAllUsersAsync() => users.GetAllAsync();
