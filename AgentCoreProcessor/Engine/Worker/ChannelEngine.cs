@@ -862,80 +862,86 @@ namespace AgentCoreProcessor.Engine
             extractionRunning = true;
             try
             {
-                // 取新消息（上次提取之后的）
-                var newMessages = await ctx.Session.GetMessagesAfterIdAsync(
-                    channelId, lastExtractedMessageId, limit: 50);
-                if (newMessages.Count < 2) return;
-
-                // 根据上次回复时间判断活跃/潜水阈值
-                bool isActive = LastCompletionTime != null
-                    && (DateTime.Now - LastCompletionTime.Value).TotalMinutes < 5;
-                int threshold = isActive
-                    ? channelConfig.ActiveExtractionThreshold
-                    : channelConfig.LurkingExtractionThreshold;
-
-                if (newMessages.Count < threshold) return;
-
-                // 取旧消息做参考上下文
-                var contextMessages = lastExtractedMessageId > 0
-                    ? await ctx.Session.GetMessagesBeforeIdAsync(channelId, lastExtractedMessageId, limit: 20)
-                    : new List<UserMessage>();
-
-                // 取近期记忆做去重
-                var recentMems = await ctx.TempMemories.GetRecentByChannelAsync(channelId, 10);
-                var recentMemContents = recentMems.Count > 0
-                    ? recentMems.ConvertAll(m => m.Content)
-                    : null;
-
-                // 构造对话行
-                var contextLines = contextMessages.Select(FormatMessageLine).ToList();
-                var newLines = newMessages.Select(FormatMessageLine).ToList();
-
-                var participantNames = recentParticipants.Values
-                    .Select(p => p.DisplayName)
-                    .Where(n => !string.IsNullOrEmpty(n))
-                    .Distinct().ToList();
-                if (participantNames.Count > 0)
-                    contextLines.Insert(0, $"[群聊参与者: {string.Join("、", participantNames)}]");
-
-                // 调用提取
-                var core = new MemoryExtractionCore();
-                var results = await core.ExtractAsync(contextLines, newLines, recentMemContents);
-
-                int count = 0;
-                foreach (var item in results)
+                while (true)
                 {
-                    if (item.Type == "knowledge")
+                    // 取新消息（上次提取之后的）
+                    var newMessages = await ctx.Session.GetMessagesAfterIdAsync(
+                        channelId, lastExtractedMessageId, limit: 50);
+                    if (newMessages.Count < 2) break;
+
+                    // 根据上次回复时间判断活跃/潜水阈值
+                    bool isActive = LastCompletionTime != null
+                        && (DateTime.Now - LastCompletionTime.Value).TotalMinutes < 5;
+                    int threshold = isActive
+                        ? channelConfig.ActiveExtractionThreshold
+                        : channelConfig.LurkingExtractionThreshold;
+
+                    if (newMessages.Count < threshold) break;
+
+                    // 取旧消息做参考上下文
+                    var contextMessages = lastExtractedMessageId > 0
+                        ? await ctx.Session.GetMessagesBeforeIdAsync(channelId, lastExtractedMessageId, limit: 20)
+                        : new List<UserMessage>();
+
+                    // 取近期记忆做去重
+                    var recentMems = await ctx.TempMemories.GetRecentByChannelAsync(channelId, 10);
+                    var recentMemContents = recentMems.Count > 0
+                        ? recentMems.ConvertAll(m => m.Content)
+                        : null;
+
+                    // 构造对话行
+                    var contextLines = contextMessages.Select(FormatMessageLine).ToList();
+                    var newLines = newMessages.Select(FormatMessageLine).ToList();
+
+                    var participantNames = recentParticipants.Values
+                        .Select(p => p.DisplayName)
+                        .Where(n => !string.IsNullOrEmpty(n))
+                        .Distinct().ToList();
+                    if (participantNames.Count > 0)
+                        contextLines.Insert(0, $"[群聊参与者: {string.Join("、", participantNames)}]");
+
+                    // 调用提取
+                    var core = new MemoryExtractionCore();
+                    var results = await core.ExtractAsync(contextLines, newLines, recentMemContents);
+
+                    int count = 0;
+                    foreach (var item in results)
                     {
-                        await ctx.MemorySvc.StoreAsync(item.Content,
-                            personId: null, channelId: null,
-                            confidence: item.Confidence,
-                            type: MemoryType.Knowledge, subject: item.Subject);
+                        if (item.Type == "knowledge")
+                        {
+                            await ctx.MemorySvc.StoreAsync(item.Content,
+                                personId: null, channelId: null,
+                                confidence: item.Confidence,
+                                type: MemoryType.Knowledge, subject: item.Subject);
+                        }
+                        else if (item.Type == "feedback" && item.Sentiment != null)
+                        {
+                            int personId = ResolveAboutToPersonId(item.About) ?? context.Person.Id;
+                            await ctx.MemorySvc.ApplyFeedbackAsync(
+                                personId, item.Content, item.Sentiment, item.Correction);
+                        }
+                        else
+                        {
+                            int personId = ResolveAboutToPersonId(item.About) ?? context.Person.Id;
+                            string memType = item.Type ?? MemoryType.Fact;
+                            await ctx.MemorySvc.StoreAsync(item.Content,
+                                personId, context.Channel.Id,
+                                confidence: item.Confidence,
+                                type: memType, subject: item.Subject);
+                        }
+                        count++;
                     }
-                    else if (item.Type == "feedback" && item.Sentiment != null)
-                    {
-                        int personId = ResolveAboutToPersonId(item.About) ?? context.Person.Id;
-                        await ctx.MemorySvc.ApplyFeedbackAsync(
-                            personId, item.Content, item.Sentiment, item.Correction);
-                    }
-                    else
-                    {
-                        int personId = ResolveAboutToPersonId(item.About) ?? context.Person.Id;
-                        string memType = item.Type ?? MemoryType.Fact;
-                        await ctx.MemorySvc.StoreAsync(item.Content,
-                            personId, context.Channel.Id,
-                            confidence: item.Confidence,
-                            type: memType, subject: item.Subject);
-                    }
-                    count++;
+
+                    // 更新进度标记
+                    lastExtractedMessageId = newMessages[^1].Id;
+
+                    if (count > 0)
+                        FrameworkLogger.Log("ChannelEngine",
+                            $"记忆提取完成: channelId={channelId}, 提取{count}条, lastId={lastExtractedMessageId}");
+
+                    // 如果这批不满 50 条，说明已经追上了
+                    if (newMessages.Count < 50) break;
                 }
-
-                // 更新进度标记
-                lastExtractedMessageId = newMessages[^1].Id;
-
-                if (count > 0)
-                    FrameworkLogger.Log("ChannelEngine",
-                        $"记忆提取完成: channelId={channelId}, 提取{count}条, lastId={lastExtractedMessageId}");
             }
             catch (Exception ex)
             {
