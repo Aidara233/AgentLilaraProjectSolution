@@ -44,6 +44,8 @@ namespace AgentCoreProcessor.WebUI.Navigation
                 new() { Title = "控制台", Href = "/console" },
             }},
 
+            new() { Title = "图片", Icon = "bi-image", Href = "/images" },
+
             new() { Title = "适配器", Icon = "bi-plug", Children = new()
             {
                 new() { Title = "概览", Href = "/adapters" },

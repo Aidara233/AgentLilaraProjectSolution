@@ -3,6 +3,7 @@
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using AgentCoreProcessor.WebUI.Services
 @using AgentCoreProcessor.Engine
+@using AgentCoreProcessor.Engine.Vision
 @inject SystemMonitor Monitor
 @inject MasterEngine Engine
 @implements IDisposable
@@ -80,6 +81,51 @@
     </div>
 </div>
 
+@if (visionSnap != null)
+{
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-eye me-1 text-accent"></i> 视觉引擎</span>
+            <div class="d-flex gap-1">
+                <button class="btn-ghost" @onclick="TriggerVision" title="立即处理">
+                    <i class="bi bi-play-circle me-1"></i>触发
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row g-2">
+                <div class="col-md-3">
+                    <div class="stat-label">状态</div>
+                    <div class="stat-value @(visionSnap.IsBusy ? "error" : "ok")">@(visionSnap.IsBusy ? "处理中" : "空闲")</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-label">活跃任务</div>
+                    <div class="stat-value">@visionSnap.ActiveTasks</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-label">已处理</div>
+                    <div class="stat-value">@visionSnap.TotalProcessed</div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-label">错误</div>
+                    <div class="stat-value @(visionSnap.VisionErrors + visionSnap.OcrErrors > 0 ? "error" : "")">V:@visionSnap.VisionErrors / O:@visionSnap.OcrErrors</div>
+                </div>
+            </div>
+            <div class="row g-2 mt-2">
+                <div class="col-md-4">
+                    <span class="small text-muted-custom">Vision: @(visionSnap.VisionAvailable ? "可用" : "不可用")</span>
+                </div>
+                <div class="col-md-4">
+                    <span class="small text-muted-custom">OCR: @(visionSnap.OcrAvailable ? "可用" : "不可用")</span>
+                </div>
+                <div class="col-md-4">
+                    <span class="small text-muted-custom">并发: V@(visionSnap.Config.VisionConcurrency)/O@(visionSnap.Config.OcrConcurrency)</span>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @if (!string.IsNullOrEmpty(statusMessage))
 {
     <div style="background:var(--status-info-dim); color:var(--status-info); padding:0.75rem 1rem; border-radius:var(--radius-md); display:flex; align-items:center; justify-content:space-between;">
@@ -92,18 +138,34 @@
 
 @code {
     private SystemSnapshot snap = new();
+    private VisionEngineSnapshot? visionSnap;
     private string? statusMessage;
 
     protected override void OnInitialized()
     {
         snap = Monitor.Current;
+        RefreshVisionSnap();
         Monitor.OnStateChanged += OnStateChanged;
     }
 
     private void OnStateChanged()
     {
         snap = Monitor.Current;
+        RefreshVisionSnap();
         InvokeAsync(StateHasChanged);
+    }
+
+    private void RefreshVisionSnap()
+    {
+        var check = Engine.GetSpawnCheck<VisionEngineSpawnCheck>();
+        visionSnap = check?.ActiveInstance?.GetSnapshot();
+    }
+
+    private void TriggerVision()
+    {
+        var check = Engine.GetSpawnCheck<VisionEngineSpawnCheck>();
+        check?.ActiveInstance?.SignalGate();
+        statusMessage = "已触发视觉引擎处理";
     }
 
     private void ToggleMute()

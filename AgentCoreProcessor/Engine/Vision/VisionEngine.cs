@@ -7,6 +7,20 @@ using AgentCoreProcessor.Adapter;
 
 namespace AgentCoreProcessor.Engine.Vision
 {
+    internal class VisionEngineSnapshot
+    {
+        public bool IsAlive { get; set; }
+        public bool IsBusy { get; set; }
+        public int ActiveTasks { get; set; }
+        public int PendingCount { get; set; }
+        public int TotalProcessed { get; set; }
+        public int VisionErrors { get; set; }
+        public int OcrErrors { get; set; }
+        public bool VisionAvailable { get; set; }
+        public bool OcrAvailable { get; set; }
+        public VisionEngineConfig Config { get; set; } = new();
+    }
+
     internal class VisionEngine : ISubEngine
     {
         public string EngineType => "Vision";
@@ -22,6 +36,9 @@ namespace AgentCoreProcessor.Engine.Vision
         private PaddleOCRSharp.PaddleOCREngine? ocrEngine;
         private int _activeTasks;
         private bool _visionAvailable;
+        private int _totalProcessed;
+        private int _visionErrors;
+        private int _ocrErrors;
 
         public VisionEngine(ISystemContext ctx)
         {
@@ -125,9 +142,15 @@ namespace AgentCoreProcessor.Engine.Vision
                 }
 
                 if (!string.IsNullOrEmpty(desc))
+                {
                     await ImageStorage.UpdateDescriptionAsync(record.Hash, desc);
+                    Interlocked.Increment(ref _totalProcessed);
+                }
                 else
+                {
+                    Interlocked.Increment(ref _visionErrors);
                     FrameworkLogger.Log("VisionEngine", $"Vision 最终失败，跳过: hash={record.Hash}");
+                }
             }
             finally
             {
@@ -150,6 +173,7 @@ namespace AgentCoreProcessor.Engine.Vision
             }
             catch (Exception ex)
             {
+                Interlocked.Increment(ref _ocrErrors);
                 FrameworkLogger.LogError("VisionEngine", ex, $"OCR 失败: hash={record.Hash}");
                 await ImageStorage.UpdateOcrAsync(record.Hash, false, null);
             }
@@ -177,6 +201,35 @@ namespace AgentCoreProcessor.Engine.Vision
         {
             ocrEngine?.Dispose();
             ocrEngine = null;
+        }
+
+        public VisionEngineSnapshot GetSnapshot()
+        {
+            return new VisionEngineSnapshot
+            {
+                IsAlive = IsAlive,
+                IsBusy = IsBusy,
+                ActiveTasks = _activeTasks,
+                PendingCount = -1, // 需要异步查询，WebUI 单独获取
+                TotalProcessed = _totalProcessed,
+                VisionErrors = _visionErrors,
+                OcrErrors = _ocrErrors,
+                VisionAvailable = _visionAvailable,
+                OcrAvailable = ocrEngine != null,
+                Config = config
+            };
+        }
+
+        public void UpdateConfig(VisionEngineConfig newConfig)
+        {
+            config = newConfig;
+            config.Save();
+            // 重建信号量（下次处理生效）
+            visionSemaphore?.Dispose();
+            ocrSemaphore?.Dispose();
+            visionSemaphore = new SemaphoreSlim(config.VisionConcurrency);
+            ocrSemaphore = new SemaphoreSlim(config.OcrConcurrency);
+            FrameworkLogger.Log("VisionEngine", "配置已更新");
         }
 
         public void OnEvent(EngineEvent e)

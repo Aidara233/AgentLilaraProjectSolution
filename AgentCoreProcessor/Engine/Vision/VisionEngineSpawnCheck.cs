@@ -10,6 +10,8 @@ namespace AgentCoreProcessor.Engine.Vision
         private VisionEngine? activeInstance;
         private DateTime? lastDeathTime;
 
+        public VisionEngine? ActiveInstance => activeInstance?.IsAlive == true ? activeInstance : null;
+
         public Task OnEventAsync(EngineEvent e, ISystemContext ctx)
         {
             if (e is SignalEvent signal && signal.SignalName == "new-image")

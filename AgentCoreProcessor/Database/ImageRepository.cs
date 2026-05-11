@@ -80,5 +80,79 @@ namespace AgentCoreProcessor.Database
                 await db.UpdateAsync(record);
             }
         }
+
+        public Task DeleteAsync(ImageRecord record) => db.DeleteAsync(record);
+
+        public async Task<int> GetTotalCountAsync()
+        {
+            var results = await db.QueryAsync<ImageRecord>("SELECT COUNT(*) as Id FROM ImageRecords");
+            return results.Count > 0 ? results[0].Id : 0;
+        }
+
+        public async Task<List<ImageRecord>> GetPagedAsync(int offset, int limit,
+            string? statusFilter = null, string? categoryFilter = null, string? keyword = null)
+        {
+            var where = new List<string>();
+            var args = new List<object>();
+
+            if (statusFilter == "pending")
+                where.Add("(Description IS NULL OR HasText IS NULL)");
+            else if (statusFilter == "done")
+                where.Add("(Description IS NOT NULL AND HasText IS NOT NULL)");
+
+            if (!string.IsNullOrEmpty(categoryFilter))
+            {
+                where.Add("Category = ?");
+                args.Add(categoryFilter);
+            }
+
+            if (!string.IsNullOrEmpty(keyword))
+            {
+                where.Add("(Description LIKE ? OR OcrText LIKE ?)");
+                args.Add($"%{keyword}%");
+                args.Add($"%{keyword}%");
+            }
+
+            var sql = "SELECT * FROM ImageRecords";
+            if (where.Count > 0)
+                sql += " WHERE " + string.Join(" AND ", where);
+            sql += " ORDER BY CreatedAt DESC LIMIT ? OFFSET ?";
+            args.Add(limit);
+            args.Add(offset);
+
+            return await db.QueryAsync<ImageRecord>(sql, args.ToArray());
+        }
+
+        public async Task<int> GetFilteredCountAsync(
+            string? statusFilter = null, string? categoryFilter = null, string? keyword = null)
+        {
+            var where = new List<string>();
+            var args = new List<object>();
+
+            if (statusFilter == "pending")
+                where.Add("(Description IS NULL OR HasText IS NULL)");
+            else if (statusFilter == "done")
+                where.Add("(Description IS NOT NULL AND HasText IS NOT NULL)");
+
+            if (!string.IsNullOrEmpty(categoryFilter))
+            {
+                where.Add("Category = ?");
+                args.Add(categoryFilter);
+            }
+
+            if (!string.IsNullOrEmpty(keyword))
+            {
+                where.Add("(Description LIKE ? OR OcrText LIKE ?)");
+                args.Add($"%{keyword}%");
+                args.Add($"%{keyword}%");
+            }
+
+            var sql = "SELECT COUNT(*) as Id FROM ImageRecords";
+            if (where.Count > 0)
+                sql += " WHERE " + string.Join(" AND ", where);
+
+            var results = await db.QueryAsync<ImageRecord>(sql, args.ToArray());
+            return results.Count > 0 ? results[0].Id : 0;
+        }
     }
 }

@@ -345,6 +345,44 @@ namespace AgentCoreProcessor.Adapter
             return record?.Id;
         }
 
+        /// <summary>删除图片（文件 + 缩略图 + DB 记录）。</summary>
+        public static async Task<bool> DeleteAsync(string hash)
+        {
+            if (_repo == null) return false;
+            var record = await _repo.GetByHashAsync(hash);
+            if (record == null) return false;
+
+            try { if (File.Exists(record.LocalPath)) File.Delete(record.LocalPath); } catch { }
+            try { if (!string.IsNullOrEmpty(record.ThumbnailPath) && File.Exists(record.ThumbnailPath)) File.Delete(record.ThumbnailPath); } catch { }
+            await _repo.DeleteAsync(record);
+            return true;
+        }
+
+        /// <summary>清除图片的描述（用于重新生成）。</summary>
+        public static async Task ClearDescriptionAsync(string hash)
+        {
+            if (_repo == null) return;
+            var record = await _repo.GetByHashAsync(hash);
+            if (record != null)
+            {
+                record.Description = null;
+                await _repo.UpdateAsync(record);
+            }
+        }
+
+        /// <summary>清除图片的 OCR 结果（用于重新处理）。</summary>
+        public static async Task ClearOcrAsync(string hash)
+        {
+            if (_repo == null) return;
+            var record = await _repo.GetByHashAsync(hash);
+            if (record != null)
+            {
+                record.HasText = null;
+                record.OcrText = null;
+                await _repo.UpdateAsync(record);
+            }
+        }
+
         /// <summary>获取待索引图片（无描述或未OCR），按时间倒序。</summary>
         public static async Task<List<ImageRecord>> GetPendingIndexAsync(int limit = 50)
         {
@@ -357,6 +395,22 @@ namespace AgentCoreProcessor.Adapter
         {
             if (_repo == null) return;
             await _repo.UpdateOcrAsync(hash, hasText, ocrText);
+        }
+
+        /// <summary>分页查询图片（WebUI 用）。</summary>
+        public static async Task<List<ImageRecord>> GetPagedAsync(int offset, int limit,
+            string? statusFilter = null, string? categoryFilter = null, string? keyword = null)
+        {
+            if (_repo == null) return new List<ImageRecord>();
+            return await _repo.GetPagedAsync(offset, limit, statusFilter, categoryFilter, keyword);
+        }
+
+        /// <summary>获取筛选后的图片总数。</summary>
+        public static async Task<int> GetFilteredCountAsync(
+            string? statusFilter = null, string? categoryFilter = null, string? keyword = null)
+        {
+            if (_repo == null) return 0;
+            return await _repo.GetFilteredCountAsync(statusFilter, categoryFilter, keyword);
         }
     }
 }
