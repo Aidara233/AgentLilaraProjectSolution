@@ -1100,44 +1100,15 @@ namespace AgentCoreProcessor.Engine
             }
         }
 
-        private async Task<List<ImageEmbed>?> ResolveImagePresentationAsync(
+        private Task<List<ImageEmbed>?> ResolveImagePresentationAsync(
             List<(string Path, string? Hash, string? Category)> images)
         {
-            // ContextBuilder 现在负责决定直传/描述，这里只触发描述生成
             foreach (var (path, hash, category) in images)
             {
                 if (!string.IsNullOrEmpty(hash))
                     _ = ImageStorage.IncrementSeenCountAsync(hash);
-
-                // 无描述时触发异步生成
-                if (!string.IsNullOrEmpty(hash))
-                {
-                    var desc = await ImageStorage.GetDescriptionAsync(hash);
-                    if (string.IsNullOrEmpty(desc))
-                        _ = GenerateDescriptionAsync(path, hash, category);
-                }
             }
-
-            // 实际的图片列表由 ContextBuilder.BuildContextXmlAsync 返回
-            return null;
-        }
-
-        private async Task GenerateDescriptionAsync(string path, string hash, string? category)
-        {
-            if (ctx.Vision == null) return;
-            try
-            {
-                var hint = category == "sticker"
-                    ? "这是一张聊天表情包，用10字以内描述其表达的情绪或动作"
-                    : null;
-                var desc = await ctx.Vision.DescribeImageAsync(path, hint);
-                if (!string.IsNullOrEmpty(desc))
-                    await ImageStorage.UpdateDescriptionAsync(hash, desc);
-            }
-            catch (Exception ex)
-            {
-                FrameworkLogger.Log("ChannelEngine", $"图片描述生成失败: {ex.Message}");
-            }
+            return Task.FromResult<List<ImageEmbed>?>(null);
         }
 
         // ---- Phase 6: 关注规则管理 ----

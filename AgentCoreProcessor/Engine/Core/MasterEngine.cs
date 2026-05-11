@@ -105,6 +105,7 @@ namespace AgentCoreProcessor.Engine
             ("System",  () => new SystemEngineSpawnCheck()),
             ("Channel",  () => new ChannelEngineSpawnCheck()),
             ("Dream",   () => new DreamEngineSpawnCheck()),
+            ("Vision",  () => new Vision.VisionEngineSpawnCheck()),
         ];
 
 
@@ -213,6 +214,19 @@ namespace AgentCoreProcessor.Engine
                 FrameworkLogger.Log("MasterEngine", "ImageRecords 已迁移（schema v3）");
             }
 
+            var schemaV4 = Path.Combine(databaseDirectory, ".image_schema_v4");
+            if (!File.Exists(schemaV4))
+            {
+                try
+                {
+                    await db.ExecuteAsync("ALTER TABLE ImageRecords ADD COLUMN OcrText TEXT");
+                    await db.ExecuteAsync("ALTER TABLE ImageRecords ADD COLUMN HasText INTEGER");
+                }
+                catch { }
+                await File.WriteAllTextAsync(schemaV4, "migrated");
+                FrameworkLogger.Log("MasterEngine", "ImageRecords 已迁移（schema v4: OCR fields）");
+            }
+
             // Repository
             var persons = new PersonRepository(db);
             var users = new UserRepository(db, persons);
@@ -226,7 +240,7 @@ namespace AgentCoreProcessor.Engine
             DreamLogs = new DreamLogRepository(db);
             ScheduledTasks = new ScheduledTaskRepository(db);
             var images = new ImageRepository(db);
-            ImageStorage.Init(images);
+            ImageStorage.Init(images, eventBus);
             ModelCallLogs = new ModelCallLogRepository(db);
             CoreBase.CallLogRepo = ModelCallLogs;
 

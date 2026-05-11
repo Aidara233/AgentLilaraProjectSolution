@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Database;
+using AgentCoreProcessor.Engine;
 using SkiaSharp;
 
 namespace AgentCoreProcessor.Adapter
@@ -17,6 +18,7 @@ namespace AgentCoreProcessor.Adapter
     internal static class ImageStorage
     {
         private static ImageRepository? _repo;
+        private static EventBus? _eventBus;
 
         /// <summary>缩略图长边最大像素（可配置）</summary>
         public static int ThumbnailMaxEdge { get; set; } = 1568;
@@ -33,7 +35,11 @@ namespace AgentCoreProcessor.Adapter
         /// <summary>单轮图片直传最大数量</summary>
         public static int MaxDirectSendCount { get; set; } = 5;
 
-        public static void Init(ImageRepository repo) => _repo = repo;
+        public static void Init(ImageRepository repo, EventBus? eventBus = null)
+        {
+            _repo = repo;
+            _eventBus = eventBus;
+        }
 
         /// <summary>
         /// 从 URL 下载图片，去重存储，返回 (本地路径, 哈希)。
@@ -73,6 +79,7 @@ namespace AgentCoreProcessor.Adapter
                     FileSize = bytes.Length,
                     CreatedAt = DateTime.Now
                 });
+                _eventBus?.PublishSignal("new-image", hash);
             }
 
             return (localPath, hash);
@@ -106,6 +113,7 @@ namespace AgentCoreProcessor.Adapter
                     SourceUrl = null,
                     CreatedAt = DateTime.Now
                 });
+                _eventBus?.PublishSignal("new-image", hash);
             }
 
             return (localPath, hash);
@@ -335,6 +343,20 @@ namespace AgentCoreProcessor.Adapter
             if (_repo == null) return null;
             var record = await _repo.GetByHashAsync(hash);
             return record?.Id;
+        }
+
+        /// <summary>获取待索引图片（无描述或未OCR），按时间倒序。</summary>
+        public static async Task<List<ImageRecord>> GetPendingIndexAsync(int limit = 50)
+        {
+            if (_repo == null) return new List<ImageRecord>();
+            return await _repo.GetPendingIndexAsync(limit);
+        }
+
+        /// <summary>更新 OCR 结果。</summary>
+        public static async Task UpdateOcrAsync(string hash, bool hasText, string? ocrText)
+        {
+            if (_repo == null) return;
+            await _repo.UpdateOcrAsync(hash, hasText, ocrText);
         }
     }
 }

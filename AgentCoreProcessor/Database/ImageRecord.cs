@@ -15,6 +15,8 @@ namespace AgentCoreProcessor.Database
         public string? SourceUrl { get; set; }
         public string? Category { get; set; }
         public string? Description { get; set; }
+        public string? OcrText { get; set; }
+        public bool? HasText { get; set; }
         public int SeenCount { get; set; } = 0;
         public long FileSize { get; set; }
         public DateTime CreatedAt { get; set; }

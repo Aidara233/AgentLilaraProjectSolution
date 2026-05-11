@@ -62,5 +62,23 @@ namespace AgentCoreProcessor.Database
                 await db.UpdateAsync(record);
             }
         }
+
+        public async Task<List<ImageRecord>> GetPendingIndexAsync(int limit = 50)
+        {
+            return await db.QueryAsync<ImageRecord>(
+                "SELECT * FROM ImageRecords WHERE Description IS NULL OR HasText IS NULL ORDER BY CreatedAt DESC LIMIT ?",
+                limit);
+        }
+
+        public async Task UpdateOcrAsync(string hash, bool hasText, string? ocrText)
+        {
+            var record = await GetByHashAsync(hash);
+            if (record != null)
+            {
+                record.HasText = hasText;
+                record.OcrText = ocrText;
+                await db.UpdateAsync(record);
+            }
+        }
     }
 }
