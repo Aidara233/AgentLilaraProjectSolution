@@ -12,7 +12,7 @@ AgentCoreProcessor/
 │     ├── OneBot/  OneBotAdapter(协议层) + OneBotMessageParser(解析层) + OneBotActions(操作层) + OneBotConfig
 │     ├── File/    FileAdapter（文件轮询，测试用）
 │     └── 通用:    IAdapter / AdapterManager / AdapterFactory / AdapterStatus / AdapterAction
-├── Client/      IModelClient 抽象层（Claude/OpenAI 双协议）+ Embedding 接口
+├── Client/      IModelClient 抽象层（Claude/OpenAI 双协议）+ Embedding + IVisionProvider + IOcrProvider
 ├── Command/     框架指令系统（/help /status /config 等）
 ├── Config/      PathConfig 绝对路径管理
 ├── Core/        业务核心（AgentCore统一+PreprocessingCore+MemoryExtractionCore+MemoryQueryCore等），继承 CoreBase，各自 JSON 配置
@@ -24,7 +24,7 @@ AgentCoreProcessor/
 ├── Util/        VectorUtil 向量操作
 ├── WebUI/       Blazor Server 管理面板（嵌入式，同进程）
 │     ├── Services/    SystemMonitor(快照采集) + LogStreamService(日志流) + ModelLogService(模型日志) + TokenStatsService(token统计) + WebConfig + WebAuthService
-│     ├── Components/  Razor 页面（Dashboard/Logs/EngineControl/DreamControl/WorkerDetail/Messages/Memories/People/ConfigEditor/Login）
+│     ├── Components/  Razor 页面（Dashboard/Logs/EngineControl/DreamControl/WorkerDetail/Messages/Memories/People/ConfigEditor/Login/Images/Engine_Vision）
 │     └── wwwroot/     静态资源（Bootstrap 5 CSS）
 └── Program.cs   入口（WebApplication 宿主，默认启动 Web 服务器 + 适配器）
 ```
@@ -38,6 +38,7 @@ MasterEngine (内核，实现 ISystemContext)
   │     Channel → ChannelEngine (每活跃频道一个，常驻，频道循环)
   │     System  → SystemEngine (单例，系统循环，纯调度者)
   │     Dream   → DreamEngine (走神/小睡/大睡)
+  │     Vision  → VisionEngine (图片描述+OCR，IsInfrastructure=true)
   │     Command → CommandSpawnCheck (指令拦截)
   ├── 活跃引擎表 (List<ISubEngine>)
   ├── TaskBridge (频道循环 ↔ 系统循环异步通信)
@@ -116,6 +117,37 @@ ChannelEngine (频道循环，常驻，一个活跃频道一个):
     PromptBuilder: 文本XML + #IMGN:标签 + image block 混排
     "查看图片"工具: Working专用, 输入ImageRecord.Id, 返回原图
     缩略图: SkiaSharp 缩放(长边≤1568px) + JPEG 85%, 存 Storage/Images/thumbs/
+```
+
+VisionEngine (视觉引擎，单例，基础设施):
+  闸门驱动循环 (LoopGate):
+    触发源: 心跳(TimerEvent tick, 60s) / 新图信号(SignalEvent "new-image")
+    ImageStorage 保存新图 → EventBus 发 "new-image" → SpawnCheck 转发 → gate.Signal()
+
+  处理流程:
+    小批次循环(BatchSize=10, ORDER BY CreatedAt DESC):
+      每张图并行:
+        ├── VisionWorker → IVisionProvider (Qwen3-VL-8B, SiliconFlow)
+        └── OcrWorker → IOcrProvider (DeepSeek-OCR, SiliconFlow, 免费)
+      两者独立写入 ImageRecord，互不等待
+      每批完成后重新查询 → 新图自然插队
+
+  并发控制:
+    VisionSemaphore(default 3) — API 限流
+    OcrSemaphore(default 4) — API 限流
+
+  容错:
+    Vision 401/403 → 暂停本轮所有 Vision 处理（下轮重试）
+    OCR 失败 → 标记 HasText=false，记录错误
+    SpawnCheck 检测死亡 → 10s 后自动重启
+
+  配置: Storage/Engine/VisionEngineConfig.json
+  模型配置: Storage/Core/VisionProvider.json + Storage/Core/OcrProvider.json
+
+  WebUI:
+    /engine/vision — 状态/配置/待处理队列/手动触发/全部重新生成
+    /images — 图片库浏览/预览/筛选/编辑描述/删除
+
 ```
 
 SystemEngine (系统循环，单例，纯调度者):
@@ -417,6 +449,8 @@ CommandSpawnCheck 拦截 → CommandRegistry 路由
 Storage/
 ├── Core/*.json          各Core的LLM配置+系统提示词
 ├── Core/Persona.txt     共享人设（自动注入 UsePersona=true 的 Core）
+├── Core/VisionProvider.json  视觉模型配置(apiKey/endpoint/model)
+├── Core/OcrProvider.json     OCR模型配置(apiKey/endpoint/model)
 ├── Dream/
 │     ├── DreamConfig.json    做梦调度参数+预算配置
 │     ├── DreamStats.json     滚动7天统计+自适应基线
@@ -424,7 +458,8 @@ Storage/
 ├── Engine/
 │     ├── EngineConfig.json          自启动引擎列表 {"autoStart":["Timer"]}
 │     ├── ImpulseConfig.json         冲动值全参数配置
-│     └── TrustProgressionConfig.json 信任升降阈值+警报冷却配置
+│     ├── TrustProgressionConfig.json 信任升降阈值+警报冷却配置
+│     └── VisionEngineConfig.json    视觉引擎并发/批量/重试配置
 ├── Adapter/
 │     └── *.json  适配器实例配置（多实例，config-driven）
 │         qq-main.json: OneBotAdapter 配置(WS地址/token/白名单/botNames)

@@ -91,6 +91,10 @@
 - 做梦调度：Engine/Dream/DreamEngineSpawnCheck.cs
 - 做梦执行：Engine/Dream/DreamEngine.cs
 - 睡眠状态：Engine/Core/SleepState.cs
+- 视觉引擎：Engine/Vision/VisionEngine.cs（图片描述+OCR调度）
+- 视觉模型：Client/SiliconFlowVisionProvider.cs + Storage/Core/VisionProvider.json
+- OCR模型：Client/SiliconFlowOcrProvider.cs + Storage/Core/OcrProvider.json
+- 图片存储：Adapter/ImageStorage.cs
 - Token 统计：Database/ModelCallLog.cs + ModelCallLogRepository.cs
 - 工具管理：Tool/ToolRegistry.cs（禁用逻辑）+ Storage/ToolConfig.json
 - 配置文件：Storage/ 目录下
