@@ -107,16 +107,49 @@
                         <tr><td class="text-muted-custom">ID</td><td>@selected.Id</td></tr>
                         <tr><td class="text-muted-custom">哈希</td><td class="text-truncate" style="max-width:180px" title="@selected.Hash">@selected.Hash</td></tr>
                         <tr><td class="text-muted-custom">大小</td><td>@FormatSize(selected.FileSize)</td></tr>
-                        <tr><td class="text-muted-custom">分类</td><td>@(selected.Category ?? "未分类")</td></tr>
+                        <tr>
+                            <td class="text-muted-custom">分类</td>
+                            <td>
+                                @if (editingField == "category")
+                                {
+                                    <select class="form-select form-select-sm" style="width:auto;display:inline" @bind="editValue" @bind:after="SaveCategory">
+                                        <option value="">未分类</option>
+                                        <option value="sticker">sticker</option>
+                                        <option value="image">image</option>
+                                    </select>
+                                }
+                                else
+                                {
+                                    <span style="cursor:pointer" @onclick='() => StartEdit("category", selected.Category ?? "")' title="点击编辑">@(selected.Category ?? "未分类") <i class="bi bi-pencil small text-muted-custom"></i></span>
+                                }
+                            </td>
+                        </tr>
                         <tr><td class="text-muted-custom">创建</td><td>@selected.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td></tr>
                         <tr><td class="text-muted-custom">引用次数</td><td>@selected.SeenCount</td></tr>
                     </table>
 
                     <div class="mb-2">
-                        <label class="small text-muted-custom">描述</label>
-                        <div class="p-2" style="background:var(--bg-secondary);border-radius:4px;min-height:40px">
-                            @(selected.Description ?? "<无>")
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="small text-muted-custom">描述</label>
+                            @if (editingField != "description")
+                            {
+                                <button class="btn-ghost small" style="padding:0 4px" @onclick='() => StartEdit("description", selected.Description ?? "")' title="编辑描述"><i class="bi bi-pencil"></i></button>
+                            }
                         </div>
+                        @if (editingField == "description")
+                        {
+                            <textarea class="form-control form-control-sm" rows="3" @bind="editValue"></textarea>
+                            <div class="d-flex gap-1 mt-1">
+                                <button class="btn-ghost small" @onclick="SaveDescription"><i class="bi bi-check"></i> 保存</button>
+                                <button class="btn-ghost small" @onclick="CancelEdit"><i class="bi bi-x"></i> 取消</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="p-2" style="background:var(--bg-secondary);border-radius:4px;min-height:40px">
+                                @(selected.Description ?? "<无>")
+                            </div>
+                        }
                     </div>
 
                     @if (selected.HasText == true && !string.IsNullOrEmpty(selected.OcrText))
@@ -147,6 +180,8 @@
     private string statusFilter = "";
     private string categoryFilter = "";
     private string keyword = "";
+    private string? editingField;
+    private string editValue = "";
     private int page = 1;
     private int pageSize = 30;
     private int totalCount;
@@ -251,6 +286,32 @@
     {
         var check = Engine.GetSpawnCheck<VisionEngineSpawnCheck>();
         check?.ActiveInstance?.SignalGate();
+    }
+
+    private void StartEdit(string field, string currentValue)
+    {
+        editingField = field;
+        editValue = currentValue;
+    }
+
+    private void CancelEdit() => editingField = null;
+
+    private async Task SaveDescription()
+    {
+        if (selected == null) return;
+        var desc = string.IsNullOrWhiteSpace(editValue) ? null : editValue.Trim();
+        await ImageStorage.UpdateDescriptionAsync(selected.Hash, desc ?? "");
+        selected.Description = desc;
+        editingField = null;
+    }
+
+    private async Task SaveCategory()
+    {
+        if (selected == null) return;
+        var cat = string.IsNullOrEmpty(editValue) ? null : editValue;
+        await ImageStorage.UpdateCategoryAsync(selected.Hash, cat);
+        selected.Category = cat;
+        editingField = null;
     }
 
     private async Task GoPage(int p)

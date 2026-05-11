@@ -162,6 +162,18 @@ namespace AgentCoreProcessor.Adapter
             }
         }
 
+        /// <summary>强制更新分类（覆盖已有值）。</summary>
+        public static async Task UpdateCategoryAsync(string hash, string? category)
+        {
+            if (_repo == null) return;
+            var record = await _repo.GetByHashAsync(hash);
+            if (record != null)
+            {
+                record.Category = category;
+                await _repo.UpdateAsync(record);
+            }
+        }
+
         public static async Task<string?> GetDescriptionAsync(string hash)
         {
             if (_repo == null) return null;
