@@ -1,0 +1,242 @@
+@page "/engine/vision"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using AgentCoreProcessor.Engine
+@using AgentCoreProcessor.Engine.Vision
+@using AgentCoreProcessor.Database
+@using AgentCoreProcessor.Adapter
+@inject MasterEngine Engine
+@inject AgentCoreProcessor.WebUI.Services.SystemMonitor Monitor
+@implements IDisposable
+
+<div class="page-title">
+    <i class="bi bi-eye"></i> 视觉引擎
+</div>
+
+@if (snap == null)
+{
+    <div class="card"><div class="card-body text-muted-custom">引擎未运行</div></div>
+}
+else
+{
+    <div class="row g-3 mb-3">
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <div class="stat-label">状态</div>
+                    <div class="stat-value @(snap.IsBusy ? "error" : "ok")">@(snap.IsBusy ? "处理中" : "空闲")</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <div class="stat-label">待处理</div>
+                    <div class="stat-value">@pendingCount</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <div class="stat-label">已处理</div>
+                    <div class="stat-value">@snap.TotalProcessed</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <div class="stat-label">错误</div>
+                    <div class="stat-value @(snap.VisionErrors + snap.OcrErrors > 0 ? "error" : "")">V:@snap.VisionErrors / O:@snap.OcrErrors</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (snap.VisionSuspended)
+    {
+        <div class="mb-3" style="background:var(--status-error-dim);color:var(--status-error);padding:0.75rem 1rem;border-radius:var(--radius-md)">
+            <i class="bi bi-exclamation-triangle me-1"></i> @snap.SuspendReason
+        </div>
+    }
+
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span>配置</span>
+            <button class="btn-ghost" @onclick="TriggerProcess"><i class="bi bi-play-circle me-1"></i>立即处理</button>
+        </div>
+        <div class="card-body">
+            <div class="row g-2">
+                <div class="col-md-3">
+                    <label class="small text-muted-custom">Vision 并发</label>
+                    <input type="number" class="form-control form-control-sm" min="1" max="10" @bind="cfgVisionConc" />
+                </div>
+                <div class="col-md-3">
+                    <label class="small text-muted-custom">OCR 并发</label>
+                    <input type="number" class="form-control form-control-sm" min="1" max="10" @bind="cfgOcrConc" />
+                </div>
+                <div class="col-md-3">
+                    <label class="small text-muted-custom">批量大小</label>
+                    <input type="number" class="form-control form-control-sm" min="1" max="200" @bind="cfgBatchSize" />
+                </div>
+                <div class="col-md-3">
+                    <label class="small text-muted-custom">重试次数</label>
+                    <input type="number" class="form-control form-control-sm" min="0" max="5" @bind="cfgRetryCount" />
+                </div>
+            </div>
+            <div class="row g-2 mt-2">
+                <div class="col-md-3">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" @bind="cfgVisionEnabled" />
+                        <label class="form-check-label small">Vision 启用</label>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" @bind="cfgOcrEnabled" />
+                        <label class="form-check-label small">OCR 启用</label>
+                    </div>
+                </div>
+                <div class="col-md-3 d-flex align-items-end">
+                    <button class="btn-ghost" @onclick="SaveConfig"><i class="bi bi-check-circle me-1"></i>保存配置</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header">能力状态</div>
+        <div class="card-body">
+            <div class="d-flex gap-3">
+                <span class="small">
+                    <i class="bi @(snap.VisionAvailable ? "bi-check-circle text-accent" : "bi-x-circle text-muted-custom")"></i>
+                    Vision (@(snap.VisionAvailable ? "可用" : "不可用"))
+                </span>
+                <span class="small">
+                    <i class="bi @(snap.OcrAvailable ? "bi-check-circle text-accent" : "bi-x-circle text-muted-custom")"></i>
+                    OCR (@(snap.OcrAvailable ? "可用" : "不可用"))
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">最近处理队列</div>
+        <div class="card-body p-0">
+            @if (recentPending.Count == 0)
+            {
+                <div class="p-3 text-muted-custom text-center">无待处理图片</div>
+            }
+            else
+            {
+                <table class="table-dark-custom">
+                    <thead>
+                        <tr><th>ID</th><th>哈希</th><th>分类</th><th>描述</th><th>OCR</th><th>创建时间</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var img in recentPending)
+                        {
+                            <tr>
+                                <td>@img.Id</td>
+                                <td class="text-truncate" style="max-width:100px" title="@img.Hash">@img.Hash[..8]...</td>
+                                <td>@(img.Category ?? "-")</td>
+                                <td>@(img.Description != null ? "done" : "pending")</td>
+                                <td>@(img.HasText == null ? "pending" : img.HasText == true ? "有文字" : "无")</td>
+                                <td>@img.CreatedAt.ToString("MM-dd HH:mm")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(statusMsg))
+{
+    <div class="mt-3" style="background:var(--status-info-dim);color:var(--status-info);padding:0.75rem 1rem;border-radius:var(--radius-md)">
+        @statusMsg
+    </div>
+}
+
+@code {
+    private VisionEngineSnapshot? snap;
+    private List<ImageRecord> recentPending = new();
+    private int pendingCount;
+    private string? statusMsg;
+
+    private int cfgVisionConc;
+    private int cfgOcrConc;
+    private int cfgBatchSize;
+    private int cfgRetryCount;
+    private bool cfgVisionEnabled;
+    private bool cfgOcrEnabled;
+
+    protected override async Task OnInitializedAsync()
+    {
+        RefreshSnap();
+        await LoadPending();
+        Monitor.OnStateChanged += OnStateChanged;
+    }
+
+    private void OnStateChanged()
+    {
+        RefreshSnap();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void RefreshSnap()
+    {
+        var check = Engine.GetSpawnCheck<VisionEngineSpawnCheck>();
+        snap = check?.ActiveInstance?.GetSnapshot();
+        if (snap != null)
+        {
+            cfgVisionConc = snap.Config.VisionConcurrency;
+            cfgOcrConc = snap.Config.OcrConcurrency;
+            cfgBatchSize = snap.Config.BatchSize;
+            cfgRetryCount = snap.Config.VisionRetryCount;
+            cfgVisionEnabled = snap.Config.VisionEnabled;
+            cfgOcrEnabled = snap.Config.OcrEnabled;
+        }
+    }
+
+    private async Task LoadPending()
+    {
+        recentPending = await ImageStorage.GetPendingIndexAsync(20);
+        pendingCount = await ImageStorage.GetFilteredCountAsync("pending");
+    }
+
+    private async Task TriggerProcess()
+    {
+        var check = Engine.GetSpawnCheck<VisionEngineSpawnCheck>();
+        check?.ActiveInstance?.SignalGate();
+        statusMsg = "已触发处理";
+        await LoadPending();
+    }
+
+    private void SaveConfig()
+    {
+        var check = Engine.GetSpawnCheck<VisionEngineSpawnCheck>();
+        var instance = check?.ActiveInstance;
+        if (instance == null) { statusMsg = "引擎未运行"; return; }
+
+        var newCfg = new VisionEngineConfig
+        {
+            VisionConcurrency = Math.Clamp(cfgVisionConc, 1, 10),
+            OcrConcurrency = Math.Clamp(cfgOcrConc, 1, 10),
+            BatchSize = Math.Clamp(cfgBatchSize, 1, 200),
+            VisionRetryCount = Math.Clamp(cfgRetryCount, 0, 5),
+            VisionRetryDelayMs = snap?.Config.VisionRetryDelayMs ?? 3000,
+            VisionEnabled = cfgVisionEnabled,
+            OcrEnabled = cfgOcrEnabled
+        };
+        instance.UpdateConfig(newCfg);
+        statusMsg = "配置已保存";
+        RefreshSnap();
+    }
+
+    public void Dispose()
+    {
+        Monitor.OnStateChanged -= OnStateChanged;
+    }
+}

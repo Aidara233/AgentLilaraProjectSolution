@@ -17,6 +17,8 @@ namespace AgentCoreProcessor.Engine.Vision
         public int VisionErrors { get; set; }
         public int OcrErrors { get; set; }
         public bool VisionAvailable { get; set; }
+        public bool VisionSuspended { get; set; }
+        public string? SuspendReason { get; set; }
         public bool OcrAvailable { get; set; }
         public VisionEngineConfig Config { get; set; } = new();
     }
@@ -39,6 +41,8 @@ namespace AgentCoreProcessor.Engine.Vision
         private int _totalProcessed;
         private int _visionErrors;
         private int _ocrErrors;
+        private volatile bool _visionSuspended;
+        private string? _suspendReason;
 
         public VisionEngine(ISystemContext ctx)
         {
@@ -86,6 +90,9 @@ namespace AgentCoreProcessor.Engine.Vision
 
         private async Task ProcessPendingImagesAsync()
         {
+            _visionSuspended = false;
+            _suspendReason = null;
+
             var pending = await ImageStorage.GetPendingIndexAsync(config.BatchSize);
             if (pending.Count == 0) return;
 
@@ -112,12 +119,14 @@ namespace AgentCoreProcessor.Engine.Vision
 
         private async Task ProcessVisionAsync(Database.ImageRecord record)
         {
-            if (!config.VisionEnabled || !_visionAvailable) return;
+            if (!config.VisionEnabled || !_visionAvailable || _visionSuspended) return;
             if (!string.IsNullOrEmpty(record.Description)) return;
 
             await visionSemaphore!.WaitAsync();
             try
             {
+                if (_visionSuspended) return;
+
                 var path = await ImageStorage.GetModelInputPathAsync(record.Hash);
                 if (path == null) return;
 
@@ -131,6 +140,14 @@ namespace AgentCoreProcessor.Engine.Vision
                             : null;
                         desc = await ctx.Vision!.DescribeImageAsync(path, hint);
                         break;
+                    }
+                    catch (System.Net.Http.HttpRequestException ex) when (
+                        ex.Message.Contains("401") || ex.Message.Contains("403"))
+                    {
+                        _visionSuspended = true;
+                        _suspendReason = $"认证失败 ({ex.Message})，本轮 Vision 处理已暂停";
+                        FrameworkLogger.Log("VisionEngine", _suspendReason);
+                        return;
                     }
                     catch (Exception ex)
                     {
@@ -210,11 +227,13 @@ namespace AgentCoreProcessor.Engine.Vision
                 IsAlive = IsAlive,
                 IsBusy = IsBusy,
                 ActiveTasks = _activeTasks,
-                PendingCount = -1, // 需要异步查询，WebUI 单独获取
+                PendingCount = -1,
                 TotalProcessed = _totalProcessed,
                 VisionErrors = _visionErrors,
                 OcrErrors = _ocrErrors,
                 VisionAvailable = _visionAvailable,
+                VisionSuspended = _visionSuspended,
+                SuspendReason = _suspendReason,
                 OcrAvailable = ocrEngine != null,
                 Config = config
             };

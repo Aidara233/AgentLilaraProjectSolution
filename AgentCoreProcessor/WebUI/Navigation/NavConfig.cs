@@ -27,6 +27,7 @@ namespace AgentCoreProcessor.WebUI.Navigation
                     new() { Title = "配置", Href = "/dream/config" },
                     new() { Title = "历史", Href = "/dream/history" },
                 }},
+                new() { Title = "视觉", Icon = "bi-eye", Href = "/engine/vision" },
                 new() { Title = "引擎管理", Icon = "bi-gear", Href = "/engine/manage" },
             }},
 
