@@ -64,6 +64,9 @@ namespace AgentCoreProcessor.Engine
         // 视觉
         IVisionProvider? Vision { get; }
 
+        // OCR
+        IOcrProvider? Ocr { get; }
+
         // 适配器
         AdapterManager Adapters { get; }
 

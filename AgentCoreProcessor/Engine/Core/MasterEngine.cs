@@ -47,6 +47,7 @@ namespace AgentCoreProcessor.Engine
         private DbManager? db;
         private IEmbeddingProvider? embeddingProvider;
         private IVisionProvider? visionProvider;
+        private IOcrProvider? ocrProvider;
         private McpServerManager? mcpManager;
 
         // ---- ISystemContext 实现 ----
@@ -62,6 +63,7 @@ namespace AgentCoreProcessor.Engine
         public SessionManager Session { get; private set; } = null!;
         public IEmbeddingProvider Embedding => embeddingProvider!;
         public IVisionProvider? Vision => visionProvider;
+        public IOcrProvider? Ocr => ocrProvider;
         public AdapterManager Adapters => adapterManager;
         public EventBus EventBus => eventBus;
         public ImpulseConfig ImpulseConfig { get; private set; } = null!;
@@ -271,6 +273,30 @@ namespace AgentCoreProcessor.Engine
             catch (Exception ex)
             {
                 FrameworkLogger.Log("MasterEngine", $"视觉模型初始化失败: {ex.Message}");
+            }
+
+            // OCR（默认用 SiliconFlow DeepSeek-OCR，OcrProvider.json 可覆盖）
+            try
+            {
+                var ocrApiKey = baseConfig.ApiKey;
+                var ocrEndpoint = "https://api.siliconflow.cn/v1/chat/completions";
+                var ocrModel = "deepseek-ai/DeepSeek-OCR";
+
+                var ocrConfigPath = Path.Combine(PathConfig.CoreConfigPath, "OcrProvider.json");
+                if (File.Exists(ocrConfigPath))
+                {
+                    var ojson = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(ocrConfigPath));
+                    ocrApiKey = ojson["apiKey"]?.ToString() ?? ocrApiKey;
+                    ocrEndpoint = ojson["endpoint"]?.ToString() ?? ocrEndpoint;
+                    ocrModel = ojson["model"]?.ToString() ?? ocrModel;
+                }
+
+                ocrProvider = new SiliconFlowOcrProvider(ocrApiKey, ocrEndpoint, ocrModel);
+                FrameworkLogger.Log("MasterEngine", $"OCR 模型已加载: {ocrModel}");
+            }
+            catch (Exception ex)
+            {
+                FrameworkLogger.Log("MasterEngine", $"OCR 模型初始化失败: {ex.Message}");
             }
 
             // 服务

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
+using AgentCoreProcessor.Client;
 
 namespace AgentCoreProcessor.Engine.Vision
 {
@@ -35,9 +36,9 @@ namespace AgentCoreProcessor.Engine.Vision
         private VisionEngineConfig config = new();
         private SemaphoreSlim? visionSemaphore;
         private SemaphoreSlim? ocrSemaphore;
-        private PaddleOCRSharp.PaddleOCREngine? ocrEngine;
         private int _activeTasks;
         private bool _visionAvailable;
+        private bool _ocrAvailable;
         private int _totalProcessed;
         private int _visionErrors;
         private int _ocrErrors;
@@ -57,12 +58,14 @@ namespace AgentCoreProcessor.Engine.Vision
             visionSemaphore = new SemaphoreSlim(config.VisionConcurrency);
             ocrSemaphore = new SemaphoreSlim(config.OcrConcurrency);
 
-            // 检查视觉模型可用性
             _visionAvailable = ctx.Vision != null;
             if (!_visionAvailable && config.VisionEnabled)
                 FrameworkLogger.Log("VisionEngine", "警告: IVisionProvider 不可用，视觉描述生成已禁用。请检查 Storage/Core/VisionProvider.json 配置");
 
-            InitOcr();
+            _ocrAvailable = ctx.Ocr != null;
+            if (!_ocrAvailable && config.OcrEnabled)
+                FrameworkLogger.Log("VisionEngine", "警告: IOcrProvider 不可用，OCR 已禁用。请检查 Storage/Core/OcrProvider.json 配置");
+
             FrameworkLogger.Log("VisionEngine", "视觉引擎已启动");
 
             while (IsAlive)
@@ -80,7 +83,6 @@ namespace AgentCoreProcessor.Engine.Vision
                 }
             }
 
-            DisposeOcr();
             visionSemaphore?.Dispose();
             ocrSemaphore?.Dispose();
             FrameworkLogger.Log("VisionEngine", "视觉引擎已停止");
@@ -177,16 +179,20 @@ namespace AgentCoreProcessor.Engine.Vision
 
         private async Task ProcessOcrAsync(Database.ImageRecord record)
         {
-            if (!config.OcrEnabled || ocrEngine == null) return;
+            if (!config.OcrEnabled || !_ocrAvailable) return;
             if (record.HasText != null) return;
 
             await ocrSemaphore!.WaitAsync();
             try
             {
-                var result = ocrEngine.DetectText(record.LocalPath);
-                var text = result?.Text?.Trim();
-                var hasText = !string.IsNullOrEmpty(text);
-                await ImageStorage.UpdateOcrAsync(record.Hash, hasText, hasText ? text : null);
+                var result = await ctx.Ocr!.RecognizeAsync(record.LocalPath);
+                await ImageStorage.UpdateOcrAsync(record.Hash, result.HasText, result.Text);
+            }
+            catch (System.Net.Http.HttpRequestException ex) when (
+                ex.Message.Contains("401") || ex.Message.Contains("403"))
+            {
+                Interlocked.Increment(ref _ocrErrors);
+                FrameworkLogger.Log("VisionEngine", $"OCR 认证失败，跳过本轮: {ex.Message}");
             }
             catch (Exception ex)
             {
@@ -198,26 +204,6 @@ namespace AgentCoreProcessor.Engine.Vision
             {
                 ocrSemaphore!.Release();
             }
-        }
-
-        private void InitOcr()
-        {
-            if (!config.OcrEnabled) return;
-            try
-            {
-                ocrEngine = new PaddleOCRSharp.PaddleOCREngine(null, new PaddleOCRSharp.OCRParameter());
-                FrameworkLogger.Log("VisionEngine", "PaddleOCR 引擎已加载");
-            }
-            catch (Exception ex)
-            {
-                FrameworkLogger.LogError("VisionEngine", ex, "PaddleOCR 初始化失败，OCR 功能不可用");
-            }
-        }
-
-        private void DisposeOcr()
-        {
-            ocrEngine?.Dispose();
-            ocrEngine = null;
         }
 
         public VisionEngineSnapshot GetSnapshot()
@@ -234,7 +220,7 @@ namespace AgentCoreProcessor.Engine.Vision
                 VisionAvailable = _visionAvailable,
                 VisionSuspended = _visionSuspended,
                 SuspendReason = _suspendReason,
-                OcrAvailable = ocrEngine != null,
+                OcrAvailable = _ocrAvailable,
                 Config = config
             };
         }
