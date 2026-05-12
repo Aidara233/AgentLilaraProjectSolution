@@ -266,7 +266,7 @@ namespace AgentCoreProcessor.Engine
                 for (int i = 0; i < toolCalls.Count; i++)
                 {
                     var tool = tools.TryGetValue(toolCalls[i].Tool, out var t) ? t : null;
-                    if (tool?.RetainResult == true && results[i].IsSuccess)
+                    if (tool?.GetRetainResult() == true && results[i].IsSuccess)
                         retainedResults.Add((toolCalls[i], results[i]));
                 }
 
@@ -436,21 +436,23 @@ namespace AgentCoreProcessor.Engine
 
         private Dictionary<string, ITool> BuildToolSet()
         {
+            // TODO: Review tool classes removed during tool system refactor.
+            // Rebuild with new tool architecture when ReviewEngine is re-enabled.
             var toolList = new ITool[]
             {
-                new ReviewSearchMemoryTool(ctx),
-                new ReviewViewLinksTool(ctx),
-                new ReviewReadMessagesTool(ctx),
-                new ReviewUpdateAffinityTool(ctx),
-                new ReviewUpdateFastMemoryTool(ctx),
-                new ReviewUpdatePersonNameTool(ctx),
-                new ReviewUpdateTrustProgressTool(ctx),
-                new ReviewWriteTempMemoryTool(),
-                new ReviewThinkingNotesTool(),
-                new ReviewMarkHintTool(),
-                new ReviewRequestReinforcementTool(),
-                new ReviewSaveProgressTool(),
-                new ReviewCompletionTool()
+                // new ReviewSearchMemoryTool(ctx),
+                // new ReviewViewLinksTool(ctx),
+                // new ReviewReadMessagesTool(ctx),
+                // new ReviewUpdateAffinityTool(ctx),
+                // new ReviewUpdateFastMemoryTool(ctx),
+                // new ReviewUpdatePersonNameTool(ctx),
+                // new ReviewUpdateTrustProgressTool(ctx),
+                // new ReviewWriteTempMemoryTool(),
+                // new ReviewThinkingNotesTool(),
+                // new ReviewMarkHintTool(),
+                // new ReviewRequestReinforcementTool(),
+                // new ReviewSaveProgressTool(),
+                // new ReviewCompletionTool()
             };
             return toolList.ToDictionary(t => t.Name);
         }

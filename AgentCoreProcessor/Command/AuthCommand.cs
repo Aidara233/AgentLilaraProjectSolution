@@ -38,7 +38,7 @@ namespace AgentCoreProcessor.Command
             if (tool == null)
                 return Task.FromResult(CommandResult.Fail($"未找到工具「{toolName}」"));
 
-            if (tool.RequiredPermission <= PermissionLevel.Default)
+            if (tool.GetPermission() <= AgentCoreProcessor.Tool.Contract.ToolPermission.Default)
                 return Task.FromResult(CommandResult.Ok($"「{toolName}」不需要授权，可自由使用"));
 
             AuthStore.Grant(context.Message.ChannelId, toolName);
@@ -55,7 +55,7 @@ namespace AgentCoreProcessor.Command
         {
             var granted = AuthStore.GetGranted(context.Message.ChannelId);
             var restricted = ToolRegistry.All.Values
-                .Where(t => t.RequiredPermission > PermissionLevel.Default)
+                .Where(t => t.GetPermission() > AgentCoreProcessor.Tool.Contract.ToolPermission.Default)
                 .ToList();
 
             if (restricted.Count == 0)
@@ -65,7 +65,7 @@ namespace AgentCoreProcessor.Command
             foreach (var tool in restricted)
             {
                 var status = granted.Contains(tool.Name) ? "已授权" : "未授权";
-                sb.AppendLine($"- {tool.Name}（{tool.RequiredPermission}）：{status}");
+                sb.AppendLine($"- {tool.Name}（{tool.GetPermission()}）：{status}");
             }
             return Task.FromResult(CommandResult.Ok(sb.ToString().TrimEnd()));
         }

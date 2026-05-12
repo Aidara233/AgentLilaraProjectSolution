@@ -126,7 +126,8 @@ namespace AgentCoreProcessor.Engine
             {
                 // 原生模式：工具通过 API 发送，不注入文本描述
                 toolDescriptions = "";
-                agentCore.ToolFilter = t => allowed.Contains(t.Name);
+                // TODO: ToolFilter removed from AgentCore; will be replaced by ProfileManager
+                // agentCore.ToolFilter = t => allowed.Contains(t.Name);
             }
             else
             {
@@ -313,13 +314,16 @@ namespace AgentCoreProcessor.Engine
                 var waitCall = toolCalls.FirstOrDefault(c => c.Tool == "wait");
                 if (waitCall != null)
                 {
-                    var waitTool = ToolRegistry.Get("wait") as WaitTool;
-                    if (waitTool != null)
-                    {
-                        waitTimeoutMinutes = waitTool.TimeoutMinutes;
-                        FrameworkLogger.Log("SystemEngine",
-                            $"落闸: {waitTool.WaitReason}, 超时 {waitTimeoutMinutes}min");
-                    }
+                    var waitResult = results.FirstOrDefault(r => true); // get corresponding result
+                    var waitIdx = toolCalls.IndexOf(waitCall);
+                    var reason = waitCall.Inputs.Count > 0 ? waitCall.Inputs[0] : "";
+                    var timeoutStr = waitCall.Inputs.Count > 1 ? waitCall.Inputs[1] : "5";
+                    if (int.TryParse(timeoutStr, out var parsedTimeout))
+                        waitTimeoutMinutes = parsedTimeout;
+                    else
+                        waitTimeoutMinutes = 5;
+                    FrameworkLogger.Log("SystemEngine",
+                        $"落闸: {reason}, 超时 {waitTimeoutMinutes}min");
                     break;
                 }
 

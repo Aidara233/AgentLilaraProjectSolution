@@ -532,7 +532,9 @@ namespace AgentCoreProcessor.Engine
                 }
 
                 // 计算下次触发
-                var nextFire = Tool.ScheduleParser.ComputeNextFire(task);
+                // TODO: Tool.ScheduleParser was deleted; need replacement for schedule computation
+                // var nextFire = Tool.ScheduleParser.ComputeNextFire(task);
+                DateTime? nextFire = null; // placeholder until schedule parser is reimplemented
                 await ScheduledTasks.MarkFiredAsync(task.Id, nextFire);
             }
         }

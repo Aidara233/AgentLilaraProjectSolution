@@ -133,7 +133,10 @@ namespace AgentCoreProcessor.Core
                 {
                     FormatSingleResult(sb, calls[i], results[i]);
                     if (results[i].Attachments != null)
-                        resultAttachments.AddRange(results[i].Attachments!);
+                        resultAttachments.AddRange(results[i].Attachments!.Select(a =>
+                            a.Base64Data != null
+                                ? ContentPart.FromImageBase64(a.Base64Data, a.MediaType ?? "image/png")
+                                : ContentPart.FromImagePath(a.FilePath ?? "")));
                 }
             }
 
@@ -150,7 +153,7 @@ namespace AgentCoreProcessor.Core
         private static void FormatSingleResult(StringBuilder sb, ToolCall call, ToolResult result)
         {
             var tool = ToolRegistry.Get(call.Tool);
-            if (tool?.ContinueLoop == true && result.IsSuccess)
+            if (tool?.GetContinueLoop() == true && result.IsSuccess)
                 sb.AppendLine($"[{call.Tool}]: 成功，返回值：{result.Data}");
             else if (result.IsSuccess)
                 sb.AppendLine($"[{call.Tool}]: 成功");

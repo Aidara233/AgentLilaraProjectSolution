@@ -23,9 +23,9 @@
                     <td><strong>@tool.Name</strong></td>
                     <td style="font-size:var(--font-size-sm); max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">@tool.Description</td>
                     <td>
-                        @if (tool.RequiredPermission > AgentCoreProcessor.Database.PermissionLevel.Default)
+                        @if (tool.GetPermission() > AgentCoreProcessor.Tool.Contract.ToolPermission.Default)
                         {
-                            <span class="badge-status badge-working">@tool.RequiredPermission</span>
+                            <span class="badge-status badge-working">@tool.GetPermission()</span>
                         }
                         else
                         {

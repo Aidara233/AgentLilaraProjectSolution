@@ -454,12 +454,12 @@ namespace AgentCoreProcessor.Engine
                 authorizedTools.Clear();
                 foreach (var t in granted) authorizedTools.Add(t);
 
-                // 设置 DelegateTaskTool 的上下文
-                var delegateTool = ToolRegistry.Get("delegate_task") as DelegateTaskTool;
-                if (delegateTool != null)
-                {
-                    delegateTool.SetContext(currentLastSc.Channel.Id, currentLastSc.Person.Id);
-                }
+                // TODO: DelegateTaskTool class removed; context injection will be handled by ProfileManager
+                // var delegateTool = ToolRegistry.Get("delegate_task") as DelegateTaskTool;
+                // if (delegateTool != null)
+                // {
+                //     delegateTool.SetContext(currentLastSc.Channel.Id, currentLastSc.Person.Id);
+                // }
 
                 // 冲动值扣减
                 impulseTracker.ApplyPostResponseUpdate();
@@ -529,7 +529,8 @@ namespace AgentCoreProcessor.Engine
 
                 if (useNative)
                 {
-                    agentCore.ToolFilter = channelToolFilter;
+                    // TODO: ToolFilter removed from AgentCore; will be replaced by ProfileManager
+                    // agentCore.ToolFilter = channelToolFilter;
                     toolDescs = "";
                     // 原生模式下工具描述跳过，额外上下文单独注入
                     var ctxSb = new StringBuilder();
@@ -697,7 +698,7 @@ namespace AgentCoreProcessor.Engine
             {
                 if (output.ToolCalls == null || output.ToolCalls.Count == 0) return;
 
-                bool hasContinue = output.ToolCalls.Any(c => ToolRegistry.Get(c.Tool)?.ContinueLoop == true);
+                bool hasContinue = output.ToolCalls.Any(c => ToolRegistry.Get(c.Tool)?.GetContinueLoop() == true);
 
                 if (hasContinue && !loopControlModule.IsMaxSilentReached && !loopControlModule.IsMaxRoundsReached)
                 {

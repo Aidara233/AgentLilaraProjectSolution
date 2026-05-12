@@ -27,7 +27,7 @@ namespace AgentCoreProcessor.Engine.Modules
                 }
 
                 // 自动收集 RetainResult 工具的成功结果
-                if (e.ToolDef?.RetainResult == true && e.Result.IsSuccess)
+                if (e.ToolDef?.GetRetainResult() == true && e.Result.IsSuccess)
                 {
                     var summary = $"{e.Call.Tool}: {string.Join(", ", e.Call.Inputs).Truncate(50)}";
                     items.Add((summary, e.Result.Data ?? ""));
