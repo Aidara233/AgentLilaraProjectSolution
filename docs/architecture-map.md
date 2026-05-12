@@ -301,46 +301,53 @@ ReviewEngine (由DreamEngine孵化，不注册SpawnCheck):
 ```
 AgentLilara.PluginSDK (共享契约，独立类库):
   ITool: Name / Description / Parameters / Timeout / ExecuteAsync / GetInputSchema()
-  IToolContext: GetService<T>() / Require<T>() / Storage
+  IToolContext: GetService<T>() / Storage
   IPluginStorage: GlobalDirectory / InstanceDirectory
   IPromptContributor: SectionKey / Priority / BuildSection()
   IMessageInterceptor: Priority / OnBeforeProcessAsync()
   ToolMetaAttribute: Group / ContinueLoop / AllowSubAgent / CapabilitySummary / Permission / Scope
-  Services/: IMemoryAccess / IAgentMessaging / IDelegationAccess / ISubAgentAccess
+  ToolParameter: Name / Description / Index / IsRequired（控制 JSON Schema required 数组）
+  Services/: IMemoryAccess（完整数据访问：语义搜索/向量操作/批量读取/临时库/关联图）
+             IAgentMessaging / IDelegationAccess / ISubAgentAccess
              IChannelAccess / IAdapterAccess / ISchedulingAccess / IEngineAccess
              ISleepAccess / IEventBusAccess / IToolHistoryAccess
 
 主程序 Tool/ (宿主层):
-  Core/CoreTools.cs    — 核心工具（continue_loop + wait），不可卸载
-  Host/PluginLoader    — 扫描 {BaseDirectory}/Plugins/*.dll，AssemblyLoadContext 隔离加载
-  Host/ToolContextImpl — IToolContext 实现（ConcurrentDictionary 服务容器）
-  Host/ToolProfileManager — 配置驱动的工具集管理（base/available/blocked/required）
-  ToolRegistry         — 全局注册表（Register/Unregister/Get/禁用管理）
-  ToolExecutor         — 顺序执行 + 权限检查 + OnToolExecuted 回调
-  TypeForwards.cs      — global using 别名（过渡期兼容）
+  Core/CoreTools.cs      — 核心工具（continue_loop + wait），不可卸载
+  Host/PluginLoader      — 扫描 {BaseDirectory}/Plugins/*.dll，AssemblyLoadContext 隔离加载
+  Host/ToolContextImpl   — IToolContext 实现（ConcurrentDictionary 服务容器）
+  Host/MemoryAccessImpl  — IMemoryAccess 桥接（Repository + EmbeddingProvider）
+  Host/ToolProfileManager — 配置驱动的工具集管理（base/available/blocked）
+  ToolRegistry           — 全局注册表（Register/Unregister/Get/禁用管理）
+  ToolExecutor           — 顺序执行 + 权限检查 + OnToolExecuted 回调
 
-插件项目 (独立 DLL):
-  Plugin.BasicTools    — speak + send_media（频道循环基本输出能力）
-  （后续）Plugin.Memory / Plugin.Communication / Plugin.FileOps 等
+插件项目 (独立 DLL，输出到 {BaseDirectory}/Plugins/):
+  Plugin.BasicTools      — speak + send_media（输出能力）
+  Plugin.WorkingTools    — pinboard + thinking_notes + retain_list（工作状态）
+  Plugin.MemoryTools     — memory（记忆读写，依赖 IMemoryAccess 服务）
+  Plugin.FileTools       — read_text + write_text + list_dir + move_file + delete_file + copy_file（文件系统）
 
-ToolCall: 原生 tool_use (Claude API) 为主路径，文本 JSON 为 fallback
-  通过 ApiClientCfg.UseNativeTools 控制
+ToolCall: 原生 tool_use (Claude API) 为主路径
+  NativeToolCallHandler: 按 properties 顺序映射命名参数到位置输入
   参数名必须英文（Bedrock 代理不支持非 ASCII schema 属性名）
 
-闸门模型与循环控制:
-  常闭引擎（频道循环）: 提供 continue_loop，处理完默认停
-  常开引擎（系统循环）: 提供 wait，默认继续转直到主动停
+循环控制（两种模式统一为事件驱动）:
+  频道循环: 每轮自动继续，模型调 wait 显式结束
+    只说话不调其他工具 → 下一轮提示确认是否结束
+    安全上限: MaxRounds=30(用户消息重置) / MaxSilentRounds=5(speak重置)
+  系统循环: 处理完检查队列，有事继续，无事休眠
+    事件驱动唤醒: TaskBridge/委托提交/定时器
 
 消息拦截器 (IMessageInterceptor):
   插件可在引擎处理消息前介入（如睡眠行为、维护模式）
   按 Priority 升序执行，首个 Skip/Handled 短路后续
-  ChannelEngine.PrepareContextAsync 中调用，位于 mute 检查之后、冲动值判断之前
 
 插件加载:
   目录: {程序目录}/Plugins/（跟程序走，不跟 Storage 走）
   每个 DLL 用独立 AssemblyLoadContext（支持卸载）
   实例化: 优先找 (IToolContext) 构造函数，其次无参构造
   启动时 MasterEngine.InitAsync 调用 PluginLoader.LoadAll()
+  服务注入: ToolContext.Register<IMemoryAccess>(impl) 在插件加载前完成
 ```
 
 ## MCP 插件系统

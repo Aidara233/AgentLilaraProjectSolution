@@ -99,6 +99,10 @@
 - 工具管理：Tool/ToolRegistry.cs（禁用逻辑）+ Storage/ToolConfig.json
 - 插件 SDK：AgentLilara.PluginSDK/（共享契约，插件引用此项目）
 - 插件加载：Tool/Host/PluginLoader.cs（扫描 {BaseDirectory}/Plugins/）
+- 记忆桥接：Tool/Host/MemoryAccessImpl.cs（IMemoryAccess → Repository + Embedding）
 - 插件项目：Plugins/Plugin.BasicTools/（speak + send_media）
+-           Plugins/Plugin.WorkingTools/（pinboard + thinking_notes + retain_list）
+-           Plugins/Plugin.MemoryTools/（memory，依赖 IMemoryAccess）
+-           Plugins/Plugin.FileTools/（read_text + write_text + list_dir + move/delete/copy）
 - 工具配置：Tool/Host/ToolProfileManager.cs + Storage/Engine/ToolProfiles.json
 - 配置文件：Storage/ 目录下
