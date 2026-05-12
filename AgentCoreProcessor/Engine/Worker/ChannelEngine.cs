@@ -574,7 +574,7 @@ namespace AgentCoreProcessor.Engine
                     var allowedTools = new HashSet<string>
                     {
                         "speak", "send_media", "thinking_notes", "memory", "pinboard", "retain_list", "task_management",
-                        "mark_review_hint", "alert", "read_file", "write_file", "delegate_task", "adapter_action",
+                        "mark_review_hint", "alert", "wait", "read_file", "write_file", "delegate_task", "adapter_action",
                         "view_image", "get_image_text"
                     };
                     return allowedTools.Contains(tool.Name);
@@ -780,22 +780,25 @@ namespace AgentCoreProcessor.Engine
                     return;
                 }
 
-                // 自动感知：只调了输出工具(speak/send_media) → 任务完成，停止
+                // 显式结束信号
+                bool hasWait = output.ToolCalls.Any(c => c.Tool == "wait");
+                if (hasWait)
+                {
+                    FrameworkLogger.Log("ChannelEngine",
+                        $"Working 完成(显式结束): rounds={loopControlModule.TotalRounds}, channelId={channelId}");
+                    EndWorkingSession();
+                    return;
+                }
+
+                // 只调了输出工具 → 标记，下一轮提示确认
                 var outputOnlyTools = new HashSet<string> { "speak", "send_media" };
                 bool isOutputOnly = output.ToolCalls.All(c => outputOnlyTools.Contains(c.Tool));
+                loopControlModule.WasOutputOnly = isOutputOnly;
 
-                if (isOutputOnly)
-                {
-                    FrameworkLogger.Log("ChannelEngine",
-                        $"Working 完成(输出完毕): rounds={loopControlModule.TotalRounds}, channelId={channelId}");
-                    EndWorkingSession();
-                }
-                else
-                {
-                    FrameworkLogger.Log("ChannelEngine",
-                        $"Working 继续: channelId={channelId}, round={loopControlModule.TotalRounds}");
-                    gate.Signal();
-                }
+                FrameworkLogger.Log("ChannelEngine",
+                    $"Working 继续: channelId={channelId}, round={loopControlModule.TotalRounds}" +
+                    (isOutputOnly ? " (仅输出，下轮提示确认)" : ""));
+                gate.Signal();
             }
         }
 

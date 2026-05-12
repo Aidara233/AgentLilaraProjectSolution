@@ -205,15 +205,16 @@ namespace AgentCoreProcessor.Tool.Host
             {
                 ["channel"] = new ToolProfile
                 {
-                    Base = ["speak", "send_media", "memory", "pinboard",
+                    Base = ["speak", "send_media", "wait", "memory", "pinboard",
                             "thinking_notes", "retain_list", "delegate_task", "alert",
                             "view_image", "get_image_text", "mark_review_hint", "task_management",
-                            "read_file", "write_file", "adapter_action"],
+                            "read_text", "write_text", "list_dir", "move_file", "delete_file",
+                            "copy_file", "adapter_action"],
                     Available = ["file", "image", "planning", "meta"],
                     Blocked = ["dream_*", "trigger_red_alert", "evaluate_delegation",
                                "create_sub_agent", "send_to_sub_agent", "stop_sub_agent",
                                "notify_channel", "set_watch_rule", "check_notifications",
-                               "system_state", "wait", "continue_loop"]
+                               "system_state", "continue_loop"]
                 },
                 ["system"] = new ToolProfile
                 {

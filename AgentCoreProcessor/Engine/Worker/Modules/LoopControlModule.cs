@@ -17,6 +17,9 @@ namespace AgentCoreProcessor.Engine.Modules
         /// <summary>频道标识，注入 prompt 供模型使用（如 thinking_notes 的 notebook 参数）。</summary>
         public string? ChannelId { get; set; }
 
+        /// <summary>上一轮是否只调了输出工具（用于注入确认提示）。</summary>
+        public bool WasOutputOnly { get; set; }
+
         public override void Attach(ILoopBus bus) { }
 
         /// <summary>轮次推进。hadSpeak=true 时重置静默计数。</summary>
@@ -48,6 +51,10 @@ namespace AgentCoreProcessor.Engine.Modules
 
             if (!string.IsNullOrEmpty(ChannelId))
                 sb.Append($"\n当前频道ID: {ChannelId}（thinking_notes 的 notebook 参数用这个）");
+
+            // 上一轮只说话的提示
+            if (WasOutputOnly)
+                sb.Append("\n💡 上一轮你只进行了说话。如果任务已完成，请调用 wait 结束循环；如果还有工作，继续调用其他工具。");
 
             // 最后一轮警告
             if (TotalRounds + 1 >= MaxRounds)
