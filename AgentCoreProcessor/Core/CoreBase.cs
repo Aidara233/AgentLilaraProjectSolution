@@ -69,7 +69,11 @@ namespace AgentCoreProcessor.Core
         {
             processor.Client.SetTools(toolDefs);
             var reasoningLog = new System.Text.StringBuilder();
+            var toolCallLog = new List<object>();
             Usage usage = new();
+
+            string? currentToolName = null;
+            var currentInputJson = new System.Text.StringBuilder();
 
             try
             {
@@ -79,11 +83,26 @@ namespace AgentCoreProcessor.Core
                         reasoningLog.Append(evt.Content);
                     if (evt.Type == Models.StreamEventType.Usage && evt.Usage != null)
                         usage = evt.Usage;
+                    if (evt.Type == Models.StreamEventType.ToolUseStart)
+                    {
+                        currentToolName = evt.ToolName;
+                        currentInputJson.Clear();
+                    }
+                    if (evt.Type == Models.StreamEventType.ToolUseDelta && evt.Content != null)
+                        currentInputJson.Append(evt.Content);
+                    if (evt.Type == Models.StreamEventType.ToolUseEnd && currentToolName != null)
+                    {
+                        toolCallLog.Add(new { tool = currentToolName, input = currentInputJson.ToString().Truncate(500) });
+                        currentToolName = null;
+                    }
                     onEvent(evt);
                 }, ct);
 
-                // 记录日志
-                LogOutput("[native tools]", reasoningLog.ToString(), usage);
+                LogOutput(
+                    toolCallLog.Count > 0
+                        ? Newtonsoft.Json.JsonConvert.SerializeObject(toolCallLog, Newtonsoft.Json.Formatting.None)
+                        : "[native tools: no calls]",
+                    reasoningLog.ToString(), usage);
             }
             catch (Exception ex)
             {

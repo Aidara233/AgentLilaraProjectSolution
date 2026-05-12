@@ -675,6 +675,15 @@ namespace AgentCoreProcessor.Engine
                 FrameworkLogger.Log("ChannelEngine",
                     $"Working 执行: channelId={channelId}, 工具数={toolCalls.Count}, " +
                     $"spoke={speakModule.HadSpeakThisRound}, round={loopControlModule.TotalRounds}");
+                foreach (var tc in toolCalls)
+                {
+                    var inputSummary = tc.Inputs.Count > 0 ? string.Join(", ", tc.Inputs).Truncate(80) : "";
+                    var r = results[toolCalls.IndexOf(tc)];
+                    FrameworkLogger.Log("ChannelEngine",
+                        $"  [{tc.Tool}]({inputSummary}) → {r.Status}" +
+                        (r.Data != null ? $": {r.Data.Truncate(100)}" : "") +
+                        (r.Error != null ? $" ERR: {r.Error}" : ""));
+                }
             }
         }
 
