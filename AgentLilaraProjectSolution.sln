@@ -15,6 +15,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Plugin.WorkingTools", "Plug
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Plugin.MemoryTools", "Plugins\Plugin.MemoryTools\Plugin.MemoryTools.csproj", "{906A787A-E1AB-4ECE-AC21-DD3AF8C1BFEA}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Plugin.FileTools", "Plugins\Plugin.FileTools\Plugin.FileTools.csproj", "{4B96395C-DCFD-4877-81F2-5F7E3F7A46DD}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -85,6 +87,18 @@ Global
 		{906A787A-E1AB-4ECE-AC21-DD3AF8C1BFEA}.Release|x64.Build.0 = Release|Any CPU
 		{906A787A-E1AB-4ECE-AC21-DD3AF8C1BFEA}.Release|x86.ActiveCfg = Release|Any CPU
 		{906A787A-E1AB-4ECE-AC21-DD3AF8C1BFEA}.Release|x86.Build.0 = Release|Any CPU
+		{4B96395C-DCFD-4877-81F2-5F7E3F7A46DD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4B96395C-DCFD-4877-81F2-5F7E3F7A46DD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4B96395C-DCFD-4877-81F2-5F7E3F7A46DD}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{4B96395C-DCFD-4877-81F2-5F7E3F7A46DD}.Debug|x64.Build.0 = Debug|Any CPU
+		{4B96395C-DCFD-4877-81F2-5F7E3F7A46DD}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{4B96395C-DCFD-4877-81F2-5F7E3F7A46DD}.Debug|x86.Build.0 = Debug|Any CPU
+		{4B96395C-DCFD-4877-81F2-5F7E3F7A46DD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4B96395C-DCFD-4877-81F2-5F7E3F7A46DD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4B96395C-DCFD-4877-81F2-5F7E3F7A46DD}.Release|x64.ActiveCfg = Release|Any CPU
+		{4B96395C-DCFD-4877-81F2-5F7E3F7A46DD}.Release|x64.Build.0 = Release|Any CPU
+		{4B96395C-DCFD-4877-81F2-5F7E3F7A46DD}.Release|x86.ActiveCfg = Release|Any CPU
+		{4B96395C-DCFD-4877-81F2-5F7E3F7A46DD}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -93,6 +107,7 @@ Global
 		{BBC3D68A-B8FA-4E86-92F6-1E5E637AF90A} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
 		{E8C2AAC4-7B24-400A-9923-949D4A6FCF02} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
 		{906A787A-E1AB-4ECE-AC21-DD3AF8C1BFEA} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
+		{4B96395C-DCFD-4877-81F2-5F7E3F7A46DD} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {8CEA9C9A-F71A-47CA-9F61-06EB3E4ED44F}

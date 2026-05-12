@@ -122,7 +122,6 @@ namespace AgentCoreProcessor.Engine
         // Express/Working 自适应切换
         private bool isWorkingMode = false;
         private int consecutiveExternalTriggers = 0;
-        private const int WorkingToExpressThreshold = 3;
 
         // 错误追踪
         private int consecutiveFailures = 0;
@@ -803,13 +802,6 @@ namespace AgentCoreProcessor.Engine
         private void EndWorkingSession()
         {
             isInWorkingSession = false;
-            if (consecutiveExternalTriggers >= WorkingToExpressThreshold)
-            {
-                FrameworkLogger.Log("ChannelEngine",
-                    $"Working→Express 回退: 连续{consecutiveExternalTriggers}次外部触发, channelId={channelId}");
-                isWorkingMode = false;
-                consecutiveExternalTriggers = 0;
-            }
         }
         public void OnEvent(EngineEvent e)
         {
