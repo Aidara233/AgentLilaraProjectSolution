@@ -17,7 +17,7 @@ namespace AgentCoreProcessor.Tool.Builtin
         public string Name => "speak";
         public string Description => "向用户发送一条消息（实时推送，不等待任务完成）";
         public IReadOnlyList<ToolParameter> Parameters =>
-            [new("消息内容", "要发送给用户的文本内容", 0)];
+            [new("content", "要发送给用户的文本内容", 0)];
         public TimeSpan Timeout => TimeSpan.FromSeconds(5);
 
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
@@ -39,9 +39,9 @@ namespace AgentCoreProcessor.Tool.Builtin
         public string Description => "发送图片、表情包、语音或文件（支持本地路径或URL）";
         public IReadOnlyList<ToolParameter> Parameters =>
         [
-            new("类型", "媒体类型：image / sticker / voice / file", 0),
-            new("路径", "本地文件路径或网络URL", 1),
-            new("附带文字", "（可选）和媒体一起发送的文字内容", 2)
+            new("type", "媒体类型：image / sticker / voice / file", 0),
+            new("path", "本地文件路径或网络URL", 1),
+            new("text", "（可选）和媒体一起发送的文字内容", 2)
         ];
         public TimeSpan Timeout => TimeSpan.FromSeconds(10);
 
