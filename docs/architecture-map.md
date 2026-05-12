@@ -267,7 +267,7 @@ EMA 社交满足度 (per Channel):
 四种片段: Consolidation / Weight / Link / Combine
 ReviewEngine (由DreamEngine孵化，不注册SpawnCheck):
   独立Agent循环 + 9个专用工具 + 4种复盘模式(频道日报/人物回顾/跨域关联/矛盾检测)
-  工具调用格式与频道循环统一: {"tool": "xxx", "inputs": ["a", "b"]}<over>
+  工具调用: 支持原生 tool_use (ReviewCore.UseNativeTools) 和文本 JSON 双路径
   Token预算制: 基础预算 + 显式请求备用 + 预算外收尾
   产出写临时记忆 → 下次Consolidation整合
 ```
@@ -306,7 +306,8 @@ ITool: Name / Description / Parameters / Timeout / ExecuteAsync
        ContinueLoop(默认false) / RetainResult(默认false) / CapabilitySummary(默认null)
        ToolGroup(默认null=始终可见) / DefaultExpanded(默认true)
 
-ToolCall(JSON): {"tool": "工具名", "inputs": ["参数1", "参数2"]}
+ToolCall: 双路径 — 原生 tool_use (Claude) / 文本 JSON {"tool":"名","inputs":["arg"]}<over> (OpenAI/旧路径)
+  通过 ApiClientCfg.UseNativeTools feature flag 控制
 ToolExecutor: 顺序执行 + 预授权检查(查权限表，不阻塞) + OnToolExecuted回调
 
 事件驱动循环 (WorkerEngine 闸门模型):
