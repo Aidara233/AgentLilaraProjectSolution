@@ -26,6 +26,12 @@ namespace AgentCoreProcessor.Engine
         public ChannelReader<Notification> NotificationReader => notificationQueue.Reader;
         public int PendingTaskCount => pendingTasks.Count;
 
+        /// <summary>任务队列中是否有待处理项。</summary>
+        public bool HasPendingTasks() => taskQueue.Reader.TryPeek(out _);
+
+        /// <summary>通知队列中是否有待处理项。</summary>
+        public bool HasPendingNotifications() => notificationQueue.Reader.TryPeek(out _);
+
         /// <summary>任务提交后的回调（用于唤醒系统循环闸门）。</summary>
         public Action? OnTaskSubmitted { get; set; }
 

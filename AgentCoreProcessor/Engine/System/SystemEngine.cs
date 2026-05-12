@@ -310,20 +310,25 @@ namespace AgentCoreProcessor.Engine
                 var assistantMsg = BuildAssistantMsg(toolCalls, output.Thinking);
                 AppendToHistory(currentTurnMsg, assistantMsg);
 
-                // ⑧ 检查是否调用了 Wait（落闸信号）
-                var waitCall = toolCalls.FirstOrDefault(c => c.Tool == "wait");
-                if (waitCall != null)
+                // ⑧ 自动感知：检查是否还有待处理事件
+                bool hasMoreWork = ctx.TaskBridge.HasPendingTasks()
+                    || ctx.TaskBridge.HasPendingNotifications()
+                    || ctx.Delegations.GetPendingForEvaluation().Count > 0;
+
+                // 纯通知类工具（不产生后续工作）→ 本轮结束
+                var terminalTools = new HashSet<string> { "notify_channel", "check_notifications" };
+                bool isTerminalOnly = toolCalls.All(c => terminalTools.Contains(c.Tool));
+
+                if (isTerminalOnly && !hasMoreWork)
                 {
-                    var waitResult = results.FirstOrDefault(r => true); // get corresponding result
-                    var waitIdx = toolCalls.IndexOf(waitCall);
-                    var reason = waitCall.Inputs.Count > 0 ? waitCall.Inputs[0] : "";
-                    var timeoutStr = waitCall.Inputs.Count > 1 ? waitCall.Inputs[1] : "5";
-                    if (int.TryParse(timeoutStr, out var parsedTimeout))
-                        waitTimeoutMinutes = parsedTimeout;
-                    else
-                        waitTimeoutMinutes = 5;
-                    FrameworkLogger.Log("SystemEngine",
-                        $"落闸: {reason}, 超时 {waitTimeoutMinutes}min");
+                    FrameworkLogger.Log("SystemEngine", "处理完毕，无待处理事件，休眠");
+                    break;
+                }
+
+                if (!hasMoreWork && toolCalls.Any(c => c.Tool == "wait"))
+                {
+                    var reason = toolCalls.First(c => c.Tool == "wait").Inputs.FirstOrDefault() ?? "";
+                    FrameworkLogger.Log("SystemEngine", $"显式休眠: {reason}");
                     break;
                 }
 

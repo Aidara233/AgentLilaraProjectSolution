@@ -575,7 +575,7 @@ namespace AgentCoreProcessor.Engine
                     var allowedTools = new HashSet<string>
                     {
                         "speak", "send_media", "thinking_notes", "memory", "pinboard", "retain_list", "task_management",
-                        "mark_review_hint", "alert", "wait", "read_file", "write_file", "delegate_task", "adapter_action",
+                        "mark_review_hint", "alert", "read_file", "write_file", "delegate_task", "adapter_action",
                         "view_image", "get_image_text"
                     };
                     return allowedTools.Contains(tool.Name);
@@ -768,16 +768,27 @@ namespace AgentCoreProcessor.Engine
             {
                 if (output.ToolCalls == null || output.ToolCalls.Count == 0) return;
 
-                bool hasWait = output.ToolCalls.Any(c => c.Tool == "wait");
-
-                if (hasWait || loopControlModule.IsMaxSilentReached || loopControlModule.IsMaxRoundsReached)
+                // 安全上限
+                if (loopControlModule.IsMaxSilentReached || loopControlModule.IsMaxRoundsReached)
                 {
                     if (loopControlModule.IsMaxSilentReached && speakModule.OnSpeak != null)
                         speakModule.OnSpeak("（工作暂停，等待回应后继续）").GetAwaiter().GetResult();
 
                     FrameworkLogger.Log("ChannelEngine",
-                        $"Working 结束: rounds={loopControlModule.TotalRounds}, " +
+                        $"Working 结束(上限): rounds={loopControlModule.TotalRounds}, " +
                         $"silent={loopControlModule.SilentRounds}, channelId={channelId}");
+                    EndWorkingSession();
+                    return;
+                }
+
+                // 自动感知：只调了输出工具(speak/send_media) → 任务完成，停止
+                var outputOnlyTools = new HashSet<string> { "speak", "send_media" };
+                bool isOutputOnly = output.ToolCalls.All(c => outputOnlyTools.Contains(c.Tool));
+
+                if (isOutputOnly)
+                {
+                    FrameworkLogger.Log("ChannelEngine",
+                        $"Working 完成(输出完毕): rounds={loopControlModule.TotalRounds}, channelId={channelId}");
                     EndWorkingSession();
                 }
                 else
