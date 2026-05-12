@@ -19,21 +19,20 @@ namespace AgentCoreProcessor.Engine.Modules
 
         public override void Attach(ILoopBus bus) { }
 
-        /// <summary>轮次推进。返回 true 表示应继续循环。</summary>
-        public bool AdvanceRound(bool hadSpeak)
+        /// <summary>轮次推进。hadSpeak=true 时重置静默计数。</summary>
+        public void AdvanceRound(bool hadSpeak)
         {
             TotalRounds++;
             if (hadSpeak)
                 SilentRounds = 0;
             else
                 SilentRounds++;
-
-            return TotalRounds < MaxRounds;
         }
 
-        /// <summary>新消息到达时重置静默计数。</summary>
+        /// <summary>用户发新消息时重置所有计数。</summary>
         public void OnNewMessage()
         {
+            TotalRounds = 0;
             SilentRounds = 0;
         }
 
@@ -43,10 +42,20 @@ namespace AgentCoreProcessor.Engine.Modules
         public override string? BuildPromptSection(EngineMode mode)
         {
             if (mode == EngineMode.Express) return null;
-            var status = $"[循环状态] 第{TotalRounds + 1}轮/共{MaxRounds}轮，距上次交互{SilentRounds}轮/上限{MaxSilentRounds}轮";
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append($"[循环状态] 第{TotalRounds + 1}轮/共{MaxRounds}轮，静默{SilentRounds}轮/上限{MaxSilentRounds}轮");
+
             if (!string.IsNullOrEmpty(ChannelId))
-                status += $"\n当前频道ID: {ChannelId}（thinking_notes 的 notebook 参数用这个）";
-            return status;
+                sb.Append($"\n当前频道ID: {ChannelId}（thinking_notes 的 notebook 参数用这个）");
+
+            // 最后一轮警告
+            if (TotalRounds + 1 >= MaxRounds)
+                sb.Append("\n⚠️ 这是最后一轮！你必须在本轮用 speak 向用户汇报进度并请求回应，否则循环将强制结束。");
+            else if (SilentRounds + 1 >= MaxSilentRounds)
+                sb.Append("\n⚠️ 静默即将达到上限！你必须在本轮用 speak 向用户汇报当前进度。");
+
+            return sb.ToString();
         }
 
         public override void Reset()
