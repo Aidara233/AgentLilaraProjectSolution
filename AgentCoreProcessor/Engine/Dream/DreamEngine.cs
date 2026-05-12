@@ -666,6 +666,23 @@ namespace AgentCoreProcessor.Engine
                             break;
                     }
                 }
+                // 未在输出中出现的 index 默认 keep
+                for (int i = 0; i < batch.Count; i++)
+                {
+                    if (!processed.Contains(i))
+                    {
+                        var temp = batch[i];
+                        candidates.Add(new ConsolidationCandidate
+                        {
+                            Content = temp.Content,
+                            PersonId = temp.PersonId,
+                            ChannelId = temp.ChannelId,
+                            Type = temp.Type,
+                            Subject = temp.Subject,
+                            Confidence = temp.Confidence
+                        });
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -714,6 +731,21 @@ namespace AgentCoreProcessor.Engine
                                 foreach (var mi in mergeWith)
                                     processed.Add(mi.Value<int>());
                             break;
+                    }
+                }
+                // 未在输出中出现的 index 默认 keep
+                for (int i = 0; i < candidates.Count; i++)
+                {
+                    if (!processed.Contains(i))
+                    {
+                        var c = candidates[i];
+                        byte[]? emb = null;
+                        try { emb = VectorUtil.FloatsToBytes(await ctx.Embedding.GetEmbeddingAsync(c.Content)); }
+                        catch { }
+                        await ctx.Memories.CreateAsync(c.Content, emb,
+                            c.PersonId, c.ChannelId,
+                            confidence: c.Confidence ?? "high",
+                            type: c.Type ?? MemoryType.Fact, subject: c.Subject);
                     }
                 }
             }
