@@ -91,7 +91,7 @@
                 }
                 else if (detail != null)
                 {
-                    <!-- 结构化 JSON 渲染 -->
+                    <!-- 结构化渲染 -->
                     <div style="padding:0.8rem;">
                         <!-- 元信息 -->
                         <div class="d-flex flex-wrap gap-2 mb-3" style="font-size:var(--font-size-sm);">
@@ -104,11 +104,31 @@
                             {
                                 <span class="badge-status" style="background:var(--bg-elevated); color:var(--text-secondary);">@detail.Provider</span>
                             }
+                            @if (!string.IsNullOrEmpty(detail.Caller))
+                            {
+                                <span class="badge-status" style="background:var(--bg-elevated); color:var(--accent-color);">@detail.Caller</span>
+                            }
                             @if (!string.IsNullOrEmpty(detail.Timestamp))
                             {
                                 <span class="text-muted-custom">@detail.Timestamp</span>
                             }
+                            @if (!string.IsNullOrEmpty(detail.SystemPromptHash))
+                            {
+                                <span class="text-muted-custom" title="System Prompt Hash">sys:@detail.SystemPromptHash</span>
+                            }
                         </div>
+
+                        <!-- Tools -->
+                        @if (detail.Tools != null && detail.Tools.Count > 0)
+                        {
+                            <div class="mb-3 d-flex flex-wrap gap-1">
+                                <span style="font-size:var(--font-size-sm); color:var(--text-muted); margin-right:0.3rem;">Tools:</span>
+                                @foreach (var tool in detail.Tools)
+                                {
+                                    <span class="badge-status" style="background:var(--bg-tertiary); color:var(--text-secondary); font-size:0.7rem;">@tool</span>
+                                }
+                            </div>
+                        }
 
                         <!-- Usage -->
                         @if (detail.Usage != null)
@@ -127,27 +147,18 @@
                             </div>
                         }
 
-                        <!-- Input 消息 -->
-                        @if (detail.Input.Count > 0)
+                        <!-- Messages -->
+                        @if (detail.Messages.Count > 0)
                         {
                             <div class="mb-3">
-                                <div style="font-size:var(--font-size-sm); color:var(--text-muted); margin-bottom:0.3rem; font-weight:600;">Input (@detail.Input.Count 条消息)</div>
-                                @foreach (var msg in detail.Input)
+                                <div style="font-size:var(--font-size-sm); color:var(--text-muted); margin-bottom:0.3rem; font-weight:600;">Messages (@detail.Messages.Count)</div>
+                                @foreach (var msg in detail.Messages)
                                 {
-                                    <div style="margin-bottom:0.5rem; border-left:2px solid var(--border); padding-left:0.6rem;">
-                                        <div style="font-size:0.7rem; color:var(--accent-color); margin-bottom:0.15rem;">@msg.Role</div>
-                                        <pre style="margin:0; font-size:var(--font-size-sm); white-space:pre-wrap; word-break:break-all; color:var(--text-primary); background:transparent; max-height:200px; overflow-y:auto;">@msg.Content</pre>
+                                    <div style="margin-bottom:0.5rem; border-left:2px solid @(msg.Role == "assistant" ? "var(--accent-color)" : "var(--border)"); padding-left:0.6rem;">
+                                        <div style="font-size:0.7rem; color:@(msg.Role == "assistant" ? "var(--accent-color)" : "var(--text-muted)"); margin-bottom:0.15rem;">@msg.Role</div>
+                                        <pre style="margin:0; font-size:var(--font-size-sm); white-space:pre-wrap; word-break:break-all; color:var(--text-primary); background:transparent;">@msg.Content</pre>
                                     </div>
                                 }
-                            </div>
-                        }
-
-                        <!-- Dynamic Input -->
-                        @if (!string.IsNullOrEmpty(detail.DynamicInput))
-                        {
-                            <div class="mb-3">
-                                <div style="font-size:var(--font-size-sm); color:var(--text-muted); margin-bottom:0.3rem; font-weight:600;">Dynamic Input</div>
-                                <pre style="margin:0; padding:0.5rem; font-size:var(--font-size-sm); white-space:pre-wrap; word-break:break-all; color:var(--text-primary); background:var(--bg-tertiary); border-radius:var(--radius-sm); max-height:200px; overflow-y:auto;">@detail.DynamicInput</pre>
                             </div>
                         }
 
@@ -156,7 +167,7 @@
                         {
                             <div class="mb-3">
                                 <div style="font-size:var(--font-size-sm); color:var(--text-muted); margin-bottom:0.3rem; font-weight:600;">Thinking</div>
-                                <pre style="margin:0; padding:0.5rem; font-size:var(--font-size-sm); white-space:pre-wrap; word-break:break-all; color:var(--text-secondary); background:var(--bg-tertiary); border-radius:var(--radius-sm); max-height:300px; overflow-y:auto;">@detail.Thinking</pre>
+                                <pre style="margin:0; padding:0.5rem; font-size:var(--font-size-sm); white-space:pre-wrap; word-break:break-all; color:var(--text-secondary); background:var(--bg-tertiary); border-radius:var(--radius-sm);">@detail.Thinking</pre>
                             </div>
                         }
 
@@ -165,7 +176,7 @@
                         {
                             <div class="mb-3">
                                 <div style="font-size:var(--font-size-sm); color:var(--text-muted); margin-bottom:0.3rem; font-weight:600;">Output</div>
-                                <pre style="margin:0; padding:0.5rem; font-size:var(--font-size-sm); white-space:pre-wrap; word-break:break-all; color:var(--text-primary); background:var(--bg-tertiary); border-radius:var(--radius-sm); max-height:400px; overflow-y:auto;">@detail.Output</pre>
+                                <pre style="margin:0; padding:0.5rem; font-size:var(--font-size-sm); white-space:pre-wrap; word-break:break-all; color:var(--text-primary); background:var(--bg-tertiary); border-radius:var(--radius-sm);">@detail.Output</pre>
                             </div>
                         }
                     </div>

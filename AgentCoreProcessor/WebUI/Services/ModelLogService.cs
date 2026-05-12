@@ -28,8 +28,10 @@ namespace AgentCoreProcessor.WebUI.Services
         public string? Model { get; init; }
         public string? Provider { get; init; }
         public string? Timestamp { get; init; }
-        public List<ModelLogMessage> Input { get; init; } = new();
-        public string? DynamicInput { get; init; }
+        public string? Caller { get; init; }
+        public string? SystemPromptHash { get; init; }
+        public List<string>? Tools { get; init; }
+        public List<ModelLogMessage> Messages { get; init; } = new();
         public string? Output { get; init; }
         public string? Thinking { get; init; }
         public ModelLogUsage? Usage { get; init; }
@@ -101,18 +103,42 @@ namespace AgentCoreProcessor.WebUI.Services
             try
             {
                 var obj = JObject.Parse(File.ReadAllText(path));
-                var input = new List<ModelLogMessage>();
-                if (obj["input"] is JArray arr)
+                var messages = new List<ModelLogMessage>();
+
+                // 新格式: "messages" 数组
+                if (obj["messages"] is JArray msgArr)
                 {
-                    foreach (var item in arr)
+                    foreach (var item in msgArr)
                     {
-                        input.Add(new ModelLogMessage
+                        messages.Add(new ModelLogMessage
                         {
                             Role = item["role"]?.ToString() ?? "",
                             Content = item["content"]?.ToString() ?? ""
                         });
                     }
                 }
+                // 旧格式: "input" 数组
+                else if (obj["input"] is JArray inputArr)
+                {
+                    foreach (var item in inputArr)
+                    {
+                        messages.Add(new ModelLogMessage
+                        {
+                            Role = item["role"]?.ToString() ?? "",
+                            Content = item["content"]?.ToString() ?? ""
+                        });
+                    }
+                }
+                // 旧格式兼容: dynamicInput
+                else if (obj["dynamicInput"]?.ToString() is string di && !string.IsNullOrEmpty(di))
+                {
+                    messages.Add(new ModelLogMessage { Role = "user", Content = di });
+                }
+
+                // 工具列表
+                List<string>? tools = null;
+                if (obj["tools"] is JArray toolArr)
+                    tools = toolArr.Select(t => t.ToString()).ToList();
 
                 ModelLogUsage? usage = null;
                 if (obj["usage"] is JObject u)
@@ -122,7 +148,7 @@ namespace AgentCoreProcessor.WebUI.Services
                         InputTokens = u["inputTokens"]?.Value<int>() ?? 0,
                         OutputTokens = u["outputTokens"]?.Value<int>() ?? 0,
                         TotalTokens = u["totalTokens"]?.Value<int>() ?? 0,
-                        CacheCreationTokens = u["cacheCreationInputTokens"]?.Value<int>() ?? 0,
+                        CacheCreationTokens = u["cacheCreationTokens"]?.Value<int>() ?? 0,
                         CacheReadTokens = u["cacheReadTokens"]?.Value<int>() ?? 0,
                         CacheHitTokens = u["cacheHitTokens"]?.Value<int>() ?? 0
                     };
@@ -134,8 +160,10 @@ namespace AgentCoreProcessor.WebUI.Services
                     Model = obj["model"]?.ToString(),
                     Provider = obj["provider"]?.ToString(),
                     Timestamp = obj["timestamp"]?.ToString(),
-                    Input = input,
-                    DynamicInput = obj["dynamicInput"]?.ToString(),
+                    Caller = obj["caller"]?.ToString(),
+                    SystemPromptHash = obj["systemPromptHash"]?.ToString(),
+                    Tools = tools,
+                    Messages = messages,
                     Output = obj["output"]?.ToString(),
                     Thinking = obj["thinking"]?.ToString(),
                     Usage = usage
