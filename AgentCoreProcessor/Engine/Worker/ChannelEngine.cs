@@ -73,7 +73,7 @@ namespace AgentCoreProcessor.Engine
         private readonly LoopGate gate = new();
         private readonly LoopBus bus = new();
         private readonly SpeakModule speakModule = new();
-        private readonly ThinkingNotesModule thinkingNotesModule = new();
+        private ThinkingNotesModule thinkingNotesModule = null!;
         private readonly TaskListModule taskListModule = new();
         private readonly PinboardModule pinboardModule = new();
         private readonly RetainListModule retainListModule = new();
@@ -180,6 +180,8 @@ namespace AgentCoreProcessor.Engine
 
         private void InitModules()
         {
+            thinkingNotesModule = new ThinkingNotesModule(channelId.ToString());
+            loopControlModule.ChannelId = channelId.ToString();
             modules = new List<EngineModule>
             {
                 speakModule, thinkingNotesModule, taskListModule, pinboardModule,
@@ -573,7 +575,7 @@ namespace AgentCoreProcessor.Engine
                     var allowedTools = new HashSet<string>
                     {
                         "speak", "send_media", "thinking_notes", "memory", "pinboard", "retain_list", "task_management",
-                        "mark_review_hint", "alert", "continue_loop", "read_file", "write_file", "delegate_task", "adapter_action",
+                        "mark_review_hint", "alert", "wait", "read_file", "write_file", "delegate_task", "adapter_action",
                         "view_image", "get_image_text"
                     };
                     return allowedTools.Contains(tool.Name);
@@ -619,7 +621,7 @@ namespace AgentCoreProcessor.Engine
                     var allowedTools = new HashSet<string>
                     {
                         "speak", "send_media", "thinking_notes", "memory", "pinboard", "retain_list", "task_management",
-                        "mark_review_hint", "alert", "continue_loop", "read_file", "write_file", "delegate_task", "adapter_action"
+                        "mark_review_hint", "alert", "read_file", "write_file", "delegate_task", "adapter_action"
                     };
                     return allowedTools.Contains(tool.Name);
                 });
@@ -766,15 +768,9 @@ namespace AgentCoreProcessor.Engine
             {
                 if (output.ToolCalls == null || output.ToolCalls.Count == 0) return;
 
-                bool hasContinue = output.ToolCalls.Any(c => ToolRegistry.Get(c.Tool)?.GetContinueLoop() == true);
+                bool hasWait = output.ToolCalls.Any(c => c.Tool == "wait");
 
-                if (hasContinue && !loopControlModule.IsMaxSilentReached && !loopControlModule.IsMaxRoundsReached)
-                {
-                    FrameworkLogger.Log("ChannelEngine",
-                        $"ContinueLoop 自唤醒: channelId={channelId}, round={loopControlModule.TotalRounds}");
-                    gate.Signal();
-                }
-                else
+                if (hasWait || loopControlModule.IsMaxSilentReached || loopControlModule.IsMaxRoundsReached)
                 {
                     if (loopControlModule.IsMaxSilentReached && speakModule.OnSpeak != null)
                         speakModule.OnSpeak("（工作暂停，等待回应后继续）").GetAwaiter().GetResult();
@@ -783,6 +779,12 @@ namespace AgentCoreProcessor.Engine
                         $"Working 结束: rounds={loopControlModule.TotalRounds}, " +
                         $"silent={loopControlModule.SilentRounds}, channelId={channelId}");
                     EndWorkingSession();
+                }
+                else
+                {
+                    FrameworkLogger.Log("ChannelEngine",
+                        $"Working 继续: channelId={channelId}, round={loopControlModule.TotalRounds}");
+                    gate.Signal();
                 }
             }
         }

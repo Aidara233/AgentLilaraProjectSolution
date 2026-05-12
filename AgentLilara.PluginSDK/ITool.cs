@@ -36,7 +36,8 @@ namespace AgentLilara.PluginSDK
                     ["type"] = "string",
                     ["description"] = p.Description
                 };
-                required.Add(p.Name);
+                if (p.IsRequired)
+                    required.Add(p.Name);
             }
             return new JsonObject
             {

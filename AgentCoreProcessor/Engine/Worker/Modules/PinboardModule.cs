@@ -1,62 +1,49 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
+using System.Text.Json;
+using AgentCoreProcessor.Config;
 
 namespace AgentCoreProcessor.Engine.Modules
 {
     /// <summary>
-    /// 便签板模块。会话级持久化，Express/Working 共享。
+    /// 便签板模块。从 Plugin.WorkingTools 的文件存储读取，注入 prompt。
     /// </summary>
     internal class PinboardModule : EngineModule
     {
         public override string Name => "便签板";
         public override int PromptPriority => 55;
 
-        private readonly Dictionary<string, string> pinboard = new();
+        private static string FilePath =>
+            Path.Combine(PathConfig.StoragePath, "PluginData", "_system", "pinboard.json");
 
-        /// <summary>获取便签板引用（供 Express 模式直接读取）。</summary>
-        public Dictionary<string, string> Entries => pinboard;
+        /// <summary>读取当前便签板内容（供快照使用）。</summary>
+        public Dictionary<string, string> Entries => LoadBoard();
 
-        public override void Attach(ILoopBus bus)
-        {
-            bus.Subscribe<ToolExecutedEvent>(e =>
-            {
-                if (e.Call.Tool != "pinboard" || !e.Result.IsSuccess) return;
-                ApplyAction(e.Result.Data ?? "");
-            });
-        }
-
-        private void ApplyAction(string data)
-        {
-            if (data.StartsWith("pin:"))
-            {
-                var rest = data[4..];
-                var sep = rest.IndexOf(':');
-                if (sep > 0)
-                {
-                    var label = rest[..sep];
-                    var content = rest[(sep + 1)..];
-                    pinboard[label] = content;
-                }
-            }
-            else if (data.StartsWith("unpin:"))
-            {
-                var label = data[6..];
-                pinboard.Remove(label);
-            }
-        }
+        public override void Attach(ILoopBus bus) { }
 
         public override string? BuildPromptSection(EngineMode mode)
         {
-            if (pinboard.Count == 0) return null;
+            var board = LoadBoard();
+            if (board.Count == 0) return null;
+
             var sb = new StringBuilder("[便签板]\n");
-            foreach (var (label, content) in pinboard)
+            foreach (var (label, content) in board)
                 sb.AppendLine($"- {label}: {content}");
             return sb.ToString();
         }
 
-        public override void Reset()
+        public override void Reset() { }
+
+        private static Dictionary<string, string> LoadBoard()
         {
-            pinboard.Clear();
+            if (!File.Exists(FilePath)) return new();
+            try
+            {
+                var json = File.ReadAllText(FilePath);
+                return JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new();
+            }
+            catch { return new(); }
         }
     }
 }

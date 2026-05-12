@@ -73,14 +73,13 @@ namespace AgentCoreProcessor.Core
                     var args = JsonNode.Parse(argsStr) as JsonObject;
                     if (args != null)
                     {
-                        // 按工具定义的 required 顺序映射
                         var def = toolDefs.Find(t => t.Name == currentToolName);
                         if (def?.Parameters is JsonObject schema
-                            && schema["required"] is JsonArray required)
+                            && schema["properties"] is JsonObject properties)
                         {
-                            foreach (var r in required)
+                            // 按 properties 定义顺序映射（与 ITool.Parameters 顺序一致）
+                            foreach (var (key, _) in properties)
                             {
-                                var key = r!.ToString();
                                 if (args.TryGetPropertyValue(key, out var val))
                                     call.Inputs.Add(val?.ToString() ?? "");
                                 else

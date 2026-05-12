@@ -1,50 +1,68 @@
 using System.Collections.Generic;
-using System.Text;
+using System.IO;
+using AgentCoreProcessor.Config;
 
 namespace AgentCoreProcessor.Engine.Modules
 {
     /// <summary>
-    /// 思考笔记模块。模型通过工具写入/删除笔记，每轮注入 prompt。
+    /// 思考笔记模块。从 Plugin.WorkingTools 的文件存储读取对应 notebook，注入 prompt。
     /// </summary>
     internal class ThinkingNotesModule : EngineModule
     {
         public override string Name => "思考笔记";
         public override int PromptPriority => 45;
 
-        private readonly Dictionary<string, string> notes = new();
+        private readonly string channelId;
 
-        /// <summary>获取思考笔记引用（供快照读取）。</summary>
-        public Dictionary<string, string> Notes => notes;
-
-        public override void Attach(ILoopBus bus)
+        public ThinkingNotesModule(string channelId)
         {
-            bus.Subscribe<ToolExecutedEvent>(e =>
-            {
-                if (e.Call.Tool != "thinking_notes" || !e.Result.IsSuccess) return;
-                if (e.Call.Inputs.Count < 2) return;
-
-                var action = e.Call.Inputs[0]?.Trim().ToLower();
-                var key = e.Call.Inputs[1] ?? "";
-
-                if (action == "write" && e.Call.Inputs.Count >= 3)
-                    notes[key] = e.Call.Inputs[2] ?? "";
-                else if (action == "delete")
-                    notes.Remove(key);
-            });
+            this.channelId = channelId;
         }
+
+        private string NotebookPath
+        {
+            get
+            {
+                var safeName = SanitizeFileName(channelId);
+                return Path.Combine(PathConfig.StoragePath, "PluginData", "_system", "notebooks", $"{safeName}.txt");
+            }
+        }
+
+        /// <summary>读取当前笔记内容（供快照使用）。</summary>
+        public Dictionary<string, string> Notes
+        {
+            get
+            {
+                var content = ReadContent();
+                if (string.IsNullOrEmpty(content)) return new();
+                return new Dictionary<string, string> { [channelId] = content };
+            }
+        }
+
+        public override void Attach(ILoopBus bus) { }
 
         public override string? BuildPromptSection(EngineMode mode)
         {
-            if (notes.Count == 0) return null;
-            var sb = new StringBuilder("你的思考笔记：\n");
-            foreach (var (key, value) in notes)
-                sb.AppendLine($"- {key}: {value}");
-            return sb.ToString();
+            var content = ReadContent();
+            if (string.IsNullOrWhiteSpace(content)) return null;
+            return $"你的思考笔记（notebook={channelId}）：\n{content}";
         }
 
-        public override void Reset()
+        public override void Reset() { }
+
+        private string ReadContent()
         {
-            notes.Clear();
+            if (!File.Exists(NotebookPath)) return "";
+            try { return File.ReadAllText(NotebookPath); }
+            catch { return ""; }
+        }
+
+        private static string SanitizeFileName(string name)
+        {
+            foreach (var c in Path.GetInvalidFileNameChars())
+                name = name.Replace(c, '_');
+            if (name.Length > 64) name = name[..64];
+            return name;
         }
     }
 }

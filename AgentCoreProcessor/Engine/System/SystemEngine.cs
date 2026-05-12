@@ -34,7 +34,7 @@ namespace AgentCoreProcessor.Engine
         private readonly DateTime startTime = DateTime.Now;
 
         // 模块
-        private readonly ThinkingNotesModule thinkingNotesModule = new();
+        private readonly ThinkingNotesModule thinkingNotesModule = new("system");
         private readonly PinboardModule pinboardModule = new();
         private readonly LoopControlModule loopControlModule = new();
         private readonly PendingEventsModule pendingEventsModule = new();

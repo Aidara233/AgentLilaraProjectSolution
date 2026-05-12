@@ -25,17 +25,17 @@ namespace AgentCoreProcessor.Tool.Core
     }
 
     /// <summary>
-    /// 循环挂起信号。系统循环用来显式进入等待状态。
+    /// 循环挂起信号。Working 模式下显式停止循环。不调用则默认继续下一轮。
     /// </summary>
     [ToolMeta(ContinueLoop = false)]
     internal class WaitTool : ITool
     {
         public string Name => "wait";
-        public string Description => "结束当前处理轮次，进入等待状态直到新事件到达";
+        public string Description => "停止当前工作循环，进入等待状态。工作模式默认每轮自动继续，只在任务完成或需要等待用户回应时调用此工具。";
         public IReadOnlyList<ToolParameter> Parameters =>
         [
-            new("reason", "等待原因（简短说明为什么现在没事做）", 0),
-            new("timeout_minutes", "等待超时时间（分钟），超时后自动唤醒。默认5", 1)
+            new("reason", "等待原因（简短说明为什么现在停下）", 0),
+            new("timeout_minutes", "（可选）等待超时分钟数，超时后自动唤醒，默认5", 1, isRequired: false)
         ];
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);
 
