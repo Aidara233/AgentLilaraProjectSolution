@@ -79,6 +79,11 @@ namespace AgentCoreProcessor.Adapter
                     FileSize = bytes.Length,
                     CreatedAt = DateTime.Now
                 });
+
+                // 超过直传上限时立即生成缩略图
+                if (bytes.Length > MaxDirectSendSize)
+                    await EnsureThumbnailAsync(hash);
+
                 _eventBus?.PublishSignal("new-image", hash);
             }
 
@@ -111,8 +116,13 @@ namespace AgentCoreProcessor.Adapter
                     Hash = hash,
                     LocalPath = localPath,
                     SourceUrl = null,
+                    FileSize = bytes.Length,
                     CreatedAt = DateTime.Now
                 });
+
+                if (bytes.Length > MaxDirectSendSize)
+                    await EnsureThumbnailAsync(hash);
+
                 _eventBus?.PublishSignal("new-image", hash);
             }
 
