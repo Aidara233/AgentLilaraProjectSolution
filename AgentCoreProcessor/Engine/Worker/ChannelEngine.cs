@@ -509,7 +509,8 @@ namespace AgentCoreProcessor.Engine
         private List<Models.Message> BuildPromptMessages()
         {
             var mode = isWorkingMode ? EngineMode.Working : EngineMode.Express;
-            var useNative = isWorkingMode && agentCore.UseNativeTools;
+            // 直接根据 WorkingCore 配置判断，不依赖当前 processor 状态（修复时序 bug）
+            var useNative = isWorkingMode;
 
             // Working 模式：使用工具白名单过滤
             string toolDescs;
