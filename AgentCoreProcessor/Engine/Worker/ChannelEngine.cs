@@ -115,6 +115,10 @@ namespace AgentCoreProcessor.Engine
         // 授权工具集（会话级）
         private readonly HashSet<string> authorizedTools = new();
 
+        // 消息拦截器（由 MasterEngine 注入）
+        private List<Tool.Contract.IMessageInterceptor> interceptors = new();
+        private readonly List<string> interceptorInjections = new();
+
         // Express/Working 自适应切换
         private bool isWorkingMode = false;
         private int consecutiveExternalTriggers = 0;
@@ -215,6 +219,12 @@ namespace AgentCoreProcessor.Engine
             var cts = _bufferTimerCts;
             _ = Task.Delay(TimeSpan.FromSeconds(ctx.ImpulseConfig.BufferWindowSeconds), cts.Token)
                 .ContinueWith(_ => gate.Signal(), TaskContinuationOptions.NotOnCanceled);
+        }
+
+        /// <summary>注入消息拦截器列表（由 MasterEngine 在创建引擎后调用）。</summary>
+        internal void SetInterceptors(List<Tool.Contract.IMessageInterceptor> list)
+        {
+            interceptors = list.OrderBy(i => i.Priority).ToList();
         }
 
         /// <summary>系统循环注入通知到频道循环。唤醒闸门，下一轮 prompt 中展示。</summary>
@@ -408,6 +418,47 @@ namespace AgentCoreProcessor.Engine
                     TrackMemoryExtraction(batch, currentLastSc);
                     return false;
                 }
+
+                // 拦截器链：插件可在此介入（如睡眠行为、维护模式等）
+                interceptorInjections.Clear();
+                if (interceptors.Count > 0)
+                {
+                    var interceptCtx = new Tool.Contract.MessageInterceptContext
+                    {
+                        SleepState = (Tool.Contract.SleepState)(int)ctx.CurrentSleepState,
+                        ChannelId = channelId,
+                        IsPrivate = currentLastMsg.IsPrivate,
+                        HasMention = batch.Any(b => b.Message.IsMentioned),
+                        ToolContext = null!, // TODO: 接入 ToolContextImpl
+                        Messages = batch.Select(b => new Tool.Contract.MessageInfo
+                        {
+                            Content = b.Message.Content,
+                            SenderName = b.Context.Person.Name ?? b.Context.User.PlatformId,
+                            PersonId = b.Context.Person.Id,
+                            IsMentioned = b.Message.IsMentioned,
+                            IsPrivate = b.Message.IsPrivate,
+                            PermissionLevel = (int)b.Context.User.PermissionLevel
+                        }).ToList()
+                    };
+
+                    foreach (var interceptor in interceptors)
+                    {
+                        var result = await interceptor.OnBeforeProcessAsync(interceptCtx);
+                        if (result.Action == Tool.Contract.InterceptAction.Skip)
+                        {
+                            TrackMemoryExtraction(batch, currentLastSc);
+                            return false;
+                        }
+                        if (result.Action == Tool.Contract.InterceptAction.Handled)
+                        {
+                            TrackMemoryExtraction(batch, currentLastSc);
+                            return false;
+                        }
+                        if (result.PromptInjection != null)
+                            interceptorInjections.Add(result.PromptInjection);
+                    }
+                }
+
                 if (!impulseTracker.ShouldRespond(batch, LastCompletionTime))
                 {
                     TrackMemoryExtraction(batch, currentLastSc);
@@ -608,6 +659,13 @@ namespace AgentCoreProcessor.Engine
             {
                 // 插入到 contextXml 消息之后、模块消息之前（index = 工具描述被跳过后的第2个消息之后）
                 messages.Insert(1, new Models.Message { Role = "user", Content = nativeContext });
+            }
+
+            // 拦截器注入的额外提示
+            if (interceptorInjections.Count > 0)
+            {
+                var injection = string.Join("\n", interceptorInjections);
+                messages.Add(new Models.Message { Role = "user", Content = injection });
             }
 
             // 图片只在首次使用后清除

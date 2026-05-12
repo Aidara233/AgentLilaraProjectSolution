@@ -1,14 +1,3 @@
-namespace AgentCoreProcessor.Engine
-{
-    /// <summary>
-    /// 系统级睡眠状态（暴露给所有引擎）。
-    /// 与 DreamEngine 内部的 SleepLevel 对应但独立，因为 SleepLevel 是实现细节。
-    /// </summary>
-    public enum SleepState
-    {
-        None,
-        Daydream,
-        Nap,
-        DeepSleep,
-    }
-}
+// SleepState 定义已迁移到 Tool.Contract 命名空间
+// 此处通过 global using 保持 Engine 命名空间下的兼容性
+global using SleepState = AgentCoreProcessor.Tool.Contract.SleepState;

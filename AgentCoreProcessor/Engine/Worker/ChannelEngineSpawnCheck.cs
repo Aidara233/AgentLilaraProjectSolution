@@ -9,7 +9,7 @@ namespace AgentCoreProcessor.Engine
     /// <summary>
     /// ChannelEngine 的创建条件检查。接管 SessionManager 调用和频道路由。
     /// 维护活跃频道引擎表，按 ChannelId 路由消息。
-    /// 睡眠期间拦截消息：入库但不触发响应。
+    /// 睡眠行为由 ChannelEngine 内部处理，此处不拦截。
     /// </summary>
     internal class ChannelEngineSpawnCheck : IEngineSpawnCheck
     {
@@ -52,39 +52,13 @@ namespace AgentCoreProcessor.Engine
                     return false;
             }
 
-            // ═══ 睡眠拦截 ═══
-            var sleepState = ctx.CurrentSleepState;
-            if (sleepState != SleepState.None)
+            var channelId = sessionContext.Channel.Id;
+
+            // 已有活跃的频道引擎 → 无条件转发
+            if (activeChannels.TryGetValue(channelId, out var existing) && existing.IsAlive)
             {
-                // 走神：被 @ 放行（DreamEngine 会自行打断）
-                if (sleepState == SleepState.Daydream && message.IsMentioned)
-                {
-                    // 放行，走正常流程
-                }
-                // 小睡：被 @ + 叫醒关键词 → 放行
-                else if (sleepState == SleepState.Nap
-                    && message.IsMentioned
-                    && ContainsWakeKeyword(message.Content))
-                {
-                    // 放行（DreamEngine 会自行打断）
-                }
-                // 大睡：仅管理员 + @ 放行
-                else if (sleepState == SleepState.DeepSleep
-                    && message.IsMentioned
-                    && sessionContext.User.PermissionLevel >= PermissionLevel.Admin)
-                {
-                    // 管理员叫醒 → 发信号唤醒 DreamEngine，放行消息
-                    ctx.EventBus.Publish(new SignalEvent
-                    {
-                        SignalName = "force-wake",
-                        Payload = "admin-wake"
-                    });
-                }
-                else
-                {
-                    // 其余情况：消息已入库，不触发响应
-                    return false;
-                }
+                existing.EnqueueMessage(message, sessionContext);
+                return false;
             }
 
             // 信任等级：首次出现自动升为 Stranger
@@ -92,15 +66,6 @@ namespace AgentCoreProcessor.Engine
             {
                 sessionContext.Person.TrustLevel = TrustLevel.Stranger;
                 await ctx.Session.UpdatePersonAsync(sessionContext.Person);
-            }
-
-            var channelId = sessionContext.Channel.Id;
-
-            // 已有活跃的频道引擎 → 转发消息
-            if (activeChannels.TryGetValue(channelId, out var existing) && existing.IsAlive)
-            {
-                existing.EnqueueMessage(message, sessionContext);
-                return false;
             }
 
             // 需要创建新的频道引擎
@@ -143,13 +108,5 @@ namespace AgentCoreProcessor.Engine
             list.Add(content);
         }
 
-        private static readonly string[] WakeKeywords =
-            ["起床", "醒醒", "wake", "起来", "叫醒", "别睡了", "醒来"];
-
-        private static bool ContainsWakeKeyword(string content)
-        {
-            var lower = content.ToLowerInvariant();
-            return WakeKeywords.Any(k => lower.Contains(k));
-        }
     }
 }
