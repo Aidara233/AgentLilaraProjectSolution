@@ -79,9 +79,8 @@ namespace AgentCoreProcessor.Core
             {
                 if (calls[i].ToolUseId != null)
                 {
-                    var inputJson = calls[i].Inputs.Count > 0
-                        ? Newtonsoft.Json.JsonConvert.SerializeObject(calls[i].Inputs)
-                        : "[]";
+                    // input 必须是 JSON object，按工具参数定义重建
+                    var inputJson = RebuildInputJson(calls[i]);
                     toolUseParts.Add(ContentPart.FromToolUse(
                         calls[i].ToolUseId!, calls[i].Tool, inputJson));
                 }
@@ -165,6 +164,33 @@ namespace AgentCoreProcessor.Core
                     sb.Append($"\n{result.Data}");
                 sb.AppendLine();
             }
+        }
+
+        /// <summary>
+        /// 将 positional inputs 重建为 JSON object（Claude API 要求 tool_use.input 必须是 object）。
+        /// </summary>
+        private static string RebuildInputJson(ToolCall call)
+        {
+            if (call.Inputs.Count == 0) return "{}";
+
+            var tool = ToolRegistry.Get(call.Tool);
+            if (tool == null)
+            {
+                // 工具不存在时用 arg0/arg1 作为 key
+                var fallback = new Dictionary<string, string>();
+                for (int i = 0; i < call.Inputs.Count; i++)
+                    fallback[$"arg{i}"] = call.Inputs[i];
+                return Newtonsoft.Json.JsonConvert.SerializeObject(fallback);
+            }
+
+            var obj = new Dictionary<string, string>();
+            var parameters = tool.Parameters;
+            for (int i = 0; i < call.Inputs.Count; i++)
+            {
+                var key = i < parameters.Count ? parameters[i].Name : $"arg{i}";
+                obj[key] = call.Inputs[i];
+            }
+            return Newtonsoft.Json.JsonConvert.SerializeObject(obj);
         }
     }
 }
