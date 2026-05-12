@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
-namespace AgentCoreProcessor.Tool.Contract.Services
+namespace AgentLilara.PluginSDK.Services
 {
     /// <summary>
     /// 定时任务调度接口。

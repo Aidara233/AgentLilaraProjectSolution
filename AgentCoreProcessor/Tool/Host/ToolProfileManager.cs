@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using AgentCoreProcessor.Config;
-using AgentCoreProcessor.Tool.Contract;
+using AgentLilara.PluginSDK;
 using Newtonsoft.Json;
 
 namespace AgentCoreProcessor.Tool.Host

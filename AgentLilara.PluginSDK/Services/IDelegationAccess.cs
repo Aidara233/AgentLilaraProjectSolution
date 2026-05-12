@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
-namespace AgentCoreProcessor.Tool.Contract.Services
+namespace AgentLilara.PluginSDK.Services
 {
     /// <summary>
     /// 委托系统访问接口（频道循环提交委托、系统循环评估委托）。

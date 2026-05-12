@@ -4,7 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Engine.Modules;
-using AgentCoreProcessor.Tool.Contract;
+using AgentLilara.PluginSDK;
 
 namespace AgentCoreProcessor.Tool
 {
@@ -58,8 +58,8 @@ namespace AgentCoreProcessor.Tool
 
             // 权限检查
             var meta = ToolRegistry.GetMeta(call.Tool);
-            var permission = meta?.Permission ?? Contract.ToolPermission.Default;
-            if (permission > Contract.ToolPermission.Default
+            var permission = meta?.Permission ?? AgentLilara.PluginSDK.ToolPermission.Default;
+            if (permission > AgentLilara.PluginSDK.ToolPermission.Default
                 && authorizedTools != null
                 && !authorizedTools.Contains(tool.Name))
             {

@@ -1,6 +1,6 @@
 using System.Threading.Tasks;
 
-namespace AgentCoreProcessor.Tool.Contract.Services
+namespace AgentLilara.PluginSDK.Services
 {
     /// <summary>
     /// 子 agent 管理接口（系统循环用）。

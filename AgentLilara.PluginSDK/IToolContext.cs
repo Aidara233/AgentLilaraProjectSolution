@@ -1,6 +1,6 @@
 using System;
 
-namespace AgentCoreProcessor.Tool.Contract
+namespace AgentLilara.PluginSDK
 {
     /// <summary>
     /// 工具上下文。插件通过此接口访问宿主提供的内部服务。

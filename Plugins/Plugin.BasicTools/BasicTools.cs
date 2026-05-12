@@ -2,17 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using AgentCoreProcessor.Tool.Contract;
+using AgentLilara.PluginSDK;
 
-namespace AgentCoreProcessor.Tool.Builtin
+namespace Plugin.BasicTools
 {
-    /// <summary>
-    /// 说话工具。向当前频道发送一条消息。
-    /// 实际发送由引擎的 SpeakModule 通过 OnToolExecuted 回调处理。
-    /// 后续将迁移为独立插件 DLL。
-    /// </summary>
     [ToolMeta(Group = null, ContinueLoop = false)]
-    internal class SpeakTool : ITool
+    public class SpeakTool : ITool
     {
         public string Name => "speak";
         public string Description => "向用户发送一条消息（实时推送，不等待任务完成）";
@@ -29,11 +24,8 @@ namespace AgentCoreProcessor.Tool.Builtin
         }
     }
 
-    /// <summary>
-    /// 发送媒体工具。发送图片、表情包、语音或文件。
-    /// </summary>
     [ToolMeta(Group = null, ContinueLoop = false)]
-    internal class SendMediaTool : ITool
+    public class SendMediaTool : ITool
     {
         public string Name => "send_media";
         public string Description => "发送图片、表情包、语音或文件（支持本地路径或URL）";

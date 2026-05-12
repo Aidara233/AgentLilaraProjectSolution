@@ -17,6 +17,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\AgentLilara.PluginSDK\AgentLilara.PluginSDK.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="paths.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
-namespace AgentCoreProcessor.Tool.Contract.Services
+namespace AgentLilara.PluginSDK.Services
 {
     /// <summary>
     /// 记忆系统访问接口。

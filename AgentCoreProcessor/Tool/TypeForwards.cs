@@ -1,12 +1,12 @@
-// 类型转发：让 using AgentCoreProcessor.Tool 的旧代码能找到已迁移到 Contract 的类型。
-// 过渡期使用，后续逐步把各文件的 using 改为直接引用 Contract 命名空间后删除此文件。
+// 类型转发：让 using AgentCoreProcessor.Tool 的旧代码能找到已迁移到 PluginSDK 的类型。
+// 过渡期使用，后续逐步把各文件的 using 改为直接引用 PluginSDK 命名空间后删除此文件。
 
-global using ITool = AgentCoreProcessor.Tool.Contract.ITool;
-global using ToolCall = AgentCoreProcessor.Tool.Contract.ToolCall;
-global using ToolResult = AgentCoreProcessor.Tool.Contract.ToolResult;
-global using ToolParameter = AgentCoreProcessor.Tool.Contract.ToolParameter;
-global using ToolDefinition = AgentCoreProcessor.Tool.Contract.ToolDefinition;
-global using ToolMetaAttribute = AgentCoreProcessor.Tool.Contract.ToolMetaAttribute;
+global using ITool = AgentLilara.PluginSDK.ITool;
+global using ToolCall = AgentLilara.PluginSDK.ToolCall;
+global using ToolResult = AgentLilara.PluginSDK.ToolResult;
+global using ToolParameter = AgentLilara.PluginSDK.ToolParameter;
+global using ToolDefinition = AgentLilara.PluginSDK.ToolDefinition;
+global using ToolMetaAttribute = AgentLilara.PluginSDK.ToolMetaAttribute;
 
 namespace AgentCoreProcessor.Tool
 {
@@ -16,22 +16,22 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal static class ToolExtensions
     {
-        public static bool GetContinueLoop(this Contract.ITool tool)
+        public static bool GetContinueLoop(this AgentLilara.PluginSDK.ITool tool)
             => ToolRegistry.GetMeta(tool.Name)?.ContinueLoop ?? false;
 
-        public static bool GetRetainResult(this Contract.ITool tool)
-            => false; // RetainResult 概念已废弃，由 IToolHistoryAccess 替代
+        public static bool GetRetainResult(this AgentLilara.PluginSDK.ITool tool)
+            => false;
 
-        public static bool GetAllowSubAgent(this Contract.ITool tool)
+        public static bool GetAllowSubAgent(this AgentLilara.PluginSDK.ITool tool)
             => ToolRegistry.GetMeta(tool.Name)?.AllowSubAgent ?? true;
 
-        public static Contract.ToolPermission GetPermission(this Contract.ITool tool)
-            => ToolRegistry.GetMeta(tool.Name)?.Permission ?? Contract.ToolPermission.Default;
+        public static AgentLilara.PluginSDK.ToolPermission GetPermission(this AgentLilara.PluginSDK.ITool tool)
+            => ToolRegistry.GetMeta(tool.Name)?.Permission ?? AgentLilara.PluginSDK.ToolPermission.Default;
 
-        public static string? GetToolGroup(this Contract.ITool tool)
+        public static string? GetToolGroup(this AgentLilara.PluginSDK.ITool tool)
             => ToolRegistry.GetMeta(tool.Name)?.Group;
 
-        public static string? GetCapabilitySummary(this Contract.ITool tool)
+        public static string? GetCapabilitySummary(this AgentLilara.PluginSDK.ITool tool)
             => ToolRegistry.GetMeta(tool.Name)?.CapabilitySummary;
     }
 }

@@ -1,6 +1,6 @@
 using System.Threading.Tasks;
 
-namespace AgentCoreProcessor.Tool.Contract.Services
+namespace AgentLilara.PluginSDK.Services
 {
     /// <summary>
     /// 适配器操作接口（平台交互）。

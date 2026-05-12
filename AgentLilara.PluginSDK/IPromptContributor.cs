@@ -1,4 +1,4 @@
-namespace AgentCoreProcessor.Tool.Contract
+namespace AgentLilara.PluginSDK
 {
     /// <summary>
     /// 静态插件的 prompt 注入接口。

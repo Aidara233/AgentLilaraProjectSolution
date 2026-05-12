@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using Newtonsoft.Json;
 
-namespace AgentCoreProcessor.Tool.Contract
+namespace AgentLilara.PluginSDK
 {
     /// <summary>
     /// 工具调用数据结构。

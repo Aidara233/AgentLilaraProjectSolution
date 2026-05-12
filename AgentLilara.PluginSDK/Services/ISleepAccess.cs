@@ -1,4 +1,4 @@
-namespace AgentCoreProcessor.Tool.Contract.Services
+namespace AgentLilara.PluginSDK.Services
 {
     /// <summary>
     /// 睡眠状态访问接口。

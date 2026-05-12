@@ -1,6 +1,6 @@
 using System.Text.Json.Nodes;
 
-namespace AgentCoreProcessor.Tool.Contract
+namespace AgentLilara.PluginSDK
 {
     /// <summary>
     /// 原生工具定义（供 Anthropic Tools / OpenAI Functions 使用）。

@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace AgentCoreProcessor.Tool.Contract.Services
+namespace AgentLilara.PluginSDK.Services
 {
     /// <summary>
     /// 工具执行历史查询接口。替代旧的 RetainList 概念。

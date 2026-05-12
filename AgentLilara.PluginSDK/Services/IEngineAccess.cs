@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace AgentCoreProcessor.Tool.Contract.Services
+namespace AgentLilara.PluginSDK.Services
 {
     /// <summary>
     /// 引擎管理接口。

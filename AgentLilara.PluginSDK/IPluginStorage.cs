@@ -1,4 +1,4 @@
-namespace AgentCoreProcessor.Tool.Contract
+namespace AgentLilara.PluginSDK
 {
     /// <summary>
     /// 插件隔离存储接口。每个插件实例拿到的是绑定了自己路径的实例。

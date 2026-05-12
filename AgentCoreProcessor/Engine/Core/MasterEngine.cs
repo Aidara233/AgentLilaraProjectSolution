@@ -377,16 +377,11 @@ namespace AgentCoreProcessor.Engine
             Tool.ToolRegistry.Register(new Tool.Core.WaitTool());
             FrameworkLogger.Log("MasterEngine", "核心工具已注册");
 
-            // 内置工具（暂时直接注册，后续迁移为插件 DLL）
-            Tool.ToolRegistry.Register(new Tool.Builtin.SpeakTool());
-            Tool.ToolRegistry.Register(new Tool.Builtin.SendMediaTool());
-            FrameworkLogger.Log("MasterEngine", $"内置工具已注册，共 {Tool.ToolRegistry.All.Count} 个");
-
-            // TODO: Phase 2 完成后在此初始化 PluginLoader
-            // var pluginLoader = new Tool.Host.PluginLoader(toolContext);
-            // pluginLoader.LoadAll();
-
-            FrameworkLogger.Log("MasterEngine", "工具系统初始化完成（插件加载待实现）");
+            // 插件加载
+            var toolContext = new Tool.Host.ToolContextImpl(new Tool.Host.PluginStorageImpl("_system"));
+            var pluginLoader = new Tool.Host.PluginLoader(toolContext);
+            pluginLoader.LoadAll();
+            FrameworkLogger.Log("MasterEngine", $"插件加载完成，共 {Tool.ToolRegistry.All.Count} 个工具已注册");
 
             // 注册所有 SpawnCheck
             foreach (var (_, factory) in SpawnCheckFactory)

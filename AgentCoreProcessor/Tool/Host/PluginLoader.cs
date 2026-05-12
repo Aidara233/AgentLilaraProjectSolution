@@ -7,7 +7,7 @@ using System.Runtime.Loader;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Engine;
-using AgentCoreProcessor.Tool.Contract;
+using AgentLilara.PluginSDK;
 
 namespace AgentCoreProcessor.Tool.Host
 {
@@ -139,25 +139,25 @@ namespace AgentCoreProcessor.Tool.Host
 
         private static List<Type> DiscoverToolTypes(Assembly assembly)
         {
-            var iToolType = typeof(Contract.ITool);
+            var iToolType = typeof(AgentLilara.PluginSDK.ITool);
             return assembly.GetExportedTypes()
                 .Where(t => t.IsClass && !t.IsAbstract && iToolType.IsAssignableFrom(t))
                 .ToList();
         }
 
-        private Contract.ITool? InstantiateTool(Type type)
+        private AgentLilara.PluginSDK.ITool? InstantiateTool(Type type)
         {
             try
             {
                 // 优先找 IToolContext 构造函数
                 var ctorWithContext = type.GetConstructor(new[] { typeof(IToolContext) });
                 if (ctorWithContext != null)
-                    return (Contract.ITool)ctorWithContext.Invoke(new object[] { toolContext });
+                    return (AgentLilara.PluginSDK.ITool)ctorWithContext.Invoke(new object[] { toolContext });
 
                 // 无参构造函数
                 var ctorDefault = type.GetConstructor(Type.EmptyTypes);
                 if (ctorDefault != null)
-                    return (Contract.ITool)ctorDefault.Invoke(null);
+                    return (AgentLilara.PluginSDK.ITool)ctorDefault.Invoke(null);
 
                 FrameworkLogger.Log("PluginLoader",
                     $"无法实例化 {type.Name}: 缺少兼容的构造函数");

@@ -1,6 +1,6 @@
 using System;
 
-namespace AgentCoreProcessor.Tool.Contract
+namespace AgentLilara.PluginSDK
 {
     /// <summary>
     /// 工具权限级别。

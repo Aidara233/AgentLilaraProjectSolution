@@ -38,7 +38,7 @@ namespace AgentCoreProcessor.Command
             if (tool == null)
                 return Task.FromResult(CommandResult.Fail($"未找到工具「{toolName}」"));
 
-            if (tool.GetPermission() <= AgentCoreProcessor.Tool.Contract.ToolPermission.Default)
+            if (tool.GetPermission() <= AgentLilara.PluginSDK.ToolPermission.Default)
                 return Task.FromResult(CommandResult.Ok($"「{toolName}」不需要授权，可自由使用"));
 
             AuthStore.Grant(context.Message.ChannelId, toolName);
@@ -55,7 +55,7 @@ namespace AgentCoreProcessor.Command
         {
             var granted = AuthStore.GetGranted(context.Message.ChannelId);
             var restricted = ToolRegistry.All.Values
-                .Where(t => t.GetPermission() > AgentCoreProcessor.Tool.Contract.ToolPermission.Default)
+                .Where(t => t.GetPermission() > AgentLilara.PluginSDK.ToolPermission.Default)
                 .ToList();
 
             if (restricted.Count == 0)

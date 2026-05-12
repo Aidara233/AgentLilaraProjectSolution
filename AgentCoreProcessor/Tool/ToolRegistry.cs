@@ -5,7 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using AgentCoreProcessor.Config;
-using AgentCoreProcessor.Tool.Contract;
+using AgentLilara.PluginSDK;
 using Newtonsoft.Json;
 
 namespace AgentCoreProcessor.Tool
@@ -76,8 +76,8 @@ namespace AgentCoreProcessor.Tool
             {
                 if (IsDisabled(tool.Name)) continue;
                 var meta = GetMeta(tool.Name);
-                var permission = meta?.Permission ?? Contract.ToolPermission.Default;
-                bool isRestricted = permission > Contract.ToolPermission.Default;
+                var permission = meta?.Permission ?? AgentLilara.PluginSDK.ToolPermission.Default;
+                bool isRestricted = permission > AgentLilara.PluginSDK.ToolPermission.Default;
                 bool isAuthorized = authorizedTools != null && authorizedTools.Contains(tool.Name);
                 var suffix = isRestricted && !isAuthorized ? "（需要管理员授权）" : "";
 

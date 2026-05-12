@@ -1,6 +1,6 @@
 using System;
 
-namespace AgentCoreProcessor.Tool.Contract.Services
+namespace AgentLilara.PluginSDK.Services
 {
     /// <summary>
     /// 事件总线访问接口。插件可发布信号和订阅事件。

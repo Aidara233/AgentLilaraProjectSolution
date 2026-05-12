@@ -116,7 +116,7 @@ namespace AgentCoreProcessor.Engine
         private readonly HashSet<string> authorizedTools = new();
 
         // 消息拦截器（由 MasterEngine 注入）
-        private List<Tool.Contract.IMessageInterceptor> interceptors = new();
+        private List<AgentLilara.PluginSDK.IMessageInterceptor> interceptors = new();
         private readonly List<string> interceptorInjections = new();
 
         // Express/Working 自适应切换
@@ -222,7 +222,7 @@ namespace AgentCoreProcessor.Engine
         }
 
         /// <summary>注入消息拦截器列表（由 MasterEngine 在创建引擎后调用）。</summary>
-        internal void SetInterceptors(List<Tool.Contract.IMessageInterceptor> list)
+        internal void SetInterceptors(List<AgentLilara.PluginSDK.IMessageInterceptor> list)
         {
             interceptors = list.OrderBy(i => i.Priority).ToList();
         }
@@ -423,14 +423,14 @@ namespace AgentCoreProcessor.Engine
                 interceptorInjections.Clear();
                 if (interceptors.Count > 0)
                 {
-                    var interceptCtx = new Tool.Contract.MessageInterceptContext
+                    var interceptCtx = new AgentLilara.PluginSDK.MessageInterceptContext
                     {
-                        SleepState = (Tool.Contract.SleepState)(int)ctx.CurrentSleepState,
+                        SleepState = (AgentLilara.PluginSDK.SleepState)(int)ctx.CurrentSleepState,
                         ChannelId = channelId,
                         IsPrivate = currentLastMsg.IsPrivate,
                         HasMention = batch.Any(b => b.Message.IsMentioned),
                         ToolContext = null!, // TODO: 接入 ToolContextImpl
-                        Messages = batch.Select(b => new Tool.Contract.MessageInfo
+                        Messages = batch.Select(b => new AgentLilara.PluginSDK.MessageInfo
                         {
                             Content = b.Message.Content,
                             SenderName = b.Context.Person.Name ?? b.Context.User.PlatformId,
@@ -444,12 +444,12 @@ namespace AgentCoreProcessor.Engine
                     foreach (var interceptor in interceptors)
                     {
                         var result = await interceptor.OnBeforeProcessAsync(interceptCtx);
-                        if (result.Action == Tool.Contract.InterceptAction.Skip)
+                        if (result.Action == AgentLilara.PluginSDK.InterceptAction.Skip)
                         {
                             TrackMemoryExtraction(batch, currentLastSc);
                             return false;
                         }
-                        if (result.Action == Tool.Contract.InterceptAction.Handled)
+                        if (result.Action == AgentLilara.PluginSDK.InterceptAction.Handled)
                         {
                             TrackMemoryExtraction(batch, currentLastSc);
                             return false;
