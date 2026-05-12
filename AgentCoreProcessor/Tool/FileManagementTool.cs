@@ -11,7 +11,7 @@ namespace AgentCoreProcessor.Tool
 {
     internal class FileManagementTool : ITool
     {
-        public string Name => "文件管理";
+        public string Name => "file_management";
         public string Description => "管理 Storage 目录内的文件和文件夹。支持 list（列目录）、mkdir（创建文件夹）、delete（删除，仅限 Workspace）、move（移动/重命名）";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

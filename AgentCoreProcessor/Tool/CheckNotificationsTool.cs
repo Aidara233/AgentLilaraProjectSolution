@@ -13,7 +13,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class CheckNotificationsTool : ITool
     {
-        public string Name => "检查通知";
+        public string Name => "check_notifications";
         public string Description => "读取轻量通知队列（Notify / ProgressUpdate / WatchHit）";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

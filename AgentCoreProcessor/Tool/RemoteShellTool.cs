@@ -13,7 +13,7 @@ namespace AgentCoreProcessor.Tool
 {
     internal class RemoteShellTool : ITool
     {
-        public string Name => "远程终端";
+        public string Name => "remote_shell";
         public string Description => "在隔离的 Linux 虚拟机上执行 shell 命令。可用于运行脚本、安装软件包、编译代码等。输出会被截断到配置的最大长度";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

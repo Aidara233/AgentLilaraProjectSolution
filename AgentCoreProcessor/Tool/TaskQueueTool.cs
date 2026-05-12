@@ -11,7 +11,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class TaskQueueTool : ITool
     {
-        public string Name => "任务队列";
+        public string Name => "task_queue";
         public string Description => "操作任务队列（skip 跳过当前任务 / postpone 延后 / abandon 放弃）";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

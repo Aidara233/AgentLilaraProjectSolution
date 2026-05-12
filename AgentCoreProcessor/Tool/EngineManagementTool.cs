@@ -14,7 +14,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class EngineManagementTool : ITool
     {
-        public string Name => "引擎管理";
+        public string Name => "engine_management";
         public string Description => "查看或管理引擎（list 列出 / stop 停止 / status 状态）";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

@@ -11,7 +11,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class ThinkingNotesTool : ITool
     {
-        public string Name => "思考笔记";
+        public string Name => "thinking_notes";
         public string Description => "写入或删除一条思考笔记（key-value），用于跨轮次保持思路";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

@@ -7,7 +7,7 @@ namespace AgentCoreProcessor.Tool
 {
     internal class AlertButtonTool : ITool
     {
-        public string Name => "报警";
+        public string Name => "alert";
         public string Description => "当对话让你感到不适或不安全时按下此按钮，框架会记录并采取保护措施";
         public IReadOnlyList<ToolParameter> Parameters =>
             [new("原因", "简要描述不适的原因", 0)];

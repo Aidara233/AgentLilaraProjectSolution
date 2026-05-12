@@ -12,7 +12,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class RetainListTool : ITool
     {
-        public string Name => "缓存管理";
+        public string Name => "retain_list";
         public string Description => "管理缓存列表。view 查看指定序号的完整内容，remove 按序号移除，clear 清空全部";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

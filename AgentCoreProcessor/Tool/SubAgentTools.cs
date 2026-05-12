@@ -12,7 +12,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class CreateSubAgentTool : ITool
     {
-        public string Name => "创建子agent";
+        public string Name => "create_sub_agent";
         public string Description => "创建异步任务子 agent。子 agent 后台执行，完成后通过通知回报结果";
         public IReadOnlyList<ToolParameter> Parameters =>
         [
@@ -70,7 +70,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class SendToSubAgentTool : ITool
     {
-        public string Name => "发送指令给子agent";
+        public string Name => "send_to_sub_agent";
         public string Description => "向子 agent 追加新指令（子 agent 空闲时处理）";
         public IReadOnlyList<ToolParameter> Parameters =>
         [
@@ -121,7 +121,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class StopSubAgentTool : ITool
     {
-        public string Name => "停止子agent";
+        public string Name => "stop_sub_agent";
         public string Description => "停止指定的子 agent";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

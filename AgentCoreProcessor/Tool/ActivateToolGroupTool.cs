@@ -10,7 +10,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class ActivateToolGroupTool : ITool
     {
-        public string Name => "激活工具组";
+        public string Name => "activate_tool_group";
         public string Description => "展开一个折叠的工具组，使其完整描述在后续轮次中可见";
         public IReadOnlyList<ToolParameter> Parameters =>
             [new("组名", "要激活的工具组名称", 0)];

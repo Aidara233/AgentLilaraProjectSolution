@@ -15,7 +15,7 @@ namespace AgentCoreProcessor.Tool
         private readonly ISystemContext ctx;
         public ReviewUpdateAffinityTool(ISystemContext ctx) { this.ctx = ctx; }
 
-        public string Name => "更新亲和度";
+        public string Name => "update_affinity";
         public string Description => "调整频道亲和度（影响群聊回复倾向）。正值=更愿意参与，负值=减少参与";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

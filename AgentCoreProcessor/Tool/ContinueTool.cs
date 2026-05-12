@@ -11,7 +11,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class ContinueTool : ITool
     {
-        public string Name => "继续";
+        public string Name => "continue_loop";
         public string Description => "手动触发下一轮循环。当你需要在便签板等操作之后继续工作时使用";
         public IReadOnlyList<ToolParameter> Parameters => [];
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);

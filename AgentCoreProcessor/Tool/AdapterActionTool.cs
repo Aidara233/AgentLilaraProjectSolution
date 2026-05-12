@@ -14,7 +14,7 @@ namespace AgentCoreProcessor.Tool
     {
         private readonly ISystemContext ctx;
 
-        public string Name => "适配器操作";
+        public string Name => "adapter_action";
         public string Description => "对指定适配器执行操作（如获取群列表、戳一戳、撤回消息等）。参数1=适配器ID，参数2=操作名，参数3=JSON参数对象（可选）";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

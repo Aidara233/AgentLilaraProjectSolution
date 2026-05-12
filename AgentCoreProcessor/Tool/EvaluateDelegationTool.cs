@@ -12,7 +12,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class EvaluateDelegationTool : ITool
     {
-        public string Name => "评估委托";
+        public string Name => "evaluate_delegation";
         public string Description => "评估频道循环提交的委托（频道循环正在等待你的评估结果）";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

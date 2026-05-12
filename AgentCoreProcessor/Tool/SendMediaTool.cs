@@ -8,7 +8,7 @@ namespace AgentCoreProcessor.Tool
 {
     internal class SendMediaTool : ITool
     {
-        public string Name => "发送媒体";
+        public string Name => "send_media";
         public string Description => "发送图片、表情包、语音或文件（支持本地路径或URL）";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

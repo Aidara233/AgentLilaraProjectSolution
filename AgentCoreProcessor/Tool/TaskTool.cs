@@ -11,7 +11,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class TaskTool : ITool
     {
-        public string Name => "任务管理";
+        public string Name => "task_management";
         public string Description => "管理主线任务列表。add 添加任务，complete 标记完成（按序号），remove 移除任务（按序号）";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

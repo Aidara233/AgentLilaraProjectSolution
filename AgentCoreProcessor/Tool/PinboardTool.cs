@@ -12,7 +12,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class PinboardTool : ITool
     {
-        public string Name => "便签板";
+        public string Name => "pinboard";
         public string Description => "管理便签板。pin 钉一条内容（跨轮可见），unpin 按标签移除，list 查看所有标签";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

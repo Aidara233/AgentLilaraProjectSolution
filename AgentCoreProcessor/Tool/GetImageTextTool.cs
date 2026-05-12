@@ -13,7 +13,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class GetImageTextTool : ITool
     {
-        public string Name => "获取图片文字";
+        public string Name => "get_image_text";
         public string Description => "获取图片中的完整文字内容（OCR结果）。输入图片ID（上下文中 <img id=\"N\"/> 的编号），返回识别到的所有文字";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

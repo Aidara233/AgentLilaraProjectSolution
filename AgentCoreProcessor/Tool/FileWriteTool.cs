@@ -9,7 +9,7 @@ namespace AgentCoreProcessor.Tool
 {
     internal class FileWriteTool : ITool
     {
-        public string Name => "写入文件";
+        public string Name => "write_file";
         public string Description => "向 Storage 目录内的文件写入内容。路径可以是相对于 Storage/ 的相对路径或绝对路径。支持覆盖写和追加模式。Storage/Workspace/ 是自由工作区";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

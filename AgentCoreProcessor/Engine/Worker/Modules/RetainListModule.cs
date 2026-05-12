@@ -20,7 +20,7 @@ namespace AgentCoreProcessor.Engine.Modules
             bus.Subscribe<ToolExecutedEvent>(e =>
             {
                 // 缓存管理工具自身的操作
-                if (e.Call.Tool == "缓存管理" && e.Result.IsSuccess)
+                if (e.Call.Tool == "retain_list" && e.Result.IsSuccess)
                 {
                     ApplyAction(e.Call, e.Result);
                     return;

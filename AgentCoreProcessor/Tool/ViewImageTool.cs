@@ -14,7 +14,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class ViewImageTool : ITool
     {
-        public string Name => "查看图片";
+        public string Name => "view_image";
         public string Description => "查看历史图片原图。输入图片ID（上下文中 <img id=\"N\"/> 的编号），返回图片内容供你仔细查看";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

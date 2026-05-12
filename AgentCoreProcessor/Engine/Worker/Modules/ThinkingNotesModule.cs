@@ -20,7 +20,7 @@ namespace AgentCoreProcessor.Engine.Modules
         {
             bus.Subscribe<ToolExecutedEvent>(e =>
             {
-                if (e.Call.Tool != "思考笔记" || !e.Result.IsSuccess) return;
+                if (e.Call.Tool != "thinking_notes" || !e.Result.IsSuccess) return;
                 if (e.Call.Inputs.Count < 2) return;
 
                 var action = e.Call.Inputs[0]?.Trim().ToLower();

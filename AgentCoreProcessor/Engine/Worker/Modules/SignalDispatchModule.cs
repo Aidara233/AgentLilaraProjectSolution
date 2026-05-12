@@ -32,28 +32,28 @@ namespace AgentCoreProcessor.Engine.Modules
 
                 switch (e.Call.Tool)
                 {
-                    case "记忆":
+                    case "memory":
                         OnMemory?.Invoke(data).GetAwaiter().GetResult();
                         break;
-                    case "睡眠许可":
+                    case "dream_permission":
                         OnSignal?.Invoke("dream-permission", null).GetAwaiter().GetResult();
                         break;
-                    case "强制睡觉":
+                    case "force_sleep":
                         OnSignal?.Invoke("force-sleep", null).GetAwaiter().GetResult();
                         break;
-                    case "修改睡眠配置":
+                    case "dream_config":
                         OnSignal?.Invoke("dream-config", data).GetAwaiter().GetResult();
                         break;
-                    case "调整睡意":
+                    case "adjust_sleep_score":
                         OnSignal?.Invoke("sleep-score-offset", data).GetAwaiter().GetResult();
                         break;
-                    case "触发红色警报":
+                    case "trigger_red_alert":
                         OnSignal?.Invoke("red-alert", null).GetAwaiter().GetResult();
                         break;
-                    case "标记复盘":
+                    case "mark_review_hint":
                         OnReviewHint?.Invoke(data).GetAwaiter().GetResult();
                         break;
-                    case "报警":
+                    case "alert":
                         OnAlert?.Invoke(data).GetAwaiter().GetResult();
                         break;
                 }

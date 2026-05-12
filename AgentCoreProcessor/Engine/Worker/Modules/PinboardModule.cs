@@ -20,7 +20,7 @@ namespace AgentCoreProcessor.Engine.Modules
         {
             bus.Subscribe<ToolExecutedEvent>(e =>
             {
-                if (e.Call.Tool != "便签板" || !e.Result.IsSuccess) return;
+                if (e.Call.Tool != "pinboard" || !e.Result.IsSuccess) return;
                 ApplyAction(e.Result.Data ?? "");
             });
         }

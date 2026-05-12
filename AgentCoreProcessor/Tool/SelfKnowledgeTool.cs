@@ -10,7 +10,7 @@ namespace AgentCoreProcessor.Tool
 {
     internal class SelfKnowledgeTool : ITool
     {
-        public string Name => "查看架构";
+        public string Name => "view_architecture";
         public string Description => "查看自身技术架构文档（按区块）";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

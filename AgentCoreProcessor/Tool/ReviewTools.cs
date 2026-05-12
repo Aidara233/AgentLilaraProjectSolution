@@ -17,7 +17,7 @@ namespace AgentCoreProcessor.Tool
         private readonly ISystemContext ctx;
         public ReviewSearchMemoryTool(ISystemContext ctx) { this.ctx = ctx; }
 
-        public string Name => "检索记忆";
+        public string Name => "search_memory";
         public string Description => "按关键词搜索主记忆库，可选按频道/人物过滤";
         public IReadOnlyList<ToolParameter> Parameters =>
         [
@@ -60,7 +60,7 @@ namespace AgentCoreProcessor.Tool
         private readonly ISystemContext ctx;
         public ReviewViewLinksTool(ISystemContext ctx) { this.ctx = ctx; }
 
-        public string Name => "查看关联";
+        public string Name => "view_links";
         public string Description => "查询指定记忆ID的关联网络（关联记忆、强度、类型）";
         public IReadOnlyList<ToolParameter> Parameters =>
             [new("记忆ID", "要查询关联的记忆ID", 0)];
@@ -98,7 +98,7 @@ namespace AgentCoreProcessor.Tool
         private readonly ISystemContext ctx;
         public ReviewReadMessagesTool(ISystemContext ctx) { this.ctx = ctx; }
 
-        public string Name => "读取消息历史";
+        public string Name => "read_messages";
         public string Description => "读取指定频道ID的原始消息记录";
         public IReadOnlyList<ToolParameter> Parameters =>
         [
@@ -132,7 +132,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class ReviewWriteTempMemoryTool : ITool
     {
-        public string Name => "写入临时记忆";
+        public string Name => "write_temp_memory";
         public string Description => "将复盘发现/结论写入临时记忆库（下次做梦时整合入主库）";
         public IReadOnlyList<ToolParameter> Parameters =>
             [new("内容", "要存储的发现或结论", 0)];
@@ -151,7 +151,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class ReviewThinkingNotesTool : ITool
     {
-        public string Name => "思考笔记";
+        public string Name => "thinking_notes";
         public string Description => "记录/修改/删除跨轮思考笔记（action: write/delete, key: 标识, value: 内容）";
         public IReadOnlyList<ToolParameter> Parameters =>
         [
@@ -178,7 +178,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class ReviewMarkHintTool : ITool
     {
-        public string Name => "标记复盘";
+        public string Name => "mark_review_hint";
         public string Description => "标记一条内容供下次复盘重点关注";
         public IReadOnlyList<ToolParameter> Parameters =>
             [new("标记内容", "值得下次复盘关注的内容", 0)];
@@ -197,7 +197,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class ReviewRequestReinforcementTool : ITool
     {
-        public string Name => "请求增援";
+        public string Name => "request_reinforcement";
         public string Description => "申请使用备用token预算（仅可使用一次，不可恢复）";
         public IReadOnlyList<ToolParameter> Parameters => [];
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);
@@ -211,7 +211,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class ReviewSaveProgressTool : ITool
     {
-        public string Name => "保存进度";
+        public string Name => "save_progress";
         public string Description => "保存当前复盘进度（包含发现和后续计划），下次大睡可继续";
         public IReadOnlyList<ToolParameter> Parameters =>
             [new("进度内容", "当前调查进度的 JSON 描述", 0)];
@@ -230,7 +230,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class ReviewCompletionTool : ITool
     {
-        public string Name => "完成";
+        public string Name => "complete";
         public string Description => "结束本次复盘（可选附带总结）";
         public IReadOnlyList<ToolParameter> Parameters =>
             [new("总结", "可选的复盘总结", 0)];
@@ -249,7 +249,7 @@ namespace AgentCoreProcessor.Tool
         private readonly ISystemContext ctx;
         public ReviewUpdateFastMemoryTool(ISystemContext ctx) { this.ctx = ctx; }
 
-        public string Name => "更新快速记忆";
+        public string Name => "update_fast_memory";
         public string Description => "更新人物的快速记忆摘要（一句话概括此人的关键信息，简明扼要）";
         public IReadOnlyList<ToolParameter> Parameters =>
         [
@@ -281,7 +281,7 @@ namespace AgentCoreProcessor.Tool
         private readonly ISystemContext ctx;
         public ReviewUpdatePersonNameTool(ISystemContext ctx) { this.ctx = ctx; }
 
-        public string Name => "更新人物称呼";
+        public string Name => "update_person_name";
         public string Description => "设置人物的主称呼和别称。主称呼是 Lilara 用来叫对方的名字，别称用于识别同一人的不同叫法";
         public IReadOnlyList<ToolParameter> Parameters =>
         [
@@ -315,7 +315,7 @@ namespace AgentCoreProcessor.Tool
         private readonly ISystemContext ctx;
         public ReviewUpdateTrustProgressTool(ISystemContext ctx) { this.ctx = ctx; }
 
-        public string Name => "调整好感度";
+        public string Name => "update_trust_progress";
         public string Description => "调整人物的好感度（正值=好感增加，负值=好感降低，每次上限±0.3）";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

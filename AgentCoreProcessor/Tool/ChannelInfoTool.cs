@@ -14,7 +14,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class ChannelInfoTool : ITool
     {
-        public string Name => "频道信息";
+        public string Name => "channel_info";
         public string Description => "查询频道列表、详情或消息历史";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

@@ -16,7 +16,7 @@ namespace AgentCoreProcessor.Tool
     {
         private ISystemContext? ctx;
 
-        public string Name => "设置关注规则";
+        public string Name => "set_watch_rule";
         public string Description =>
             "为指定频道设置关注规则。当频道中出现匹配的消息时，根据规则执行相应动作（通知/打断/升级）。";
         public string? CapabilitySummary => null;

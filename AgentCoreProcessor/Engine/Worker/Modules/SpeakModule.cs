@@ -19,12 +19,12 @@ namespace AgentCoreProcessor.Engine.Modules
         {
             bus.Subscribe<ToolExecutedEvent>(e =>
             {
-                if (e.Call.Tool == "说话" && e.Result.IsSuccess && OnSpeak != null)
+                if (e.Call.Tool == "speak" && e.Result.IsSuccess && OnSpeak != null)
                 {
                     OnSpeak(e.Result.Data ?? "").GetAwaiter().GetResult();
                     HadSpeakThisRound = true;
                 }
-                else if (e.Call.Tool == "发送媒体" && e.Result.IsSuccess && OnSendMedia != null)
+                else if (e.Call.Tool == "send_media" && e.Result.IsSuccess && OnSendMedia != null)
                 {
                     try
                     {

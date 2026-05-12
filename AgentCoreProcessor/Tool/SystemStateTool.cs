@@ -11,7 +11,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class SystemStateTool : ITool
     {
-        public string Name => "系统状态";
+        public string Name => "system_state";
         public string Description => "切换系统循环的状态（idle/busy/donotdisturb）";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

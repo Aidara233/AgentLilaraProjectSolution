@@ -455,7 +455,7 @@ namespace AgentCoreProcessor.Engine
                 foreach (var t in granted) authorizedTools.Add(t);
 
                 // 设置 DelegateTaskTool 的上下文
-                var delegateTool = ToolRegistry.Get("委派任务") as DelegateTaskTool;
+                var delegateTool = ToolRegistry.Get("delegate_task") as DelegateTaskTool;
                 if (delegateTool != null)
                 {
                     delegateTool.SetContext(currentLastSc.Channel.Id, currentLastSc.Person.Id);
@@ -520,9 +520,9 @@ namespace AgentCoreProcessor.Engine
                 {
                     var allowedTools = new HashSet<string>
                     {
-                        "说话", "发送媒体", "思考笔记", "记忆", "便签板", "缓存管理", "任务管理",
-                        "标记复盘", "报警", "继续", "读取文件", "写入文件", "委派任务", "适配器操作",
-                        "查看图片", "获取图片文字"
+                        "speak", "send_media", "thinking_notes", "memory", "pinboard", "retain_list", "task_management",
+                        "mark_review_hint", "alert", "continue_loop", "read_file", "write_file", "delegate_task", "adapter_action",
+                        "view_image", "get_image_text"
                     };
                     return allowedTools.Contains(tool.Name);
                 });
@@ -565,8 +565,8 @@ namespace AgentCoreProcessor.Engine
                 {
                     var allowedTools = new HashSet<string>
                     {
-                        "说话", "发送媒体", "思考笔记", "记忆", "便签板", "缓存管理", "任务管理",
-                        "标记复盘", "报警", "继续", "读取文件", "写入文件", "委派任务", "适配器操作"
+                        "speak", "send_media", "thinking_notes", "memory", "pinboard", "retain_list", "task_management",
+                        "mark_review_hint", "alert", "continue_loop", "read_file", "write_file", "delegate_task", "adapter_action"
                     };
                     return allowedTools.Contains(tool.Name);
                 });

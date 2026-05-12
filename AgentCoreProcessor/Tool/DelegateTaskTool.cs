@@ -12,7 +12,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class DelegateTaskTool : ITool
     {
-        public string Name => "委派任务";
+        public string Name => "delegate_task";
         public string Description => "将复杂任务提交给系统循环评估和处理。会同步等待评估结果（接受/排队/拒绝），执行结果稍后自动送达。";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

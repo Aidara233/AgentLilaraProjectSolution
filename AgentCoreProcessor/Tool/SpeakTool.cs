@@ -11,7 +11,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class SpeakTool : ITool
     {
-        public string Name => "说话";
+        public string Name => "speak";
         public string Description => "向用户发送一条消息（实时推送，不等待任务完成）";
         public IReadOnlyList<ToolParameter> Parameters =>
             [new("消息内容", "要发送给用户的文本内容", 0)];

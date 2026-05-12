@@ -9,7 +9,7 @@ namespace AgentCoreProcessor.Tool
 {
     internal class FileReadTool : ITool
     {
-        public string Name => "读取文件";
+        public string Name => "read_file";
         public string Description => "读取 Storage 目录内的文件内容。路径可以是相对于 Storage/ 的相对路径或绝对路径。Storage/Workspace/ 是自由工作区";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

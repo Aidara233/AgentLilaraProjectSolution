@@ -17,7 +17,7 @@ namespace AgentCoreProcessor.Engine.Modules
         {
             bus.Subscribe<ToolExecutedEvent>(e =>
             {
-                if (e.Call.Tool != "任务管理" || !e.Result.IsSuccess) return;
+                if (e.Call.Tool != "task_management" || !e.Result.IsSuccess) return;
                 ApplyAction(e.Result.Data ?? "");
             });
         }

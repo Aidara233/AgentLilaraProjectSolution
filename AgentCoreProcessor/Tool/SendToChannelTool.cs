@@ -12,7 +12,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class SendToChannelTool : ITool
     {
-        public string Name => "通知频道";
+        public string Name => "notify_channel";
         public string Description => "向指定频道循环注入通知。频道循环醒来后会看到通知内容，自行决定是否回应用户以及如何措辞。";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

@@ -199,17 +199,17 @@ namespace AgentCoreProcessor.Engine
 
                     switch (call.Tool)
                     {
-                        case "完成":
+                        case "complete":
                             shouldStop = true;
                             FrameworkLogger.Log("ReviewEngine",
                                 $"复盘完成: {result.Data}");
                             break;
 
-                        case "思考笔记":
+                        case "thinking_notes":
                             ApplyThinkingNotes(call, thinkingNotes);
                             break;
 
-                        case "写入临时记忆":
+                        case "write_temp_memory":
                             try
                             {
                                 await ctx.MemorySvc.StoreAsync(result.Data ?? "");
@@ -221,7 +221,7 @@ namespace AgentCoreProcessor.Engine
                             }
                             break;
 
-                        case "标记复盘":
+                        case "mark_review_hint":
                             try
                             {
                                 await ctx.ReviewHints.CreateAsync(result.Data ?? "");
@@ -229,7 +229,7 @@ namespace AgentCoreProcessor.Engine
                             catch { }
                             break;
 
-                        case "请求增援":
+                        case "request_reinforcement":
                             if (!reserveUsed)
                             {
                                 reserveUsed = true;
@@ -239,7 +239,7 @@ namespace AgentCoreProcessor.Engine
                             }
                             break;
 
-                        case "保存进度":
+                        case "save_progress":
                             try
                             {
                                 var investigation = JsonConvert.DeserializeObject<ReviewInvestigation>(
@@ -333,9 +333,9 @@ namespace AgentCoreProcessor.Engine
                         var result = results[i];
                         if (!result.IsSuccess) continue;
 
-                        if (call.Tool == "写入临时记忆")
+                        if (call.Tool == "write_temp_memory")
                             try { await ctx.MemorySvc.StoreAsync(result.Data ?? ""); } catch { }
-                        else if (call.Tool == "保存进度")
+                        else if (call.Tool == "save_progress")
                         {
                             try
                             {

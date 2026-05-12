@@ -310,10 +310,10 @@ namespace AgentCoreProcessor.Engine
                 AppendToHistory(currentTurnMsg, assistantMsg);
 
                 // ⑧ 检查是否调用了 Wait（落闸信号）
-                var waitCall = toolCalls.FirstOrDefault(c => c.Tool == "等待");
+                var waitCall = toolCalls.FirstOrDefault(c => c.Tool == "wait");
                 if (waitCall != null)
                 {
-                    var waitTool = ToolRegistry.Get("等待") as WaitTool;
+                    var waitTool = ToolRegistry.Get("wait") as WaitTool;
                     if (waitTool != null)
                     {
                         waitTimeoutMinutes = waitTool.TimeoutMinutes;
@@ -515,14 +515,14 @@ namespace AgentCoreProcessor.Engine
         {
             return new HashSet<string>
             {
-                "等待", "继续",
-                "创建子agent", "发送指令给子agent", "停止子agent",
-                "查看通知", "设置关注规则", "频道信息",
-                "引擎管理", "适配器操作",
-                "便签板", "思考笔记",
-                "创建定时任务", "取消定时任务",
-                "记忆读取", "记忆搜索",
-                "评估委托", "通知频道"
+                "wait", "continue_loop",
+                "create_sub_agent", "send_to_sub_agent", "stop_sub_agent",
+                "check_notifications", "set_watch_rule", "channel_info",
+                "engine_management", "adapter_action",
+                "pinboard", "thinking_notes",
+                "create_scheduled_task", "cancel_scheduled_task",
+                "memory",
+                "evaluate_delegation", "notify_channel"
             };
         }
 

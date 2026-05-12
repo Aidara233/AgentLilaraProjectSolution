@@ -13,7 +13,7 @@ namespace AgentCoreProcessor.Tool
 {
     internal class FileTransferTool : ITool
     {
-        public string Name => "文件传输";
+        public string Name => "file_transfer";
         public string Description => "在主机 Storage 目录与远程 Linux 虚拟机之间传输文件。支持上传和下载";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

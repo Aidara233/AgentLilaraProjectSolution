@@ -14,7 +14,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class ScheduledTaskTool : ITool
     {
-        public string Name => "创建定时任务";
+        public string Name => "create_scheduled_task";
         public string Description => "创建定时任务。支持: 相对时间(30m/2h/1d)、绝对时间(09:00/2026-05-10 14:00)、重复(every 1h/daily 09:00/weekly mon 09:00)";
         public IReadOnlyList<ToolParameter> Parameters =>
         [
@@ -90,7 +90,7 @@ namespace AgentCoreProcessor.Tool
     /// <summary>取消定时任务工具。</summary>
     internal class CancelScheduledTaskTool : ITool
     {
-        public string Name => "取消定时任务";
+        public string Name => "cancel_scheduled_task";
         public string Description => "取消指定的定时任务";
         public IReadOnlyList<ToolParameter> Parameters =>
         [

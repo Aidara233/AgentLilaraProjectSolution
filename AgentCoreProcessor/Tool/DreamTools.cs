@@ -12,7 +12,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class DreamPermissionTool : ITool
     {
-        public string Name => "睡眠许可";
+        public string Name => "dream_permission";
         public string Description => "授予大睡许可，允许系统在满足其他条件时进入深度睡眠";
         public IReadOnlyList<ToolParameter> Parameters => [];
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);
@@ -36,7 +36,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class ForceSleepTool : ITool
     {
-        public string Name => "强制睡觉";
+        public string Name => "force_sleep";
         public string Description => "立即触发深度睡眠，跳过所有前置条件检查";
         public IReadOnlyList<ToolParameter> Parameters => [];
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);
@@ -60,7 +60,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class DreamConfigTool : ITool
     {
-        public string Name => "修改睡眠配置";
+        public string Name => "dream_config";
         public string Description => "修改做梦调度配置（JSON格式），如走神冷却期、小睡阈值、大睡时间段等";
         public IReadOnlyList<ToolParameter> Parameters =>
             [new("配置JSON", "JSON格式的配置内容", 0)];
@@ -92,7 +92,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class SleepScoreTool : ITool
     {
-        public string Name => "调整睡意";
+        public string Name => "adjust_sleep_score";
         public string Description => "调整睡意偏移值（正值=更困，负值=更清醒），影响黄色评分总分。负值会取消已有的睡眠计划";
         public IReadOnlyList<ToolParameter> Parameters =>
             [new("偏移值", "浮点数，如 3.0 或 -5.0", 0)];
@@ -123,7 +123,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class RedAlertTool : ITool
     {
-        public string Name => "触发红色警报";
+        public string Name => "trigger_red_alert";
         public string Description => "触发深度睡眠红色警报，跳过黄色评分直接进入许可等待阶段";
         public IReadOnlyList<ToolParameter> Parameters => [];
         public TimeSpan Timeout => TimeSpan.FromSeconds(1);

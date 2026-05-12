@@ -11,7 +11,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class WaitTool : ITool
     {
-        public string Name => "等待";
+        public string Name => "wait";
         public string Description => "结束当前处理轮次，进入等待状态直到新事件到达。当你判断当前没有需要处理的事务时调用";
         public IReadOnlyList<ToolParameter> Parameters => new[]
         {

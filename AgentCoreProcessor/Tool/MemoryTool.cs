@@ -11,7 +11,7 @@ namespace AgentCoreProcessor.Tool
     /// </summary>
     internal class MemoryTool : ITool
     {
-        public string Name => "记忆";
+        public string Name => "memory";
         public string Description => "记录一条信息到记忆库（由框架自动关联当前用户、频道、话题）";
         public IReadOnlyList<ToolParameter> Parameters =>
             [new("记忆内容", "要记住的信息", 0)];
