@@ -264,7 +264,7 @@ EMA 社交满足度 (per Channel):
   → 决定锁定 → 许可闸门(管理员授权/超时自动) → 执行
   信号: force-sleep(触发睡觉) / force-wake(强制唤醒) / dream-config(配置更新)
 
-四种片段: Consolidation / Weight / Link / Combine
+五种片段: Consolidation / Weight / Link / Combine / Dedup
 ReviewEngine (由DreamEngine孵化，不注册SpawnCheck):
   独立Agent循环 + 9个专用工具 + 4种复盘模式(频道日报/人物回顾/跨域关联/矛盾检测)
   工具调用: 支持原生 tool_use (ReviewCore.UseNativeTools) 和文本 JSON 双路径
@@ -292,6 +292,8 @@ ReviewEngine (由DreamEngine孵化，不注册SpawnCheck):
     30s 意图缓存，同一轮对话内不重复调用
 
 整合: TempMemory → Consolidation(做梦) → Memory
+	去重: Dedup片段 → 关联集群 → DedupCore判断merge/discard → 清理重复记忆
+	过期清理: 每次做梦入口执行，DELETE IsPersistent=0 AND Expired + 孤立MemoryLink
 标记: ReviewHint表 (工作时标记 → 复盘时消费)
 低置信: Confidence(high/low) + Feedback(positive/negative)，低置信记忆标注"不太确定"
 ```
