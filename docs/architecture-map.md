@@ -15,12 +15,12 @@ AgentCoreProcessor/
 ├── Client/      IModelClient 抽象层（Claude/OpenAI 双协议）+ Embedding + IVisionProvider + IOcrProvider
 ├── Command/     框架指令系统（/help /status /config 等）
 ├── Config/      PathConfig 绝对路径管理
-├── Core/        业务核心（AgentCore统一+PreprocessingCore+MemoryExtractionCore+MemoryQueryCore等），继承 CoreBase，各自 JSON 配置
+├── Core/        业务核心（AgentCore+PreprocessingCore+MemoryExtractionCore+MemoryQueryCore+ConsolidationCore+ConsolidationFinalCore+WeightCore+LinkCore+CombineCore+DedupCore+ReviewCore+SummarizationCore+SleepTalkCore等），继承 CoreBase，各自 JSON 配置
 ├── Database/    实体 + Repository（SQLite，13张表）
 ├── Engine/      引擎生态（MasterEngine 内核 + 子引擎 + Worker闸门循环 + 内务模块）
 ├── Memory/      MemoryService 检索管线
 ├── MCP/         MCP Client 桥接层（外部插件生态接入）
-├── Tool/        工具接口 + 顺序执行器 + 工具折叠分组 + 全局禁用管理 + 全局/局部工具集
+├── Tool/        工具接口 + 顺序执行器 + 工具折叠分组 + 全局禁用管理 + 全局/局部工具集（全部英文 snake_case 命名，Anthropic SDK 兼容）
 ├── Util/        VectorUtil 向量操作
 ├── WebUI/       Blazor Server 管理面板（嵌入式，同进程）
 │     ├── Services/    SystemMonitor(快照采集) + LogStreamService(日志流) + ModelLogService(模型日志) + TokenStatsService(token统计) + WebConfig + WebAuthService
@@ -292,8 +292,8 @@ ReviewEngine (由DreamEngine孵化，不注册SpawnCheck):
     30s 意图缓存，同一轮对话内不重复调用
 
 整合: TempMemory → Consolidation(做梦) → Memory
-	去重: Dedup片段 → 关联集群 → DedupCore判断merge/discard → 清理重复记忆
-	过期清理: 每次做梦入口执行，DELETE IsPersistent=0 AND Expired + 孤立MemoryLink
+	去重: Dedup片段 → 关联MemoryLink 1-hop集群 → DedupCore模型判断merge/discard → 清理重复+重定向关联
+	过期清理: 每次做梦RunAsync入口执行，DELETE IsPersistent=0 AND Expired + 孤立MemoryLink（纯SQL，无模型消耗）
 标记: ReviewHint表 (工作时标记 → 复盘时消费)
 低置信: Confidence(high/low) + Feedback(positive/negative)，低置信记忆标注"不太确定"
 ```
