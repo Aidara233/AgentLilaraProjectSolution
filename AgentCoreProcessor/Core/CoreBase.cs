@@ -265,6 +265,22 @@ namespace AgentCoreProcessor.Core
                 var history = processor.Client.GetConversationHistory();
                 var cfg = processor.Client.Config;
 
+                // 系统提示词只记 hash
+                var systemMessages = history.Where(m => m.Role == "system").ToList();
+                var systemHash = systemMessages.Count > 0
+                    ? ComputeShortHash(string.Join("\n", systemMessages.Select(m => m.Content)))
+                    : null;
+
+                // 动态消息：非 system 的全部记录，不截断
+                var dynamicMessages = history
+                    .Where(m => m.Role != "system")
+                    .Select(m => new { role = m.Role, content = m.Content })
+                    .ToList();
+
+                // 工具列表
+                var toolNames = processor.Client.GetTools()
+                    ?.Select(t => t.Name).ToArray();
+
                 var logEntry = new
                 {
                     timestamp = DateTime.Now.ToString("o"),
@@ -272,12 +288,11 @@ namespace AgentCoreProcessor.Core
                     caller = CallerTag,
                     model = cfg.Model,
                     provider = cfg.Provider,
-                    inputMessages = history.Count,
-                    inputChars = history.Sum(m => m.Content?.Length ?? 0),
-                    tools = (string[]?)null,
-                    dynamicInput = history.LastOrDefault(m => m.Role == "user")?.Content?.Truncate(2000),
-                    output = content.Truncate(5000),
-                    thinking = string.IsNullOrEmpty(reasoning) ? null : reasoning.Truncate(3000),
+                    systemPromptHash = systemHash,
+                    tools = toolNames,
+                    messages = dynamicMessages,
+                    output = content,
+                    thinking = string.IsNullOrEmpty(reasoning) ? null : reasoning,
                     usage = usage == null ? null : new
                     {
                         inputTokens = usage.PromptTokens,
@@ -317,6 +332,13 @@ namespace AgentCoreProcessor.Core
             {
             }
             return fileName;
+        }
+
+        private static string ComputeShortHash(string input)
+        {
+            var bytes = System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(input));
+            return Convert.ToHexString(bytes)[..12].ToLower();
         }
     }
 
