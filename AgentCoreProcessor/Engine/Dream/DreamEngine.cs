@@ -15,7 +15,7 @@ using Newtonsoft.Json.Linq;
 namespace AgentCoreProcessor.Engine
 {
     internal enum SleepLevel { Daydream, Nap, DeepSleep }
-    internal enum FragmentType { Consolidation, Weight, Link, Combine }
+    internal enum FragmentType { Consolidation, Weight, Link, Combine, Dedup }
 
     /// <summary>
     /// 做梦引擎实例。每次睡觉创建，完成后销毁。
@@ -36,6 +36,7 @@ namespace AgentCoreProcessor.Engine
         private readonly WeightCore weightCore = new();
         private readonly LinkCore linkCore = new();
         private readonly CombineCore combineCore = new();
+        private readonly DedupCore dedupCore = new();
         private readonly SleepTalkCore sleepTalkCore = new();
 
         private volatile bool shouldWake = false;
@@ -70,6 +71,9 @@ namespace AgentCoreProcessor.Engine
 
         public async Task RunAsync()
         {
+            // 清理过期记忆 + 孤立关联（纯机械操作，不消耗模型 token）
+            await CleanupExpiredMemoriesAsync();
+
             FrameworkLogger.Log("DreamEngine", $"开始做梦: level={level} max={maxFragments}");
             ctx.CurrentSleepState = level switch
             {
@@ -469,6 +473,7 @@ namespace AgentCoreProcessor.Engine
                 var undreamed = await ctx.Memories.GetUndreamedAsync(10);
                 weights[FragmentType.Link] = undreamed.Count > 0 ? 3.0f : 1.0f;
                 weights[FragmentType.Combine] = 0.5f;
+                weights[FragmentType.Dedup] = undreamed.Count > 0 ? 3.0f : 0.5f;
             }
             else
             {
@@ -477,6 +482,7 @@ namespace AgentCoreProcessor.Engine
                 var undreamed = await ctx.Memories.GetUndreamedAsync(10);
                 weights[FragmentType.Link] = undreamed.Count > 0 ? 3.0f : 1.0f;
                 weights[FragmentType.Combine] = 0.5f;
+                weights[FragmentType.Dedup] = undreamed.Count > 0 ? 3.0f : 0.5f;
             }
 
             return weights;
@@ -490,6 +496,7 @@ namespace AgentCoreProcessor.Engine
                 FragmentType.Weight => await ExecuteWeightWithSummary(),
                 FragmentType.Link => await ExecuteLinkWithSummary(),
                 FragmentType.Combine => await ExecuteCombineWithSummary(),
+                FragmentType.Dedup => await ExecuteDedupWithSummary(),
                 _ => null
             };
         }
@@ -1093,6 +1100,196 @@ namespace AgentCoreProcessor.Engine
             catch (Exception ex)
             {
                 FrameworkLogger.Log("DreamEngine", $"持久化做梦日志失败: {ex.Message}");
+            }
+        }
+
+        // ---- 去重片段 ----
+
+        private async Task<string?> ExecuteDedupWithSummary()
+        {
+            var result = await ExecuteDedup();
+            return result;
+        }
+
+        private async Task<string?> ExecuteDedup()
+        {
+            var cfg = spawnCheck.GetConfig();
+            var minCluster = cfg.DedupMinClusterSize;
+            var maxCluster = cfg.DedupClusterSize;
+
+            // 1. 选种子：优先 undreamed，其次 oldest dreamed
+            var seeds = await ctx.Memories.GetUndreamedAsync(3);
+            if (seeds.Count == 0) seeds = await ctx.Memories.GetOldestDreamedAsync(3);
+            if (seeds.Count == 0) return "无种子记忆";
+
+            int merged = 0;
+            int discarded = 0;
+            var processed = new HashSet<int>();
+            var inputParts = new List<string>();
+            var outputParts = new List<string>();
+
+            foreach (var seed in seeds)
+            {
+                if (shouldWake) break;
+                if (processed.Contains(seed.Id)) continue;
+
+                // 2. 扩展集群：1-hop 关联
+                var links = await ctx.MemoryLinks.GetByMemoryIdAsync(seed.Id);
+                var linkedIds = links
+                    .Select(l => l.SourceId == seed.Id ? l.TargetId : l.SourceId)
+                    .Distinct()
+                    .Where(id => !processed.Contains(id))
+                    .ToList();
+
+                if (linkedIds.Count + 1 < minCluster) // +1 for seed itself
+                {
+                    seed.LastDreamTime = DateTime.Now;
+                    await ctx.Memories.UpdateAsync(seed);
+                    continue;
+                }
+
+                // 取种子+前N条关联
+                var clusterIds = new List<int> { seed.Id };
+                clusterIds.AddRange(linkedIds.Take(maxCluster - 1));
+                var cluster = await ctx.Memories.GetByIdsAsync(clusterIds);
+                if (cluster.Count < minCluster)
+                {
+                    seed.LastDreamTime = DateTime.Now;
+                    await ctx.Memories.UpdateAsync(seed);
+                    continue;
+                }
+
+                CurrentInputDescription = $"去重集群: #{seed.Id} + {cluster.Count - 1} 条关联记忆";
+                var input = $"种子记忆: [{seed.Id}] {seed.Content} (person={seed.PersonId}, importance={seed.Importance:F2})\n\n关联候选:\n";
+                for (int i = 1; i < cluster.Count; i++)
+                {
+                    var m = cluster[i];
+                    input += $"[{i - 1}] {m.Content} (id={m.Id}, person={m.PersonId}, importance={m.Importance:F2})\n";
+                }
+                inputParts.Add($"#{seed.Id}→{string.Join(",", linkedIds.Take(maxCluster - 1))}");
+
+                // 3. 模型判断
+                var result = await dedupCore.DedupAsync(input);
+                outputParts.Add(result);
+
+                // 4. 应用决策
+                try
+                {
+                    var actions = JArray.Parse(TextUtil.StripMarkdownCodeFence(result));
+                    var roundProcessed = new HashSet<int>();
+
+                    foreach (var item in actions)
+                    {
+                        var idx = item["index"]?.Value<int>() ?? -1;
+                        var action = item["action"]?.Value<string>() ?? "";
+                        if (idx < 0 || idx >= cluster.Count || roundProcessed.Contains(idx)) continue;
+                        roundProcessed.Add(idx);
+
+                        if (action == "merge")
+                        {
+                            var mergedContent = item["content"]?.Value<string>() ?? cluster[idx].Content;
+                            var mergeWith = item["mergeWith"] as JArray;
+                            var survivor = cluster[idx];
+                            survivor.Content = mergedContent;
+                            // 取最高 importance
+                            var maxImp = survivor.Importance;
+                            if (mergeWith != null)
+                            {
+                                foreach (var mi in mergeWith)
+                                {
+                                    var miIdx = mi.Value<int>();
+                                    if (miIdx >= 0 && miIdx < cluster.Count && miIdx != idx)
+                                    {
+                                        maxImp = Math.Max(maxImp, cluster[miIdx].Importance);
+                                        roundProcessed.Add(miIdx);
+                                        // 重定向关联
+                                        await RedirectLinksAsync(cluster[miIdx].Id, survivor.Id);
+                                        await ctx.Memories.DeleteAsync(cluster[miIdx]);
+                                        merged++;
+                                    }
+                                }
+                            }
+                            survivor.Importance = maxImp;
+                            survivor.LastDreamTime = DateTime.Now;
+                            await ctx.Memories.UpdateAsync(survivor);
+                            currentDetails.Add(new FragmentDetailRecord
+                            {
+                                Action = "dedup_merge",
+                                MemoryId = survivor.Id,
+                                Note = mergedContent.Length > 50 ? mergedContent[..50] : mergedContent
+                            });
+                        }
+                        else if (action == "discard")
+                        {
+                            await ctx.MemoryLinks.DeleteOrphanedForMemoryAsync(cluster[idx].Id);
+                            await ctx.Memories.DeleteAsync(cluster[idx]);
+                            discarded++;
+                            currentDetails.Add(new FragmentDetailRecord
+                            {
+                                Action = "dedup_discard",
+                                MemoryId = cluster[idx].Id,
+                                Note = cluster[idx].Content.Length > 50 ? cluster[idx].Content[..50] : cluster[idx].Content
+                            });
+                        }
+                    }
+                    // 默认 keep：不处理
+                }
+                catch (Exception ex)
+                {
+                    FrameworkLogger.Log("DreamEngine", $"去重解析失败: {ex.Message}");
+                }
+
+                // 标记参与的记忆为 dreamed
+                foreach (var m in cluster)
+                {
+                    if (!processed.Contains(m.Id))
+                    {
+                        m.LastDreamTime = DateTime.Now;
+                        await ctx.Memories.UpdateAsync(m);
+                        processed.Add(m.Id);
+                    }
+                }
+            }
+
+            currentInputIds = string.Join("|", inputParts);
+            currentOutputRaw = string.Join("\n---\n", outputParts);
+            return $"去重集群={seeds.Count}, 合并={merged}, 丢弃={discarded}";
+        }
+
+        /// <summary>将指向旧 ID 的 MemoryLink 重定向到幸存者，并清理旧关联。</summary>
+        private async Task RedirectLinksAsync(int oldId, int survivorId)
+        {
+            try
+            {
+                var links = await ctx.MemoryLinks.GetByMemoryIdAsync(oldId);
+                foreach (var link in links)
+                {
+                    var newSource = link.SourceId == oldId ? survivorId : link.SourceId;
+                    var newTarget = link.TargetId == oldId ? survivorId : link.TargetId;
+                    if (newSource == newTarget) continue; // 避免自关联
+                    await ctx.MemoryLinks.CreateOrUpdateAsync(newSource, newTarget,
+                        link.Strength, link.LinkType);
+                    await ctx.MemoryLinks.DeleteAsync(link);
+                }
+            }
+            catch { }
+        }
+
+        // ---- 过期清理 ----
+
+        private async Task CleanupExpiredMemoriesAsync()
+        {
+            try
+            {
+                var expiredCount = await ctx.Memories.DeleteExpiredAsync();
+                var orphanedCount = await ctx.MemoryLinks.DeleteOrphanedAsync();
+                if (expiredCount > 0 || orphanedCount > 0)
+                    FrameworkLogger.Log("DreamEngine",
+                        $"过期清理: 记忆={expiredCount}, 孤立关联={orphanedCount}");
+            }
+            catch (Exception ex)
+            {
+                FrameworkLogger.Log("DreamEngine", $"过期清理异常: {ex.Message}");
             }
         }
     }

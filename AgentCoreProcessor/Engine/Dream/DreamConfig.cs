@@ -104,6 +104,14 @@ namespace AgentCoreProcessor.Engine
         /// <summary>记忆组合每次尝试的最大对数</summary>
         public int CombineMaxPairs { get; set; } = 3;
 
+        // ---- 去重配置 ----
+
+        /// <summary>去重集群最大条数（种子+关联）</summary>
+        public int DedupClusterSize { get; set; } = 12;
+
+        /// <summary>去重集群最小条数，低于此数不触发</summary>
+        public int DedupMinClusterSize { get; set; } = 3;
+
         /// <summary>判断当前时间是否在大睡时间段内。</summary>
         public bool IsInDeepSleepWindow()
         {

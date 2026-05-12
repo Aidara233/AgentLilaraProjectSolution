@@ -61,6 +61,38 @@ namespace AgentCoreProcessor.Database
         /// <summary>删除一条关联。</summary>
         public Task<int> DeleteAsync(MemoryLink link) => db.DeleteAsync(link);
 
+        /// <summary>删除指向不存在记忆的孤立关联。</summary>
+        public async Task<int> DeleteOrphanedAsync()
+        {
+            var orphaned = await db.QueryAsync<MemoryLink>(
+                @"SELECT ml.* FROM MemoryLinks ml
+                  WHERE NOT EXISTS (SELECT 1 FROM Memories WHERE Id = ml.SourceId)
+                     OR NOT EXISTS (SELECT 1 FROM Memories WHERE Id = ml.TargetId)");
+            int count = 0;
+            foreach (var link in orphaned)
+            {
+                await db.DeleteAsync(link);
+                count++;
+            }
+            return count;
+        }
+
+        /// <summary>删除指定记忆的所有关联。</summary>
+        public async Task DeleteOrphanedForMemoryAsync(int memoryId)
+        {
+            await db.ExecuteAsync(
+                "DELETE FROM MemoryLinks WHERE SourceId = ? OR TargetId = ?",
+                memoryId, memoryId);
+        }
+
+        /// <summary>批量按 ID 删除关联。</summary>
+        public async Task DeleteByIdsAsync(List<int> ids)
+        {
+            if (ids.Count == 0) return;
+            var idList = string.Join(",", ids);
+            await db.ExecuteAsync($"DELETE FROM MemoryLinks WHERE Id IN ({idList})");
+        }
+
         /// <summary>获取指定记忆的所有关联。</summary>
         public async Task<List<MemoryLink>> GetByMemoryIdAsync(int memoryId)
         {
