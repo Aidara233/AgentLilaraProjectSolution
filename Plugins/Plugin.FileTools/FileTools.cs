@@ -145,4 +145,252 @@ namespace Plugin.FileTools
         private static Task<ToolResult> Fail(string err) =>
             Task.FromResult(new ToolResult { Status = "failed", Error = err });
     }
+
+    [ToolMeta(Group = "file", ContinueLoop = true, CapabilitySummary = "列出目录内容")]
+    public class ListDirTool : ITool
+    {
+        private readonly string _workspaceDir;
+
+        public string Name => "list_dir";
+        public string Description => "列出目录下的文件和子目录。路径相对于 Workspace 目录，为空则列出根目录。";
+        public IReadOnlyList<ToolParameter> Parameters =>
+        [
+            new("path", "（可选）目录路径，相对于 Workspace，为空则列出根目录", 0, isRequired: false)
+        ];
+        public TimeSpan Timeout => TimeSpan.FromSeconds(5);
+
+        public ListDirTool(IToolContext ctx)
+        {
+            _workspaceDir = Path.Combine(ctx.Storage.GlobalDirectory, "..", "..", "Workspace");
+            _workspaceDir = Path.GetFullPath(_workspaceDir);
+            Directory.CreateDirectory(_workspaceDir);
+        }
+
+        public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
+        {
+            var path = resolvedInputs.Count > 0 ? resolvedInputs[0].Trim() : "";
+            var fullPath = string.IsNullOrEmpty(path)
+                ? _workspaceDir
+                : ResolvePath(path);
+
+            if (fullPath == null)
+                return Fail("路径不合法：不能访问 Workspace 目录之外");
+            if (!Directory.Exists(fullPath))
+                return Fail($"目录不存在: {path}");
+
+            var sb = new System.Text.StringBuilder();
+            var dirs = Directory.GetDirectories(fullPath);
+            var files = Directory.GetFiles(fullPath);
+
+            sb.AppendLine($"[{(string.IsNullOrEmpty(path) ? "/" : path)}] {dirs.Length} 个目录, {files.Length} 个文件");
+            foreach (var d in dirs)
+                sb.AppendLine($"  📁 {Path.GetFileName(d)}/");
+            foreach (var f in files)
+            {
+                var info = new FileInfo(f);
+                sb.AppendLine($"  📄 {info.Name} ({FormatSize(info.Length)})");
+            }
+            return Ok(sb.ToString().TrimEnd());
+        }
+
+        private string? ResolvePath(string relativePath)
+        {
+            var full = Path.GetFullPath(Path.Combine(_workspaceDir, relativePath));
+            return full.StartsWith(_workspaceDir, StringComparison.OrdinalIgnoreCase) ? full : null;
+        }
+
+        private static string FormatSize(long bytes) => bytes switch
+        {
+            < 1024 => $"{bytes}B",
+            < 1024 * 1024 => $"{bytes / 1024.0:F1}KB",
+            _ => $"{bytes / (1024.0 * 1024):F1}MB"
+        };
+
+        private static Task<ToolResult> Ok(string data) =>
+            Task.FromResult(new ToolResult { Status = "success", Data = data });
+        private static Task<ToolResult> Fail(string err) =>
+            Task.FromResult(new ToolResult { Status = "failed", Error = err });
+    }
+
+    [ToolMeta(Group = "file", ContinueLoop = true)]
+    public class MoveFileTool : ITool
+    {
+        private readonly string _workspaceDir;
+
+        public string Name => "move_file";
+        public string Description => "移动或重命名文件/目录。源和目标路径都相对于 Workspace 目录。";
+        public IReadOnlyList<ToolParameter> Parameters =>
+        [
+            new("source", "源路径", 0),
+            new("destination", "目标路径", 1)
+        ];
+        public TimeSpan Timeout => TimeSpan.FromSeconds(10);
+
+        public MoveFileTool(IToolContext ctx)
+        {
+            _workspaceDir = Path.Combine(ctx.Storage.GlobalDirectory, "..", "..", "Workspace");
+            _workspaceDir = Path.GetFullPath(_workspaceDir);
+        }
+
+        public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
+        {
+            var src = resolvedInputs.Count > 0 ? resolvedInputs[0].Trim() : "";
+            var dst = resolvedInputs.Count > 1 ? resolvedInputs[1].Trim() : "";
+
+            if (string.IsNullOrEmpty(src) || string.IsNullOrEmpty(dst))
+                return Fail("source 和 destination 都不能为空");
+
+            var srcFull = ResolvePath(src);
+            var dstFull = ResolvePath(dst);
+            if (srcFull == null || dstFull == null)
+                return Fail("路径不合法：不能访问 Workspace 目录之外");
+
+            try
+            {
+                var dstDir = Path.GetDirectoryName(dstFull)!;
+                Directory.CreateDirectory(dstDir);
+
+                if (Directory.Exists(srcFull))
+                    Directory.Move(srcFull, dstFull);
+                else if (File.Exists(srcFull))
+                    File.Move(srcFull, dstFull, overwrite: true);
+                else
+                    return Fail($"源不存在: {src}");
+
+                return Ok($"已移动: {src} → {dst}");
+            }
+            catch (Exception ex) { return Fail($"移动失败: {ex.Message}"); }
+        }
+
+        private string? ResolvePath(string relativePath)
+        {
+            var full = Path.GetFullPath(Path.Combine(_workspaceDir, relativePath));
+            return full.StartsWith(_workspaceDir, StringComparison.OrdinalIgnoreCase) ? full : null;
+        }
+
+        private static Task<ToolResult> Ok(string data) =>
+            Task.FromResult(new ToolResult { Status = "success", Data = data });
+        private static Task<ToolResult> Fail(string err) =>
+            Task.FromResult(new ToolResult { Status = "failed", Error = err });
+    }
+
+    [ToolMeta(Group = "file", ContinueLoop = true)]
+    public class DeleteFileTool : ITool
+    {
+        private readonly string _workspaceDir;
+
+        public string Name => "delete_file";
+        public string Description => "删除文件或空目录。路径相对于 Workspace 目录。非空目录需要先清空。";
+        public IReadOnlyList<ToolParameter> Parameters =>
+        [
+            new("path", "要删除的文件或空目录路径", 0)
+        ];
+        public TimeSpan Timeout => TimeSpan.FromSeconds(5);
+
+        public DeleteFileTool(IToolContext ctx)
+        {
+            _workspaceDir = Path.Combine(ctx.Storage.GlobalDirectory, "..", "..", "Workspace");
+            _workspaceDir = Path.GetFullPath(_workspaceDir);
+        }
+
+        public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
+        {
+            var path = resolvedInputs.Count > 0 ? resolvedInputs[0].Trim() : "";
+            if (string.IsNullOrEmpty(path))
+                return Fail("path 不能为空");
+
+            var fullPath = ResolvePath(path);
+            if (fullPath == null)
+                return Fail("路径不合法：不能访问 Workspace 目录之外");
+
+            try
+            {
+                if (File.Exists(fullPath))
+                {
+                    File.Delete(fullPath);
+                    return Ok($"已删除文件: {path}");
+                }
+                if (Directory.Exists(fullPath))
+                {
+                    Directory.Delete(fullPath, recursive: false);
+                    return Ok($"已删除目录: {path}");
+                }
+                return Fail($"不存在: {path}");
+            }
+            catch (IOException ex) when (ex.Message.Contains("not empty"))
+            {
+                return Fail($"目录非空，无法删除: {path}");
+            }
+            catch (Exception ex) { return Fail($"删除失败: {ex.Message}"); }
+        }
+
+        private string? ResolvePath(string relativePath)
+        {
+            var full = Path.GetFullPath(Path.Combine(_workspaceDir, relativePath));
+            return full.StartsWith(_workspaceDir, StringComparison.OrdinalIgnoreCase) ? full : null;
+        }
+
+        private static Task<ToolResult> Ok(string data) =>
+            Task.FromResult(new ToolResult { Status = "success", Data = data });
+        private static Task<ToolResult> Fail(string err) =>
+            Task.FromResult(new ToolResult { Status = "failed", Error = err });
+    }
+
+    [ToolMeta(Group = "file", ContinueLoop = true)]
+    public class CopyFileTool : ITool
+    {
+        private readonly string _workspaceDir;
+
+        public string Name => "copy_file";
+        public string Description => "复制文件。源和目标路径都相对于 Workspace 目录。";
+        public IReadOnlyList<ToolParameter> Parameters =>
+        [
+            new("source", "源文件路径", 0),
+            new("destination", "目标文件路径", 1)
+        ];
+        public TimeSpan Timeout => TimeSpan.FromSeconds(10);
+
+        public CopyFileTool(IToolContext ctx)
+        {
+            _workspaceDir = Path.Combine(ctx.Storage.GlobalDirectory, "..", "..", "Workspace");
+            _workspaceDir = Path.GetFullPath(_workspaceDir);
+        }
+
+        public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
+        {
+            var src = resolvedInputs.Count > 0 ? resolvedInputs[0].Trim() : "";
+            var dst = resolvedInputs.Count > 1 ? resolvedInputs[1].Trim() : "";
+
+            if (string.IsNullOrEmpty(src) || string.IsNullOrEmpty(dst))
+                return Fail("source 和 destination 都不能为空");
+
+            var srcFull = ResolvePath(src);
+            var dstFull = ResolvePath(dst);
+            if (srcFull == null || dstFull == null)
+                return Fail("路径不合法：不能访问 Workspace 目录之外");
+
+            if (!File.Exists(srcFull))
+                return Fail($"源文件不存在: {src}");
+
+            try
+            {
+                var dstDir = Path.GetDirectoryName(dstFull)!;
+                Directory.CreateDirectory(dstDir);
+                File.Copy(srcFull, dstFull, overwrite: true);
+                return Ok($"已复制: {src} → {dst}");
+            }
+            catch (Exception ex) { return Fail($"复制失败: {ex.Message}"); }
+        }
+
+        private string? ResolvePath(string relativePath)
+        {
+            var full = Path.GetFullPath(Path.Combine(_workspaceDir, relativePath));
+            return full.StartsWith(_workspaceDir, StringComparison.OrdinalIgnoreCase) ? full : null;
+        }
+
+        private static Task<ToolResult> Ok(string data) =>
+            Task.FromResult(new ToolResult { Status = "success", Data = data });
+        private static Task<ToolResult> Fail(string err) =>
+            Task.FromResult(new ToolResult { Status = "failed", Error = err });
+    }
 }
