@@ -51,9 +51,9 @@ namespace AgentCoreProcessor.Engine.Modules
 
             // 最后一轮警告
             if (TotalRounds + 1 >= MaxRounds)
-                sb.Append("\n⚠️ 这是最后一轮！你必须在本轮用 speak 向用户汇报进度并请求回应，否则循环将强制结束。");
+                sb.Append("\n⚠️ 这是最后一轮！你必须用 speak 向用户汇报进度并请求回应（用户回应后轮次重置）。如果任务未完成，同时调用 speak 和其他工具以保持循环。");
             else if (SilentRounds + 1 >= MaxSilentRounds)
-                sb.Append("\n⚠️ 静默即将达到上限！你必须在本轮用 speak 向用户汇报当前进度。");
+                sb.Append("\n⚠️ 静默即将达到上限！如果还有工作要做，同时调用 speak（汇报进度）和其他工具（继续工作）。如果已完成，只调用 speak 即可结束。");
 
             return sb.ToString();
         }
