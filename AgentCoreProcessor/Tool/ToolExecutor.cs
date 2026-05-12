@@ -2,23 +2,20 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine;
-using AgentCoreProcessor.Engine.Modules;
+using AgentCoreProcessor.Tool.Contract;
 
 namespace AgentCoreProcessor.Tool
 {
     /// <summary>
-    /// 工具执行器。顺序执行工具调用列表，支持授权检查。
+    /// 工具执行器。顺序执行工具调用列表，支持禁用检查和权限检查。
     /// </summary>
     internal class ToolExecutor
     {
         private readonly Func<string, ITool?> toolResolver;
         private readonly HashSet<string>? authorizedTools;
 
-        /// <summary>
-        /// 每个工具执行完毕后立即触发的回调。用于即时处理副作用（如发送说话消息）。
-        /// </summary>
+        /// <summary>每个工具执行完毕后触发的回调。</summary>
         public Func<ToolCall, ToolResult, Task>? OnToolExecuted { get; set; }
 
         public ToolExecutor(
@@ -51,7 +48,6 @@ namespace AgentCoreProcessor.Tool
                 return new ToolResult { Status = "failed", Error = $"未知工具: {call.Tool}" };
             }
 
-            // 禁用检查
             if (ToolRegistry.IsDisabled(call.Tool))
             {
                 var reason = ToolRegistry.GetDisableReason(call.Tool) ?? "未知原因";
@@ -59,8 +55,10 @@ namespace AgentCoreProcessor.Tool
                 return new ToolResult { Status = "failed", Error = $"工具已禁用: {reason}" };
             }
 
-            // 预授权检查：只查权限表，不阻塞
-            if (tool.RequiredPermission > PermissionLevel.Default
+            // 权限检查
+            var meta = ToolRegistry.GetMeta(call.Tool);
+            var permission = meta?.Permission ?? PermissionLevel.Default;
+            if (permission > PermissionLevel.Default
                 && authorizedTools != null
                 && !authorizedTools.Contains(tool.Name))
             {
@@ -91,8 +89,7 @@ namespace AgentCoreProcessor.Tool
                         (dataSummary.Length > 0 ? $", data={dataSummary}" : ""));
                 else
                     FrameworkLogger.Log("ToolExecutor",
-                        $"失败: {call.Tool} → {result.Status}: {result.Error}, {sw.ElapsedMilliseconds}ms" +
-                        (dataSummary.Length > 0 ? $"\n  data={dataSummary}" : ""));
+                        $"失败: {call.Tool} → {result.Status}: {result.Error}, {sw.ElapsedMilliseconds}ms");
 
                 return result;
             }
