@@ -182,6 +182,17 @@ namespace AgentCoreProcessor.Client
                 // content_block_start: tool_use
                 if (resp.ContentBlock?.Type == "tool_use")
                 {
+                    // 多工具场景：先 finalize 上一个工具
+                    if (currentToolUseId != null)
+                    {
+                        onEvt(new StreamEvent
+                        {
+                            Type = StreamEventType.ToolUseEnd,
+                            ToolUseId = currentToolUseId,
+                            ToolName = currentToolName
+                        });
+                    }
+
                     currentToolUseId = resp.ContentBlock.Id;
                     currentToolName = resp.ContentBlock.Name;
                     toolInputJson.Clear();
