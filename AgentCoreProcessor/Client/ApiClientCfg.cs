@@ -69,6 +69,10 @@ namespace AgentCoreProcessor.Client
         [JsonProperty("promptCaching")]
         public bool PromptCaching { get; set; } = false;
 
+        // 启用原生工具调用（Anthropic tool_use / OpenAI function calling）
+        [JsonProperty("useNativeTools")]
+        public bool UseNativeTools { get; set; } = false;
+
         // 预设消息模板（从配置文件加载，system prompt + few-shot 示例）
         [JsonProperty("conversationHistory")]
         public List<Message> PresetMessages { get; set; } = new List<Message>();

@@ -1,17 +1,20 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Text.Json;
 using AgentCoreProcessor.Models;
+using Newtonsoft.Json;
 
 namespace AgentCoreProcessor.Engine
 {
     /// <summary>
     /// 系统循环上下文持久化（WAL 模式）。
     /// 每轮追加写入 context.jsonl，模块状态写入 state.json。
+    /// v2: 支持 ContentParts（tool_use/tool_result），使用 Newtonsoft.Json 序列化。
     /// </summary>
     internal class ContextPersistence
     {
+        private const int FormatVersion = 2;
+
         private readonly string contextPath;
         private readonly string summaryPath;
         private readonly string statePath;
@@ -24,7 +27,7 @@ namespace AgentCoreProcessor.Engine
         }
 
         /// <summary>
-        /// 追加一轮对话到 context.jsonl。
+        /// 追加一轮对话到 context.jsonl（v2 格式，含 ContentParts 支持）。
         /// </summary>
         public void AppendRound(List<Message> userMessages, List<Message> assistantMessages)
         {
@@ -32,12 +35,14 @@ namespace AgentCoreProcessor.Engine
             {
                 var round = new
                 {
+                    FormatVersion,
                     Timestamp = DateTime.Now,
                     User = userMessages,
                     Assistant = assistantMessages
                 };
 
-                var json = JsonSerializer.Serialize(round);
+                var json = JsonConvert.SerializeObject(round, Formatting.None,
+                    new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
                 File.AppendAllText(contextPath, json + "\n");
             }
             catch (Exception ex)
@@ -53,7 +58,7 @@ namespace AgentCoreProcessor.Engine
         {
             try
             {
-                var json = JsonSerializer.Serialize(state, new JsonSerializerOptions { WriteIndented = true });
+                var json = JsonConvert.SerializeObject(state, Formatting.Indented);
                 File.WriteAllText(statePath, json);
             }
             catch (Exception ex)
@@ -63,7 +68,7 @@ namespace AgentCoreProcessor.Engine
         }
 
         /// <summary>
-        /// 加载完整上下文（summary + JSONL）。
+        /// 加载完整上下文（summary + JSONL）。检测格式版本，旧格式清空重建。
         /// </summary>
         public (string? Summary, List<List<Message>> Rounds) LoadContext()
         {
@@ -92,22 +97,34 @@ namespace AgentCoreProcessor.Engine
                     foreach (var line in lines)
                     {
                         if (string.IsNullOrWhiteSpace(line)) continue;
-                        var round = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(line);
-                        if (round != null)
+
+                        var wrapper = JsonConvert.DeserializeObject<dynamic>(line);
+                        if (wrapper == null) continue;
+
+                        // 版本检测：旧格式（无 FormatVersion）需清空重建
+                        int? version = wrapper.FormatVersion;
+                        if (version == null || version < FormatVersion)
                         {
-                            var messages = new List<Message>();
-                            if (round.ContainsKey("User"))
-                            {
-                                var userMsgs = JsonSerializer.Deserialize<List<Message>>(round["User"].GetRawText());
-                                if (userMsgs != null) messages.AddRange(userMsgs);
-                            }
-                            if (round.ContainsKey("Assistant"))
-                            {
-                                var assistantMsgs = JsonSerializer.Deserialize<List<Message>>(round["Assistant"].GetRawText());
-                                if (assistantMsgs != null) messages.AddRange(assistantMsgs);
-                            }
-                            rounds.Add(messages);
+                            FrameworkLogger.Log("ContextPersistence",
+                                $"上下文格式版本不兼容 (v{version ?? 1}→v{FormatVersion})，清空重建");
+                            ClearContext();
+                            return (summary, new List<List<Message>>());
                         }
+
+                        var messages = new List<Message>();
+                        if (wrapper.User != null)
+                        {
+                            var userJson = JsonConvert.SerializeObject(wrapper.User);
+                            var userMsgs = JsonConvert.DeserializeObject<List<Message>>(userJson);
+                            if (userMsgs != null) messages.AddRange(userMsgs);
+                        }
+                        if (wrapper.Assistant != null)
+                        {
+                            var asstJson = JsonConvert.SerializeObject(wrapper.Assistant);
+                            var asstMsgs = JsonConvert.DeserializeObject<List<Message>>(asstJson);
+                            if (asstMsgs != null) messages.AddRange(asstMsgs);
+                        }
+                        rounds.Add(messages);
                     }
                 }
                 catch (Exception ex)
@@ -129,7 +146,7 @@ namespace AgentCoreProcessor.Engine
             try
             {
                 var json = File.ReadAllText(statePath);
-                return JsonSerializer.Deserialize<Dictionary<string, object>>(json);
+                return JsonConvert.DeserializeObject<Dictionary<string, object>>(json);
             }
             catch (Exception ex)
             {
@@ -146,12 +163,28 @@ namespace AgentCoreProcessor.Engine
             try
             {
                 File.WriteAllText(summaryPath, summary);
-                File.Delete(contextPath);
+                if (File.Exists(contextPath))
+                    File.Delete(contextPath);
                 FrameworkLogger.Log("ContextPersistence", "上下文已压缩");
             }
             catch (Exception ex)
             {
                 FrameworkLogger.Log("ContextPersistence", $"压缩失败: {ex.Message}");
+            }
+        }
+
+        private void ClearContext()
+        {
+            try
+            {
+                if (File.Exists(contextPath))
+                    File.Delete(contextPath);
+                if (File.Exists(statePath))
+                    File.Delete(statePath);
+            }
+            catch (Exception ex)
+            {
+                FrameworkLogger.Log("ContextPersistence", $"清空上下文失败: {ex.Message}");
             }
         }
     }

@@ -19,6 +19,10 @@ namespace AgentCoreProcessor.Tool
         [JsonIgnore]
         public int Index { get; set; }
 
+        /// <summary>原生工具调用的 tool_use_id（Anthropic tool_use / OpenAI function_call id）。文本 JSON 路径为 null。</summary>
+        [JsonIgnore]
+        public string? ToolUseId { get; set; }
+
         public static ToolCall FromJson(string json)
         {
             if (string.IsNullOrWhiteSpace(json))

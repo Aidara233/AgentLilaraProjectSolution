@@ -31,6 +31,8 @@ namespace AgentCoreProcessor.Engine
         private readonly ReviewCore reviewCore = new();
         private readonly Dictionary<string, ITool> tools;
         private readonly string toolDescriptions;
+        private readonly bool useNativeTools;
+        private List<ToolDefinition>? _nativeToolDefs;
 
         private volatile bool shouldWake = false;
         private volatile bool shouldStop = false;
@@ -55,7 +57,22 @@ namespace AgentCoreProcessor.Engine
 
             // 初始化工具集（不注册到全局 ToolRegistry）
             tools = BuildToolSet();
-            toolDescriptions = GenerateToolDescriptions();
+            useNativeTools = reviewCore.UseNativeTools;
+            if (useNativeTools)
+            {
+                toolDescriptions = "";
+                _nativeToolDefs = tools.Values.Select(t =>
+                    new ToolDefinition
+                    {
+                        Name = t.Name,
+                        Description = t.Description,
+                        Parameters = t.GetInputSchema()
+                    }).ToList();
+            }
+            else
+            {
+                toolDescriptions = GenerateToolDescriptions();
+            }
             reviewCore.CallerTag = $"Review:{mode}";
         }
 
@@ -121,28 +138,37 @@ namespace AgentCoreProcessor.Engine
                 reviewCore.ResetProcessor();
                 reviewCore.SetConversation(messages);
 
-                // 2. 调用模型，解析工具调用（与 AgentCore 相同的简单格式解析）
-                var toolCalls = new List<ToolCall>();
-                var usage = await reviewCore.GenerateAsync(onBreak: (block) =>
+                // 2. 调用模型，解析工具调用
+                List<ToolCall> toolCalls;
+                Models.Usage usage;
+                if (useNativeTools && _nativeToolDefs != null)
                 {
-                    var raw = block.Content.Trim();
-                    if (string.IsNullOrEmpty(raw)) return;
-
-                    var jsonStart = raw.IndexOf('{');
-                    var jsonEnd = raw.LastIndexOf('}');
-
-                    if (jsonStart >= 0 && jsonEnd > jsonStart)
+                    (toolCalls, _, usage) = await reviewCore.GenerateToolCallsWithToolsAsync(_nativeToolDefs);
+                }
+                else
+                {
+                    toolCalls = new List<ToolCall>();
+                    usage = await reviewCore.GenerateAsync(onBreak: (block) =>
                     {
-                        var json = raw[jsonStart..(jsonEnd + 1)];
-                        try
+                        var raw = block.Content.Trim();
+                        if (string.IsNullOrEmpty(raw)) return;
+
+                        var jsonStart = raw.IndexOf('{');
+                        var jsonEnd = raw.LastIndexOf('}');
+
+                        if (jsonStart >= 0 && jsonEnd > jsonStart)
                         {
-                            var call = ToolCall.FromJson(json);
-                            if (!call.Validate().Any())
-                                toolCalls.Add(call);
+                            var json = raw[jsonStart..(jsonEnd + 1)];
+                            try
+                            {
+                                var call = ToolCall.FromJson(json);
+                                if (!call.Validate().Any())
+                                    toolCalls.Add(call);
+                            }
+                            catch { }
                         }
-                        catch { }
-                    }
-                });
+                    });
+                }
 
                 // 累加 token
                 totalTokens += usage.TotalTokens;
@@ -273,18 +299,26 @@ namespace AgentCoreProcessor.Engine
                 reviewCore.ResetProcessor();
                 reviewCore.SetConversation(messages);
 
-                var toolCalls = new List<ToolCall>();
-                await reviewCore.GenerateAsync(onBreak: (block) =>
+                List<ToolCall> toolCalls;
+                if (useNativeTools && _nativeToolDefs != null)
                 {
-                    var json = block.Content.Trim();
-                    if (string.IsNullOrEmpty(json)) return;
-                    try
+                    (toolCalls, _, _) = await reviewCore.GenerateToolCallsWithToolsAsync(_nativeToolDefs);
+                }
+                else
+                {
+                    toolCalls = new List<ToolCall>();
+                    await reviewCore.GenerateAsync(onBreak: (block) =>
                     {
-                        var call = ToolCall.FromJson(json);
-                        if (call.Validate().Count() == 0) toolCalls.Add(call);
-                    }
-                    catch { }
-                });
+                        var json = block.Content.Trim();
+                        if (string.IsNullOrEmpty(json)) return;
+                        try
+                        {
+                            var call = ToolCall.FromJson(json);
+                            if (call.Validate().Count() == 0) toolCalls.Add(call);
+                        }
+                        catch { }
+                    });
+                }
 
                 if (toolCalls.Count > 0)
                 {
@@ -336,8 +370,9 @@ namespace AgentCoreProcessor.Engine
         {
             var messages = new List<Message>();
 
-            // 工具描述
-            messages.Add(new Message { Role = "user", Content = toolDescriptions });
+            // 工具描述（native 模式跳过，工具通过 API 发送）
+            if (!useNativeTools && !string.IsNullOrEmpty(toolDescriptions))
+                messages.Add(new Message { Role = "user", Content = toolDescriptions });
 
             // 预注入上下文（首轮）
             if (round == 0)

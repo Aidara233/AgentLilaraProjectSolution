@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Models;
+using AgentCoreProcessor.Tool;
 
 namespace AgentCoreProcessor.Client
 {
@@ -12,6 +13,7 @@ namespace AgentCoreProcessor.Client
     {
         protected readonly HttpClient httpClient;
         protected ApiClientCfg apiClientCfg;
+        protected List<ToolDefinition>? tools;
 
         public ApiClientCfg Config
         {
@@ -104,6 +106,21 @@ namespace AgentCoreProcessor.Client
         // ── 子类实现 ──
 
         public abstract Task<string> StreamChatAsync(Action<ApiResponse> onDelta, CancellationToken ct = default);
+
+        // ── 原生工具调用（默认实现，子类覆盖） ──
+
+        public virtual IModelClient SetTools(List<ToolDefinition> tools)
+        {
+            this.tools = tools;
+            return this;
+        }
+
+        public virtual List<ToolDefinition>? GetTools() => tools;
+
+        public virtual Task StreamChatWithToolsAsync(Action<StreamEvent> onEvent, CancellationToken ct = default)
+            => throw new NotSupportedException($"Provider {apiClientCfg.Provider} 不支持原生工具调用");
+
+        public virtual void AddToolResult(string toolUseId, string result, bool isError = false) { }
 
         public virtual void Dispose()
         {

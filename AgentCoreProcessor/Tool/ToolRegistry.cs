@@ -142,6 +142,24 @@ namespace AgentCoreProcessor.Tool
         }
 
         /// <summary>
+        /// 生成原生工具定义列表（供 Anthropic Tools / OpenAI Functions 使用）。
+        /// </summary>
+        public static List<ToolDefinition> GenerateToolDefinitions(
+            IEnumerable<ITool>? tools = null,
+            Func<ITool, bool>? filter = null)
+        {
+            var source = (tools ?? _tools.Values).ToList();
+            if (filter != null) source = source.Where(filter).ToList();
+
+            return source.Select(tool => new ToolDefinition
+            {
+                Name = tool.Name,
+                Description = tool.Description,
+                Parameters = tool.GetInputSchema()
+            }).ToList();
+        }
+
+        /// <summary>
         /// 生成能力摘要列表，注入 Express prompt 让模型知道可升级到 Working 模式的能力。
         /// </summary>
         public static string GenerateCapabilitySummary(Func<ITool, bool>? filter = null)

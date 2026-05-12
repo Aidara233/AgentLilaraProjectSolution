@@ -15,6 +15,18 @@ namespace AgentCoreProcessor.Core
         private string currentMode = "WorkingCore";
         private readonly bool fixedMode;
         private readonly bool noPersona;
+        private List<ToolDefinition>? _nativeToolDefs;
+        private Func<ITool, bool>? _toolFilter;
+
+        /// <summary>设置原生工具调用的工具过滤器。null 表示使用全部工具。</summary>
+        public Func<ITool, bool>? ToolFilter
+        {
+            get => _toolFilter;
+            set { _toolFilter = value; _nativeToolDefs = null; }
+        }
+
+        /// <summary>当前是否使用原生工具调用。</summary>
+        internal bool UseNativeTools => processor?.Client?.Config?.UseNativeTools == true;
 
         protected override bool UsePersona => !noPersona;
 
@@ -74,11 +86,14 @@ namespace AgentCoreProcessor.Core
         }
 
         /// <summary>
-        /// 工具调用解析（Working 模式）。解析模型输出中的 JSON 工具调用块。
-        /// 支持模型在 JSON 前输出思考文本（会被提取并保留）。
+        /// 工具调用解析（Working 模式）。UseNativeTools 时使用原生 tool_use，否则解析文本 JSON。
         /// </summary>
         public async Task<(List<ToolCall> Calls, string? Thinking)> GenerateToolCallsWithThinkingAsync()
         {
+            if (UseNativeTools)
+                return await GenerateWithNativeToolsAsync();
+
+            // 旧路径：文本 JSON 解析
             var calls = new List<ToolCall>();
             var thinkingParts = new List<string>();
             await GenerateAsync(onBreak: block =>
@@ -91,7 +106,6 @@ namespace AgentCoreProcessor.Core
 
                 if (jsonStart >= 0 && jsonEnd > jsonStart)
                 {
-                    // 提取思考文本（JSON 之前的部分）
                     if (jsonStart > 0)
                     {
                         var thinking = raw[..jsonStart].Trim();
@@ -99,7 +113,6 @@ namespace AgentCoreProcessor.Core
                             thinkingParts.Add(thinking);
                     }
 
-                    // 提取并解析 JSON
                     var json = raw[jsonStart..(jsonEnd + 1)];
                     try
                     {
@@ -111,13 +124,22 @@ namespace AgentCoreProcessor.Core
                 }
                 else
                 {
-                    // 整个 block 都是文本（无 JSON）
                     if (raw.Length > 0)
                         thinkingParts.Add(raw);
                 }
             });
             var thinking = thinkingParts.Count > 0 ? string.Join("\n", thinkingParts) : null;
             return (calls, thinking);
+        }
+
+        private async Task<(List<ToolCall> Calls, string? Thinking)> GenerateWithNativeToolsAsync()
+        {
+            _nativeToolDefs ??= ToolRegistry.GenerateToolDefinitions(filter: _toolFilter);
+            var handler = new NativeToolCallHandler(_nativeToolDefs);
+
+            await GenerateWithToolsAsync(_nativeToolDefs, handler.OnEvent);
+
+            return handler.GetResult();
         }
 
         /// <summary>

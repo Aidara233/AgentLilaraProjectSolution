@@ -14,6 +14,7 @@ namespace AgentCoreProcessor.Core
     {
         /// <summary>
         /// 模块驱动的 prompt 组装。Express/Working 统一使用此方法。
+        /// useNativeTools=true 时跳过文本工具描述，工具结果以 tool_result content block 回传。
         /// </summary>
         public List<Message> BuildRoundMessages(
             string toolDescriptions,
@@ -22,12 +23,14 @@ namespace AgentCoreProcessor.Core
             EngineMode mode,
             List<ToolResult>? lastRoundResults,
             List<ToolCall>? lastRoundCalls,
-            List<ImageEmbed>? imageEmbeds = null)
+            List<ImageEmbed>? imageEmbeds = null,
+            bool useNativeTools = false)
         {
             var messages = new List<Message>();
 
-            // 1. 工具描述
-            messages.Add(new Message { Role = "user", Content = toolDescriptions });
+            // 1. 工具描述（native 模式跳过）
+            if (!useNativeTools)
+                messages.Add(new Message { Role = "user", Content = toolDescriptions });
 
             // 2. 对话上下文 XML + 图片
             var contextMsg = new Message { Role = "user", Content = contextXml };
@@ -54,29 +57,94 @@ namespace AgentCoreProcessor.Core
             // 4. 上一轮工具执行结果
             if (lastRoundResults != null && lastRoundCalls != null && lastRoundResults.Count > 0)
             {
-                var sb = new StringBuilder("上一轮工具执行结果：\n");
-                var resultAttachments = new List<ContentPart>();
-                for (int i = 0; i < lastRoundCalls.Count; i++)
+                if (useNativeTools)
                 {
-                    if (i < lastRoundResults.Count)
-                    {
-                        FormatSingleResult(sb, lastRoundCalls[i], lastRoundResults[i]);
-                        if (lastRoundResults[i].Attachments != null)
-                            resultAttachments.AddRange(lastRoundResults[i].Attachments!);
-                    }
+                    BuildNativeToolResults(messages, lastRoundCalls, lastRoundResults);
                 }
-
-                var resultMsg = new Message { Role = "user", Content = sb.ToString() };
-                if (resultAttachments.Count > 0)
+                else
                 {
-                    var parts = new List<ContentPart> { ContentPart.FromText(sb.ToString()) };
-                    parts.AddRange(resultAttachments);
-                    resultMsg.ContentParts = parts;
+                    BuildTextToolResults(messages, lastRoundCalls, lastRoundResults);
                 }
-                messages.Add(resultMsg);
             }
 
             return messages;
+        }
+
+        private static void BuildNativeToolResults(
+            List<Message> messages, List<ToolCall> calls, List<ToolResult> results)
+        {
+            // 构建 assistant 消息（含 tool_use 块）
+            var toolUseParts = new List<ContentPart>();
+            for (int i = 0; i < calls.Count; i++)
+            {
+                if (calls[i].ToolUseId != null)
+                {
+                    var inputJson = calls[i].Inputs.Count > 0
+                        ? Newtonsoft.Json.JsonConvert.SerializeObject(calls[i].Inputs)
+                        : "[]";
+                    toolUseParts.Add(ContentPart.FromToolUse(
+                        calls[i].ToolUseId!, calls[i].Tool, inputJson));
+                }
+            }
+            if (toolUseParts.Count > 0)
+            {
+                var asstMsg = new Message
+                {
+                    Role = "assistant",
+                    Content = "[tool calls]",
+                    ContentParts = toolUseParts
+                };
+                messages.Add(asstMsg);
+            }
+
+            // 构建 user 消息（含 tool_result 块）
+            var resultParts = new List<ContentPart>();
+            for (int i = 0; i < calls.Count && i < results.Count; i++)
+            {
+                if (calls[i].ToolUseId != null)
+                {
+                    var data = results[i].IsSuccess
+                        ? (results[i].Data ?? "成功")
+                        : $"失败: {results[i].Error ?? results[i].Status}";
+                    resultParts.Add(ContentPart.FromToolResult(
+                        calls[i].ToolUseId!, data, !results[i].IsSuccess));
+                }
+            }
+            if (resultParts.Count > 0)
+            {
+                var resultMsg = new Message
+                {
+                    Role = "user",
+                    Content = "[tool results]",
+                    ContentParts = resultParts
+                };
+                messages.Add(resultMsg);
+            }
+        }
+
+        private static void BuildTextToolResults(
+            List<Message> messages, List<ToolCall> calls, List<ToolResult> results)
+        {
+            var sb = new StringBuilder("上一轮工具执行结果：\n");
+            var resultAttachments = new List<ContentPart>();
+            for (int i = 0; i < calls.Count; i++)
+            {
+                if (i < results.Count)
+                {
+                    FormatSingleResult(sb, calls[i], results[i]);
+                    if (results[i].Attachments != null)
+                        resultAttachments.AddRange(results[i].Attachments!);
+                }
+            }
+
+            var resultMsg = new Message { Role = "user", Content = sb.ToString() };
+            if (resultAttachments.Count > 0)
+            {
+                var parts = new List<ContentPart> { ContentPart.FromText(sb.ToString()) };
+                parts.AddRange(resultAttachments);
+                resultMsg.ContentParts = parts;
+            }
+            messages.Add(resultMsg);
         }
 
         private static void FormatSingleResult(StringBuilder sb, ToolCall call, ToolResult result)

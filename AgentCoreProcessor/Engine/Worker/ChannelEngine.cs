@@ -509,9 +509,11 @@ namespace AgentCoreProcessor.Engine
         private List<Models.Message> BuildPromptMessages()
         {
             var mode = isWorkingMode ? EngineMode.Working : EngineMode.Express;
+            var useNative = isWorkingMode && agentCore.UseNativeTools;
 
             // Working 模式：使用工具白名单过滤
             string toolDescs;
+            string? nativeContext = null;
             if (isWorkingMode)
             {
                 var channelToolFilter = new Func<ITool, bool>(tool =>
@@ -524,15 +526,37 @@ namespace AgentCoreProcessor.Engine
                     };
                     return allowedTools.Contains(tool.Name);
                 });
-                toolDescs = ToolRegistry.GenerateDescriptions(authorizedTools: authorizedTools, filter: channelToolFilter);
-                if (!string.IsNullOrEmpty(escalationReason))
+
+                if (useNative)
                 {
-                    toolDescs += $"\n\n[升级任务] {escalationReason}";
-                    escalationReason = null;
+                    agentCore.ToolFilter = channelToolFilter;
+                    toolDescs = "";
+                    // 原生模式下工具描述跳过，额外上下文单独注入
+                    var ctxSb = new StringBuilder();
+                    if (!string.IsNullOrEmpty(escalationReason))
+                    {
+                        ctxSb.AppendLine($"[升级任务] {escalationReason}");
+                        escalationReason = null;
+                    }
+                    var botIdW = ctx.Adapters.GetBotPlatformId("qq");
+                    if (!string.IsNullOrEmpty(botIdW))
+                        ctxSb.AppendLine($"身份信息：你的QQ号是 {botIdW}。");
+                    ctxSb.Append("[图片标记说明]\n上下文中的 <img/> 标记表示用户发送的图片。其中 desc/text 属性为自动生成的摘要，仅供快速参考，可能存在误差或遗漏。涉及具体内容时请使用工具查看原图或获取完整文字。");
+                    nativeContext = ctxSb.ToString().TrimEnd();
                 }
-                var botIdW = ctx.Adapters.GetBotPlatformId("qq");
-                if (!string.IsNullOrEmpty(botIdW))
-                    toolDescs += $"\n\n身份信息：你的QQ号是 {botIdW}。";
+                else
+                {
+                    toolDescs = ToolRegistry.GenerateDescriptions(authorizedTools: authorizedTools, filter: channelToolFilter);
+                    if (!string.IsNullOrEmpty(escalationReason))
+                    {
+                        toolDescs += $"\n\n[升级任务] {escalationReason}";
+                        escalationReason = null;
+                    }
+                    var botIdW = ctx.Adapters.GetBotPlatformId("qq");
+                    if (!string.IsNullOrEmpty(botIdW))
+                        toolDescs += $"\n\n身份信息：你的QQ号是 {botIdW}。";
+                    toolDescs += "\n\n[图片标记说明]\n上下文中的 <img/> 标记表示用户发送的图片。其中 desc/text 属性为自动生成的摘要，仅供快速参考，可能存在误差或遗漏。涉及具体内容时请使用工具查看原图或获取完整文字。";
+                }
             }
             else
             {
@@ -552,37 +576,37 @@ namespace AgentCoreProcessor.Engine
                 if (!string.IsNullOrEmpty(botId))
                     pokeHint += $"\n\n身份信息：你的QQ号是 {botId}，不要把自己的号当成别人的。";
                 toolDescs += pokeHint;
-            }
 
-            // Phase 6: 注入关注规则（仅 Express 模式）
-            if (!isWorkingMode)
-            {
+                // Phase 6: 注入关注规则
                 List<WatchRule> rules;
                 lock (watchRulesLock)
                 {
                     rules = new List<WatchRule>(watchRules);
                 }
-
                 if (rules.Count > 0)
                 {
                     var sb = new StringBuilder();
                     sb.AppendLine("\n[关注规则]");
                     sb.AppendLine("以下规则已激活，当消息匹配时会自动触发相应动作：");
                     foreach (var rule in rules)
-                    {
                         sb.AppendLine($"- {rule.Description}（模式：{rule.Pattern}，动作：{rule.Action}）");
-                    }
                     toolDescs += "\n" + sb.ToString();
                 }
-            }
 
-            // 图片标记说明（Express/Working 通用）
-            toolDescs += "\n\n[图片标记说明]\n上下文中的 <img/> 标记表示用户发送的图片。其中 desc/text 属性为自动生成的摘要，仅供快速参考，可能存在误差或遗漏。涉及具体内容时请使用工具查看原图或获取完整文字。";
+                toolDescs += "\n\n[图片标记说明]\n上下文中的 <img/> 标记表示用户发送的图片。其中 desc/text 属性为自动生成的摘要，仅供快速参考，可能存在误差或遗漏。涉及具体内容时请使用工具查看原图或获取完整文字。";
+            }
 
             var messages = promptBuilder.BuildRoundMessages(
                 toolDescs, currentContextXml!, modules, mode,
                 lastRoundResults, lastRoundCalls,
-                currentImageEmbeds);
+                currentImageEmbeds, useNative);
+
+            // 原生模式下：额外上下文（Bot ID、升级原因等）在 PromptBuilder 跳过工具描述后单独注入
+            if (useNative && nativeContext != null)
+            {
+                // 插入到 contextXml 消息之后、模块消息之前（index = 工具描述被跳过后的第2个消息之后）
+                messages.Insert(1, new Models.Message { Role = "user", Content = nativeContext });
+            }
 
             // 图片只在首次使用后清除
             currentImageEmbeds = null;

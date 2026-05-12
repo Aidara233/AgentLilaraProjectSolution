@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Models;
+using AgentCoreProcessor.Tool;
 
 namespace AgentCoreProcessor.Client
 {
@@ -24,5 +25,11 @@ namespace AgentCoreProcessor.Client
 
         // 流式生成
         Task<string> StreamChatAsync(Action<ApiResponse> onDelta, CancellationToken ct = default);
+
+        // 原生工具调用
+        IModelClient SetTools(List<ToolDefinition> tools);
+        List<ToolDefinition>? GetTools();
+        Task StreamChatWithToolsAsync(Action<StreamEvent> onEvent, CancellationToken ct = default);
+        void AddToolResult(string toolUseId, string result, bool isError = false);
     }
 }

@@ -51,6 +51,9 @@ namespace AgentCoreProcessor.Engine
         private const int SoftThresholdPercent = 60;
         private const int HardThresholdPercent = 85;
 
+        // 原生工具调用
+        private readonly bool useNativeTools;
+
         // 系统状态（供频道循环感知）
         public SystemLoopState CurrentState { get; private set; } = SystemLoopState.Active;
 
@@ -95,6 +98,7 @@ namespace AgentCoreProcessor.Engine
             this.ctx = ctx;
             this.agentCore = new AgentCore("SystemCore", usePersona: false);
             agentCore.CallerTag = "System";
+            useNativeTools = agentCore.UseNativeTools;
 
             // 初始化模块
             systemStatusModule = new SystemStatusModule(ctx, () => GetActiveSubAgents(), () => GetContextUsage());
@@ -118,7 +122,16 @@ namespace AgentCoreProcessor.Engine
 
             // 启动时生成工具描述（固定前缀，不再每轮重建）
             var allowed = GetAuthorizedTools();
-            toolDescriptions = ToolRegistry.GenerateDescriptions(filter: t => allowed.Contains(t.Name));
+            if (useNativeTools)
+            {
+                // 原生模式：工具通过 API 发送，不注入文本描述
+                toolDescriptions = "";
+                agentCore.ToolFilter = t => allowed.Contains(t.Name);
+            }
+            else
+            {
+                toolDescriptions = ToolRegistry.GenerateDescriptions(filter: t => allowed.Contains(t.Name));
+            }
 
             // 恢复持久化的对话历史
             RestoreContext();
@@ -254,8 +267,7 @@ namespace AgentCoreProcessor.Engine
                 }
 
                 // ② 构建当前轮的 user 消息（状态 + 事件 + 上轮工具结果）
-                var currentTurnContent = BuildCurrentTurnMessage();
-                var currentTurnMsg = new Message { Role = "user", Content = currentTurnContent };
+                var currentTurnMsg = BuildCurrentTurnMsg();
 
                 // ③ 组装完整消息列表（固定前缀 + 历史 + 当前轮）
                 var messages = BuildFullMessages(currentTurnMsg);
@@ -294,8 +306,8 @@ namespace AgentCoreProcessor.Engine
                 lastRoundResults = results;
 
                 // ⑦ 追加到历史（assistant 响应，含思考文本）
-                var assistantContent = FormatToolCallsAsText(toolCalls, output.Thinking);
-                AppendToHistory(currentTurnMsg, new Message { Role = "assistant", Content = assistantContent });
+                var assistantMsg = BuildAssistantMsg(toolCalls, output.Thinking);
+                AppendToHistory(currentTurnMsg, assistantMsg);
 
                 // ⑧ 检查是否调用了 Wait（落闸信号）
                 var waitCall = toolCalls.FirstOrDefault(c => c.Tool == "等待");
@@ -400,8 +412,8 @@ namespace AgentCoreProcessor.Engine
             return messages;
         }
 
-        /// <summary>构建当前轮的 user 消息内容：仪表盘 + 模块注入 + 工具结果。</summary>
-        private string BuildCurrentTurnMessage()
+        /// <summary>构建当前轮的 user 消息：仪表盘 + 模块注入 + 工具结果。</summary>
+        private Message BuildCurrentTurnMsg()
         {
             var sb = new StringBuilder();
 
@@ -434,7 +446,33 @@ namespace AgentCoreProcessor.Engine
                 }
             }
 
-            return sb.ToString();
+            var content = sb.ToString();
+
+            // 原生模式：工具结果以 tool_result ContentParts 回传
+            if (useNativeTools && lastRoundResults != null && lastRoundCalls != null && lastRoundResults.Count > 0)
+            {
+                var parts = new List<ContentPart> { ContentPart.FromText(content) };
+                for (int i = 0; i < lastRoundCalls.Count && i < lastRoundResults.Count; i++)
+                {
+                    if (lastRoundCalls[i].ToolUseId != null)
+                    {
+                        var data = lastRoundResults[i].IsSuccess
+                            ? (lastRoundResults[i].Data ?? "成功")
+                            : $"失败: {lastRoundResults[i].Error ?? lastRoundResults[i].Status}";
+                        parts.Add(ContentPart.FromToolResult(
+                            lastRoundCalls[i].ToolUseId!, data, !lastRoundResults[i].IsSuccess));
+                    }
+                    else
+                    {
+                        // 无 ToolUseId 时退化为文本说明
+                        parts.Add(ContentPart.FromText(
+                            $"\n[{lastRoundCalls[i].Tool}]: {(lastRoundResults[i].IsSuccess ? "成功" : "失败")}"));
+                    }
+                }
+                return new Message { Role = "user", Content = content, ContentParts = parts };
+            }
+
+            return new Message { Role = "user", Content = content };
         }
 
         private List<SystemTask> DrainTasks()
@@ -488,22 +526,56 @@ namespace AgentCoreProcessor.Engine
             };
         }
 
-        private static string FormatToolCallsAsText(List<ToolCall>? calls, string? thinking = null)
+        /// <summary>构建 assistant 消息。原生模式使用 tool_use ContentParts，否则使用文本格式。</summary>
+        private Message BuildAssistantMsg(List<ToolCall>? calls, string? thinking = null)
         {
-            var parts = new List<string>();
+            if (!useNativeTools || calls == null || calls.Count == 0)
+            {
+                // 文本格式（兼容旧路径）
+                var parts = new List<string>();
+                if (!string.IsNullOrEmpty(thinking))
+                    parts.Add(thinking);
+                if (calls == null || calls.Count == 0)
+                    parts.Add("(无操作)");
+                else
+                    parts.AddRange(calls.Select(c =>
+                        $"{c.Tool}({string.Join(", ", c.Inputs).Truncate(100)})"));
+                return new Message { Role = "assistant", Content = string.Join("\n", parts) };
+            }
+
+            // 原生格式：ContentParts 含 thinking text + tool_use 块
+            var contentParts = new List<ContentPart>();
             if (!string.IsNullOrEmpty(thinking))
-                parts.Add(thinking);
-            if (calls == null || calls.Count == 0)
+                contentParts.Add(ContentPart.FromText(thinking));
+
+            foreach (var call in calls)
             {
-                parts.Add("(无操作)");
+                if (call.ToolUseId != null)
+                {
+                    var inputJson = call.Inputs.Count > 0
+                        ? Newtonsoft.Json.JsonConvert.SerializeObject(call.Inputs)
+                        : "[]";
+                    contentParts.Add(ContentPart.FromToolUse(
+                        call.ToolUseId, call.Tool, inputJson));
+                }
+                else
+                {
+                    // 无 ToolUseId 时退化为文本
+                    contentParts.Add(ContentPart.FromText(
+                        $"\n{toolCallText(call)}"));
+                }
             }
-            else
+
+            return new Message
             {
-                parts.AddRange(calls.Select(c =>
-                    $"{c.Tool}({string.Join(", ", c.Inputs).Truncate(100)})"));
-            }
-            return string.Join("\n", parts);
+                Role = "assistant",
+                Content = thinking ?? "[tool calls]",
+                ContentParts = contentParts
+            };
         }
+
+        private static string toolCallText(ToolCall c)
+            => $"{c.Tool}({string.Join(", ", c.Inputs).Truncate(100)})";
 
         private void SaveModuleState()
         {

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Database;
@@ -51,5 +52,34 @@ namespace AgentCoreProcessor.Tool
 
         /// <summary>同组内是否默认展开（而非折叠为摘要）。</summary>
         bool DefaultExpanded => true;
+
+        /// <summary>
+        /// 原生工具调用的 JSON Schema。默认从 Parameters 推导（全部 type: string）。
+        /// 需要非 string 类型的工具可覆盖此方法。
+        /// </summary>
+        JsonNode GetInputSchema()
+        {
+            if (Parameters.Count == 0)
+                return new JsonObject { ["type"] = "object", ["properties"] = new JsonObject() };
+
+            var props = new JsonObject();
+            var required = new JsonArray();
+            foreach (var p in Parameters)
+            {
+                props[p.Name] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["description"] = p.Description
+                };
+                required.Add(p.Name);
+            }
+            return new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = props,
+                ["required"] = required
+            };
+        }
     }
 }
+

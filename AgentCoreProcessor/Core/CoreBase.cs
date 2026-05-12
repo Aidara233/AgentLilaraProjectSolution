@@ -59,6 +59,53 @@ namespace AgentCoreProcessor.Core
             ApplyExtraMessages();
         }
 
+        /// <summary>
+        /// 使用原生工具调用进行流式生成。
+        /// </summary>
+        protected async Task<Usage> GenerateWithToolsAsync(
+            List<Tool.ToolDefinition> toolDefs,
+            Action<Models.StreamEvent> onEvent,
+            CancellationToken ct = default)
+        {
+            processor.Client.SetTools(toolDefs);
+            var reasoningLog = new System.Text.StringBuilder();
+            Usage usage = new();
+
+            try
+            {
+                await processor.Client.StreamChatWithToolsAsync(evt =>
+                {
+                    if (evt.Type == Models.StreamEventType.Thinking && evt.Content != null)
+                        reasoningLog.Append(evt.Content);
+                    if (evt.Type == Models.StreamEventType.Usage && evt.Usage != null)
+                        usage = evt.Usage;
+                    onEvent(evt);
+                }, ct);
+
+                // 记录日志
+                LogOutput("[native tools]", reasoningLog.ToString(), usage);
+            }
+            catch (Exception ex)
+            {
+                var cfg = processor.Client.Config;
+                var context = $"core={processor.CfgName} provider={cfg.Provider} model={cfg.Model} endpoint={cfg.ApiEndpoint}";
+                FrameworkLogger.LogError("CoreBase", ex, context);
+
+                // 重试一次
+                reasoningLog.Clear();
+                await processor.Client.StreamChatWithToolsAsync(evt =>
+                {
+                    if (evt.Type == Models.StreamEventType.Thinking && evt.Content != null)
+                        reasoningLog.Append(evt.Content);
+                    if (evt.Type == Models.StreamEventType.Usage && evt.Usage != null)
+                        usage = evt.Usage;
+                    onEvent(evt);
+                }, ct);
+            }
+
+            return usage;
+        }
+
         public async Task<Usage> GenerateAsync(Action<ApiResponse>? onDelta = null, Action<ResponseBlock>? onBreak = null)
         {
             var buffer = new StringBuilder();
