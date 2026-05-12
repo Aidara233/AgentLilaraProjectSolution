@@ -5,11 +5,22 @@ namespace AgentCoreProcessor.Tool.Contract
     /// <summary>
     /// 工具权限级别。
     /// </summary>
-    public enum PermissionLevel
+    public enum ToolPermission
     {
         Default = 0,
         Elevated = 1,
         Admin = 2
+    }
+
+    /// <summary>
+    /// 插件作用域。
+    /// </summary>
+    public enum PluginScope
+    {
+        /// <summary>全局单例，MasterEngine 管理。</summary>
+        Singleton,
+        /// <summary>每引擎会话一份，各引擎自己管理。</summary>
+        PerSession
     }
 
     /// <summary>
@@ -27,9 +38,6 @@ namespace AgentCoreProcessor.Tool.Contract
         /// <summary>执行后触发下一轮循环。</summary>
         public bool ContinueLoop { get; set; }
 
-        /// <summary>结果跨轮保留（摘要注入 prompt）。</summary>
-        public bool RetainResult { get; set; }
-
         /// <summary>是否允许子 agent 使用。</summary>
         public bool AllowSubAgent { get; set; } = true;
 
@@ -37,6 +45,19 @@ namespace AgentCoreProcessor.Tool.Contract
         public string? CapabilitySummary { get; set; }
 
         /// <summary>使用此工具所需的最低权限。</summary>
-        public PermissionLevel Permission { get; set; } = PermissionLevel.Default;
+        public ToolPermission Permission { get; set; } = ToolPermission.Default;
+
+        /// <summary>插件作用域。</summary>
+        public PluginScope Scope { get; set; } = PluginScope.Singleton;
+    }
+
+    /// <summary>
+    /// 插件依赖声明。标注在工具类上，声明需要先加载的其他插件。
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
+    public class PluginDependencyAttribute : Attribute
+    {
+        public string DependencyName { get; }
+        public PluginDependencyAttribute(string name) { DependencyName = name; }
     }
 }

@@ -76,8 +76,8 @@ namespace AgentCoreProcessor.Tool
             {
                 if (IsDisabled(tool.Name)) continue;
                 var meta = GetMeta(tool.Name);
-                var permission = meta?.Permission ?? PermissionLevel.Default;
-                bool isRestricted = permission > PermissionLevel.Default;
+                var permission = meta?.Permission ?? Contract.ToolPermission.Default;
+                bool isRestricted = permission > Contract.ToolPermission.Default;
                 bool isAuthorized = authorizedTools != null && authorizedTools.Contains(tool.Name);
                 var suffix = isRestricted && !isAuthorized ? "（需要管理员授权）" : "";
 

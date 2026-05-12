@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.IO;
 using AgentCoreProcessor.Tool.Contract;
 
 namespace AgentCoreProcessor.Tool.Host
@@ -10,6 +11,14 @@ namespace AgentCoreProcessor.Tool.Host
     internal class ToolContextImpl : IToolContext
     {
         private readonly ConcurrentDictionary<Type, object> _services = new();
+        private readonly IPluginStorage _storage;
+
+        public ToolContextImpl(IPluginStorage storage)
+        {
+            _storage = storage;
+        }
+
+        public IPluginStorage Storage => _storage;
 
         /// <summary>注册服务实例。重复注册同类型会覆盖。</summary>
         public void Register<T>(T service) where T : class
@@ -32,6 +41,32 @@ namespace AgentCoreProcessor.Tool.Host
         public T? GetService<T>() where T : class
         {
             return _services.TryGetValue(typeof(T), out var svc) ? (T)svc : null;
+        }
+    }
+
+    /// <summary>
+    /// IPluginStorage 实现。根据插件名和作用域提供隔离目录。
+    /// </summary>
+    internal class PluginStorageImpl : IPluginStorage
+    {
+        public string GlobalDirectory { get; }
+        public string InstanceDirectory { get; }
+
+        public PluginStorageImpl(string pluginName, string? instanceId = null)
+        {
+            var baseDir = Path.Combine(Config.PathConfig.StoragePath, "PluginData", pluginName);
+            GlobalDirectory = baseDir;
+            Directory.CreateDirectory(GlobalDirectory);
+
+            if (instanceId != null)
+            {
+                InstanceDirectory = Path.Combine(baseDir, "instances", instanceId);
+                Directory.CreateDirectory(InstanceDirectory);
+            }
+            else
+            {
+                InstanceDirectory = GlobalDirectory;
+            }
         }
     }
 }

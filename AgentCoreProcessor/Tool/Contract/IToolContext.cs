@@ -19,5 +19,8 @@ namespace AgentCoreProcessor.Tool.Contract
                 ?? throw new InvalidOperationException(
                     $"服务 {typeof(T).Name} 未注册。请确认对应的内部模块已初始化。");
         }
+
+        /// <summary>插件隔离存储（由宿主根据插件名+作用域自动绑定路径）。</summary>
+        IPluginStorage Storage { get; }
     }
 }

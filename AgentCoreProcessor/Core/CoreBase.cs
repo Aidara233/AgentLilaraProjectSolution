@@ -63,7 +63,7 @@ namespace AgentCoreProcessor.Core
         /// 使用原生工具调用进行流式生成。
         /// </summary>
         protected async Task<Usage> GenerateWithToolsAsync(
-            List<Tool.ToolDefinition> toolDefs,
+            List<ToolDefinition> toolDefs,
             Action<Models.StreamEvent> onEvent,
             CancellationToken ct = default)
         {

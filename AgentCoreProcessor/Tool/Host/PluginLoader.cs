@@ -108,9 +108,7 @@ namespace AgentCoreProcessor.Tool.Host
                     var tool = InstantiateTool(type);
                     if (tool == null) continue;
 
-                    // 过渡期：Contract.ITool 通过适配器注册到旧 ToolRegistry
-                    var adapted = new PluginToolAdapter(tool);
-                    if (ToolRegistry.Register(adapted))
+                    if (ToolRegistry.Register(tool))
                     {
                         entry.ToolNames.Add(tool.Name);
                     }
@@ -180,49 +178,6 @@ namespace AgentCoreProcessor.Tool.Host
         public string FileName { get; set; } = "";
         public AssemblyLoadContext LoadContext { get; set; } = null!;
         public List<string> ToolNames { get; set; } = new();
-    }
-
-    /// <summary>
-    /// 过渡期适配器：将 Contract.ITool 包装为旧 Tool.ITool，
-    /// 使插件工具能注册到现有 ToolRegistry。
-    /// 待 ToolRegistry 迁移到 Contract.ITool 后移除。
-    /// </summary>
-    internal class PluginToolAdapter : ITool
-    {
-        private readonly Contract.ITool inner;
-        private readonly Contract.ToolMetaAttribute? meta;
-
-        public PluginToolAdapter(Contract.ITool tool)
-        {
-            inner = tool;
-            meta = Attribute.GetCustomAttribute(tool.GetType(), typeof(Contract.ToolMetaAttribute))
-                as Contract.ToolMetaAttribute;
-        }
-
-        public string Name => inner.Name;
-        public string Description => inner.Description;
-        public IReadOnlyList<ToolParameter> Parameters =>
-            inner.Parameters.Select(p => new ToolParameter(p.Name, p.Description, p.Index)).ToList();
-        public TimeSpan Timeout => inner.Timeout;
-
-        public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
-        {
-            return inner.ExecuteAsync(resolvedInputs, ct).ContinueWith(t =>
-            {
-                var r = t.Result;
-                return new ToolResult { Status = r.Status, Data = r.Data, Error = r.Error };
-            }, ct);
-        }
-
-        public System.Text.Json.Nodes.JsonNode GetInputSchema() => inner.GetInputSchema();
-        public bool AllowSubAgent => meta?.AllowSubAgent ?? true;
-        public Database.PermissionLevel RequiredPermission =>
-            (Database.PermissionLevel)(int)(meta?.Permission ?? Contract.PermissionLevel.Default);
-        public bool ContinueLoop => meta?.ContinueLoop ?? false;
-        public bool RetainResult => meta?.RetainResult ?? false;
-        public string? CapabilitySummary => meta?.CapabilitySummary;
-        public string? ToolGroup => meta?.Group;
-        public bool DefaultExpanded => meta?.DefaultExpanded ?? true;
     }
 
     /// <summary>

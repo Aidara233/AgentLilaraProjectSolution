@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Engine;
+using AgentCoreProcessor.Engine.Modules;
 using AgentCoreProcessor.Tool.Contract;
 
 namespace AgentCoreProcessor.Tool
@@ -57,8 +58,8 @@ namespace AgentCoreProcessor.Tool
 
             // 权限检查
             var meta = ToolRegistry.GetMeta(call.Tool);
-            var permission = meta?.Permission ?? PermissionLevel.Default;
-            if (permission > PermissionLevel.Default
+            var permission = meta?.Permission ?? Contract.ToolPermission.Default;
+            if (permission > Contract.ToolPermission.Default
                 && authorizedTools != null
                 && !authorizedTools.Contains(tool.Name))
             {

@@ -372,22 +372,16 @@ namespace AgentCoreProcessor.Engine
             };
             FrameworkLogger.Log("MasterEngine", "DelegationRegistry 已初始化");
 
-            // 注册需要 ISystemContext 的工具（动态注册）
-            Tool.ToolRegistry.Register(new Tool.DelegateTaskTool(this));
-            Tool.ToolRegistry.Register(new Tool.SendToChannelTool(this));
-            Tool.ToolRegistry.Register(new Tool.ChannelInfoTool(this));
-            Tool.ToolRegistry.Register(new Tool.EngineManagementTool(this));
-            Tool.ToolRegistry.Register(new Tool.CheckNotificationsTool(this));
-            Tool.ToolRegistry.Register(new Tool.AdapterActionTool(this));
-            Tool.ToolRegistry.Register(new Tool.ScheduledTaskTool(this));
-            Tool.ToolRegistry.Register(new Tool.CancelScheduledTaskTool(this));
+            // 注册核心工具（不可卸载的循环控制工具）
+            Tool.ToolRegistry.Register(new Tool.Core.ContinueLoopTool());
+            Tool.ToolRegistry.Register(new Tool.Core.WaitTool());
+            FrameworkLogger.Log("MasterEngine", "核心工具已注册");
 
-            // Phase 6: 注册关注规则工具
-            var watchRuleTool = new Tool.SetWatchRuleTool();
-            watchRuleTool.SetContext(this);
-            Tool.ToolRegistry.Register(watchRuleTool);
+            // TODO: Phase 2 完成后在此初始化 PluginLoader
+            // var pluginLoader = new Tool.Host.PluginLoader(toolContext);
+            // pluginLoader.LoadAll();
 
-            FrameworkLogger.Log("MasterEngine", "系统循环工具已注册");
+            FrameworkLogger.Log("MasterEngine", "工具系统初始化完成（插件加载待实现）");
 
             // 注册所有 SpawnCheck
             foreach (var (_, factory) in SpawnCheckFactory)
@@ -415,18 +409,8 @@ namespace AgentCoreProcessor.Engine
                 }
             }
 
-            // Phase 5: 注册子 agent 管理工具（需要 SystemEngine 引用）
-            if (systemEngine != null)
-            {
-                Tool.ToolRegistry.Register(new Tool.CreateSubAgentTool(instruction => systemEngine.CreateSubAgent(instruction)));
-                Tool.ToolRegistry.Register(new Tool.SendToSubAgentTool(sessionId => systemEngine.GetSubAgent(sessionId)));
-                Tool.ToolRegistry.Register(new Tool.StopSubAgentTool(sessionId => systemEngine.GetSubAgent(sessionId)));
-                Tool.ToolRegistry.Register(new Tool.WaitTool());
-                Tool.ToolRegistry.Register(new Tool.EvaluateDelegationTool(
-                    Delegations,
-                    (instruction, delegationId) => systemEngine.CreateSubAgentForDelegation(instruction, delegationId)));
-                FrameworkLogger.Log("MasterEngine", "系统循环工具已注册");
-            }
+            // TODO: Phase 3 实现子 agent 管理插件后移除
+            // 子 agent 工具将作为插件加载
 
             // MCP Server 初始化
             try
