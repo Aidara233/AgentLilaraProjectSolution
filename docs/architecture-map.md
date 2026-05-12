@@ -7,26 +7,27 @@
 ## 目录结构
 
 ```
-AgentCoreProcessor/
-├── Adapter/     平台适配（File/OneBot QQ），消息收发，通用操作接口
-│     ├── OneBot/  OneBotAdapter(协议层) + OneBotMessageParser(解析层) + OneBotActions(操作层) + OneBotConfig
-│     ├── File/    FileAdapter（文件轮询，测试用）
-│     └── 通用:    IAdapter / AdapterManager / AdapterFactory / AdapterStatus / AdapterAction
-├── Client/      IModelClient 抽象层（Claude/OpenAI 双协议）+ Embedding + IVisionProvider + IOcrProvider
-├── Command/     框架指令系统（/help /status /config 等）
-├── Config/      PathConfig 绝对路径管理
-├── Core/        业务核心（AgentCore+PreprocessingCore+MemoryExtractionCore+MemoryQueryCore+ConsolidationCore+ConsolidationFinalCore+WeightCore+LinkCore+CombineCore+DedupCore+ReviewCore+SummarizationCore+SleepTalkCore等），继承 CoreBase，各自 JSON 配置
-├── Database/    实体 + Repository（SQLite，13张表）
-├── Engine/      引擎生态（MasterEngine 内核 + 子引擎 + Worker闸门循环 + 内务模块）
-├── Memory/      MemoryService 检索管线
-├── MCP/         MCP Client 桥接层（外部插件生态接入）
-├── Tool/        工具接口 + 顺序执行器 + 工具折叠分组 + 全局禁用管理 + 全局/局部工具集（全部英文 snake_case 命名，Anthropic SDK 兼容）
-├── Util/        VectorUtil 向量操作
-├── WebUI/       Blazor Server 管理面板（嵌入式，同进程）
-│     ├── Services/    SystemMonitor(快照采集) + LogStreamService(日志流) + ModelLogService(模型日志) + TokenStatsService(token统计) + WebConfig + WebAuthService
-│     ├── Components/  Razor 页面（Dashboard/Logs/EngineControl/DreamControl/WorkerDetail/Messages/Memories/People/ConfigEditor/Login/Images/Engine_Vision）
-│     └── wwwroot/     静态资源（Bootstrap 5 CSS）
-└── Program.cs   入口（WebApplication 宿主，默认启动 Web 服务器 + 适配器）
+AgentLilaraProjectSolution/
+├── AgentLilara.PluginSDK/   共享契约类库（ITool/IToolContext/服务接口），插件开发者引用此项目
+├── AgentCoreProcessor/      主程序
+│     ├── Adapter/     平台适配（File/OneBot QQ），消息收发，通用操作接口
+│     │     ├── OneBot/  OneBotAdapter(协议层) + OneBotMessageParser(解析层) + OneBotActions(操作层) + OneBotConfig
+│     │     ├── File/    FileAdapter（文件轮询，测试用）
+│     │     └── 通用:    IAdapter / AdapterManager / AdapterFactory / AdapterStatus / AdapterAction
+│     ├── Client/      IModelClient 抽象层（Claude/OpenAI 双协议）+ Embedding + IVisionProvider + IOcrProvider
+│     ├── Command/     框架指令系统（/help /status /config 等）
+│     ├── Config/      PathConfig 绝对路径管理
+│     ├── Core/        业务核心（AgentCore+PreprocessingCore+MemoryExtractionCore+MemoryQueryCore+ConsolidationCore+ConsolidationFinalCore+WeightCore+LinkCore+CombineCore+DedupCore+ReviewCore+SummarizationCore+SleepTalkCore等），继承 CoreBase，各自 JSON 配置
+│     ├── Database/    实体 + Repository（SQLite，13张表）
+│     ├── Engine/      引擎生态（MasterEngine 内核 + 子引擎 + Worker闸门循环 + 内务模块）
+│     ├── Memory/      MemoryService 检索管线
+│     ├── MCP/         MCP Client 桥接层（外部插件生态接入）
+│     ├── Tool/        工具宿主（PluginLoader/ToolRegistry/ToolExecutor/ToolProfileManager）+ 核心工具（continue_loop/wait）
+│     ├── Util/        VectorUtil 向量操作
+│     ├── WebUI/       Blazor Server 管理面板（嵌入式，同进程）
+│     └── Program.cs   入口（WebApplication 宿主，默认启动 Web 服务器 + 适配器）
+└── Plugins/
+      └── Plugin.BasicTools/  第一个插件（speak + send_media）
 ```
 
 ## 引擎生态
@@ -63,15 +64,10 @@ IAgentSession: 统一会话接口 (ChannelSession/TaskSession/MonitorSession)
 
 ```
 Adapter → EventBus(MessageEvent) → ChannelEngineSpawnCheck
-  ① SessionManager.OnMessageAsync (用户映射 + 频道映射 + 消息入库，无论是否睡眠都执行)
+  ① SessionManager.OnMessageAsync (用户映射 + 频道映射 + 消息入库)
   ② 权限检查 (Blocked/Restricted 拦截)
-  ③ 睡眠拦截 (CurrentSleepState != None 时):
-     走神: 被@ → 放行 (DreamEngine 自行打断)
-     小睡: 被@ + 叫醒关键词 → 放行; 仅被@ → DreamEngine 触发梦话，不放行
-     大睡: 管理员被@ → 发 force-wake 信号 + 放行; 其余 → 不放行
-     任务提交 → 强制唤醒 (TaskBridge.OnTaskSubmitted 发 force-wake)
-     拦截的消息已入库，醒来后频道引擎自动补提取记忆
-  ④ 按 ChannelId 路由: 有活跃 ChannelEngine → EnqueueMessage / 无 → 创建新 ChannelEngine
+  ③ 按 ChannelId 路由: 有活跃 ChannelEngine → EnqueueMessage / 无 → 创建新 ChannelEngine
+  （睡眠行为由 ChannelEngine 内部通过 IMessageInterceptor 插件处理，SpawnCheck 不拦截）
 
 ChannelEngine (频道循环，常驻，一个活跃频道一个):
   闸门驱动循环 (LoopGate, auto-reset):
@@ -300,81 +296,51 @@ ReviewEngine (由DreamEngine孵化，不注册SpawnCheck):
 
 12张表: Person / User / Channel / UserMessage / MemoryEntry / TempMemoryEntry / MemoryLink / PersonaMemoryEntry / ReviewHint / ImageRecord / (Topics 保留但不再使用)
 
-## 工具系统
+## 工具系统（插件化架构）
 
 ```
-ITool: Name / Description / Parameters / Timeout / ExecuteAsync
-       AllowSubAgent(默认true) / RequiredPermission(默认Default)
-       ContinueLoop(默认false) / RetainResult(默认false) / CapabilitySummary(默认null)
-       ToolGroup(默认null=始终可见) / DefaultExpanded(默认true)
+AgentLilara.PluginSDK (共享契约，独立类库):
+  ITool: Name / Description / Parameters / Timeout / ExecuteAsync / GetInputSchema()
+  IToolContext: GetService<T>() / Require<T>() / Storage
+  IPluginStorage: GlobalDirectory / InstanceDirectory
+  IPromptContributor: SectionKey / Priority / BuildSection()
+  IMessageInterceptor: Priority / OnBeforeProcessAsync()
+  ToolMetaAttribute: Group / ContinueLoop / AllowSubAgent / CapabilitySummary / Permission / Scope
+  Services/: IMemoryAccess / IAgentMessaging / IDelegationAccess / ISubAgentAccess
+             IChannelAccess / IAdapterAccess / ISchedulingAccess / IEngineAccess
+             ISleepAccess / IEventBusAccess / IToolHistoryAccess
 
-ToolCall: 双路径 — 原生 tool_use (Claude) / 文本 JSON {"tool":"名","inputs":["arg"]}<over> (OpenAI/旧路径)
-  通过 ApiClientCfg.UseNativeTools feature flag 控制
-ToolExecutor: 顺序执行 + 预授权检查(查权限表，不阻塞) + OnToolExecuted回调
+主程序 Tool/ (宿主层):
+  Core/CoreTools.cs    — 核心工具（continue_loop + wait），不可卸载
+  Host/PluginLoader    — 扫描 {BaseDirectory}/Plugins/*.dll，AssemblyLoadContext 隔离加载
+  Host/ToolContextImpl — IToolContext 实现（ConcurrentDictionary 服务容器）
+  Host/ToolProfileManager — 配置驱动的工具集管理（base/available/blocked/required）
+  ToolRegistry         — 全局注册表（Register/Unregister/Get/禁用管理）
+  ToolExecutor         — 顺序执行 + 权限检查 + OnToolExecuted 回调
+  TypeForwards.cs      — global using 别名（过渡期兼容）
 
-事件驱动循环 (WorkerEngine 闸门模型):
-  ContinueLoop=true 的工具被调用 → gate.Signal() 自唤醒下一轮
-  全部 ContinueLoop=false → 自然 idle，等待外部事件
-  不需要显式"完成"工具
+插件项目 (独立 DLL):
+  Plugin.BasicTools    — speak + send_media（频道循环基本输出能力）
+  （后续）Plugin.Memory / Plugin.Communication / Plugin.FileOps 等
 
-工具折叠 (ToolGroup):
-  默认组(null): 始终可见
-  展开组(DefaultExpanded=true): 文件操作、远程终端
-  折叠组(DefaultExpanded=false): 系统管理
-  元工具「激活工具组」: 运行时展开折叠组
-  折叠组在 prompt 中只显示一行摘要
+ToolCall: 原生 tool_use (Claude API) 为主路径，文本 JSON 为 fallback
+  通过 ApiClientCfg.UseNativeTools 控制
+  参数名必须英文（Bedrock 代理不支持非 ASCII schema 属性名）
 
-便签板 (Pinboard):
-  会话级上下文注入，Express/Working 共享
-  Working 通过 PinboardTool 操作(pin/unpin/list)，Express 只读
-  每轮 prompt 全量展示内容
+闸门模型与循环控制:
+  常闭引擎（频道循环）: 提供 continue_loop，处理完默认停
+  常开引擎（系统循环）: 提供 wait，默认继续转直到主动停
 
-缓存列表 (Retain):
-  RetainResult=true 的工具结果自动收集（摘要+完整内容）
-  prompt 只注入摘要，模型通过 RetainListTool 的 view 查看完整内容
-  支持 remove/clear 管理
+消息拦截器 (IMessageInterceptor):
+  插件可在引擎处理消息前介入（如睡眠行为、维护模式）
+  按 Priority 升序执行，首个 Skip/Handled 短路后续
+  ChannelEngine.PrepareContextAsync 中调用，位于 mute 检查之后、冲动值判断之前
 
-继续工具:
-  ContinueLoop=true 的空操作工具
-  便签板等非 ContinueLoop 工具操作后想继续工作时使用
-
-预授权模型:
-  ITool.RequiredPermission > Default 的工具为受限工具
-  管理员通过 /auth grant <工具名> 预授权（频道级）
-  ToolExecutor 查权限表：有权限执行，无权限返回提示
-  不阻塞工具执行流程
-
-Express/Working 自适应切换:
-  默认 Express 模式（轻量聊天）
-  ExpressCore 输出 [ESCALATE] → 切换到 Working 模式
-  Working 模式下连续 3 次外部消息触发 → 回退到 Express
-  CapabilitySummary 自动注入 Express prompt（模型知道可升级的能力）
-
-全局工具 (ToolRegistry):
-  自由工具(Default): 说话 / 思考笔记 / 记忆 / 标记复盘 / 任务管理 / 报警 / 读取文件 / 便签板 / 缓存管理 / 继续
-  受限工具(Elevated): 睡眠许可 / 强制睡觉 / 调整睡意 / 远程终端 / 写入文件 / 文件传输
-  受限工具(Admin): 修改睡眠配置 / 触发红色警报
-
-系统循环专用工具:
-  调度类: 创建子agent / 发送给子agent / 停止子agent / 删除子agent
-  通信类: 发送到频道 / 检查通知 / 设置关注规则 / 检查任务队列
-  自用类: 便签板 / 思考笔记 / 继续
-  轻量执行: 读取文件 / 记忆读写
-
-子 agent 工具集:
-  根据创建时指定的工具白名单动态注册
-  敏感操作需要系统循环确认（子agent 阻塞等待审批）
-
-文件系统沙盒:
-  Storage/Workspace/ — 自由工作区（500MB上限）
-  Storage/ 其余 — 受限区（写入需 Elevated）
-  Storage/ 之外 — 完全禁止
-  黑名单: lilara.db / SSH目录 / *.key 文件
-  FileTransferTool: SCP 双向传输（主机↔Alpine VM，10MB上限）
-
-Review专用工具 (ReviewEngine内部):
-  检索记忆 / 查看关联 / 读取消息历史 / 更新亲和度 / 写入临时记忆 / 思考笔记
-  更新人物称呼 / 更新快速记忆 / 调整好感度 / 标记复盘 / 请求增援 / 保存进度 / 完成
+插件加载:
+  目录: {程序目录}/Plugins/（跟程序走，不跟 Storage 走）
+  每个 DLL 用独立 AssemblyLoadContext（支持卸载）
+  实例化: 优先找 (IToolContext) 构造函数，其次无参构造
+  启动时 MasterEngine.InitAsync 调用 PluginLoader.LoadAll()
 ```
 
 ## MCP 插件系统

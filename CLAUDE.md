@@ -42,7 +42,7 @@
 
 - .NET 8, C#, SQLite-net-pcl, Newtonsoft.Json
 - 新引擎：实现 ISubEngine，通过 SpawnCheck 注册或 ctx.StartEngine() 直接启动
-- 新工具：实现 ITool，全局工具注册到 ToolRegistry，引擎专用工具在引擎内部管理
+- 新工具：实现 ITool（AgentLilara.PluginSDK），放在 Plugins/ 下独立项目，引用 SDK 编译为 DLL。参数名必须英文（Bedrock 代理限制）
 - 新 Core：继承 CoreBase，配置放 Storage/Core/{CoreName}.json
 - 新实体：放 Database/，Repository 模式，DbManager.InitAsync() 加 CreateTableAsync
 - 基础设施引擎：设 IsInfrastructure => true（不影响 IsIdle 判定）
@@ -97,4 +97,8 @@
 - 图片存储：Adapter/ImageStorage.cs
 - Token 统计：Database/ModelCallLog.cs + ModelCallLogRepository.cs
 - 工具管理：Tool/ToolRegistry.cs（禁用逻辑）+ Storage/ToolConfig.json
+- 插件 SDK：AgentLilara.PluginSDK/（共享契约，插件引用此项目）
+- 插件加载：Tool/Host/PluginLoader.cs（扫描 {BaseDirectory}/Plugins/）
+- 插件项目：Plugins/Plugin.BasicTools/（speak + send_media）
+- 工具配置：Tool/Host/ToolProfileManager.cs + Storage/Engine/ToolProfiles.json
 - 配置文件：Storage/ 目录下
