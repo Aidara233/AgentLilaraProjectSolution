@@ -96,27 +96,33 @@ namespace AgentCoreProcessor.Engine.Vision
             _suspendReason = null;
 
             // Phase 1: OCR（处理所有 HasText IS NULL 的图片）
-            while (IsAlive)
+            if (config.OcrEnabled && _ocrAvailable)
             {
-                var ocrPending = await ImageStorage.GetOcrPendingAsync(config.BatchSize);
-                if (ocrPending.Count == 0) break;
+                while (IsAlive)
+                {
+                    var ocrPending = await ImageStorage.GetOcrPendingAsync(config.BatchSize);
+                    if (ocrPending.Count == 0) break;
 
-                FrameworkLogger.Log("VisionEngine", $"OCR 处理 {ocrPending.Count} 张图片");
-                var tasks = ocrPending.Select(r => ProcessOcrWrapperAsync(r));
-                await Task.WhenAll(tasks);
+                    FrameworkLogger.Log("VisionEngine", $"OCR 处理 {ocrPending.Count} 张图片");
+                    var tasks = ocrPending.Select(r => ProcessOcrWrapperAsync(r));
+                    await Task.WhenAll(tasks);
+                }
             }
 
             // Phase 2: Vision（处理 OCR 已完成但 Description IS NULL 的图片）
-            while (IsAlive)
+            if (config.VisionEnabled && _visionAvailable)
             {
-                var visionPending = await ImageStorage.GetVisionPendingAsync(config.BatchSize);
-                if (visionPending.Count == 0) break;
+                while (IsAlive)
+                {
+                    var visionPending = await ImageStorage.GetVisionPendingAsync(config.BatchSize);
+                    if (visionPending.Count == 0) break;
 
-                FrameworkLogger.Log("VisionEngine", $"Vision 处理 {visionPending.Count} 张图片");
-                var tasks = visionPending.Select(r => ProcessVisionWrapperAsync(r));
-                await Task.WhenAll(tasks);
+                    FrameworkLogger.Log("VisionEngine", $"Vision 处理 {visionPending.Count} 张图片");
+                    var tasks = visionPending.Select(r => ProcessVisionWrapperAsync(r));
+                    await Task.WhenAll(tasks);
 
-                if (_visionSuspended) break;
+                    if (_visionSuspended) break;
+                }
             }
         }
 
