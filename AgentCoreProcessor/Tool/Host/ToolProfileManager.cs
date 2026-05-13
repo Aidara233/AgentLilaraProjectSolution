@@ -241,11 +241,18 @@ namespace AgentCoreProcessor.Tool.Host
         {
             if (name == "_root") return;
             config.Profiles.Remove(name);
-            // 清理引用此 profile 的 channelMapping
             var toRemove = config.ChannelMapping.Where(kv => kv.Value == name).Select(kv => kv.Key).ToList();
             foreach (var k in toRemove) config.ChannelMapping.Remove(k);
             Save();
             resolvedCache.Clear();
+        }
+
+        public void ResetToDefault()
+        {
+            config = GetDefaultConfig();
+            Save();
+            resolvedCache.Clear();
+            sessionActivations.Clear();
         }
 
         /// <summary>生成原生工具定义列表（用于 API tool_use）。</summary>

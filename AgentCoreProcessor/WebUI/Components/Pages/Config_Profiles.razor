@@ -13,9 +13,14 @@
     <div class="card" style="width:280px; flex-shrink:0;">
         <div class="card-header d-flex justify-content-between align-items-center">
             <span>Profile 树</span>
-            <button class="btn-ghost" style="font-size:var(--font-size-sm);" @onclick="ShowCreateDialog">
-                <i class="bi bi-plus-circle"></i>
-            </button>
+            <div class="d-flex gap-1">
+                <button class="btn-ghost" style="font-size:var(--font-size-sm);" title="重置为默认" @onclick="() => showResetDialog = true">
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                </button>
+                <button class="btn-ghost" style="font-size:var(--font-size-sm);" title="新建" @onclick="ShowCreateDialog">
+                    <i class="bi bi-plus-circle"></i>
+                </button>
+            </div>
         </div>
         <div class="card-body p-2" style="overflow-y:auto;">
             @if (treeRoot != null)
@@ -229,6 +234,24 @@
 </div>
 }
 
+@if (showResetDialog)
+{
+<div class="modal-overlay" @onclick="() => showResetDialog = false">
+    <div class="card" style="width:360px;" @onclick:stopPropagation="true">
+        <div class="card-header">重置为默认配置</div>
+        <div class="card-body">
+            <p class="small" style="color:var(--danger-color);">
+                <i class="bi bi-exclamation-triangle me-1"></i>这将删除所有自定义 Profile 和频道映射，恢复为出厂默认。此操作不可撤销。
+            </p>
+        </div>
+        <div class="card-body" style="border-top:1px solid var(--border-color);display:flex;gap:0.5rem;justify-content:flex-end;">
+            <button class="btn-ghost" @onclick="() => showResetDialog = false">取消</button>
+            <button class="btn-ghost" style="color:var(--danger-color);" @onclick="ResetToDefault">确认重置</button>
+        </div>
+    </div>
+</div>
+}
+
 <!-- PLACEHOLDER_STYLE -->
 <style>
     .profile-tree { padding: 0.5rem 0; }
@@ -275,6 +298,9 @@
 
     // 删除对话框
     private bool showDeleteDialog;
+
+    // 重置对话框
+    private bool showResetDialog;
 
     // 工具屏蔽对话框
     private bool showAddBlockDialog;
@@ -476,5 +502,14 @@
             selectedProfile.BlockedTools.Add(newBlockedTool.Trim());
         Engine.ToolProfiles.Save();
         showAddBlockDialog = false;
+    }
+
+    private void ResetToDefault()
+    {
+        Engine.ToolProfiles.ResetToDefault();
+        showResetDialog = false;
+        selectedName = null;
+        selectedProfile = null;
+        Refresh();
     }
 }
