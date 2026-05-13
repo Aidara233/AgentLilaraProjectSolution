@@ -215,6 +215,7 @@ namespace AgentCoreProcessor.Engine
                     // 填充 PendingEventsModule
                     pendingEventsModule.SetPendingEvents(tasks, notifications, scheduledEvents, lastRoundNoAction);
                     pendingEventsModule.SetPendingDelegations(ctx.Delegations.GetPendingForEvaluation());
+                    pendingEventsModule.SetRetryPendingDelegations(ctx.Delegations.GetRetryPending());
 
                     // ═══ 内层：Agent 循环 ═══
                     Interlocked.Exchange(ref _busyFlag, 1);
@@ -332,7 +333,8 @@ namespace AgentCoreProcessor.Engine
                 // ⑧ 自动感知：检查是否还有待处理事件
                 bool hasMoreWork = ctx.TaskBridge.HasPendingTasks()
                     || ctx.TaskBridge.HasPendingNotifications()
-                    || ctx.Delegations.GetPendingForEvaluation().Count > 0;
+                    || ctx.Delegations.GetPendingForEvaluation().Count > 0
+                    || ctx.Delegations.GetRetryPending().Count > 0;
 
                 // 纯通知类工具（不产生后续工作）→ 本轮结束
                 var terminalTools = new HashSet<string> { "notify_channel", "check_notifications" };
@@ -568,7 +570,7 @@ namespace AgentCoreProcessor.Engine
                 "pinboard", "thinking_notes",
                 "create_scheduled_task", "cancel_scheduled_task",
                 "memory",
-                "evaluate_delegation", "notify_channel"
+                "evaluate_delegation", "complete_delegation", "notify_channel"
             };
         }
 

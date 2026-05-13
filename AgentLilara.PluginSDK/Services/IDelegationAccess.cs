@@ -42,6 +42,15 @@ namespace AgentLilara.PluginSDK.Services
 
         /// <summary>取消/移除委托（任何状态均可）。</summary>
         bool Cancel(string delegationId);
+
+        /// <summary>检查委托是否还能重试。</summary>
+        bool CanRetry(string delegationId);
+
+        /// <summary>递增重试计数并将状态重置为 Accepted（准备重新执行）。</summary>
+        void IncrementRetry(string delegationId);
+
+        /// <summary>获取等待重试决策的委托列表。</summary>
+        List<DelegationInfo> GetRetryPending();
     }
 
     public class DelegationSubmitResult
@@ -60,5 +69,6 @@ namespace AgentLilara.PluginSDK.Services
         public int ChannelId { get; set; }
         public string Status { get; set; } = "";
         public string? Result { get; set; }
+        public int RetryCount { get; set; }
     }
 }

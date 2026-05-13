@@ -246,6 +246,7 @@ namespace AgentCoreProcessor.Engine
         public NotificationType Type { get; set; }
         public string SourceId { get; set; } = "";
         public string Summary { get; set; } = "";
+        public string? DelegationId { get; set; }
         public DateTime Timestamp { get; set; } = DateTime.Now;
     }
 
@@ -253,6 +254,7 @@ namespace AgentCoreProcessor.Engine
     {
         Notify,          // 一般通知
         ProgressUpdate,  // 进度汇报
-        WatchHit         // 关注列表命中
+        WatchHit,        // 关注列表命中
+        SubAgentFailed   // 子 agent 执行失败，需系统循环决策
     }
 }

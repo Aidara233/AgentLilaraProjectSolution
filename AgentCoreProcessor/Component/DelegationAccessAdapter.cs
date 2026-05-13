@@ -90,6 +90,17 @@ internal class DelegationAccessAdapter : IDelegationAccess
 
     public bool Cancel(string delegationId) => _registry.Cancel(delegationId);
 
+    public bool CanRetry(string delegationId) => _registry.CanRetry(delegationId);
+
+    public void IncrementRetry(string delegationId) => _registry.IncrementRetry(delegationId);
+
+    public List<DelegationInfo> GetRetryPending()
+    {
+        return _registry.GetRetryPending()
+            .Select(ToInfo)
+            .ToList();
+    }
+
     private static DelegationInfo ToInfo(Delegation d) => new()
     {
         Id = d.DelegationId,
@@ -97,6 +108,7 @@ internal class DelegationAccessAdapter : IDelegationAccess
         Context = d.ContextSummary,
         ChannelId = d.SourceChannelId,
         Status = d.Status.ToString(),
-        Result = d.Result
+        Result = d.Result,
+        RetryCount = d.RetryCount
     };
 }

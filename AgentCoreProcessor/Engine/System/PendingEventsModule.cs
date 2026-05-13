@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using AgentCoreProcessor.Engine;
 
 namespace AgentCoreProcessor.Engine.Modules
 {
@@ -17,6 +18,7 @@ namespace AgentCoreProcessor.Engine.Modules
         private readonly List<Notification> pendingNotifications = new();
         private readonly List<ScheduledTaskFiredEvent> firedScheduledTasks = new();
         private readonly List<Delegation> pendingDelegations = new();
+        private readonly List<Delegation> retryPendingDelegations = new();
         private bool noActionLastRound;
 
         /// <summary>清空并重新填充本轮待处理事件。由 SystemEngine 在每轮开始时调用。</summary>
@@ -42,6 +44,13 @@ namespace AgentCoreProcessor.Engine.Modules
             pendingDelegations.AddRange(delegations);
         }
 
+        /// <summary>设置等待重试决策的委托列表。</summary>
+        public void SetRetryPendingDelegations(List<Delegation> delegations)
+        {
+            retryPendingDelegations.Clear();
+            retryPendingDelegations.AddRange(delegations);
+        }
+
         public override void Attach(ILoopBus bus) { }
 
         public override string? BuildPromptSection(EngineMode mode)
@@ -57,7 +66,8 @@ namespace AgentCoreProcessor.Engine.Modules
             }
 
             bool hasAny = pendingTasks.Count > 0 || pendingNotifications.Count > 0
-                || firedScheduledTasks.Count > 0 || pendingDelegations.Count > 0;
+                || firedScheduledTasks.Count > 0 || pendingDelegations.Count > 0
+                || retryPendingDelegations.Count > 0;
 
             if (!hasAny)
             {
@@ -77,6 +87,19 @@ namespace AgentCoreProcessor.Engine.Modules
                         sb.AppendLine($"    上下文: {d.ContextSummary}");
                 }
                 sb.AppendLine("  → 请立即对每个委托调用「评估委托」工具（accept/queue/reject）");
+                sb.AppendLine();
+            }
+
+            if (retryPendingDelegations.Count > 0)
+            {
+                sb.AppendLine($"--- ⚠ 执行失败待重试 ({retryPendingDelegations.Count}) ---");
+                foreach (var d in retryPendingDelegations)
+                {
+                    sb.AppendLine($"  委托#{d.DelegationId}: {d.Description}");
+                    sb.AppendLine($"    失败原因: {d.Result?.Truncate(80)}");
+                    sb.AppendLine($"    已重试: {d.RetryCount}/{DelegationRegistry.MaxRetries}");
+                }
+                sb.AppendLine("  → 如果还有重试余量，可重新创建子 agent 执行；否则调用「标记委托失败」放弃。");
                 sb.AppendLine();
             }
 

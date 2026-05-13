@@ -35,6 +35,7 @@ namespace AgentCoreProcessor.Engine
         private Task? backgroundTask;
 
         private const int MaxRoundsPerInstruction = 15;
+        private const int MaxInvokeRetries = 3;
 
         public TaskSession(ISystemContext ctx, string? delegationId = null, HashSet<string>? toolWhitelist = null)
         {
@@ -101,10 +102,8 @@ namespace AgentCoreProcessor.Engine
 
         private async Task ProcessInstructionAsync(string instruction, CancellationToken ct)
         {
-            // 将指令加入对话历史
             conversationHistory.Add(new Message { Role = "user", Content = $"[指令] {instruction}" });
 
-            // 注册 task_done 工具（子 agent 专用，完成时调用）
             var taskDoneTool = new TaskDoneTool(this);
             ToolRegistry.Register(taskDoneTool);
 
@@ -116,7 +115,16 @@ namespace AgentCoreProcessor.Engine
                 for (int round = 0; round < MaxRoundsPerInstruction && !ct.IsCancellationRequested; round++)
                 {
                     var messages = BuildMessages(lastCalls, lastResults);
-                    var output = await agentCore.InvokeAsync(messages, EngineMode.Working);
+
+                    // 单轮 API 调用：指数退避重试瞬时错误
+                    var maybeOutput = await InvokeWithRetryAsync(messages, ct);
+                    if (maybeOutput == null)
+                    {
+                        LastResult = "API 调用连续失败，子 agent 中止";
+                        FrameworkLogger.Log("TaskSession", $"API 重试耗尽: {SessionId}, round={round + 1}");
+                        return;
+                    }
+                    var output = maybeOutput.Value;
 
                     if (output.IsText || output.ToolCalls == null || output.ToolCalls.Count == 0)
                     {
@@ -127,11 +135,9 @@ namespace AgentCoreProcessor.Engine
                         return;
                     }
 
-                    // 执行工具
                     var executor = new ToolExecutor(authorizedTools: toolWhitelist);
                     var results = await executor.ExecuteAsync(output.ToolCalls);
 
-                    // 检查是否调用了 task_done
                     if (_taskDoneSignaled)
                     {
                         FrameworkLogger.Log("TaskSession",
@@ -153,6 +159,29 @@ namespace AgentCoreProcessor.Engine
             {
                 ToolRegistry.Unregister("task_done");
             }
+        }
+
+        private async Task<ModelOutput?> InvokeWithRetryAsync(List<Message> messages, CancellationToken ct)
+        {
+            for (int attempt = 0; attempt < MaxInvokeRetries; attempt++)
+            {
+                try
+                {
+                    return await agentCore.InvokeAsync(messages, EngineMode.Working);
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex)
+                {
+                    FrameworkLogger.LogError("TaskSession", ex,
+                        $"API 调用失败 (attempt {attempt + 1}/{MaxInvokeRetries}): {SessionId}");
+                    if (attempt < MaxInvokeRetries - 1)
+                    {
+                        var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt + 1));
+                        await Task.Delay(delay, ct);
+                    }
+                }
+            }
+            return null;
         }
 
         private List<Message> BuildMessages(List<ToolCall>? lastCalls, List<ToolResult>? lastResults)
@@ -214,23 +243,51 @@ namespace AgentCoreProcessor.Engine
         {
             try
             {
-                // 如果关联了委托，更新委托状态
+                var result = LastResult ?? "(无结果)";
+                var isFailed = result.StartsWith("异常终止") || result == "达到最大轮次限制"
+                    || result == "API 调用连续失败，子 agent 中止";
+
                 if (!string.IsNullOrEmpty(delegationId))
                 {
-                    var result = LastResult ?? "(无结果)";
-                    if (result.StartsWith("异常终止") || result == "达到最大轮次限制")
-                        ctx.Delegations.MarkFailed(delegationId, result);
-                    else
-                        ctx.Delegations.MarkCompleted(delegationId, result);
-                }
+                    if (isFailed)
+                    {
+                        // 失败：标记 RetryPending，双通知
+                        ctx.Delegations.MarkRetryPending(delegationId, result);
 
-                ctx.TaskBridge.PostNotification(new Notification
+                        // 通知系统循环：子 agent 失败，需决策
+                        ctx.TaskBridge.PostNotification(new Notification
+                        {
+                            Type = NotificationType.SubAgentFailed,
+                            SourceId = SessionId,
+                            DelegationId = delegationId,
+                            Summary = $"子 agent 执行失败: {result.Truncate(100)}",
+                            Timestamp = DateTime.Now
+                        });
+
+                        // 通知频道循环：让用户知情
+                        var delegation = ctx.Delegations.Get(delegationId);
+                        if (delegation != null)
+                        {
+                            var channelMsg = $"[系统] 委托「{delegation.Description.Truncate(30)}」执行遇到问题: {result.Truncate(60)}。系统正在评估是否重试（已重试 {delegation.RetryCount}/{DelegationRegistry.MaxRetries} 次）。";
+                            ctx.NotifyChannel(delegation.SourceChannelId, channelMsg);
+                        }
+                    }
+                    else
+                    {
+                        ctx.Delegations.MarkCompleted(delegationId, result);
+                    }
+                }
+                else
                 {
-                    Type = NotificationType.ProgressUpdate,
-                    SourceId = SessionId,
-                    Summary = $"子 agent 完成: {LastResult?.Truncate(100) ?? "(无结果)"}",
-                    Timestamp = DateTime.Now
-                });
+                    // 无委托关联的子 agent，仅发进度通知
+                    ctx.TaskBridge.PostNotification(new Notification
+                    {
+                        Type = isFailed ? NotificationType.SubAgentFailed : NotificationType.ProgressUpdate,
+                        SourceId = SessionId,
+                        Summary = $"子 agent {(isFailed ? "失败" : "完成")}: {result.Truncate(100)}",
+                        Timestamp = DateTime.Now
+                    });
+                }
             }
             catch (Exception ex)
             {

@@ -19,7 +19,8 @@ namespace AgentCoreProcessor.Engine
         Executing,
         Completed,
         Failed,
-        Timeout
+        Timeout,
+        RetryPending
     }
 
     public class Delegation
@@ -32,6 +33,7 @@ namespace AgentCoreProcessor.Engine
         public DelegationStatus Status { get; set; } = DelegationStatus.Submitted;
         public string? EvaluationReason { get; set; }
         public string? Result { get; set; }
+        public int RetryCount { get; set; }
         public DateTime SubmittedAt { get; set; } = DateTime.Now;
         public DateTime? EvaluatedAt { get; set; }
         public DateTime? CompletedAt { get; set; }
@@ -46,6 +48,8 @@ namespace AgentCoreProcessor.Engine
 
     internal class DelegationRegistry
     {
+        public const int MaxRetries = 2;
+
         private readonly ConcurrentDictionary<string, Delegation> delegations = new();
         private readonly ConcurrentDictionary<string, TaskCompletionSource<DelegationEvaluation>> evaluationWaiters = new();
         private readonly string persistencePath;
@@ -154,6 +158,34 @@ namespace AgentCoreProcessor.Engine
             }
         }
 
+        public void MarkRetryPending(string delegationId, string error)
+        {
+            if (delegations.TryGetValue(delegationId, out var d))
+            {
+                d.Status = DelegationStatus.RetryPending;
+                d.Result = error;
+                Persist();
+                FrameworkLogger.Log("DelegationRegistry",
+                    $"委托等待重试: {delegationId}, 已重试 {d.RetryCount}/{MaxRetries}, 错误: {error.Truncate(80)}");
+            }
+        }
+
+        public bool CanRetry(string delegationId)
+        {
+            if (!delegations.TryGetValue(delegationId, out var d)) return false;
+            return d.RetryCount < MaxRetries;
+        }
+
+        public void IncrementRetry(string delegationId)
+        {
+            if (delegations.TryGetValue(delegationId, out var d))
+            {
+                d.RetryCount++;
+                d.Status = DelegationStatus.Accepted;
+                Persist();
+            }
+        }
+
         public List<Delegation> GetPendingForEvaluation()
             => delegations.Values.Where(d => d.Status == DelegationStatus.Submitted).ToList();
 
@@ -174,6 +206,9 @@ namespace AgentCoreProcessor.Engine
 
         public List<Delegation> GetAcceptedForExecution()
             => delegations.Values.Where(d => d.Status == DelegationStatus.Accepted).ToList();
+
+        public List<Delegation> GetRetryPending()
+            => delegations.Values.Where(d => d.Status == DelegationStatus.RetryPending).ToList();
 
         public void ConsumeCompleted(string delegationId)
         {
