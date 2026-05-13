@@ -39,9 +39,16 @@ public interface ILoopComponent
     ComponentMeta Meta { get; }
     IEnumerable<ITool> Tools { get; }
 
-    Task OnInitAsync(ILoopComponentContext context);
-    Task<ShutdownResponse> OnShutdownRequestedAsync(ShutdownReason reason); // 协商：能不能关？
-    Task OnShutdownAsync(ShutdownReason reason);  // 收尾：一定会被调用
+    // 生命周期：启动/关闭
+    Task OnInitAsync(ILoopComponentContext context, InitReason reason);  // Fresh / Reload
+    Task<ShutdownResponse> OnShutdownRequestedAsync(ShutdownReason reason); // 协商
+    Task OnShutdownAsync(ShutdownReason reason);  // 收尾，一定会被调用
+
+    // 生命周期：启用/禁用（仅运行时切换触发，启动时不触发）
+    Task OnEnabledAsync();
+    Task OnDisabledAsync();
+
+    // 循环事件
     Task OnActivatedAsync();   // 循环从闲置被唤醒
     Task OnPauseAsync();       // 循环进入等待
     Task OnBeforeInvokeAsync(); // 模型调用前
@@ -59,9 +66,14 @@ public interface IGlobalComponent
     ComponentMeta Meta { get; }
     IEnumerable<ITool> Tools { get; }
 
-    Task OnInitAsync(IGlobalComponentContext context);
+    // 生命周期：启动/关闭
+    Task OnInitAsync(IGlobalComponentContext context, InitReason reason);
     Task<ShutdownResponse> OnShutdownRequestedAsync(ShutdownReason reason);
     Task OnShutdownAsync(ShutdownReason reason);
+
+    // 生命周期：启用/禁用
+    Task OnEnabledAsync();
+    Task OnDisabledAsync();
 
     string? BuildPromptSection(LoopInfo caller);
 }
@@ -79,7 +91,7 @@ public class ComponentMeta
 }
 ```
 
-### ShutdownResponse & ShutdownReason
+### ShutdownResponse, ShutdownReason & InitReason
 
 ```csharp
 public record ShutdownResponse(bool Allow, string? Reason = null)
@@ -88,12 +100,14 @@ public record ShutdownResponse(bool Allow, string? Reason = null)
     public static ShutdownResponse Deny(string reason) => new(false, reason);
 }
 
-public enum ShutdownReason { Destroy, Reload, Disable }
+public enum ShutdownReason { Destroy, Reload }
+public enum InitReason { Fresh, Reload }
 ```
 
 **两阶段关闭协议（Two-Phase Shutdown）：**
 
 阶段 1 — 协商（`OnShutdownRequestedAsync`）：
+- 仅 Destroy/Reload 时触发，Disable 不走协商
 - 询问所有受影响的 Component，收集意见
 - Component 只表态，不做实际收尾工作
 - 有 Deny → 暂停，汇报原因给调用者
@@ -106,6 +120,22 @@ public enum ShutdownReason { Destroy, Reload, Disable }
 - reason 参数让 Component 可以针对不同场景做不同处理（Reload 时只存最小状态）
 
 宿主始终有最终决定权。强制 = 跳过协商直接进收尾，不会跳过收尾本身。
+
+**Enable/Disable 生命周期：**
+
+- `OnEnabledAsync` / `OnDisabledAsync` 仅在运行时状态切换时触发
+- 启动时不触发（无论初始状态是 Enabled 还是 Disabled）
+- Component 在 OnInit 时通过 `context.IsEnabled` 获知初始状态
+- Disable 不走协商，不走 Shutdown 流程
+
+**完整生命周期：**
+```
+OnInit(Fresh) → [如果运行时被启用] OnEnabled → [正常工作] → OnDisabled → [闲置] → OnEnabled → ...
+  → OnShutdownRequested(Destroy) → OnShutdown(Destroy)
+
+热重载：
+OnShutdownRequested(Reload) → OnShutdown(Reload) → [卸载] → OnInit(Reload) → ...
+```
 
 ## Context 接口
 
@@ -293,15 +323,9 @@ OnPauseAsync（进入等待时）
 3. 阶段 2：`OnShutdownAsync(Reload)` — 收尾，持久化状态到 Storage
 4. 清理所有事件订阅
 5. 卸载 AssemblyLoadContext
-6. 加载新 DLL → 实例化 → `OnInitAsync()`（Component 自行从 Storage 恢复状态）
+6. 加载新 DLL → 实例化 → `OnInitAsync(context, InitReason.Reload)`（Component 自行从 Storage 恢复状态）
 
-### ShutdownReason 语义
-
-- `Destroy`：真的要关了（循环销毁、程序退出）
-- `Reload`：马上回来，存最小状态即可
-- `Disable`：被禁用，可能会再启用
-
-Component 在 OnShutdownAsync 里根据 reason 决定收尾策略。OnInit 时检查 Storage 有无恢复数据。状态恢复是 Component 自己的责任。
+Component 在 OnShutdownAsync 里根据 reason 决定收尾策略（Reload 只存最小状态）。OnInit 时通过 InitReason.Reload 知道需要恢复状态。状态恢复是 Component 自己的责任。
 
 ### 影响
 
