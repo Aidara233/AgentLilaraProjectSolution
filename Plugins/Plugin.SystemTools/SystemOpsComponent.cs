@@ -14,6 +14,7 @@ public class SystemOpsComponent : LoopComponentBase
     private ISubAgentAccess? _subAgents;
 
     private EvaluateDelegationTool? _evalTool;
+    private CompleteDelegationTool? _completeTool;
     private NotifyChannelTool? _notifyTool;
     private CreateSubAgentTool? _createTool;
     private StopSubAgentTool? _stopTool;
@@ -31,6 +32,7 @@ public class SystemOpsComponent : LoopComponentBase
         get
         {
             if (_evalTool != null) yield return _evalTool;
+            if (_completeTool != null) yield return _completeTool;
             if (_notifyTool != null) yield return _notifyTool;
             if (_createTool != null) yield return _createTool;
             if (_stopTool != null) yield return _stopTool;
@@ -44,7 +46,10 @@ public class SystemOpsComponent : LoopComponentBase
         _subAgents = context.GetService<ISubAgentAccess>();
 
         if (_delegations != null)
+        {
             _evalTool = new EvaluateDelegationTool(_delegations);
+            _completeTool = new CompleteDelegationTool(_delegations);
+        }
         if (_channels != null)
             _notifyTool = new NotifyChannelTool(_channels);
         if (_subAgents != null)
