@@ -187,7 +187,6 @@ namespace AgentCoreProcessor.Engine
                 speakModule, taskListModule,
                 memoryWindowModule, loopControlModule, signalDispatchModule,
                 new ToolStatusModule(),
-                new Modules.DelegationModule(ctx.Delegations, channelId),
                 new Modules.SystemNotificationModule(DrainSystemNotifications)
             };
             foreach (var m in modules) m.Attach(bus);
