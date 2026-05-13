@@ -187,6 +187,16 @@ namespace AgentCoreProcessor.Engine
         public Delegation? Get(string delegationId)
             => delegations.TryGetValue(delegationId, out var d) ? d : null;
 
+        public bool Cancel(string delegationId)
+        {
+            if (!delegations.TryRemove(delegationId, out _)) return false;
+            evaluationWaiters.TryRemove(delegationId, out var tcs);
+            tcs?.TrySetCanceled();
+            Persist();
+            FrameworkLogger.Log("DelegationRegistry", $"委托已取消: {delegationId}");
+            return true;
+        }
+
         public void Cleanup(TimeSpan maxAge)
         {
             var cutoff = DateTime.Now - maxAge;

@@ -12,6 +12,7 @@ public class DelegationComponent : LoopComponentBase
     private ILoopComponentContext _ctx = null!;
     private IDelegationAccess? _delegations;
     private DelegateTaskTool? _tool;
+    private CancelDelegationTool? _cancelTool;
     private readonly List<CompletedEntry> _completedBuffer = new();
 
     public override ComponentMeta Meta => new()
@@ -27,6 +28,7 @@ public class DelegationComponent : LoopComponentBase
         get
         {
             if (_tool != null) yield return _tool;
+            if (_cancelTool != null) yield return _cancelTool;
         }
     }
 
@@ -35,7 +37,10 @@ public class DelegationComponent : LoopComponentBase
         _ctx = context;
         _delegations = context.GetService<IDelegationAccess>();
         if (_delegations != null)
+        {
             _tool = new DelegateTaskTool(_delegations, _ctx.LoopId);
+            _cancelTool = new CancelDelegationTool(_delegations);
+        }
         return Task.CompletedTask;
     }
 

@@ -88,6 +88,8 @@ internal class DelegationAccessAdapter : IDelegationAccess
 
     public void ConsumeCompleted(string delegationId) => _registry.ConsumeCompleted(delegationId);
 
+    public bool Cancel(string delegationId) => _registry.Cancel(delegationId);
+
     private static DelegationInfo ToInfo(Delegation d) => new()
     {
         Id = d.DelegationId,

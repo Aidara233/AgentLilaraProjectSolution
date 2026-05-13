@@ -39,6 +39,9 @@ namespace AgentLilara.PluginSDK.Services
 
         /// <summary>标记委托结果已被频道消费。</summary>
         void ConsumeCompleted(string delegationId);
+
+        /// <summary>取消/移除委托（任何状态均可）。</summary>
+        bool Cancel(string delegationId);
     }
 
     public class DelegationSubmitResult
