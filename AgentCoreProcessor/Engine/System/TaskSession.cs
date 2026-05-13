@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -22,7 +23,7 @@ namespace AgentCoreProcessor.Engine
         public AgentSessionType Type => AgentSessionType.Task;
         public bool IsAlive { get; private set; } = true;
         public string? CurrentInstruction { get; private set; }
-        public string? LastResult { get; private set; }
+        public string? LastResult { get; internal set; }
 
         private readonly ISystemContext ctx;
         private readonly AgentCore agentCore = new();
@@ -49,6 +50,7 @@ namespace AgentCoreProcessor.Engine
         {
             stopCts = new CancellationTokenSource();
             instructionQueue.Writer.TryWrite(initialInstruction);
+            instructionQueue.Writer.Complete();
             backgroundTask = Task.Run(() => RunLoopAsync(stopCts.Token));
             FrameworkLogger.Log("TaskSession", $"启动: {SessionId}, 指令: {initialInstruction.Truncate(80)}");
         }
@@ -57,9 +59,8 @@ namespace AgentCoreProcessor.Engine
         public Task<bool> SendInstructionAsync(string instruction)
         {
             if (!IsAlive) return Task.FromResult(false);
-            instructionQueue.Writer.TryWrite(instruction);
-            FrameworkLogger.Log("TaskSession", $"追加指令: {SessionId}");
-            return Task.FromResult(true);
+            FrameworkLogger.Log("TaskSession", $"追加指令失败（单指令模式）: {SessionId}");
+            return Task.FromResult(false);
         }
 
         public Task<bool> UpdateWatchRulesAsync(List<WatchRule> rules)
@@ -96,43 +97,62 @@ namespace AgentCoreProcessor.Engine
             }
         }
 
+        internal bool _taskDoneSignaled;
+
         private async Task ProcessInstructionAsync(string instruction, CancellationToken ct)
         {
             // 将指令加入对话历史
             conversationHistory.Add(new Message { Role = "user", Content = $"[指令] {instruction}" });
 
+            // 注册 task_done 工具（子 agent 专用，完成时调用）
+            var taskDoneTool = new TaskDoneTool(this);
+            ToolRegistry.Register(taskDoneTool);
+
             List<ToolCall>? lastCalls = null;
             List<ToolResult>? lastResults = null;
 
-            for (int round = 0; round < MaxRoundsPerInstruction && !ct.IsCancellationRequested; round++)
+            try
             {
-                var messages = BuildMessages(lastCalls, lastResults);
-                var output = await agentCore.InvokeAsync(messages, EngineMode.Working);
-
-                if (output.IsText || output.ToolCalls == null || output.ToolCalls.Count == 0)
+                for (int round = 0; round < MaxRoundsPerInstruction && !ct.IsCancellationRequested; round++)
                 {
-                    // 模型返回文本 = 任务完成
-                    LastResult = output.Thinking ?? output.Text ?? "(完成，无输出)";
-                    conversationHistory.Add(new Message { Role = "assistant", Content = LastResult });
-                    FrameworkLogger.Log("TaskSession",
-                        $"指令完成: {SessionId}, rounds={round + 1}, result={LastResult.Truncate(100)}");
-                    return;
+                    var messages = BuildMessages(lastCalls, lastResults);
+                    var output = await agentCore.InvokeAsync(messages, EngineMode.Working);
+
+                    if (output.IsText || output.ToolCalls == null || output.ToolCalls.Count == 0)
+                    {
+                        LastResult = output.Thinking ?? output.Text ?? "(完成，无输出)";
+                        conversationHistory.Add(new Message { Role = "assistant", Content = LastResult });
+                        FrameworkLogger.Log("TaskSession",
+                            $"指令完成: {SessionId}, rounds={round + 1}, result={LastResult.Truncate(100)}");
+                        return;
+                    }
+
+                    // 执行工具
+                    var executor = new ToolExecutor(authorizedTools: toolWhitelist);
+                    var results = await executor.ExecuteAsync(output.ToolCalls);
+
+                    // 检查是否调用了 task_done
+                    if (_taskDoneSignaled)
+                    {
+                        FrameworkLogger.Log("TaskSession",
+                            $"task_done 信号: {SessionId}, rounds={round + 1}, result={LastResult?.Truncate(100)}");
+                        return;
+                    }
+
+                    lastCalls = output.ToolCalls;
+                    lastResults = results;
+
+                    var callSummary = string.Join("\n", output.ToolCalls.Select(c => $"{c.Tool}(...)"));
+                    conversationHistory.Add(new Message { Role = "assistant", Content = callSummary });
                 }
 
-                // 执行工具
-                var executor = new ToolExecutor(authorizedTools: toolWhitelist);
-                var results = await executor.ExecuteAsync(output.ToolCalls);
-
-                lastCalls = output.ToolCalls;
-                lastResults = results;
-
-                // 记录到对话历史
-                var callSummary = string.Join("\n", output.ToolCalls.Select(c => $"{c.Tool}(...)"));
-                conversationHistory.Add(new Message { Role = "assistant", Content = callSummary });
+                LastResult = "达到最大轮次限制";
+                FrameworkLogger.Log("TaskSession", $"指令达到轮次上限: {SessionId}");
             }
-
-            LastResult = "达到最大轮次限制";
-            FrameworkLogger.Log("TaskSession", $"指令达到轮次上限: {SessionId}");
+            finally
+            {
+                ToolRegistry.Unregister("task_done");
+            }
         }
 
         private List<Message> BuildMessages(List<ToolCall>? lastCalls, List<ToolResult>? lastResults)
@@ -192,23 +212,66 @@ namespace AgentCoreProcessor.Engine
 
         private void NotifyCompletion()
         {
-            // 如果关联了委托，更新委托状态
-            if (!string.IsNullOrEmpty(delegationId))
+            try
             {
-                var result = LastResult ?? "(无结果)";
-                if (result.StartsWith("异常终止") || result == "达到最大轮次限制")
-                    ctx.Delegations.MarkFailed(delegationId, result);
-                else
-                    ctx.Delegations.MarkCompleted(delegationId, result);
-            }
+                // 如果关联了委托，更新委托状态
+                if (!string.IsNullOrEmpty(delegationId))
+                {
+                    var result = LastResult ?? "(无结果)";
+                    if (result.StartsWith("异常终止") || result == "达到最大轮次限制")
+                        ctx.Delegations.MarkFailed(delegationId, result);
+                    else
+                        ctx.Delegations.MarkCompleted(delegationId, result);
+                }
 
-            ctx.TaskBridge.PostNotification(new Notification
+                ctx.TaskBridge.PostNotification(new Notification
+                {
+                    Type = NotificationType.ProgressUpdate,
+                    SourceId = SessionId,
+                    Summary = $"子 agent 完成: {LastResult?.Truncate(100) ?? "(无结果)"}",
+                    Timestamp = DateTime.Now
+                });
+            }
+            catch (Exception ex)
             {
-                Type = NotificationType.ProgressUpdate,
-                SourceId = SessionId,
-                Summary = $"子 agent 完成: {LastResult?.Truncate(100) ?? "(无结果)"}",
-                Timestamp = DateTime.Now
-            });
+                FrameworkLogger.LogError("TaskSession", ex, $"NotifyCompletion 失败: {SessionId}");
+            }
         }
+    }
+
+    /// <summary>
+    /// 子 agent 专用工具：标记任务完成并汇报结果。
+    /// </summary>
+    internal class TaskDoneTool : ITool
+    {
+        private readonly TaskSession _session;
+
+        public TaskDoneTool(TaskSession session) { _session = session; }
+
+        public string Name => "task_done";
+        public string Description => "任务完成时调用此工具汇报结果。调用后子agent将立即停止。";
+        public IReadOnlyList<ToolParameter> Parameters =>
+        [
+            new("result", "任务执行结果摘要", 0)
+        ];
+        public TimeSpan Timeout => TimeSpan.FromSeconds(5);
+
+        public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
+        {
+            var result = resolvedInputs.Count > 0 ? resolvedInputs[0] : "(无结果)";
+            _session.LastResult = result;
+            _session._taskDoneSignaled = true;
+            return Task.FromResult(new ToolResult { Status = "success", Data = "任务已标记完成。" });
+        }
+
+        public JsonNode GetInputSchema() => JsonNode.Parse("""
+        {
+            "type": "object",
+            "properties": {
+                "result": { "type": "string", "description": "任务执行结果摘要" }
+            },
+            "required": ["result"]
+        }
+        """)!;
     }
 }
