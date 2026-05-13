@@ -40,8 +40,8 @@ public interface ILoopComponent
     IEnumerable<ITool> Tools { get; }
 
     Task OnInitAsync(ILoopComponentContext context);
-    Task OnDestroyAsync();
-    Task OnReloadingAsync();   // 即将热重载，持久化状态
+    Task<ShutdownResponse> OnDestroyAsync();
+    Task<ShutdownResponse> OnReloadingAsync();   // 即将热重载，持久化状态
     Task OnActivatedAsync();   // 循环从闲置被唤醒
     Task OnPauseAsync();       // 循环进入等待
     Task OnBeforeInvokeAsync(); // 模型调用前
@@ -60,8 +60,8 @@ public interface IGlobalComponent
     IEnumerable<ITool> Tools { get; }
 
     Task OnInitAsync(IGlobalComponentContext context);
-    Task OnDestroyAsync();
-    Task OnReloadingAsync();   // 即将热重载，持久化状态
+    Task<ShutdownResponse> OnDestroyAsync();
+    Task<ShutdownResponse> OnReloadingAsync();   // 即将热重载，持久化状态
 
     string? BuildPromptSection(LoopInfo caller);
 }
@@ -78,6 +78,23 @@ public class ComponentMeta
     public int PromptPriority { get; init; } = 50;
 }
 ```
+
+### ShutdownResponse
+
+```csharp
+public record ShutdownResponse(bool Allow, string? Reason = null)
+{
+    public static ShutdownResponse Ok => new(true);
+    public static ShutdownResponse Deny(string reason) => new(false, reason);
+}
+```
+
+宿主行为：
+- `Allow = true`：正常继续关闭/重载/禁用流程
+- `Allow = false` + Reason：暂停操作，将 Reason 返回给调用者（模型/管理员）
+- 强制操作时忽略返回值，直接执行（宿主始终有最终决定权）
+
+适用于：OnDestroyAsync / OnReloadingAsync / Disable 操作（组件管理器先询问目标 Component）
 
 ## Context 接口
 
@@ -211,8 +228,8 @@ public record ComponentStateChanged(string ComponentName, bool IsEnabled, string
 
 ### 控制方式
 
-1. **Component 自控**：通过 context.Enable() / context.Disable()
-2. **组件管理器**：一个特殊的 ILoopComponent，提供 enable_component / disable_component 工具
+1. **Component 自控**：通过 context.Enable() / context.Disable()（自己禁用自己不触发协商）
+2. **组件管理器**：一个特殊的 ILoopComponent，提供 enable_component / disable_component 工具。禁用前先调目标的 OnDestroyAsync() 协商，返回 Deny 则告知模型原因，模型决定是否强制
 3. **配置文件**：启动时默认状态
 
 ## 宿主集成
