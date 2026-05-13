@@ -46,9 +46,19 @@ MasterEngine (内核，实现 ISystemContext)
   │     TaskQueue (重量请求: DelegateTask/RequestApproval/Escalate)
   │     NotificationQueue (轻量信号: Notify/ProgressUpdate/WatchHit)
   ├── DelegationRegistry (频道循环 → 系统循环委托生命周期管理)
-  │     Submit → WaitForEvaluation → MarkExecuting → MarkCompleted/MarkFailed
+  │     Submit → WaitForEvaluation → MarkExecuting → MarkCompleted/MarkFailed/MarkRetryPending
+  │     RetryPending: 子agent失败后等待系统循环决策（MaxRetries=2）
   │     OnDelegationSubmitted → 唤醒系统循环
   │     OnDelegationCompleted → EventBus 信号唤醒源频道循环
+  ├── ToolProfileManager (组件状态模型，链式继承)
+  │     Profile: components(enabled/disabled/unavailable) + blockedTools/unblockedTools
+  │     _root → channel/system/sub-agent 继承链
+  │     channelMapping: channelId → profileName
+  │     会话级组件激活: manage_components 工具
+  ├── ComponentEventBus + GlobalComponentHost + ComponentHost(per-loop)
+  │     Component 系统: IGlobalComponent(全局) / ILoopComponent(per-loop)
+  │     ComponentRegistry: 类型注册，PluginLoader 扫描 [Component] 标记
+  │     ComponentHost: 实例管理 + 工具注册/反注册 ToolRegistry
   └── 事件流水线: EventBus → HandleEventAsync
         ① 内核更新 (lastMessageTime)
         ② SpawnCheck: OnEventAsync → ShouldSpawnAsync → Create → StartEngine
@@ -57,7 +67,7 @@ MasterEngine (内核，实现 ISystemContext)
 ```
 
 ISubEngine: EngineType / RunAsync / OnEvent / IsAlive / RequestStop / IsInfrastructure(默认false)
-ISystemContext: 数据访问 + 适配器 + EventBus + 引擎查询 + StartEngine/RequestStopEngine + TaskBridge + Delegations + CurrentSleepState + MuteMode + NotifyChannel
+ISystemContext: 数据访问 + 适配器 + EventBus + 引擎查询 + StartEngine/RequestStopEngine + TaskBridge + Delegations + CurrentSleepState + MuteMode + NotifyChannel + ToolProfiles + ComponentEventBus + GlobalComponentHost + ComponentServices
 IAgentSession: 统一会话接口 (ChannelSession/TaskSession/MonitorSession)
 
 ## 消息处理流
@@ -191,10 +201,11 @@ SystemEngine (系统循环，单例，纯调度者):
     DelegateTaskTool 同步等待评估结果(15s超时)，返回 verdict 给频道循环
   
   子 agent 管理:
-    通过 CreateSubAgentTool 创建 TaskSession
-    通过 SendToSubAgentTool 发送指令（子agent 被动执行一轮）
+    通过 CreateSubAgentTool 创建 TaskSession（工具集从 sub-agent profile 获取）
     通过 StopSubAgentTool 停止子agent
     禁止套娃（子agent 不能创建子agent）
+    失败恢复: TaskSession 内部 API 重试(max 3, 指数退避) → 失败标记 RetryPending + 双通知
+    系统循环看到 RetryPending → 决定重试(IncrementRetry + 新建子agent) 或放弃(MarkFailed)
   
   工具集 (纯调度+轻量执行):
     调度类: CreateSubAgent / SendToSubAgent / StopSubAgent / DeleteSubAgent
@@ -313,19 +324,21 @@ AgentLilara.PluginSDK (共享契约，独立类库):
              ISleepAccess / IEventBusAccess / IToolHistoryAccess
 
 主程序 Tool/ (宿主层):
-  Core/CoreTools.cs      — 核心工具（continue_loop + wait），不可卸载
-  Host/PluginLoader      — 扫描 {BaseDirectory}/Plugins/*.dll，AssemblyLoadContext 隔离加载
-  Host/ToolContextImpl   — IToolContext 实现（ConcurrentDictionary 服务容器）
-  Host/MemoryAccessImpl  — IMemoryAccess 桥接（Repository + EmbeddingProvider）
-  Host/ToolProfileManager — 配置驱动的工具集管理（base/available/blocked）
-  ToolRegistry           — 全局注册表（Register/Unregister/Get/禁用管理）
-  ToolExecutor           — 顺序执行 + 权限检查 + OnToolExecuted 回调
+  Core/CoreTools.cs          — 核心工具（continue_loop + wait + manage_components），不可卸载
+  Host/PluginLoader          — 扫描 {BaseDirectory}/Plugins/*.dll，AssemblyLoadContext 隔离加载
+  Host/ToolContextImpl       — IToolContext 实现（ConcurrentDictionary 服务容器）
+  Host/MemoryAccessImpl      — IMemoryAccess 桥接（Repository + EmbeddingProvider）
+  Host/ToolProfileManager    — 组件状态模型（enabled/disabled/unavailable），链式继承，per-channel 映射
+  ToolRegistry               — 全局注册表（Register/Unregister/Get/禁用管理）
+  ToolExecutor               — 顺序执行 + 权限检查 + OnToolExecuted 回调
 
 插件项目 (独立 DLL，输出到 {BaseDirectory}/Plugins/):
-  Plugin.BasicTools      — speak + send_media（输出能力）
-  Plugin.WorkingTools    — pinboard + thinking_notes + retain_list（工作状态）
-  Plugin.MemoryTools     — memory（记忆读写，依赖 IMemoryAccess 服务）
-  Plugin.FileTools       — read_text + write_text + list_dir + move_file + delete_file + copy_file（文件系统）
+  Plugin.BasicTools      — speak + send_media（输出能力）[GlobalComponent: basic-tools]
+  Plugin.WorkingTools    — pinboard + thinking_notes + retain_list（工作状态）[LoopComponent: working-tools]
+  Plugin.MemoryTools     — memory（记忆读写，依赖 IMemoryAccess 服务）[GlobalComponent: memory-tools]
+  Plugin.FileTools       — read_text + write_text + list_dir + move/delete/copy（文件系统）[GlobalComponent: file-tools]
+  Plugin.DelegationTools — delegate_task + cancel_delegation（频道循环委托提交）[LoopComponent: delegation]
+  Plugin.SystemTools     — evaluate_delegation + complete_delegation + notify_channel + create/stop_sub_agent（系统循环调度）[LoopComponent: system-ops]
 
 ToolCall: 原生 tool_use (Claude API) 为主路径
   NativeToolCallHandler: 按 properties 顺序映射命名参数到位置输入
@@ -435,7 +448,9 @@ Storage/
 │     ├── EngineConfig.json          自启动引擎列表 {"autoStart":["Timer"]}
 │     ├── ImpulseConfig.json         冲动值全参数配置
 │     ├── TrustProgressionConfig.json 信任升降阈值+警报冷却配置
-│     └── VisionEngineConfig.json    视觉引擎并发/批量/重试配置
+│     ├── VisionEngineConfig.json    视觉引擎并发/批量/重试配置
+│     ├── ToolProfiles.json          组件配置（profile继承树+channelMapping）
+│     └── ComponentConfig.json       组件启用/禁用状态
 ├── Adapter/
 │     └── *.json  适配器实例配置（多实例，config-driven）
 │         qq-main.json: OneBotAdapter 配置(WS地址/token/白名单/botNames)
@@ -474,6 +489,8 @@ Storage/
   Memories     — 主记忆/临时记忆浏览 + 人物/关键词过滤
   People       — 人物目录 + 信任等级 + 关联账号展开
   ConfigEditor — JSON配置组编辑器（类型感知输入/敏感字段遮罩）
+  Config/Tools — 工具启用/禁用管理
+  Config/Profiles — 组件配置管理（继承树+组件状态+工具屏蔽+频道映射）
 
 启动行为:
   默认启动 Web 服务器（所有模式），ConsoleAdapter 已移除（仅 --debug 保留纯控制台）
