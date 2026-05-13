@@ -41,8 +41,8 @@ public interface ILoopComponent
 
     // 生命周期：启动/关闭
     Task OnInitAsync(ILoopComponentContext context, InitReason reason);  // Fresh / Reload
-    Task<ShutdownResponse> OnShutdownRequestedAsync(ShutdownReason reason); // 协商
-    Task OnShutdownAsync(ShutdownReason reason);  // 收尾，一定会被调用
+    Task<ShutdownResponse> OnShutdownRequestedAsync(ShutdownReason reason); // 准备就绪后返回 Ok
+    Task OnShutdownAsync(ShutdownReason reason);  // 最终关闭，一定会被调用
 
     // 生命周期：启用/禁用（仅运行时切换触发，启动时不触发）
     Task OnEnabledAsync();
@@ -97,7 +97,7 @@ public class ComponentMeta
 public record ShutdownResponse(bool Allow, string? Reason = null)
 {
     public static ShutdownResponse Ok => new(true);
-    public static ShutdownResponse Deny(string reason) => new(false, reason);
+    public static ShutdownResponse NotReady(string reason) => new(false, reason);
 }
 
 public enum ShutdownReason { Destroy, Reload }
@@ -106,20 +106,23 @@ public enum InitReason { Fresh, Reload }
 
 **两阶段关闭协议（Two-Phase Shutdown）：**
 
-阶段 1 — 协商（`OnShutdownRequestedAsync`）：
-- 仅 Destroy/Reload 时触发，Disable 不走协商
-- 询问所有受影响的 Component，收集意见
-- Component 只表态，不做实际收尾工作
-- 有 Deny → 暂停，汇报原因给调用者
-- 强制操作 = 跳过此阶段
+阶段 1 — 等待就绪（`OnShutdownRequestedAsync`）：
+- 宿主通知所有受影响的 Component："准备关闭"
+- Component 做收尾准备工作（持久化状态、完成进行中的操作）
+- 准备好后返回 `ShutdownResponse.Ok`
+- 未准备好返回 `ShutdownResponse.Deny(reason)`（仍在收尾中）
+- 默认实现（未覆盖）：立即返回 Ok
+- 宿主等待所有 Component 返回 Ok 后自动进入阶段 2
+- 超时（如 10s）后强制进入阶段 2（不再等待未就绪的 Component）
+- 强制操作 = 跳过阶段 1 直接进阶段 2
 
-阶段 2 — 收尾（`OnShutdownAsync`）：
-- 无论是否强制，一定会被调用
-- Component 在此做持久化、清理资源等收尾工作
-- 带超时等待完成
-- reason 参数让 Component 可以针对不同场景做不同处理（Reload 时只存最小状态）
+阶段 2 — 最终关闭（`OnShutdownAsync`）：
+- 一定会被调用，无论是否强制
+- 此时 Component 应已完成收尾（阶段 1 已给了时间）
+- 做最后的资源释放
+- 带短超时（如 3s）
 
-宿主始终有最终决定权。强制 = 跳过协商直接进收尾，不会跳过收尾本身。
+宿主始终有最终决定权。整个流程自动推进，无需人工干预。
 
 **Enable/Disable 生命周期：**
 
