@@ -146,10 +146,13 @@ namespace AgentCoreProcessor.Engine
                 Content = BuildSystemStatus()
             });
 
-            // 工具描述
-            var toolDescs = ToolRegistry.GenerateDescriptions(authorizedTools: toolWhitelist);
-            if (!string.IsNullOrEmpty(toolDescs))
-                messages.Add(new Message { Role = "user", Content = toolDescs });
+            // 工具描述（仅非原生模式需要文本描述，原生模式通过 API tools 参数传递）
+            if (!agentCore.UseNativeTools)
+            {
+                var toolDescs = ToolRegistry.GenerateDescriptions(authorizedTools: toolWhitelist);
+                if (!string.IsNullOrEmpty(toolDescs))
+                    messages.Add(new Message { Role = "user", Content = toolDescs });
+            }
 
             // 对话历史（最近 10 轮）
             var recentHistory = conversationHistory.TakeLast(20).ToList();
