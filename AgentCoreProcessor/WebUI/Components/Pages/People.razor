@@ -44,8 +44,7 @@
                             <td>
                                 @if (editingPersonId == p.Id && editingField == "TrustLevel")
                                 {
-                                    <select class="inline-edit-select" @bind="editTrustLevel"
-                                            @onblur="() => CancelEdit()">
+                                    <select class="inline-edit-select" @bind="editTrustLevel">
                                         @foreach (var lv in Enum.GetValues<TrustLevel>())
                                         {
                                             <option value="@lv">@lv</option>
