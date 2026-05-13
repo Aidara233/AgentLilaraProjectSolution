@@ -30,6 +30,15 @@ namespace AgentLilara.PluginSDK.Services
 
         /// <summary>获取委托详情。</summary>
         DelegationInfo? Get(string delegationId);
+
+        /// <summary>获取频道已完成（含失败）且未消费的委托。</summary>
+        List<DelegationInfo> GetCompletedForChannel(int channelId);
+
+        /// <summary>获取频道进行中的委托（Accepted/Queued/Executing）。</summary>
+        List<DelegationInfo> GetActiveForChannel(int channelId);
+
+        /// <summary>标记委托结果已被频道消费。</summary>
+        void ConsumeCompleted(string delegationId);
     }
 
     public class DelegationSubmitResult
@@ -47,5 +56,6 @@ namespace AgentLilara.PluginSDK.Services
         public string? Context { get; set; }
         public int ChannelId { get; set; }
         public string Status { get; set; } = "";
+        public string? Result { get; set; }
     }
 }
