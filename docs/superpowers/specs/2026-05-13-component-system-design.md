@@ -113,7 +113,8 @@ public enum InitReason { Fresh, Reload }
 - 未准备好返回 `ShutdownResponse.Deny(reason)`（仍在收尾中）
 - 默认实现（未覆盖）：立即返回 Ok
 - 宿主等待所有 Component 返回 Ok 后自动进入阶段 2
-- 超时（如 10s）后强制进入阶段 2（不再等待未就绪的 Component）
+- 超时后强制进入阶段 2（不再等待未就绪的 Component）
+- 超时时长可配置（默认 30s），配置路径：ComponentConfig.json
 - 强制操作 = 跳过阶段 1 直接进阶段 2
 
 阶段 2 — 最终关闭（`OnShutdownAsync`）：
