@@ -103,12 +103,18 @@ ChannelEngine (频道循环，常驻，一个活跃频道一个):
   ② CollectBuffer → drain 缓冲消息
   ③ PrepareContext → 每轮重建 contextXml（从DB拉最新历史）+ 记忆 + 授权
   ④ BuildPrompt → PromptBuilder（Express/Working 都走此路径）
-  ⑤ CallModel → AgentCore.InvokeAsync（Express返回文本，Working返回工具调用）
-  ⑥ ProcessResponse → Express发文本 / Working执行工具+发布事件
-  ⑦ DecideNext → ESCALATE(切模式+signal) / ContinueLoop(signal) / idle
+  ⑤ CallModel → AgentCore.InvokeAsync（Express返回文本+Express工具，Working返回工具调用）
+  ⑥ ProcessResponse → Express发文本+静默执行Express工具 / Working执行工具+发布事件
+  ⑦ DecideNext → escalate工具(切模式+signal) / ContinueLoop(signal) / idle
+
+  Express 工具 (fire-and-forget):
+    ToolMetaAttribute.ExpressAvailable=true 标记的工具在 Express 模式下可用
+    模型返回文本+tool_use → 文本发送，工具静默执行，结果不回注，不续轮
+    核心 Express 工具: escalate(切Working) / manage_components(组件管理)
+    非 native 提供商 fallback: 仍解析 [ESCALATE] 文本标记
 
   模式切换:
-    Express [ESCALATE] → 切 Working + gate.Signal()，下轮自然走 Working
+    Express escalate工具 → 切 Working + gate.Signal()，下轮自然走 Working
     Working 连续3次外部触发 → 回退 Express
     分类检测任务 → 直接进入 Working
   ⑧ ParseBotOutput 解析 <at/>/<reply/> 标签 → OutgoingMessage
@@ -316,15 +322,17 @@ AgentLilara.PluginSDK (共享契约，独立类库):
   IPluginStorage: GlobalDirectory / InstanceDirectory
   IPromptContributor: SectionKey / Priority / BuildSection()
   IMessageInterceptor: Priority / OnBeforeProcessAsync()
-  ToolMetaAttribute: Group / ContinueLoop / AllowSubAgent / CapabilitySummary / Permission / Scope
+  ToolMetaAttribute: Group / ContinueLoop / AllowSubAgent / CapabilitySummary / Permission / Scope / ExpressAvailable
   ToolParameter: Name / Description / Index / IsRequired（控制 JSON Schema required 数组）
+  EngineMode: Express / Working（SDK 枚举，供 ILoopControl 使用）
   Services/: IMemoryAccess（完整数据访问：语义搜索/向量操作/批量读取/临时库/关联图）
              IAgentMessaging / IDelegationAccess / ISubAgentAccess
              IChannelAccess / IAdapterAccess / ISchedulingAccess / IEngineAccess
-             ISleepAccess / IEventBusAccess / IToolHistoryAccess
+             ISleepAccess / IEventBusAccess / IToolHistoryAccess / ILoopControl
 
 主程序 Tool/ (宿主层):
-  Core/CoreTools.cs          — 核心工具（continue_loop + wait + manage_components），不可卸载
+  Core/CoreTools.cs          — 核心工具（continue_loop + wait + manage_components + escalate），不可卸载
+  Core/EscalateTool.cs       — Express→Working 模式切换工具（ExpressAvailable=true）
   Host/PluginLoader          — 扫描 {BaseDirectory}/Plugins/*.dll，AssemblyLoadContext 隔离加载
   Host/ToolContextImpl       — IToolContext 实现（ConcurrentDictionary 服务容器）
   Host/MemoryAccessImpl      — IMemoryAccess 桥接（Repository + EmbeddingProvider）
