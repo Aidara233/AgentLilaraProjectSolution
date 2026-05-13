@@ -174,6 +174,8 @@ namespace AgentCoreProcessor.Engine
             lock (engineLock) { return spawnChecks.OfType<T>().FirstOrDefault(); }
         }
 
+        internal SystemEngine? GetSystemEngine() => systemEngine;
+
         public void NotifyChannel(int channelId, string content)
         {
             var check = GetSpawnCheck<ChannelEngineSpawnCheck>();
@@ -398,6 +400,13 @@ namespace AgentCoreProcessor.Engine
             FrameworkLogger.Log("MasterEngine", $"插件加载完成，共 {Tool.ToolRegistry.All.Count} 个工具已注册");
 
             // Component 系统初始化（PluginLoader 已填充 ComponentRegistry）
+            componentServices.Register<AgentLilara.PluginSDK.Services.IDelegationAccess>(
+                new Component.DelegationAccessAdapter(Delegations));
+            componentServices.Register<AgentLilara.PluginSDK.Services.ISubAgentAccess>(
+                new Component.SubAgentAccessAdapter(this));
+            componentServices.Register<AgentLilara.PluginSDK.Services.IChannelAccess>(
+                new Component.ChannelAccessAdapter(this));
+
             globalComponentHost = new GlobalComponentHost(
                 componentEventBus, componentServices,
                 loopId => WakeLoop(loopId));
