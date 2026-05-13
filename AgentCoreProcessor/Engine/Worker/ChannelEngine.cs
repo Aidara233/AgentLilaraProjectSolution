@@ -7,7 +7,6 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
-using AgentCoreProcessor.Command;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Memory;
@@ -520,17 +519,11 @@ namespace AgentCoreProcessor.Engine
                 loopControlModule.OnNewMessage();
                 isInWorkingSession = false;
 
-                // 同步频道授权
-                var granted = AuthStore.GetGranted(currentLastMsg.ChannelId);
+                // 同步频道工具 profile
+                var profileName = ctx.ToolProfiles.GetProfileForChannel(currentLastMsg.ChannelId);
+                var profileTools = ctx.ToolProfiles.GetActiveTools(profileName);
                 authorizedTools.Clear();
-                foreach (var t in granted) authorizedTools.Add(t);
-
-                // TODO: DelegateTaskTool class removed; context injection will be handled by ProfileManager
-                // var delegateTool = ToolRegistry.Get("delegate_task") as DelegateTaskTool;
-                // if (delegateTool != null)
-                // {
-                //     delegateTool.SetContext(currentLastSc.Channel.Id, currentLastSc.Person.Id);
-                // }
+                foreach (var t in profileTools) authorizedTools.Add(t);
 
                 // 冲动值扣减
                 impulseTracker.ApplyPostResponseUpdate();

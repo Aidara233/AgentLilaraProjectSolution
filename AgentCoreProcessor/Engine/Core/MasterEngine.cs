@@ -95,6 +95,9 @@ namespace AgentCoreProcessor.Engine
         public TaskBridge TaskBridge { get; private set; } = null!;
         public DelegationRegistry Delegations { get; private set; } = null!;
 
+        // ---- ISystemContext: 工具 Profile ----
+        public Tool.Host.ToolProfileManager ToolProfiles { get; } = new();
+
         // ---- ISystemContext: Component 系统 ----
         public ComponentEventBus ComponentEventBus => componentEventBus;
         public GlobalComponentHost? GlobalComponentHost => globalComponentHost;
@@ -400,6 +403,10 @@ namespace AgentCoreProcessor.Engine
             var pluginLoader = new Tool.Host.PluginLoader(toolContext);
             pluginLoader.LoadAll();
             FrameworkLogger.Log("MasterEngine", $"插件加载完成，共 {Tool.ToolRegistry.All.Count} 个工具已注册");
+
+            // 工具 Profile 加载（在插件加载后，引擎启动前）
+            ToolProfiles.Load();
+            FrameworkLogger.Log("MasterEngine", "ToolProfiles 已加载");
 
             // Component 系统初始化（PluginLoader 已填充 ComponentRegistry）
             componentServices.Register<AgentLilara.PluginSDK.Services.IDelegationAccess>(

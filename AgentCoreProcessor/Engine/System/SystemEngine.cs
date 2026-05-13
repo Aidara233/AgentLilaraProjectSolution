@@ -561,17 +561,7 @@ namespace AgentCoreProcessor.Engine
 
         private HashSet<string> GetAuthorizedTools()
         {
-            return new HashSet<string>
-            {
-                "wait", "continue_loop",
-                "create_sub_agent", "send_to_sub_agent", "stop_sub_agent",
-                "check_notifications", "set_watch_rule", "channel_info",
-                "engine_management", "adapter_action",
-                "pinboard", "thinking_notes",
-                "create_scheduled_task", "cancel_scheduled_task",
-                "memory",
-                "evaluate_delegation", "complete_delegation", "notify_channel"
-            };
+            return ctx.ToolProfiles.GetActiveTools("system");
         }
 
         /// <summary>构建 assistant 消息。原生模式使用 tool_use ContentParts，否则使用文本格式。</summary>
@@ -682,7 +672,8 @@ namespace AgentCoreProcessor.Engine
         /// <summary>创建并启动子 agent。</summary>
         public IAgentSession CreateSubAgent(string instruction)
         {
-            var session = new TaskSession(ctx);
+            var pool = ctx.ToolProfiles.GetSubAgentPool();
+            var session = new TaskSession(ctx, toolWhitelist: pool);
             lock (subAgentLock)
             {
                 subAgents[session.SessionId] = session;
@@ -695,7 +686,8 @@ namespace AgentCoreProcessor.Engine
         /// <summary>创建并启动子 agent（关联委托）。完成后自动更新委托状态。</summary>
         public IAgentSession CreateSubAgentForDelegation(string instruction, string? delegationId)
         {
-            var session = new TaskSession(ctx, delegationId);
+            var pool = ctx.ToolProfiles.GetSubAgentPool();
+            var session = new TaskSession(ctx, delegationId, toolWhitelist: pool);
             lock (subAgentLock)
             {
                 subAgents[session.SessionId] = session;

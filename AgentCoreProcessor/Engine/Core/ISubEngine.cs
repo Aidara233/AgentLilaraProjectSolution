@@ -121,6 +121,9 @@ namespace AgentCoreProcessor.Engine
         /// <summary>向指定频道循环注入系统通知。频道循环醒来后自行决定如何回应。</summary>
         void NotifyChannel(int channelId, string content);
 
+        /// <summary>工具 Profile 管理器。</summary>
+        Tool.Host.ToolProfileManager ToolProfiles { get; }
+
         /// <summary>组件事件总线（全局单例）。</summary>
         ComponentEventBus ComponentEventBus { get; }
 

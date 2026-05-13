@@ -10,52 +10,59 @@ using Newtonsoft.Json;
 namespace AgentCoreProcessor.Tool.Host
 {
     /// <summary>
-    /// 引擎工具配置管理。根据 profile 配置决定每个引擎可用的工具集，
-    /// 替代原来散落在各引擎内部的硬编码白名单。
+    /// 引擎工具配置管理。根据 profile 配置决定每个引擎可用的工具集。
+    /// 支持链式继承、per-channel 映射、子 agent 工具池。
     /// </summary>
     internal class ToolProfileManager
     {
-        private Dictionary<string, ToolProfile> profiles = new();
+        private ToolProfileConfig config = new();
         private readonly Dictionary<string, HashSet<string>> activeGroups = new();
+        private readonly Dictionary<string, ResolvedProfile> resolvedCache = new();
 
         private static string ConfigPath => Path.Combine(PathConfig.StoragePath, "Engine", "ToolProfiles.json");
 
         public void Load()
         {
             if (!File.Exists(ConfigPath))
-            {
                 CreateDefaultConfig();
-            }
 
             try
             {
                 var json = File.ReadAllText(ConfigPath);
-                profiles = JsonConvert.DeserializeObject<Dictionary<string, ToolProfile>>(json)
-                    ?? new Dictionary<string, ToolProfile>();
+                config = JsonConvert.DeserializeObject<ToolProfileConfig>(json) ?? new();
             }
             catch (Exception ex)
             {
                 Engine.FrameworkLogger.Log("ToolProfileManager", $"加载配置失败: {ex.Message}，使用默认配置");
-                profiles = GetDefaultProfiles();
+                config = GetDefaultConfig();
             }
+
+            resolvedCache.Clear();
         }
 
-        /// <summary>获取指定 profile 的基础工具名列表（始终包含在请求中）。</summary>
+        /// <summary>根据 channelId 获取对应的 profile 名。</summary>
+        public string GetProfileForChannel(string channelId)
+        {
+            if (config.ChannelMapping.TryGetValue(channelId, out var profile))
+                return profile;
+            if (config.ChannelMapping.TryGetValue("_default", out var def))
+                return def;
+            return "_root";
+        }
+
+        /// <summary>获取解析后的基础工具集（沿继承链合并）。</summary>
         public HashSet<string> GetBaseTools(string profileName)
         {
-            if (!profiles.TryGetValue(profileName, out var profile))
-                return new HashSet<string>();
-            return new HashSet<string>(profile.Base);
+            var resolved = Resolve(profileName);
+            return new HashSet<string>(resolved.Base);
         }
 
-        /// <summary>获取指定 profile 的完整可用工具名集合（base + 已激活的 available 组）。</summary>
+        /// <summary>获取完整可用工具集（base + 已激活组的工具）。</summary>
         public HashSet<string> GetActiveTools(string profileName)
         {
-            var result = GetBaseTools(profileName);
-            if (!profiles.TryGetValue(profileName, out var profile))
-                return result;
+            var resolved = Resolve(profileName);
+            var result = new HashSet<string>(resolved.Base);
 
-            // 加入已激活组的工具
             if (activeGroups.TryGetValue(profileName, out var activated))
             {
                 var allTools = ToolRegistry.All;
@@ -64,7 +71,7 @@ namespace AgentCoreProcessor.Tool.Host
                     var meta = GetToolMeta(tool);
                     if (meta?.Group != null && activated.Contains(meta.Group))
                     {
-                        if (!IsBlocked(profile, tool.Name))
+                        if (!resolved.Blocked.Any(p => MatchesPattern(tool.Name, p)))
                             result.Add(tool.Name);
                     }
                 }
@@ -76,17 +83,15 @@ namespace AgentCoreProcessor.Tool.Host
         /// <summary>判断工具是否被 profile 阻止。</summary>
         public bool IsBlocked(string profileName, string toolName)
         {
-            if (!profiles.TryGetValue(profileName, out var profile))
-                return false;
-            return IsBlocked(profile, toolName);
+            var resolved = Resolve(profileName);
+            return resolved.Blocked.Any(p => MatchesPattern(toolName, p));
         }
 
         /// <summary>判断工具组是否在 available 列表中。</summary>
         public bool IsGroupAvailable(string profileName, string groupName)
         {
-            if (!profiles.TryGetValue(profileName, out var profile))
-                return false;
-            return profile.Available.Any(pattern => MatchesPattern(groupName, pattern));
+            var resolved = Resolve(profileName);
+            return resolved.Available.Any(p => MatchesPattern(groupName, p));
         }
 
         /// <summary>激活工具组（会话级）。</summary>
@@ -94,7 +99,6 @@ namespace AgentCoreProcessor.Tool.Host
         {
             if (!IsGroupAvailable(profileName, groupName))
                 return false;
-
             if (!activeGroups.ContainsKey(profileName))
                 activeGroups[profileName] = new HashSet<string>();
             activeGroups[profileName].Add(groupName);
@@ -107,12 +111,10 @@ namespace AgentCoreProcessor.Tool.Host
             activeGroups.Remove(profileName);
         }
 
-        /// <summary>获取可激活但尚未激活的工具组摘要（用于 prompt 注入）。</summary>
+        /// <summary>获取可激活但尚未激活的工具组摘要。</summary>
         public List<ToolGroupSummary> GetAvailableGroupSummaries(string profileName)
         {
-            if (!profiles.TryGetValue(profileName, out var profile))
-                return new List<ToolGroupSummary>();
-
+            var resolved = Resolve(profileName);
             var activated = activeGroups.TryGetValue(profileName, out var set) ? set : new HashSet<string>();
             var allTools = ToolRegistry.All;
 
@@ -120,20 +122,41 @@ namespace AgentCoreProcessor.Tool.Host
                 .Select(t => GetToolMeta(t)?.Group)
                 .Where(g => g != null)
                 .Distinct()
-                .Where(g => profile.Available.Any(p => MatchesPattern(g!, p)) && !activated.Contains(g!))
+                .Where(g => resolved.Available.Any(p => MatchesPattern(g!, p)) && !activated.Contains(g!))
                 .ToList();
 
             return groups.Select(g => new ToolGroupSummary
             {
                 GroupName = g!,
                 ToolNames = allTools.Values
-                    .Where(t => GetToolMeta(t)?.Group == g && !IsBlocked(profile, t.Name))
+                    .Where(t => GetToolMeta(t)?.Group == g
+                        && !resolved.Blocked.Any(p => MatchesPattern(t.Name, p)))
                     .Select(t => t.Name)
                     .ToList()
             }).Where(s => s.ToolNames.Count > 0).ToList();
         }
 
-        /// <summary>生成原生工具定义列表（只包含 base + 已激活组）。</summary>
+        /// <summary>获取子 agent 可分配工具池。</summary>
+        public HashSet<string> GetSubAgentPool()
+        {
+            var pool = new HashSet<string>(config.SubAgent.Pool);
+            var allTools = ToolRegistry.All;
+            foreach (var tool in allTools.Values)
+            {
+                if (pool.Contains(tool.Name)
+                    && config.SubAgent.Blocked.Any(p => MatchesPattern(tool.Name, p)))
+                    pool.Remove(tool.Name);
+            }
+            return pool;
+        }
+
+        /// <summary>获取子 agent 阻止列表。</summary>
+        public HashSet<string> GetSubAgentBlocked()
+        {
+            return new HashSet<string>(config.SubAgent.Blocked);
+        }
+
+        /// <summary>生成原生工具定义列表。</summary>
         public List<ToolDefinition> GetToolDefinitions(string profileName)
         {
             var activeTools = GetActiveTools(profileName);
@@ -148,13 +171,12 @@ namespace AgentCoreProcessor.Tool.Host
                 .ToList();
         }
 
-        /// <summary>生成文本格式工具描述（JSON 降级路径用）。</summary>
-        public string GetToolDescriptions(string profileName, HashSet<string>? authorizedTools = null)
+        /// <summary>生成文本格式工具描述。</summary>
+        public string GetToolDescriptions(string profileName)
         {
             var activeTools = GetActiveTools(profileName);
             return ToolRegistry.GenerateDescriptions(
-                filter: t => activeTools.Contains(t.Name),
-                authorizedTools: authorizedTools);
+                authorizedTools: activeTools);
         }
 
         /// <summary>生成 Express 模式能力摘要。</summary>
@@ -165,9 +187,63 @@ namespace AgentCoreProcessor.Tool.Host
                 filter: t => activeTools.Contains(t.Name));
         }
 
-        private bool IsBlocked(ToolProfile profile, string toolName)
+        /// <summary>获取所有 profile 名称。</summary>
+        public List<string> GetProfileNames() => config.Profiles.Keys.ToList();
+
+        /// <summary>获取 channel mapping 配置。</summary>
+        public Dictionary<string, string> GetChannelMapping() => new(config.ChannelMapping);
+
+        // ---- 继承解析 ----
+
+        private ResolvedProfile Resolve(string profileName)
         {
-            return profile.Blocked.Any(pattern => MatchesPattern(toolName, pattern));
+            if (resolvedCache.TryGetValue(profileName, out var cached))
+                return cached;
+
+            var chain = BuildInheritanceChain(profileName);
+            var resolved = MergeChain(chain);
+            resolvedCache[profileName] = resolved;
+            return resolved;
+        }
+
+        private List<ToolProfile> BuildInheritanceChain(string profileName)
+        {
+            var chain = new List<ToolProfile>();
+            var visited = new HashSet<string>();
+            var current = profileName;
+
+            while (!string.IsNullOrEmpty(current) && !visited.Contains(current))
+            {
+                visited.Add(current);
+                if (config.Profiles.TryGetValue(current, out var profile))
+                {
+                    chain.Add(profile);
+                    current = profile.Inherits;
+                }
+                else break;
+            }
+
+            return chain;
+        }
+
+        private static ResolvedProfile MergeChain(List<ToolProfile> chain)
+        {
+            var base_ = new HashSet<string>();
+            var available = new HashSet<string>();
+            var blocked = new HashSet<string>();
+
+            // 从根（链尾）往叶（链头）合并
+            for (int i = chain.Count - 1; i >= 0; i--)
+            {
+                var p = chain[i];
+                foreach (var t in p.Base) base_.Add(t);
+                foreach (var t in p.Available) available.Add(t);
+                foreach (var t in p.Blocked) blocked.Add(t);
+                foreach (var t in p.RemoveBlock) blocked.Remove(t);
+                foreach (var t in p.Remove) base_.Remove(t);
+            }
+
+            return new ResolvedProfile { Base = base_, Available = available, Blocked = blocked };
         }
 
         private static bool MatchesPattern(string value, string pattern)
@@ -186,69 +262,100 @@ namespace AgentCoreProcessor.Tool.Host
             return Attribute.GetCustomAttribute(tool.GetType(), typeof(ToolMetaAttribute)) as ToolMetaAttribute;
         }
 
+        // ---- 默认配置 ----
+
         private void CreateDefaultConfig()
         {
-            var defaults = GetDefaultProfiles();
+            config = GetDefaultConfig();
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath)!);
-                var json = JsonConvert.SerializeObject(defaults, Formatting.Indented);
+                var json = JsonConvert.SerializeObject(config, Formatting.Indented);
                 File.WriteAllText(ConfigPath, json);
             }
             catch { }
-            profiles = defaults;
         }
 
-        private static Dictionary<string, ToolProfile> GetDefaultProfiles()
+        private static ToolProfileConfig GetDefaultConfig()
         {
-            return new Dictionary<string, ToolProfile>
+            return new ToolProfileConfig
             {
-                ["channel"] = new ToolProfile
+                Profiles = new Dictionary<string, ToolProfile>
                 {
-                    Base = ["speak", "send_media", "wait", "memory", "pinboard",
-                            "thinking_notes", "retain_list", "delegate_task", "alert",
-                            "view_image", "get_image_text", "mark_review_hint", "task_management",
-                            "read_text", "write_text", "list_dir", "move_file", "delete_file",
-                            "copy_file", "adapter_action"],
-                    Available = ["file", "image", "planning", "meta"],
-                    Blocked = ["dream_*", "trigger_red_alert", "evaluate_delegation",
-                               "create_sub_agent", "send_to_sub_agent", "stop_sub_agent",
-                               "notify_channel", "set_watch_rule", "check_notifications",
-                               "system_state", "continue_loop"]
+                    ["_root"] = new ToolProfile
+                    {
+                        Base = ["wait"],
+                        Available = [],
+                        Blocked = []
+                    },
+                    ["channel"] = new ToolProfile
+                    {
+                        Inherits = "_root",
+                        Base = ["speak", "send_media", "memory", "pinboard",
+                                "thinking_notes", "retain_list", "delegate_task",
+                                "cancel_delegation", "alert",
+                                "view_image", "get_image_text", "mark_review_hint",
+                                "read_text", "write_text", "list_dir", "move_file",
+                                "delete_file", "copy_file", "adapter_action"],
+                        Available = ["file", "image", "planning", "meta"],
+                        Blocked = ["dream_*", "evaluate_delegation", "complete_delegation",
+                                   "create_sub_agent", "stop_sub_agent",
+                                   "notify_channel", "set_watch_rule", "check_notifications",
+                                   "continue_loop", "task_done"]
+                    },
+                    ["system"] = new ToolProfile
+                    {
+                        Inherits = "_root",
+                        Base = ["continue_loop", "pinboard", "thinking_notes",
+                                "evaluate_delegation", "complete_delegation",
+                                "notify_channel", "create_sub_agent", "stop_sub_agent",
+                                "check_notifications", "set_watch_rule", "memory",
+                                "channel_info", "engine_management", "adapter_action",
+                                "create_scheduled_task", "cancel_scheduled_task"],
+                        Available = ["planning", "meta", "file"],
+                        Blocked = ["speak", "send_media", "dream_*",
+                                   "delegate_task", "cancel_delegation",
+                                   "alert", "view_image", "get_image_text", "task_done"]
+                    }
                 },
-                ["system"] = new ToolProfile
+                ChannelMapping = new Dictionary<string, string>
                 {
-                    Base = ["wait", "continue_loop", "pinboard", "thinking_notes",
-                            "evaluate_delegation", "notify_channel", "create_sub_agent",
-                            "send_to_sub_agent", "stop_sub_agent", "check_notifications",
-                            "set_watch_rule", "memory", "channel_info", "engine_management",
-                            "adapter_action", "create_scheduled_task", "cancel_scheduled_task"],
-                    Available = ["planning", "meta", "file"],
-                    Blocked = ["speak", "send_media", "dream_*", "trigger_red_alert",
-                               "delegate_task", "alert", "view_image", "get_image_text"]
+                    ["_default"] = "channel"
                 },
-                ["sub_agent"] = new ToolProfile
+                SubAgent = new SubAgentPoolConfig
                 {
-                    Base = ["continue_loop"],
-                    Available = [],
-                    Blocked = ["create_sub_agent", "send_to_sub_agent", "stop_sub_agent",
-                               "evaluate_delegation", "notify_channel"]
-                },
-                ["review"] = new ToolProfile
-                {
-                    Base = ["search_memory", "view_links", "read_messages",
-                            "update_affinity", "write_temp_memory", "thinking_notes",
-                            "update_person_alias", "update_fast_memory", "adjust_trust",
-                            "mark_review_hint", "request_reinforcement", "save_progress", "finish"],
-                    Available = [],
-                    Blocked = ["*"]
+                    Pool = ["memory", "read_text", "write_text", "list_dir",
+                            "move_file", "delete_file", "copy_file",
+                            "pinboard", "thinking_notes", "task_done",
+                            "adapter_action"],
+                    Blocked = ["create_sub_agent", "stop_sub_agent",
+                               "evaluate_delegation", "complete_delegation",
+                               "notify_channel", "set_watch_rule",
+                               "delegate_task", "cancel_delegation"]
                 }
             };
         }
     }
 
+    // ---- 数据模型 ----
+
+    internal class ToolProfileConfig
+    {
+        [JsonProperty("profiles")]
+        public Dictionary<string, ToolProfile> Profiles { get; set; } = new();
+
+        [JsonProperty("channelMapping")]
+        public Dictionary<string, string> ChannelMapping { get; set; } = new();
+
+        [JsonProperty("subAgent")]
+        public SubAgentPoolConfig SubAgent { get; set; } = new();
+    }
+
     internal class ToolProfile
     {
+        [JsonProperty("inherits")]
+        public string? Inherits { get; set; }
+
         [JsonProperty("base")]
         public List<string> Base { get; set; } = [];
 
@@ -257,6 +364,28 @@ namespace AgentCoreProcessor.Tool.Host
 
         [JsonProperty("blocked")]
         public List<string> Blocked { get; set; } = [];
+
+        [JsonProperty("removeBlock")]
+        public List<string> RemoveBlock { get; set; } = [];
+
+        [JsonProperty("remove")]
+        public List<string> Remove { get; set; } = [];
+    }
+
+    internal class SubAgentPoolConfig
+    {
+        [JsonProperty("pool")]
+        public List<string> Pool { get; set; } = [];
+
+        [JsonProperty("blocked")]
+        public List<string> Blocked { get; set; } = [];
+    }
+
+    internal class ResolvedProfile
+    {
+        public HashSet<string> Base { get; set; } = new();
+        public HashSet<string> Available { get; set; } = new();
+        public HashSet<string> Blocked { get; set; } = new();
     }
 
     public class ToolGroupSummary
