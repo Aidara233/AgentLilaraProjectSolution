@@ -159,6 +159,7 @@ namespace AgentCoreProcessor.Tool.Host
 
             // 核心工具始终可用
             result.Add("wait");
+            result.Add("manage_components");
 
             return result;
         }

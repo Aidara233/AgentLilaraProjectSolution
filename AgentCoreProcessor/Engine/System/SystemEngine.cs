@@ -320,6 +320,8 @@ namespace AgentCoreProcessor.Engine
                 // ⑥ 执行工具
                 lastRoundNoAction = false;
                 var toolCalls = output.ToolCalls;
+                Tool.Core.ManageComponentsTool.CurrentLoop.Value =
+                    new Tool.Core.ManageComponentsTool.LoopContext("system", "system-loop");
                 var executor = new ToolExecutor(authorizedTools: GetAuthorizedTools());
                 var results = await executor.ExecuteAsync(toolCalls);
 

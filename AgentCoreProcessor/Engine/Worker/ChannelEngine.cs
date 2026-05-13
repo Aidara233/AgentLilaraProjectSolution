@@ -115,6 +115,7 @@ namespace AgentCoreProcessor.Engine
 
         // 授权工具集（会话级）
         private readonly HashSet<string> authorizedTools = new();
+        private string currentProfileName = "channel";
 
         // 消息拦截器（由 MasterEngine 注入）
         private List<AgentLilara.PluginSDK.IMessageInterceptor> interceptors = new();
@@ -520,8 +521,8 @@ namespace AgentCoreProcessor.Engine
                 isInWorkingSession = false;
 
                 // 同步频道工具 profile
-                var profileName = ctx.ToolProfiles.GetProfileForChannel(currentLastMsg.ChannelId);
-                var profileTools = ctx.ToolProfiles.GetActiveTools(profileName);
+                currentProfileName = ctx.ToolProfiles.GetProfileForChannel(currentLastMsg.ChannelId);
+                var profileTools = ctx.ToolProfiles.GetActiveTools(currentProfileName);
                 authorizedTools.Clear();
                 foreach (var t in profileTools) authorizedTools.Add(t);
 
@@ -749,6 +750,8 @@ namespace AgentCoreProcessor.Engine
                 }
 
                 speakModule.ResetRound();
+                Tool.Core.ManageComponentsTool.CurrentLoop.Value =
+                    new Tool.Core.ManageComponentsTool.LoopContext(currentProfileName, $"channel-{channelId}");
                 var executor = new ToolExecutor(authorizedTools: authorizedTools);
                 executor.OnToolExecuted = async (call, result) =>
                 {
