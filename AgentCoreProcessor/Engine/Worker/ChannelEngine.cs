@@ -627,40 +627,68 @@ namespace AgentCoreProcessor.Engine
             }
             else
             {
-                // Express 模式：使用能力摘要（也应用过滤器）
-                var channelToolFilter = new Func<ITool, bool>(tool =>
+                // Express 模式
+                var useExpressNative = agentCore.UseNativeTools
+                    && ToolRegistry.GetExpressToolDefinitions().Count > 0;
+
+                if (useExpressNative)
                 {
-                    var allowedTools = new HashSet<string>
+                    // 原生 Express 工具：工具定义通过 API 传递，这里只注入上下文提示
+                    useNative = true;
+                    toolDescs = "";
+                    var ctxSb = new StringBuilder();
+                    ctxSb.AppendLine("你当前处于轻量对话模式。需要执行复杂操作时调用 escalate 工具切换到工作模式。");
+                    var botId = ctx.Adapters.GetBotPlatformId("qq");
+                    if (!string.IsNullOrEmpty(botId))
+                        ctxSb.AppendLine($"身份信息：你的QQ号是 {botId}，不要把自己的号当成别人的。");
+                    ctxSb.AppendLine("轻量动作（直接在回复中使用，不需要切换模式）：\n- [POKE:对方QQ号] 戳一戳对方");
+
+                    List<WatchRule> rules;
+                    lock (watchRulesLock) { rules = new List<WatchRule>(watchRules); }
+                    if (rules.Count > 0)
                     {
-                        "speak", "send_media", "thinking_notes", "memory", "pinboard", "retain_list", "task_management",
-                        "mark_review_hint", "alert", "read_file", "write_file", "delegate_task", "adapter_action"
-                    };
-                    return allowedTools.Contains(tool.Name);
-                });
-                toolDescs = ToolRegistry.GenerateCapabilitySummary(filter: channelToolFilter);
-                var botId = ctx.Adapters.GetBotPlatformId("qq");
-                var pokeHint = "\n\n轻量动作（直接在回复中使用，不需要切换模式）：\n- [POKE:对方QQ号] 戳一戳对方";
-                if (!string.IsNullOrEmpty(botId))
-                    pokeHint += $"\n\n身份信息：你的QQ号是 {botId}，不要把自己的号当成别人的。";
-                toolDescs += pokeHint;
+                        ctxSb.AppendLine("\n[关注规则]");
+                        ctxSb.AppendLine("以下规则已激活，当消息匹配时会自动触发相应动作：");
+                        foreach (var rule in rules)
+                            ctxSb.AppendLine($"- {rule.Description}（模式：{rule.Pattern}，动作：{rule.Action}）");
+                    }
 
-                // Phase 6: 注入关注规则
-                List<WatchRule> rules;
-                lock (watchRulesLock)
-                {
-                    rules = new List<WatchRule>(watchRules);
+                    ctxSb.Append("[图片标记说明]\n上下文中的 <img/> 标记表示用户发送的图片。其中 desc/text 属性为自动生成的摘要，仅供快速参考，可能存在误差或遗漏。涉及具体内容时请使用工具查看原图或获取完整文字。");
+                    nativeContext = ctxSb.ToString().TrimEnd();
                 }
-                if (rules.Count > 0)
+                else
                 {
-                    var sb = new StringBuilder();
-                    sb.AppendLine("\n[关注规则]");
-                    sb.AppendLine("以下规则已激活，当消息匹配时会自动触发相应动作：");
-                    foreach (var rule in rules)
-                        sb.AppendLine($"- {rule.Description}（模式：{rule.Pattern}，动作：{rule.Action}）");
-                    toolDescs += "\n" + sb.ToString();
-                }
+                    // Fallback: 非 native 模式，使用文本能力摘要
+                    var channelToolFilter = new Func<ITool, bool>(tool =>
+                    {
+                        var allowedTools = new HashSet<string>
+                        {
+                            "speak", "send_media", "thinking_notes", "memory", "pinboard", "retain_list", "task_management",
+                            "mark_review_hint", "alert", "read_file", "write_file", "delegate_task", "adapter_action"
+                        };
+                        return allowedTools.Contains(tool.Name);
+                    });
+                    toolDescs = ToolRegistry.GenerateCapabilitySummary(filter: channelToolFilter);
+                    var botId = ctx.Adapters.GetBotPlatformId("qq");
+                    var pokeHint = "\n\n轻量动作（直接在回复中使用，不需要切换模式）：\n- [POKE:对方QQ号] 戳一戳对方";
+                    if (!string.IsNullOrEmpty(botId))
+                        pokeHint += $"\n\n身份信息：你的QQ号是 {botId}，不要把自己的号当成别人的。";
+                    toolDescs += pokeHint;
 
-                toolDescs += "\n\n[图片标记说明]\n上下文中的 <img/> 标记表示用户发送的图片。其中 desc/text 属性为自动生成的摘要，仅供快速参考，可能存在误差或遗漏。涉及具体内容时请使用工具查看原图或获取完整文字。";
+                    List<WatchRule> rules;
+                    lock (watchRulesLock) { rules = new List<WatchRule>(watchRules); }
+                    if (rules.Count > 0)
+                    {
+                        var sb = new StringBuilder();
+                        sb.AppendLine("\n[关注规则]");
+                        sb.AppendLine("以下规则已激活，当消息匹配时会自动触发相应动作：");
+                        foreach (var rule in rules)
+                            sb.AppendLine($"- {rule.Description}（模式：{rule.Pattern}，动作：{rule.Action}）");
+                        toolDescs += "\n" + sb.ToString();
+                    }
+
+                    toolDescs += "\n\n[图片标记说明]\n上下文中的 <img/> 标记表示用户发送的图片。其中 desc/text 属性为自动生成的摘要，仅供快速参考，可能存在误差或遗漏。涉及具体内容时请使用工具查看原图或获取完整文字。";
+                }
             }
 
             var messages = promptBuilder.BuildRoundMessages(
@@ -714,8 +742,8 @@ namespace AgentCoreProcessor.Engine
             {
                 var text = output.Text!;
 
-                // [ALERT] 检测
-                if (text.Contains("[ALERT]"))
+                // [ALERT] 检测 (fallback，非 native 模式)
+                if (!output.HasToolCalls && text.Contains("[ALERT]"))
                 {
                     FrameworkLogger.Log("ChannelEngine", $"Express 触发报警: channelId={channelId}");
                     var reason = text.Replace("[ALERT]", "").Replace("[ESCALATE]", "").Trim();
@@ -724,8 +752,8 @@ namespace AgentCoreProcessor.Engine
                     text = text.Replace("[ALERT]", "").Trim();
                 }
 
-                // 发送文本（ESCALATE 前的部分）
-                var sendText = text.Contains("[ESCALATE]")
+                // 发送文本（fallback 模式下 ESCALATE 前的部分）
+                var sendText = (!output.HasToolCalls && text.Contains("[ESCALATE]"))
                     ? text.Split("[ESCALATE]")[0].Trim()
                     : text;
 
@@ -734,6 +762,22 @@ namespace AgentCoreProcessor.Engine
 
                 if (!string.IsNullOrEmpty(sendText))
                     await SendSegmentsAsync(sendText, currentLastMsg, currentLastSc, currentParticipantSnapshot);
+
+                // Fire-and-forget: 静默执行 Express 工具（结果不回注）
+                if (output.HasToolCalls)
+                {
+                    Tool.Core.ManageComponentsTool.CurrentLoop.Value =
+                        new Tool.Core.ManageComponentsTool.LoopContext(currentProfileName, $"channel-{channelId}");
+                    var executor = new ToolExecutor(authorizedTools: null);
+                    await executor.ExecuteAsync(output.ToolCalls!);
+
+                    foreach (var tc in output.ToolCalls!)
+                    {
+                        var inputSummary = tc.Inputs.Count > 0 ? string.Join(", ", tc.Inputs).Truncate(80) : "";
+                        FrameworkLogger.Log("ChannelEngine",
+                            $"  Express工具 [{tc.Tool}]({inputSummary})");
+                    }
+                }
             }
             else
             {
@@ -785,11 +829,24 @@ namespace AgentCoreProcessor.Engine
         {
             if (output.IsText)
             {
-                if (output.Text!.Contains("[ESCALATE]"))
+                // Express 工具路径：检查 escalate 工具调用
+                if (output.HasToolCalls && output.ToolCalls!.Any(c => c.Tool == "escalate"))
+                {
+                    var call = output.ToolCalls!.First(c => c.Tool == "escalate");
+                    escalationReason = call.Inputs.Count > 0 && !string.IsNullOrWhiteSpace(call.Inputs[0])
+                        ? call.Inputs[0] : null;
+                    FrameworkLogger.Log("ChannelEngine", $"Express→Working 升级: channelId={channelId}, reason={escalationReason ?? "(无)"}");
+                    isWorkingMode = true;
+                    isInWorkingSession = true;
+                    consecutiveExternalTriggers = 0;
+                    gate.Signal();
+                }
+                // Fallback: 非 native 模式仍解析文本标记
+                else if (!output.HasToolCalls && output.Text!.Contains("[ESCALATE]"))
                 {
                     var parts = output.Text!.Split("[ESCALATE]", 2);
                     escalationReason = parts.Length > 1 ? parts[1].Trim() : null;
-                    FrameworkLogger.Log("ChannelEngine", $"Express→Working 升级: channelId={channelId}, reason={escalationReason ?? "(无)"}");
+                    FrameworkLogger.Log("ChannelEngine", $"Express→Working 升级(fallback): channelId={channelId}, reason={escalationReason ?? "(无)"}");
                     isWorkingMode = true;
                     isInWorkingSession = true;
                     consecutiveExternalTriggers = 0;

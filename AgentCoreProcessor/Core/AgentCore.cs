@@ -60,8 +60,17 @@ namespace AgentCoreProcessor.Core
 
             if (mode == Engine.EngineMode.Express)
             {
-                var text = await GenerateOnceAsync();
-                return ModelOutput.FromText(text);
+                var expressDefs = ToolRegistry.GetExpressToolDefinitions();
+                if (expressDefs.Count > 0 && UseNativeTools)
+                {
+                    var (text, calls, thinking) = await GenerateExpressWithToolsAsync(expressDefs);
+                    return ModelOutput.FromExpressWithTools(text, calls.Count > 0 ? calls : null, thinking);
+                }
+                else
+                {
+                    var text = await GenerateOnceAsync();
+                    return ModelOutput.FromText(text);
+                }
             }
             else
             {
@@ -150,6 +159,14 @@ namespace AgentCoreProcessor.Core
 
             var handler = new NativeToolCallHandler(toolDefs);
             await GenerateWithToolsAsync(toolDefs, handler.OnEvent);
+            return handler.GetResult();
+        }
+
+        private async Task<(string Text, List<ToolCall> Calls, string? Thinking)> GenerateExpressWithToolsAsync(
+            List<ToolDefinition> expressDefs)
+        {
+            var handler = new ExpressToolCallHandler(expressDefs);
+            await GenerateWithToolsAsync(expressDefs, handler.OnEvent);
             return handler.GetResult();
         }
 

@@ -128,6 +128,19 @@ namespace AgentCoreProcessor.Tool
 
         // ---- 禁用管理 ----
 
+        public static List<ToolDefinition> GetExpressToolDefinitions()
+        {
+            return _tools.Values
+                .Where(t => !IsDisabled(t.Name) && (GetMeta(t.Name)?.ExpressAvailable ?? false))
+                .Select(t => new ToolDefinition
+                {
+                    Name = t.Name,
+                    Description = t.Description,
+                    Parameters = t.GetInputSchema()
+                })
+                .ToList();
+        }
+
         public static bool IsDisabled(string toolName) => _disabledTools.ContainsKey(toolName);
 
         public static string? GetDisableReason(string toolName)

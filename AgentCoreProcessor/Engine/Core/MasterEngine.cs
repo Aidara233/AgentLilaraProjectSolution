@@ -395,6 +395,7 @@ namespace AgentCoreProcessor.Engine
             Tool.ToolRegistry.Register(new Tool.Core.ContinueLoopTool());
             Tool.ToolRegistry.Register(new Tool.Core.WaitTool());
             Tool.ToolRegistry.Register(new Tool.Core.ManageComponentsTool(ToolProfiles));
+            Tool.ToolRegistry.Register(new Tool.Core.EscalateTool());
             FrameworkLogger.Log("MasterEngine", "核心工具已注册");
 
             // 插件加载

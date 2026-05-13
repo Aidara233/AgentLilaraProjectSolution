@@ -49,6 +49,9 @@ namespace AgentLilara.PluginSDK
 
         /// <summary>插件作用域。</summary>
         public PluginScope Scope { get; set; } = PluginScope.Singleton;
+
+        /// <summary>是否在 Express 模式下可用（fire-and-forget，结果不回注）。</summary>
+        public bool ExpressAvailable { get; set; }
     }
 
     /// <summary>

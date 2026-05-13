@@ -13,7 +13,7 @@ namespace AgentCoreProcessor.Tool.Core
     /// 组件管理工具。模型可用此工具查看、激活、停用当前会话中的组件。
     /// 核心工具，始终可用，不属于任何组件。
     /// </summary>
-    [ToolMeta(ContinueLoop = true, CapabilitySummary = "管理当前会话的组件（启用/禁用可用插件）")]
+    [ToolMeta(ContinueLoop = true, ExpressAvailable = true, CapabilitySummary = "管理当前会话的组件（启用/禁用可用插件）")]
     internal class ManageComponentsTool : ITool
     {
         private readonly ToolProfileManager _profiles;
