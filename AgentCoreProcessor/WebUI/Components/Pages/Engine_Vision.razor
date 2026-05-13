@@ -69,7 +69,7 @@ else
                 <button class="btn-ghost" style="color:var(--warning)" @onclick="RegenAllOcr"><i class="bi bi-arrow-repeat me-1"></i>全部重新OCR</button>
             </div>
         </div>
-        <div class="card-body">
+        <div class="card-body" @onfocusin="() => isEditing = true" @onfocusout="() => isEditing = false">
             <div class="row g-2">
                 <div class="col-md-3">
                     <label class="small text-muted-custom">Vision 并发</label>
@@ -172,6 +172,7 @@ else
     private List<ImageRecord> recentPending = new();
     private int pendingCount;
     private string? statusMsg;
+    private bool isEditing;
 
     private int cfgVisionConc;
     private int cfgOcrConc;
@@ -198,7 +199,7 @@ else
     {
         var check = Engine.GetSpawnCheck<VisionEngineSpawnCheck>();
         snap = check?.ActiveInstance?.GetSnapshot();
-        if (snap != null)
+        if (snap != null && !isEditing)
         {
             cfgVisionConc = snap.Config.VisionConcurrency;
             cfgOcrConc = snap.Config.OcrConcurrency;
@@ -261,6 +262,7 @@ else
         };
         instance.UpdateConfig(newCfg);
         statusMsg = "配置已保存";
+        isEditing = false;
         RefreshSnap();
     }
 
