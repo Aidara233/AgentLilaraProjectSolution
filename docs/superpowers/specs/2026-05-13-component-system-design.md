@@ -41,6 +41,7 @@ public interface ILoopComponent
 
     Task OnInitAsync(ILoopComponentContext context);
     Task OnDestroyAsync();
+    Task OnReloadingAsync();   // 即将热重载，持久化状态
     Task OnActivatedAsync();   // 循环从闲置被唤醒
     Task OnPauseAsync();       // 循环进入等待
     Task OnBeforeInvokeAsync(); // 模型调用前
@@ -60,6 +61,7 @@ public interface IGlobalComponent
 
     Task OnInitAsync(IGlobalComponentContext context);
     Task OnDestroyAsync();
+    Task OnReloadingAsync();   // 即将热重载，持久化状态
 
     string? BuildPromptSection(LoopInfo caller);
 }
@@ -251,6 +253,39 @@ OnAfterInvokeAsync
   ↓
 OnPauseAsync（进入等待时）
 ```
+
+## 热重载
+
+### 流程
+
+所有 Component（Global 和 Loop）统一流程：
+
+1. 宿主发布 `ComponentReloading` 事件（Component 收到后持久化状态到 Storage）
+2. 等待当前正在执行的事件 handler 完成（短超时，如 5s）
+3. 调 `OnDestroyAsync()`
+4. 清理所有事件订阅
+5. 卸载 AssemblyLoadContext
+6. 加载新 DLL → 实例化 → `OnInitAsync()`（Component 自行从 Storage 恢复状态）
+
+### 接口
+
+```csharp
+// ILoopComponent / IGlobalComponent 共有
+Task OnReloadingAsync();  // 通知即将重载，持久化状态
+```
+
+### 语义区分
+
+- `OnReloadingAsync()`：马上回来，存盘用
+- `OnDestroyAsync()`：可能真的要关了（循环销毁、程序退出）
+
+Component 在 OnReloading 里只需要把必要状态写入 Storage，OnInit 时检查 Storage 有无恢复数据即可。状态恢复是 Component 自己的责任。
+
+### 影响
+
+- Loop Component 重载：仅影响所属循环（该循环暂时失去该组件的工具和 prompt 注入）
+- Global Component 重载：影响所有循环（所有循环暂时失去该组件的工具）
+- 重载期间循环可以继续运行，只是工具列表暂时缺少该组件的工具
 
 ## 迁移路径
 
