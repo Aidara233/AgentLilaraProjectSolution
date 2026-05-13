@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Client;
+using AgentCoreProcessor.Component;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.MCP;
 using AgentCoreProcessor.Memory;
@@ -119,5 +120,14 @@ namespace AgentCoreProcessor.Engine
 
         /// <summary>向指定频道循环注入系统通知。频道循环醒来后自行决定如何回应。</summary>
         void NotifyChannel(int channelId, string content);
+
+        /// <summary>组件事件总线（全局单例）。</summary>
+        ComponentEventBus ComponentEventBus { get; }
+
+        /// <summary>全局组件宿主（MasterEngine 持有）。</summary>
+        GlobalComponentHost? GlobalComponentHost { get; }
+
+        /// <summary>组件系统的服务提供者。</summary>
+        IServiceProvider ComponentServices { get; }
     }
 }

@@ -1,0 +1,65 @@
+// AgentCoreProcessor/Component/ComponentRegistry.cs
+using System.Collections.Concurrent;
+using System.Reflection;
+using AgentLilara.PluginSDK;
+
+namespace AgentCoreProcessor.Component;
+
+internal record ComponentRegistration(
+    Type Type,
+    ComponentScope Scope,
+    Applicability ChannelApplicability,
+    Applicability SystemApplicability,
+    Assembly SourceAssembly);
+
+internal static class ComponentRegistry
+{
+    private static readonly ConcurrentDictionary<string, ComponentRegistration> _registrations = new();
+
+    public static bool Register(Type type)
+    {
+        var attr = type.GetCustomAttribute<ComponentAttribute>();
+        if (attr == null) return false;
+
+        var loopAttr = type.GetCustomAttribute<LoopApplicabilityAttribute>();
+
+        var reg = new ComponentRegistration(
+            Type: type,
+            Scope: attr.Scope,
+            ChannelApplicability: loopAttr?.Channel ?? Applicability.Enabled,
+            SystemApplicability: loopAttr?.System ?? Applicability.Enabled,
+            SourceAssembly: type.Assembly);
+
+        return _registrations.TryAdd(attr.Name, reg);
+    }
+
+    public static void Unregister(string name) => _registrations.TryRemove(name, out _);
+
+    public static ComponentRegistration? Get(string name)
+    {
+        _registrations.TryGetValue(name, out var reg);
+        return reg;
+    }
+
+    public static IEnumerable<ComponentRegistration> GetAll() => _registrations.Values;
+
+    public static IEnumerable<ComponentRegistration> GetGlobals() =>
+        _registrations.Values.Where(r => r.Scope == ComponentScope.Global);
+
+    public static IEnumerable<ComponentRegistration> GetLoopComponents(string loopType)
+    {
+        return _registrations.Values.Where(r =>
+        {
+            if (r.Scope != ComponentScope.Loop) return false;
+            var applicability = loopType switch
+            {
+                "channel" => r.ChannelApplicability,
+                "system" => r.SystemApplicability,
+                _ => Applicability.Enabled
+            };
+            return applicability != Applicability.NotApplicable;
+        });
+    }
+
+    public static void Clear() => _registrations.Clear();
+}

@@ -12,8 +12,10 @@ using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Memory;
 using AgentCoreProcessor.Models;
+using AgentCoreProcessor.Component;
 using AgentCoreProcessor.Engine.Modules;
 using AgentCoreProcessor.Tool;
+using AgentLilara.PluginSDK;
 
 namespace AgentCoreProcessor.Engine
 {
@@ -73,14 +75,14 @@ namespace AgentCoreProcessor.Engine
         private readonly LoopGate gate = new();
         private readonly LoopBus bus = new();
         private readonly SpeakModule speakModule = new();
-        private ThinkingNotesModule thinkingNotesModule = null!;
         private readonly TaskListModule taskListModule = new();
-        private readonly PinboardModule pinboardModule = new();
-        private readonly RetainListModule retainListModule = new();
         private readonly MemoryWindowModule memoryWindowModule = new();
         private readonly LoopControlModule loopControlModule = new();
         private readonly SignalDispatchModule signalDispatchModule = new();
         private List<EngineModule> modules = null!;
+
+        // Component 系统
+        private ComponentHost? componentHost;
 
         // 已处理消息标记
         private readonly LinkedList<long> processedTicks = new();
@@ -179,12 +181,11 @@ namespace AgentCoreProcessor.Engine
 
         private void InitModules()
         {
-            thinkingNotesModule = new ThinkingNotesModule(channelId.ToString());
             loopControlModule.ChannelId = channelId.ToString();
             modules = new List<EngineModule>
             {
-                speakModule, thinkingNotesModule, taskListModule, pinboardModule,
-                retainListModule, memoryWindowModule, loopControlModule, signalDispatchModule,
+                speakModule, taskListModule,
+                memoryWindowModule, loopControlModule, signalDispatchModule,
                 new ToolStatusModule(),
                 new Modules.DelegationModule(ctx.Delegations, channelId),
                 new Modules.SystemNotificationModule(DrainSystemNotifications)
@@ -251,6 +252,12 @@ namespace AgentCoreProcessor.Engine
             FrameworkLogger.Log("ChannelEngine", $"启动: channelId={channelId}");
             WireModuleCallbacks();
 
+            // 初始化 ComponentHost
+            componentHost = new ComponentHost(
+                channelId.ToString(), "channel", ctx.ComponentEventBus, ctx.ComponentServices,
+                () => gate.Signal());
+            await componentHost.InitAsync();
+
             while (IsAlive)
             {
                 // ① WaitGate
@@ -266,20 +273,28 @@ namespace AgentCoreProcessor.Engine
                     break;
                 }
 
+                // 循环唤醒：通知组件
+                await componentHost.OnActivatedAsync();
 
                 // ② CollectBuffer
                 var batch = CollectBuffer();
 
                 // ③ PrepareContext
-                if (!await PrepareContextAsync(batch)) continue;
+                if (!await PrepareContextAsync(batch))
+                {
+                    await componentHost.OnPauseAsync();
+                    continue;
+                }
 
                 // ④⑤⑥⑦ BuildPrompt → CallModel → ProcessResponse → DecideNext
                 Interlocked.Exchange(ref _busyFlag, 1);
                 try
                 {
+                    await componentHost.OnBeforeInvokeAsync();
                     var messages = BuildPromptMessages();
                     var mode = isWorkingMode ? EngineMode.Working : EngineMode.Express;
                     var output = await agentCore.InvokeAsync(messages, mode);
+                    await componentHost.OnAfterInvokeAsync();
                     await ProcessResponseAsync(output);
                     DecideNext(output);
                     consecutiveFailures = 0;
@@ -320,9 +335,14 @@ namespace AgentCoreProcessor.Engine
                     {
                         Interlocked.Exchange(ref _busyFlag, 0);
                         Interlocked.Exchange(ref _completionTicks, DateTime.Now.Ticks);
+                        await componentHost.OnPauseAsync();
                     }
                 }
             }
+
+            // 关闭 ComponentHost
+            if (componentHost != null)
+                await componentHost.ShutdownAsync(ShutdownReason.Destroy);
 
             // 清理模块状态
             foreach (var m in modules) m.Reset();
@@ -660,6 +680,24 @@ namespace AgentCoreProcessor.Engine
             {
                 // 插入到 contextXml 消息之后、模块消息之前（index = 工具描述被跳过后的第2个消息之后）
                 messages.Insert(1, new Models.Message { Role = "user", Content = nativeContext });
+            }
+
+            // Component 系统 prompt 注入
+            if (componentHost != null)
+            {
+                var groups = ToolListFormatter.CollectGroups(componentHost, ctx.GlobalComponentHost);
+                var toolOverview = ToolListFormatter.BuildToolOverviewSection(groups);
+                if (toolOverview != null)
+                    messages.Add(new Models.Message { Role = "user", Content = toolOverview });
+
+                var componentSections = componentHost.BuildPromptSections();
+                foreach (var section in componentSections)
+                    messages.Add(new Models.Message { Role = "user", Content = section });
+
+                var globalSections = ctx.GlobalComponentHost?.BuildPromptSections(
+                    new LoopInfo(channelId.ToString(), "channel")) ?? new();
+                foreach (var section in globalSections)
+                    messages.Add(new Models.Message { Role = "user", Content = section });
             }
 
             // 拦截器注入的额外提示

@@ -36,6 +36,26 @@ namespace Plugin.WorkingTools
             Directory.CreateDirectory(_baseDir);
         }
 
+        /// <summary>Component 模式构造函数</summary>
+        public RetainListTool(IPluginStorage storage)
+        {
+            _baseDir = Path.Combine(storage.GlobalDirectory, "retain");
+            Directory.CreateDirectory(_baseDir);
+        }
+
+        public string? BuildSection()
+        {
+            var items = LoadItems();
+            if (items.Count == 0) return null;
+            var sb = new StringBuilder("[缓存列表]\n");
+            foreach (var (label, content) in items)
+            {
+                var preview = content.Length > 120 ? content[..120] + "..." : content;
+                sb.AppendLine($"- [{label}] {preview}");
+            }
+            return sb.ToString();
+        }
+
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
             var action = resolvedInputs.Count > 0 ? resolvedInputs[0].Trim().ToLower() : "";

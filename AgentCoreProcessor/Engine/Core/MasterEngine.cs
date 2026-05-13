@@ -6,12 +6,14 @@ using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Client;
+using AgentCoreProcessor.Component;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.MCP;
 using AgentCoreProcessor.Memory;
 using AgentCoreProcessor.Engine.Modules;
+using AgentLilara.PluginSDK;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -93,12 +95,22 @@ namespace AgentCoreProcessor.Engine
         public TaskBridge TaskBridge { get; private set; } = null!;
         public DelegationRegistry Delegations { get; private set; } = null!;
 
+        // ---- ISystemContext: Component 系统 ----
+        public ComponentEventBus ComponentEventBus => componentEventBus;
+        public GlobalComponentHost? GlobalComponentHost => globalComponentHost;
+        public IServiceProvider ComponentServices => componentServices;
+
         // ---- 引擎注册表 ----
         private readonly List<IEngineSpawnCheck> spawnChecks = new();
         private readonly List<ISubEngine> activeEngines = new();
         private readonly object engineLock = new();
         private readonly SemaphoreSlim eventLock = new(1, 1);
         private SystemEngine? systemEngine; // Phase 5: 保存 SystemEngine 引用用于工具注册
+
+        // ---- Component 系统 ----
+        private readonly ComponentEventBus componentEventBus = new();
+        private GlobalComponentHost? globalComponentHost;
+        private readonly SimpleServiceProvider componentServices = new();
 
         // SpawnCheck 工厂（有序列表，Command 在 Channel 之前拦截命令消息）
         private static readonly List<(string Name, Func<IEngineSpawnCheck> Factory)> SpawnCheckFactory =
@@ -385,6 +397,13 @@ namespace AgentCoreProcessor.Engine
             pluginLoader.LoadAll();
             FrameworkLogger.Log("MasterEngine", $"插件加载完成，共 {Tool.ToolRegistry.All.Count} 个工具已注册");
 
+            // Component 系统初始化（PluginLoader 已填充 ComponentRegistry）
+            globalComponentHost = new GlobalComponentHost(
+                componentEventBus, componentServices,
+                loopId => WakeLoop(loopId));
+            await globalComponentHost.InitAsync();
+            FrameworkLogger.Log("MasterEngine", "GlobalComponentHost 已初始化");
+
             // 注册所有 SpawnCheck
             foreach (var (_, factory) in SpawnCheckFactory)
                 spawnChecks.Add(factory());
@@ -605,6 +624,40 @@ namespace AgentCoreProcessor.Engine
             catch (Exception ex)
             {
                 FrameworkLogger.Log("MasterEngine", $"人设记忆种子加载失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>唤醒指定 loopId 的循环（供 GlobalComponentHost 使用）。</summary>
+        private void WakeLoop(string loopId)
+        {
+            if (loopId == "system")
+            {
+                systemEngine?.SignalGate();
+                return;
+            }
+
+            // 尝试解析为频道 ID
+            if (int.TryParse(loopId, out var channelId))
+            {
+                var check = GetSpawnCheck<ChannelEngineSpawnCheck>();
+                if (check != null)
+                {
+                    var channels = check.GetActiveChannels();
+                    if (channels.TryGetValue(channelId, out var engine) && engine.IsAlive)
+                    {
+                        engine.InjectNotification("[component-wake]");
+                    }
+                }
+            }
+        }
+
+        /// <summary>关闭 GlobalComponentHost（由外部调用或 Dispose 时）。</summary>
+        public async Task ShutdownComponentsAsync()
+        {
+            if (globalComponentHost != null)
+            {
+                await globalComponentHost.ShutdownAsync(ShutdownReason.Destroy);
+                FrameworkLogger.Log("MasterEngine", "GlobalComponentHost 已关闭");
             }
         }
     }

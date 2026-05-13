@@ -28,10 +28,31 @@ namespace Plugin.WorkingTools
         ];
         public TimeSpan Timeout => TimeSpan.FromSeconds(5);
 
+        private readonly string? _defaultNotebook;
+
         public ThinkingNotesTool(IToolContext ctx)
         {
             _baseDir = Path.Combine(ctx.Storage.GlobalDirectory, "notebooks");
+            _defaultNotebook = null;
             Directory.CreateDirectory(_baseDir);
+        }
+
+        /// <summary>Component 模式构造函数</summary>
+        public ThinkingNotesTool(IPluginStorage storage, string loopId)
+        {
+            _baseDir = Path.Combine(storage.InstanceDirectory, "notebooks");
+            _defaultNotebook = loopId;
+            Directory.CreateDirectory(_baseDir);
+        }
+
+        public string? BuildSection()
+        {
+            if (_defaultNotebook == null) return null;
+            var path = Path.Combine(_baseDir, $"{SanitizeFileName(_defaultNotebook)}.txt");
+            if (!File.Exists(path)) return null;
+            var content = File.ReadAllText(path);
+            if (string.IsNullOrWhiteSpace(content)) return null;
+            return $"你的思考笔记（notebook={_defaultNotebook}）：\n{content}";
         }
 
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)

@@ -1,0 +1,247 @@
+// AgentCoreProcessor/Component/ComponentHost.cs
+using System.Reflection;
+using AgentCoreProcessor.Config;
+using AgentCoreProcessor.Engine;
+using AgentCoreProcessor.Tool;
+using AgentLilara.PluginSDK;
+
+namespace AgentCoreProcessor.Component;
+
+/// <summary>
+/// 管理一个循环内所有 Component 实例的生命周期、工具收集、Prompt 收集。
+/// 每个 ChannelEngine/SystemEngine 持有一个 ComponentHost。
+/// </summary>
+internal class ComponentHost
+{
+    private readonly string _loopId;
+    private readonly string _loopType;
+    private readonly ComponentEventBus _eventBus;
+    private readonly IServiceProvider _services;
+    private readonly Action _wakeLoop;
+
+    private readonly List<LoopComponentInstance> _loopComponents = new();
+    private readonly ComponentConfig _config;
+
+    public ComponentHost(
+        string loopId,
+        string loopType,
+        ComponentEventBus eventBus,
+        IServiceProvider services,
+        Action wakeLoop)
+    {
+        _loopId = loopId;
+        _loopType = loopType;
+        _eventBus = eventBus;
+        _services = services;
+        _wakeLoop = wakeLoop;
+        _config = ComponentConfig.Load();
+    }
+
+    public async Task InitAsync()
+    {
+        var registrations = ComponentRegistry.GetLoopComponents(_loopType);
+
+        foreach (var reg in registrations)
+        {
+            try
+            {
+                var instance = CreateInstance(reg);
+                if (instance == null) continue;
+                _loopComponents.Add(instance);
+                await instance.Component.OnInitAsync(instance.Context, InitReason.Fresh);
+                RegisterTools(instance);
+            }
+            catch (Exception ex)
+            {
+                FrameworkLogger.Log("ComponentHost", $"Init failed for {reg.Type.Name}: {ex.Message}");
+            }
+        }
+    }
+
+    public IEnumerable<ITool> GetVisibleTools()
+    {
+        foreach (var inst in _loopComponents)
+        {
+            if (!ShouldShowTools(inst)) continue;
+            foreach (var tool in inst.Component.Tools)
+                yield return tool;
+        }
+    }
+
+    public List<string> BuildPromptSections()
+    {
+        var sections = new List<(int priority, string content)>();
+
+        foreach (var inst in _loopComponents)
+        {
+            if (!inst.Context.IsEnabled) continue;
+            var section = inst.Component.BuildPromptSection();
+            if (section != null)
+                sections.Add((inst.Component.Meta.PromptPriority, section));
+        }
+
+        return sections
+            .OrderBy(s => s.priority)
+            .Select(s => s.content)
+            .ToList();
+    }
+
+    public async Task OnActivatedAsync()
+    {
+        foreach (var inst in _loopComponents.Where(i => i.Context.IsEnabled))
+        {
+            try { await inst.Component.OnActivatedAsync(); }
+            catch (Exception ex) { LogError(inst, "OnActivated", ex); }
+        }
+    }
+
+    public async Task OnPauseAsync()
+    {
+        foreach (var inst in _loopComponents.Where(i => i.Context.IsEnabled))
+        {
+            try { await inst.Component.OnPauseAsync(); }
+            catch (Exception ex) { LogError(inst, "OnPause", ex); }
+        }
+    }
+    public async Task OnBeforeInvokeAsync()
+    {
+        foreach (var inst in _loopComponents.Where(i => i.Context.IsEnabled))
+        {
+            try { await inst.Component.OnBeforeInvokeAsync(); }
+            catch (Exception ex) { LogError(inst, "OnBeforeInvoke", ex); }
+        }
+    }
+
+    public async Task OnAfterInvokeAsync()
+    {
+        foreach (var inst in _loopComponents.Where(i => i.Context.IsEnabled))
+        {
+            try { await inst.Component.OnAfterInvokeAsync(); }
+            catch (Exception ex) { LogError(inst, "OnAfterInvoke", ex); }
+        }
+    }
+
+    public async Task EnableComponentAsync(string name)
+    {
+        var inst = _loopComponents.FirstOrDefault(i => i.Component.Meta.Name == name);
+        if (inst == null || inst.Context.IsEnabled) return;
+        inst.Context.SetEnabledDirect(true);
+        RegisterTools(inst);
+        try { await inst.Component.OnEnabledAsync(); }
+        catch (Exception ex) { LogError(inst, "OnEnabled", ex); }
+    }
+
+    public async Task DisableComponentAsync(string name)
+    {
+        var inst = _loopComponents.FirstOrDefault(i => i.Component.Meta.Name == name);
+        if (inst == null || !inst.Context.IsEnabled) return;
+        inst.Context.SetEnabledDirect(false);
+        UnregisterTools(inst);
+        try { await inst.Component.OnDisabledAsync(); }
+        catch (Exception ex) { LogError(inst, "OnDisabled", ex); }
+    }
+
+    public async Task ShutdownAsync(ShutdownReason reason)
+    {
+        var timeout = _config.ShutdownTimeoutMs;
+
+        // Phase 1: 等待就绪
+        using var cts = new CancellationTokenSource(timeout);
+        var tasks = _loopComponents.Select(async inst =>
+        {
+            try { return await inst.Component.OnShutdownRequestedAsync(reason); }
+            catch { return ShutdownResponse.Ok; }
+        });
+        try { await Task.WhenAll(tasks).WaitAsync(cts.Token); }
+        catch (OperationCanceledException)
+        {
+            FrameworkLogger.Log("ComponentHost", $"Shutdown timeout for loop {_loopId}, forcing phase 2");
+        }
+
+        // Phase 2: 最终关闭
+        foreach (var inst in _loopComponents)
+        {
+            UnregisterTools(inst);
+            try { await inst.Component.OnShutdownAsync(reason).WaitAsync(TimeSpan.FromSeconds(3)); }
+            catch (Exception ex) { LogError(inst, "OnShutdown", ex); }
+        }
+
+        _eventBus.RemoveLoop(_loopId);
+        _loopComponents.Clear();
+    }
+
+    public IReadOnlyList<LoopComponentInstance> Instances => _loopComponents;
+
+    private void RegisterTools(LoopComponentInstance inst)
+    {
+        if (!ShouldShowTools(inst)) return;
+        foreach (var tool in inst.Component.Tools)
+            ToolRegistry.Register(tool);
+    }
+
+    private void UnregisterTools(LoopComponentInstance inst)
+    {
+        foreach (var tool in inst.Component.Tools)
+            ToolRegistry.Unregister(tool.Name);
+    }
+
+    private LoopComponentInstance? CreateInstance(ComponentRegistration reg)
+    {
+        var component = (ILoopComponent?)Activator.CreateInstance(reg.Type);
+        if (component == null) return null;
+
+        var defaultEnabled = _config.IsEnabled(component.Meta.Name, component.Meta.DefaultEnabled);
+        var storage = new ComponentStorage(component.Meta.Name, _loopId);
+
+        var context = new LoopComponentContext(
+            _loopId, _loopType, _eventBus, _services, storage,
+            _wakeLoop,
+            (loopId, enabled) =>
+            {
+                if (enabled) _ = EnableComponentAsync(component.Meta.Name);
+                else _ = DisableComponentAsync(component.Meta.Name);
+            },
+            defaultEnabled);
+
+        return new LoopComponentInstance(component, context, reg);
+    }
+
+    private bool ShouldShowTools(LoopComponentInstance inst)
+    {
+        var visibility = _config.GetVisibility(
+            inst.Component.Meta.Name,
+            inst.Registration.Type.GetCustomAttribute<ToolVisibilityAttribute>()?.Default ?? Visibility.FollowState);
+
+        return visibility switch
+        {
+            Visibility.AlwaysVisible => true,
+            Visibility.AlwaysHidden => false,
+            Visibility.FollowState => inst.Context.IsEnabled,
+            _ => inst.Context.IsEnabled
+        };
+    }
+
+    private static void LogError(LoopComponentInstance inst, string hook, Exception ex)
+    {
+        FrameworkLogger.Log("ComponentHost", $"{hook} error in {inst.Component.Meta.Name}: {ex.Message}");
+    }
+}
+
+internal record LoopComponentInstance(
+    ILoopComponent Component,
+    LoopComponentContext Context,
+    ComponentRegistration Registration);
+
+internal class ComponentStorage : IPluginStorage
+{
+    public ComponentStorage(string componentName, string loopId)
+    {
+        GlobalDirectory = Path.Combine(PathConfig.StoragePath, "PluginData", componentName);
+        InstanceDirectory = Path.Combine(PathConfig.StoragePath, "PluginData", componentName, loopId);
+        Directory.CreateDirectory(GlobalDirectory);
+        Directory.CreateDirectory(InstanceDirectory);
+    }
+
+    public string GlobalDirectory { get; }
+    public string InstanceDirectory { get; }
+}

@@ -33,6 +33,12 @@ namespace Plugin.MemoryTools
             memory = ctx.GetService<IMemoryAccess>();
         }
 
+        /// <summary>Component 模式构造函数</summary>
+        public MemoryTool(IMemoryAccess? memoryAccess)
+        {
+            memory = memoryAccess;
+        }
+
         public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
             if (memory == null)

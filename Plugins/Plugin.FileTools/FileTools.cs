@@ -29,6 +29,14 @@ namespace Plugin.FileTools
             Directory.CreateDirectory(_workspaceDir);
         }
 
+        /// <summary>Component 模式构造函数</summary>
+        public ReadTextTool(IPluginStorage storage)
+        {
+            _workspaceDir = Path.Combine(storage.GlobalDirectory, "..", "..", "Workspace");
+            _workspaceDir = Path.GetFullPath(_workspaceDir);
+            Directory.CreateDirectory(_workspaceDir);
+        }
+
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
             var path = resolvedInputs.Count > 0 ? resolvedInputs[0].Trim() : "";
@@ -102,6 +110,14 @@ namespace Plugin.FileTools
             Directory.CreateDirectory(_workspaceDir);
         }
 
+        /// <summary>Component 模式构造函数</summary>
+        public WriteTextTool(IPluginStorage storage)
+        {
+            _workspaceDir = Path.Combine(storage.GlobalDirectory, "..", "..", "Workspace");
+            _workspaceDir = Path.GetFullPath(_workspaceDir);
+            Directory.CreateDirectory(_workspaceDir);
+        }
+
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
             var path = resolvedInputs.Count > 0 ? resolvedInputs[0].Trim() : "";
@@ -162,6 +178,14 @@ namespace Plugin.FileTools
         public ListDirTool(IToolContext ctx)
         {
             _workspaceDir = Path.Combine(ctx.Storage.GlobalDirectory, "..", "..", "Workspace");
+            _workspaceDir = Path.GetFullPath(_workspaceDir);
+            Directory.CreateDirectory(_workspaceDir);
+        }
+
+        /// <summary>Component 模式构造函数</summary>
+        public ListDirTool(IPluginStorage storage)
+        {
+            _workspaceDir = Path.Combine(storage.GlobalDirectory, "..", "..", "Workspace");
             _workspaceDir = Path.GetFullPath(_workspaceDir);
             Directory.CreateDirectory(_workspaceDir);
         }
@@ -232,6 +256,13 @@ namespace Plugin.FileTools
             _workspaceDir = Path.GetFullPath(_workspaceDir);
         }
 
+        /// <summary>Component 模式构造函数</summary>
+        public MoveFileTool(IPluginStorage storage)
+        {
+            _workspaceDir = Path.Combine(storage.GlobalDirectory, "..", "..", "Workspace");
+            _workspaceDir = Path.GetFullPath(_workspaceDir);
+        }
+
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
             var src = resolvedInputs.Count > 0 ? resolvedInputs[0].Trim() : "";
@@ -290,6 +321,13 @@ namespace Plugin.FileTools
         public DeleteFileTool(IToolContext ctx)
         {
             _workspaceDir = Path.Combine(ctx.Storage.GlobalDirectory, "..", "..", "Workspace");
+            _workspaceDir = Path.GetFullPath(_workspaceDir);
+        }
+
+        /// <summary>Component 模式构造函数</summary>
+        public DeleteFileTool(IPluginStorage storage)
+        {
+            _workspaceDir = Path.Combine(storage.GlobalDirectory, "..", "..", "Workspace");
             _workspaceDir = Path.GetFullPath(_workspaceDir);
         }
 
@@ -353,6 +391,13 @@ namespace Plugin.FileTools
         public CopyFileTool(IToolContext ctx)
         {
             _workspaceDir = Path.Combine(ctx.Storage.GlobalDirectory, "..", "..", "Workspace");
+            _workspaceDir = Path.GetFullPath(_workspaceDir);
+        }
+
+        /// <summary>Component 模式构造函数</summary>
+        public CopyFileTool(IPluginStorage storage)
+        {
+            _workspaceDir = Path.Combine(storage.GlobalDirectory, "..", "..", "Workspace");
             _workspaceDir = Path.GetFullPath(_workspaceDir);
         }
 

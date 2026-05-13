@@ -32,6 +32,22 @@ namespace Plugin.WorkingTools
             _filePath = Path.Combine(ctx.Storage.GlobalDirectory, "pinboard.json");
         }
 
+        /// <summary>Component 模式构造函数</summary>
+        public PinboardTool(IPluginStorage storage)
+        {
+            _filePath = Path.Combine(storage.GlobalDirectory, "pinboard.json");
+        }
+
+        public string? BuildSection()
+        {
+            var board = LoadBoard();
+            if (board.Count == 0) return null;
+            var sb = new System.Text.StringBuilder("[便签板]\n");
+            foreach (var (label, content) in board)
+                sb.AppendLine($"- {label}: {content}");
+            return sb.ToString();
+        }
+
         public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
             var action = resolvedInputs.Count > 0 ? resolvedInputs[0].Trim().ToLower() : "";

@@ -5,11 +5,13 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Component;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Engine.Modules;
 using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Tool;
+using AgentLilara.PluginSDK;
 
 namespace AgentCoreProcessor.Engine
 {
@@ -42,6 +44,9 @@ namespace AgentCoreProcessor.Engine
         private readonly ContextPersistence persistence;
         private readonly ContextCompressionModule compressionModule;
         private List<EngineModule> modules = null!;
+
+        // Component 系统
+        private ComponentHost? componentHost;
 
         // 追加式对话历史
         private readonly List<Message> conversationHistory = new();
@@ -112,8 +117,6 @@ namespace AgentCoreProcessor.Engine
                 new ToolStatusModule(),      // 优先级 30
                 systemStatusModule,          // 优先级 35
                 pendingEventsModule,         // 优先级 38
-                thinkingNotesModule,         // 优先级 45
-                pinboardModule,              // 优先级 55
                 loopControlModule,           // 优先级 60
                 compressionModule            // 优先级 100（不注入 prompt）
             };
@@ -179,6 +182,12 @@ namespace AgentCoreProcessor.Engine
             stopCts = new CancellationTokenSource();
             var ct = stopCts.Token;
 
+            // 初始化 ComponentHost
+            componentHost = new ComponentHost(
+                "system", "system", ctx.ComponentEventBus, ctx.ComponentServices,
+                () => gate.Signal());
+            await componentHost.InitAsync();
+
             FrameworkLogger.Log("SystemEngine", "系统循环就绪（闸门模型）");
 
             try
@@ -187,6 +196,9 @@ namespace AgentCoreProcessor.Engine
                 {
                     // ═══ 外层：闸门等待 ═══
                     await gate.WaitAsync(TimeSpan.FromMinutes(waitTimeoutMinutes), ct);
+
+                    // 循环唤醒：通知组件
+                    await componentHost.OnActivatedAsync();
 
                     // 定期自检（每 5 分钟）
                     if ((DateTime.Now - lastSleepCheck).TotalMinutes >= 5)
@@ -233,6 +245,7 @@ namespace AgentCoreProcessor.Engine
                         Interlocked.Exchange(ref _busyFlag, 0);
                         lastRoundCalls = null;
                         lastRoundResults = null;
+                        await componentHost.OnPauseAsync();
                     }
                 }
             }
@@ -250,6 +263,10 @@ namespace AgentCoreProcessor.Engine
             }
             finally
             {
+                // 关闭 ComponentHost
+                if (componentHost != null)
+                    await componentHost.ShutdownAsync(ShutdownReason.Destroy);
+
                 IsAlive = false;
                 foreach (var m in modules) m.Reset();
             }
@@ -275,7 +292,9 @@ namespace AgentCoreProcessor.Engine
 
                 // ④ 调用模型
                 FrameworkLogger.Log("SystemEngine", $"Agent 循环 round {round + 1}, 上下文 {estimatedTokens}/{MaxContextTokens} tokens ({usagePercent}%)");
+                if (componentHost != null) await componentHost.OnBeforeInvokeAsync();
                 var output = await agentCore.InvokeWithHistoryAsync(messages);
+                if (componentHost != null) await componentHost.OnAfterInvokeAsync();
 
                 // ⑤ 处理响应
                 if (output.IsText || output.ToolCalls == null || output.ToolCalls.Count == 0)
@@ -421,12 +440,12 @@ namespace AgentCoreProcessor.Engine
             return messages;
         }
 
-        /// <summary>构建当前轮的 user 消息：仪表盘 + 模块注入 + 工具结果。</summary>
+        /// <summary>构建当前轮的 user 消息：仪表盘 + 模块注入 + 组件注入 + 工具结果。</summary>
         private Message BuildCurrentTurnMsg()
         {
             var sb = new StringBuilder();
 
-            // 模块注入（状态仪表盘、待处理事件、思考笔记等）
+            // 模块注入（状态仪表盘、待处理事件等）
             var sections = modules
                 .OrderBy(m => m.PromptPriority)
                 .Select(m => m.BuildPromptSection(EngineMode.Working))
@@ -435,6 +454,24 @@ namespace AgentCoreProcessor.Engine
 
             if (sections.Any())
                 sb.AppendLine(string.Join("\n\n", sections));
+
+            // Component 系统 prompt 注入
+            if (componentHost != null)
+            {
+                var groups = ToolListFormatter.CollectGroups(componentHost, ctx.GlobalComponentHost);
+                var toolOverview = ToolListFormatter.BuildToolOverviewSection(groups);
+                if (toolOverview != null)
+                    sb.AppendLine("\n" + toolOverview);
+
+                var componentSections = componentHost.BuildPromptSections();
+                foreach (var section in componentSections)
+                    sb.AppendLine("\n" + section);
+
+                var globalSections = ctx.GlobalComponentHost?.BuildPromptSections(
+                    new LoopInfo("system", "system")) ?? new();
+                foreach (var section in globalSections)
+                    sb.AppendLine("\n" + section);
+            }
 
             // 上一轮工具结果
             if (lastRoundResults != null && lastRoundCalls != null && lastRoundResults.Count > 0)

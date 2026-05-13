@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Runtime.Loader;
 using System.Threading;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Component;
 using AgentCoreProcessor.Engine;
 using AgentLilara.PluginSDK;
 
@@ -72,6 +73,8 @@ namespace AgentCoreProcessor.Tool.Host
             {
                 foreach (var name in entry.ToolNames)
                     ToolRegistry.Unregister(name);
+                foreach (var name in entry.ComponentNames)
+                    ComponentRegistry.Unregister(name);
 
                 entry.LoadContext.Unload();
             }
@@ -88,8 +91,9 @@ namespace AgentCoreProcessor.Tool.Host
                 loadContext = new PluginLoadContext(dllPath);
                 var assembly = loadContext.LoadFromAssemblyPath(dllPath);
                 var toolTypes = DiscoverToolTypes(assembly);
+                var componentTypes = DiscoverComponentTypes(assembly);
 
-                if (toolTypes.Count == 0)
+                if (toolTypes.Count == 0 && componentTypes.Count == 0)
                 {
                     loadContext.Unload();
                     return;
@@ -100,30 +104,46 @@ namespace AgentCoreProcessor.Tool.Host
                     FilePath = dllPath,
                     FileName = fileName,
                     LoadContext = loadContext,
-                    ToolNames = new List<string>()
+                    ToolNames = new List<string>(),
+                    ComponentNames = new List<string>()
                 };
 
-                foreach (var type in toolTypes)
+                // 如果 DLL 有 Component，工具由 Component 管理，PluginLoader 不独立注册
+                if (componentTypes.Count == 0)
                 {
-                    var tool = InstantiateTool(type);
-                    if (tool == null) continue;
+                    foreach (var type in toolTypes)
+                    {
+                        var tool = InstantiateTool(type);
+                        if (tool == null) continue;
 
-                    if (ToolRegistry.Register(tool))
-                    {
-                        entry.ToolNames.Add(tool.Name);
-                    }
-                    else
-                    {
-                        FrameworkLogger.Log("PluginLoader",
-                            $"工具名冲突，跳过: {tool.Name} (来自 {fileName})");
+                        if (ToolRegistry.Register(tool))
+                        {
+                            entry.ToolNames.Add(tool.Name);
+                        }
+                        else
+                        {
+                            FrameworkLogger.Log("PluginLoader",
+                                $"工具名冲突，跳过: {tool.Name} (来自 {fileName})");
+                        }
                     }
                 }
 
-                if (entry.ToolNames.Count > 0)
+                foreach (var type in componentTypes)
+                {
+                    if (ComponentRegistry.Register(type))
+                    {
+                        var attr = type.GetCustomAttribute<ComponentAttribute>()!;
+                        entry.ComponentNames.Add(attr.Name);
+                        FrameworkLogger.Log("PluginLoader",
+                            $"已注册组件: {attr.Name} ({attr.Scope}) 来自 {fileName}");
+                    }
+                }
+
+                if (entry.ToolNames.Count > 0 || entry.ComponentNames.Count > 0)
                 {
                     loadedPlugins.Add(entry);
                     FrameworkLogger.Log("PluginLoader",
-                        $"已加载 {fileName}: {string.Join(", ", entry.ToolNames)}");
+                        $"已加载 {fileName}: {string.Join(", ", entry.ToolNames.Concat(entry.ComponentNames))}");
                 }
                 else
                 {
@@ -142,6 +162,14 @@ namespace AgentCoreProcessor.Tool.Host
             var iToolType = typeof(AgentLilara.PluginSDK.ITool);
             return assembly.GetExportedTypes()
                 .Where(t => t.IsClass && !t.IsAbstract && iToolType.IsAssignableFrom(t))
+                .ToList();
+        }
+
+        private static List<Type> DiscoverComponentTypes(Assembly assembly)
+        {
+            return assembly.GetExportedTypes()
+                .Where(t => t.IsClass && !t.IsAbstract
+                    && t.GetCustomAttribute<ComponentAttribute>() != null)
                 .ToList();
         }
 
@@ -178,6 +206,7 @@ namespace AgentCoreProcessor.Tool.Host
         public string FileName { get; set; } = "";
         public AssemblyLoadContext LoadContext { get; set; } = null!;
         public List<string> ToolNames { get; set; } = new();
+        public List<string> ComponentNames { get; set; } = new();
     }
 
     /// <summary>
@@ -195,7 +224,7 @@ namespace AgentCoreProcessor.Tool.Host
         protected override Assembly? Load(AssemblyName assemblyName)
         {
             // 契约类型从主程序加载，不从插件 DLL 重复加载
-            if (assemblyName.Name == "AgentCoreProcessor")
+            if (assemblyName.Name == "AgentCoreProcessor" || assemblyName.Name == "AgentLilara.PluginSDK")
                 return null;
 
             var path = resolver.ResolveAssemblyToPath(assemblyName);
