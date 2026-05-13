@@ -672,7 +672,7 @@ namespace AgentCoreProcessor.Engine
         /// <summary>创建并启动子 agent。</summary>
         public IAgentSession CreateSubAgent(string instruction)
         {
-            var pool = ctx.ToolProfiles.GetSubAgentPool();
+            var pool = ctx.ToolProfiles.GetActiveTools("sub-agent");
             var session = new TaskSession(ctx, toolWhitelist: pool);
             lock (subAgentLock)
             {
@@ -686,7 +686,7 @@ namespace AgentCoreProcessor.Engine
         /// <summary>创建并启动子 agent（关联委托）。完成后自动更新委托状态。</summary>
         public IAgentSession CreateSubAgentForDelegation(string instruction, string? delegationId)
         {
-            var pool = ctx.ToolProfiles.GetSubAgentPool();
+            var pool = ctx.ToolProfiles.GetActiveTools("sub-agent");
             var session = new TaskSession(ctx, delegationId, toolWhitelist: pool);
             lock (subAgentLock)
             {
