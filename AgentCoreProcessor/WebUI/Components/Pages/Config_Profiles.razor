@@ -89,8 +89,7 @@
                         <tbody>
                         @foreach (var comp in GetResolvedComponents())
                         {
-                            var isOwn = selectedProfile.Components.ContainsKey(comp.Name);
-                            <tr style="@(!isOwn ? "opacity:0.6;" : "")">
+                            <tr style="@(!comp.IsOwn ? "opacity:0.6;" : "")">
                                 <td>@comp.Name</td>
                                 <td>
                                     <select class="inline-edit-select" style="width:120px;"
@@ -99,14 +98,14 @@
                                         <option value="enabled">启用</option>
                                         <option value="disabled">可激活</option>
                                         <option value="unavailable">不可用</option>
-                                        @if (!isOwn)
+                                        @if (selectedName != "_root")
                                         {
                                             <option value="">继承</option>
                                         }
                                     </select>
                                 </td>
                                 <td style="font-size:var(--font-size-sm);">
-                                    @(isOwn ? "本节点" : "继承")
+                                    @(comp.IsOwn ? "本节点" : "继承")
                                 </td>
                             </tr>
                         }
@@ -348,11 +347,11 @@
     };
 
     // ---- 组件状态解析 ----
-    private record ComponentInfo(string Name, string State);
+    private record ComponentInfo(string Name, string State, bool IsOwn);
 
     private List<ComponentInfo> GetResolvedComponents()
     {
-        if (selectedName == null) return new();
+        if (selectedName == null || selectedProfile == null) return new();
         var allComponents = new HashSet<string>();
         foreach (var name in profileNames)
         {
@@ -360,7 +359,6 @@
             if (p != null)
                 foreach (var k in p.Components.Keys) allComponents.Add(k);
         }
-        // 也加上 ComponentRegistry 中已注册的
         foreach (var reg in Component.ComponentRegistry.GetAll())
         {
             var attr = AgentLilara.PluginSDK.ComponentAttribute.GetFrom(reg.Type);
@@ -369,8 +367,9 @@
 
         return allComponents.OrderBy(n => n).Select(n =>
         {
-            var state = Engine.ToolProfiles.GetComponentState(selectedName, n);
-            return new ComponentInfo(n, state.ToString().ToLower());
+            var isOwn = selectedProfile.Components.ContainsKey(n);
+            var state = isOwn ? selectedProfile.Components[n] : "";
+            return new ComponentInfo(n, state, isOwn);
         }).ToList();
     }
 
