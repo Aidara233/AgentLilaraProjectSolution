@@ -230,6 +230,24 @@ namespace AgentCoreProcessor.Tool.Host
             resolvedCache.Clear();
         }
 
+        public void AddProfile(string name, ToolProfile profile)
+        {
+            config.Profiles[name] = profile;
+            Save();
+            resolvedCache.Clear();
+        }
+
+        public void RemoveProfile(string name)
+        {
+            if (name == "_root") return;
+            config.Profiles.Remove(name);
+            // 清理引用此 profile 的 channelMapping
+            var toRemove = config.ChannelMapping.Where(kv => kv.Value == name).Select(kv => kv.Key).ToList();
+            foreach (var k in toRemove) config.ChannelMapping.Remove(k);
+            Save();
+            resolvedCache.Clear();
+        }
+
         /// <summary>生成原生工具定义列表（用于 API tool_use）。</summary>
         public List<AgentLilara.PluginSDK.ToolDefinition> GetToolDefinitions(string profileName, string? sessionId = null)
         {

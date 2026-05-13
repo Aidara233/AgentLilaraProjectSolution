@@ -60,6 +60,7 @@ namespace AgentCoreProcessor.WebUI.Navigation
                 new() { Title = "模型日志", Href = "/logs/model" },
                 new() { Title = "Token 统计", Href = "/logs/tokens" },
                 new() { Title = "工具管理", Href = "/config/tools" },
+                new() { Title = "组件配置", Href = "/config/profiles" },
                 new() { Title = "配置", Href = "/config" },
                 new() { Title = "MCP", Href = "/mcp" },
             }},
