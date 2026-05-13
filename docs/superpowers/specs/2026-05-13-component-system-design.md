@@ -40,8 +40,8 @@ public interface ILoopComponent
     IEnumerable<ITool> Tools { get; }
 
     Task OnInitAsync(ILoopComponentContext context);
-    Task<ShutdownResponse> OnDestroyAsync();
-    Task<ShutdownResponse> OnReloadingAsync();   // 即将热重载，持久化状态
+    Task<ShutdownResponse> OnShutdownRequestedAsync(ShutdownReason reason); // 协商：能不能关？
+    Task OnShutdownAsync(ShutdownReason reason);  // 收尾：一定会被调用
     Task OnActivatedAsync();   // 循环从闲置被唤醒
     Task OnPauseAsync();       // 循环进入等待
     Task OnBeforeInvokeAsync(); // 模型调用前
@@ -60,8 +60,8 @@ public interface IGlobalComponent
     IEnumerable<ITool> Tools { get; }
 
     Task OnInitAsync(IGlobalComponentContext context);
-    Task<ShutdownResponse> OnDestroyAsync();
-    Task<ShutdownResponse> OnReloadingAsync();   // 即将热重载，持久化状态
+    Task<ShutdownResponse> OnShutdownRequestedAsync(ShutdownReason reason);
+    Task OnShutdownAsync(ShutdownReason reason);
 
     string? BuildPromptSection(LoopInfo caller);
 }
@@ -79,7 +79,7 @@ public class ComponentMeta
 }
 ```
 
-### ShutdownResponse
+### ShutdownResponse & ShutdownReason
 
 ```csharp
 public record ShutdownResponse(bool Allow, string? Reason = null)
@@ -87,14 +87,25 @@ public record ShutdownResponse(bool Allow, string? Reason = null)
     public static ShutdownResponse Ok => new(true);
     public static ShutdownResponse Deny(string reason) => new(false, reason);
 }
+
+public enum ShutdownReason { Destroy, Reload, Disable }
 ```
 
-宿主行为：
-- `Allow = true`：正常继续关闭/重载/禁用流程
-- `Allow = false` + Reason：暂停操作，将 Reason 返回给调用者（模型/管理员）
-- 强制操作时忽略返回值，直接执行（宿主始终有最终决定权）
+**两阶段关闭协议（Two-Phase Shutdown）：**
 
-适用于：OnDestroyAsync / OnReloadingAsync / Disable 操作（组件管理器先询问目标 Component）
+阶段 1 — 协商（`OnShutdownRequestedAsync`）：
+- 询问所有受影响的 Component，收集意见
+- Component 只表态，不做实际收尾工作
+- 有 Deny → 暂停，汇报原因给调用者
+- 强制操作 = 跳过此阶段
+
+阶段 2 — 收尾（`OnShutdownAsync`）：
+- 无论是否强制，一定会被调用
+- Component 在此做持久化、清理资源等收尾工作
+- 带超时等待完成
+- reason 参数让 Component 可以针对不同场景做不同处理（Reload 时只存最小状态）
+
+宿主始终有最终决定权。强制 = 跳过协商直接进收尾，不会跳过收尾本身。
 
 ## Context 接口
 
@@ -229,7 +240,7 @@ public record ComponentStateChanged(string ComponentName, bool IsEnabled, string
 ### 控制方式
 
 1. **Component 自控**：通过 context.Enable() / context.Disable()（自己禁用自己不触发协商）
-2. **组件管理器**：一个特殊的 ILoopComponent，提供 enable_component / disable_component 工具。禁用前先调目标的 OnDestroyAsync() 协商，返回 Deny 则告知模型原因，模型决定是否强制
+2. **组件管理器**：一个特殊的 ILoopComponent，提供 enable_component / disable_component 工具。禁用前先调目标的 OnShutdownRequestedAsync(Disable) 协商，返回 Deny 则告知模型原因，模型决定是否强制
 3. **配置文件**：启动时默认状态
 
 ## 宿主集成
@@ -251,7 +262,7 @@ public record ComponentStateChanged(string ComponentName, bool IsEnabled, string
 1. 查 ComponentRegistry 中 Applicability != NotApplicable 的 Loop 类型
 2. 读配置决定初始状态
 3. 实例化，调 OnInitAsync(context)
-4. 循环销毁时调 OnDestroyAsync()
+4. 循环销毁时走两阶段关闭协议
 
 ### 每轮调用顺序
 
@@ -275,28 +286,22 @@ OnPauseAsync（进入等待时）
 
 ### 流程
 
-所有 Component（Global 和 Loop）统一流程：
+所有 Component（Global 和 Loop）统一走两阶段关闭协议：
 
-1. 宿主发布 `ComponentReloading` 事件（Component 收到后持久化状态到 Storage）
+1. 阶段 1（可选）：`OnShutdownRequestedAsync(Reload)` — 协商，收集意见
 2. 等待当前正在执行的事件 handler 完成（短超时，如 5s）
-3. 调 `OnDestroyAsync()`
+3. 阶段 2：`OnShutdownAsync(Reload)` — 收尾，持久化状态到 Storage
 4. 清理所有事件订阅
 5. 卸载 AssemblyLoadContext
 6. 加载新 DLL → 实例化 → `OnInitAsync()`（Component 自行从 Storage 恢复状态）
 
-### 接口
+### ShutdownReason 语义
 
-```csharp
-// ILoopComponent / IGlobalComponent 共有
-Task OnReloadingAsync();  // 通知即将重载，持久化状态
-```
+- `Destroy`：真的要关了（循环销毁、程序退出）
+- `Reload`：马上回来，存最小状态即可
+- `Disable`：被禁用，可能会再启用
 
-### 语义区分
-
-- `OnReloadingAsync()`：马上回来，存盘用
-- `OnDestroyAsync()`：可能真的要关了（循环销毁、程序退出）
-
-Component 在 OnReloading 里只需要把必要状态写入 Storage，OnInit 时检查 Storage 有无恢复数据即可。状态恢复是 Component 自己的责任。
+Component 在 OnShutdownAsync 里根据 reason 决定收尾策略。OnInit 时检查 Storage 有无恢复数据。状态恢复是 Component 自己的责任。
 
 ### 影响
 
