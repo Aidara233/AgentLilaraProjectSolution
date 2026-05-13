@@ -31,11 +31,6 @@ namespace AgentCoreProcessor.Engine.Vision
             if (activeInstance != null && activeInstance.IsAlive)
                 return Task.FromResult(false);
 
-            // 检查配置：如果 OCR 和 Vision 都禁用，不启动引擎
-            var config = VisionEngineConfig.Load();
-            if (!config.OcrEnabled && !config.VisionEnabled)
-                return Task.FromResult(false);
-
             if (e is TimerEvent timer && timer.TimerName == "tick")
             {
                 if (lastDeathTime == null || (DateTime.Now - lastDeathTime.Value).TotalSeconds >= 10)
