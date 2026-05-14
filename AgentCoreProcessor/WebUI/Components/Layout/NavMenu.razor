@@ -2,6 +2,7 @@
 @using Microsoft.JSInterop
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject AgentCoreProcessor.WebUI.Shell.ProviderRegistry Registry
 @implements IDisposable
 
 <nav class="app-sidebar">
@@ -28,6 +29,28 @@
             }
         }
     </ul>
+    @if (navGroups.Count > 0)
+    {
+        <hr class="sidebar-divider" />
+        <ul class="sidebar-nav">
+            @foreach (var group in navGroups)
+            {
+                @if (group.IsSinglePage && group.Pages.Count == 1)
+                {
+                    var p = group.Pages[0];
+                    <li @key="@($"p-{p.Route}")">
+                        <NavLink class="nav-link" href="@($"/p/{p.Route}")" Match="NavLinkMatch.Prefix">
+                            <i class="bi @(p.Meta.Icon ?? "bi-circle")"></i> @p.Meta.Title
+                        </NavLink>
+                    </li>
+                }
+                else
+                {
+                    <NavSection @key="@($"pg-{group.Name}")" Item="@ToNavItem(group)" ExpandedSet="expandedSet" Version="version" />
+                }
+            }
+        </ul>
+    }
     <hr class="sidebar-divider" />
     <div class="sidebar-footer">
         <button class="btn-theme-toggle" @onclick="ToggleTheme" title="切换主题">
@@ -46,6 +69,7 @@
     private HashSet<string> expandedSet = new();
     private int version = 0;
     private string currentTheme = "dark";
+    private List<AgentCoreProcessor.WebUI.Shell.NavGroup> navGroups = new();
 
     private string themeIcon => currentTheme switch
     {
@@ -80,6 +104,8 @@
     {
         ExpandForCurrentPath();
         Nav.LocationChanged += OnLocationChanged;
+        navGroups = Registry.BuildNavTree();
+        Registry.OnChanged += OnRegistryChanged;
     }
 
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
@@ -88,6 +114,24 @@
         version++;
         InvokeAsync(StateHasChanged);
     }
+
+    private void OnRegistryChanged()
+    {
+        navGroups = Registry.BuildNavTree();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private Navigation.NavItem ToNavItem(AgentCoreProcessor.WebUI.Shell.NavGroup group) => new()
+    {
+        Title = group.Name,
+        Icon = group.Icon ?? "bi-folder",
+        Children = group.Pages.Select(p => new Navigation.NavItem
+        {
+            Title = p.Meta.Title,
+            Href = $"/p/{p.Route}",
+            Icon = p.Meta.Icon ?? ""
+        }).ToList()
+    };
 
     private void ExpandForCurrentPath()
     {
@@ -132,5 +176,6 @@
     public void Dispose()
     {
         Nav.LocationChanged -= OnLocationChanged;
+        Registry.OnChanged -= OnRegistryChanged;
     }
 }
