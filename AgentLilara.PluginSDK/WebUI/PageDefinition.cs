@@ -19,10 +19,3 @@ public class PageMeta
     public bool DefaultCollapsed { get; init; }
 }
 
-public class DataSourceDefinition
-{
-    public required string Id { get; init; }
-    public required IDataSource Source { get; init; }
-}
-
-public interface IDataSource { }
