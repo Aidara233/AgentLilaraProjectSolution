@@ -37,6 +37,8 @@ namespace AgentCoreProcessor
             var logAccess = new LogAccessImpl(logWriter, logQuery, spanTracker, logDb);
 
             SignalContext.Init(logWriter);
+            Signal.Begin(LogGroup.Engine, "system", "程序启动", new { version = "1.0.0" });
+            Signal.Event(LogGroup.Engine, "配置加载完成");
 
             var debug = Array.Exists(args, a => a == "--debug");
             var fileMode = Array.Exists(args, a => a == "--file");
@@ -299,6 +301,7 @@ namespace AgentCoreProcessor
             builder.Services.AddSingleton(sp =>
                 new WebUI.Services.TokenStatsService(engine.ModelCallLogs));
             builder.Services.AddSingleton(providerRegistry);
+            Signal.Event(LogGroup.Engine, "服务注册完成");
 
             builder.Services.AddRazorComponents()
                 .AddInteractiveServerComponents();
@@ -355,6 +358,7 @@ namespace AgentCoreProcessor
             await app.RunAsync();
 
             // 关闭时释放日志系统
+            Signal.Event(LogGroup.Engine, "程序关闭中");
             logWriter.Dispose();
             logDb.Dispose();
 

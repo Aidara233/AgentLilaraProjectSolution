@@ -13,6 +13,7 @@ using AgentCoreProcessor.Database;
 using AgentCoreProcessor.MCP;
 using AgentCoreProcessor.Memory;
 using AgentCoreProcessor.Engine.Modules;
+using AgentCoreProcessor.Logging;
 using AgentLilara.PluginSDK;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -212,6 +213,7 @@ namespace AgentCoreProcessor.Engine
             var dbPath = Path.Combine(databaseDirectory, "lilara.db");
             db = new DbManager(dbPath);
             await db.InitAsync();
+            Signal.Event(LogGroup.Engine, "数据库初始化完成");
 
             // 记忆表结构变更（v2: 加 Type/Subject，移除 TopicId），一次性重建
             var schemaMarker = Path.Combine(databaseDirectory, ".memory_schema_v2");
@@ -408,6 +410,7 @@ namespace AgentCoreProcessor.Engine
             var pluginLoader = new Tool.Host.PluginLoader(toolContext, ProviderRegistry);
             pluginLoader.LoadAll();
             FrameworkLogger.Log("MasterEngine", $"插件加载完成，共 {Tool.ToolRegistry.All.Count} 个工具已注册");
+            Signal.Event(LogGroup.Plugin, "插件加载完成", new { count = Tool.ToolRegistry.All.Count });
 
             // 工具 Profile 加载（在插件加载后，引擎启动前）
             ToolProfiles.Load();
@@ -469,6 +472,7 @@ namespace AgentCoreProcessor.Engine
             }
 
             FrameworkLogger.Log("MasterEngine", "内核初始化完成");
+            Signal.Event(LogGroup.Engine, "引擎就绪");
         }
 
         // ---- 事件分发（内核流水线） ----
@@ -597,6 +601,11 @@ namespace AgentCoreProcessor.Engine
                 }
                 catch (Exception ex)
                 {
+                    Signal.Error(LogGroup.Engine, "未捕获异常", new {
+                        exception = ex.GetType().Name,
+                        message = ex.Message,
+                        stack = ex.StackTrace
+                    });
                     FrameworkLogger.LogError("MasterEngine", ex, $"引擎类型={engine.EngineType}");
                 }
             });
