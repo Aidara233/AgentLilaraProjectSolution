@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Database;
+using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Memory;
 using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Component;
@@ -275,12 +276,26 @@ namespace AgentCoreProcessor.Engine
                 // 循环唤醒：通知组件
                 await componentHost.OnActivatedAsync();
 
+                // 如果没有上游注入的 SignalContext，在此创建一个新的轮次信号
+                if (SignalContext.Current == null)
+                    Signal.Begin(LogGroup.Engine, $"channel:{channelId}", "频道轮次",
+                        new { channelId, mode = isWorkingMode ? "working" : "express" });
+
                 // ② CollectBuffer
                 var batch = CollectBuffer();
 
-                // ③ PrepareContext
-                if (!await PrepareContextAsync(batch))
+                // ③ PrepareContext（含闸门评估）
+                bool prepareResult;
+                using (var gateSpan = Signal.Open(LogGroup.Engine, "闸门评估",
+                    new { hasMessages = batch?.Count ?? 0, isWorkingMode }))
                 {
+                    prepareResult = await PrepareContextAsync(batch);
+                    gateSpan.SetCloseDetail(new { passed = prepareResult });
+                }
+
+                if (!prepareResult)
+                {
+                    Signal.Event(LogGroup.Engine, "频道挂起", new { reason = "闸门拦截" });
                     await componentHost.OnPauseAsync();
                     continue;
                 }
@@ -292,11 +307,27 @@ namespace AgentCoreProcessor.Engine
                     await componentHost.OnBeforeInvokeAsync();
                     var messages = BuildPromptMessages();
                     var mode = isWorkingMode ? EngineMode.Working : EngineMode.Express;
-                    var output = await agentCore.InvokeAsync(messages, mode);
+
+                    ModelOutput output;
+                    using (var modelSpan = Signal.Open(LogGroup.Model, "模型调用",
+                        new { mode = mode.ToString(), channelId }))
+                    {
+                        output = await agentCore.InvokeAsync(messages, mode);
+                        modelSpan.SetCloseDetail(new
+                        {
+                            isText = output.IsText,
+                            hasToolCalls = output.HasToolCalls,
+                            toolCount = output.ToolCalls?.Count ?? 0
+                        });
+                    }
+
                     await componentHost.OnAfterInvokeAsync();
                     await ProcessResponseAsync(output);
                     DecideNext(output);
                     consecutiveFailures = 0;
+
+                    if (!isInWorkingSession)
+                        Signal.Event(LogGroup.Engine, "频道挂起", new { reason = "轮次完成" });
                 }
                 catch (Exception ex)
                 {
@@ -304,6 +335,8 @@ namespace AgentCoreProcessor.Engine
                     totalErrorCount++;
                     lastErrorTime = DateTime.Now;
                     lastErrorMessage = $"{ex.GetType().Name}: {ex.Message}";
+                    Signal.Error(LogGroup.Engine, "轮次异常",
+                        new { error = ex.GetType().Name, message = ex.Message, consecutiveFailures });
                     FrameworkLogger.LogError("ChannelEngine", ex, $"channelId={channelId}, 连续第 {consecutiveFailures} 次");
 
                     if (currentLastMsg != null && consecutiveFailures <= 1)
@@ -547,25 +580,36 @@ namespace AgentCoreProcessor.Engine
             if (currentLastMsg == null || currentLastSc == null) return false;
             currentParticipantSnapshot ??= new Dictionary<int, ParticipantInfo>(recentParticipants);
 
-            var recentMessages = await ctx.Session.GetContextByChannelAsync(channelId);
-            var effectiveBatch = batch ?? new List<(IncomingMessage, SessionContext)>();
-            var (xml, imageEmbeds) = await contextBuilder.BuildContextXmlAsync(
-                effectiveBatch, recentMessages, currentParticipantSnapshot);
-
-            // 图片直传列表：ContextBuilder 已根据规则收集
-            if (imageEmbeds.Count > 0)
+            using (var ctxSpan = Signal.Open(LogGroup.Memory, "上下文组装",
+                new { channelId, personId = currentLastSc.Person.Id }))
             {
-                currentImageEmbeds = imageEmbeds;
-            }
-            else
-            {
-                currentImageEmbeds = null;
-            }
-            currentContextXml = xml;
+                var recentMessages = await ctx.Session.GetContextByChannelAsync(channelId);
+                var effectiveBatch = batch ?? new List<(IncomingMessage, SessionContext)>();
+                var (xml, imageEmbeds) = await contextBuilder.BuildContextXmlAsync(
+                    effectiveBatch, recentMessages, currentParticipantSnapshot);
 
-            // 刷新记忆
-            var memoryResults = await GetCachedMemoryAsync(currentLastSc, currentLastMsg.Content);
-            memoryWindowModule.SetMemories(memoryResults);
+                // 图片直传列表：ContextBuilder 已根据规则收集
+                if (imageEmbeds.Count > 0)
+                {
+                    currentImageEmbeds = imageEmbeds;
+                }
+                else
+                {
+                    currentImageEmbeds = null;
+                }
+                currentContextXml = xml;
+
+                // 刷新记忆
+                var memoryResults = await GetCachedMemoryAsync(currentLastSc, currentLastMsg.Content);
+                memoryWindowModule.SetMemories(memoryResults);
+
+                ctxSpan.SetCloseDetail(new
+                {
+                    recentMsgCount = recentMessages.Count,
+                    memoryCount = memoryResults.Count,
+                    hasImages = imageEmbeds.Count > 0
+                });
+            }
 
             return true;
         }
@@ -803,7 +847,18 @@ namespace AgentCoreProcessor.Engine
                     bus.Publish(new ToolExecutedEvent(call, result, toolDef));
                     await Task.CompletedTask;
                 };
-                var results = await executor.ExecuteAsync(toolCalls);
+
+                List<ToolResult> results;
+                using (var toolSpan = Signal.Open(LogGroup.Tool, "工具执行",
+                    new { toolCount = toolCalls.Count, tools = string.Join(",", toolCalls.Select(c => c.Tool)) }))
+                {
+                    results = await executor.ExecuteAsync(toolCalls);
+                    toolSpan.SetCloseDetail(new
+                    {
+                        successCount = results.Count(r => r.Status == "ok"),
+                        errorCount = results.Count(r => r.Error != null)
+                    });
+                }
 
                 lastRoundCalls = toolCalls;
                 lastRoundResults = results;
