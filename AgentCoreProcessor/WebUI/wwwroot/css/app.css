@@ -1475,13 +1475,15 @@ select.config-input option {
 }
 
 [data-theme="tech"] .card-grid-item > .card-header .btn {
-    border-color: var(--glass-border);
+    border: none;
     color: var(--accent);
+    opacity: 0.6;
 }
 
 [data-theme="tech"] .card-grid-item > .card-header .btn:hover {
-    background: var(--accent-dim);
-    box-shadow: 0 0 4px rgba(0, 212, 255, 0.2);
+    opacity: 1;
+    background: transparent;
+    text-shadow: 0 0 6px rgba(0, 212, 255, 0.5);
 }
 
 [data-theme="tech"] .status-card .status-field-row {
@@ -1519,11 +1521,16 @@ select.config-input option {
 [data-theme="tech"] .table-card .table-card-toolbar .form-control {
     background: rgba(8, 14, 28, 0.6);
     border-color: var(--glass-border);
+    padding: 0.25rem 0.5rem;
+    font-size: var(--font-size-xs);
+    height: auto;
 }
 
 [data-theme="tech"] .table-card .table-card-toolbar .btn {
     border-color: var(--glass-border);
     color: var(--accent);
+    padding: 0.25rem 0.6rem;
+    font-size: var(--font-size-xs);
 }
 
 [data-theme="tech"] .table-card .table-card-toolbar .btn:hover {
@@ -1665,14 +1672,15 @@ select.config-input option {
 
 .card-grid-item > .card-header .btn {
     color: var(--text-muted);
-    border-color: var(--border);
+    border: none;
     padding: 0.15rem 0.4rem;
     font-size: var(--font-size-xs);
+    opacity: 0.6;
 }
 
 .card-grid-item > .card-header .btn:hover {
     color: var(--text-primary);
-    border-color: var(--accent);
+    opacity: 1;
 }
 
 .card-error-state,
@@ -1744,6 +1752,10 @@ select.config-input option {
 }
 
 /* === Table Card === */
+.table-card {
+    padding: 0.5rem;
+}
+
 .table-card .table-card-toolbar {
     padding: 0.5rem 0.75rem 0;
 }
@@ -1752,7 +1764,9 @@ select.config-input option {
     background: var(--bg-tertiary);
     border-color: var(--border);
     color: var(--text-primary);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-xs);
+    padding: 0.25rem 0.5rem;
+    height: auto;
 }
 
 .table-card .table-card-toolbar .form-control::placeholder {
@@ -1762,7 +1776,9 @@ select.config-input option {
 .table-card .table-card-toolbar .btn {
     border-color: var(--border);
     color: var(--text-muted);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-xs);
+    padding: 0.25rem 0.6rem;
+    white-space: nowrap;
 }
 
 .table-card .sortable-col {
