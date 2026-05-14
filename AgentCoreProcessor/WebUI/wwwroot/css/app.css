@@ -1437,6 +1437,132 @@ select.config-input option {
     background: rgba(0, 200, 255, 0.4);
 }
 
+/* Card system — tech theme overrides */
+[data-theme="tech"] .card-grid-item .btn-outline-secondary {
+    background: transparent;
+    border: 1px solid var(--glass-border);
+    color: var(--accent);
+    font-size: var(--font-size-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+[data-theme="tech"] .card-grid-item .btn-outline-secondary:hover:not(:disabled) {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+    box-shadow: 0 0 6px rgba(0, 212, 255, 0.25);
+}
+
+[data-theme="tech"] .card-grid-item .btn-outline-secondary:disabled {
+    opacity: 0.3;
+    color: var(--text-muted);
+}
+
+[data-theme="tech"] .card-grid-item .btn-outline-danger {
+    border-color: rgba(255, 23, 68, 0.4);
+    color: var(--status-error);
+}
+
+[data-theme="tech"] .card-grid-item .btn-outline-danger:hover {
+    background: var(--status-error-dim);
+    border-color: var(--status-error);
+    box-shadow: 0 0 6px rgba(255, 23, 68, 0.25);
+}
+
+[data-theme="tech"] .card-grid-item > .card-header {
+    border-bottom: 1px solid var(--glass-border);
+    background: rgba(0, 200, 255, 0.03);
+}
+
+[data-theme="tech"] .card-grid-item > .card-header .btn {
+    border-color: var(--glass-border);
+    color: var(--accent);
+}
+
+[data-theme="tech"] .card-grid-item > .card-header .btn:hover {
+    background: var(--accent-dim);
+    box-shadow: 0 0 4px rgba(0, 212, 255, 0.2);
+}
+
+[data-theme="tech"] .status-card .status-field-row {
+    border-bottom-color: rgba(0, 200, 255, 0.08);
+}
+
+[data-theme="tech"] .status-card .status-field-label {
+    color: var(--text-secondary);
+}
+
+[data-theme="tech"] .status-card .status-field-value.badge {
+    background: var(--accent-dim) !important;
+    color: var(--accent);
+    border: 1px solid rgba(0, 212, 255, 0.3);
+}
+
+[data-theme="tech"] .status-card .status-actions {
+    border-top-color: rgba(0, 200, 255, 0.1);
+}
+
+[data-theme="tech"] .status-card .btn-primary-custom {
+    background: transparent;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-size: var(--font-size-xs);
+}
+
+[data-theme="tech"] .status-card .btn-primary-custom:hover {
+    background: var(--accent-dim);
+    box-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
+}
+
+[data-theme="tech"] .table-card .table-card-toolbar .form-control {
+    background: rgba(8, 14, 28, 0.6);
+    border-color: var(--glass-border);
+}
+
+[data-theme="tech"] .table-card .table-card-toolbar .btn {
+    border-color: var(--glass-border);
+    color: var(--accent);
+}
+
+[data-theme="tech"] .table-card .table-card-toolbar .btn:hover {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+}
+
+[data-theme="tech"] .table-card .table-card-pagination {
+    border-top-color: rgba(0, 200, 255, 0.08);
+    color: var(--text-secondary);
+}
+
+[data-theme="tech"] .table-card .table-card-pagination .text-muted {
+    color: var(--text-secondary) !important;
+}
+
+[data-theme="tech"] .table-card .table-card-pagination .btn {
+    border-color: var(--glass-border);
+    color: var(--accent);
+}
+
+[data-theme="tech"] .table-card .table-card-pagination .btn:not(:disabled):hover {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+    box-shadow: 0 0 4px rgba(0, 212, 255, 0.2);
+}
+
+[data-theme="tech"] .table-card .table-card-pagination .btn.disabled,
+[data-theme="tech"] .table-card .table-card-pagination .btn:disabled {
+    background: rgba(8, 14, 28, 0.4);
+    border-color: var(--glass-border);
+    color: var(--text-secondary);
+}
+
+[data-theme="tech"] .table-card .sortable-col:hover {
+    color: var(--accent);
+    text-shadow: 0 0 4px rgba(0, 212, 255, 0.3);
+}
+
 /* Config field — tech */
 [data-theme="tech"] .config-field input {
     background: rgba(8, 14, 28, 0.6);
@@ -1668,4 +1794,46 @@ select.config-input option {
 
 .table-card .table-card-pagination .text-muted {
     color: var(--text-muted) !important;
+}
+
+/* === Button Overrides (card system) === */
+.card-grid-item .btn-outline-secondary {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+}
+
+.card-grid-item .btn-outline-secondary:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-dim);
+}
+
+.card-grid-item .btn-outline-secondary:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.card-grid-item .btn-outline-danger {
+    background: transparent;
+    border: 1px solid var(--status-error);
+    color: var(--status-error);
+    font-size: var(--font-size-sm);
+    border-radius: var(--radius-sm);
+}
+
+.card-grid-item .btn-outline-danger:hover {
+    background: var(--status-error-dim);
+}
+
+/* 分页页码显示 */
+.table-card .table-card-pagination .btn.disabled,
+.table-card .table-card-pagination .btn:disabled {
+    background: var(--bg-tertiary);
+    border-color: var(--border);
+    color: var(--text-secondary);
+    opacity: 1;
 }
