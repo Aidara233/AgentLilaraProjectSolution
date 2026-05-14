@@ -504,4 +504,14 @@ Storage/
   默认启动 Web 服务器（所有模式），ConsoleAdapter 已移除（仅 --debug 保留纯控制台）
   --debug / --test 模式不启动 Web 服务器
   ASP.NET 日志压制到 Warning 级别，控制台输出干净
+
+卡片式数据驱动系统 (Phase 1+2 已实现):
+  SDK 接口: IWebUIProvider / IDataSource / CardSchema(7种) / IPageContext / DataQuery
+  Shell: ProviderRegistry + DynamicPage + CardGrid + CardHost + 7种卡片渲染器
+  路由: /p/{route} → ProviderRegistry.FindPage → DynamicPage 渲染
+  数据层: DataSourceManager (Fetch重试3次指数退避 + Subscribe推送)
+  Provider 发现: PluginLoader 扫描 IWebUIProvider 实现类 (与 Component/ITool 同管道)
+  热重载: ALC 卸载 → 反注册 → 重新加载 → 注册 → 侧边栏自动刷新
+  卡片类型: Table / Status / Form / Stream / Chat / Tree / Detail (+ Custom 预留)
+  布局: CSS Grid 12列，CardLayout 声明 PreferredCols/MinWidth/Height，移动端自动单列
 ```

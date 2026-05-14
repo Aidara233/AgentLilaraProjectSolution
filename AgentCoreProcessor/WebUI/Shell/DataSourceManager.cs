@@ -43,7 +43,7 @@ internal class DataSourceManager : IDisposable
                 state.RetryCount = 0;
                 return result;
             }
-            catch (Exception ex) when (attempt < 3)
+            catch (Exception) when (attempt < 3)
             {
                 state.RetryCount = attempt + 1;
                 var delay = (int)Math.Pow(2, attempt) * 1000;
