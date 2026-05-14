@@ -1,0 +1,132 @@
+@using AgentLilara.PluginSDK.WebUI
+@using System.Text.Json.Nodes
+
+<div class="tree-card">
+    @if (_roots.Count == 0)
+    {
+        <div class="text-muted text-center py-3">暂无数据</div>
+    }
+    else
+    {
+        <ul class="tree-list list-unstyled mb-0">
+            @foreach (var node in _roots)
+            {
+                @RenderNode(node)
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public TreeSchema Schema { get; set; } = null!;
+    [Parameter] public JsonNode? Data { get; set; }
+    [Parameter] public EventCallback<string> OnNodeSelect { get; set; }
+
+    private List<TreeNode> _roots = new();
+    private HashSet<string> _expanded = new();
+    private string? _selected;
+
+    private class TreeNode
+    {
+        public string Id { get; set; } = "";
+        public string Label { get; set; } = "";
+        public JsonNode? Raw { get; set; }
+        public List<TreeNode> Children { get; set; } = new();
+    }
+
+    protected override void OnParametersSet()
+    {
+        _roots = BuildTree();
+    }
+
+    private List<TreeNode> BuildTree()
+    {
+        if (Data is not JsonArray arr) return new();
+
+        var allNodes = arr
+            .OfType<JsonObject>()
+            .Select(obj => new TreeNode
+            {
+                Id = obj[Schema.NodeIdField]?.ToString() ?? "",
+                Label = obj[Schema.NodeLabelField]?.ToString() ?? "",
+                Raw = obj
+            })
+            .ToList();
+
+        if (string.IsNullOrEmpty(Schema.ParentIdField))
+            return allNodes;
+
+        var byId = allNodes.ToDictionary(n => n.Id);
+        var roots = new List<TreeNode>();
+
+        foreach (var node in allNodes)
+        {
+            var parentId = (node.Raw as JsonObject)?[Schema.ParentIdField]?.ToString();
+            if (string.IsNullOrEmpty(parentId) || !byId.ContainsKey(parentId))
+                roots.Add(node);
+            else
+                byId[parentId].Children.Add(node);
+        }
+
+        return roots;
+    }
+
+    private RenderFragment RenderNode(TreeNode node) => __builder =>
+    {
+        var hasChildren = node.Children.Count > 0;
+        var isExpanded = _expanded.Contains(node.Id);
+        var isSelected = _selected == node.Id;
+
+        __builder.OpenElement(0, "li");
+        __builder.AddAttribute(1, "class", "tree-node");
+
+        __builder.OpenElement(2, "div");
+        __builder.AddAttribute(3, "class", $"tree-node-row d-flex align-items-center py-1 px-2 rounded {(isSelected ? "bg-primary text-white" : "hover-bg")}");
+        __builder.AddAttribute(4, "style", "cursor:pointer;");
+        __builder.AddAttribute(5, "onclick", Microsoft.AspNetCore.Components.EventCallback.Factory.Create<Microsoft.AspNetCore.Components.Web.MouseEventArgs>(
+            this, _ => SelectNode(node)));
+
+        if (hasChildren && Schema.Expandable)
+        {
+            __builder.OpenElement(6, "i");
+            __builder.AddAttribute(7, "class", $"bi {(isExpanded ? "bi-chevron-down" : "bi-chevron-right")} me-1 small");
+            __builder.CloseElement();
+        }
+        else
+        {
+            __builder.OpenElement(6, "i");
+            __builder.AddAttribute(7, "class", "bi bi-dot me-1 small");
+            __builder.CloseElement();
+        }
+
+        __builder.AddContent(9, node.Label);
+        __builder.CloseElement(); // row div
+
+        if (hasChildren && isExpanded)
+        {
+            __builder.OpenElement(10, "ul");
+            __builder.AddAttribute(11, "class", "list-unstyled ms-3 mb-0");
+            foreach (var child in node.Children)
+            {
+                __builder.AddContent(12, RenderNode(child));
+            }
+            __builder.CloseElement();
+        }
+
+        __builder.CloseElement(); // li
+    };
+
+    private void ToggleExpand(string id)
+    {
+        if (_expanded.Contains(id)) _expanded.Remove(id);
+        else _expanded.Add(id);
+    }
+
+    private async Task SelectNode(TreeNode node)
+    {
+        _selected = node.Id;
+        if (node.Children.Count > 0 && Schema.Expandable)
+            ToggleExpand(node.Id);
+        await OnNodeSelect.InvokeAsync(node.Id);
+    }
+}

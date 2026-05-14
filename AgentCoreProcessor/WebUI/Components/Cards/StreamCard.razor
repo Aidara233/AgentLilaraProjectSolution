@@ -1,0 +1,67 @@
+@using AgentLilara.PluginSDK.WebUI
+@using System.Text.Json.Nodes
+@implements IDisposable
+
+<div class="stream-card d-flex flex-column h-100">
+    @if (Schema.ShowFilter || Schema.ShowPauseButton)
+    {
+        <div class="stream-toolbar d-flex gap-2 mb-2">
+            @if (Schema.ShowFilter)
+            {
+                <input class="form-control form-control-sm" placeholder="过滤..." @bind="_filter" @bind:event="oninput" />
+            }
+            @if (Schema.ShowPauseButton)
+            {
+                <button class="btn btn-sm @(_paused ? "btn-warning" : "btn-outline-secondary")" @onclick="TogglePause">
+                    <i class="bi @(_paused ? "bi-play-fill" : "bi-pause-fill")"></i>
+                    @(_paused ? "继续" : "暂停")
+                </button>
+            }
+        </div>
+    }
+
+    <div class="stream-output flex-grow-1 overflow-auto font-monospace small p-2 bg-dark text-light rounded"
+         style="min-height:200px; max-height:400px;"
+         @ref="_scrollContainer">
+        @foreach (var line in FilteredLines)
+        {
+            <div class="stream-line">@line</div>
+        }
+        @if (!FilteredLines.Any())
+        {
+            <div class="text-muted">暂无输出</div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public StreamSchema Schema { get; set; } = null!;
+    [Parameter] public JsonNode? Data { get; set; }
+
+    private string? _filter;
+    private bool _paused;
+    private List<string> _lines = new();
+    private ElementReference _scrollContainer;
+
+    private IEnumerable<string> FilteredLines => string.IsNullOrEmpty(_filter)
+        ? _lines
+        : _lines.Where(l => l.Contains(_filter, StringComparison.OrdinalIgnoreCase));
+
+    protected override void OnParametersSet()
+    {
+        if (_paused) return;
+
+        if (Data is JsonArray arr)
+        {
+            _lines = arr
+                .Where(n => n != null)
+                .Select(n => n!.ToString())
+                .TakeLast(Schema.MaxLines)
+                .ToList();
+        }
+    }
+
+    private void TogglePause() => _paused = !_paused;
+
+    public void Dispose() { }
+}

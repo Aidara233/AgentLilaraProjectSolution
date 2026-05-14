@@ -1,0 +1,182 @@
+@using AgentLilara.PluginSDK.WebUI
+@using System.Text.Json.Nodes
+
+<div class="form-card">
+    @if (Schema.Groups?.Count > 0)
+    {
+        @foreach (var group in Schema.Groups)
+        {
+            var groupFields = Schema.Fields.Where(f => f.Group == group.Name).ToList();
+            if (groupFields.Count == 0) continue;
+            <div class="form-group-section mb-3">
+                <div class="form-group-header d-flex align-items-center mb-2 cursor-pointer"
+                     @onclick="() => ToggleGroup(group.Name)">
+                    <i class="bi @(_collapsedGroups.Contains(group.Name) ? "bi-chevron-right" : "bi-chevron-down") me-2"></i>
+                    <strong>@group.Name</strong>
+                    @if (!string.IsNullOrEmpty(group.Description))
+                    {
+                        <span class="text-muted small ms-2">@group.Description</span>
+                    }
+                </div>
+                @if (!_collapsedGroups.Contains(group.Name))
+                {
+                    @foreach (var field in groupFields)
+                    {
+                        @RenderField(field)
+                    }
+                }
+            </div>
+        }
+        @foreach (var field in Schema.Fields.Where(f => string.IsNullOrEmpty(f.Group)))
+        {
+            @RenderField(field)
+        }
+    }
+    else
+    {
+        @foreach (var field in Schema.Fields)
+        {
+            @RenderField(field)
+        }
+    }
+
+    <div class="form-card-actions mt-3 d-flex gap-2">
+        <button class="btn btn-sm btn-primary" @onclick="HandleSubmit">保存</button>
+        @if (Schema.ShowReset)
+        {
+            <button class="btn btn-sm btn-outline-secondary" @onclick="HandleReset">重置</button>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public FormSchema Schema { get; set; } = null!;
+    [Parameter] public JsonNode? Data { get; set; }
+    [Parameter] public EventCallback<JsonNode> OnSubmit { get; set; }
+
+    private Dictionary<string, string> _values = new();
+    private HashSet<string> _collapsedGroups = new();
+
+    protected override void OnParametersSet()
+    {
+        _values = new Dictionary<string, string>();
+        if (Data is JsonObject obj)
+        {
+            foreach (var field in Schema.Fields)
+            {
+                var val = obj[field.Field];
+                _values[field.Field] = val?.ToString() ?? "";
+            }
+        }
+        else
+        {
+            foreach (var field in Schema.Fields)
+                _values[field.Field] = "";
+        }
+
+        if (Schema.Groups != null)
+        {
+            foreach (var g in Schema.Groups.Where(g => g.DefaultCollapsed))
+                _collapsedGroups.Add(g.Name);
+        }
+    }
+
+    private RenderFragment RenderField(FormField field) => __builder =>
+    {
+        __builder.OpenElement(0, "div");
+        __builder.AddAttribute(1, "class", "mb-2");
+
+        __builder.OpenElement(2, "label");
+        __builder.AddAttribute(3, "class", "form-label small mb-1");
+        __builder.AddContent(4, field.Label);
+        if (field.Required) { __builder.AddContent(5, " *"); }
+        __builder.CloseElement();
+
+        switch (field.Type)
+        {
+            case FormFieldType.Toggle:
+                __builder.OpenElement(6, "div");
+                __builder.AddAttribute(7, "class", "form-check form-switch");
+                __builder.OpenElement(8, "input");
+                __builder.AddAttribute(9, "type", "checkbox");
+                __builder.AddAttribute(10, "class", "form-check-input");
+                __builder.AddAttribute(11, "checked", _values.TryGetValue(field.Field, out var tv) && tv == "true");
+                __builder.AddAttribute(12, "onchange", Microsoft.AspNetCore.Components.EventCallback.Factory.Create<Microsoft.AspNetCore.Components.ChangeEventArgs>(
+                    this, e => _values[field.Field] = e.Value?.ToString() == "True" ? "true" : "false"));
+                __builder.CloseElement();
+                __builder.CloseElement();
+                break;
+
+            case FormFieldType.Select:
+                __builder.OpenElement(6, "select");
+                __builder.AddAttribute(7, "class", "form-select form-select-sm");
+                __builder.AddAttribute(8, "value", _values.TryGetValue(field.Field, out var sv) ? sv : "");
+                __builder.AddAttribute(9, "onchange", Microsoft.AspNetCore.Components.EventCallback.Factory.Create<Microsoft.AspNetCore.Components.ChangeEventArgs>(
+                    this, e => _values[field.Field] = e.Value?.ToString() ?? ""));
+                if (field.Options != null)
+                {
+                    foreach (var opt in field.Options)
+                    {
+                        __builder.OpenElement(10, "option");
+                        __builder.AddAttribute(11, "value", opt.Value);
+                        __builder.AddContent(12, opt.Label);
+                        __builder.CloseElement();
+                    }
+                }
+                __builder.CloseElement();
+                break;
+
+            case FormFieldType.TextArea:
+            case FormFieldType.Json:
+                __builder.OpenElement(6, "textarea");
+                __builder.AddAttribute(7, "class", "form-control form-control-sm");
+                __builder.AddAttribute(8, "rows", field.Type == FormFieldType.Json ? 5 : 3);
+                __builder.AddAttribute(9, "placeholder", field.Placeholder ?? "");
+                __builder.AddAttribute(10, "value", _values.TryGetValue(field.Field, out var tav) ? tav : "");
+                __builder.AddAttribute(11, "oninput", Microsoft.AspNetCore.Components.EventCallback.Factory.Create<Microsoft.AspNetCore.Components.ChangeEventArgs>(
+                    this, e => _values[field.Field] = e.Value?.ToString() ?? ""));
+                __builder.CloseElement();
+                break;
+
+            default:
+                __builder.OpenElement(6, "input");
+                __builder.AddAttribute(7, "class", "form-control form-control-sm");
+                __builder.AddAttribute(8, "type", field.Type == FormFieldType.Number ? "number" : field.Type == FormFieldType.Password ? "password" : "text");
+                __builder.AddAttribute(9, "placeholder", field.Placeholder ?? "");
+                __builder.AddAttribute(10, "value", _values.TryGetValue(field.Field, out var iv) ? iv : "");
+                __builder.AddAttribute(11, "oninput", Microsoft.AspNetCore.Components.EventCallback.Factory.Create<Microsoft.AspNetCore.Components.ChangeEventArgs>(
+                    this, e => _values[field.Field] = e.Value?.ToString() ?? ""));
+                __builder.CloseElement();
+                break;
+        }
+
+        if (!string.IsNullOrEmpty(field.Description))
+        {
+            __builder.OpenElement(20, "div");
+            __builder.AddAttribute(21, "class", "form-text text-muted");
+            __builder.AddContent(22, field.Description);
+            __builder.CloseElement();
+        }
+
+        __builder.CloseElement();
+    };
+
+    private void ToggleGroup(string name)
+    {
+        if (_collapsedGroups.Contains(name)) _collapsedGroups.Remove(name);
+        else _collapsedGroups.Add(name);
+    }
+
+    private async Task HandleSubmit()
+    {
+        var obj = new JsonObject();
+        foreach (var kv in _values)
+            obj[kv.Key] = JsonValue.Create(kv.Value);
+        await OnSubmit.InvokeAsync(obj);
+    }
+
+    private void HandleReset()
+    {
+        OnParametersSet();
+    }
+}

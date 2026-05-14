@@ -1,0 +1,156 @@
+@using AgentLilara.PluginSDK.WebUI
+@using System.Text.Json.Nodes
+
+<div class="table-card">
+    @if (Schema.Searchable)
+    {
+        <div class="table-card-toolbar mb-2 d-flex gap-2">
+            <input class="form-control form-control-sm" placeholder="搜索..." @bind="_search" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
+            <button class="btn btn-sm btn-outline-secondary" @onclick="ApplySearch">搜索</button>
+        </div>
+    }
+
+    <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0">
+            <thead>
+                <tr>
+                    @foreach (var col in Schema.Columns)
+                    {
+                        <th style="@(col.Width != null ? $"width:{col.Width}" : "")"
+                            class="@(col.Sortable ? "sortable-col" : "")"
+                            @onclick="() => col.Sortable ? ToggleSort(col.Field) : Task.CompletedTask">
+                            @col.Header
+                            @if (_sortBy == col.Field)
+                            {
+                                <i class="bi @(_sortDesc ? "bi-sort-down" : "bi-sort-up") ms-1"></i>
+                            }
+                        </th>
+                    }
+                    @if (Schema.RowActions?.Count > 0)
+                    {
+                        <th>操作</th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @if (_rows != null)
+                {
+                    @foreach (var row in _rows)
+                    {
+                        <tr>
+                            @foreach (var col in Schema.Columns)
+                            {
+                                <td>@GetCellValue(row, col)</td>
+                            }
+                            @if (Schema.RowActions?.Count > 0)
+                            {
+                                <td>
+                                    @foreach (var action in Schema.RowActions)
+                                    {
+                                        <button class="btn btn-sm @(action.Danger ? "btn-outline-danger" : "btn-outline-secondary") me-1"
+                                                @onclick="() => HandleRowAction(action, row)">
+                                            @action.Label
+                                        </button>
+                                    }
+                                </td>
+                            }
+                        </tr>
+                    }
+                }
+                else
+                {
+                    <tr><td colspan="@(Schema.Columns.Count + (Schema.RowActions?.Count > 0 ? 1 : 0))" class="text-center text-muted py-3">暂无数据</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (Schema.Paginated)
+    {
+        <div class="table-card-pagination d-flex align-items-center justify-content-between mt-2 px-1">
+            <span class="text-muted small">共 @(TotalCount ?? 0) 条</span>
+            <div class="d-flex gap-1">
+                <button class="btn btn-sm btn-outline-secondary" disabled="@(_page <= 1)" @onclick="PrevPage">上一页</button>
+                <span class="btn btn-sm disabled">@_page / @TotalPages</span>
+                <button class="btn btn-sm btn-outline-secondary" disabled="@(_page >= TotalPages)" @onclick="NextPage">下一页</button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public TableSchema Schema { get; set; } = null!;
+    [Parameter] public JsonNode? Data { get; set; }
+    [Parameter] public int? TotalCount { get; set; }
+    [Parameter] public EventCallback<DataQuery> OnQueryChanged { get; set; }
+    [Parameter] public EventCallback<(string ActionId, JsonNode Row)> OnRowAction { get; set; }
+
+    private List<JsonNode>? _rows;
+    private string? _search;
+    private string? _sortBy;
+    private bool _sortDesc;
+    private int _page = 1;
+    private int _pageSize;
+
+    private int TotalPages => _pageSize > 0 && TotalCount.HasValue
+        ? Math.Max(1, (int)Math.Ceiling((double)TotalCount.Value / _pageSize))
+        : 1;
+
+    protected override void OnParametersSet()
+    {
+        _pageSize = Schema.DefaultPageSize;
+        if (Data is JsonArray arr)
+            _rows = arr.Where(n => n != null).Select(n => n!).ToList();
+        else
+            _rows = null;
+    }
+
+    private string GetCellValue(JsonNode row, ColumnDef col)
+    {
+        var val = row[col.Field];
+        return val?.ToString() ?? "";
+    }
+
+    private async Task ToggleSort(string field)
+    {
+        if (_sortBy == field) _sortDesc = !_sortDesc;
+        else { _sortBy = field; _sortDesc = false; }
+        _page = 1;
+        await EmitQuery();
+    }
+
+    private async Task OnSearchKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await ApplySearch();
+    }
+
+    private async Task ApplySearch()
+    {
+        _page = 1;
+        await EmitQuery();
+    }
+
+    private async Task PrevPage() { if (_page > 1) { _page--; await EmitQuery(); } }
+    private async Task NextPage() { if (_page < TotalPages) { _page++; await EmitQuery(); } }
+
+    private async Task EmitQuery()
+    {
+        await OnQueryChanged.InvokeAsync(new DataQuery
+        {
+            Page = _page,
+            PageSize = _pageSize,
+            Search = _search,
+            SortBy = _sortBy,
+            SortDesc = _sortDesc
+        });
+    }
+
+    private async Task HandleRowAction(RowAction action, JsonNode row)
+    {
+        if (!string.IsNullOrEmpty(action.Confirm))
+        {
+            // 简单确认：实际页面可替换为模态框
+        }
+        await OnRowAction.InvokeAsync((action.Id, row));
+    }
+}

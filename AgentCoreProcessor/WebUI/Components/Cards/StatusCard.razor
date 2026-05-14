@@ -1,0 +1,58 @@
+@using AgentLilara.PluginSDK.WebUI
+@using System.Text.Json.Nodes
+
+<div class="status-card">
+    <div class="status-fields">
+        @foreach (var field in Schema.Fields)
+        {
+            <div class="status-field-row d-flex justify-content-between align-items-center py-1 border-bottom">
+                <span class="status-field-label text-muted small">@field.Label</span>
+                <span class="status-field-value @GetValueClass(field)">
+                    @GetFieldValue(field)
+                </span>
+            </div>
+        }
+    </div>
+
+    @if (Schema.Actions?.Count > 0)
+    {
+        <div class="status-actions mt-3 d-flex flex-wrap gap-2">
+            @foreach (var action in Schema.Actions)
+            {
+                <button class="btn btn-sm @(action.Danger ? "btn-outline-danger" : "btn-outline-primary")"
+                        @onclick="() => HandleAction(action)">
+                    @if (!string.IsNullOrEmpty(action.Icon))
+                    {
+                        <i class="bi @action.Icon me-1"></i>
+                    }
+                    @action.Label
+                </button>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public StatusSchema Schema { get; set; } = null!;
+    [Parameter] public JsonNode? Data { get; set; }
+    [Parameter] public EventCallback<string> OnAction { get; set; }
+
+    private string GetFieldValue(StatusField field)
+    {
+        if (Data is not JsonObject obj) return "-";
+        var val = obj[field.Field];
+        return val?.ToString() ?? "-";
+    }
+
+    private string GetValueClass(StatusField field) => field.Type switch
+    {
+        StatusFieldType.Badge => "badge bg-secondary",
+        StatusFieldType.Indicator => "status-indicator",
+        _ => ""
+    };
+
+    private async Task HandleAction(ActionButton action)
+    {
+        await OnAction.InvokeAsync(action.Id);
+    }
+}

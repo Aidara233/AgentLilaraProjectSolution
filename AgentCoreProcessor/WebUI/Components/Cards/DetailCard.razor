@@ -1,0 +1,117 @@
+@using AgentLilara.PluginSDK.WebUI
+@using System.Text.Json.Nodes
+
+<div class="detail-card">
+    @foreach (var sec in Schema.Sections)
+    {
+        var isCollapsed = _collapsedSections.Contains(sec.Title);
+        <div class="detail-section mb-3">
+            <div class="detail-section-header d-flex align-items-center mb-2 cursor-pointer"
+                 @onclick="() => ToggleSection(sec.Title)">
+                <i class="bi @(isCollapsed ? "bi-chevron-right" : "bi-chevron-down") me-2"></i>
+                <strong>@sec.Title</strong>
+            </div>
+
+            @if (!isCollapsed)
+            {
+                <div class="detail-section-body">
+                    @foreach (var field in sec.Fields)
+                    {
+                        var isEditing = _editingField == field.Field;
+                        <div class="detail-field-row d-flex align-items-center py-1 border-bottom"
+                             @ondblclick="() => HandleDblClick(field.Field, field.Editable)">
+                            <span class="detail-field-label text-muted small me-3" style="min-width:120px;">@field.Label</span>
+                            @if (isEditing)
+                            {
+                                <input class="form-control form-control-sm flex-grow-1"
+                                       value="@GetFieldValue(field.Field)"
+                                       @onchange="e => SetFieldValue(field.Field, e.Value?.ToString() ?? string.Empty)"
+                                       @onblur="() => CommitEdit(field.Field)"
+                                       @onkeyup="e => OnEditKeyUp(e, field.Field)" />
+                            }
+                            else
+                            {
+                                <span class="detail-field-value flex-grow-1">@GetFieldValue(field.Field)</span>
+                                @if (field.Editable)
+                                {
+                                    <i class="bi bi-pencil text-muted small ms-2" title="双击编辑"></i>
+                                }
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    <div class="detail-actions mt-3 d-flex gap-2">
+        <button class="btn btn-sm btn-primary" @onclick="HandleSubmit">保存</button>
+        <button class="btn btn-sm btn-outline-secondary" @onclick="HandleReset">重置</button>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public DetailSchema Schema { get; set; } = null!;
+    [Parameter] public JsonNode? Data { get; set; }
+    [Parameter] public EventCallback<JsonNode> OnSubmit { get; set; }
+
+    private HashSet<string> _collapsedSections = new();
+    private string? _editingField;
+    private Dictionary<string, string> _editValues = new();
+
+    protected override void OnParametersSet()
+    {
+        _editValues = new Dictionary<string, string>();
+        if (Data is JsonObject obj)
+        {
+            foreach (var section in Schema.Sections)
+                foreach (var field in section.Fields)
+                    _editValues[field.Field] = obj[field.Field]?.ToString() ?? "";
+        }
+
+        foreach (var section in Schema.Sections.Where(s => s.DefaultCollapsed))
+            _collapsedSections.Add(section.Title);
+    }
+
+    private string GetFieldValue(string field) =>
+        _editValues.TryGetValue(field, out var v) ? v : "-";
+
+    private void SetFieldValue(string field, string value) =>
+        _editValues[field] = value;
+
+    private void ToggleSection(string title)
+    {
+        if (_collapsedSections.Contains(title)) _collapsedSections.Remove(title);
+        else _collapsedSections.Add(title);
+    }
+
+    private void HandleDblClick(string field, bool editable)
+    {
+        if (editable) _editingField = field;
+    }
+
+    private void CommitEdit(string field)
+    {
+        if (_editingField == field) _editingField = null;
+    }
+
+    private void OnEditKeyUp(KeyboardEventArgs e, string field)
+    {
+        if (e.Key == "Enter" || e.Key == "Escape") CommitEdit(field);
+    }
+
+    private async Task HandleSubmit()
+    {
+        _editingField = null;
+        var obj = new JsonObject();
+        foreach (var kv in _editValues)
+            obj[kv.Key] = JsonValue.Create(kv.Value);
+        await OnSubmit.InvokeAsync(obj);
+    }
+
+    private void HandleReset()
+    {
+        _editingField = null;
+        OnParametersSet();
+    }
+}

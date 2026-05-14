@@ -1,0 +1,97 @@
+@using AgentLilara.PluginSDK.WebUI
+@using System.Text.Json.Nodes
+
+<div class="chat-card d-flex flex-column h-100">
+    <div class="chat-messages flex-grow-1 overflow-auto p-2" style="min-height:200px; max-height:400px;">
+        @foreach (var msg in _messages)
+        {
+            var isBot = msg.IsBot;
+            <div class="chat-message d-flex @(isBot ? "justify-content-start" : "justify-content-end") mb-2">
+                <div class="chat-bubble px-3 py-2 rounded @(isBot ? "bg-light text-dark" : "bg-primary text-white")"
+                     style="max-width:75%;">
+                    @if (isBot && !string.IsNullOrEmpty(msg.Sender))
+                    {
+                        <div class="chat-sender small fw-bold mb-1">@msg.Sender</div>
+                    }
+                    <div>@msg.Text</div>
+                </div>
+            </div>
+        }
+        @if (!_messages.Any())
+        {
+            <div class="text-muted text-center py-3">暂无消息</div>
+        }
+    </div>
+
+    @if (Schema.ShowInput)
+    {
+        <div class="chat-input-area border-top pt-2 mt-2">
+            @if (Schema.ShowSenderSwitch && Schema.Senders?.Count > 0)
+            {
+                <div class="mb-2">
+                    <select class="form-select form-select-sm" @bind="_selectedSender">
+                        @foreach (var s in Schema.Senders)
+                        {
+                            <option value="@s">@s</option>
+                        }
+                    </select>
+                </div>
+            }
+            <div class="d-flex gap-2">
+                <input class="form-control form-control-sm" placeholder="输入消息..."
+                       @bind="_inputText" @bind:event="oninput"
+                       @onkeyup="OnInputKeyUp" />
+                <button class="btn btn-sm btn-primary" @onclick="HandleSend">发送</button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ChatSchema Schema { get; set; } = null!;
+    [Parameter] public JsonNode? Data { get; set; }
+    [Parameter] public EventCallback<JsonNode> OnSubmit { get; set; }
+
+    private List<ChatMessage> _messages = new();
+    private string _inputText = "";
+    private string _selectedSender = "";
+
+    private record ChatMessage(string Sender, string Text, bool IsBot);
+
+    protected override void OnParametersSet()
+    {
+        _messages = new List<ChatMessage>();
+        if (Data is JsonArray arr)
+        {
+            foreach (var item in arr)
+            {
+                if (item is not JsonObject obj) continue;
+                var sender = obj["sender"]?.ToString() ?? "";
+                var text = obj["text"]?.ToString() ?? "";
+                var isBot = obj["isBot"]?.GetValue<bool>() ?? false;
+                _messages.Add(new ChatMessage(sender, text, isBot));
+            }
+        }
+
+        if (string.IsNullOrEmpty(_selectedSender) && Schema.Senders?.Count > 0)
+            _selectedSender = Schema.Senders[0];
+    }
+
+    private async Task OnInputKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await HandleSend();
+    }
+
+    private async Task HandleSend()
+    {
+        if (string.IsNullOrWhiteSpace(_inputText)) return;
+
+        var payload = new JsonObject
+        {
+            ["sender"] = _selectedSender,
+            ["text"] = _inputText
+        };
+        _inputText = "";
+        await OnSubmit.InvokeAsync(payload);
+    }
+}
