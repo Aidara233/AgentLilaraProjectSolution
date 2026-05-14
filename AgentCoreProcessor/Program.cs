@@ -63,6 +63,10 @@ namespace AgentCoreProcessor
             if (muteMode)
                 engine.MuteMode = true;
 
+            // ProviderRegistry（在 InitAsync 前创建，以便 PluginLoader 可以注册插件 Provider）
+            var providerRegistry = new AgentCoreProcessor.WebUI.Shell.ProviderRegistry();
+            engine.ProviderRegistry = providerRegistry;
+
             // 初始化数据库（建表 + Repository）+ 订阅事件总线
             try
             {
@@ -272,6 +276,7 @@ namespace AgentCoreProcessor
             builder.Services.AddSingleton<WebUI.Services.ModelLogService>();
             builder.Services.AddSingleton(sp =>
                 new WebUI.Services.TokenStatsService(engine.ModelCallLogs));
+            builder.Services.AddSingleton(providerRegistry);
 
             builder.Services.AddRazorComponents()
                 .AddInteractiveServerComponents();

@@ -22,14 +22,16 @@ namespace AgentCoreProcessor.Tool.Host
         private static string PluginDir => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Plugins");
 
         private readonly IToolContext toolContext;
+        private readonly WebUI.Shell.ProviderRegistry? _providerRegistry;
         private readonly List<PluginEntry> loadedPlugins = new();
 
         public int LoadedToolCount => loadedPlugins.Sum(p => p.ToolNames.Count);
         public IReadOnlyList<PluginEntry> LoadedPlugins => loadedPlugins;
 
-        public PluginLoader(IToolContext toolContext)
+        public PluginLoader(IToolContext toolContext, WebUI.Shell.ProviderRegistry? providerRegistry = null)
         {
             this.toolContext = toolContext;
+            _providerRegistry = providerRegistry;
         }
 
         /// <summary>扫描并加载所有插件。启动时调用。</summary>
@@ -71,6 +73,8 @@ namespace AgentCoreProcessor.Tool.Host
         {
             foreach (var entry in loadedPlugins)
             {
+                foreach (var id in entry.ProviderIds)
+                    _providerRegistry?.Unregister(id);
                 foreach (var name in entry.ToolNames)
                     ToolRegistry.Unregister(name);
                 foreach (var name in entry.ComponentNames)
@@ -92,8 +96,9 @@ namespace AgentCoreProcessor.Tool.Host
                 var assembly = loadContext.LoadFromAssemblyPath(dllPath);
                 var toolTypes = DiscoverToolTypes(assembly);
                 var componentTypes = DiscoverComponentTypes(assembly);
+                var earlyProviderTypes = DiscoverProviderTypes(assembly);
 
-                if (toolTypes.Count == 0 && componentTypes.Count == 0)
+                if (toolTypes.Count == 0 && componentTypes.Count == 0 && earlyProviderTypes.Count == 0)
                 {
                     loadContext.Unload();
                     return;
@@ -139,7 +144,25 @@ namespace AgentCoreProcessor.Tool.Host
                     }
                 }
 
-                if (entry.ToolNames.Count > 0 || entry.ComponentNames.Count > 0)
+                var providerTypes = earlyProviderTypes;
+                foreach (var type in providerTypes)
+                {
+                    try
+                    {
+                        var provider = (AgentLilara.PluginSDK.WebUI.IWebUIProvider)Activator.CreateInstance(type)!;
+                        var attr = type.GetCustomAttribute<AgentLilara.PluginSDK.WebUI.WebUIProviderAttribute>();
+                        if (_providerRegistry?.Register(provider, attr?.BuiltIn ?? false) == true)
+                        {
+                            entry.ProviderIds.Add(provider.Id);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        FrameworkLogger.Log("PluginLoader", $"Provider 实例化失败 {type.Name}: {ex.Message}");
+                    }
+                }
+
+                if (entry.ToolNames.Count > 0 || entry.ComponentNames.Count > 0 || entry.ProviderIds.Count > 0)
                 {
                     loadedPlugins.Add(entry);
                     FrameworkLogger.Log("PluginLoader",
@@ -170,6 +193,14 @@ namespace AgentCoreProcessor.Tool.Host
             return assembly.GetExportedTypes()
                 .Where(t => t.IsClass && !t.IsAbstract
                     && t.GetCustomAttribute<ComponentAttribute>() != null)
+                .ToList();
+        }
+
+        private static List<Type> DiscoverProviderTypes(Assembly assembly)
+        {
+            var iProviderType = typeof(AgentLilara.PluginSDK.WebUI.IWebUIProvider);
+            return assembly.GetExportedTypes()
+                .Where(t => t.IsClass && !t.IsAbstract && iProviderType.IsAssignableFrom(t))
                 .ToList();
         }
 
@@ -207,6 +238,7 @@ namespace AgentCoreProcessor.Tool.Host
         public AssemblyLoadContext LoadContext { get; set; } = null!;
         public List<string> ToolNames { get; set; } = new();
         public List<string> ComponentNames { get; set; } = new();
+        public List<string> ProviderIds { get; set; } = new();
     }
 
     /// <summary>

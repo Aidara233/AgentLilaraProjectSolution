@@ -72,6 +72,9 @@ namespace AgentCoreProcessor.Engine
         public ImpulseConfig ImpulseConfig { get; private set; } = null!;
         public TrustProgressionConfig TrustConfig { get; private set; } = null!;
 
+        // WebUI
+        public WebUI.Shell.ProviderRegistry? ProviderRegistry { get; set; }
+
         // 内核级状态
         private DateTime lastMessageTime = DateTime.Now;
         public DateTime LastMessageTime => lastMessageTime;
@@ -402,7 +405,7 @@ namespace AgentCoreProcessor.Engine
             var toolContext = new Tool.Host.ToolContextImpl(new Tool.Host.PluginStorageImpl("_system"));
             toolContext.Register<AgentLilara.PluginSDK.Services.IMemoryAccess>(
                 new Tool.Host.MemoryAccessImpl(Memories, TempMemories, MemoryLinks, Embedding));
-            var pluginLoader = new Tool.Host.PluginLoader(toolContext);
+            var pluginLoader = new Tool.Host.PluginLoader(toolContext, ProviderRegistry);
             pluginLoader.LoadAll();
             FrameworkLogger.Log("MasterEngine", $"插件加载完成，共 {Tool.ToolRegistry.All.Count} 个工具已注册");
 
