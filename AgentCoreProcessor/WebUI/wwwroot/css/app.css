@@ -1511,3 +1511,38 @@ select.config-input option {
 [data-theme="tech"] .alert-bar.alert-error {
     border-left-color: var(--status-error);
 }
+
+/* === Card Grid System === */
+.card-grid {
+    width: 100%;
+}
+
+.card-grid-item {
+    min-width: 0;
+}
+
+@media (max-width: 768px) {
+    .card-grid {
+        grid-template-columns: 1fr !important;
+    }
+    .card-grid-item {
+        grid-column: span 12 !important;
+    }
+}
+
+/* === Card Host === */
+.card-error-state,
+.card-loading-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 2rem;
+    color: var(--text-muted);
+}
+
+.card-error-state {
+    border: 1px solid var(--danger-color, #dc3545);
+    border-radius: 0.25rem;
+    margin: 0.5rem;
+}

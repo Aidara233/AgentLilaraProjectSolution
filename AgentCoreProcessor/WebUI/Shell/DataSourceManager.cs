@@ -100,7 +100,7 @@ internal class DataSourceManager : IDisposable
     }
 }
 
-internal class DataSourceState
+public class DataSourceState
 {
     public bool IsLoading { get; set; }
     public string? Error { get; set; }
