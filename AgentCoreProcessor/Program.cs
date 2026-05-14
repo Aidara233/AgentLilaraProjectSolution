@@ -5,7 +5,9 @@ using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Engine;
+using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.WebUI.Services;
+using AgentLilara.PluginSDK.Logging;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
@@ -24,6 +26,17 @@ namespace AgentCoreProcessor
 
             PathConfig.Load();
             AgentCoreProcessor.Tool.ToolRegistry.LoadConfig();
+
+            // 日志系统初始化（早于其他服务，以便后续组件可以使用 Signal.*）
+            var logStoragePath = Path.Combine(AppContext.BaseDirectory, "Storage");
+            var logDb = new LogDatabase(logStoragePath);
+            var spanTracker = new OpenSpanTracker();
+            var tokenAggregator = new TokenAggregator(logDb);
+            var logWriter = new LogWriter(logDb, spanTracker, tokenAggregator);
+            var logQuery = new LogQuery(logDb);
+            var logAccess = new LogAccessImpl(logWriter, logQuery, spanTracker, logDb);
+
+            SignalContext.Init(logWriter);
 
             var debug = Array.Exists(args, a => a == "--debug");
             var fileMode = Array.Exists(args, a => a == "--file");
@@ -265,6 +278,14 @@ namespace AgentCoreProcessor
             builder.Services.AddSingleton(adapterManager);
             builder.Services.AddSingleton(webConfig);
             builder.Services.AddSingleton<WebAuthService>();
+
+            // 日志系统 DI 注册
+            builder.Services.AddSingleton(logDb);
+            builder.Services.AddSingleton(logWriter);
+            builder.Services.AddSingleton(spanTracker);
+            builder.Services.AddSingleton<ILogQuery>(logQuery);
+            builder.Services.AddSingleton<ILogAccess>(logAccess);
+            builder.Services.AddSingleton<ISignalLogger>(logAccess);
             builder.Services.AddSingleton(sp =>
             {
                 var alertService = new WebUI.Services.AlertService();
@@ -332,6 +353,10 @@ namespace AgentCoreProcessor
             Console.WriteLine($"[WebUI] 管理面板: http://localhost:{webConfig.Port}");
 
             await app.RunAsync();
+
+            // 关闭时释放日志系统
+            logWriter.Dispose();
+            logDb.Dispose();
 
             return 0;
         }
