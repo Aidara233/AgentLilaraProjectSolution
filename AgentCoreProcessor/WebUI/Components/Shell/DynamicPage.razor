@@ -1,0 +1,147 @@
+@page "/p/{*Route}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using AgentLilara.PluginSDK.WebUI
+@using AgentCoreProcessor.WebUI.Shell
+@using AgentCoreProcessor.WebUI.Components.Cards
+@using System.Text.Json.Nodes
+@inject ProviderRegistry Registry
+@inject NavigationManager Nav
+@implements IDisposable
+
+@if (page == null)
+{
+    <div class="p-4 text-center text-muted-custom">
+        <i class="bi bi-question-circle" style="font-size:2rem"></i>
+        <p>页面未找到: @Route</p>
+    </div>
+}
+else
+{
+    <div class="p-3">
+        <h4 class="mb-3">@(page.Meta.Title)</h4>
+        <AgentCoreProcessor.WebUI.Components.Shell.CardGrid>
+            @foreach (var card in page.Cards.OrderBy(c => c.Layout.Order))
+            {
+                var state = dsManager.GetState(card.DataSourceId);
+                <CardHost Title="@card.Title" Layout="@card.Layout" State="@state"
+                          OnRefresh="() => RefreshCard(card)">
+                    @RenderCard(card, state)
+                </CardHost>
+            }
+        </AgentCoreProcessor.WebUI.Components.Shell.CardGrid>
+    </div>
+}
+
+@code {
+    [Parameter] public string? Route { get; set; }
+
+    private PageDefinition? page;
+    private DataSourceManager dsManager = new();
+    private PageContext? pageContext;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        Cleanup();
+
+        page = Registry.FindPage(Route ?? "");
+        if (page == null) return;
+
+        pageContext = new PageContext(Nav);
+        dsManager = new DataSourceManager();
+        dsManager.Initialize(page.DataSources);
+        dsManager.OnDataChanged += OnDataSourceChanged;
+        dsManager.SubscribeAll();
+
+        foreach (var ds in page.DataSources)
+        {
+            await dsManager.FetchAsync(ds.Id);
+        }
+    }
+
+    private async Task RefreshCard(CardDefinition card)
+    {
+        await dsManager.FetchAsync(card.DataSourceId);
+        StateHasChanged();
+    }
+
+    private void OnDataSourceChanged(string dataSourceId)
+    {
+        InvokeAsync(async () =>
+        {
+            await dsManager.FetchAsync(dataSourceId);
+            StateHasChanged();
+        });
+    }
+
+    private RenderFragment RenderCard(CardDefinition card, DataSourceState? state) => __builder =>
+    {
+        var data = state?.LastData?.Data;
+        var totalCount = state?.LastData?.TotalCount;
+        var dsId = card.DataSourceId;
+        var pc = pageContext;
+
+        switch (card.Type)
+        {
+            case CardType.Table:
+                <TableCard Schema="@((TableSchema)card.Schema)" Data="@data" TotalCount="@totalCount"
+                           OnQueryChanged="@(q => OnQuery(dsId, q))"
+                           OnRowAction="@(e => OnRowAction(dsId, e))" />
+                break;
+            case CardType.Status:
+                <StatusCard Schema="@((StatusSchema)card.Schema)" Data="@data"
+                            OnAction="@(id => OnSubmitAction(dsId, id, null))" />
+                break;
+            case CardType.Form:
+                <FormCard Schema="@((FormSchema)card.Schema)" Data="@data"
+                          OnSubmit='@(d => OnSubmitAction(dsId, "save", d))' />
+                break;
+            case CardType.Stream:
+                <StreamCard Schema="@((StreamSchema)card.Schema)" Data="@data" />
+                break;
+            case CardType.Chat:
+                <ChatCard Schema="@((ChatSchema)card.Schema)" Data="@data"
+                          OnSubmit='@(d => OnSubmitAction(dsId, "send", d))' />
+                break;
+            case CardType.Tree:
+                <TreeCard Schema="@((TreeSchema)card.Schema)" Data="@data"
+                          OnNodeSelect='@(EventCallback.Factory.Create<string>(this, id => EmitNodeSelected(pc, id)))' />
+                break;
+            case CardType.Detail:
+                <DetailCard Schema="@((DetailSchema)card.Schema)" Data="@data"
+                            OnSubmit='@(d => OnSubmitAction(dsId, "update", d))' />
+                break;
+        }
+    };
+
+    private static void EmitNodeSelected(PageContext? pc, string id)
+        => pc?.Emit("node-selected", JsonValue.Create(id));
+
+    private async Task OnQuery(string dsId, DataQuery query)
+    {
+        await dsManager.FetchAsync(dsId, query);
+        StateHasChanged();
+    }
+
+    private async Task OnRowAction(string dsId, (string ActionId, JsonNode Row) e)
+    {
+        await dsManager.SubmitAsync(dsId, e.ActionId, e.Row);
+        await dsManager.FetchAsync(dsId);
+        StateHasChanged();
+    }
+
+    private async Task OnSubmitAction(string dsId, string action, JsonNode? data)
+    {
+        await dsManager.SubmitAsync(dsId, action, data);
+        await dsManager.FetchAsync(dsId);
+        StateHasChanged();
+    }
+
+    private void Cleanup()
+    {
+        dsManager.OnDataChanged -= OnDataSourceChanged;
+        dsManager.Dispose();
+        pageContext?.Dispose();
+    }
+
+    public void Dispose() => Cleanup();
+}
