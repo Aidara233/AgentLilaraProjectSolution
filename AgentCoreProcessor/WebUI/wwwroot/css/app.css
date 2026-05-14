@@ -1713,8 +1713,9 @@ select.config-input option {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.5rem 0;
+    padding: 0.55rem 0;
     border-bottom: 1px solid var(--border-subtle);
+    min-height: 2.2rem;
 }
 
 .status-card .status-field-row:last-child {
@@ -1736,8 +1737,9 @@ select.config-input option {
     background: var(--accent-dim) !important;
     color: var(--accent);
     font-size: var(--font-size-xs);
-    padding: 0.2rem 0.5rem;
+    padding: 0.15rem 0.45rem;
     border-radius: 10px;
+    line-height: 1;
 }
 
 .status-card .status-field-value.status-indicator {
