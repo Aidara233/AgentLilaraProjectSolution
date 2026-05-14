@@ -1,4 +1,4 @@
-/* ===== Lilara WebUI Theme System ===== */
+﻿/* ===== Lilara WebUI Theme System ===== */
 
 :root {
     /* --- Base palette --- */
@@ -1440,22 +1440,51 @@ select.config-input option {
 /* Card system — tech theme overrides */
 [data-theme="tech"] .card-grid-item .btn-outline-secondary {
     background: transparent;
-    border: 1px solid var(--glass-border);
+    border: none;
     color: var(--accent);
     font-size: var(--font-size-xs);
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    font-weight: 600;
+    padding: 0.35rem 0.7rem;
+    position: relative;
+}
+
+[data-theme="tech"] .card-grid-item .btn-outline-secondary::before,
+[data-theme="tech"] .card-grid-item .btn-outline-secondary::after {
+    content: '';
+    position: absolute;
+    width: 5px;
+    height: 5px;
+    border-color: var(--accent);
+    border-style: solid;
+}
+
+[data-theme="tech"] .card-grid-item .btn-outline-secondary::before {
+    top: 0;
+    left: 0;
+    border-width: 1.5px 0 0 1.5px;
+}
+
+[data-theme="tech"] .card-grid-item .btn-outline-secondary::after {
+    bottom: 0;
+    right: 0;
+    border-width: 0 1.5px 1.5px 0;
 }
 
 [data-theme="tech"] .card-grid-item .btn-outline-secondary:hover:not(:disabled) {
     background: var(--accent-dim);
-    border-color: var(--accent);
     box-shadow: 0 0 6px rgba(0, 212, 255, 0.25);
 }
 
 [data-theme="tech"] .card-grid-item .btn-outline-secondary:disabled {
     opacity: 0.3;
     color: var(--text-muted);
+}
+
+[data-theme="tech"] .card-grid-item .btn-outline-secondary:disabled::before,
+[data-theme="tech"] .card-grid-item .btn-outline-secondary:disabled::after {
+    border-color: var(--text-muted);
 }
 
 [data-theme="tech"] .card-grid-item .btn-outline-danger {
@@ -1475,15 +1504,22 @@ select.config-input option {
 }
 
 [data-theme="tech"] .card-grid-item > .card-header .btn {
-    border: none;
+    border: none !important;
     color: var(--accent);
     opacity: 0.6;
+    position: static;
+}
+
+[data-theme="tech"] .card-grid-item > .card-header .btn::before,
+[data-theme="tech"] .card-grid-item > .card-header .btn::after {
+    display: none;
 }
 
 [data-theme="tech"] .card-grid-item > .card-header .btn:hover {
     opacity: 1;
-    background: transparent;
+    background: transparent !important;
     text-shadow: 0 0 6px rgba(0, 212, 255, 0.5);
+    box-shadow: none;
 }
 
 [data-theme="tech"] .status-card .status-field-row {
@@ -1506,11 +1542,36 @@ select.config-input option {
 
 [data-theme="tech"] .status-card .btn-primary-custom {
     background: transparent;
-    border: 1px solid var(--accent);
+    border: none;
     color: var(--accent);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     font-size: var(--font-size-xs);
+    font-weight: 600;
+    padding: 0.4rem 0.8rem;
+    position: relative;
+}
+
+[data-theme="tech"] .status-card .btn-primary-custom::before,
+[data-theme="tech"] .status-card .btn-primary-custom::after {
+    content: '';
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    border-color: var(--accent);
+    border-style: solid;
+}
+
+[data-theme="tech"] .status-card .btn-primary-custom::before {
+    top: 0;
+    left: 0;
+    border-width: 1.5px 0 0 1.5px;
+}
+
+[data-theme="tech"] .status-card .btn-primary-custom::after {
+    bottom: 0;
+    right: 0;
+    border-width: 0 1.5px 1.5px 0;
 }
 
 [data-theme="tech"] .status-card .btn-primary-custom:hover {
@@ -1761,7 +1822,7 @@ select.config-input option {
 }
 
 .table-card .table-card-toolbar {
-    padding: 0.5rem 0.75rem 0;
+    padding: 0.5rem 0rem 0;
 }
 
 .table-card .table-card-toolbar .form-control {
