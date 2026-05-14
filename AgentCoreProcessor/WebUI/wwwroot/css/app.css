@@ -1739,10 +1739,11 @@ select.config-input option {
     font-size: var(--font-size-sm);
     opacity: 0.6;
     box-shadow: none !important;
+    transition: all var(--transition-fast);
 }
 
 .card-grid-item > .card-header .btn:hover {
-    color: var(--text-primary);
+    color: var(--accent);
     opacity: 1;
 }
 
@@ -1863,10 +1864,16 @@ select.config-input option {
 
 .table-card .table-card-pagination .btn {
     border-color: var(--border);
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-size: var(--font-size-xs);
     padding: 0.2rem 0.5rem;
     transition: all var(--transition-fast);
+}
+
+.table-card .table-card-pagination .btn[disabled],
+.table-card .table-card-pagination .btn:disabled {
+    color: var(--text-muted);
+    opacity: 0.4;
 }
 
 .table-card .table-card-pagination .btn:not([disabled]):hover {
