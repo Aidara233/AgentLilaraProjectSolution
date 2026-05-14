@@ -19,7 +19,7 @@
         <div class="status-actions">
             @foreach (var action in Schema.Actions)
             {
-                <button class="btn btn-sm @(action.Danger ? "btn-outline-danger" : "btn-primary-custom")"
+                <button class="btn btn-sm @(action.Danger ? "btn-outline-danger" : "btn-ghost")"
                         @onclick="() => HandleAction(action)">
                     @if (!string.IsNullOrEmpty(action.Icon))
                     {

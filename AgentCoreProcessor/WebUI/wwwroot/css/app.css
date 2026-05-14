@@ -1540,45 +1540,6 @@ select.config-input option {
     border-top-color: rgba(0, 200, 255, 0.1);
 }
 
-[data-theme="tech"] .status-card .btn-primary-custom {
-    background: transparent;
-    border: none;
-    color: var(--accent);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    font-size: var(--font-size-xs);
-    font-weight: 600;
-    padding: 0.4rem 0.8rem;
-    position: relative;
-}
-
-[data-theme="tech"] .status-card .btn-primary-custom::before,
-[data-theme="tech"] .status-card .btn-primary-custom::after {
-    content: '';
-    position: absolute;
-    width: 6px;
-    height: 6px;
-    border-color: var(--accent);
-    border-style: solid;
-}
-
-[data-theme="tech"] .status-card .btn-primary-custom::before {
-    top: 0;
-    left: 0;
-    border-width: 1.5px 0 0 1.5px;
-}
-
-[data-theme="tech"] .status-card .btn-primary-custom::after {
-    bottom: 0;
-    right: 0;
-    border-width: 0 1.5px 1.5px 0;
-}
-
-[data-theme="tech"] .status-card .btn-primary-custom:hover {
-    background: var(--accent-dim);
-    box-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
-}
-
 [data-theme="tech"] .table-card .table-card-toolbar .form-control {
     background: rgba(8, 14, 28, 0.6);
     border-color: var(--glass-border);
