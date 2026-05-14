@@ -1552,7 +1552,7 @@ select.config-input option {
     color: var(--accent);
 }
 
-[data-theme="tech"] .table-card .table-card-pagination .btn:not(:disabled):hover {
+[data-theme="tech"] .table-card .table-card-pagination .btn:not([disabled]):hover {
     background: var(--accent-dim);
     border-color: var(--accent);
     box-shadow: 0 0 4px rgba(0, 212, 255, 0.2);
@@ -1672,10 +1672,12 @@ select.config-input option {
 
 .card-grid-item > .card-header .btn {
     color: var(--text-muted);
-    border: none;
+    border: none !important;
+    background: transparent !important;
     padding: 0.15rem 0.4rem;
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-sm);
     opacity: 0.6;
+    box-shadow: none !important;
 }
 
 .card-grid-item > .card-header .btn:hover {
@@ -1746,8 +1748,8 @@ select.config-input option {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
-    margin-top: 1rem;
-    padding-top: 0.75rem;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
     border-top: 1px solid var(--border-subtle);
 }
 
@@ -1801,11 +1803,13 @@ select.config-input option {
     color: var(--text-muted);
     font-size: var(--font-size-xs);
     padding: 0.2rem 0.5rem;
+    transition: all var(--transition-fast);
 }
 
-.table-card .table-card-pagination .btn:not(:disabled):hover {
+.table-card .table-card-pagination .btn:not([disabled]):hover {
     border-color: var(--accent);
     color: var(--accent);
+    background: var(--accent-dim);
 }
 
 .table-card .table-card-pagination .text-muted {

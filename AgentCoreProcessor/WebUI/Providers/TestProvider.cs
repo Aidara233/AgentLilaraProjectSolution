@@ -98,7 +98,7 @@ internal class TestListDataSource : IDataSource
     public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
         var arr = new JsonArray();
-        for (int i = 1; i <= 5; i++)
+        for (int i = 1; i <= 25; i++)
         {
             arr.Add(new JsonObject
             {
@@ -107,7 +107,7 @@ internal class TestListDataSource : IDataSource
                 ["time"] = DateTime.Now.AddMinutes(-i * 10).ToString("O")
             });
         }
-        return Task.FromResult(new DataResult { Data = arr, TotalCount = 5 });
+        return Task.FromResult(new DataResult { Data = arr, TotalCount = 25 });
     }
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
