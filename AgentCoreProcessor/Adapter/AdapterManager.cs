@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Engine;
+using AgentCoreProcessor.Logging;
 using Newtonsoft.Json;
 
 namespace AgentCoreProcessor.Adapter
@@ -93,6 +94,13 @@ namespace AgentCoreProcessor.Adapter
             adapter.OnMessageReceived += msg =>
             {
                 msg.AdapterId = adapter.Id;
+                // 为每条入站消息创建新 Signal，AsyncLocal 会自动传播到下游
+                Signal.Begin(
+                    LogGroup.Adapter,
+                    $"adapter:{adapter.Platform}",
+                    "消息接收",
+                    new { adapterId = adapter.Id, platform = adapter.Platform, channelId = msg.ChannelId, userId = msg.PlatformUserId, isPrivate = msg.IsPrivate }
+                );
                 eventBus?.PublishMessage(msg);
             };
             adapters[adapter.Id] = adapter;
@@ -177,13 +185,27 @@ namespace AgentCoreProcessor.Adapter
         {
             var adapter = ResolveForChannel(platform, message.ChannelId);
             if (adapter == null) return null;
-            return await adapter.SendMessageAsync(message);
+            using var span = Signal.Open(
+                LogGroup.Adapter,
+                "消息发送",
+                new { adapterId = adapter.Id, platform, channelId = message.ChannelId }
+            );
+            var result = await adapter.SendMessageAsync(message);
+            span.SetCloseDetail(new { messageId = result });
+            return result;
         }
 
         public async Task<string?> SendMessageByIdAsync(string adapterId, OutgoingMessage message)
         {
             if (!adapters.TryGetValue(adapterId, out var adapter)) return null;
-            return await adapter.SendMessageAsync(message);
+            using var span = Signal.Open(
+                LogGroup.Adapter,
+                "消息发送",
+                new { adapterId, channelId = message.ChannelId }
+            );
+            var result = await adapter.SendMessageAsync(message);
+            span.SetCloseDetail(new { messageId = result });
+            return result;
         }
 
         public async Task<ActionResult> ExecuteActionAsync(string platform, string channelId, string action, Dictionary<string, string> parameters)

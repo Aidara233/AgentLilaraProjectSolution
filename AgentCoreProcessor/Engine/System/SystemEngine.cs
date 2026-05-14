@@ -9,6 +9,7 @@ using AgentCoreProcessor.Component;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Engine.Modules;
+using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Tool;
 using AgentLilara.PluginSDK;
@@ -211,11 +212,38 @@ namespace AgentCoreProcessor.Engine
                     var tasks = DrainTasks();
                     var notifications = DrainNotifications();
                     var scheduledEvents = DrainScheduledEvents();
+                    var pendingDelegations = ctx.Delegations.GetPendingForEvaluation();
+                    var retryDelegations = ctx.Delegations.GetRetryPending();
+
+                    Signal.Begin(LogGroup.Engine, "system", "系统循环轮次", new
+                    {
+                        tasks = tasks.Count,
+                        notifications = notifications.Count,
+                        scheduled = scheduledEvents.Count,
+                        delegations = pendingDelegations.Count,
+                        retryDelegations = retryDelegations.Count
+                    });
+
+                    Signal.Event(LogGroup.Engine, "任务队列检查", new
+                    {
+                        pending = tasks.Count,
+                        notifications = notifications.Count,
+                        scheduled = scheduledEvents.Count
+                    });
+
+                    if (pendingDelegations.Count > 0 || retryDelegations.Count > 0)
+                    {
+                        Signal.Event(LogGroup.Engine, "委托待评估", new
+                        {
+                            pending = pendingDelegations.Count,
+                            retry = retryDelegations.Count
+                        });
+                    }
 
                     // 填充 PendingEventsModule
                     pendingEventsModule.SetPendingEvents(tasks, notifications, scheduledEvents, lastRoundNoAction);
-                    pendingEventsModule.SetPendingDelegations(ctx.Delegations.GetPendingForEvaluation());
-                    pendingEventsModule.SetRetryPendingDelegations(ctx.Delegations.GetRetryPending());
+                    pendingEventsModule.SetPendingDelegations(pendingDelegations);
+                    pendingEventsModule.SetRetryPendingDelegations(retryDelegations);
 
                     // ═══ 内层：Agent 循环 ═══
                     Interlocked.Exchange(ref _busyFlag, 1);
@@ -278,6 +306,8 @@ namespace AgentCoreProcessor.Engine
         {
             for (int round = 0; round < MaxRoundsPerWake && !ct.IsCancellationRequested; round++)
             {
+                using var roundSpan = Signal.Open(LogGroup.Engine, "agent轮次", new { round = round + 1 });
+
                 // ① 检查是否需要压缩（硬阈值）
                 var usagePercent = (int)(estimatedTokens * 100.0 / MaxContextTokens);
                 if (usagePercent >= HardThresholdPercent)
@@ -323,6 +353,18 @@ namespace AgentCoreProcessor.Engine
                 Tool.Core.ManageComponentsTool.CurrentLoop.Value =
                     new Tool.Core.ManageComponentsTool.LoopContext("system", "system-loop");
                 var executor = new ToolExecutor(authorizedTools: GetAuthorizedTools());
+
+                // 记录委托相关决策
+                var delegationTools = new HashSet<string> { "accept_delegation", "reject_delegation", "queue_delegation" };
+                var delegationCalls = toolCalls.Where(c => delegationTools.Contains(c.Tool)).ToList();
+                if (delegationCalls.Count > 0)
+                {
+                    Signal.Event(LogGroup.Engine, "委托决策", new
+                    {
+                        decisions = delegationCalls.Select(c => new { tool = c.Tool, arg = c.Inputs.FirstOrDefault() }).ToArray()
+                    });
+                }
+
                 var results = await executor.ExecuteAsync(toolCalls);
 
                 lastRoundCalls = toolCalls;
@@ -388,6 +430,7 @@ namespace AgentCoreProcessor.Engine
             ctx.TaskBridge.SystemState = SystemLoopState.Compressing;
             FrameworkLogger.Log("SystemEngine", $"触发上下文压缩: {estimatedTokens} tokens ({estimatedTokens * 100 / MaxContextTokens}%)");
 
+            using var span = Signal.Open(LogGroup.Engine, "上下文压缩", new { tokensBefore = estimatedTokens });
             try
             {
                 await compressionModule.CompressAsync(conversationHistory);
@@ -408,6 +451,7 @@ namespace AgentCoreProcessor.Engine
                 }
 
                 FrameworkLogger.Log("SystemEngine", $"压缩完成: → {estimatedTokens} tokens");
+                Signal.Event(LogGroup.Engine, "上下文压缩完成", new { tokensAfter = estimatedTokens });
             }
             finally
             {
