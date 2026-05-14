@@ -20,6 +20,7 @@
 - 模型日志结构化：JSON 格式（含 usage + caller tag），WebUI /logs/model 展示 token 摘要 + 按来源筛选
   - CallerTag 标识调用来源：Channel:{id} / System / SubAgent:{sessionId} / Review:{mode}
 - 工具禁用管理：ToolRegistry.DisableTool/EnableTool + ToolConfig.json 持久化 + ToolStatusModule 动态注入 + WebUI /config/tools
+- Express 工具（fire-and-forget）：ToolMetaAttribute.ExpressAvailable=true 标记轻量工具，Express 模式下原生 tool_use，结果不回注不续轮。escalate 工具替代 [ESCALATE] 文本标记切换到 Working 模式。非 native 提供商保留文本 fallback。
 - 多模态图片处理：ContentPart 支持 text/image(path或base64)、ContextBuilder 图片感知（<img id="N"/>标记+直传/描述分流）、ViewImageTool Working专用、SkiaSharp 缩略图
 
 ## 冷启动
@@ -97,6 +98,7 @@
 - 图片存储：Adapter/ImageStorage.cs
 - Token 统计：Database/ModelCallLog.cs + ModelCallLogRepository.cs
 - 工具管理：Tool/ToolRegistry.cs（禁用逻辑）+ Storage/ToolConfig.json
+- 核心工具：Tool/Core/CoreTools.cs（wait + continue_loop）+ Tool/Core/EscalateTool.cs + Tool/Core/ManageComponentsTool.cs
 - 插件 SDK：AgentLilara.PluginSDK/（共享契约，插件引用此项目）
 - 插件加载：Tool/Host/PluginLoader.cs（扫描 {BaseDirectory}/Plugins/）
 - 记忆桥接：Tool/Host/MemoryAccessImpl.cs（IMemoryAccess → Repository + Embedding）
