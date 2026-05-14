@@ -1742,8 +1742,11 @@ select.config-input option {
     transition: all var(--transition-fast);
 }
 
-.card-grid-item > .card-header .btn:hover {
-    color: var(--accent);
+.card-grid-item > .card-header .btn:hover,
+.card-grid-item > .card-header .btn.btn-outline-secondary:hover {
+    color: var(--accent) !important;
+    background: transparent !important;
+    border: none !important;
     opacity: 1;
 }
 
@@ -1919,9 +1922,8 @@ select.config-input option {
     background: var(--status-error-dim);
 }
 
-/* 分页页码显示 */
-.table-card .table-card-pagination .btn.disabled,
-.table-card .table-card-pagination .btn:disabled {
+/* 分页页码显示（span.disabled，非真正禁用按钮） */
+.table-card .table-card-pagination span.disabled {
     background: var(--bg-tertiary);
     border-color: var(--border);
     color: var(--text-secondary);
