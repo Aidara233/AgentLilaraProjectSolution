@@ -2,10 +2,12 @@ using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Engine.Modules;
+using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Models;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -75,10 +77,41 @@ namespace AgentCoreProcessor.Core
             string? currentToolName = null;
             var currentInputJson = new System.Text.StringBuilder();
 
+            var cfg = processor.Client.Config;
+            var msgCount = processor.Client.GetConversationHistory().Count;
+            var sw = Stopwatch.StartNew();
+            bool firstTokenLogged = false;
+
+            Signal.Debug(LogGroup.Model, "模型请求发出", new
+            {
+                model = cfg.Model,
+                messages_count = msgCount,
+                core = CoreName,
+                caller = CallerTag,
+                mode = "tools"
+            });
+
+            using var span = Signal.Open(LogGroup.Model, "模型调用", new
+            {
+                model = cfg.Model,
+                core = CoreName,
+                caller = CallerTag
+            });
+
+            Exception? callError = null;
             try
             {
                 await processor.Client.StreamChatWithToolsAsync(evt =>
                 {
+                    if (!firstTokenLogged && (
+                        evt.Type == Models.StreamEventType.Text ||
+                        evt.Type == Models.StreamEventType.Thinking ||
+                        evt.Type == Models.StreamEventType.ToolUseStart))
+                    {
+                        firstTokenLogged = true;
+                        Signal.Debug(LogGroup.Model, "首token到达", new { elapsed_ms = sw.ElapsedMilliseconds });
+                    }
+
                     if (evt.Type == Models.StreamEventType.Thinking && evt.Content != null)
                         reasoningLog.Append(evt.Content);
                     if (evt.Type == Models.StreamEventType.Usage && evt.Usage != null)
@@ -106,21 +139,54 @@ namespace AgentCoreProcessor.Core
             }
             catch (Exception ex)
             {
-                var cfg = processor.Client.Config;
+                callError = ex;
+                cfg = processor.Client.Config;
                 var context = $"core={processor.CfgName} provider={cfg.Provider} model={cfg.Model} endpoint={cfg.ApiEndpoint}";
                 FrameworkLogger.LogError("CoreBase", ex, context);
 
+                Signal.Error(LogGroup.Model, "模型调用失败，准备重试", new { error = ex.Message, elapsed_ms = sw.ElapsedMilliseconds });
+
                 // 重试一次
                 reasoningLog.Clear();
-                await processor.Client.StreamChatWithToolsAsync(evt =>
+                firstTokenLogged = false;
+                callError = null;
+                try
                 {
-                    if (evt.Type == Models.StreamEventType.Thinking && evt.Content != null)
-                        reasoningLog.Append(evt.Content);
-                    if (evt.Type == Models.StreamEventType.Usage && evt.Usage != null)
-                        usage = evt.Usage;
-                    onEvent(evt);
-                }, ct);
+                    await processor.Client.StreamChatWithToolsAsync(evt =>
+                    {
+                        if (!firstTokenLogged && (
+                            evt.Type == Models.StreamEventType.Text ||
+                            evt.Type == Models.StreamEventType.Thinking ||
+                            evt.Type == Models.StreamEventType.ToolUseStart))
+                        {
+                            firstTokenLogged = true;
+                            Signal.Debug(LogGroup.Model, "首token到达(重试)", new { elapsed_ms = sw.ElapsedMilliseconds });
+                        }
+
+                        if (evt.Type == Models.StreamEventType.Thinking && evt.Content != null)
+                            reasoningLog.Append(evt.Content);
+                        if (evt.Type == Models.StreamEventType.Usage && evt.Usage != null)
+                            usage = evt.Usage;
+                        onEvent(evt);
+                    }, ct);
+                }
+                catch (Exception retryEx)
+                {
+                    callError = retryEx;
+                }
             }
+
+            span.SetCloseDetail(new
+            {
+                elapsed_ms = sw.ElapsedMilliseconds,
+                model = cfg.Model,
+                caller = CallerTag,
+                tokens_in = usage.PromptTokens,
+                tokens_out = usage.CompletionTokens,
+                cached_tokens = usage.PromptCacheHitTokens ?? usage.CacheReadInputTokens,
+                tool_calls = toolCallLog.Count,
+                error = callError?.Message
+            });
 
             return usage;
         }
@@ -132,6 +198,27 @@ namespace AgentCoreProcessor.Core
             var reasoningLog = new StringBuilder();
             Usage usage = new();
 
+            var cfg = processor.Client.Config;
+            var msgCount = processor.Client.GetConversationHistory().Count;
+            var sw = Stopwatch.StartNew();
+            bool firstTokenLogged = false;
+
+            Signal.Debug(LogGroup.Model, "模型请求发出", new
+            {
+                model = cfg.Model,
+                messages_count = msgCount,
+                core = CoreName,
+                caller = CallerTag,
+                mode = "stream"
+            });
+
+            using var span = Signal.Open(LogGroup.Model, "模型调用", new
+            {
+                model = cfg.Model,
+                core = CoreName,
+                caller = CallerTag
+            });
+
             await processor.ProcessAsync((response) =>
             {
                 var delta = response.Choices is { Count: > 0 } ? response.Choices[0].Delta : null;
@@ -139,6 +226,12 @@ namespace AgentCoreProcessor.Core
 
                 bool hasContent = delta.ReasoningContent != null || delta.Content != null;
                 if (!hasContent) return;
+
+                if (!firstTokenLogged)
+                {
+                    firstTokenLogged = true;
+                    Signal.Debug(LogGroup.Model, "首token到达", new { elapsed_ms = sw.ElapsedMilliseconds });
+                }
 
                 if (delta.ReasoningContent != null)
                     reasoningLog.Append(delta.ReasoningContent);
@@ -195,6 +288,17 @@ namespace AgentCoreProcessor.Core
                 buffer.Clear();
                 fullContent.Clear();
                 reasoningLog.Clear();
+                firstTokenLogged = false;
+            });
+
+            span.SetCloseDetail(new
+            {
+                elapsed_ms = sw.ElapsedMilliseconds,
+                model = cfg.Model,
+                caller = CallerTag,
+                tokens_in = usage.PromptTokens,
+                tokens_out = usage.CompletionTokens,
+                cached_tokens = usage.PromptCacheHitTokens ?? usage.CacheReadInputTokens
             });
 
             LogOutput(fullContent.ToString(), reasoningLog.ToString(), usage);
