@@ -1,12 +1,12 @@
 @using AgentLilara.PluginSDK.WebUI
 @using System.Text.Json.Nodes
 
-<div class="status-card">
+<div class="status-card p-3">
     <div class="status-fields">
         @foreach (var field in Schema.Fields)
         {
-            <div class="status-field-row d-flex justify-content-between align-items-center py-1 border-bottom">
-                <span class="status-field-label text-muted small">@field.Label</span>
+            <div class="status-field-row">
+                <span class="status-field-label">@field.Label</span>
                 <span class="status-field-value @GetValueClass(field)">
                     @GetFieldValue(field)
                 </span>
@@ -16,10 +16,10 @@
 
     @if (Schema.Actions?.Count > 0)
     {
-        <div class="status-actions mt-3 d-flex flex-wrap gap-2">
+        <div class="status-actions">
             @foreach (var action in Schema.Actions)
             {
-                <button class="btn btn-sm @(action.Danger ? "btn-outline-danger" : "btn-outline-primary")"
+                <button class="btn btn-sm @(action.Danger ? "btn-outline-danger" : "btn-primary-custom")"
                         @onclick="() => HandleAction(action)">
                     @if (!string.IsNullOrEmpty(action.Icon))
                     {
@@ -44,12 +44,24 @@
         return val?.ToString() ?? "-";
     }
 
-    private string GetValueClass(StatusField field) => field.Type switch
+    private string GetValueClass(StatusField field)
     {
-        StatusFieldType.Badge => "badge bg-secondary",
-        StatusFieldType.Indicator => "status-indicator",
-        _ => ""
-    };
+        if (field.Type == StatusFieldType.Badge)
+            return "badge";
+        if (field.Type == StatusFieldType.Indicator)
+        {
+            var val = GetFieldValue(field).ToLower();
+            var color = val switch
+            {
+                "running" or "active" or "online" or "ok" => "color: var(--status-ok)",
+                "stopped" or "offline" or "error" => "color: var(--status-error)",
+                "idle" or "sleeping" or "paused" => "color: var(--status-warn)",
+                _ => ""
+            };
+            return $"status-indicator\" style=\"{color}";
+        }
+        return "";
+    }
 
     private async Task HandleAction(ActionButton action)
     {

@@ -1519,6 +1519,7 @@ select.config-input option {
 
 .card-grid-item {
     min-width: 0;
+    overflow: hidden;
 }
 
 @media (max-width: 768px) {
@@ -1531,6 +1532,23 @@ select.config-input option {
 }
 
 /* === Card Host === */
+.card-grid-item > .card-header {
+    font-weight: 600;
+    font-size: var(--font-size-sm);
+}
+
+.card-grid-item > .card-header .btn {
+    color: var(--text-muted);
+    border-color: var(--border);
+    padding: 0.15rem 0.4rem;
+    font-size: var(--font-size-xs);
+}
+
+.card-grid-item > .card-header .btn:hover {
+    color: var(--text-primary);
+    border-color: var(--accent);
+}
+
 .card-error-state,
 .card-loading-state {
     display: flex;
@@ -1542,7 +1560,112 @@ select.config-input option {
 }
 
 .card-error-state {
-    border: 1px solid var(--danger-color, #dc3545);
-    border-radius: 0.25rem;
-    margin: 0.5rem;
+    border: 1px solid var(--status-error);
+    border-radius: var(--radius-sm);
+    margin: 0.75rem;
+    background: var(--status-error-dim);
+}
+
+/* === Status Card === */
+.status-card .status-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.status-card .status-field-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.status-card .status-field-row:last-child {
+    border-bottom: none;
+}
+
+.status-card .status-field-label {
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+}
+
+.status-card .status-field-value {
+    color: var(--text-primary);
+    font-weight: 500;
+    font-size: var(--font-size-sm);
+}
+
+.status-card .status-field-value.badge {
+    background: var(--accent-dim) !important;
+    color: var(--accent);
+    font-size: var(--font-size-xs);
+    padding: 0.2rem 0.5rem;
+    border-radius: 10px;
+}
+
+.status-card .status-field-value.status-indicator {
+    font-weight: 600;
+}
+
+.status-card .status-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border-subtle);
+}
+
+/* === Table Card === */
+.table-card .table-card-toolbar {
+    padding: 0.5rem 0.75rem 0;
+}
+
+.table-card .table-card-toolbar .form-control {
+    background: var(--bg-tertiary);
+    border-color: var(--border);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+}
+
+.table-card .table-card-toolbar .form-control::placeholder {
+    color: var(--text-muted);
+}
+
+.table-card .table-card-toolbar .btn {
+    border-color: var(--border);
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+}
+
+.table-card .sortable-col {
+    cursor: pointer;
+    user-select: none;
+}
+
+.table-card .sortable-col:hover {
+    color: var(--accent);
+}
+
+.table-card .table-card-pagination {
+    padding: 0.5rem 0.75rem;
+    border-top: 1px solid var(--border-subtle);
+    font-size: var(--font-size-sm);
+}
+
+.table-card .table-card-pagination .btn {
+    border-color: var(--border);
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    padding: 0.2rem 0.5rem;
+}
+
+.table-card .table-card-pagination .btn:not(:disabled):hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.table-card .table-card-pagination .text-muted {
+    color: var(--text-muted) !important;
 }
