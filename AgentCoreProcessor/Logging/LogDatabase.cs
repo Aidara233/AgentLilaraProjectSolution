@@ -8,6 +8,7 @@ public class LogDatabase : IDisposable
 
     public LogDatabase(string storagePath)
     {
+        Directory.CreateDirectory(storagePath);
         var dbPath = Path.Combine(storagePath, "logs.db");
         _conn = new SqliteConnection($"Data Source={dbPath}");
         _conn.Open();

@@ -28,7 +28,7 @@ namespace AgentCoreProcessor
             AgentCoreProcessor.Tool.ToolRegistry.LoadConfig();
 
             // 日志系统初始化（早于其他服务，以便后续组件可以使用 Signal.*）
-            var logStoragePath = Path.Combine(AppContext.BaseDirectory, "Storage");
+            var logStoragePath = PathConfig.DatabasePath;
             var logDb = new LogDatabase(logStoragePath);
             var spanTracker = new OpenSpanTracker();
             var tokenAggregator = new TokenAggregator(logDb);
