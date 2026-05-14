@@ -515,3 +515,27 @@ Storage/
   卡片类型: Table / Status / Form / Stream / Chat / Tree / Detail (+ Custom 预留)
   布局: CSS Grid 12列，CardLayout 声明 PreferredCols/MinWidth/Height，移动端自动单列
 ```
+
+## 日志系统（信号追踪）
+
+```
+Signal API (静态门面，开发者入口)
+  ├── SignalContext (AsyncLocal 传播: signal_id / scope / branch / parent)
+  ├── LogWriter (Channel<T> 有界队列 → 后台批量写入 → 通知订阅者)
+  ├── LogDatabase (独立 SQLite: Storage/Database/logs.db, WAL 模式)
+  │     ├── events 表 (signal_id, scope, branch, parent_id, span_id, group, level, type, timestamp, name, detail)
+  │     └── token_usage 表 (从 Model close 事件派生)
+  ├── OpenSpanTracker (内存 ConcurrentDictionary，快速查"当前卡在哪")
+  ├── TokenAggregator (Model close → token_usage 聚合)
+  └── LogQuery / LogAccessImpl (查询 + SDK ILogAccess 桥接)
+
+SDK 接口: ISignalLogger (写) / ILogAccess (读写，继承 ISignalLogger)
+兼容层: FrameworkLogger 保留旧 API，底层转发 Signal（过渡期，待 WebUI 迁移后移除）
+
+信号模型:
+  Signal.Begin → 新信号（适配器收消息、定时器、冲动触发）
+  Signal.Continue → 继承信号（跨频道委托、子agent唤醒）
+  Signal.Open/Close → 操作跨度（模型调用、工具执行、闸门开关）
+  Signal.Event → 时间点日志
+  信号吸收: 频道处理中收到新消息 → 双向记录 absorbed_by
+```

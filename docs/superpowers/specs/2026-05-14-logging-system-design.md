@@ -493,3 +493,11 @@ CREATE INDEX idx_token_usage_caller ON token_usage(caller_tag, timestamp);
 
 清理时机：WebUI 日志 Provider 实现后，一次性移除上述所有文件和调用。
 
+### 清理时具体动作
+
+1. FrameworkLogger.cs 中删除文件写入逻辑（只保留 Signal 转发 + OnLogWritten 事件给 Dashboard）
+2. CoreBase 中删除 LogOutput() 方法和 CallLogRepo 静态字段（停止写 ModelCallLog 表和 JSON 文件）
+3. 确认 token_usage 表数据正常后，删除 ModelCallLog.cs + ModelCallLogRepository.cs
+4. 新 WebUI 日志页上线后，删除 LogStreamService、TokenStatsService、旧三个 Logs 页面
+5. 最后：将 FrameworkLogger 的 170+ 处调用逐步替换为 Signal API，删除 FrameworkLogger.cs
+
