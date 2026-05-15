@@ -538,4 +538,12 @@ SDK 接口: ISignalLogger (写) / ILogAccess (读写，继承 ISignalLogger)
   Signal.Open/Close → 操作跨度（模型调用、工具执行、闸门开关）
   Signal.Event → 时间点日志
   信号吸收: 频道处理中收到新消息 → 双向记录 absorbed_by
+
+WebUI 日志追踪页 (/logs/trace):
+  独立实现（不走卡片系统），LogTraceProvider 仅注册导航
+  SVG 渲染引擎: slot分配 + 竖线/节点/斜线统一SVG
+  虚拟化: 只渲染可视区±30行，rAF节流
+  实时推送: 订阅 LogWriter 事件流
+  交互: 因果链高亮(parentId树) + 右键菜单 + 筛选(Level/Scope/仅卡住)
+  已知问题: parent_id 存 timestamp 非 row id，因果链碰撞风险待重设计
 ```
