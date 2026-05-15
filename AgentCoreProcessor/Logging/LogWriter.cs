@@ -95,7 +95,7 @@ public class LogWriter : IDisposable
             var pSig = cmd.Parameters.Add("@sig", SqliteType.Text);
             var pScope = cmd.Parameters.Add("@scope", SqliteType.Text);
             var pBranch = cmd.Parameters.Add("@branch", SqliteType.Integer);
-            var pParent = cmd.Parameters.Add("@parent", SqliteType.Integer);
+            var pParent = cmd.Parameters.Add("@parent", SqliteType.Text);
             var pSpan = cmd.Parameters.Add("@span", SqliteType.Text);
             var pGroup = cmd.Parameters.Add("@group", SqliteType.Text);
             var pLevel = cmd.Parameters.Add("@level", SqliteType.Integer);
@@ -109,7 +109,7 @@ public class LogWriter : IDisposable
                 pSig.Value = evt.SignalId;
                 pScope.Value = evt.Scope;
                 pBranch.Value = evt.Branch;
-                pParent.Value = evt.ParentId.HasValue ? evt.ParentId.Value : DBNull.Value;
+                pParent.Value = evt.ParentId != null ? evt.ParentId : DBNull.Value;
                 pSpan.Value = evt.SpanId != null ? evt.SpanId : DBNull.Value;
                 pGroup.Value = evt.GroupName;
                 pLevel.Value = evt.Level;

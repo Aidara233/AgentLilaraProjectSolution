@@ -6,7 +6,7 @@ public class LogEvent
     public string SignalId { get; set; } = "";
     public string Scope { get; set; } = "";
     public long Branch { get; set; }
-    public long? ParentId { get; set; }
+    public string? ParentId { get; set; }
     public string? SpanId { get; set; }
     public string GroupName { get; set; } = "";
     public int Level { get; set; } = 1;

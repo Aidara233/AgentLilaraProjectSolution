@@ -5,7 +5,7 @@ public static class Signal
     public static SignalContext Begin(string group, string scope, string name, object? detail = null)
         => SignalContext.Begin(group, scope, name, detail);
 
-    public static SignalContext Continue(string signalId, long? parentSpanId, string scope, string group, string name, object? detail = null)
+    public static SignalContext Continue(string signalId, string? parentSpanId, string scope, string group, string name, object? detail = null)
         => SignalContext.Continue(signalId, parentSpanId, scope, group, name, detail);
 
     public static string NewId() => SignalContext.NewSignalId();

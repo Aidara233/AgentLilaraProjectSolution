@@ -152,7 +152,7 @@ public class LogQuery : ILogQuery
                 SignalId = reader.GetString(1),
                 Scope = reader.GetString(2),
                 Branch = reader.GetInt64(3),
-                ParentId = reader.IsDBNull(4) ? null : reader.GetInt64(4),
+                ParentId = reader.IsDBNull(4) ? null : reader.GetString(4),
                 SpanId = reader.IsDBNull(5) ? null : reader.GetString(5),
                 GroupName = reader.GetString(6),
                 Level = reader.GetInt32(7),

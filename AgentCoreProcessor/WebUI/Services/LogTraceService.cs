@@ -123,16 +123,22 @@ internal class LogTraceService
         {
             var closedSpans = events.Where(e => e.Type == "close").Select(e => e.SpanId).ToHashSet();
             var stuckOpens = events.Where(e => e.Type == "open" && !closedSpans.Contains(e.SpanId)).ToList();
+            var openBySpanId = events.Where(e => e.Type == "open" && e.SpanId != null)
+                .ToDictionary(e => e.SpanId!, e => e.Id);
             var keepIds = new HashSet<long>();
             foreach (var open in stuckOpens)
             {
                 keepIds.Add(open.Id);
                 var current = open;
-                while (current.ParentId.HasValue)
+                while (current.ParentId != null)
                 {
-                    keepIds.Add(current.ParentId.Value);
-                    current = events.FirstOrDefault(e => e.Id == current.ParentId.Value);
-                    if (current == null) break;
+                    if (openBySpanId.TryGetValue(current.ParentId, out var parentRowId))
+                    {
+                        keepIds.Add(parentRowId);
+                        current = events.FirstOrDefault(e => e.Id == parentRowId);
+                        if (current == null) break;
+                    }
+                    else break;
                 }
             }
             result = result.Where(e => keepIds.Contains(e.Id));
@@ -161,7 +167,7 @@ internal class TraceRow
     public long Id { get; set; }
     public string SignalId { get; set; } = "";
     public string Scope { get; set; } = "";
-    public long? ParentId { get; set; }
+    public string? ParentId { get; set; }
     public string? SpanId { get; set; }
     public string Type { get; set; } = "";
     public int Level { get; set; }

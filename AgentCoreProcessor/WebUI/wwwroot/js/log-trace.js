@@ -48,25 +48,24 @@ function buildLookupMaps(rows) {
     const childrenOf = {};
     const closeToOpen = {};
 
-    // parent_id in the DB stores the parent's TIMESTAMP, not its row id.
-    // Build a timestamp→id map to resolve parent references.
-    const idByTimestamp = {};
+    // Index rows by id and by spanId (for parent lookup)
+    const idBySpanId = {};
     for (const row of rows) {
         byId[row.id] = row;
-        // For open events, their timestamp is what children reference as parentId
-        if (row.type === 'open') {
-            idByTimestamp[row.timestamp] = row.id;
+        if (row.type === 'open' && row.spanId != null) {
+            idBySpanId[row.spanId] = row.id;
         }
     }
 
-    // Build childrenOf using resolved parent ids
+    // Build childrenOf: parentId is now the span_id of the parent open event
     for (const row of rows) {
         if (row.parentId != null) {
-            // parentId is a timestamp — resolve to actual row id
-            const parentRowId = idByTimestamp[row.parentId] ?? row.parentId;
+            const parentRowId = idBySpanId[row.parentId] ?? null;
             row._resolvedParentId = parentRowId;
-            if (!childrenOf[parentRowId]) childrenOf[parentRowId] = [];
-            childrenOf[parentRowId].push(row.id);
+            if (parentRowId != null) {
+                if (!childrenOf[parentRowId]) childrenOf[parentRowId] = [];
+                childrenOf[parentRowId].push(row.id);
+            }
         }
     }
 

@@ -13,7 +13,7 @@ public class SignalContext
     public string SignalId { get; private init; } = "";
     public string Scope { get; private init; } = "";
     public long Branch { get; private set; }
-    public long? CurrentSpanId { get; private set; }
+    public string? CurrentSpanId { get; private set; }
 
     public static void Init(LogWriter writer, int minLevel = LogLevel.Info)
     {
@@ -37,7 +37,7 @@ public class SignalContext
         var spanId = GenerateSpanId();
         var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         ctx.Branch = ts;
-        ctx.CurrentSpanId = ts;
+        ctx.CurrentSpanId = spanId;
 
         var evt = new LogEvent
         {
@@ -57,7 +57,7 @@ public class SignalContext
         return ctx;
     }
 
-    public static SignalContext Continue(string signalId, long? parentSpanId, string scope, string group, string name, object? detail = null)
+    public static SignalContext Continue(string signalId, string? parentSpanId, string scope, string group, string name, object? detail = null)
     {
         var ctx = new SignalContext
         {
@@ -69,7 +69,7 @@ public class SignalContext
         var spanId = GenerateSpanId();
         var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         ctx.Branch = ts;
-        ctx.CurrentSpanId = ts;
+        ctx.CurrentSpanId = spanId;
 
         var evt = new LogEvent
         {
@@ -94,7 +94,7 @@ public class SignalContext
     public SpanHandle Open(string group, string name, object? detail = null)
     {
         var spanId = GenerateSpanId();
-        var parentId = CurrentSpanId;
+        var parentSpanId = CurrentSpanId;
         var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
         var evt = new LogEvent
@@ -102,7 +102,7 @@ public class SignalContext
             SignalId = SignalId,
             Scope = Scope,
             Branch = Branch,
-            ParentId = parentId,
+            ParentId = parentSpanId,
             SpanId = spanId,
             GroupName = group,
             Level = LogLevel.Info,
@@ -114,11 +114,11 @@ public class SignalContext
         _writer?.Enqueue(evt);
 
         var prevSpanId = CurrentSpanId;
-        CurrentSpanId = ts;
+        CurrentSpanId = spanId;
         return new SpanHandle(this, group, spanId, prevSpanId);
     }
 
-    internal void CloseSpan(string group, string spanId, long? prevSpanId, object? detail)
+    internal void CloseSpan(string group, string spanId, string? prevSpanId, object? detail)
     {
         var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var evt = new LogEvent
@@ -177,13 +177,13 @@ public class SpanHandle : IDisposable
     private readonly SignalContext? _ctx;
     private readonly string? _group;
     private readonly string? _spanId;
-    private readonly long? _prevSpanId;
+    private readonly string? _prevSpanId;
     private object? _closeDetail;
     private bool _disposed;
 
     private SpanHandle() { _disposed = true; } // Noop constructor
 
-    internal SpanHandle(SignalContext ctx, string group, string spanId, long? prevSpanId)
+    internal SpanHandle(SignalContext ctx, string group, string spanId, string? prevSpanId)
     {
         _ctx = ctx;
         _group = group;

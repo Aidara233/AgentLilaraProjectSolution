@@ -21,13 +21,19 @@ public class LogDatabase : IDisposable
         cmd.CommandText = """
             PRAGMA journal_mode=WAL;
             PRAGMA synchronous=NORMAL;
+            """;
+        cmd.ExecuteNonQuery();
 
+        MigrateParentIdToText();
+
+        using var cmd2 = _conn.CreateCommand();
+        cmd2.CommandText = """
             CREATE TABLE IF NOT EXISTS events (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 signal_id   TEXT NOT NULL,
                 scope       TEXT NOT NULL,
                 branch      INTEGER NOT NULL DEFAULT 0,
-                parent_id   INTEGER,
+                parent_id   TEXT,
                 span_id     TEXT,
                 group_name  TEXT NOT NULL,
                 level       INTEGER NOT NULL DEFAULT 1,
@@ -43,6 +49,7 @@ public class LogDatabase : IDisposable
             CREATE INDEX IF NOT EXISTS idx_events_span ON events(span_id);
             CREATE INDEX IF NOT EXISTS idx_events_group_time ON events(group_name, timestamp);
             CREATE INDEX IF NOT EXISTS idx_events_level_time ON events(level, timestamp);
+            CREATE INDEX IF NOT EXISTS idx_events_parent ON events(parent_id);
 
             CREATE TABLE IF NOT EXISTS token_usage (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -60,7 +67,33 @@ public class LogDatabase : IDisposable
             CREATE INDEX IF NOT EXISTS idx_token_model ON token_usage(model, timestamp);
             CREATE INDEX IF NOT EXISTS idx_token_caller ON token_usage(caller_tag, timestamp);
             """;
-        cmd.ExecuteNonQuery();
+        cmd2.ExecuteNonQuery();
+    }
+
+    private void MigrateParentIdToText()
+    {
+        using var check = _conn.CreateCommand();
+        check.CommandText = "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='events'";
+        var exists = (long)check.ExecuteScalar()! > 0;
+        if (!exists) return;
+
+        using var typeCheck = _conn.CreateCommand();
+        typeCheck.CommandText = "PRAGMA table_info(events)";
+        using var reader = typeCheck.ExecuteReader();
+        while (reader.Read())
+        {
+            if (reader.GetString(1) == "parent_id")
+            {
+                var colType = reader.GetString(2).ToUpperInvariant();
+                if (colType == "INTEGER" || colType == "")
+                {
+                    using var drop = _conn.CreateCommand();
+                    drop.CommandText = "DROP TABLE events";
+                    drop.ExecuteNonQuery();
+                }
+                break;
+            }
+        }
     }
 
     public SqliteConnection Connection => _conn;
