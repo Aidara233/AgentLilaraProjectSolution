@@ -399,8 +399,9 @@
         }).ToList();
     }
 
-    private List<string> GetChannelsForProfile(string profileName)
+    private List<string> GetChannelsForProfile(string? profileName)
     {
+        if (profileName == null) return new();
         return Engine.ToolProfiles.GetChannelMapping()
             .Where(kv => kv.Value == profileName)
             .Select(kv => kv.Key)
