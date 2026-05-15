@@ -1039,7 +1039,7 @@ select.config-input option {
 
 .chat-bubble.chat-bot {
     background: var(--accent-dim);
-    border: 1px solid rgba(212, 175, 55, 0.2);
+    border: 1px solid var(--border);
     margin-left: auto;
 }
 
@@ -1889,4 +1889,145 @@ select.config-input option {
     border-color: var(--border);
     color: var(--text-secondary);
     opacity: 1;
+}
+
+/* === Card System — Bootstrap Override (theme-aware) === */
+
+.card-grid-item .text-muted,
+.card-grid-item .form-text {
+    color: var(--text-muted) !important;
+}
+
+.card-grid-item .form-label,
+.card-grid-item label {
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+.card-grid-item .form-group-header strong {
+    color: var(--text-primary);
+}
+
+.card-grid-item .form-group-header .text-muted {
+    color: var(--text-muted) !important;
+}
+
+.card-grid-item .small,
+.card-grid-item small {
+    color: var(--text-muted);
+}
+
+.card-grid-item .btn-primary {
+    background: var(--accent);
+    color: var(--bg-primary);
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    transition: all var(--transition-fast);
+}
+
+.card-grid-item .btn-primary:hover {
+    background: var(--accent-hover);
+    box-shadow: 0 2px 8px var(--accent-dim);
+    color: var(--bg-primary);
+}
+
+[data-theme="tech"] .card-grid-item .btn-primary {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    position: relative;
+}
+
+[data-theme="tech"] .card-grid-item .btn-primary:hover {
+    background: var(--accent-dim);
+    box-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
+    color: var(--accent);
+}
+
+.card-grid-item .border-top {
+    border-color: var(--border) !important;
+}
+
+.card-grid-item .form-check-input {
+    background-color: var(--bg-tertiary);
+    border-color: var(--border);
+}
+
+.card-grid-item .form-check-input:checked {
+    background-color: var(--accent);
+    border-color: var(--accent);
+}
+
+.card-grid-item .form-check-input:focus {
+    box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.card-grid-item .border-bottom {
+    border-color: var(--border) !important;
+}
+
+.card-grid-item .detail-field-label {
+    color: var(--text-muted);
+}
+
+.card-grid-item .detail-field-value {
+    color: var(--text-primary);
+}
+
+.card-grid-item .detail-section-header strong {
+    color: var(--text-primary);
+}
+
+.card-grid-item .btn-warning {
+    background: var(--status-warn);
+    border-color: var(--status-warn);
+    color: var(--bg-primary);
+    font-size: var(--font-size-sm);
+}
+
+/* === Stream Card Level Colors === */
+
+.stream-line {
+    padding: 0.15rem 0;
+    line-height: 1.4;
+}
+
+.stream-line-error {
+    color: var(--status-error);
+}
+
+.stream-line-warn {
+    color: var(--status-warn);
+}
+
+.stream-line-debug {
+    color: var(--text-muted);
+}
+
+/* === Utility === */
+
+.cursor-pointer {
+    cursor: pointer;
+}
+
+.hover-bg:hover {
+    background: var(--bg-hover);
+}
+
+/* === Tree Card === */
+
+.tree-node-row.tree-node-selected {
+    background: var(--accent-dim) !important;
+    color: var(--accent) !important;
+    border: 1px solid var(--accent);
+}
+
+.tree-node-row {
+    color: var(--text-primary);
+    transition: background var(--transition-fast);
 }

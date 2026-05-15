@@ -39,6 +39,34 @@ else
     private DataSourceManager dsManager = new();
     private PageContext? pageContext;
 
+    protected override void OnInitialized()
+    {
+        Registry.OnChanged += OnRegistryChanged;
+    }
+
+    private void OnRegistryChanged()
+    {
+        var newPage = Registry.FindPage(Route ?? "");
+        if (newPage == page) return;
+
+        InvokeAsync(async () =>
+        {
+            Cleanup();
+            page = newPage;
+            if (page != null)
+            {
+                pageContext = new PageContext(Nav);
+                dsManager = new DataSourceManager();
+                dsManager.Initialize(page.DataSources);
+                dsManager.OnDataChanged += OnDataSourceChanged;
+                dsManager.SubscribeAll();
+                foreach (var ds in page.DataSources)
+                    await dsManager.FetchAsync(ds.Id);
+            }
+            StateHasChanged();
+        });
+    }
+
     protected override async Task OnParametersSetAsync()
     {
         Cleanup();
@@ -143,5 +171,9 @@ else
         pageContext?.Dispose();
     }
 
-    public void Dispose() => Cleanup();
+    public void Dispose()
+    {
+        Registry.OnChanged -= OnRegistryChanged;
+        Cleanup();
+    }
 }

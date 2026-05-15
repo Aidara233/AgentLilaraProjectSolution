@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Text.Json.Nodes;
 using System.Threading;
@@ -9,9 +10,9 @@ namespace AgentCoreProcessor.WebUI.Shell;
 
 internal class DataSourceManager : IDisposable
 {
-    private readonly Dictionary<string, IDataSource> _sources = new();
-    private readonly Dictionary<string, IDisposable?> _subscriptions = new();
-    private readonly Dictionary<string, DataSourceState> _states = new();
+    private readonly ConcurrentDictionary<string, IDataSource> _sources = new();
+    private readonly ConcurrentDictionary<string, IDisposable?> _subscriptions = new();
+    private readonly ConcurrentDictionary<string, DataSourceState> _states = new();
 
     public event Action<string>? OnDataChanged;
 
@@ -29,11 +30,12 @@ internal class DataSourceManager : IDisposable
         if (!_sources.TryGetValue(dataSourceId, out var source))
             return null;
 
-        var state = _states[dataSourceId];
+        if (!_states.TryGetValue(dataSourceId, out var state))
+            return null;
         state.IsLoading = true;
         state.Error = null;
 
-        for (int attempt = 0; attempt <= 3; attempt++)
+        for (int attempt = 0; attempt < 3; attempt++)
         {
             try
             {

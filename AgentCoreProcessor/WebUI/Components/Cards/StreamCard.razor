@@ -12,7 +12,7 @@
             }
             @if (Schema.ShowPauseButton)
             {
-                <button class="btn btn-sm @(_paused ? "btn-warning" : "btn-outline-secondary")" @onclick="TogglePause">
+            <button class="btn btn-sm flex-shrink-0 @(_paused ? "btn-warning" : "btn-outline-secondary")" style="white-space:nowrap;" @onclick="TogglePause">
                     <i class="bi @(_paused ? "bi-play-fill" : "bi-pause-fill")"></i>
                     @(_paused ? "继续" : "暂停")
                 </button>
@@ -20,16 +20,16 @@
         </div>
     }
 
-    <div class="stream-output flex-grow-1 overflow-auto font-monospace small p-2 bg-dark text-light rounded"
-         style="min-height:200px; max-height:400px;"
+    <div class="stream-output flex-grow-1 overflow-auto font-monospace small p-2 rounded"
+         style="min-height:200px; max-height:400px; background:var(--bg-tertiary); color:var(--text-primary);"
          @ref="_scrollContainer">
         @foreach (var line in FilteredLines)
         {
-            <div class="stream-line">@line</div>
+            <div class="stream-line @GetLineLevelClass(line)">@FormatLine(line)</div>
         }
         @if (!FilteredLines.Any())
         {
-            <div class="text-muted">暂无输出</div>
+            <div style="color:var(--text-muted);">暂无输出</div>
         }
     </div>
 </div>
@@ -59,6 +59,31 @@
                 .TakeLast(Schema.MaxLines)
                 .ToList();
         }
+    }
+
+    private string FormatLine(string line)
+    {
+        try
+        {
+            var obj = JsonNode.Parse(line);
+            if (obj is JsonObject jo)
+            {
+                var time = jo["time"]?.ToString() ?? "";
+                var level = jo["level"]?.ToString() ?? "";
+                var text = jo["text"]?.ToString() ?? jo.ToString();
+                return $"{time} [{level}] {text}";
+            }
+        }
+        catch { }
+        return line;
+    }
+
+    private string GetLineLevelClass(string line)
+    {
+        if (line.Contains("\"ERROR\"") || line.Contains("[ERROR]")) return "stream-line-error";
+        if (line.Contains("\"WARN\"") || line.Contains("[WARN]")) return "stream-line-warn";
+        if (line.Contains("\"DEBUG\"") || line.Contains("[DEBUG]")) return "stream-line-debug";
+        return "";
     }
 
     private void TogglePause() => _paused = !_paused;

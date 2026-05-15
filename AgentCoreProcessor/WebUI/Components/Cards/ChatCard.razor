@@ -6,12 +6,11 @@
         @foreach (var msg in _messages)
         {
             var isBot = msg.IsBot;
-            <div class="chat-message d-flex @(isBot ? "justify-content-start" : "justify-content-end") mb-2">
-                <div class="chat-bubble px-3 py-2 rounded @(isBot ? "bg-light text-dark" : "bg-primary text-white")"
-                     style="max-width:75%;">
-                    @if (isBot && !string.IsNullOrEmpty(msg.Sender))
+            <div class="chat-message d-flex mb-2">
+                <div class="chat-bubble @(isBot ? "chat-bot" : "chat-user")">
+                    @if (!string.IsNullOrEmpty(msg.Sender))
                     {
-                        <div class="chat-sender small fw-bold mb-1">@msg.Sender</div>
+                        <div class="chat-sender">@msg.Sender</div>
                     }
                     <div>@msg.Text</div>
                 </div>
@@ -68,7 +67,9 @@
                 if (item is not JsonObject obj) continue;
                 var sender = obj["sender"]?.ToString() ?? "";
                 var text = obj["text"]?.ToString() ?? "";
-                var isBot = obj["isBot"]?.GetValue<bool>() ?? false;
+                var role = obj["role"]?.ToString() ?? "";
+                var isBot = obj["isBot"]?.GetValue<bool>()
+                    ?? role is "assistant" or "bot" or "system";
                 _messages.Add(new ChatMessage(sender, text, isBot));
             }
         }
