@@ -181,6 +181,9 @@
         }
     }
 
+    private readonly List<TraceRow> _pendingRows = new();
+    private bool _flushScheduled;
+
     private void OnNewEvent(TraceRow row)
     {
         if (_paused) return;
@@ -188,12 +191,27 @@
         if (_hiddenScopes.Contains(row.Scope)) return;
         if (!string.IsNullOrEmpty(_selectedSignal) && row.SignalId != _selectedSignal) return;
 
+        lock (_pendingRows)
+        {
+            _pendingRows.Add(row);
+            if (_flushScheduled) return;
+            _flushScheduled = true;
+        }
+
         _ = InvokeAsync(async () =>
         {
+            await Task.Delay(50);
+            List<TraceRow> batch;
+            lock (_pendingRows)
+            {
+                batch = _pendingRows.ToList();
+                _pendingRows.Clear();
+                _flushScheduled = false;
+            }
             try
             {
-                if (_jsModule != null)
-                    await _jsModule.InvokeVoidAsync("appendRow", row, _autoScroll);
+                if (_jsModule != null && batch.Count > 0)
+                    await _jsModule.InvokeVoidAsync("appendRows", batch, _autoScroll);
             }
             catch { }
         });

@@ -884,15 +884,21 @@ let _appendPending = false;
 let _appendAutoScroll = false;
 
 export function appendRow(row, autoScroll) {
+    appendRows([row], autoScroll);
+}
+
+export function appendRows(rows, autoScroll) {
     if (!state || !state.graphEl) return;
-    state.rows.push(row);
-    if (state.rows.length > MAX_ROWS) state.rows.shift();
+    for (const row of rows) {
+        state.rows.push(row);
+    }
+    while (state.rows.length > MAX_ROWS) state.rows.shift();
     _appendAutoScroll = _appendAutoScroll || autoScroll;
     if (!_appendPending) {
         _appendPending = true;
         requestAnimationFrame(() => {
             _appendPending = false;
-            renderTrace(state.graphEl, state.textEl, state.bodyEl, state.scopes, state.rows);
+            rebuildState();
             if (_appendAutoScroll && state.textEl) {
                 state.textEl.scrollTop = state.textEl.scrollHeight;
                 state.graphEl.scrollTop = state.graphEl.scrollHeight;
@@ -902,11 +908,34 @@ export function appendRow(row, autoScroll) {
     }
 }
 
+function rebuildState() {
+    if (!state || state.rows.length === 0) return;
+    const rows = state.rows;
+    const scopes = [...new Set(rows.map(r => r.scope))];
+    state.scopes = scopes;
+
+    const { byId, childrenOf, closeToOpen } = buildLookupMaps(rows);
+    state.byId = byId;
+    state.childrenOf = childrenOf;
+    state.closeToOpen = closeToOpen;
+
+    const { meta, maxSlots } = assignSlots(rows, scopes);
+    state.rowMeta = meta;
+
+    const columns = computeColumns(scopes, maxSlots);
+    state.columns = columns;
+
+    renderHeader(state.graphEl, columns);
+    renderSvg(state.graphEl, columns, rows, meta);
+    renderTextRows(state.textEl, rows);
+    requestAnimationFrame(() => renderVisibleRange());
+}
+
 export function prependRows(olderRows, hasMore) {
-    // Stub: full re-render for now
     if (!state || !state.graphEl) return;
     state.rows = [...olderRows, ...state.rows];
-    renderTrace(state.graphEl, state.textEl, state.bodyEl, state.scopes, state.rows);
+    while (state.rows.length > MAX_ROWS) state.rows.pop();
+    rebuildState();
 }
 
 export function dispose() {
