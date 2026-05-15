@@ -39,12 +39,25 @@ function buildLookupMaps(rows) {
     const childrenOf = {};
     const closeToOpen = {};
 
-    // Build byId and childrenOf
+    // parent_id in the DB stores the parent's TIMESTAMP, not its row id.
+    // Build a timestamp→id map to resolve parent references.
+    const idByTimestamp = {};
     for (const row of rows) {
         byId[row.id] = row;
+        // For open events, their timestamp is what children reference as parentId
+        if (row.type === 'open') {
+            idByTimestamp[row.timestamp] = row.id;
+        }
+    }
+
+    // Build childrenOf using resolved parent ids
+    for (const row of rows) {
         if (row.parentId != null) {
-            if (!childrenOf[row.parentId]) childrenOf[row.parentId] = [];
-            childrenOf[row.parentId].push(row.id);
+            // parentId is a timestamp — resolve to actual row id
+            const parentRowId = idByTimestamp[row.parentId] ?? row.parentId;
+            row._resolvedParentId = parentRowId;
+            if (!childrenOf[parentRowId]) childrenOf[parentRowId] = [];
+            childrenOf[parentRowId].push(row.id);
         }
     }
 
@@ -297,9 +310,9 @@ function renderCrossLines(svg, rows, meta, columns) {
 
     for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
-        if (row.parentId == null) continue;
+        if (row._resolvedParentId == null) continue;
 
-        const parentIdx = rowById.get(row.parentId);
+        const parentIdx = rowById.get(row._resolvedParentId);
         if (parentIdx == null) continue;
 
         const parentMeta = meta[parentIdx];
@@ -486,9 +499,9 @@ function setupInteraction(graphEl, textEl, bodyEl) {
     function getAncestors(id) {
         const ancestors = new Set();
         let current = byId[id];
-        while (current && current.parentId != null) {
-            ancestors.add(current.parentId);
-            current = byId[current.parentId];
+        while (current && current._resolvedParentId != null) {
+            ancestors.add(current._resolvedParentId);
+            current = byId[current._resolvedParentId];
         }
         return ancestors;
     }
@@ -615,8 +628,8 @@ function setupContextMenu(graphEl, textEl) {
             }
         }
 
-        if (row.parentId != null) {
-            const parentIdx = state.rows.findIndex(r => r.id === row.parentId);
+        if (row._resolvedParentId != null) {
+            const parentIdx = state.rows.findIndex(r => r.id === row._resolvedParentId);
             if (parentIdx >= 0) {
                 items.push({ label: '跳转到父节点', icon: 'bi-arrow-up', action: () => scrollToRow(parentIdx) });
             }
