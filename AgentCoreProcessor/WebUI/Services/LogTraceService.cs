@@ -5,8 +5,38 @@ namespace AgentCoreProcessor.WebUI.Services;
 internal class LogTraceService
 {
     private readonly ILogQuery _query;
+    private readonly LogWriter _writer;
 
-    public LogTraceService(ILogQuery query) => _query = query;
+    public LogTraceService(ILogQuery query, LogWriter writer)
+    {
+        _query = query;
+        _writer = writer;
+    }
+
+    public IDisposable Subscribe(Action<TraceRow> onNewRow)
+    {
+        return _writer.Subscribe(batch =>
+        {
+            foreach (var evt in batch)
+            {
+                var row = new TraceRow
+                {
+                    Id = evt.Id,
+                    SignalId = evt.SignalId,
+                    Scope = evt.Scope,
+                    ParentId = evt.ParentId,
+                    SpanId = evt.SpanId,
+                    Type = evt.Type,
+                    Level = evt.Level,
+                    Timestamp = evt.Timestamp,
+                    Name = evt.Name,
+                    Detail = evt.Detail,
+                    GroupName = evt.GroupName
+                };
+                onNewRow(row);
+            }
+        });
+    }
 
     public List<SignalSummary> GetSignalList(int limit = 50)
     {

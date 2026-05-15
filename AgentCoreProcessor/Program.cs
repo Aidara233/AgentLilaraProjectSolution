@@ -302,7 +302,7 @@ namespace AgentCoreProcessor
             builder.Services.AddSingleton(sp =>
                 new WebUI.Services.TokenStatsService(engine.ModelCallLogs));
             builder.Services.AddScoped<AgentCoreProcessor.WebUI.Services.LogTraceService>(
-                sp => new AgentCoreProcessor.WebUI.Services.LogTraceService(logQuery));
+                sp => new AgentCoreProcessor.WebUI.Services.LogTraceService(logQuery, logWriter));
             builder.Services.AddSingleton(providerRegistry);
             Signal.Event(LogGroup.Engine, "服务注册完成");
 

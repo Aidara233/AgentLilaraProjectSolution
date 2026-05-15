@@ -9,6 +9,9 @@ const CROSS_LINE_WIDTH = 2.5;
 const COL_PADDING = 12;
 const MIN_COL_WIDTH = 180;
 
+const VIRTUAL_BUFFER = 30; // rows above/below viewport to pre-render
+const MAX_ROWS = 2000;     // max rows to keep in memory
+
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 // Module-level state
@@ -28,7 +31,13 @@ function initState() {
         scrollSyncing: false,
         byId: {},         // id → row object
         childrenOf: {},   // parentId → [child ids]
-        closeToOpen: {}   // close row id → paired open row id (matched by spanId)
+        closeToOpen: {},  // close row id → paired open row id (matched by spanId)
+        _renderStart: -1, // virtual render range start
+        _renderEnd: -1,   // virtual render range end
+        _contentGroup: null, // SVG <g> for dynamic content
+        _textContainer: null, // div container for text rows
+        _rafPending: false,  // rAF throttle flag
+        _spans: null         // pre-computed span map for vertical lines
     };
 }
 
@@ -195,7 +204,7 @@ function renderHeader(graphEl, columns) {
     state.headerEl = header;
 }
 
-// --- Render SVG ---
+// --- Render SVG (shell only — content rendered by renderVisibleRange) ---
 
 function renderSvg(graphEl, columns, rows, meta) {
     // Remove old SVG
@@ -212,17 +221,21 @@ function renderSvg(graphEl, columns, rows, meta) {
     });
     svg.style.display = 'block';
 
-    // Column backgrounds and separators
+    // Spacer rect to maintain full scroll height
+    svg.appendChild(svgEl('rect', {
+        x: 0, y: 0, width: totalWidth, height: totalHeight,
+        fill: 'transparent', class: 'spacer'
+    }));
+
+    // Column backgrounds and separators (static, always rendered)
     for (let i = 0; i < columns.length; i++) {
         const col = columns[i];
-        // Odd columns get subtle tint
         if (i % 2 === 1) {
             svg.appendChild(svgEl('rect', {
                 x: col.x, y: 0, width: col.width, height: totalHeight,
                 fill: 'rgba(255,255,255,0.015)', class: 'col-bg'
             }));
         }
-        // Dashed separator (except after last)
         if (i < columns.length - 1) {
             svg.appendChild(svgEl('line', {
                 x1: col.x + col.width, y1: 0,
@@ -235,25 +248,22 @@ function renderSvg(graphEl, columns, rows, meta) {
         }
     }
 
-    // Render vertical lines
-    renderVerticalLines(svg, rows, meta, columns);
+    // Content group for dynamic elements (cleared on each virtual render)
+    const contentGroup = svgEl('g', { class: 'content' });
+    svg.appendChild(contentGroup);
+    state._contentGroup = contentGroup;
 
-    // Render cross-scope lines
-    renderCrossLines(svg, rows, meta, columns);
-
-    // Render nodes
-    renderNodes(svg, rows, meta, columns);
+    // Pre-compute span map for vertical lines
+    state._spans = buildSpanMap(rows, meta);
 
     graphEl.appendChild(svg);
     state.svgEl = svg;
 }
 
-// --- Render vertical lines ---
+// --- Build span map (pre-computed once, used by renderVerticalLinesRange) ---
 
-function renderVerticalLines(svg, rows, meta, columns) {
-    // Build span map: spanId -> { openIdx, closeIdx, scopeIdx, slotIdx, openRowId }
+function buildSpanMap(rows, meta) {
     const spans = new Map();
-
     for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
         const m = meta[i];
@@ -264,24 +274,35 @@ function renderVerticalLines(svg, rows, meta, columns) {
             if (span) span.closeIdx = i;
         }
     }
+    return spans;
+}
+
+// --- Render vertical lines (range only) ---
+
+function renderVerticalLinesRange(g, columns, start, end) {
+    const spans = state._spans;
+    if (!spans) return;
 
     for (const [spanId, span] of spans) {
         const { openIdx, closeIdx, scopeIdx, slotIdx, openRowId } = span;
         const x = getNodeX(columns, scopeIdx, slotIdx);
-        const endIdx = closeIdx >= 0 ? closeIdx : rows.length - 1;
+        const endIdx = closeIdx >= 0 ? closeIdx : state.rows.length - 1;
 
-        for (let r = openIdx; r <= endIdx; r++) {
+        // Skip spans that don't overlap with [start, end)
+        if (endIdx < start || openIdx >= end) continue;
+
+        const segStart = Math.max(openIdx, start);
+        const segEnd = Math.min(endIdx, end - 1);
+
+        for (let r = segStart; r <= segEnd; r++) {
             let y1, y2;
             if (r === openIdx) {
-                // Half-line: bottom half
                 y1 = getNodeY(r);
                 y2 = r * ROW_HEIGHT + ROW_HEIGHT;
             } else if (r === endIdx && closeIdx >= 0) {
-                // Half-line: top half
                 y1 = r * ROW_HEIGHT;
                 y2 = getNodeY(r);
             } else {
-                // Full-height segment
                 y1 = r * ROW_HEIGHT;
                 y2 = r * ROW_HEIGHT + ROW_HEIGHT;
             }
@@ -294,21 +315,21 @@ function renderVerticalLines(svg, rows, meta, columns) {
                 'data-row': r,
                 'data-id': openRowId
             });
-            svg.appendChild(line);
+            g.appendChild(line);
         }
     }
 }
 
-// --- Render cross-scope diagonal lines ---
+// --- Render cross-scope diagonal lines (range only) ---
 
-function renderCrossLines(svg, rows, meta, columns) {
+function renderCrossLinesRange(g, rows, meta, columns, start, end) {
     // Build row index by id for quick lookup
     const rowById = new Map();
     for (let i = 0; i < rows.length; i++) {
         rowById.set(rows[i].id, i);
     }
 
-    for (let i = 0; i < rows.length; i++) {
+    for (let i = start; i < end; i++) {
         const row = rows[i];
         if (row._resolvedParentId == null) continue;
 
@@ -334,20 +355,50 @@ function renderCrossLines(svg, rows, meta, columns) {
             'data-from': rows[parentIdx].id,
             'data-to': row.id
         });
-        svg.appendChild(line);
+        g.appendChild(line);
+    }
+
+    // Also render cross-lines where the PARENT is in range but child is outside
+    // (so lines originating from visible parents are drawn)
+    for (let i = 0; i < rows.length; i++) {
+        if (i >= start && i < end) continue; // already handled above
+        const row = rows[i];
+        if (row._resolvedParentId == null) continue;
+
+        const parentIdx = rowById.get(row._resolvedParentId);
+        if (parentIdx == null || parentIdx < start || parentIdx >= end) continue;
+
+        const parentMeta = meta[parentIdx];
+        const childMeta = meta[i];
+        if (parentMeta._scopeIdx === childMeta._scopeIdx) continue;
+
+        const x1 = getNodeX(columns, parentMeta._scopeIdx, parentMeta._slotIdx);
+        const y1 = getNodeY(parentIdx);
+        const x2 = getNodeX(columns, childMeta._scopeIdx, childMeta._slotIdx);
+        const y2 = getNodeY(i);
+
+        const line = svgEl('line', {
+            x1, y1, x2, y2,
+            stroke: 'var(--vis-line-cross)',
+            'stroke-width': CROSS_LINE_WIDTH,
+            class: 'cross-line',
+            'data-from': rows[parentIdx].id,
+            'data-to': row.id
+        });
+        g.appendChild(line);
     }
 }
 
-// --- Render nodes ---
+// --- Render nodes (range only) ---
 
-function renderNodes(svg, rows, meta, columns) {
+function renderNodesRange(g, rows, meta, columns, start, end) {
     // Build span map to check if open has paired close
     const spanHasClose = new Set();
     for (const row of rows) {
         if (row.type === 'close') spanHasClose.add(row.spanId);
     }
 
-    for (let i = 0; i < rows.length; i++) {
+    for (let i = start; i < end; i++) {
         const row = rows[i];
         const m = meta[i];
         const cx = getNodeX(columns, m._scopeIdx, m._slotIdx);
@@ -358,18 +409,17 @@ function renderNodes(svg, rows, meta, columns) {
 
         if (row.type === 'open' && row.parentId == null) {
             // Origin: double circle
-            const g = svgEl('g', { class: 'node', 'data-row': i, 'data-id': row.id });
-            g.appendChild(svgEl('circle', {
+            const g2 = svgEl('g', { class: 'node', 'data-row': i, 'data-id': row.id });
+            g2.appendChild(svgEl('circle', {
                 cx, cy, r: r + 2,
                 fill: 'none', stroke: 'var(--vis-info)', 'stroke-width': 1.5
             }));
-            g.appendChild(svgEl('circle', {
+            g2.appendChild(svgEl('circle', {
                 cx, cy, r: r - 1,
                 fill: 'none', stroke: 'var(--vis-info)', 'stroke-width': 1.5
             }));
-            node = g;
+            node = g2;
         } else if (row.type === 'open') {
-            // Ring: green if paired, red if stuck
             const color = spanHasClose.has(row.spanId) ? 'var(--vis-ok)' : 'var(--vis-error)';
             node = svgEl('circle', {
                 cx, cy, r,
@@ -377,14 +427,12 @@ function renderNodes(svg, rows, meta, columns) {
                 class: 'node', 'data-row': i, 'data-id': row.id
             });
         } else if (row.type === 'close') {
-            // Ring: green
             node = svgEl('circle', {
                 cx, cy, r,
                 fill: 'none', stroke: 'var(--vis-ok)', 'stroke-width': 1.5,
                 class: 'node', 'data-row': i, 'data-id': row.id
             });
         } else {
-            // Event: filled circle
             const color = (row.level === 0) ? 'var(--vis-debug)' : 'var(--vis-info)';
             node = svgEl('circle', {
                 cx, cy, r: r - 1,
@@ -393,11 +441,11 @@ function renderNodes(svg, rows, meta, columns) {
             });
         }
 
-        svg.appendChild(node);
+        g.appendChild(node);
     }
 }
 
-// --- Render text rows ---
+// --- Render text rows (shell only — content rendered by renderVisibleRange) ---
 
 function renderTextRows(textEl, rows) {
     textEl.innerHTML = '';
@@ -416,7 +464,32 @@ function renderTextRows(textEl, rows) {
     headerSpacer.appendChild(nameLabel);
     textEl.appendChild(headerSpacer);
 
-    for (let i = 0; i < rows.length; i++) {
+    // Container for virtual text rows (with padding-top offset)
+    const container = document.createElement('div');
+    container.className = 'trace-text-container';
+    container.style.height = (rows.length * ROW_HEIGHT) + 'px';
+    container.style.position = 'relative';
+    textEl.appendChild(container);
+    state._textContainer = container;
+}
+
+// --- Render text rows for a range ---
+
+function renderTextRange(start, end) {
+    const container = state._textContainer;
+    if (!container) return;
+    const { rows } = state;
+
+    // Clear existing rows
+    container.innerHTML = '';
+
+    // Offset spacer
+    container.style.paddingTop = (start * ROW_HEIGHT) + 'px';
+    container.style.height = (rows.length * ROW_HEIGHT) + 'px';
+    // paddingTop is inside height, so set box-sizing
+    container.style.boxSizing = 'border-box';
+
+    for (let i = start; i < end; i++) {
         const row = rows[i];
         const div = document.createElement('div');
         div.className = 'trace-text-row';
@@ -448,7 +521,7 @@ function renderTextRows(textEl, rows) {
             div.appendChild(tagSpan);
         }
 
-        textEl.appendChild(div);
+        container.appendChild(div);
     }
 }
 
@@ -464,6 +537,45 @@ function formatTime(timestamp) {
     return `${h}:${m}:${s}.${ms}`;
 }
 
+// --- Virtual rendering: only render visible range + buffer ---
+
+function renderVisibleRange() {
+    const { graphEl, textEl, rows, rowMeta, columns, _contentGroup } = state;
+    if (!graphEl || !rows || rows.length === 0 || !_contentGroup) return;
+
+    const scrollTop = graphEl.scrollTop;
+    const viewHeight = graphEl.clientHeight;
+
+    const firstVisible = Math.floor(scrollTop / ROW_HEIGHT);
+    const lastVisible = Math.ceil((scrollTop + viewHeight) / ROW_HEIGHT);
+    const renderStart = Math.max(0, firstVisible - VIRTUAL_BUFFER);
+    const renderEnd = Math.min(rows.length, lastVisible + VIRTUAL_BUFFER);
+
+    // Skip if range hasn't changed
+    if (renderStart === state._renderStart && renderEnd === state._renderEnd) return;
+    state._renderStart = renderStart;
+    state._renderEnd = renderEnd;
+
+    // Clear content group and re-render
+    _contentGroup.innerHTML = '';
+
+    renderVerticalLinesRange(_contentGroup, columns, renderStart, renderEnd);
+    renderCrossLinesRange(_contentGroup, rows, rowMeta, columns, renderStart, renderEnd);
+    renderNodesRange(_contentGroup, rows, rowMeta, columns, renderStart, renderEnd);
+
+    // Re-render text rows
+    renderTextRange(renderStart, renderEnd);
+}
+
+function scheduleRender() {
+    if (state._rafPending) return;
+    state._rafPending = true;
+    requestAnimationFrame(() => {
+        state._rafPending = false;
+        renderVisibleRange();
+    });
+}
+
 // --- Scroll sync ---
 
 function setupScrollSync(graphEl, textEl) {
@@ -472,6 +584,7 @@ function setupScrollSync(graphEl, textEl) {
         state.scrollSyncing = true;
         textEl.scrollTop = graphEl.scrollTop;
         state.scrollSyncing = false;
+        scheduleRender();
     };
 
     const onTextScroll = () => {
@@ -479,6 +592,7 @@ function setupScrollSync(graphEl, textEl) {
         state.scrollSyncing = true;
         graphEl.scrollTop = textEl.scrollTop;
         state.scrollSyncing = false;
+        scheduleRender();
     };
 
     graphEl.addEventListener('scroll', onGraphScroll);
@@ -759,6 +873,10 @@ export function renderTrace(graphEl, textEl, bodyEl, scopes, rows) {
     renderSvg(graphEl, columns, rows, meta);
     renderTextRows(textEl, rows);
     setupScrollSync(graphEl, textEl);
+
+    // Initial virtual render (after DOM is ready)
+    requestAnimationFrame(() => renderVisibleRange());
+
     setupInteraction(graphEl, textEl, bodyEl);
     setupContextMenu(graphEl, textEl);
 }

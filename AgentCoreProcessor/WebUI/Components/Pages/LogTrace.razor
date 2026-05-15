@@ -80,6 +80,7 @@
     private TraceViewModel? _trace;
     private HashSet<string> _hiddenScopes = new();
     private List<string> _allScopes = new();
+    private IDisposable? _subscription;
 
     private ElementReference _bodyRef;
     private ElementReference _graphRef;
@@ -89,6 +90,7 @@
     protected override void OnInitialized()
     {
         _signals = TraceService.GetSignalList(50);
+        _subscription = TraceService.Subscribe(OnNewEvent);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -171,10 +173,29 @@
 
     public async ValueTask DisposeAsync()
     {
+        _subscription?.Dispose();
         if (_jsModule != null)
         {
             try { await _jsModule.InvokeVoidAsync("dispose"); } catch { }
             await _jsModule.DisposeAsync();
         }
+    }
+
+    private void OnNewEvent(TraceRow row)
+    {
+        if (_paused) return;
+        if (row.Level < _minLevel) return;
+        if (_hiddenScopes.Contains(row.Scope)) return;
+        if (!string.IsNullOrEmpty(_selectedSignal) && row.SignalId != _selectedSignal) return;
+
+        _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                if (_jsModule != null)
+                    await _jsModule.InvokeVoidAsync("appendRow", row, _autoScroll);
+            }
+            catch { }
+        });
     }
 }
