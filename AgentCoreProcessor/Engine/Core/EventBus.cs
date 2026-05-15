@@ -16,6 +16,8 @@ namespace AgentCoreProcessor.Engine
 
         public void Publish(EngineEvent e)
         {
+            e.TraceSignalId ??= SignalContext.Current?.SignalId;
+            e.TraceParentSpanId ??= SignalContext.Current?.CurrentSpanId;
             lock (lockObj)
             {
                 OnEvent?.Invoke(e);
@@ -25,7 +27,6 @@ namespace AgentCoreProcessor.Engine
         /// <summary>便捷方法：发布消息事件。</summary>
         public void PublishMessage(IncomingMessage msg)
         {
-            Signal.Event(LogGroup.Engine, "总线分发", new { channel = msg.ChannelId });
             Publish(new MessageEvent { Message = msg, Time = msg.Time });
         }
 

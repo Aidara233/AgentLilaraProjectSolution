@@ -38,6 +38,8 @@ namespace AgentCoreProcessor.Engine
         public DateTime? EvaluatedAt { get; set; }
         public DateTime? CompletedAt { get; set; }
         public bool Consumed { get; set; }
+        public string? TraceSignalId { get; set; }
+        public string? TraceParentSpanId { get; set; }
     }
 
     public class DelegationEvaluation
@@ -66,6 +68,8 @@ namespace AgentCoreProcessor.Engine
 
         public Delegation Submit(Delegation delegation)
         {
+            delegation.TraceSignalId ??= Logging.SignalContext.Current?.SignalId;
+            delegation.TraceParentSpanId ??= Logging.SignalContext.Current?.CurrentSpanId;
             delegation.Status = DelegationStatus.Submitted;
             delegation.SubmittedAt = DateTime.Now;
             delegations[delegation.DelegationId] = delegation;

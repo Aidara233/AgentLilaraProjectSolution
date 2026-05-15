@@ -54,6 +54,9 @@ namespace AgentCoreProcessor.Engine
         /// </summary>
         public async Task<TaskResult> SubmitTaskAsync(SystemTask task, TimeSpan timeout)
         {
+            task.TraceSignalId ??= Logging.SignalContext.Current?.SignalId;
+            task.TraceParentSpanId ??= Logging.SignalContext.Current?.CurrentSpanId;
+
             var tcs = new TaskCompletionSource<TaskResult>();
             if (!pendingTasks.TryAdd(task.TaskId, tcs))
             {
@@ -104,6 +107,8 @@ namespace AgentCoreProcessor.Engine
         /// </summary>
         public async Task SubmitTaskFireAndForgetAsync(SystemTask task)
         {
+            task.TraceSignalId ??= Logging.SignalContext.Current?.SignalId;
+            task.TraceParentSpanId ??= Logging.SignalContext.Current?.CurrentSpanId;
             await taskQueue.Writer.WriteAsync(task);
             PersistQueue();
             OnTaskSubmitted?.Invoke();
@@ -129,6 +134,8 @@ namespace AgentCoreProcessor.Engine
         /// </summary>
         public void PostNotification(Notification notification)
         {
+            notification.TraceSignalId ??= Logging.SignalContext.Current?.SignalId;
+            notification.TraceParentSpanId ??= Logging.SignalContext.Current?.CurrentSpanId;
             notificationQueue.Writer.TryWrite(notification);
         }
 
@@ -217,6 +224,8 @@ namespace AgentCoreProcessor.Engine
         public int RequestingPersonId { get; set; }
         public int Priority { get; set; }
         public DateTime SubmittedAt { get; set; } = DateTime.Now;
+        public string? TraceSignalId { get; set; }
+        public string? TraceParentSpanId { get; set; }
     }
 
     /// <summary>
@@ -240,6 +249,8 @@ namespace AgentCoreProcessor.Engine
         public string Summary { get; set; } = "";
         public string? DelegationId { get; set; }
         public DateTime Timestamp { get; set; } = DateTime.Now;
+        public string? TraceSignalId { get; set; }
+        public string? TraceParentSpanId { get; set; }
     }
 
     public enum NotificationType

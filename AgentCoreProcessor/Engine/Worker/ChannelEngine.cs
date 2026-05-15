@@ -148,6 +148,10 @@ namespace AgentCoreProcessor.Engine
         // 缓冲定时器
         private CancellationTokenSource? _bufferTimerCts;
 
+        // 信号追踪：最近入队消息携带的上游信号
+        private string? _traceSignalId;
+        private string? _traceParentSpanId;
+
         // 未消费的图片路径
         private readonly List<(string Path, string? Hash, string? Category)> pendingImageInfos = new();
 
@@ -200,6 +204,8 @@ namespace AgentCoreProcessor.Engine
                 buffer.Add((msg, sc));
                 lastBufferTime = DateTime.Now;
                 CollectImagePaths(msg);
+                _traceSignalId = SignalContext.Current?.SignalId;
+                _traceParentSpanId = SignalContext.Current?.CurrentSpanId;
             }
             recentParticipants.AddOrUpdate(
                 sc.User.Id,
@@ -272,10 +278,18 @@ namespace AgentCoreProcessor.Engine
                 // 循环唤醒：通知组件
                 await componentHost.OnActivatedAsync();
 
-                // 如果没有上游注入的 SignalContext，在此创建一个新的轮次信号
+                // 如果没有上游注入的 SignalContext，尝试从缓冲消息的上游信号接续
                 if (SignalContext.Current == null)
-                    Signal.Begin(LogGroup.Engine, $"channel:{channelId}", "频道轮次",
-                        new { channelId, mode = isWorkingMode ? "working" : "express" });
+                {
+                    string? sigId, parentSpan;
+                    lock (bufferLock) { sigId = _traceSignalId; parentSpan = _traceParentSpanId; }
+                    if (sigId != null)
+                        Signal.Continue(sigId, parentSpan, $"channel:{channelId}", LogGroup.Engine, "频道轮次",
+                            new { channelId, mode = isWorkingMode ? "working" : "express" });
+                    else
+                        Signal.Begin(LogGroup.Engine, $"channel:{channelId}", "频道轮次",
+                            new { channelId, mode = isWorkingMode ? "working" : "express" });
+                }
 
                 // ② CollectBuffer
                 var batch = CollectBuffer();

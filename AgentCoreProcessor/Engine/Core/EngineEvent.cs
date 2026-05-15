@@ -19,6 +19,11 @@ namespace AgentCoreProcessor.Engine
 
         /// <summary>事件是否已被消费（如命令拦截），后续 SpawnCheck 应跳过。</summary>
         public bool Consumed { get; set; }
+
+        /// <summary>信号追踪：发布时自动捕获的上游信号 ID。</summary>
+        public string? TraceSignalId { get; set; }
+        /// <summary>信号追踪：发布时自动捕获的上游 span ID。</summary>
+        public string? TraceParentSpanId { get; set; }
     }
 
     /// <summary>用户消息事件，包装 IncomingMessage。</summary>
