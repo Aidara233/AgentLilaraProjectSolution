@@ -178,8 +178,6 @@ function svgEl(tag, attrs) {
 // --- Render column headers (HTML) ---
 
 function formatScopeName(scope) {
-    if (scope.startsWith('channel:')) return scope.slice(8);
-    if (scope.startsWith('adapter:')) return scope.slice(8);
     return scope;
 }
 

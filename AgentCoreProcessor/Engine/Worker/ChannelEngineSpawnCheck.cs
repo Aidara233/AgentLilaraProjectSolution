@@ -55,7 +55,7 @@ namespace AgentCoreProcessor.Engine
             // 已有活跃的频道引擎 → 无条件转发
             if (activeChannels.TryGetValue(channelId, out var existing) && existing.IsAlive)
             {
-                existing.EnqueueMessage(message, sessionContext);
+                existing.EnqueueMessage(message, sessionContext, e.TraceSignalId, e.TraceParentSpanId);
                 return false;
             }
 

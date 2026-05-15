@@ -174,6 +174,9 @@ namespace AgentCoreProcessor.Engine
             this.contextBuilder = new ContextBuilder(ctx.Session, initialContext.Channel.Id);
             agentCore.CallerTag = $"Channel:{channelId}";
 
+            _traceSignalId = Logging.SignalContext.Current?.SignalId;
+            _traceParentSpanId = Logging.SignalContext.Current?.CurrentSpanId;
+
             buffer.Add((initialMessage, initialContext));
             CollectImagePaths(initialMessage);
             recentParticipants.TryAdd(initialContext.User.Id, ParticipantInfo.From(initialContext.User, initialContext.Person, initialMessage));
@@ -197,15 +200,15 @@ namespace AgentCoreProcessor.Engine
         }
 
         /// <summary>由 SpawnCheck 调用，将新消息加入缓冲。</summary>
-        public void EnqueueMessage(IncomingMessage msg, SessionContext sc)
+        public void EnqueueMessage(IncomingMessage msg, SessionContext sc, string? traceSignalId = null, string? traceParentSpanId = null)
         {
             lock (bufferLock)
             {
                 buffer.Add((msg, sc));
                 lastBufferTime = DateTime.Now;
                 CollectImagePaths(msg);
-                _traceSignalId = SignalContext.Current?.SignalId;
-                _traceParentSpanId = SignalContext.Current?.CurrentSpanId;
+                _traceSignalId = traceSignalId ?? SignalContext.Current?.SignalId;
+                _traceParentSpanId = traceParentSpanId ?? SignalContext.Current?.CurrentSpanId;
             }
             recentParticipants.AddOrUpdate(
                 sc.User.Id,
