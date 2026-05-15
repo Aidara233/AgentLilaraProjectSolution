@@ -71,7 +71,6 @@ namespace AgentCoreProcessor.Engine
             delegations[delegation.DelegationId] = delegation;
             Persist();
             OnDelegationSubmitted?.Invoke();
-            FrameworkLogger.Log("DelegationRegistry", $"委托已提交: {delegation.DelegationId}, 描述: {delegation.Description.Truncate(60)}");
             return delegation;
         }
 
@@ -98,7 +97,6 @@ namespace AgentCoreProcessor.Engine
                     d.EvaluationReason = "评估超时";
                     Persist();
                 }
-                FrameworkLogger.Log("DelegationRegistry", $"委托评估超时: {delegationId}");
                 return null;
             }
         }
@@ -116,8 +114,6 @@ namespace AgentCoreProcessor.Engine
             if (evaluationWaiters.TryRemove(delegationId, out var tcs))
                 tcs.TrySetResult(evaluation);
 
-            FrameworkLogger.Log("DelegationRegistry",
-                $"委托已评估: {delegationId} → {evaluation.Verdict}, 理由: {evaluation.Reason.Truncate(60)}");
             return true;
         }
 
@@ -139,8 +135,6 @@ namespace AgentCoreProcessor.Engine
                 d.CompletedAt = DateTime.Now;
                 Persist();
                 OnDelegationCompleted?.Invoke(d.SourceChannelId);
-                FrameworkLogger.Log("DelegationRegistry",
-                    $"委托已完成: {delegationId}, 结果: {result.Truncate(80)}");
             }
         }
 
@@ -153,8 +147,6 @@ namespace AgentCoreProcessor.Engine
                 d.CompletedAt = DateTime.Now;
                 Persist();
                 OnDelegationCompleted?.Invoke(d.SourceChannelId);
-                FrameworkLogger.Log("DelegationRegistry",
-                    $"委托失败: {delegationId}, 错误: {error.Truncate(80)}");
             }
         }
 
@@ -165,8 +157,6 @@ namespace AgentCoreProcessor.Engine
                 d.Status = DelegationStatus.RetryPending;
                 d.Result = error;
                 Persist();
-                FrameworkLogger.Log("DelegationRegistry",
-                    $"委托等待重试: {delegationId}, 已重试 {d.RetryCount}/{MaxRetries}, 错误: {error.Truncate(80)}");
             }
         }
 
@@ -228,7 +218,6 @@ namespace AgentCoreProcessor.Engine
             evaluationWaiters.TryRemove(delegationId, out var tcs);
             tcs?.TrySetCanceled();
             Persist();
-            FrameworkLogger.Log("DelegationRegistry", $"委托已取消: {delegationId}");
             return true;
         }
 
@@ -258,7 +247,6 @@ namespace AgentCoreProcessor.Engine
                 }
                 catch (Exception ex)
                 {
-                    FrameworkLogger.LogError("DelegationRegistry", ex, "持久化失败");
                 }
             }
         }
@@ -281,11 +269,9 @@ namespace AgentCoreProcessor.Engine
                     }
                     delegations[d.DelegationId] = d;
                 }
-                FrameworkLogger.Log("DelegationRegistry", $"已恢复 {list.Count} 条委托记录");
             }
             catch (Exception ex)
             {
-                FrameworkLogger.LogError("DelegationRegistry", ex, "加载失败");
             }
         }
     }

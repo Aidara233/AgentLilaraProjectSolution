@@ -173,9 +173,8 @@ namespace AgentCoreProcessor.Engine
                             nextTargets.Add(quoted.ReplyToPlatformMessageId);
                     }
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    FrameworkLogger.Log("ContextBuilder", $"引用上下文查询失败: {ex.Message}");
                 }
             }
 

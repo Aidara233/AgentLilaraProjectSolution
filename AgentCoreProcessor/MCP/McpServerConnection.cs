@@ -74,7 +74,6 @@ namespace AgentCoreProcessor.MCP
             foreach (var mcpTool in toolList)
                 _tools.Add(new McpBridgeTool(mcpTool, _entry));
 
-            FrameworkLogger.Log("MCP", $"[{_entry.Id}] 已连接，发现 {_tools.Count} 个工具");
         }
 
         public async ValueTask DisposeAsync()
@@ -82,14 +81,12 @@ namespace AgentCoreProcessor.MCP
             if (_client != null)
             {
                 try { await _client.DisposeAsync(); }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    FrameworkLogger.Log("MCP", $"[{_entry.Id}] 断开连接异常: {ex.Message}");
                 }
                 _client = null;
             }
             _tools.Clear();
-            FrameworkLogger.Log("MCP", $"[{_entry.Id}] 已断开");
         }
     }
 }

@@ -38,7 +38,6 @@ namespace AgentCoreProcessor.Tool.Host
             }
             catch (Exception ex)
             {
-                Engine.FrameworkLogger.Log("ToolProfileManager", $"加载配置失败: {ex.Message}，使用默认配置");
                 config = GetDefaultConfig();
             }
 
@@ -55,7 +54,6 @@ namespace AgentCoreProcessor.Tool.Host
             }
             catch (Exception ex)
             {
-                Engine.FrameworkLogger.LogError("ToolProfileManager", ex, "保存配置失败");
             }
         }
 
@@ -341,8 +339,6 @@ namespace AgentCoreProcessor.Tool.Host
                 var conflicts = leaf.BlockedTools.Intersect(leaf.UnblockedTools).ToList();
                 foreach (var c in conflicts)
                 {
-                    Engine.FrameworkLogger.Log("ToolProfileManager",
-                        $"警告: 工具 '{c}' 同时出现在 blockedTools 和 unblockedTools 中，block 优先");
                 }
             }
 

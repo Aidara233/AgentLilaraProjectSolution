@@ -142,7 +142,6 @@ namespace AgentCoreProcessor.Core
                 callError = ex;
                 cfg = processor.Client.Config;
                 var context = $"core={processor.CfgName} provider={cfg.Provider} model={cfg.Model} endpoint={cfg.ApiEndpoint}";
-                FrameworkLogger.LogError("CoreBase", ex, context);
 
                 Signal.Error(LogGroup.Model, "模型调用失败，准备重试", new { error = ex.Message, elapsed_ms = sw.ElapsedMilliseconds });
 
@@ -413,7 +412,6 @@ namespace AgentCoreProcessor.Core
                     new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
                 File.WriteAllText(logPath, json);
 
-                FrameworkLogger.LogModelCall("CoreBase", CoreName, fileName);
 
                 if (CallLogRepo != null && usage != null)
                 {

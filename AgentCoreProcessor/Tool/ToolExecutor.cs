@@ -45,14 +45,12 @@ namespace AgentCoreProcessor.Tool
             var tool = toolResolver(call.Tool);
             if (tool == null)
             {
-                FrameworkLogger.Log("ToolExecutor", $"未知工具: {call.Tool}");
                 return new ToolResult { Status = "failed", Error = $"未知工具: {call.Tool}" };
             }
 
             if (ToolRegistry.IsDisabled(call.Tool))
             {
                 var reason = ToolRegistry.GetDisableReason(call.Tool) ?? "未知原因";
-                FrameworkLogger.Log("ToolExecutor", $"工具已禁用: {call.Tool} ({reason})");
                 return new ToolResult { Status = "failed", Error = $"工具已禁用: {reason}" };
             }
 
@@ -63,7 +61,6 @@ namespace AgentCoreProcessor.Tool
                 && authorizedTools != null
                 && !authorizedTools.Contains(tool.Name))
             {
-                FrameworkLogger.Log("ToolExecutor", $"未授权: {call.Tool}");
                 return new ToolResult
                 {
                     Status = "failed",
@@ -71,41 +68,18 @@ namespace AgentCoreProcessor.Tool
                 };
             }
 
-            var inputSummary = call.Inputs.Count > 0
-                ? string.Join(", ", call.Inputs).Truncate(120)
-                : "(无参数)";
-            FrameworkLogger.Log("ToolExecutor", $"执行: {call.Tool}({inputSummary})");
-
-            var sw = System.Diagnostics.Stopwatch.StartNew();
             using var cts = new CancellationTokenSource(tool.Timeout);
             try
             {
                 var result = await tool.ExecuteAsync(call.Inputs, cts.Token);
-                sw.Stop();
-
-                var dataSummary = result.Data != null ? result.Data.Truncate(200) : "";
-                if (result.IsSuccess)
-                    FrameworkLogger.Log("ToolExecutor",
-                        $"完成: {call.Tool} → {result.Status}, {sw.ElapsedMilliseconds}ms" +
-                        (dataSummary.Length > 0 ? $", data={dataSummary}" : ""));
-                else
-                    FrameworkLogger.Log("ToolExecutor",
-                        $"失败: {call.Tool} → {result.Status}: {result.Error}, {sw.ElapsedMilliseconds}ms");
-
                 return result;
             }
             catch (OperationCanceledException)
             {
-                sw.Stop();
-                FrameworkLogger.Log("ToolExecutor",
-                    $"超时: {call.Tool}, {sw.ElapsedMilliseconds}ms (limit={tool.Timeout.TotalSeconds}s)");
                 return new ToolResult { Status = "failed", Error = $"执行超时（{tool.Timeout.TotalSeconds}s）" };
             }
             catch (Exception ex)
             {
-                sw.Stop();
-                FrameworkLogger.Log("ToolExecutor",
-                    $"异常: {call.Tool}, {sw.ElapsedMilliseconds}ms, {ex.GetType().Name}: {ex.Message}");
                 return new ToolResult { Status = "failed", Error = ex.Message };
             }
         }

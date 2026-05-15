@@ -57,7 +57,6 @@ namespace AgentCoreProcessor.Engine.Modules
                     }
                     catch (Exception ex)
                     {
-                        FrameworkLogger.Log("SpeakModule", $"发送媒体失败: {ex.Message}");
                     }
                 }
             });

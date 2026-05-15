@@ -53,14 +53,12 @@ namespace AgentCoreProcessor.Engine
             instructionQueue.Writer.TryWrite(initialInstruction);
             instructionQueue.Writer.Complete();
             backgroundTask = Task.Run(() => RunLoopAsync(stopCts.Token));
-            FrameworkLogger.Log("TaskSession", $"启动: {SessionId}, 指令: {initialInstruction.Truncate(80)}");
         }
 
         /// <summary>追加指令到队列（子 agent 空闲时处理）。</summary>
         public Task<bool> SendInstructionAsync(string instruction)
         {
             if (!IsAlive) return Task.FromResult(false);
-            FrameworkLogger.Log("TaskSession", $"追加指令失败（单指令模式）: {SessionId}");
             return Task.FromResult(false);
         }
 
@@ -69,7 +67,6 @@ namespace AgentCoreProcessor.Engine
 
         public void RequestStop()
         {
-            FrameworkLogger.Log("TaskSession", $"停止请求: {SessionId}");
             stopCts?.Cancel();
             instructionQueue.Writer.TryComplete();
         }
@@ -88,7 +85,6 @@ namespace AgentCoreProcessor.Engine
             catch (OperationCanceledException) { }
             catch (Exception ex)
             {
-                FrameworkLogger.LogError("TaskSession", ex, $"子 agent 异常: {SessionId}");
                 LastResult = $"异常终止: {ex.Message}";
             }
             finally
@@ -121,7 +117,6 @@ namespace AgentCoreProcessor.Engine
                     if (maybeOutput == null)
                     {
                         LastResult = "API 调用连续失败，子 agent 中止";
-                        FrameworkLogger.Log("TaskSession", $"API 重试耗尽: {SessionId}, round={round + 1}");
                         return;
                     }
                     var output = maybeOutput.Value;
@@ -130,8 +125,6 @@ namespace AgentCoreProcessor.Engine
                     {
                         LastResult = output.Thinking ?? output.Text ?? "(完成，无输出)";
                         conversationHistory.Add(new Message { Role = "assistant", Content = LastResult });
-                        FrameworkLogger.Log("TaskSession",
-                            $"指令完成: {SessionId}, rounds={round + 1}, result={LastResult.Truncate(100)}");
                         return;
                     }
 
@@ -140,8 +133,6 @@ namespace AgentCoreProcessor.Engine
 
                     if (_taskDoneSignaled)
                     {
-                        FrameworkLogger.Log("TaskSession",
-                            $"task_done 信号: {SessionId}, rounds={round + 1}, result={LastResult?.Truncate(100)}");
                         return;
                     }
 
@@ -153,7 +144,6 @@ namespace AgentCoreProcessor.Engine
                 }
 
                 LastResult = "达到最大轮次限制";
-                FrameworkLogger.Log("TaskSession", $"指令达到轮次上限: {SessionId}");
             }
             finally
             {
@@ -172,8 +162,6 @@ namespace AgentCoreProcessor.Engine
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
                 {
-                    FrameworkLogger.LogError("TaskSession", ex,
-                        $"API 调用失败 (attempt {attempt + 1}/{MaxInvokeRetries}): {SessionId}");
                     if (attempt < MaxInvokeRetries - 1)
                     {
                         var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt + 1));
@@ -291,7 +279,6 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
-                FrameworkLogger.LogError("TaskSession", ex, $"NotifyCompletion 失败: {SessionId}");
             }
         }
     }

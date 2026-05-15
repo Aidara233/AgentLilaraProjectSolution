@@ -36,9 +36,8 @@ namespace AgentCoreProcessor.WebUI.Services
                     return JsonConvert.DeserializeObject<WebConfig>(json) ?? CreateDefault();
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                FrameworkLogger.Log("WebConfig", $"加载失败: {ex.Message}");
             }
             return CreateDefault();
         }
@@ -51,9 +50,8 @@ namespace AgentCoreProcessor.WebUI.Services
                 Directory.CreateDirectory(dir);
                 File.WriteAllText(ConfigPath, JsonConvert.SerializeObject(this, Formatting.Indented));
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                FrameworkLogger.Log("WebConfig", $"保存失败: {ex.Message}");
             }
         }
 
@@ -62,7 +60,6 @@ namespace AgentCoreProcessor.WebUI.Services
             var cfg = new WebConfig();
             cfg.Admins[0].PasswordHash = HashPassword("lilara");
             cfg.Save();
-            FrameworkLogger.Log("WebConfig", "已生成默认配置（默认密码: lilara）");
             return cfg;
         }
 

@@ -46,7 +46,6 @@ namespace AgentCoreProcessor.Engine
                             "daydream" => SleepLevel.Daydream,
                             _ => SleepLevel.DeepSleep
                         };
-                        FrameworkLogger.Log("DreamSpawnCheck", $"强制睡觉信号: level={forcedLevel}");
                         break;
                     case "force-wake":
                         activeDreamEngine?.ForceWake(signal.Payload as string ?? "signal");
@@ -61,7 +60,6 @@ namespace AgentCoreProcessor.Engine
                             }
                             catch (Exception ex)
                             {
-                                FrameworkLogger.Log("DreamSpawnCheck", $"配置更新失败: {ex.Message}");
                             }
                         }
                         break;
@@ -99,7 +97,6 @@ namespace AgentCoreProcessor.Engine
             {
                 pendingLevel = SleepLevel.Nap;
                 pendingMaxFragments = cfg.MaxFragmentsPerNap;
-                FrameworkLogger.Log("DreamSpawnCheck", $"小睡触发（空闲 {ctx.IdleDuration.TotalSeconds:F0}s）");
                 return Task.FromResult(true);
             }
 
@@ -109,7 +106,6 @@ namespace AgentCoreProcessor.Engine
             {
                 pendingLevel = SleepLevel.Daydream;
                 pendingMaxFragments = 1;
-                FrameworkLogger.Log("DreamSpawnCheck", "走神触发");
                 return Task.FromResult(true);
             }
 
@@ -165,16 +161,13 @@ namespace AgentCoreProcessor.Engine
             if (level == SleepLevel.Daydream)
             {
                 lastDaydreamTime = DateTime.Now;
-                FrameworkLogger.Log("DreamSpawnCheck", "走神完成");
             }
             else if (level == SleepLevel.Nap)
             {
                 lastNapTime = DateTime.Now;
-                FrameworkLogger.Log("DreamSpawnCheck", $"小睡完成，处理 {processed} 个片段");
             }
             else if (level == SleepLevel.DeepSleep)
             {
-                FrameworkLogger.Log("DreamSpawnCheck", $"大睡完成，处理 {processed} 个片段");
             }
         }
     }

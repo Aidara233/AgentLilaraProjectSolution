@@ -43,13 +43,11 @@ internal class GlobalComponentHost
                 await instance.Component.OnInitAsync(instance.Context, InitReason.Fresh);
                 RegisterTools(instance);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                FrameworkLogger.Log("GlobalComponentHost", $"Init failed for {reg.Type.Name}: {ex.Message}");
             }
         }
 
-        FrameworkLogger.Log("GlobalComponentHost", $"Initialized {_components.Count} global components");
     }
 
     public IEnumerable<ITool> GetVisibleTools(string loopType)
@@ -87,9 +85,8 @@ internal class GlobalComponentHost
         inst.Context.SetEnabledDirect(true);
         RegisterTools(inst);
         try { await inst.Component.OnEnabledAsync(); }
-        catch (Exception ex)
+        catch (Exception)
         {
-            FrameworkLogger.Log("GlobalComponentHost", $"OnEnabled error in {name}: {ex.Message}");
         }
     }
 
@@ -100,9 +97,8 @@ internal class GlobalComponentHost
         inst.Context.SetEnabledDirect(false);
         UnregisterTools(inst);
         try { await inst.Component.OnDisabledAsync(); }
-        catch (Exception ex)
+        catch (Exception)
         {
-            FrameworkLogger.Log("GlobalComponentHost", $"OnDisabled error in {name}: {ex.Message}");
         }
     }
     public async Task ShutdownAsync(ShutdownReason reason)
@@ -119,16 +115,14 @@ internal class GlobalComponentHost
         try { await Task.WhenAll(tasks).WaitAsync(cts.Token); }
         catch (OperationCanceledException)
         {
-            FrameworkLogger.Log("GlobalComponentHost", "Shutdown timeout, forcing phase 2");
         }
 
         foreach (var inst in _components)
         {
             UnregisterTools(inst);
             try { await inst.Component.OnShutdownAsync(reason).WaitAsync(TimeSpan.FromSeconds(3)); }
-            catch (Exception ex)
+            catch (Exception)
             {
-                FrameworkLogger.Log("GlobalComponentHost", $"OnShutdown error in {inst.Component.Meta.Name}: {ex.Message}");
             }
         }
 

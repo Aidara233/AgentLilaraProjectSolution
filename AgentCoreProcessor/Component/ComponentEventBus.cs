@@ -83,6 +83,5 @@ internal class ComponentEventBus
 
     private static void LogError(Exception ex, string eventType, string scope)
     {
-        FrameworkLogger.Log("ComponentEventBus", $"Handler error for {eventType} in {scope}: {ex.Message}");
     }
 }

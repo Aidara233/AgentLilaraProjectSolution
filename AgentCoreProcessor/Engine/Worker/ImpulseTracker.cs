@@ -31,28 +31,20 @@ namespace AgentCoreProcessor.Engine
         {
             if (batch.Any(b => b.Message.IsPrivate))
             {
-                FrameworkLogger.Log("ImpulseTracker", $"决策: 私聊必回, channelId={channelId}");
                 return true;
             }
             if (batch.Any(b => b.Message.IsMentioned && !b.Message.IsSystemEvent))
             {
-                FrameworkLogger.Log("ImpulseTracker", $"决策: @提及必回, channelId={channelId}");
                 return true;
             }
 
             if (lastCompletionTime != null &&
                 (DateTime.Now - lastCompletionTime.Value).TotalSeconds < config.PostResponseCooldownSeconds)
             {
-                FrameworkLogger.Log("ImpulseTracker",
-                    $"决策: 发言冷却中, channelId={channelId}, " +
-                    $"elapsed={(DateTime.Now - lastCompletionTime.Value).TotalSeconds:F1}s");
                 return false;
             }
 
             bool respond = impulse >= config.Threshold;
-            FrameworkLogger.Log("ImpulseTracker",
-                $"决策: impulse={impulse:F1}, threshold={config.Threshold}, " +
-                $"respond={respond}, channelId={channelId}");
             return respond;
         }
 
@@ -75,17 +67,11 @@ namespace AgentCoreProcessor.Engine
             }
             impulse += added;
 
-            FrameworkLogger.Log("ImpulseTracker",
-                $"冲动值+{added:F1}: impulse={impulse:F1}, " +
-                $"affinity={channelAffinity:F2}, participants={participantCount}, " +
-                $"mentioned={msg.IsMentioned}, sysEvent={isSystemEvent}, channelId={channelId}");
         }
 
         public void ApplyPostResponseUpdate()
         {
             impulse = Math.Min(impulse, config.PostResponseCap);
-            FrameworkLogger.Log("ImpulseTracker",
-                $"回复后压低: impulse={impulse:F1}, cap={config.PostResponseCap}, channelId={channelId}");
         }
 
         private void ApplyDecay()

@@ -50,9 +50,8 @@ namespace AgentCoreProcessor.Adapter
                     var adapter = AdapterFactory.Create(config);
                     RegisterAdapter(adapter, config.Enabled);
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    FrameworkLogger.Log("AdapterManager", $"加载适配器配置失败 {Path.GetFileName(file)}: {ex.Message}");
                 }
             }
         }
@@ -79,11 +78,9 @@ namespace AgentCoreProcessor.Adapter
                 var newPath = Path.Combine(configDirectory, "qq-main.json");
                 File.WriteAllText(newPath, JsonConvert.SerializeObject(newConfig, Formatting.Indented));
                 File.Delete(legacyPath);
-                FrameworkLogger.Log("AdapterManager", "旧配置已迁移: OneBotAdapter.json → qq-main.json");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                FrameworkLogger.Log("AdapterManager", $"配置迁移失败: {ex.Message}");
             }
         }
 

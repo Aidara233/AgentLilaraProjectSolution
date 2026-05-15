@@ -17,8 +17,6 @@ namespace AgentCoreProcessor.Engine
             person.AlertLevel = Math.Min(person.AlertLevel + 1, 4);
             person.LastAlertTime = DateTime.Now;
 
-            FrameworkLogger.Log("AlertHandler",
-                $"报警触发: personId={person.Id}, alertLevel={person.AlertLevel}, reason={reason}");
 
             switch (person.AlertLevel)
             {
@@ -59,7 +57,6 @@ namespace AgentCoreProcessor.Engine
                     }
                     catch (Exception ex)
                     {
-                        FrameworkLogger.Log("AlertHandler", $"管理员通知失败: {ex.Message}");
                     }
                     break;
             }

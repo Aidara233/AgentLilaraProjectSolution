@@ -320,7 +320,6 @@ namespace AgentCoreProcessor.Adapter
             }
             catch (Exception ex)
             {
-                Engine.FrameworkLogger.Log("ImageStorage", $"缩略图生成失败: {ex.Message}");
                 return null;
             }
         }

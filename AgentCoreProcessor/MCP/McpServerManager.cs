@@ -26,7 +26,6 @@ namespace AgentCoreProcessor.MCP
 
         public async Task ReloadAsync()
         {
-            FrameworkLogger.Log("MCP", "开始重载 MCP Server 配置...");
             await DisconnectAllAsync();
             await ConnectAllAsync();
         }
@@ -38,7 +37,6 @@ namespace AgentCoreProcessor.MCP
 
             if (enabled.Count == 0)
             {
-                FrameworkLogger.Log("MCP", "无已启用的 MCP Server 配置");
                 return;
             }
 
@@ -55,17 +53,13 @@ namespace AgentCoreProcessor.MCP
                     {
                         if (ToolRegistry.Register(tool))
                             totalTools++;
-                        else
-                            FrameworkLogger.Log("MCP", $"工具名冲突，跳过: {tool.Name}");
                     }
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    FrameworkLogger.LogError("MCP", ex, $"Server [{entry.Id}] 连接失败");
                 }
             }
 
-            FrameworkLogger.Log("MCP", $"已连接 {_connections.Count}/{enabled.Count} 个 Server，注册 {totalTools} 个工具");
         }
 
         private async Task DisconnectAllAsync()

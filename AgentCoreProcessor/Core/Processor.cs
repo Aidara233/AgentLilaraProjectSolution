@@ -29,7 +29,6 @@ namespace AgentCoreProcessor.Core
                 var fullPath = Path.Combine(cfgDirectoryPath, value) + ".json";
                 if (!File.Exists(fullPath))
                 {
-                    FrameworkLogger.Log("Processor", $"配置文件不存在，回退到 Base: {fullPath}");
                     cfgName = "Base";
                     return;
                 }
@@ -56,22 +55,19 @@ namespace AgentCoreProcessor.Core
             {
                 await client.StreamChatAsync(onDelta, ct).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 var cfg = client.Config;
                 var context = $"core={cfgName} provider={cfg.Provider} model={cfg.Model} endpoint={cfg.ApiEndpoint}";
-                FrameworkLogger.LogError("Processor", ex, context);
 
                 // 重试一次：先让调用方清空已累积的部分内容
                 onRetryReset?.Invoke();
                 try
                 {
-                    FrameworkLogger.Log("Processor", $"流式请求失败，正在重试: {cfgName}");
                     await client.StreamChatAsync(onDelta, ct).ConfigureAwait(false);
                 }
-                catch (Exception retryEx)
+                catch (Exception)
                 {
-                    FrameworkLogger.LogError("Processor", retryEx, $"重试失败: {context}");
                     throw;
                 }
             }

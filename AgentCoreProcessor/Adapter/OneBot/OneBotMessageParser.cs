@@ -164,9 +164,8 @@ namespace AgentCoreProcessor.Adapter
                                     SegmentIndex = imgIndex
                                 });
                             }
-                            catch (Exception ex)
+                            catch (Exception)
                             {
-                                FrameworkLogger.Log("OneBotParser", $"图片下载失败: {ex.Message}");
                             }
                         }
                         break;

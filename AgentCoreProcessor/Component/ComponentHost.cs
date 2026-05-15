@@ -51,9 +51,8 @@ internal class ComponentHost
                 await instance.Component.OnInitAsync(instance.Context, InitReason.Fresh);
                 RegisterTools(instance);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                FrameworkLogger.Log("ComponentHost", $"Init failed for {reg.Type.Name}: {ex.Message}");
             }
         }
     }
@@ -155,7 +154,6 @@ internal class ComponentHost
         try { await Task.WhenAll(tasks).WaitAsync(cts.Token); }
         catch (OperationCanceledException)
         {
-            FrameworkLogger.Log("ComponentHost", $"Shutdown timeout for loop {_loopId}, forcing phase 2");
         }
 
         // Phase 2: 最终关闭
@@ -223,7 +221,6 @@ internal class ComponentHost
 
     private static void LogError(LoopComponentInstance inst, string hook, Exception ex)
     {
-        FrameworkLogger.Log("ComponentHost", $"{hook} error in {inst.Component.Meta.Name}: {ex.Message}");
     }
 }
 

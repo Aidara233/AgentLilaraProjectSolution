@@ -83,9 +83,8 @@ namespace AgentCoreProcessor.WebUI.Services
 
                 OnStateChanged?.Invoke();
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                FrameworkLogger.Log("SystemMonitor", $"快照采集异常: {ex.Message}");
             }
         }
 

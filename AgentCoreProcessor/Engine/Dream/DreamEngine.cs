@@ -74,7 +74,6 @@ namespace AgentCoreProcessor.Engine
             // 清理过期记忆 + 孤立关联（纯机械操作，不消耗模型 token）
             await CleanupExpiredMemoriesAsync();
 
-            FrameworkLogger.Log("DreamEngine", $"开始做梦: level={level} max={maxFragments}");
             ctx.CurrentSleepState = level switch
             {
                 SleepLevel.Daydream => SleepState.Daydream,
@@ -97,7 +96,6 @@ namespace AgentCoreProcessor.Engine
             // 持久化到数据库
             await PersistSessionAsync(startTime, executed);
 
-            FrameworkLogger.Log("DreamEngine", $"做梦结束: level={level} executed={executed}");
             ctx.CurrentSleepState = SleepState.None;
             IsAlive = false;
         }
@@ -115,7 +113,6 @@ namespace AgentCoreProcessor.Engine
                     if (msg.IsMentioned)
                     {
                         shouldWake = true;
-                        FrameworkLogger.Log("DreamEngine", "走神被 @ 打断");
                     }
                     break;
 
@@ -124,7 +121,6 @@ namespace AgentCoreProcessor.Engine
                     if (msg.IsMentioned && ContainsWakeKeyword(msg.Content))
                     {
                         shouldWake = true;
-                        FrameworkLogger.Log("DreamEngine", "小睡被叫醒");
                     }
                     else if (msg.IsMentioned)
                     {
@@ -143,7 +139,6 @@ namespace AgentCoreProcessor.Engine
         internal void ForceWake(string reason)
         {
             shouldWake = true;
-            FrameworkLogger.Log("DreamEngine", $"强制唤醒: {reason}");
         }
 
         private static readonly string[] WakeKeywords =
@@ -179,11 +174,9 @@ namespace AgentCoreProcessor.Engine
                     Content = talk
                 });
                 await ctx.Session.SaveBotMessageAsync(targetChannel.Id, talk, sentId);
-                FrameworkLogger.Log("DreamEngine", $"被 @ 梦话: \"{talk}\"");
             }
             catch (Exception ex)
             {
-                FrameworkLogger.Log("DreamEngine", $"被 @ 梦话失败: {ex.Message}");
             }
         }
 
@@ -197,15 +190,14 @@ namespace AgentCoreProcessor.Engine
             FragmentsTotal = maxFragments;
             for (int i = 0; i < maxFragments; i++)
             {
-                if (shouldWake) { FrameworkLogger.Log("DreamEngine", "被叫醒"); break; }
+                if (shouldWake) { break; }
                 var fragment = await SelectFragment(isPhase2: false);
-                if (fragment == null) { FrameworkLogger.Log("DreamEngine", "无可执行片段"); break; }
+                if (fragment == null) { break; }
                 try
                 {
                     CurrentFragment = fragment.ToString();
                     CurrentFragmentStartTime = DateTime.Now;
                     currentDetails = new(); currentInputIds = null; currentOutputRaw = null;
-                    FrameworkLogger.Log("DreamEngine", $"执行片段: {fragment}");
                     var summary = await ExecuteFragment(fragment.Value);
                     var duration = (DateTime.Now - CurrentFragmentStartTime.Value).TotalSeconds;
                     fragmentRecords.Add(new FragmentRecord
@@ -226,7 +218,6 @@ namespace AgentCoreProcessor.Engine
                 }
                 catch (Exception ex)
                 {
-                    FrameworkLogger.Log("DreamEngine", $"片段异常: {fragment} - {ex.Message}");
                     fragmentRecords.Add(new FragmentRecord
                     {
                         Type = fragment.ToString()!,
@@ -253,7 +244,6 @@ namespace AgentCoreProcessor.Engine
             int phase1Budget = cfg.DeepSleepTokenBudget / 3;
 
             // ========== Phase 1: 浅睡 — 集中清临时记忆 ==========
-            FrameworkLogger.Log("DreamEngine", "Phase 1: 浅睡开始");
 
             while (!shouldWake)
             {
@@ -263,7 +253,6 @@ namespace AgentCoreProcessor.Engine
                 var tempCount = (await ctx.TempMemories.GetAllAsync()).Count;
                 if (tempCount == 0)
                 {
-                    FrameworkLogger.Log("DreamEngine", "临时记忆已清空，Phase 1 完成");
                     break;
                 }
 
@@ -275,7 +264,6 @@ namespace AgentCoreProcessor.Engine
                     CurrentFragment = fragment.ToString();
                     CurrentFragmentStartTime = DateTime.Now;
                     currentDetails = new();
-                    FrameworkLogger.Log("DreamEngine", $"[Phase1] 执行片段: {fragment}");
                     var summary = await ExecuteFragment(fragment.Value);
                     var duration = (DateTime.Now - CurrentFragmentStartTime.Value).TotalSeconds;
                     fragmentRecords.Add(new FragmentRecord
@@ -295,7 +283,6 @@ namespace AgentCoreProcessor.Engine
                 }
                 catch (Exception ex)
                 {
-                    FrameworkLogger.Log("DreamEngine", $"[Phase1] 片段异常: {fragment} - {ex.Message}");
                     fragmentRecords.Add(new FragmentRecord
                     {
                         Type = fragment.ToString()!,
@@ -308,15 +295,12 @@ namespace AgentCoreProcessor.Engine
                 }
             }
 
-            FrameworkLogger.Log("DreamEngine",
-                $"Phase 1 结束: executed={executed} tokens≈{tokensUsed}");
 
             // ========== Phase 2: 深睡 — 信任评估 + 启动 ReviewEngine + 继续做梦 ==========
             ISubEngine? reviewEngine = null;
 
             if (!shouldWake && ElapsedMinutes(startTime) < cfg.DeepSleepMaxMinutes)
             {
-                FrameworkLogger.Log("DreamEngine", "Phase 2: 深睡开始");
 
                 // 信任等级评估（不消耗 token，纯框架逻辑）
                 await ExecuteTrustEvaluationAsync();
@@ -328,11 +312,9 @@ namespace AgentCoreProcessor.Engine
                     reviewEngine = new ReviewEngine(ctx, mode, preContext,
                         cfg.ReviewTokenBudget, cfg.ReviewReserveBudget, progress);
                     ctx.StartEngine(reviewEngine);
-                    FrameworkLogger.Log("DreamEngine", $"ReviewEngine 已启动: mode={mode}");
                 }
                 catch (Exception ex)
                 {
-                    FrameworkLogger.Log("DreamEngine", $"ReviewEngine 启动失败: {ex.Message}");
                 }
 
                 // Phase 2 循环：继续跑 Weight/Link/Combine，陪跑 ReviewEngine
@@ -342,7 +324,6 @@ namespace AgentCoreProcessor.Engine
                     // 时间超限
                     if (ElapsedMinutes(startTime) > cfg.DeepSleepMaxMinutes)
                     {
-                        FrameworkLogger.Log("DreamEngine", "大睡时间超限");
                         reviewEngine?.RequestStop();
                         break;
                     }
@@ -363,7 +344,6 @@ namespace AgentCoreProcessor.Engine
                                 CurrentFragment = fragment.ToString();
                                 CurrentFragmentStartTime = DateTime.Now;
                                 currentDetails = new();
-                                FrameworkLogger.Log("DreamEngine", $"[Phase2] 执行片段: {fragment}");
                                 var summary = await ExecuteFragment(fragment.Value);
                                 var duration = (DateTime.Now - CurrentFragmentStartTime.Value).TotalSeconds;
                                 fragmentRecords.Add(new FragmentRecord
@@ -382,8 +362,6 @@ namespace AgentCoreProcessor.Engine
                             }
                             catch (Exception ex)
                             {
-                                FrameworkLogger.Log("DreamEngine",
-                                    $"[Phase2] 片段异常: {fragment} - {ex.Message}");
                                 fragmentRecords.Add(new FragmentRecord
                                 {
                                     Type = fragment.ToString()!,
@@ -402,7 +380,6 @@ namespace AgentCoreProcessor.Engine
                             {
                                 if (nullCount >= 3)
                                 {
-                                    FrameworkLogger.Log("DreamEngine", "Phase 2 无片段可跑且 Review 完成");
                                     break;
                                 }
                             }
@@ -421,16 +398,12 @@ namespace AgentCoreProcessor.Engine
                 // 等待 ReviewEngine 完成当前轮（最多 30 秒）
                 if (reviewEngine?.IsAlive == true)
                 {
-                    FrameworkLogger.Log("DreamEngine", "等待 ReviewEngine 完成当前轮...");
                     var waitStart = DateTime.Now;
                     while (reviewEngine.IsAlive && (DateTime.Now - waitStart).TotalSeconds < 30)
                         await Task.Delay(1000);
                 }
             }
 
-            FrameworkLogger.Log("DreamEngine",
-                $"大睡结束: totalExecuted={executed} tokens≈{tokensUsed} " +
-                $"duration={ElapsedMinutes(startTime):F1}min");
 
             return executed;
         }
@@ -523,8 +496,6 @@ namespace AgentCoreProcessor.Engine
             // ---- 分组 ----
             var batches = BuildBatches(temps, batchSize, smallThreshold);
             CurrentInputDescription = $"整合 {temps.Count} 条临时记忆，分 {batches.Count} 批处理";
-            FrameworkLogger.Log("DreamEngine",
-                $"整合开始: 临时记忆={temps.Count}, 批次={batches.Count}");
 
             // ---- 第一轮：逐批初筛 ----
             var candidates = new List<ConsolidationCandidate>();
@@ -534,7 +505,6 @@ namespace AgentCoreProcessor.Engine
             {
                 if (shouldWake)
                 {
-                    FrameworkLogger.Log("DreamEngine", "整合被打断（第一轮）");
                     return;
                 }
 
@@ -544,8 +514,6 @@ namespace AgentCoreProcessor.Engine
                 candidates.AddRange(batchCandidates);
             }
 
-            FrameworkLogger.Log("DreamEngine",
-                $"第一轮完成: 输入={temps.Count}, 产出={candidates.Count}");
 
             if (candidates.Count == 0)
             {
@@ -558,7 +526,6 @@ namespace AgentCoreProcessor.Engine
             // ---- 第二轮：全局精筛 ----
             if (shouldWake)
             {
-                FrameworkLogger.Log("DreamEngine", "整合被打断（第二轮前）");
                 return;
             }
 
@@ -575,7 +542,6 @@ namespace AgentCoreProcessor.Engine
             foreach (var t in temps)
                 await ctx.TempMemories.DeleteAsync(t);
 
-            FrameworkLogger.Log("DreamEngine", "整合完成，临时记忆已清空");
         }
 
         private static List<List<TempMemoryEntry>> BuildBatches(
@@ -693,7 +659,6 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
-                FrameworkLogger.Log("DreamEngine", $"第一轮解析失败: {ex.Message}");
             }
             return candidates;
         }
@@ -758,7 +723,6 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
-                FrameworkLogger.Log("DreamEngine", $"第二轮解析失败: {ex.Message}");
             }
         }
 
@@ -801,7 +765,7 @@ namespace AgentCoreProcessor.Engine
                     });
                 }
             }
-            catch (Exception ex) { FrameworkLogger.Log("DreamEngine", $"权重解析失败: {ex.Message}"); }
+            catch (Exception ex) { }
             return $"评估{batch.Count}条，调整{adjusted}条";
         }
 
@@ -854,7 +818,7 @@ namespace AgentCoreProcessor.Engine
                         }
                     }
                 }
-                catch (Exception ex) { FrameworkLogger.Log("DreamEngine", $"关联解析失败: {ex.Message}"); }
+                catch (Exception ex) { }
                 target.LastDreamTime = DateTime.Now;
                 await ctx.Memories.UpdateAsync(target);
             }
@@ -938,8 +902,6 @@ namespace AgentCoreProcessor.Engine
                             if (string.IsNullOrEmpty(person.FastMemory))
                                 await ctx.ReviewHints.CreateAsync(
                                     $"Person [{person.Id}] 升级为 Understanding，需要生成 FastMemory", person.Id);
-                            FrameworkLogger.Log("DreamEngine",
-                                $"信任升级: Person [{person.Id}] Stranger → Understanding");
                         }
                     }
                     else if (person.TrustLevel == TrustLevel.Understanding)
@@ -953,8 +915,6 @@ namespace AgentCoreProcessor.Engine
                             {
                                 person.TrustLevel = TrustLevel.Familiarity;
                                 changed = true;
-                                FrameworkLogger.Log("DreamEngine",
-                                    $"信任升级: Person [{person.Id}] Understanding → Familiarity");
                             }
                         }
                     }
@@ -965,16 +925,12 @@ namespace AgentCoreProcessor.Engine
                     {
                         person.TrustLevel = TrustLevel.Hostile;
                         changed = true;
-                        FrameworkLogger.Log("DreamEngine",
-                            $"信任降级: Person [{person.Id}] → Hostile (progress={person.TrustProgress:F1})");
                     }
                     else if (person.TrustProgress <= tcfg.ProgressForWary
                         && person.TrustLevel > TrustLevel.Wary)
                     {
                         person.TrustLevel = TrustLevel.Wary;
                         changed = true;
-                        FrameworkLogger.Log("DreamEngine",
-                            $"信任降级: Person [{person.Id}] → Wary (progress={person.TrustProgress:F1})");
                     }
 
                     // 3. 警报冷却恢复
@@ -986,8 +942,6 @@ namespace AgentCoreProcessor.Engine
                         {
                             person.AlertLevel--;
                             changed = true;
-                            FrameworkLogger.Log("DreamEngine",
-                                $"警报冷却: Person [{person.Id}] alertLevel → {person.AlertLevel}");
                         }
                     }
 
@@ -997,7 +951,6 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
-                FrameworkLogger.Log("DreamEngine", $"信任评估异常: {ex.Message}");
             }
         }
 
@@ -1043,11 +996,9 @@ namespace AgentCoreProcessor.Engine
                 });
                 await ctx.Session.SaveBotMessageAsync(targetChannel.Id, talk, sentId);
 
-                FrameworkLogger.Log("DreamEngine", $"梦话: \"{talk}\" → {targetChannel.Name}");
             }
             catch (Exception ex)
             {
-                FrameworkLogger.Log("DreamEngine", $"梦话失败: {ex.Message}");
             }
         }
 
@@ -1099,7 +1050,6 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
-                FrameworkLogger.Log("DreamEngine", $"持久化做梦日志失败: {ex.Message}");
             }
         }
 
@@ -1236,7 +1186,6 @@ namespace AgentCoreProcessor.Engine
                 }
                 catch (Exception ex)
                 {
-                    FrameworkLogger.Log("DreamEngine", $"去重解析失败: {ex.Message}");
                 }
 
                 // 标记参与的记忆为 dreamed
@@ -1283,13 +1232,9 @@ namespace AgentCoreProcessor.Engine
             {
                 var expiredCount = await ctx.Memories.DeleteExpiredAsync();
                 var orphanedCount = await ctx.MemoryLinks.DeleteOrphanedAsync();
-                if (expiredCount > 0 || orphanedCount > 0)
-                    FrameworkLogger.Log("DreamEngine",
-                        $"过期清理: 记忆={expiredCount}, 孤立关联={orphanedCount}");
             }
             catch (Exception ex)
             {
-                FrameworkLogger.Log("DreamEngine", $"过期清理异常: {ex.Message}");
             }
         }
     }

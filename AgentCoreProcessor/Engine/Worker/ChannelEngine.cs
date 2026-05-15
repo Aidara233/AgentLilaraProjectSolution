@@ -177,7 +177,6 @@ namespace AgentCoreProcessor.Engine
             InitModules();
             ScheduleBufferSignal();
 
-            FrameworkLogger.Log("ChannelEngine", $"创建: channelId={channelId}, affinity={impulseTracker.ChannelAffinity:F2}");
         }
 
         private void InitModules()
@@ -234,7 +233,6 @@ namespace AgentCoreProcessor.Engine
         {
             systemNotifications.Enqueue(content);
             gate.Signal();
-            FrameworkLogger.Log("ChannelEngine", $"channelId={channelId} 收到系统通知: {content.Truncate(80)}");
         }
 
         /// <summary>Drain 系统通知队列。</summary>
@@ -249,7 +247,6 @@ namespace AgentCoreProcessor.Engine
 
         public async Task RunAsync()
         {
-            FrameworkLogger.Log("ChannelEngine", $"启动: channelId={channelId}");
             WireModuleCallbacks();
 
             // 初始化 ComponentHost
@@ -268,7 +265,6 @@ namespace AgentCoreProcessor.Engine
                 {
                     if (processedMessageCount > 0 && lastContext != null)
                         await ExtractMemoryAsync(lastContext);
-                    FrameworkLogger.Log("ChannelEngine", $"冷却退出: channelId={channelId}");
                     IsAlive = false;
                     break;
                 }
@@ -337,7 +333,6 @@ namespace AgentCoreProcessor.Engine
                     lastErrorMessage = $"{ex.GetType().Name}: {ex.Message}";
                     Signal.Error(LogGroup.Engine, "轮次异常",
                         new { error = ex.GetType().Name, message = ex.Message, consecutiveFailures });
-                    FrameworkLogger.LogError("ChannelEngine", ex, $"channelId={channelId}, 连续第 {consecutiveFailures} 次");
 
                     if (currentLastMsg != null && consecutiveFailures <= 1)
                     {
@@ -354,8 +349,6 @@ namespace AgentCoreProcessor.Engine
 
                     if (consecutiveFailures >= ChannelMaxConsecutiveBeforeBackoff)
                     {
-                        FrameworkLogger.Log("ChannelEngine",
-                            $"channelId={channelId} 连续失败 {consecutiveFailures} 次，退避 {ChannelBackoffSeconds}s");
                         await Task.Delay(TimeSpan.FromSeconds(ChannelBackoffSeconds));
                     }
 
@@ -462,9 +455,6 @@ namespace AgentCoreProcessor.Engine
                 currentLastSc = batch[^1].Context;
                 currentParticipantSnapshot = new Dictionary<int, ParticipantInfo>(recentParticipants);
 
-                FrameworkLogger.Log("ChannelEngine",
-                    $"处理批次: channelId={channelId}, 消息数={batch.Count}, " +
-                    $"user={currentLastSc.User.PlatformId} person={currentLastSc.Person.Id}");
 
                 if (ctx.MuteMode)
                 {
@@ -543,7 +533,6 @@ namespace AgentCoreProcessor.Engine
                 {
                     var isTask = await preprocessingCore.IsTaskAsync(
                         batch.Select(b => b.Message.Content).LastOrDefault() ?? "");
-                    FrameworkLogger.Log("ChannelEngine", $"分类结果: {(isTask ? "任务" : "聊天")}");
                     if (isTask) { isWorkingMode = true; consecutiveExternalTriggers = 0; }
                 }
 
@@ -572,8 +561,6 @@ namespace AgentCoreProcessor.Engine
             }
             else
             {
-                FrameworkLogger.Log("ChannelEngine",
-                    $"Working 续轮: channelId={channelId}, round={loopControlModule.TotalRounds}");
             }
 
             // 每轮统一重建上下文
@@ -789,7 +776,6 @@ namespace AgentCoreProcessor.Engine
                 // [ALERT] 检测 (fallback，非 native 模式)
                 if (!output.HasToolCalls && text.Contains("[ALERT]"))
                 {
-                    FrameworkLogger.Log("ChannelEngine", $"Express 触发报警: channelId={channelId}");
                     var reason = text.Replace("[ALERT]", "").Replace("[ESCALATE]", "").Trim();
                     await HandleAlertAsync(currentLastSc.Person, currentLastSc,
                         string.IsNullOrEmpty(reason) ? "聊天中触发" : reason);
@@ -818,8 +804,6 @@ namespace AgentCoreProcessor.Engine
                     foreach (var tc in output.ToolCalls!)
                     {
                         var inputSummary = tc.Inputs.Count > 0 ? string.Join(", ", tc.Inputs).Truncate(80) : "";
-                        FrameworkLogger.Log("ChannelEngine",
-                            $"  Express工具 [{tc.Tool}]({inputSummary})");
                     }
                 }
             }
@@ -832,7 +816,6 @@ namespace AgentCoreProcessor.Engine
 
                 if (toolCalls.Count == 0)
                 {
-                    FrameworkLogger.Log("ChannelEngine", $"Working idle: channelId={channelId}");
                     EndWorkingSession();
                     return;
                 }
@@ -864,17 +847,10 @@ namespace AgentCoreProcessor.Engine
                 lastRoundResults = results;
                 loopControlModule.AdvanceRound(speakModule.HadSpeakThisRound);
 
-                FrameworkLogger.Log("ChannelEngine",
-                    $"Working 执行: channelId={channelId}, 工具数={toolCalls.Count}, " +
-                    $"spoke={speakModule.HadSpeakThisRound}, round={loopControlModule.TotalRounds}");
                 foreach (var tc in toolCalls)
                 {
                     var inputSummary = tc.Inputs.Count > 0 ? string.Join(", ", tc.Inputs).Truncate(80) : "";
                     var r = results[toolCalls.IndexOf(tc)];
-                    FrameworkLogger.Log("ChannelEngine",
-                        $"  [{tc.Tool}]({inputSummary}) → {r.Status}" +
-                        (r.Data != null ? $": {r.Data.Truncate(100)}" : "") +
-                        (r.Error != null ? $" ERR: {r.Error}" : ""));
                 }
             }
         }
@@ -890,7 +866,6 @@ namespace AgentCoreProcessor.Engine
                     var call = output.ToolCalls!.First(c => c.Tool == "escalate");
                     escalationReason = call.Inputs.Count > 0 && !string.IsNullOrWhiteSpace(call.Inputs[0])
                         ? call.Inputs[0] : null;
-                    FrameworkLogger.Log("ChannelEngine", $"Express→Working 升级: channelId={channelId}, reason={escalationReason ?? "(无)"}");
                     isWorkingMode = true;
                     isInWorkingSession = true;
                     consecutiveExternalTriggers = 0;
@@ -901,7 +876,6 @@ namespace AgentCoreProcessor.Engine
                 {
                     var parts = output.Text!.Split("[ESCALATE]", 2);
                     escalationReason = parts.Length > 1 ? parts[1].Trim() : null;
-                    FrameworkLogger.Log("ChannelEngine", $"Express→Working 升级(fallback): channelId={channelId}, reason={escalationReason ?? "(无)"}");
                     isWorkingMode = true;
                     isInWorkingSession = true;
                     consecutiveExternalTriggers = 0;
@@ -918,9 +892,6 @@ namespace AgentCoreProcessor.Engine
                     if (loopControlModule.IsMaxSilentReached && speakModule.OnSpeak != null)
                         speakModule.OnSpeak("（工作暂停，等待回应后继续）").GetAwaiter().GetResult();
 
-                    FrameworkLogger.Log("ChannelEngine",
-                        $"Working 结束(上限): rounds={loopControlModule.TotalRounds}, " +
-                        $"silent={loopControlModule.SilentRounds}, channelId={channelId}");
                     EndWorkingSession();
                     return;
                 }
@@ -929,8 +900,6 @@ namespace AgentCoreProcessor.Engine
                 bool hasWait = output.ToolCalls.Any(c => c.Tool == "wait");
                 if (hasWait)
                 {
-                    FrameworkLogger.Log("ChannelEngine",
-                        $"Working 完成(显式结束): rounds={loopControlModule.TotalRounds}, channelId={channelId}");
                     EndWorkingSession();
                     return;
                 }
@@ -940,9 +909,6 @@ namespace AgentCoreProcessor.Engine
                 bool isOutputOnly = output.ToolCalls.All(c => outputOnlyTools.Contains(c.Tool));
                 loopControlModule.WasOutputOnly = isOutputOnly;
 
-                FrameworkLogger.Log("ChannelEngine",
-                    $"Working 继续: channelId={channelId}, round={loopControlModule.TotalRounds}" +
-                    (isOutputOnly ? " (仅输出，下轮提示确认)" : ""));
                 gate.Signal();
             }
         }
@@ -1022,7 +988,6 @@ namespace AgentCoreProcessor.Engine
             if (memoryCache.TryGetValue(personId, out var cached) &&
                 (DateTime.Now - cached.Time).TotalSeconds < MemoryCacheTtlSeconds)
             {
-                FrameworkLogger.Log("ChannelEngine", $"记忆缓存命中: personId={personId}");
                 return cached.Results;
             }
 
@@ -1041,7 +1006,6 @@ namespace AgentCoreProcessor.Engine
                     return results;
                 }
 
-                FrameworkLogger.Log("ChannelEngine", $"记忆检索超时(15s)，跳过: personId={personId}");
                 return new List<ScoredMemory>();
             }
             catch
@@ -1101,7 +1065,6 @@ namespace AgentCoreProcessor.Engine
                     return intent;
                 }
 
-                FrameworkLogger.Log("ChannelEngine", "MemoryQueryCore 超时(5s)，跳过意图提取");
                 return null;
             }
             catch
@@ -1120,13 +1083,11 @@ namespace AgentCoreProcessor.Engine
         {
             channelConfig.AutoExtractionEnabled = enabled;
             ChannelStateManager.SaveConfig(channelId, channelConfig);
-            FrameworkLogger.Log("ChannelEngine", $"自动提取已{(enabled ? "启用" : "关闭")}: channelId={channelId}");
         }
 
         public void CancelExtraction()
         {
             extractionCts?.Cancel();
-            FrameworkLogger.Log("ChannelEngine", $"提取已取消: channelId={channelId}");
         }
 
         private async Task RunExtractionAsync(SessionContext context)
@@ -1232,8 +1193,6 @@ namespace AgentCoreProcessor.Engine
                         channelId, lastExtractedMessageId);
 
                     if (count > 0)
-                        FrameworkLogger.Log("ChannelEngine",
-                            $"记忆提取完成: channelId={channelId}, 提取{count}条, lastId={lastExtractedMessageId}");
 
                     // 如果这批不满 50 条，说明已经追上了
                     if (newMessages.Count < 50) break;
@@ -1241,7 +1200,6 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
-                FrameworkLogger.Log("ChannelEngine", $"记忆提取失败: {ex.Message}");
             }
             finally
             {
@@ -1324,8 +1282,6 @@ namespace AgentCoreProcessor.Engine
                 if (groupId.HasValue) parameters["group_id"] = groupId.Value.ToString();
 
                 var result = await ctx.Adapters.ExecuteActionAsync(lastMsg.Platform, lastMsg.ChannelId, "poke", parameters);
-                FrameworkLogger.Log("ChannelEngine",
-                    $"Express POKE: target={targetUid}, group={groupId}, success={result.Success}");
             }
 
             return PokeRegex.Replace(text, "").Trim();
@@ -1434,8 +1390,6 @@ namespace AgentCoreProcessor.Engine
             {
                 watchRules = new List<WatchRule>(rules);
             }
-            FrameworkLogger.Log("ChannelEngine",
-                $"关注规则已更新: channelId={channelId}, 规则数={rules.Count}");
         }
 
         /// <summary>检查消息是否命中关注规则。</summary>
@@ -1460,8 +1414,6 @@ namespace AgentCoreProcessor.Engine
 
                 if (!matched) continue;
 
-                FrameworkLogger.Log("ChannelEngine",
-                    $"关注规则命中: channelId={channelId}, ruleId={rule.RuleId}, pattern={rule.Pattern}");
 
                 // 发送通知
                 ctx.TaskBridge.PostNotification(new Notification

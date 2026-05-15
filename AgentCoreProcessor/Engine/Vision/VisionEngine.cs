@@ -60,13 +60,10 @@ namespace AgentCoreProcessor.Engine.Vision
 
             _visionAvailable = ctx.Vision != null;
             if (!_visionAvailable && config.VisionEnabled)
-                FrameworkLogger.Log("VisionEngine", "警告: IVisionProvider 不可用，视觉描述生成已禁用。请检查 Storage/Core/VisionProvider.json 配置");
 
             _ocrAvailable = ctx.Ocr != null;
             if (!_ocrAvailable && config.OcrEnabled)
-                FrameworkLogger.Log("VisionEngine", "警告: IOcrProvider 不可用，OCR 已禁用。请检查 Storage/Core/OcrProvider.json 配置");
 
-            FrameworkLogger.Log("VisionEngine", "视觉引擎已启动");
 
             while (IsAlive)
             {
@@ -79,13 +76,11 @@ namespace AgentCoreProcessor.Engine.Vision
                 }
                 catch (Exception ex)
                 {
-                    FrameworkLogger.LogError("VisionEngine", ex, "处理循环异常");
                 }
             }
 
             visionSemaphore?.Dispose();
             ocrSemaphore?.Dispose();
-            FrameworkLogger.Log("VisionEngine", "视觉引擎已停止");
         }
 
         // PLACEHOLDER_PROCESS_METHODS
@@ -103,7 +98,6 @@ namespace AgentCoreProcessor.Engine.Vision
                     var ocrPending = await ImageStorage.GetOcrPendingAsync(config.BatchSize);
                     if (ocrPending.Count == 0) break;
 
-                    FrameworkLogger.Log("VisionEngine", $"OCR 处理 {ocrPending.Count} 张图片");
                     var tasks = ocrPending.Select(r => ProcessOcrWrapperAsync(r));
                     await Task.WhenAll(tasks);
                 }
@@ -117,7 +111,6 @@ namespace AgentCoreProcessor.Engine.Vision
                     var visionPending = await ImageStorage.GetVisionPendingAsync(config.BatchSize);
                     if (visionPending.Count == 0) break;
 
-                    FrameworkLogger.Log("VisionEngine", $"Vision 处理 {visionPending.Count} 张图片");
                     var tasks = visionPending.Select(r => ProcessVisionWrapperAsync(r));
                     await Task.WhenAll(tasks);
 
@@ -175,13 +168,10 @@ namespace AgentCoreProcessor.Engine.Vision
                     {
                         _visionSuspended = true;
                         _suspendReason = $"认证失败 ({ex.Message})，本轮 Vision 处理已暂停";
-                        FrameworkLogger.Log("VisionEngine", _suspendReason);
                         return;
                     }
                     catch (Exception ex)
                     {
-                        FrameworkLogger.Log("VisionEngine",
-                            $"Vision 失败 (attempt {attempt + 1}/{config.VisionRetryCount + 1}): hash={record.Hash} err={ex.Message}");
                         if (attempt < config.VisionRetryCount)
                             await Task.Delay(config.VisionRetryDelayMs);
                     }
@@ -195,7 +185,6 @@ namespace AgentCoreProcessor.Engine.Vision
                 else
                 {
                     Interlocked.Increment(ref _visionErrors);
-                    FrameworkLogger.Log("VisionEngine", $"Vision 最终失败，跳过: hash={record.Hash}");
                 }
             }
             finally
@@ -219,12 +208,10 @@ namespace AgentCoreProcessor.Engine.Vision
                 ex.Message.Contains("401") || ex.Message.Contains("403"))
             {
                 Interlocked.Increment(ref _ocrErrors);
-                FrameworkLogger.Log("VisionEngine", $"OCR 认证失败，跳过本轮: {ex.Message}");
             }
             catch (Exception ex)
             {
                 Interlocked.Increment(ref _ocrErrors);
-                FrameworkLogger.LogError("VisionEngine", ex, $"OCR 失败: hash={record.Hash}");
                 await ImageStorage.UpdateOcrAsync(record.Hash, false, null);
             }
             finally
@@ -261,7 +248,6 @@ namespace AgentCoreProcessor.Engine.Vision
             ocrSemaphore?.Dispose();
             visionSemaphore = new SemaphoreSlim(config.VisionConcurrency);
             ocrSemaphore = new SemaphoreSlim(config.OcrConcurrency);
-            FrameworkLogger.Log("VisionEngine", "配置已更新");
         }
 
         public void OnEvent(EngineEvent e)

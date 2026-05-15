@@ -47,7 +47,6 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
-                FrameworkLogger.Log("ContextPersistence", $"追加上下文失败: {ex.Message}");
             }
         }
 
@@ -63,7 +62,6 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
-                FrameworkLogger.Log("ContextPersistence", $"保存状态失败: {ex.Message}");
             }
         }
 
@@ -84,7 +82,6 @@ namespace AgentCoreProcessor.Engine
                 }
                 catch (Exception ex)
                 {
-                    FrameworkLogger.Log("ContextPersistence", $"加载摘要失败: {ex.Message}");
                 }
             }
 
@@ -105,8 +102,6 @@ namespace AgentCoreProcessor.Engine
                         int? version = wrapper.FormatVersion;
                         if (version == null || version < FormatVersion)
                         {
-                            FrameworkLogger.Log("ContextPersistence",
-                                $"上下文格式版本不兼容 (v{version ?? 1}→v{FormatVersion})，清空重建");
                             ClearContext();
                             return (summary, new List<List<Message>>());
                         }
@@ -129,7 +124,6 @@ namespace AgentCoreProcessor.Engine
                 }
                 catch (Exception ex)
                 {
-                    FrameworkLogger.Log("ContextPersistence", $"加载上下文失败: {ex.Message}");
                 }
             }
 
@@ -150,7 +144,6 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
-                FrameworkLogger.Log("ContextPersistence", $"加载状态失败: {ex.Message}");
                 return null;
             }
         }
@@ -165,11 +158,9 @@ namespace AgentCoreProcessor.Engine
                 File.WriteAllText(summaryPath, summary);
                 if (File.Exists(contextPath))
                     File.Delete(contextPath);
-                FrameworkLogger.Log("ContextPersistence", "上下文已压缩");
             }
             catch (Exception ex)
             {
-                FrameworkLogger.Log("ContextPersistence", $"压缩失败: {ex.Message}");
             }
         }
 
@@ -184,7 +175,6 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
-                FrameworkLogger.Log("ContextPersistence", $"清空上下文失败: {ex.Message}");
             }
         }
     }

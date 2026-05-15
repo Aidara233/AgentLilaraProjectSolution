@@ -45,10 +45,8 @@ namespace AgentCoreProcessor.Engine
             switch (sessionContext.User.PermissionLevel)
             {
                 case PermissionLevel.Blocked:
-                    FrameworkLogger.LogPermission("WorkerSpawnCheck", sessionContext.User.PlatformId, "Blocked", false);
                     return false;
                 case PermissionLevel.Restricted:
-                    FrameworkLogger.LogPermission("WorkerSpawnCheck", sessionContext.User.PlatformId, "Restricted", false);
                     return false;
             }
 

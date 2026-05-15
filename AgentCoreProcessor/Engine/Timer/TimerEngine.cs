@@ -35,7 +35,6 @@ namespace AgentCoreProcessor.Engine
 
         public async Task RunAsync()
         {
-            FrameworkLogger.Log("TimerEngine", $"心跳启动，间隔 {intervalSeconds}s");
             while (IsAlive)
             {
                 await Task.Delay(intervalSeconds * 1000);
@@ -56,8 +55,6 @@ namespace AgentCoreProcessor.Engine
                     var elapsed = (System.DateTime.Now - lastSystemHeartbeat).TotalHours;
                     if (elapsed > 1.0 && !alarmSent)
                     {
-                        FrameworkLogger.Log("TimerEngine",
-                            $"[CRITICAL] SystemEngine 心跳超时 {elapsed:F1} 小时！系统循环已挂，需要人工介入！");
 
                         // 发送报警通知到所有管理员频道
                         await SendSystemCrashAlarmAsync();
@@ -65,7 +62,6 @@ namespace AgentCoreProcessor.Engine
                     }
                 }
             }
-            FrameworkLogger.Log("TimerEngine", "心跳停止");
         }
 
         private async Task SendSystemCrashAlarmAsync()
@@ -105,7 +101,6 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
-                FrameworkLogger.Log("TimerEngine", $"发送系统崩溃报警失败: {ex.Message}");
             }
         }
 
@@ -116,7 +111,6 @@ namespace AgentCoreProcessor.Engine
                 && signal.Payload is string s && int.TryParse(s, out var val) && val > 0)
             {
                 intervalSeconds = val;
-                FrameworkLogger.Log("TimerEngine", $"间隔调整为 {intervalSeconds}s");
             }
         }
 

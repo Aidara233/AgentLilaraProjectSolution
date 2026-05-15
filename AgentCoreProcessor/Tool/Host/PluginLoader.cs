@@ -40,14 +40,12 @@ namespace AgentCoreProcessor.Tool.Host
             if (!Directory.Exists(PluginDir))
             {
                 Directory.CreateDirectory(PluginDir);
-                FrameworkLogger.Log("PluginLoader", $"插件目录已创建: {PluginDir}");
                 return;
             }
 
             var dlls = Directory.GetFiles(PluginDir, "*.dll", SearchOption.AllDirectories);
             if (dlls.Length == 0)
             {
-                FrameworkLogger.Log("PluginLoader", "未发现插件 DLL");
                 return;
             }
 
@@ -56,14 +54,11 @@ namespace AgentCoreProcessor.Tool.Host
                 LoadPlugin(dllPath);
             }
 
-            FrameworkLogger.Log("PluginLoader",
-                $"插件加载完成: {loadedPlugins.Count} 个 DLL, {LoadedToolCount} 个工具");
         }
 
         /// <summary>重载所有插件。运行时调用。</summary>
         public void ReloadAll()
         {
-            FrameworkLogger.Log("PluginLoader", "开始重载插件...");
             UnloadAll();
             LoadAll();
         }
@@ -127,8 +122,6 @@ namespace AgentCoreProcessor.Tool.Host
                         }
                         else
                         {
-                            FrameworkLogger.Log("PluginLoader",
-                                $"工具名冲突，跳过: {tool.Name} (来自 {fileName})");
                         }
                     }
                 }
@@ -139,8 +132,6 @@ namespace AgentCoreProcessor.Tool.Host
                     {
                         var attr = type.GetCustomAttribute<ComponentAttribute>()!;
                         entry.ComponentNames.Add(attr.Name);
-                        FrameworkLogger.Log("PluginLoader",
-                            $"已注册组件: {attr.Name} ({attr.Scope}) 来自 {fileName}");
                     }
                 }
 
@@ -158,15 +149,12 @@ namespace AgentCoreProcessor.Tool.Host
                     }
                     catch (Exception ex)
                     {
-                        FrameworkLogger.Log("PluginLoader", $"Provider 实例化失败 {type.Name}: {ex.Message}");
                     }
                 }
 
                 if (entry.ToolNames.Count > 0 || entry.ComponentNames.Count > 0 || entry.ProviderIds.Count > 0)
                 {
                     loadedPlugins.Add(entry);
-                    FrameworkLogger.Log("PluginLoader",
-                        $"已加载 {fileName}: {string.Join(", ", entry.ToolNames.Concat(entry.ComponentNames))}");
                 }
                 else
                 {
@@ -175,7 +163,6 @@ namespace AgentCoreProcessor.Tool.Host
             }
             catch (Exception ex)
             {
-                FrameworkLogger.Log("PluginLoader", $"加载失败 {fileName}: {ex.Message}");
                 loadContext?.Unload();
             }
         }
@@ -218,14 +205,10 @@ namespace AgentCoreProcessor.Tool.Host
                 if (ctorDefault != null)
                     return (AgentLilara.PluginSDK.ITool)ctorDefault.Invoke(null);
 
-                FrameworkLogger.Log("PluginLoader",
-                    $"无法实例化 {type.Name}: 缺少兼容的构造函数");
                 return null;
             }
             catch (Exception ex)
             {
-                FrameworkLogger.Log("PluginLoader",
-                    $"实例化失败 {type.Name}: {ex.InnerException?.Message ?? ex.Message}");
                 return null;
             }
         }

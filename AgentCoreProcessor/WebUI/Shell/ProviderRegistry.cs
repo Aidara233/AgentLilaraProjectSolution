@@ -19,7 +19,6 @@ internal class ProviderRegistry
         if (!_providers.TryAdd(provider.Id, entry))
             return false;
 
-        FrameworkLogger.Log("ProviderRegistry", $"已注册 Provider: {provider.Id} ({provider.Pages.Count} 页面)");
         OnChanged?.Invoke();
         return true;
     }
@@ -35,7 +34,6 @@ internal class ProviderRegistry
             return false;
         }
 
-        FrameworkLogger.Log("ProviderRegistry", $"已反注册 Provider: {providerId}");
         OnChanged?.Invoke();
         return true;
     }

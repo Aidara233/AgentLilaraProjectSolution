@@ -16,7 +16,6 @@ namespace AgentCoreProcessor.Engine
 
         public void Publish(EngineEvent e)
         {
-            FrameworkLogger.Log("EventBus", $"事件发布: type={e.Type}");
             lock (lockObj)
             {
                 OnEvent?.Invoke(e);

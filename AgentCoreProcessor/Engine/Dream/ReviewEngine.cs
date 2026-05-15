@@ -78,8 +78,6 @@ namespace AgentCoreProcessor.Engine
 
         public async Task RunAsync()
         {
-            FrameworkLogger.Log("ReviewEngine",
-                $"复盘开始: mode={mode} budget={baseBudget} reserve={reserveBudget}");
 
             try
             {
@@ -87,7 +85,6 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
-                FrameworkLogger.Log("ReviewEngine", $"复盘异常: {ex.Message}");
             }
             finally
             {
@@ -100,8 +97,6 @@ namespace AgentCoreProcessor.Engine
                 }
                 catch { }
 
-                FrameworkLogger.Log("ReviewEngine",
-                    $"复盘结束: mode={mode} tokens={totalTokens}/{effectiveBudget}");
                 IsAlive = false;
             }
         }
@@ -127,7 +122,6 @@ namespace AgentCoreProcessor.Engine
             {
                 if (shouldWake)
                 {
-                    FrameworkLogger.Log("ReviewEngine", "被叫醒，完成当前轮后停止");
                     shouldStop = true; // 完成本轮后退出
                 }
 
@@ -178,7 +172,6 @@ namespace AgentCoreProcessor.Engine
                 {
                     if (round == 0)
                     {
-                        FrameworkLogger.Log("ReviewEngine", "首轮无工具调用，终止");
                         break;
                     }
                     break; // 隐式完成
@@ -201,8 +194,6 @@ namespace AgentCoreProcessor.Engine
                     {
                         case "complete":
                             shouldStop = true;
-                            FrameworkLogger.Log("ReviewEngine",
-                                $"复盘完成: {result.Data}");
                             break;
 
                         case "thinking_notes":
@@ -216,8 +207,6 @@ namespace AgentCoreProcessor.Engine
                             }
                             catch (Exception ex)
                             {
-                                FrameworkLogger.Log("ReviewEngine",
-                                    $"写入临时记忆失败: {ex.Message}");
                             }
                             break;
 
@@ -234,8 +223,6 @@ namespace AgentCoreProcessor.Engine
                             {
                                 reserveUsed = true;
                                 effectiveBudget += reserveBudget;
-                                FrameworkLogger.Log("ReviewEngine",
-                                    $"备用预算已启用，总预算: {effectiveBudget}");
                             }
                             break;
 
@@ -249,12 +236,9 @@ namespace AgentCoreProcessor.Engine
                                 progress.ActiveInvestigations.Clear();
                                 progress.ActiveInvestigations.Add(investigation);
                                 progress.Save(DreamProgressPath);
-                                FrameworkLogger.Log("ReviewEngine", "进度已保存");
                             }
                             catch (Exception ex)
                             {
-                                FrameworkLogger.Log("ReviewEngine",
-                                    $"保存进度失败: {ex.Message}");
                             }
                             break;
                     }
@@ -279,7 +263,6 @@ namespace AgentCoreProcessor.Engine
             // 预算外收尾：如果是预算耗尽退出（非主动完成），给一轮总结机会
             if (!shouldStop && totalTokens >= effectiveBudget)
             {
-                FrameworkLogger.Log("ReviewEngine", "预算耗尽，执行收尾轮");
                 await RunFinalRound(thinkingNotes, retainedResults,
                     lastRoundCalls, lastRoundResults, round);
             }
@@ -354,7 +337,6 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
-                FrameworkLogger.Log("ReviewEngine", $"收尾轮异常: {ex.Message}");
             }
         }
 

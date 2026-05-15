@@ -163,9 +163,6 @@ namespace AgentCoreProcessor.Engine
             }
 
             RecalculateTokens();
-
-            if (conversationHistory.Count > 0)
-                FrameworkLogger.Log("SystemEngine", $"已恢复 {conversationHistory.Count} 条历史消息, 估算 {estimatedTokens} tokens");
         }
 
         private void RecalculateTokens()
@@ -189,7 +186,6 @@ namespace AgentCoreProcessor.Engine
                 () => gate.Signal());
             await componentHost.InitAsync();
 
-            FrameworkLogger.Log("SystemEngine", "系统循环就绪（闸门模型）");
 
             try
             {
@@ -260,12 +256,10 @@ namespace AgentCoreProcessor.Engine
                         totalErrorCount++;
                         lastErrorTime = DateTime.Now;
                         lastErrorMessage = $"{ex.GetType().Name}: {ex.Message}";
-                        FrameworkLogger.LogError("SystemEngine", ex, $"Agent 循环异常 (连续第 {consecutiveFailures} 次)");
 
                         if (consecutiveFailures >= MaxConsecutiveFailures)
                         {
                             var backoff = BackoffSeconds[Math.Min(consecutiveFailures - 1, BackoffSeconds.Length - 1)];
-                            FrameworkLogger.Log("SystemEngine", $"连续失败 {consecutiveFailures} 次，退避 {backoff}s");
                             await Task.Delay(TimeSpan.FromSeconds(backoff), ct);
                         }
                     }
@@ -280,11 +274,9 @@ namespace AgentCoreProcessor.Engine
             }
             catch (OperationCanceledException)
             {
-                FrameworkLogger.Log("SystemEngine", "系统循环已停止");
             }
             catch (Exception ex)
             {
-                FrameworkLogger.LogError("SystemEngine", ex, "系统循环致命异常，将自动重启");
                 // 致命异常兜底：标记死亡后由 SpawnCheck 重启
                 totalErrorCount++;
                 lastErrorTime = DateTime.Now;
@@ -322,7 +314,6 @@ namespace AgentCoreProcessor.Engine
                 var messages = BuildFullMessages(currentTurnMsg);
 
                 // ④ 调用模型
-                FrameworkLogger.Log("SystemEngine", $"Agent 循环 round {round + 1}, 上下文 {estimatedTokens}/{MaxContextTokens} tokens ({usagePercent}%)");
                 if (componentHost != null) await componentHost.OnBeforeInvokeAsync();
                 var output = await agentCore.InvokeWithHistoryAsync(messages);
                 if (componentHost != null) await componentHost.OnAfterInvokeAsync();
@@ -331,7 +322,6 @@ namespace AgentCoreProcessor.Engine
                 if (output.IsText || output.ToolCalls == null || output.ToolCalls.Count == 0)
                 {
                     var text = output.Thinking ?? output.Text ?? "";
-                    FrameworkLogger.Log("SystemEngine", $"模型无工具调用: {text.Truncate(100)}");
                     lastRoundNoAction = true;
 
                     // 追加到历史
@@ -339,7 +329,6 @@ namespace AgentCoreProcessor.Engine
 
                     if (round > 0 && lastRoundCalls == null)
                     {
-                        FrameworkLogger.Log("SystemEngine", "连续无操作，自动进入等待");
                         break;
                     }
                     lastRoundCalls = null;
@@ -386,14 +375,12 @@ namespace AgentCoreProcessor.Engine
 
                 if (isTerminalOnly && !hasMoreWork)
                 {
-                    FrameworkLogger.Log("SystemEngine", "处理完毕，无待处理事件，休眠");
                     break;
                 }
 
                 if (!hasMoreWork && toolCalls.Any(c => c.Tool == "wait"))
                 {
                     var reason = toolCalls.First(c => c.Tool == "wait").Inputs.FirstOrDefault() ?? "";
-                    FrameworkLogger.Log("SystemEngine", $"显式休眠: {reason}");
                     break;
                 }
 
@@ -428,7 +415,6 @@ namespace AgentCoreProcessor.Engine
         {
             CurrentState = SystemLoopState.Compressing;
             ctx.TaskBridge.SystemState = SystemLoopState.Compressing;
-            FrameworkLogger.Log("SystemEngine", $"触发上下文压缩: {estimatedTokens} tokens ({estimatedTokens * 100 / MaxContextTokens}%)");
 
             using var span = Signal.Open(LogGroup.Engine, "上下文压缩", new { tokensBefore = estimatedTokens });
             try
@@ -450,7 +436,6 @@ namespace AgentCoreProcessor.Engine
                         msg.Role == "assistant" ? new List<Message> { msg } : new List<Message>());
                 }
 
-                FrameworkLogger.Log("SystemEngine", $"压缩完成: → {estimatedTokens} tokens");
                 Signal.Event(LogGroup.Engine, "上下文压缩完成", new { tokensAfter = estimatedTokens });
             }
             finally
@@ -684,7 +669,6 @@ namespace AgentCoreProcessor.Engine
                     case "sleep-approve" when pendingSleepRequest != null:
                         if (pendingSleepRequest.RequestId == (string?)signal.Payload)
                         {
-                            FrameworkLogger.Log("SystemEngine", $"睡觉请求 {signal.Payload} 已批准");
                             pendingSleepRequest.Status = SleepRequestStatus.Approved;
                             _ = StartDreamEngineAsync();
                             pendingSleepRequest = null;
@@ -693,7 +677,6 @@ namespace AgentCoreProcessor.Engine
                     case "sleep-deny" when pendingSleepRequest != null:
                         if (pendingSleepRequest.RequestId == (string?)signal.Payload)
                         {
-                            FrameworkLogger.Log("SystemEngine", $"睡觉请求 {signal.Payload} 已拒绝");
                             pendingSleepRequest = null;
                         }
                         break;
@@ -706,7 +689,6 @@ namespace AgentCoreProcessor.Engine
 
         public void RequestStop()
         {
-            FrameworkLogger.Log("SystemEngine", "收到停止请求");
             stopCts?.Cancel();
         }
 
@@ -725,7 +707,6 @@ namespace AgentCoreProcessor.Engine
                 subAgents[session.SessionId] = session;
             }
             session.Start(instruction);
-            FrameworkLogger.Log("SystemEngine", $"子 agent 已创建并启动: {session.SessionId}");
             return session;
         }
 
@@ -739,7 +720,6 @@ namespace AgentCoreProcessor.Engine
                 subAgents[session.SessionId] = session;
             }
             session.Start(instruction);
-            FrameworkLogger.Log("SystemEngine", $"子 agent 已创建（委托 {delegationId}）: {session.SessionId}");
             return session;
         }
 
@@ -820,7 +800,6 @@ namespace AgentCoreProcessor.Engine
                 if (elapsed > 10 && pendingSleepRequest.Status == SleepRequestStatus.Pending)
                 {
                     // 超时自动批准
-                    FrameworkLogger.Log("SystemEngine", "睡觉请求超时，自动批准");
                     pendingSleepRequest.Status = SleepRequestStatus.Approved;
                     await StartDreamEngineAsync();
                     pendingSleepRequest = null;
@@ -913,7 +892,6 @@ namespace AgentCoreProcessor.Engine
             if (adminChannels.Count == 0)
             {
                 // 没有管理员，自动批准（兜底）
-                FrameworkLogger.Log("SystemEngine", "无管理员频道，自动批准睡觉");
                 await StartDreamEngineAsync();
                 return;
             }
@@ -946,7 +924,6 @@ namespace AgentCoreProcessor.Engine
                 RequestId = requestId
             };
 
-            FrameworkLogger.Log("SystemEngine", $"睡觉请求已发送: {requestId}, 评分 {score:F1}");
         }
 
         /// <summary>查找管理员最近活跃的频道。</summary>
@@ -966,7 +943,6 @@ namespace AgentCoreProcessor.Engine
         private Task StartDreamEngineAsync()
         {
             ctx.EventBus.PublishSignal("force-sleep", "deepsleep");
-            FrameworkLogger.Log("SystemEngine", "已触发 DreamEngine 启动");
             return Task.CompletedTask;
         }
     }

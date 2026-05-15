@@ -195,8 +195,6 @@ namespace AgentCoreProcessor.Engine
             else
             {
                 check.StashNotification(channelId, content);
-                FrameworkLogger.Log("MasterEngine",
-                    $"NotifyChannel: 频道 {channelId} 无活跃循环，通知已暂存");
             }
         }
 
@@ -221,7 +219,6 @@ namespace AgentCoreProcessor.Engine
             {
                 await db.RebuildMemoryTablesAsync();
                 await File.WriteAllTextAsync(schemaMarker, "rebuilt");
-                FrameworkLogger.Log("MasterEngine", "记忆表已重建（schema v2）");
             }
 
             // ImageRecord 扩展（v3: 加 Category/Description/SeenCount）
@@ -236,7 +233,6 @@ namespace AgentCoreProcessor.Engine
                 }
                 catch { }
                 await File.WriteAllTextAsync(schemaV3, "migrated");
-                FrameworkLogger.Log("MasterEngine", "ImageRecords 已迁移（schema v3）");
             }
 
             var schemaV4 = Path.Combine(databaseDirectory, ".image_schema_v4");
@@ -249,7 +245,6 @@ namespace AgentCoreProcessor.Engine
                 }
                 catch { }
                 await File.WriteAllTextAsync(schemaV4, "migrated");
-                FrameworkLogger.Log("MasterEngine", "ImageRecords 已迁移（schema v4: OCR fields）");
             }
 
             var schemaV5 = Path.Combine(databaseDirectory, ".channel_schema_v5");
@@ -261,7 +256,6 @@ namespace AgentCoreProcessor.Engine
                 }
                 catch { }
                 await File.WriteAllTextAsync(schemaV5, "migrated");
-                FrameworkLogger.Log("MasterEngine", "Channels 已迁移（schema v5: extraction progress）");
             }
 
             // Repository
@@ -317,16 +311,13 @@ namespace AgentCoreProcessor.Engine
                 if (!string.IsNullOrEmpty(vApiKey))
                 {
                     visionProvider = new SiliconFlowVisionProvider(vApiKey, vEndpoint, vModel);
-                    FrameworkLogger.Log("MasterEngine", $"视觉模型已加载: {vModel}");
                 }
                 else
                 {
-                    FrameworkLogger.Log("MasterEngine", "警告: VisionProvider.json 未配置或缺少 apiKey，视觉功能不可用");
                 }
             }
             catch (Exception ex)
             {
-                FrameworkLogger.Log("MasterEngine", $"视觉模型初始化失败: {ex.Message}");
             }
 
             // OCR（从 OcrProvider.json 读取，不依赖 Base.json）
@@ -348,16 +339,13 @@ namespace AgentCoreProcessor.Engine
                 if (!string.IsNullOrEmpty(ocrApiKey))
                 {
                     ocrProvider = new SiliconFlowOcrProvider(ocrApiKey, ocrEndpoint, ocrModel);
-                    FrameworkLogger.Log("MasterEngine", $"OCR 模型已加载: {ocrModel}");
                 }
                 else
                 {
-                    FrameworkLogger.Log("MasterEngine", "警告: OcrProvider.json 未配置或缺少 apiKey，OCR 功能不可用");
                 }
             }
             catch (Exception ex)
             {
-                FrameworkLogger.Log("MasterEngine", $"OCR 模型初始化失败: {ex.Message}");
             }
 
             // 服务
@@ -377,7 +365,6 @@ namespace AgentCoreProcessor.Engine
             var systemLoopPath = Path.Combine(PathConfig.StoragePath, "SystemLoop");
             Directory.CreateDirectory(systemLoopPath);
             TaskBridge = new TaskBridge(systemLoopPath);
-            FrameworkLogger.Log("MasterEngine", "TaskBridge 已初始化");
 
             // 创建 DelegationRegistry
             Delegations = new DelegationRegistry(systemLoopPath);
@@ -394,14 +381,12 @@ namespace AgentCoreProcessor.Engine
                 // 同时通过 NotifyChannel 确保频道循环被唤醒（即使当前不活跃）
                 NotifyChannel(channelId, "[系统] 委托任务已完成，请查看委托状态。");
             };
-            FrameworkLogger.Log("MasterEngine", "DelegationRegistry 已初始化");
 
             // 注册核心工具（不可卸载的循环控制工具）
             Tool.ToolRegistry.Register(new Tool.Core.ContinueLoopTool());
             Tool.ToolRegistry.Register(new Tool.Core.WaitTool());
             Tool.ToolRegistry.Register(new Tool.Core.ManageComponentsTool(ToolProfiles));
             Tool.ToolRegistry.Register(new Tool.Core.EscalateTool());
-            FrameworkLogger.Log("MasterEngine", "核心工具已注册");
 
             // 插件加载
             var toolContext = new Tool.Host.ToolContextImpl(new Tool.Host.PluginStorageImpl("_system"));
@@ -409,12 +394,10 @@ namespace AgentCoreProcessor.Engine
                 new Tool.Host.MemoryAccessImpl(Memories, TempMemories, MemoryLinks, Embedding));
             var pluginLoader = new Tool.Host.PluginLoader(toolContext, ProviderRegistry);
             pluginLoader.LoadAll();
-            FrameworkLogger.Log("MasterEngine", $"插件加载完成，共 {Tool.ToolRegistry.All.Count} 个工具已注册");
             Signal.Event(LogGroup.Plugin, "插件加载完成", new { count = Tool.ToolRegistry.All.Count });
 
             // 工具 Profile 加载（在插件加载后，引擎启动前）
             ToolProfiles.Load();
-            FrameworkLogger.Log("MasterEngine", "ToolProfiles 已加载");
 
             // Component 系统初始化（PluginLoader 已填充 ComponentRegistry）
             componentServices.Register<AgentLilara.PluginSDK.Services.IDelegationAccess>(
@@ -428,7 +411,6 @@ namespace AgentCoreProcessor.Engine
                 componentEventBus, componentServices,
                 loopId => WakeLoop(loopId));
             await globalComponentHost.InitAsync();
-            FrameworkLogger.Log("MasterEngine", "GlobalComponentHost 已初始化");
 
             // 注册所有 SpawnCheck
             foreach (var (_, factory) in SpawnCheckFactory)
@@ -446,7 +428,6 @@ namespace AgentCoreProcessor.Engine
                 {
                     var engine = check.Create(this);
                     StartEngine(engine);
-                    FrameworkLogger.Log("MasterEngine", $"自启动引擎: {type}");
 
                     // Phase 5: 保存 SystemEngine 引用
                     if (engine is SystemEngine sysEngine)
@@ -468,10 +449,8 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
-                FrameworkLogger.LogError("MasterEngine", ex, "MCP 初始化失败（不影响核心功能）");
             }
 
-            FrameworkLogger.Log("MasterEngine", "内核初始化完成");
             Signal.Event(LogGroup.Engine, "引擎就绪");
         }
 
@@ -518,7 +497,6 @@ namespace AgentCoreProcessor.Engine
                 }
                 catch (Exception ex)
                 {
-                    FrameworkLogger.LogError("MasterEngine", ex, $"SpawnCheck={check.EngineType}");
                 }
             }
 
@@ -532,7 +510,6 @@ namespace AgentCoreProcessor.Engine
                     try { engine.OnEvent(e); }
                     catch (Exception ex)
                     {
-                        FrameworkLogger.LogError("MasterEngine", ex, $"引擎 OnEvent={engine.EngineType}");
                     }
                 }
             }
@@ -592,7 +569,6 @@ namespace AgentCoreProcessor.Engine
         public ISubEngine StartEngine(ISubEngine engine)
         {
             lock (engineLock) { activeEngines.Add(engine); }
-            FrameworkLogger.Log("MasterEngine", $"引擎启动: {engine.EngineType}");
             _ = Task.Run(async () =>
             {
                 try
@@ -606,7 +582,6 @@ namespace AgentCoreProcessor.Engine
                         message = ex.Message,
                         stack = ex.StackTrace
                     });
-                    FrameworkLogger.LogError("MasterEngine", ex, $"引擎类型={engine.EngineType}");
                 }
             });
             return engine;
@@ -615,7 +590,6 @@ namespace AgentCoreProcessor.Engine
         public void RequestStopEngine(ISubEngine engine)
         {
             engine.RequestStop();
-            FrameworkLogger.Log("MasterEngine", $"请求停止引擎: {engine.EngineType}");
         }
 
         /// <summary>人设记忆种子加载：表空时从 Storage/PersonaMemorySeed.txt 导入。</summary>
@@ -651,11 +625,9 @@ namespace AgentCoreProcessor.Engine
                     loaded++;
                 }
 
-                FrameworkLogger.Log("MasterEngine", $"人设记忆种子已加载: {loaded} 条");
             }
             catch (Exception ex)
             {
-                FrameworkLogger.Log("MasterEngine", $"人设记忆种子加载失败: {ex.Message}");
             }
         }
 
@@ -689,7 +661,6 @@ namespace AgentCoreProcessor.Engine
             if (globalComponentHost != null)
             {
                 await globalComponentHost.ShutdownAsync(ShutdownReason.Destroy);
-                FrameworkLogger.Log("MasterEngine", "GlobalComponentHost 已关闭");
             }
         }
     }

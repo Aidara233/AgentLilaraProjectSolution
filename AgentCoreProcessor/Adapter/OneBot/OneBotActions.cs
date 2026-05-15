@@ -33,7 +33,6 @@ namespace AgentCoreProcessor.Adapter
             }
             else
             {
-                FrameworkLogger.Log("OneBotActions", $"无法识别的 ChannelId 格式: {message.ChannelId}");
                 return null;
             }
 
@@ -141,8 +140,6 @@ namespace AgentCoreProcessor.Adapter
             {
                 if (resp["retcode"]?.Value<int>() != 0)
                 {
-                    FrameworkLogger.Log("OneBotActions",
-                        $"发送失败: action={action}, retcode={resp["retcode"]}, msg={resp["message"]}");
                 }
                 else
                 {

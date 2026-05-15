@@ -38,9 +38,8 @@ namespace AgentCoreProcessor.Engine
                 {
                     ((Action<TEvent>)handler)(e);
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    FrameworkLogger.Log("LoopBus", $"事件处理异常: {type.Name} - {ex.Message}");
                 }
             }
         }

@@ -96,7 +96,6 @@ namespace AgentCoreProcessor.Adapter
                 connectionState = AdapterConnectionState.Reconnecting;
                 lastError = ex.Message;
                 lastErrorAt = DateTime.Now;
-                FrameworkLogger.Log("OneBotAdapter", $"首次连接失败（将在后台重连）: {ex.Message}");
             }
 
             receiveTask = RunReceiveLoopWithReconnectAsync(cts.Token);
@@ -106,11 +105,9 @@ namespace AgentCoreProcessor.Adapter
                 try
                 {
                     selfId = await GetSelfIdAsync();
-                    FrameworkLogger.Log("OneBotAdapter", $"已连接，selfId={selfId}");
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    FrameworkLogger.Log("OneBotAdapter", $"获取 selfId 失败: {ex.Message}");
                 }
             }
         }
@@ -138,7 +135,6 @@ namespace AgentCoreProcessor.Adapter
             ws = null;
 
             connectionState = AdapterConnectionState.Stopped;
-            FrameworkLogger.Log("OneBotAdapter", "已停止");
         }
 
         public Task ReloadConfigAsync()
@@ -151,11 +147,6 @@ namespace AgentCoreProcessor.Adapter
 
             bool connectionChanged = newConfig.WsUrl != config.WsUrl || newConfig.Token != config.Token;
             config = newConfig;
-            FrameworkLogger.Log("OneBotAdapter",
-                $"配置已重载: filterMode={config.FilterMode}, whitelist=[{string.Join(",", config.Whitelist)}]");
-
-            if (connectionChanged)
-                FrameworkLogger.Log("OneBotAdapter", "WsUrl 或 Token 已变更，需要重启适配器才能生效");
 
             return Task.CompletedTask;
         }
@@ -231,13 +222,11 @@ namespace AgentCoreProcessor.Adapter
                 }
                 catch (Exception ex)
                 {
-                    FrameworkLogger.Log("OneBotAdapter", $"连接断开: {ex.Message}");
                 }
 
                 if (ct.IsCancellationRequested) break;
 
                 connectionState = AdapterConnectionState.Reconnecting;
-                FrameworkLogger.Log("OneBotAdapter", $"将在 {reconnectDelayMs}ms 后重连...");
                 try
                 {
                     await Task.Delay(reconnectDelayMs, ct);
@@ -251,7 +240,6 @@ namespace AgentCoreProcessor.Adapter
                     catch { selfId = 0; }
                     connectionState = AdapterConnectionState.Connected;
                     reconnectCount++;
-                    FrameworkLogger.Log("OneBotAdapter", $"重连成功，selfId={selfId}");
                     reconnectDelayMs = 1000;
                 }
                 catch (OperationCanceledException) { break; }
@@ -259,7 +247,6 @@ namespace AgentCoreProcessor.Adapter
                 {
                     lastError = ex.Message;
                     lastErrorAt = DateTime.Now;
-                    FrameworkLogger.Log("OneBotAdapter", $"重连失败: {ex.Message}");
                     reconnectDelayMs = Math.Min(reconnectDelayMs * 2, MaxReconnectDelayMs);
                 }
             }
@@ -307,7 +294,6 @@ namespace AgentCoreProcessor.Adapter
             if (postType != null && postType != "meta_event")
             {
                 var raw = data.ToString(Formatting.None);
-                FrameworkLogger.Log("OneBotAdapter", $"收到事件: post_type={postType}, {raw[..Math.Min(200, raw.Length)]}");
             }
 
             var msg = await parser.HandleEventAsync(data);
@@ -347,7 +333,6 @@ namespace AgentCoreProcessor.Adapter
                     return await tcs.Task;
 
                 pendingCalls.TryRemove(echo, out _);
-                FrameworkLogger.Log("OneBotAdapter", $"API 调用超时: {action}");
                 return null;
             }
             catch

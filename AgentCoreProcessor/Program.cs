@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
@@ -46,10 +46,6 @@ namespace AgentCoreProcessor
             var qqMode = Array.Exists(args, a => a == "--qq");
             var testSend = Array.Exists(args, a => a == "--test-send");
             var muteMode = Array.Exists(args, a => a == "--mute");
-
-            // --test 模式启用日志镜像到控制台
-            if (testMode)
-                FrameworkLogger.MirrorToConsole = true;
 
             // 事件总线
             var eventBus = new EventBus();
@@ -355,7 +351,6 @@ namespace AgentCoreProcessor
             // 适配器后台启动（ConsoleAdapter.StartAsync 会阻塞，不能 await）
             _ = Task.Run(() => adapterManager.StartAllAsync(debugMode: false));
 
-            FrameworkLogger.Log("Program", $"WebUI 已启动: http://localhost:{webConfig.Port}");
             Console.WriteLine($"[WebUI] 管理面板: http://localhost:{webConfig.Port}");
 
             await app.RunAsync();

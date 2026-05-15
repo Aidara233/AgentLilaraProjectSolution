@@ -37,7 +37,6 @@ namespace AgentCoreProcessor.Engine
                 .Select(kv => kv.Key).ToList();
             foreach (var key in expired)
             {
-                FrameworkLogger.Log("Command", $"会话超时: {key}");
                 _sessions.Remove(key);
             }
             return Task.CompletedTask;
@@ -94,8 +93,6 @@ namespace AgentCoreProcessor.Engine
             // 权限检查
             if (user.PermissionLevel < command.RequiredPermission)
             {
-                FrameworkLogger.Log("Command",
-                    $"权限不足: /{name} 需要 {command.RequiredPermission}，用户 {user.PlatformId} 为 {user.PermissionLevel}");
                 await Reply(ctx, msgEvent.Message,
                     $"权限不足: /{name} 需要 {command.RequiredPermission} 权限。");
                 e.Consumed = true;
@@ -122,7 +119,6 @@ namespace AgentCoreProcessor.Engine
                 };
                 _sessions[sessionKey] = newSession;
                 await Reply(ctx, msgEvent.Message, FormatStepPrompt(interactive.Steps[0]));
-                FrameworkLogger.Log("Command", $"交互会话开始: /{name} user={user.PlatformId}");
                 e.Consumed = true;
                 return false;
             }
@@ -133,13 +129,10 @@ namespace AgentCoreProcessor.Engine
                 var result = await command.ExecuteAsync(args, context);
                 if (!string.IsNullOrEmpty(result.Response))
                     await Reply(ctx, msgEvent.Message, result.Response);
-                FrameworkLogger.Log("Command",
-                    $"/{name} user={user.PlatformId} success={result.Success}");
             }
             catch (Exception ex)
             {
                 await Reply(ctx, msgEvent.Message, $"命令异常: {ex.Message}");
-                FrameworkLogger.Log("Command", $"/{name} 异常: {ex.Message}");
             }
 
             e.Consumed = true;
@@ -198,14 +191,10 @@ namespace AgentCoreProcessor.Engine
                     session.Data, session.Context);
                 if (!string.IsNullOrEmpty(result.Response))
                     await Reply(ctx, msg, result.Response);
-                FrameworkLogger.Log("Command",
-                    $"交互完成: /{session.Command.Name} success={result.Success}");
             }
             catch (Exception ex)
             {
                 await Reply(ctx, msg, $"命令异常: {ex.Message}");
-                FrameworkLogger.Log("Command",
-                    $"交互异常: /{session.Command.Name} - {ex.Message}");
             }
         }
 

@@ -75,8 +75,6 @@ namespace AgentCoreProcessor.Core
             float maxSim = sims.Max();
             int bestIdx = sims.IndexOf(maxSim);
 
-            FrameworkLogger.Log("Preprocessing",
-                $"分类得分: maxSim={maxSim:F3} bestAnchor=\"{TaskAnchors[bestIdx]}\" threshold={TaskThreshold}");
 
             return maxSim > TaskThreshold;
         }

@@ -23,8 +23,6 @@ namespace AgentCoreProcessor.Engine
                 {
                     lastDeathTime = DateTime.Now;
                     restartCount++;
-                    FrameworkLogger.Log("SystemEngineSpawnCheck",
-                        $"SystemEngine 已死亡，等待自动重启 (第 {restartCount} 次)");
                 }
                 activeInstance = null;
             }
@@ -52,8 +50,6 @@ namespace AgentCoreProcessor.Engine
                 var elapsed = (DateTime.Now - lastDeathTime.Value).TotalSeconds;
                 if (elapsed >= 10)
                 {
-                    FrameworkLogger.Log("SystemEngineSpawnCheck",
-                        $"自动重启 SystemEngine (死亡 {elapsed:F0}s 后)");
                     lastDeathTime = null;
                     return Task.FromResult(true);
                 }

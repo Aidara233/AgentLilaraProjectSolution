@@ -65,7 +65,6 @@ namespace AgentCoreProcessor.Engine
             PersistQueue();
             OnTaskSubmitted?.Invoke();
 
-            FrameworkLogger.Log("TaskBridge", $"任务已提交: {task.TaskId} from channel {task.SourceChannelId}");
 
             // 等待结果或超时
             using var cts = new CancellationTokenSource(timeout);
@@ -108,7 +107,6 @@ namespace AgentCoreProcessor.Engine
             await taskQueue.Writer.WriteAsync(task);
             PersistQueue();
             OnTaskSubmitted?.Invoke();
-            FrameworkLogger.Log("TaskBridge", $"任务已异步提交: {task.TaskId} from channel {task.SourceChannelId}");
         }
 
         /// <summary>
@@ -120,11 +118,9 @@ namespace AgentCoreProcessor.Engine
             {
                 tcs.SetResult(result);
                 PersistQueue();
-                FrameworkLogger.Log("TaskBridge", $"任务已完成: {taskId}");
             }
             else
             {
-                FrameworkLogger.Log("TaskBridge", $"警告: 尝试完成不存在的任务 {taskId}");
             }
         }
 
@@ -134,7 +130,6 @@ namespace AgentCoreProcessor.Engine
         public void PostNotification(Notification notification)
         {
             notificationQueue.Writer.TryWrite(notification);
-            FrameworkLogger.Log("TaskBridge", $"通知已发送: {notification.Type} from {notification.SourceId}");
         }
 
         /// <summary>
@@ -186,7 +181,6 @@ namespace AgentCoreProcessor.Engine
                 }
                 catch (Exception ex)
                 {
-                    FrameworkLogger.Log("TaskBridge", $"持久化失败: {ex.Message}");
                 }
             }
         }
@@ -204,11 +198,9 @@ namespace AgentCoreProcessor.Engine
                 var data = JsonSerializer.Deserialize<Dictionary<string, object>>(json);
                 // 注意：重启后任务 ID 会被加载，但实际任务对象已丢失
                 // 系统循环重启时会清理这些孤儿任务
-                FrameworkLogger.Log("TaskBridge", "任务队列已从持久化文件恢复");
             }
             catch (Exception ex)
             {
-                FrameworkLogger.Log("TaskBridge", $"加载持久化文件失败: {ex.Message}");
             }
         }
     }

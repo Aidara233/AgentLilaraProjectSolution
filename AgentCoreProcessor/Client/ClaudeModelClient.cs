@@ -349,10 +349,6 @@ namespace AgentCoreProcessor.Client
                 });
 
                 // web search 活动日志
-                if (resp.ContentBlock?.Type == "server_tool_use" && resp.ContentBlock?.Name == "web_search")
-                    Engine.FrameworkLogger.Log("WebSearch", "Claude 发起搜索...");
-                if (resp.ContentBlock?.Type == "web_search_tool_result")
-                    Engine.FrameworkLogger.Log("WebSearch", "搜索结果已返回");
             }
 
             // 兜底 usage（如果流没有发）

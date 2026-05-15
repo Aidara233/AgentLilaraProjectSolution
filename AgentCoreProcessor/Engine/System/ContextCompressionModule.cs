@@ -54,12 +54,9 @@ namespace AgentCoreProcessor.Engine.Modules
             var toCompress = fullHistory.Take(fullHistory.Count - RecentRoundsToKeep).ToList();
             keptMessages = fullHistory.TakeLast(RecentRoundsToKeep).ToList();
 
-            FrameworkLogger.Log("ContextCompression",
-                $"压缩 {toCompress.Count} 条消息, 保留 {keptMessages.Count} 条");
 
             currentSummary = await summarizationCore.SummarizeContextAsync(toCompress, currentSummary);
 
-            FrameworkLogger.Log("ContextCompression", "压缩完成");
         }
 
         public override string? BuildPromptSection(EngineMode mode)
