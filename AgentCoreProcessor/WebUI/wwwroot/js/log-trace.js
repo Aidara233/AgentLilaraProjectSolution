@@ -389,6 +389,20 @@ function renderNodes(svg, rows, meta, columns) {
 function renderTextRows(textEl, rows) {
     textEl.innerHTML = '';
 
+    // Add a header spacer to align with the graph column header
+    const headerSpacer = document.createElement('div');
+    headerSpacer.className = 'log-trace-header';
+    headerSpacer.style.borderBottom = '1px solid var(--vis-col-separator)';
+    const timeLabel = document.createElement('span');
+    timeLabel.style.cssText = 'width:80px;flex-shrink:0;font-size:12px;color:var(--vis-text-dim);';
+    timeLabel.textContent = '时间';
+    const nameLabel = document.createElement('span');
+    nameLabel.style.cssText = 'flex:1;font-size:12px;color:var(--vis-text-dim);padding-left:0.5rem;';
+    nameLabel.textContent = '事件';
+    headerSpacer.appendChild(timeLabel);
+    headerSpacer.appendChild(nameLabel);
+    textEl.appendChild(headerSpacer);
+
     for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
         const div = document.createElement('div');
@@ -576,6 +590,130 @@ function setupInteraction(graphEl, textEl, bodyEl) {
     });
 }
 
+// --- Context menu ---
+
+function setupContextMenu(graphEl, textEl) {
+    let menu = null;
+
+    function showMenu(e, rowIdx) {
+        e.preventDefault();
+        hideMenu();
+        const row = state.rows[rowIdx];
+        if (!row) return;
+
+        menu = document.createElement('div');
+        menu.className = 'trace-context-menu';
+
+        const items = [];
+        items.push({ label: '查看此信号', icon: 'bi-diagram-3', action: () => filterSignal(row.signalId) });
+
+        if ((row.type === 'open' || row.type === 'close') && row.spanId) {
+            const pairType = row.type === 'open' ? 'close' : 'open';
+            const pair = state.rows.findIndex(r => r.spanId === row.spanId && r.type === pairType);
+            if (pair >= 0) {
+                items.push({ label: '定位配对节点', icon: 'bi-arrow-left-right', action: () => scrollToRow(pair) });
+            }
+        }
+
+        if (row.parentId != null) {
+            const parentIdx = state.rows.findIndex(r => r.id === row.parentId);
+            if (parentIdx >= 0) {
+                items.push({ label: '跳转到父节点', icon: 'bi-arrow-up', action: () => scrollToRow(parentIdx) });
+            }
+        }
+
+        items.push({ sep: true });
+        items.push({ label: '复制详情', icon: 'bi-clipboard', action: () => copyDetail(row) });
+
+        for (const item of items) {
+            if (item.sep) {
+                const sep = document.createElement('div');
+                sep.className = 'menu-sep';
+                menu.appendChild(sep);
+            } else {
+                const div = document.createElement('div');
+                div.className = 'menu-item';
+                div.innerHTML = `<i class="bi ${item.icon}"></i>${item.label}`;
+                div.addEventListener('click', () => { item.action(); hideMenu(); });
+                menu.appendChild(div);
+            }
+        }
+
+        // Position menu
+        menu.style.left = e.clientX + 'px';
+        menu.style.top = e.clientY + 'px';
+        document.body.appendChild(menu);
+
+        // Adjust if off-screen
+        requestAnimationFrame(() => {
+            if (!menu) return;
+            const rect = menu.getBoundingClientRect();
+            if (rect.right > window.innerWidth) menu.style.left = (e.clientX - rect.width) + 'px';
+            if (rect.bottom > window.innerHeight) menu.style.top = (e.clientY - rect.height) + 'px';
+        });
+    }
+
+    function hideMenu() {
+        if (menu) { menu.remove(); menu = null; }
+    }
+
+    function scrollToRow(rowIdx) {
+        const y = rowIdx * ROW_HEIGHT - state.graphEl.clientHeight / 2;
+        state.graphEl.scrollTop = Math.max(0, y);
+        state.textEl.scrollTop = Math.max(0, y);
+        // Flash highlight
+        const textRow = state.textEl.querySelector(`[data-row="${rowIdx}"]`);
+        if (textRow) {
+            textRow.style.background = 'rgba(96,165,250,0.2)';
+            setTimeout(() => { textRow.style.background = ''; }, 1500);
+        }
+    }
+
+    function filterSignal(signalId) {
+        // Find the select element and change its value, then trigger change
+        const select = document.querySelector('.log-trace-toolbar select');
+        if (select) {
+            // Find option matching this signalId
+            for (const opt of select.options) {
+                if (opt.value === signalId) {
+                    select.value = signalId;
+                    select.dispatchEvent(new Event('change', { bubbles: true }));
+                    return;
+                }
+            }
+        }
+    }
+
+    function copyDetail(row) {
+        const text = row.detail || row.name || '';
+        navigator.clipboard.writeText(text).catch(() => {});
+    }
+
+    // Bind right-click on graph nodes
+    graphEl.addEventListener('contextmenu', e => {
+        const node = e.target.closest('.node');
+        if (!node) return;
+        const id = parseInt(node.dataset.id);
+        if (isNaN(id)) return;
+        const ri = state.rows.findIndex(r => r.id === id);
+        if (ri >= 0) showMenu(e, ri);
+    });
+
+    // Bind right-click on text rows
+    textEl.addEventListener('contextmenu', e => {
+        const row = e.target.closest('.trace-text-row');
+        if (!row) return;
+        const ri = parseInt(row.dataset.row);
+        if (!isNaN(ri)) showMenu(e, ri);
+    });
+
+    // Close on click anywhere
+    document.addEventListener('click', hideMenu);
+    document.addEventListener('contextmenu', e => {
+        if (!e.target.closest('.node') && !e.target.closest('.trace-text-row')) hideMenu();
+    });
+}
+
 // --- Exported functions ---
 
 export function renderTrace(graphEl, textEl, bodyEl, scopes, rows) {
@@ -609,6 +747,7 @@ export function renderTrace(graphEl, textEl, bodyEl, scopes, rows) {
     renderTextRows(textEl, rows);
     setupScrollSync(graphEl, textEl);
     setupInteraction(graphEl, textEl, bodyEl);
+    setupContextMenu(graphEl, textEl);
 }
 
 export function appendRow(row, autoScroll) {

@@ -24,6 +24,25 @@
             <option value="3">仅 Error</option>
         </select>
 
+        <div class="dropdown">
+            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button"
+                    data-bs-toggle="dropdown" aria-expanded="false"
+                    disabled="@(_allScopes.Count == 0)">
+                Scope @(_hiddenScopes.Count > 0 ? $"(-{_hiddenScopes.Count})" : "")
+            </button>
+            <div class="dropdown-menu p-2" style="min-width:200px;max-height:300px;overflow-y:auto;">
+                @foreach (var scope in _allScopes)
+                {
+                    var s = scope;
+                    <label class="dropdown-item d-flex align-items-center gap-2 py-1" style="cursor:pointer;font-size:13px;">
+                        <input type="checkbox" checked="@(!_hiddenScopes.Contains(s))"
+                               @onchange="e => ToggleScope(s, (bool)e.Value!)" />
+                        @FormatScopeName(s)
+                    </label>
+                }
+            </div>
+        </div>
+
         <button class="btn btn-sm @(_showOpenOnly ? "btn-danger" : "btn-outline-secondary")"
                 @onclick="ToggleOpenOnly" title="仅显示未关闭 span">
             <i class="bi bi-exclamation-circle"></i> 仅卡住
@@ -59,6 +78,8 @@
     private bool _autoScroll = true;
     private List<SignalSummary> _signals = new();
     private TraceViewModel? _trace;
+    private HashSet<string> _hiddenScopes = new();
+    private List<string> _allScopes = new();
 
     private ElementReference _bodyRef;
     private ElementReference _graphRef;
@@ -85,6 +106,12 @@
         _trace = string.IsNullOrEmpty(_selectedSignal)
             ? TraceService.GetRecentTrace(500, filter)
             : TraceService.GetTrace(_selectedSignal, filter);
+        // Update available scopes (before filtering by scope)
+        var unfilteredScopes = string.IsNullOrEmpty(_selectedSignal)
+            ? TraceService.GetRecentTrace(500)
+            : TraceService.GetTrace(_selectedSignal);
+        _allScopes = unfilteredScopes.Scopes;
+        _hiddenScopes.RemoveWhere(s => !_allScopes.Contains(s));
         await RenderGraph();
     }
 
@@ -96,6 +123,13 @@
     private async Task ToggleOpenOnly()
     {
         _showOpenOnly = !_showOpenOnly;
+        await ApplyFilters();
+    }
+
+    private async Task ToggleScope(string scope, bool visible)
+    {
+        if (visible) _hiddenScopes.Remove(scope);
+        else _hiddenScopes.Add(scope);
         await ApplyFilters();
     }
 
@@ -117,9 +151,16 @@
     private TraceFilter BuildFilter() => new()
     {
         MinLevel = _minLevel,
-        VisibleScopes = null,
+        VisibleScopes = _hiddenScopes.Count > 0 ? _allScopes.Except(_hiddenScopes).ToHashSet() : null,
         OpenSpansOnly = _showOpenOnly
     };
+
+    private static string FormatScopeName(string scope)
+    {
+        if (scope.StartsWith("channel:")) return scope[8..];
+        if (scope.StartsWith("adapter:")) return scope[8..];
+        return scope;
+    }
 
     private static string FormatSignalOption(SignalSummary sig)
     {
