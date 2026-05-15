@@ -77,22 +77,28 @@ public class LogDatabase : IDisposable
         var exists = (long)check.ExecuteScalar()! > 0;
         if (!exists) return;
 
-        using var typeCheck = _conn.CreateCommand();
-        typeCheck.CommandText = "PRAGMA table_info(events)";
-        using var reader = typeCheck.ExecuteReader();
-        while (reader.Read())
+        bool needsDrop = false;
+        using (var typeCheck = _conn.CreateCommand())
         {
-            if (reader.GetString(1) == "parent_id")
+            typeCheck.CommandText = "PRAGMA table_info(events)";
+            using var reader = typeCheck.ExecuteReader();
+            while (reader.Read())
             {
-                var colType = reader.GetString(2).ToUpperInvariant();
-                if (colType == "INTEGER" || colType == "")
+                if (reader.GetString(1) == "parent_id")
                 {
-                    using var drop = _conn.CreateCommand();
-                    drop.CommandText = "DROP TABLE events";
-                    drop.ExecuteNonQuery();
+                    var colType = reader.GetString(2).ToUpperInvariant();
+                    if (colType == "INTEGER" || colType == "")
+                        needsDrop = true;
+                    break;
                 }
-                break;
             }
+        }
+
+        if (needsDrop)
+        {
+            using var drop = _conn.CreateCommand();
+            drop.CommandText = "DROP TABLE events";
+            drop.ExecuteNonQuery();
         }
     }
 
