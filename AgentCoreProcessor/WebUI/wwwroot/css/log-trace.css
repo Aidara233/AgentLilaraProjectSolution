@@ -1,0 +1,205 @@
+/* log-trace.css — 信号追踪可视化 */
+:root {
+    --vis-ok: #3ecf8e;
+    --vis-error: #ef4444;
+    --vis-info: #60a5fa;
+    --vis-debug: #6b7280;
+    --vis-warn: #f5a623;
+    --vis-line: #4b5068;
+    --vis-line-cross: rgba(124,130,152,0.5);
+    --vis-text: #cdd2dc;
+    --vis-text-dim: #949ab0;
+    --vis-bg: #161922;
+    --vis-node-size: 9px;
+    --vis-line-width: 1.5px;
+    --vis-row-height: 26px;
+    --vis-slot-width: 14px;
+    --vis-col-separator: rgba(75,80,104,0.3);
+}
+
+[data-theme="light"] {
+    --vis-ok: #16a34a;
+    --vis-error: #dc2626;
+    --vis-info: #2563eb;
+    --vis-debug: #9ca3af;
+    --vis-warn: #d97706;
+    --vis-line: #d1d5db;
+    --vis-line-cross: rgba(156,163,175,0.6);
+    --vis-text: #374151;
+    --vis-text-dim: #6b7280;
+    --vis-bg: #ffffff;
+    --vis-col-separator: rgba(209,213,219,0.5);
+}
+
+.log-trace-page {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.log-trace-toolbar {
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+}
+
+.log-trace-body {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+.log-trace-graph {
+    flex-shrink: 0;
+    overflow-x: auto;
+    overflow-y: auto;
+    position: relative;
+    background: var(--vis-bg);
+}
+
+.log-trace-text {
+    flex: 1;
+    overflow-y: auto;
+    min-width: 300px;
+    border-left: 1px solid var(--border);
+}
+
+.log-trace-header {
+    display: flex;
+    border-bottom: 1px solid var(--vis-col-separator);
+    padding: 0.4rem 0;
+    font-size: 12px;
+    color: var(--vis-text-dim);
+    position: sticky;
+    top: 0;
+    background: var(--vis-bg);
+    z-index: 10;
+}
+
+.log-trace-col-header {
+    text-align: center;
+    flex-shrink: 0;
+    border-right: 1px dashed var(--vis-col-separator);
+    padding: 0 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.trace-row {
+    display: flex;
+    align-items: center;
+    height: var(--vis-row-height);
+    position: relative;
+    cursor: pointer;
+}
+
+.trace-row:hover {
+    background: rgba(255,255,255,0.03);
+}
+
+.trace-text-row {
+    height: var(--vis-row-height);
+    display: flex;
+    align-items: center;
+    padding: 0 0.75rem;
+    font-size: 13px;
+    color: var(--vis-text);
+    cursor: pointer;
+}
+
+.trace-text-row:hover {
+    background: rgba(255,255,255,0.03);
+}
+
+.trace-text-row .time {
+    width: 80px;
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--vis-text-dim);
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+}
+
+.trace-text-row .name {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.trace-text-row .tag {
+    font-size: 11px;
+    color: var(--vis-text-dim);
+    margin-left: 0.5rem;
+}
+
+.trace-text-row .dur {
+    font-size: 11px;
+    color: var(--vis-ok);
+    margin-left: 0.5rem;
+}
+
+/* Hover dim */
+.log-trace-body.has-hover .trace-row.dimmed,
+.log-trace-body.has-hover .trace-text-row.dimmed {
+    opacity: 0.15;
+}
+
+.log-trace-body.has-hover svg .v-line.dimmed,
+.log-trace-body.has-hover svg .node.dimmed {
+    opacity: 0.15;
+}
+
+.log-trace-body.has-hover svg .cross-line.dimmed {
+    opacity: 0.12;
+}
+
+.trace-row, .trace-text-row, svg .v-line, svg .node, svg .cross-line {
+    transition: opacity 0.15s;
+}
+
+/* Context menu */
+.trace-context-menu {
+    position: fixed;
+    z-index: 1000;
+    background: var(--vis-bg);
+    border: 1px solid var(--vis-col-separator);
+    border-radius: 6px;
+    padding: 4px 0;
+    min-width: 160px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    font-size: 13px;
+}
+
+.trace-context-menu .menu-item {
+    padding: 6px 12px;
+    cursor: pointer;
+    color: var(--vis-text);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.trace-context-menu .menu-item:hover {
+    background: rgba(255,255,255,0.06);
+}
+
+.trace-context-menu .menu-sep {
+    height: 1px;
+    background: var(--vis-col-separator);
+    margin: 4px 0;
+}
+
+/* Empty state */
+.log-trace-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--vis-text-dim);
+    font-size: 14px;
+}

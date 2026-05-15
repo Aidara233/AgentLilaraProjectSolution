@@ -82,6 +82,7 @@ namespace AgentCoreProcessor
             var providerRegistry = new AgentCoreProcessor.WebUI.Shell.ProviderRegistry();
             engine.ProviderRegistry = providerRegistry;
             providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.TestProvider(), builtIn: true);
+            providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.LogTraceProvider(), builtIn: true);
 
             // 初始化数据库（建表 + Repository）+ 订阅事件总线
             try
@@ -300,6 +301,8 @@ namespace AgentCoreProcessor
             builder.Services.AddSingleton<WebUI.Services.ModelLogService>();
             builder.Services.AddSingleton(sp =>
                 new WebUI.Services.TokenStatsService(engine.ModelCallLogs));
+            builder.Services.AddScoped<AgentCoreProcessor.WebUI.Services.LogTraceService>(
+                sp => new AgentCoreProcessor.WebUI.Services.LogTraceService(logQuery));
             builder.Services.AddSingleton(providerRegistry);
             Signal.Event(LogGroup.Engine, "服务注册完成");
 

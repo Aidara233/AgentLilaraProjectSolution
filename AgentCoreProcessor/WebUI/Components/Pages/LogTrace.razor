@@ -1,0 +1,139 @@
+@page "/logs/trace"
+@page "/p/logs/trace"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using AgentCoreProcessor.WebUI.Services
+@using Microsoft.JSInterop
+@inject LogTraceService TraceService
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div class="log-trace-page">
+    <div class="log-trace-toolbar">
+        <select class="form-select form-select-sm" style="width:auto;max-width:280px;" @bind="_selectedSignal" @bind:after="LoadTrace">
+            <option value="">最近事件</option>
+            @foreach (var sig in _signals)
+            {
+                <option value="@sig.SignalId">@FormatSignalOption(sig)</option>
+            }
+        </select>
+
+        <select class="form-select form-select-sm" style="width:auto;" @bind="_minLevel" @bind:after="ApplyFilters">
+            <option value="0">全部级别</option>
+            <option value="1">Info+</option>
+            <option value="2">Warn+</option>
+            <option value="3">仅 Error</option>
+        </select>
+
+        <button class="btn btn-sm @(_showOpenOnly ? "btn-danger" : "btn-outline-secondary")"
+                @onclick="ToggleOpenOnly" title="仅显示未关闭 span">
+            <i class="bi bi-exclamation-circle"></i> 仅卡住
+        </button>
+
+        <button class="btn btn-sm @(_paused ? "btn-warning" : "btn-outline-secondary")"
+                @onclick="TogglePause">
+            <i class="bi @(_paused ? "bi-play-fill" : "bi-pause-fill")"></i>
+            @(_paused ? "继续" : "暂停")
+        </button>
+
+        <button class="btn btn-sm @(_autoScroll ? "btn-info" : "btn-outline-secondary")"
+                @onclick="() => _autoScroll = !_autoScroll" title="自动滚动到底部">
+            <i class="bi bi-arrow-down-circle"></i>
+        </button>
+
+        <button class="btn btn-sm btn-outline-secondary" @onclick="Refresh" title="刷新">
+            <i class="bi bi-arrow-clockwise"></i>
+        </button>
+    </div>
+
+    <div class="log-trace-body" @ref="_bodyRef">
+        <div class="log-trace-graph" @ref="_graphRef"></div>
+        <div class="log-trace-text" @ref="_textRef"></div>
+    </div>
+</div>
+
+@code {
+    private string _selectedSignal = "";
+    private int _minLevel = 0;
+    private bool _showOpenOnly = false;
+    private bool _paused = false;
+    private bool _autoScroll = true;
+    private List<SignalSummary> _signals = new();
+    private TraceViewModel? _trace;
+
+    private ElementReference _bodyRef;
+    private ElementReference _graphRef;
+    private ElementReference _textRef;
+    private IJSObjectReference? _jsModule;
+
+    protected override void OnInitialized()
+    {
+        _signals = TraceService.GetSignalList(50);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _jsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/log-trace.js");
+            await LoadTrace();
+        }
+    }
+
+    private async Task LoadTrace()
+    {
+        var filter = BuildFilter();
+        _trace = string.IsNullOrEmpty(_selectedSignal)
+            ? TraceService.GetRecentTrace(500, filter)
+            : TraceService.GetTrace(_selectedSignal, filter);
+        await RenderGraph();
+    }
+
+    private async Task ApplyFilters()
+    {
+        await LoadTrace();
+    }
+
+    private async Task ToggleOpenOnly()
+    {
+        _showOpenOnly = !_showOpenOnly;
+        await ApplyFilters();
+    }
+
+    private void TogglePause() => _paused = !_paused;
+
+    private async Task Refresh()
+    {
+        _signals = TraceService.GetSignalList(50);
+        await LoadTrace();
+    }
+
+    private async Task RenderGraph()
+    {
+        if (_jsModule == null || _trace == null) return;
+        await _jsModule.InvokeVoidAsync("renderTrace",
+            _graphRef, _textRef, _bodyRef, _trace.Scopes, _trace.Rows);
+    }
+
+    private TraceFilter BuildFilter() => new()
+    {
+        MinLevel = _minLevel,
+        VisibleScopes = null,
+        OpenSpansOnly = _showOpenOnly
+    };
+
+    private static string FormatSignalOption(SignalSummary sig)
+    {
+        var time = DateTimeOffset.FromUnixTimeMilliseconds(sig.Timestamp).LocalDateTime;
+        var id = sig.SignalId.Length > 8 ? sig.SignalId[..8] : sig.SignalId;
+        return $"{time:HH:mm:ss} {sig.Name} ({id})";
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_jsModule != null)
+        {
+            try { await _jsModule.InvokeVoidAsync("dispose"); } catch { }
+            await _jsModule.DisposeAsync();
+        }
+    }
+}
