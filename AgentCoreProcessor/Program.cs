@@ -37,7 +37,7 @@ namespace AgentCoreProcessor
             var logAccess = new LogAccessImpl(logWriter, logQuery, spanTracker, logDb);
 
             SignalContext.Init(logWriter);
-            Signal.Begin(LogGroup.Engine, "system", "程序启动", new { version = "1.0.0" });
+            var startupSignal = Signal.Begin(LogGroup.Engine, "system:init", "程序启动", new { version = "1.0.0" });
             Signal.Event(LogGroup.Engine, "配置加载完成");
 
             var debug = Array.Exists(args, a => a == "--debug");
@@ -356,7 +356,7 @@ namespace AgentCoreProcessor
             await app.RunAsync();
 
             // 关闭时释放日志系统
-            Signal.Event(LogGroup.Engine, "程序关闭中");
+            startupSignal.Close(new { reason = "shutdown" });
             logWriter.Dispose();
             logDb.Dispose();
 

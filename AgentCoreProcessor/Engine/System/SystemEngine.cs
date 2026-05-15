@@ -211,7 +211,7 @@ namespace AgentCoreProcessor.Engine
                     var pendingDelegations = ctx.Delegations.GetPendingForEvaluation();
                     var retryDelegations = ctx.Delegations.GetRetryPending();
 
-                    Signal.Begin(LogGroup.Engine, "system", "系统循环轮次", new
+                    using var iterSignal = Signal.Begin(LogGroup.Engine, "system:main", "系统循环轮次", new
                     {
                         tasks = tasks.Count,
                         notifications = notifications.Count,

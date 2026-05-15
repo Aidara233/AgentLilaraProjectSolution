@@ -279,15 +279,16 @@ namespace AgentCoreProcessor.Engine
                 await componentHost.OnActivatedAsync();
 
                 // 如果没有上游注入的 SignalContext，尝试从缓冲消息的上游信号接续
+                SignalContext? iterSignal = null;
                 if (SignalContext.Current == null)
                 {
                     string? sigId, parentSpan;
                     lock (bufferLock) { sigId = _traceSignalId; parentSpan = _traceParentSpanId; }
                     if (sigId != null)
-                        Signal.Continue(sigId, parentSpan, $"channel:{channelId}", LogGroup.Engine, "频道轮次",
+                        iterSignal = Signal.Continue(sigId, parentSpan, $"channel:{channelId}", LogGroup.Engine, "频道轮次",
                             new { channelId, mode = isWorkingMode ? "working" : "express" });
                     else
-                        Signal.Begin(LogGroup.Engine, $"channel:{channelId}", "频道轮次",
+                        iterSignal = Signal.Begin(LogGroup.Engine, $"channel:{channelId}", "频道轮次",
                             new { channelId, mode = isWorkingMode ? "working" : "express" });
                 }
 
@@ -306,6 +307,7 @@ namespace AgentCoreProcessor.Engine
                 if (!prepareResult)
                 {
                     Signal.Event(LogGroup.Engine, "频道挂起", new { reason = "闸门拦截" });
+                    iterSignal?.Close();
                     await componentHost.OnPauseAsync();
                     continue;
                 }
@@ -370,6 +372,7 @@ namespace AgentCoreProcessor.Engine
                 }
                 finally
                 {
+                    iterSignal?.Close();
                     if (!isInWorkingSession)
                     {
                         Interlocked.Exchange(ref _busyFlag, 0);

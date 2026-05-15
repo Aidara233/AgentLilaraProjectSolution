@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace AgentCoreProcessor.Logging;
 
-public class SignalContext
+public class SignalContext : IDisposable
 {
     private static readonly AsyncLocal<SignalContext?> _current = new();
     private static LogWriter? _writer;
@@ -14,6 +14,10 @@ public class SignalContext
     public string Scope { get; private init; } = "";
     public long Branch { get; private set; }
     public string? CurrentSpanId { get; private set; }
+
+    private string? _rootSpanId;
+    private string? _rootGroup;
+    private bool _disposed;
 
     public static void Init(LogWriter writer, int minLevel = LogLevel.Info)
     {
@@ -38,6 +42,8 @@ public class SignalContext
         var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         ctx.Branch = ts;
         ctx.CurrentSpanId = spanId;
+        ctx._rootSpanId = spanId;
+        ctx._rootGroup = group;
 
         var evt = new LogEvent
         {
@@ -70,6 +76,8 @@ public class SignalContext
         var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         ctx.Branch = ts;
         ctx.CurrentSpanId = spanId;
+        ctx._rootSpanId = spanId;
+        ctx._rootGroup = group;
 
         var evt = new LogEvent
         {
@@ -159,6 +167,30 @@ public class SignalContext
         };
         _writer?.Enqueue(evt);
     }
+
+    public void Close(object? detail = null)
+    {
+        if (_disposed || _rootSpanId == null) return;
+        _disposed = true;
+        var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var evt = new LogEvent
+        {
+            SignalId = SignalId,
+            Scope = Scope,
+            Branch = Branch,
+            ParentId = _rootSpanId,
+            SpanId = _rootSpanId,
+            GroupName = _rootGroup!,
+            Level = LogLevel.Info,
+            Type = "close",
+            Timestamp = ts,
+            Name = "",
+            Detail = SerializeDetail(detail)
+        };
+        _writer?.EnqueueClose(evt);
+    }
+
+    public void Dispose() => Close();
 
     private static string GenerateSpanId() => Guid.NewGuid().ToString("N")[..16];
 

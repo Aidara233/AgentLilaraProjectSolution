@@ -91,10 +91,9 @@ namespace AgentCoreProcessor.Adapter
             adapter.OnMessageReceived += msg =>
             {
                 msg.AdapterId = adapter.Id;
-                // 为每条入站消息创建新 Signal，AsyncLocal 会自动传播到下游
-                Signal.Begin(
+                using var ctx = Signal.Begin(
                     LogGroup.Adapter,
-                    $"adapter:{adapter.Platform}",
+                    $"adapter:{adapter.Id}",
                     "消息接收",
                     new { adapterId = adapter.Id, platform = adapter.Platform, channelId = msg.ChannelId, userId = msg.PlatformUserId, isPrivate = msg.IsPrivate }
                 );

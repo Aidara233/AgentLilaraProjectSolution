@@ -880,14 +880,25 @@ export function renderTrace(graphEl, textEl, bodyEl, scopes, rows) {
     setupContextMenu(graphEl, textEl);
 }
 
+let _appendPending = false;
+let _appendAutoScroll = false;
+
 export function appendRow(row, autoScroll) {
-    // Stub: full re-render for now
     if (!state || !state.graphEl) return;
     state.rows.push(row);
-    renderTrace(state.graphEl, state.textEl, state.bodyEl, state.scopes, state.rows);
-    if (autoScroll && state.textEl) {
-        state.textEl.scrollTop = state.textEl.scrollHeight;
-        state.graphEl.scrollTop = state.graphEl.scrollHeight;
+    if (state.rows.length > MAX_ROWS) state.rows.shift();
+    _appendAutoScroll = _appendAutoScroll || autoScroll;
+    if (!_appendPending) {
+        _appendPending = true;
+        requestAnimationFrame(() => {
+            _appendPending = false;
+            renderTrace(state.graphEl, state.textEl, state.bodyEl, state.scopes, state.rows);
+            if (_appendAutoScroll && state.textEl) {
+                state.textEl.scrollTop = state.textEl.scrollHeight;
+                state.graphEl.scrollTop = state.graphEl.scrollHeight;
+            }
+            _appendAutoScroll = false;
+        });
     }
 }
 
