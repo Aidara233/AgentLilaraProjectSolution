@@ -12,21 +12,48 @@ Prerequisite: read `signal-logging-guide.md` for API usage.
 
 ## Signal Boundaries (Signal.Begin)
 
-Call `Signal.Begin` when a new causal chain starts — something whose upstream is either external or unpredictable:
+`Signal.Begin` is ONLY for when causality enters the process from outside. "Outside" means: not traceable to any existing SignalContext.
+
+This happens in exactly two cases:
+1. **Network I/O arrives** — WebSocket frame, HTTP request (adapter receives message)
+2. **OS clock fires** — Timer elapsed, heartbeat tick (no prior async context)
 
 | Trigger | Scope | Example |
 |---------|-------|---------|
 | External message arrives | `adapter:{adapterId}` | OneBotAdapter receives WS event |
 | Timer/heartbeat fires | `timer:{engineId}` | TimerEngine tick |
-| Engine starts running | `system:{engineId}`, `dream:{engineId}`, `vision:{engineId}` | SystemEngine loop begins |
-| Channel engine activated | `channel:{channelId}` | ChannelEngine.RunAsync starts |
-| Sub-agent spawned | `subagent:{sessionId}` | TaskSession begins execution |
 
-After `Signal.Begin`, everything downstream in the same async context automatically belongs to that signal.
+**Everything else uses `Signal.Continue`** — engines, sub-agents, and channels are activated BY something that already has a signal. They continue that signal, not start a new one.
 
-Use `Signal.Continue` when execution crosses to a different owner:
-- Adapter receives message → publishes to EventBus → ChannelEngine picks it up with `Continue`
-- SystemEngine spawns sub-agent → sub-agent starts with `Continue`
+| Continuation | Scope | Gets trace from |
+|-------------|-------|-----------------|
+| ChannelEngine wakes | `channel:{channelId}` | EngineEvent.TraceSignalId (from adapter) |
+| SystemEngine processes task | `system:{engineId}` | SystemTask.TraceSignalId (from channel) |
+| Sub-agent spawned | `subagent:{sessionId}` | Delegation.TraceSignalId (from channel) |
+| DreamEngine starts | `dream:{engineId}` | EngineEvent.TraceSignalId (from timer) |
+| VisionEngine processes | `vision:{engineId}` | (internal queue, Begin as fallback) |
+
+## Trace Propagation Across Async Boundaries
+
+AsyncLocal breaks when work crosses Task boundaries (producer-consumer queues, gate signals). The solution: data carriers hold trace metadata.
+
+**Already instrumented carriers:**
+- `EngineEvent.TraceSignalId / TraceParentSpanId` — auto-captured by `EventBus.Publish`
+- `SystemTask.TraceSignalId / TraceParentSpanId` — auto-captured by `TaskBridge.SubmitTaskAsync`
+- `Notification.TraceSignalId / TraceParentSpanId` — auto-captured by `TaskBridge.PostNotification`
+- `Delegation.TraceSignalId / TraceParentSpanId` — auto-captured by `DelegationRegistry.Submit`
+
+**Consumer pattern:**
+```csharp
+// When waking up to process work from a queue:
+if (SignalContext.Current == null && carrier.TraceSignalId != null)
+    Signal.Continue(carrier.TraceSignalId, carrier.TraceParentSpanId,
+        $"myengine:{myId}", LogGroup.Engine, "operation name", new { ... });
+else if (SignalContext.Current == null)
+    Signal.Begin(...); // Fallback: truly no upstream (shouldn't happen normally)
+```
+
+**When adding new cross-boundary carriers:** add `TraceSignalId` and `TraceParentSpanId` string? fields, capture at submit time via `SignalContext.Current`, and Continue at consume time.
 
 ## Span Placement (Signal.Open)
 
