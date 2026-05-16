@@ -148,6 +148,7 @@ namespace AgentCoreProcessor.Engine
         // 信号追踪：最近入队消息携带的上游信号
         private string? _traceSignalId;
         private string? _traceParentSpanId;
+        private string? _sessionRootSpanId; // session root span（提取 cause 指向此处，避免指向内部子 span）
 
         // 未消费的图片路径
         private readonly List<(string Path, string? Hash, string? Category)> pendingImageInfos = new();
@@ -308,6 +309,7 @@ namespace AgentCoreProcessor.Engine
                         sessionCtx = Signal.Begin(LogGroup.Engine, $"channel:{channelId}", "频道会话",
                             new { channelId, mode = isWorkingMode ? "working" : "express" });
                 }
+                _sessionRootSpanId = sessionCtx?.CurrentSpanId; // capture before sub-spans open
 
                 // ④ Gate evaluation（会话内部：决定是否开闸）
                 bool prepareResult;
@@ -1079,7 +1081,7 @@ namespace AgentCoreProcessor.Engine
             processedMessageCount += messages.Count;
             unrespondedMessageCount += messages.Count;
 
-            extractionWorker.Trigger(sc, SignalContext.Current);
+            extractionWorker.Trigger(sc, _sessionRootSpanId);
         }
 
         private async Task<List<ScoredMemory>> GetCachedMemoryAsync(SessionContext context, string query)

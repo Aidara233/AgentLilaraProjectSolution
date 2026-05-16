@@ -58,11 +58,10 @@ namespace AgentCoreProcessor.Engine
             cts?.Cancel();
         }
 
-        public void Trigger(SessionContext context, SignalContext? triggerCtx)
+        public void Trigger(SessionContext context, string? causeSpanId)
         {
             if (!channelConfig.AutoExtractionEnabled || running) return;
             running = true;
-            var causeSpanId = triggerCtx?.CurrentSpanId;
 
             _ = Task.Run(async () =>
             {
