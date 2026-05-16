@@ -9,6 +9,8 @@
 - TaskBridge 异步通信：任务队列 + 通知队列
 - 子agent系统：TaskSession 被动执行，工具白名单，禁止套娃，支持 delegationId 自动回写结果
 - 引擎容错：API 调用失败不杀循环，连续失败 exponential backoff，SystemEngine 崩溃后 SpawnCheck 自动重启
+- 优雅退出：ApplicationStopping 钩子 → 停适配器 → 停引擎（signal gate + CTS）→ 等 30s → 强杀兜底 → close startupSignal
+- 引擎生命周期信号：每个引擎 RunAsync 用 Signal.Continue 创建 lifecycle span（scope=自己），退出时 Close 带 reason
 - 上下文持久化：SystemContext.json WAL 模式
 - 上下文压缩：超过 80k tokens 触发，保留最近 5 轮 + 摘要
 - 关注列表：系统循环下发规则，频道循环语义匹配

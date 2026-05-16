@@ -172,6 +172,16 @@ Signal.Event(...)
 
 Both are `span_id` values (16-char hex GUID), generated synchronously before enqueue. The visualization builds trees from `parent_id` and cross-scope links from `cause_span_id`. A span with no close event has its vertical line terminated at the deepest descendant row (tree-based), not at page bottom.
 
+**Node color semantics (trace page):**
+
+| Color | Meaning | Condition |
+|-------|---------|-----------|
+| Green | Completed | Span has a close event |
+| Yellow | In progress | No close, but parent span also has no close (still running) |
+| Red | Anomaly/crash | No close, but parent span IS closed (or startupSignal closed) |
+
+**Graceful shutdown:** Program.cs registers `ApplicationStopping` hook → stops adapters → stops all engines → waits 30s → closes startupSignal. Engine lifecycle spans close with reason. On kill/crash, lifecycle spans stay open → red on trace page.
+
 ## Checklist for Adding Log Points
 
 1. Identify the operation boundary → use `Signal.Open` for spans, `Signal.Event` for points

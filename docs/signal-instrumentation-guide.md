@@ -27,11 +27,48 @@ This happens in exactly two cases:
 
 | Continuation | Scope | Gets trace from |
 |-------------|-------|-----------------|
+| Engine lifecycle starts | `{engine}:{id}` | SignalContext.Current (startup signal via AsyncLocal) |
 | ChannelEngine wakes | `channel:{channelId}` | EngineEvent.TraceSignalId (from adapter) |
 | SystemEngine processes task | `system:{engineId}` | SystemTask.TraceSignalId (from channel) |
 | Sub-agent spawned | `subagent:{sessionId}` | Delegation.TraceSignalId (from channel) |
 | DreamEngine starts | `dream:{engineId}` | EngineEvent.TraceSignalId (from timer) |
 | VisionEngine processes | `vision:{engineId}` | (internal queue, Begin as fallback) |
+
+## Engine Lifecycle Pattern
+
+Every engine's `RunAsync` wraps its loop in a lifecycle signal:
+
+```csharp
+public async Task RunAsync()
+{
+    var parentCtx = SignalContext.Current; // startup signal (flows via AsyncLocal)
+    var lifeCtx = Signal.Continue(
+        parentCtx?.SignalId ?? Signal.NewId(), parentCtx?.CurrentSpanId,
+        $"myengine:{myId}", LogGroup.Engine, "引擎运行",
+        new { engineType = EngineType });
+
+    try
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            // Per-iteration signals (Begin or Continue from upstream)
+            using var iterCtx = Signal.Begin(...);
+            // ... work ...
+        }
+    }
+    finally
+    {
+        lifeCtx.Close(new { engineType = EngineType, reason = "shutdown" });
+    }
+}
+```
+
+**Key points:**
+- Lifecycle uses `Continue` from startup signal → creates `cause_span_id` link (diagonal line on trace page)
+- Lifecycle span lives in the engine's own scope (not the caller's scope)
+- Per-iteration signals are independent (they replace `SignalContext.Current` but lifecycle is closed via `lifeCtx` variable)
+- On graceful shutdown: lifecycle closes with reason → green on trace page
+- On crash/kill: lifecycle never closes → red on trace page (distinguishes "crashed" from "in progress")
 
 ## Trace Propagation Across Async Boundaries
 
