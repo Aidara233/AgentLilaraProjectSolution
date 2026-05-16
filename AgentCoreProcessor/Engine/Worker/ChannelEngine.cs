@@ -344,14 +344,24 @@ namespace AgentCoreProcessor.Engine
 
                     ModelOutput output;
                     using (var modelSpan = Signal.Open(LogGroup.Model, "AI模型调用",
-                        new { mode = mode.ToString(), channelId }))
+                        new {
+                            mode = mode.ToString(),
+                            channelId,
+                            core = agentCore.CoreName,
+                            messageCount = messages.Count,
+                            messages = messages.Select(m => new { role = m.Role, content = m.Content }),
+                            imageCount = currentImageEmbeds?.Count ?? 0
+                        }))
                     {
                         output = await agentCore.InvokeAsync(messages, mode);
                         modelSpan.SetCloseDetail(new
                         {
                             isText = output.IsText,
                             hasToolCalls = output.HasToolCalls,
-                            toolCount = output.ToolCalls?.Count ?? 0
+                            toolCount = output.ToolCalls?.Count ?? 0,
+                            responseText = output.IsText ? output.Text : null,
+                            thinking = output.Thinking,
+                            toolCalls = output.ToolCalls?.Select(tc => new { tool = tc.Tool, inputs = tc.Inputs })
                         });
                     }
 
