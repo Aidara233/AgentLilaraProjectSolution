@@ -686,7 +686,9 @@ namespace AgentCoreProcessor.Engine
                 {
                     recentMsgCount = recentMessages.Count,
                     memoryCount = memoryResults.Count,
-                    hasImages = imageEmbeds.Count > 0
+                    hasImages = imageEmbeds.Count > 0,
+                    contextXml = xml,
+                    memories = memoryResults.Select(m => new { id = m.Id, content = m.Content, score = m.Score, confidence = m.Confidence, type = m.IsPersona ? "persona" : m.IsTemp ? "temp" : "fact" })
                 });
             }
         }
