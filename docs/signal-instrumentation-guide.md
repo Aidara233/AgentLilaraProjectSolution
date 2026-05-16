@@ -44,7 +44,7 @@ public async Task RunAsync()
     var parentCtx = SignalContext.Current; // startup signal (flows via AsyncLocal)
     var lifeCtx = Signal.Continue(
         parentCtx?.SignalId ?? Signal.NewId(), parentCtx?.CurrentSpanId,
-        $"myengine:{myId}", LogGroup.Engine, "引擎运行",
+        $"myengine:{myId}", LogGroup.Engine, $"{EngineType}引擎",
         new { engineType = EngineType });
 
     try
@@ -58,7 +58,7 @@ public async Task RunAsync()
     }
     finally
     {
-        lifeCtx.Close(new { engineType = EngineType, reason = "shutdown" });
+        lifeCtx.Close(new { reason = "shutdown" });
     }
 }
 ```
@@ -66,9 +66,48 @@ public async Task RunAsync()
 **Key points:**
 - Lifecycle uses `Continue` from startup signal → creates `cause_span_id` link (diagonal line on trace page)
 - Lifecycle span lives in the engine's own scope (not the caller's scope)
+- **Lifecycle name MUST include engine type**: `"Channel引擎 [群名]"`, `"System引擎"`, `"Timer引擎"` — not generic `"引擎运行"`
 - Per-iteration signals are independent (they replace `SignalContext.Current` but lifecycle is closed via `lifeCtx` variable)
 - On graceful shutdown: lifecycle closes with reason → green on trace page
 - On crash/kill: lifecycle never closes → red on trace page (distinguishes "crashed" from "in progress")
+
+## Context Restoration After Close
+
+When a `SignalContext` is closed (via `Close()` or `Dispose()`), the AsyncLocal `SignalContext.Current` still points to the disposed context. Any subsequent `Signal.Open()` calls will create spans under the closed context, polluting the trace graph.
+
+**Always restore the parent context after closing:**
+
+```csharp
+// Inside a loop that creates per-iteration contexts:
+sessionCtx.Close(new { reason = "循环挂起" });
+sessionCtx = null;
+SignalContext.Restore(lifeCtx); // ← restore parent for subsequent Signal.Open calls
+```
+
+This ensures gate evaluations, idle checks, and other between-session work appear under the lifecycle span, not the closed session span.
+
+**Close events automatically carry the open name.** `SignalContext.Close()` and `SpanHandle.Dispose()` now emit the open event's name in the close event. On the trace page, close nodes show `[完成] 频道会话` instead of blank `[完成] `. Detail fields carry supplementary data (counts, decisions, outcomes).
+
+## Channel Engine Session/Round Pattern
+
+The channel engine's loop structure is the most heavily instrumented example:
+
+```
+Channel引擎 [群名]          ← lifecycle, Continue from startup signal
+  └─ 频道会话                ← per-wakeup session, Continue from adapter signal
+       ├─ 闸门评估            ← gate inside session (not outside)
+       ├─ 处理轮次            ← one round per model interaction
+       │    ├─ 组装对话上下文
+       │    ├─ AI模型调用
+       │    └─ 执行工具
+       └─ (next round or close)
+```
+
+Key patterns:
+- Session opens BEFORE gate evaluation (gate is inside session, visually connected)
+- Session spans multiple rounds in Working mode (single vertical line)
+- Each round adds `SetCloseDetail` with outcome (mode, toolCount, hadSpeak)
+- Session close detail includes reason ("循环挂起" for pause, "cold_timeout" for exit)
 
 ## Trace Propagation Across Async Boundaries
 

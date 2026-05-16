@@ -533,17 +533,21 @@ SDK 接口: ISignalLogger (写) / ILogAccess (读写，继承 ISignalLogger)
 兼容层: FrameworkLogger 保留旧 API，底层转发 Signal（过渡期，待 WebUI 迁移后移除）
 
 信号模型:
-  Signal.Begin → 新信号（适配器收消息、定时器、冲动触发）
-  Signal.Continue → 继承信号（跨频道委托、子agent唤醒）
-  Signal.Open/Close → 操作跨度（模型调用、工具执行、闸门开关）
-  Signal.Event → 时间点日志
-  信号吸收: 频道处理中收到新消息 → 双向记录 absorbed_by
+  Signal.Begin → 新信号源◉（适配器收消息、Timer每tick独立信号）
+  Signal.Continue → 继承上游信号（引擎生命周期/频道会话，带cause_span_id斜线）
+  Signal.Open/Close → 操作跨度（闸门/轮次/模型调用/工具执行）
+  Signal.Event/Error → 时间点日志/异常
+  Close节点自动携带open的name（[完成] 处理轮次）
+  SignalContext.Restore → Close后恢复父context，防止后续Open挂到已关闭span下
 
 WebUI 日志追踪页 (/logs/trace):
   独立实现（不走卡片系统），LogTraceProvider 仅注册导航
   SVG 渲染引擎: slot分配 + 竖线/节点/斜线统一SVG
   虚拟化: 只渲染可视区±30行，rAF节流
   实时推送: 订阅 LogWriter 事件流
-  交互: 因果链高亮(parentId树) + 右键菜单 + 筛选(Level/Scope/仅卡住)
-  已知问题: parent_id 存 timestamp 非 row id，因果链碰撞风险待重设计
+  交互: 悬停高亮+详情预览 / 单击锁定详情 / 双击筛选同信号 / 右键解锁
+  文本区: 时间 / 来源(scope列) / 事件名 + 详情标签
+  Close节点自动带open名称([完成] 处理轮次)
+  列头中文显示(频道123/系统循环/Timer心跳等)
+  悬停暂停自动滚动，滚轮恢复
 ```
