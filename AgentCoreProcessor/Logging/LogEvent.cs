@@ -15,6 +15,7 @@ public class LogEvent
     public long Timestamp { get; set; }
     public string Name { get; set; } = "";
     public string? Detail { get; set; }
+    public bool IsSignalOrigin { get; set; }
 }
 
 public static class LogLevel

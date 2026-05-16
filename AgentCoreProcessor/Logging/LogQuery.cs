@@ -15,7 +15,7 @@ public class LogQuery : ILogQuery
     {
         using var cmd = _db.Connection.CreateCommand();
         cmd.CommandText = """
-            SELECT id, signal_id, scope, branch, parent_id, span_id, cause_span_id, group_name, level, type, timestamp, name, detail
+            SELECT id, signal_id, scope, branch, parent_id, span_id, cause_span_id, group_name, level, type, timestamp, name, detail, is_signal_origin
             FROM events
             WHERE signal_id = @sig
             ORDER BY timestamp
@@ -30,7 +30,7 @@ public class LogQuery : ILogQuery
         if (since.HasValue)
         {
             cmd.CommandText = """
-                SELECT id, signal_id, scope, branch, parent_id, span_id, cause_span_id, group_name, level, type, timestamp, name, detail
+                SELECT id, signal_id, scope, branch, parent_id, span_id, cause_span_id, group_name, level, type, timestamp, name, detail, is_signal_origin
                 FROM events
                 WHERE scope = @scope AND timestamp >= @since
                 ORDER BY timestamp DESC
@@ -41,7 +41,7 @@ public class LogQuery : ILogQuery
         else
         {
             cmd.CommandText = """
-                SELECT id, signal_id, scope, branch, parent_id, span_id, cause_span_id, group_name, level, type, timestamp, name, detail
+                SELECT id, signal_id, scope, branch, parent_id, span_id, cause_span_id, group_name, level, type, timestamp, name, detail, is_signal_origin
                 FROM events
                 WHERE scope = @scope
                 ORDER BY timestamp DESC
@@ -70,7 +70,7 @@ public class LogQuery : ILogQuery
 
         var where = conditions.Count > 0 ? "WHERE " + string.Join(" AND ", conditions) : "";
         cmd.CommandText = $"""
-            SELECT id, signal_id, scope, branch, parent_id, span_id, cause_span_id, group_name, level, type, timestamp, name, detail
+            SELECT id, signal_id, scope, branch, parent_id, span_id, cause_span_id, group_name, level, type, timestamp, name, detail, is_signal_origin
             FROM events
             {where}
             ORDER BY timestamp DESC
@@ -84,7 +84,7 @@ public class LogQuery : ILogQuery
     {
         using var cmd = _db.Connection.CreateCommand();
         cmd.CommandText = """
-            SELECT e1.id, e1.signal_id, e1.scope, e1.branch, e1.parent_id, e1.span_id, e1.cause_span_id, e1.group_name, e1.level, e1.type, e1.timestamp, e1.name, e1.detail
+            SELECT e1.id, e1.signal_id, e1.scope, e1.branch, e1.parent_id, e1.span_id, e1.cause_span_id, e1.group_name, e1.level, e1.type, e1.timestamp, e1.name, e1.detail, e1.is_signal_origin
             FROM events e1
             WHERE e1.type = 'open'
               AND NOT EXISTS (
@@ -100,7 +100,7 @@ public class LogQuery : ILogQuery
     {
         using var cmd = _db.Connection.CreateCommand();
         cmd.CommandText = """
-            SELECT id, signal_id, scope, branch, parent_id, span_id, cause_span_id, group_name, level, type, timestamp, name, detail
+            SELECT id, signal_id, scope, branch, parent_id, span_id, cause_span_id, group_name, level, type, timestamp, name, detail, is_signal_origin
             FROM events
             WHERE type = 'open' AND parent_id IS NULL
             ORDER BY timestamp DESC
@@ -160,7 +160,8 @@ public class LogQuery : ILogQuery
                 Type = reader.GetString(9),
                 Timestamp = reader.GetInt64(10),
                 Name = reader.GetString(11),
-                Detail = reader.IsDBNull(12) ? null : reader.GetString(12)
+                Detail = reader.IsDBNull(12) ? null : reader.GetString(12),
+                IsSignalOrigin = reader.GetInt32(13) == 1
             });
         }
         return results;

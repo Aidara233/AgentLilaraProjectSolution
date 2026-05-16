@@ -26,6 +26,7 @@ public class LogDatabase : IDisposable
 
         MigrateParentIdToText();
         MigrateCauseSpanId();
+        MigrateIsSignalOrigin();
 
         using var cmd2 = _conn.CreateCommand();
         cmd2.CommandText = """
@@ -42,7 +43,8 @@ public class LogDatabase : IDisposable
                 type        TEXT NOT NULL DEFAULT 'event',
                 timestamp   INTEGER NOT NULL,
                 name        TEXT NOT NULL,
-                detail      TEXT
+                detail      TEXT,
+                is_signal_origin INTEGER NOT NULL DEFAULT 0
             );
 
             CREATE INDEX IF NOT EXISTS idx_events_signal ON events(signal_id);
@@ -93,8 +95,8 @@ public class LogDatabase : IDisposable
         var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         using var insert = _conn.CreateCommand();
         insert.CommandText = """
-            INSERT INTO events (signal_id, scope, branch, parent_id, span_id, cause_span_id, group_name, level, type, timestamp, name, detail)
-            VALUES ('system', 'system:init', @ts, NULL, NULL, NULL, 'Engine', 1, 'cease', @ts, '进程中断恢复', @detail)
+            INSERT INTO events (signal_id, scope, branch, parent_id, span_id, cause_span_id, group_name, level, type, timestamp, name, detail, is_signal_origin)
+            VALUES ('system', 'system:init', @ts, NULL, NULL, NULL, 'Engine', 1, 'cease', @ts, '进程中断恢复', @detail, 0)
             """;
         insert.Parameters.AddWithValue("@ts", ts);
         insert.Parameters.AddWithValue("@detail", $"{{\"unclosed\":{unclosed}}}");
@@ -177,6 +179,43 @@ public class LogDatabase : IDisposable
               )
             """;
         migrate.ExecuteNonQuery();
+    }
+
+    private void MigrateIsSignalOrigin()
+    {
+        using var check = _conn.CreateCommand();
+        check.CommandText = "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='events'";
+        if ((long)check.ExecuteScalar()! == 0) return;
+
+        bool hasColumn = false;
+        using (var colCheck = _conn.CreateCommand())
+        {
+            colCheck.CommandText = "PRAGMA table_info(events)";
+            using var reader = colCheck.ExecuteReader();
+            while (reader.Read())
+            {
+                if (reader.GetString(1) == "is_signal_origin")
+                {
+                    hasColumn = true;
+                    break;
+                }
+            }
+        }
+
+        if (!hasColumn)
+        {
+            using var add = _conn.CreateCommand();
+            add.CommandText = "ALTER TABLE events ADD COLUMN is_signal_origin INTEGER NOT NULL DEFAULT 0";
+            add.ExecuteNonQuery();
+        }
+
+        // Backfill: mark existing signal origins (Begin: no parent, no cause)
+        using var backfill = _conn.CreateCommand();
+        backfill.CommandText = """
+            UPDATE events SET is_signal_origin = 1
+            WHERE type = 'open' AND parent_id IS NULL
+            """;
+        backfill.ExecuteNonQuery();
     }
 
     public SqliteConnection Connection => _conn;

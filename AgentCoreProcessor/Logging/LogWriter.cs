@@ -88,8 +88,8 @@ public class LogWriter : IDisposable
             using var cmd = _db.Connection.CreateCommand();
             cmd.Transaction = tx;
             cmd.CommandText = """
-                INSERT INTO events (signal_id, scope, branch, parent_id, span_id, cause_span_id, group_name, level, type, timestamp, name, detail)
-                VALUES (@sig, @scope, @branch, @parent, @span, @cause, @group, @level, @type, @ts, @name, @detail)
+                INSERT INTO events (signal_id, scope, branch, parent_id, span_id, cause_span_id, group_name, level, type, timestamp, name, detail, is_signal_origin)
+                VALUES (@sig, @scope, @branch, @parent, @span, @cause, @group, @level, @type, @ts, @name, @detail, @isOrigin)
                 """;
 
             var pSig = cmd.Parameters.Add("@sig", SqliteType.Text);
@@ -104,6 +104,7 @@ public class LogWriter : IDisposable
             var pTs = cmd.Parameters.Add("@ts", SqliteType.Integer);
             var pName = cmd.Parameters.Add("@name", SqliteType.Text);
             var pDetail = cmd.Parameters.Add("@detail", SqliteType.Text);
+            var pIsOrigin = cmd.Parameters.Add("@isOrigin", SqliteType.Integer);
 
             using var idCmd = _db.Connection.CreateCommand();
             idCmd.Transaction = tx;
@@ -123,6 +124,7 @@ public class LogWriter : IDisposable
                 pTs.Value = evt.Timestamp;
                 pName.Value = evt.Name;
                 pDetail.Value = evt.Detail != null ? evt.Detail : DBNull.Value;
+                pIsOrigin.Value = evt.IsSignalOrigin ? 1 : 0;
                 cmd.ExecuteNonQuery();
                 evt.Id = (long)idCmd.ExecuteScalar()!;
             }

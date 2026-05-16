@@ -32,7 +32,8 @@ internal class LogTraceService
                     Timestamp = evt.Timestamp,
                     Name = evt.Name,
                     Detail = evt.Detail,
-                    GroupName = evt.GroupName
+                    GroupName = evt.GroupName,
+                    IsSignalOrigin = evt.IsSignalOrigin
                 };
                 onNewRow(row);
             }
@@ -177,6 +178,7 @@ internal class TraceRow
     public long Timestamp { get; set; }
     public string Name { get; set; } = "";
     public string? Detail { get; set; }
+    public bool IsSignalOrigin { get; set; }
     public string GroupName { get; set; } = "";
 }
 

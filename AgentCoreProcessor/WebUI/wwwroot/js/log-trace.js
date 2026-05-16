@@ -627,12 +627,6 @@ function renderNodesRange(g, rows, meta, columns, start, end) {
         if (row.type === 'close') spanHasClose.add(row.spanId);
     }
 
-    // Build set of spanIds that are causal sources (referenced by other rows' causeSpanId)
-    const isCausalSource = new Set();
-    for (const row of rows) {
-        if (row.causeSpanId != null) isCausalSource.add(row.causeSpanId);
-    }
-
     // Color for unclosed spans: green/yellow/red/gray
     function getOpenColor(spanId, row) {
         if (spanHasClose.has(spanId)) return 'var(--vis-ok)';
@@ -649,9 +643,7 @@ function renderNodesRange(g, rows, meta, columns, start, end) {
     }
 
     function isSignalOrigin(row) {
-        if (row.parentId == null && row.causeSpanId == null) return true;
-        if (row.spanId != null && isCausalSource.has(row.spanId)) return true;
-        return false;
+        return !!row.isSignalOrigin;
     }
 
     for (let i = start; i < end; i++) {
@@ -1250,13 +1242,7 @@ export function renderTrace(graphEl, textEl, bodyEl, detailEl, scopes, rows) {
 // --- Detail panel ---
 
 function isSignalOrigin(row) {
-    if (row.parentId == null && row.causeSpanId == null) return true;
-    if (row.spanId != null && state.causeSpanIdToRowId) {
-        for (const [effectId, causeId] of Object.entries(state.causeSpanIdToRowId)) {
-            if (row.spanId === state.rows.find(r => r.id === causeId)?.spanId) return true;
-        }
-    }
-    return false;
+    return !!row.isSignalOrigin;
 }
 
 function showDetail(rowId) {
