@@ -245,9 +245,18 @@ Signal.Error(LogGroup.Model, "模型调用失败", new
 });
 ```
 
-**Include:** IDs, counts, durations, states, decisions, reasons, error messages, configuration values that affected the decision.
+**Include (MANDATORY — no truncation, no summarization):**
+- All IDs, counts, durations, states, decisions, reasons, error messages
+- Configuration values that affected the decision
+- **Full model input** — every prompt message with complete content, role, images; every tool description; every system injection
+- **Full model output** — complete response text, complete tool call parameters, complete token usage data
+- **Full message content** — incoming and outgoing, before and after parsing
+- **Full memory data** — all stored/retrieved/extracted content, scores, types, subjects, before/after states
+- **Full context** — assembled context XML, memory window contents, participant snapshots
 
-**Exclude:** Full message bodies (privacy), full model responses (too large for detail field — log a summary or length instead), binary data, secrets/tokens.
+**Exclude ONLY:** Binary data (raw image bytes), secrets/tokens/keys.
+
+Rationale: Signal logs go to a dedicated SQLite database. The trace page can render large detail fields. There is no size constraint that justifies truncating data useful for debugging. If you can reconstruct the exact state of the system from the log alone, the detail is sufficient.
 
 ## Checklist for Sub-Agents
 
