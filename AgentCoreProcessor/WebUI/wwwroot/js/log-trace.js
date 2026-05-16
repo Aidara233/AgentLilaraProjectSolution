@@ -22,6 +22,7 @@ function initState() {
         graphEl: null,
         textEl: null,
         bodyEl: null,
+        detailEl: null,
         scopes: [],
         rows: [],
         columns: [],      // { scope, slotCount, width, x }
@@ -1009,12 +1010,13 @@ function setupContextMenu(graphEl, textEl) {
 
 // --- Exported functions ---
 
-export function renderTrace(graphEl, textEl, bodyEl, scopes, rows) {
+export function renderTrace(graphEl, textEl, bodyEl, detailEl, scopes, rows) {
     // Initialize state
     state = initState();
     state.graphEl = graphEl;
     state.textEl = textEl;
     state.bodyEl = bodyEl;
+    state.detailEl = detailEl;
     state.scopes = scopes;
     state.rows = rows;
 
@@ -1048,6 +1050,62 @@ export function renderTrace(graphEl, textEl, bodyEl, scopes, rows) {
 
     setupInteraction(graphEl, textEl, bodyEl);
     setupContextMenu(graphEl, textEl);
+    setupDetailPanel(graphEl, textEl);
+}
+
+// --- Detail panel ---
+
+function setupDetailPanel(graphEl, textEl) {
+    const handler = (e) => {
+        const node = e.target.closest('[data-id]');
+        if (!node) return;
+        const id = parseInt(node.dataset.id);
+        showDetail(id);
+    };
+    graphEl.addEventListener('click', handler);
+    textEl.addEventListener('click', (e) => {
+        const row = e.target.closest('.trace-text-row');
+        if (!row) return;
+        const id = parseInt(row.dataset.id);
+        if (!isNaN(id)) showDetail(id);
+    });
+}
+
+function showDetail(rowId) {
+    const el = state.detailEl;
+    if (!el) return;
+    const row = state.byId[rowId];
+    if (!row) return;
+
+    const ts = new Date(row.timestamp).toLocaleString();
+    let detail = '';
+    try { detail = row.detail ? JSON.stringify(JSON.parse(row.detail), null, 2) : ''; }
+    catch { detail = row.detail || ''; }
+
+    const fields = [
+        { label: '类型', value: row.type },
+        { label: '时间', value: ts },
+        { label: 'Scope', value: row.scope },
+        { label: 'Signal', value: row.signalId },
+        { label: 'Span ID', value: row.spanId || '-' },
+        { label: 'Parent', value: row.parentId || '-' },
+        { label: 'Cause', value: row.causeSpanId || '-' },
+        { label: 'Group', value: row.groupName },
+        { label: 'Level', value: ['Debug','Info','Warn','Error'][row.level] || row.level },
+    ];
+
+    let html = `<div class="detail-title">${escapeHtml(row.name || '(close)')}</div>`;
+    for (const f of fields) {
+        html += `<div class="detail-field"><div class="detail-label">${f.label}</div><div class="detail-value">${escapeHtml(f.value ?? '')}</div></div>`;
+    }
+    if (detail) {
+        html += `<div class="detail-json">${escapeHtml(detail)}</div>`;
+    }
+    el.innerHTML = html;
+}
+
+function escapeHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 let _appendPending = false;

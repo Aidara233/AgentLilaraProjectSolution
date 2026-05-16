@@ -2,7 +2,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using AgentCoreProcessor.Engine;
 
 namespace AgentCoreProcessor.WebUI.Services
 {
@@ -21,28 +20,6 @@ namespace AgentCoreProcessor.WebUI.Services
 
         public event Action<LogEntry>? OnNewEntry;
 
-        public LogStreamService()
-        {
-            FrameworkLogger.OnLogWritten += HandleLogWritten;
-        }
-
-        private void HandleLogWritten(string source, string fullLine, bool isError)
-        {
-            var entry = new LogEntry
-            {
-                Time = DateTime.Now,
-                Source = source,
-                Message = fullLine,
-                IsError = isError
-            };
-
-            buffer.Enqueue(entry);
-            while (buffer.Count > MaxBufferSize)
-                buffer.TryDequeue(out _);
-
-            OnNewEntry?.Invoke(entry);
-        }
-
         public List<LogEntry> GetRecent(int count, string? sourceFilter = null)
         {
             var items = buffer.ToArray().AsEnumerable();
@@ -51,9 +28,6 @@ namespace AgentCoreProcessor.WebUI.Services
             return items.TakeLast(count).ToList();
         }
 
-        public void Dispose()
-        {
-            FrameworkLogger.OnLogWritten -= HandleLogWritten;
-        }
+        public void Dispose() { }
     }
 }

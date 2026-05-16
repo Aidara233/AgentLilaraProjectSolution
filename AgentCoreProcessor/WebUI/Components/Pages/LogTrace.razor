@@ -67,6 +67,9 @@
     <div class="log-trace-body" @ref="_bodyRef">
         <div class="log-trace-graph" @ref="_graphRef"></div>
         <div class="log-trace-text" @ref="_textRef"></div>
+        <div class="log-trace-detail" @ref="_detailRef">
+            <div class="detail-placeholder">点击节点查看详情</div>
+        </div>
     </div>
 </div>
 
@@ -85,6 +88,7 @@
     private ElementReference _bodyRef;
     private ElementReference _graphRef;
     private ElementReference _textRef;
+    private ElementReference _detailRef;
     private IJSObjectReference? _jsModule;
 
     protected override void OnInitialized()
@@ -147,7 +151,7 @@
     {
         if (_jsModule == null || _trace == null) return;
         await _jsModule.InvokeVoidAsync("renderTrace",
-            _graphRef, _textRef, _bodyRef, _trace.Scopes, _trace.Rows);
+            _graphRef, _textRef, _bodyRef, _detailRef, _trace.Scopes, _trace.Rows);
     }
 
     private TraceFilter BuildFilter() => new()
