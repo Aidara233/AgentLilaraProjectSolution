@@ -664,7 +664,11 @@ function renderNodesRange(g, rows, meta, columns, start, end) {
                 class: 'node', 'data-row': i, 'data-id': row.id
             });
         } else {
-            const color = (row.level === 0) ? 'var(--vis-debug)' : 'var(--vis-info)';
+            let color;
+            if (row.level >= 3) color = 'var(--vis-error)';
+            else if (row.level === 2) color = 'var(--vis-warn)';
+            else if (row.level === 0) color = 'var(--vis-debug)';
+            else color = 'var(--vis-info)';
             node = svgEl('circle', {
                 cx, cy, r: r - 1,
                 fill: color, stroke: 'none',
@@ -1186,8 +1190,12 @@ export function renderTrace(graphEl, textEl, bodyEl, detailEl, scopes, rows) {
     renderTextRows(textEl, rows);
     setupScrollSync(graphEl, textEl);
 
-    // Initial virtual render (after DOM is ready)
-    requestAnimationFrame(() => renderVisibleRange());
+    // Initial virtual render (after DOM is ready), then scroll to bottom
+    requestAnimationFrame(() => {
+        renderVisibleRange();
+        textEl.scrollTop = textEl.scrollHeight;
+        graphEl.scrollTop = graphEl.scrollHeight;
+    });
 
     setupInteraction(graphEl, textEl, bodyEl);
     setupContextMenu(graphEl, textEl);
