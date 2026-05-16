@@ -271,6 +271,8 @@ namespace AgentCoreProcessor.Engine
                 () => gate.Signal());
             await componentHost.InitAsync();
 
+            SignalContext? sessionCtx = null;
+
             while (IsAlive)
             {
                 // ① WaitGate
@@ -295,16 +297,7 @@ namespace AgentCoreProcessor.Engine
                 // ② CollectBuffer
                 var batch = CollectBuffer();
 
-                // ③ 循环会话开始（信号级：承载适配器因果链）
-                SignalContext sessionCtx;
-                if (sigId != null)
-                    sessionCtx = Signal.Continue(sigId, parentSpan, $"channel:{channelId}", LogGroup.Engine, "循环开始",
-                        new { channelId, mode = isWorkingMode ? "working" : "express" });
-                else
-                    sessionCtx = Signal.Begin(LogGroup.Engine, $"channel:{channelId}", "循环开始",
-                        new { channelId, mode = isWorkingMode ? "working" : "express" });
-
-                // ④ PrepareContext（含闸门评估）
+                // ③ Gate evaluation（会话外部：决定是否开闸）
                 bool prepareResult;
                 using (var gateSpan = Signal.Open(LogGroup.Engine, "闸门评估",
                     new { hasMessages = batch?.Count ?? 0, isWorkingMode }))
@@ -315,21 +308,41 @@ namespace AgentCoreProcessor.Engine
 
                 if (!prepareResult)
                 {
-                    sessionCtx.Close(new { reason = "闸门拦截" });
+                    // 闸门拦截：结束当前会话（如有）
+                    if (sessionCtx != null)
+                    {
+                        sessionCtx.Close(new { reason = "循环挂起" });
+                        sessionCtx = null;
+                    }
                     await componentHost.OnPauseAsync();
                     continue;
                 }
 
-                // ⑤ BuildPrompt → CallModel → ProcessResponse → DecideNext（单轮）
+                // ④ 循环会话开始（信号级：承载适配器因果链，跨多轮持久）
+                if (sessionCtx == null)
+                {
+                    if (sigId != null)
+                        sessionCtx = Signal.Continue(sigId, parentSpan, $"channel:{channelId}", LogGroup.Engine, "循环开始",
+                            new { channelId, mode = isWorkingMode ? "working" : "express" });
+                    else
+                        sessionCtx = Signal.Begin(LogGroup.Engine, $"channel:{channelId}", "循环开始",
+                            new { channelId, mode = isWorkingMode ? "working" : "express" });
+                }
+
+                // ⑤ 单轮处理（上下文组装 → 模型调用 → 工具执行 → 后续决策）
                 Interlocked.Exchange(ref _busyFlag, 1);
                 try
                 {
                     await componentHost.OnBeforeInvokeAsync();
-                    var messages = BuildPromptMessages();
-                    var mode = isWorkingMode ? EngineMode.Working : EngineMode.Express;
 
                     using var roundSpan = Signal.Open(LogGroup.Engine, "轮次",
-                        new { channelId, mode = mode.ToString() });
+                        new { channelId, mode = isWorkingMode ? "working" : "express" });
+
+                    // 上下文组装（轮次内）
+                    await AssembleRoundContextAsync(batch);
+
+                    var messages = BuildPromptMessages();
+                    var mode = isWorkingMode ? EngineMode.Working : EngineMode.Express;
 
                     ModelOutput output;
                     using (var modelSpan = Signal.Open(LogGroup.Model, "模型调用",
@@ -348,8 +361,6 @@ namespace AgentCoreProcessor.Engine
                     await ProcessResponseAsync(output);
                     DecideNext(output);
                     consecutiveFailures = 0;
-
-                    roundSpan.SetCloseDetail(new { totalRounds = processedMessageCount });
                 }
                 catch (Exception ex)
                 {
@@ -382,7 +393,12 @@ namespace AgentCoreProcessor.Engine
                 }
                 finally
                 {
-                    sessionCtx.Close(new { reason = isInWorkingSession ? "继续处理" : "循环挂起" });
+                    // 会话结束：非 working 模式时关闭 session span
+                    if (!isInWorkingSession && sessionCtx != null)
+                    {
+                        sessionCtx.Close(new { reason = "循环挂起" });
+                        sessionCtx = null;
+                    }
                     if (!isInWorkingSession)
                     {
                         Interlocked.Exchange(ref _busyFlag, 0);
@@ -588,12 +604,16 @@ namespace AgentCoreProcessor.Engine
             {
                 return false;
             }
-            else
-            {
-            }
+            // else: in working session, no new messages → continue processing
 
-            // 每轮统一重建上下文
-            if (currentLastMsg == null || currentLastSc == null) return false;
+            return true;
+        }
+
+        /// <summary>统一重建上下文 XML（在轮次 span 内调用）。</summary>
+        private async Task AssembleRoundContextAsync(
+            List<(IncomingMessage Message, SessionContext Context)>? batch)
+        {
+            if (currentLastMsg == null || currentLastSc == null) return;
             currentParticipantSnapshot ??= new Dictionary<int, ParticipantInfo>(recentParticipants);
 
             using (var ctxSpan = Signal.Open(LogGroup.Memory, "上下文组装",
@@ -626,8 +646,6 @@ namespace AgentCoreProcessor.Engine
                     hasImages = imageEmbeds.Count > 0
                 });
             }
-
-            return true;
         }
 
         /// <summary>统一 prompt 构建。Express/Working 都走 PromptBuilder。</summary>
