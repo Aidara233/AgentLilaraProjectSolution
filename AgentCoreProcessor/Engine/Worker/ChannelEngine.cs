@@ -288,21 +288,23 @@ namespace AgentCoreProcessor.Engine
                 // 循环唤醒：通知组件
                 await componentHost.OnActivatedAsync();
 
-                // 每轮迭代创建独立的信号上下文（从上游适配器信号接续，或新建）
+                // 收集 trace 信息（上游适配器信号的因果链接）
                 string? sigId, parentSpan;
                 lock (bufferLock) { sigId = _traceSignalId; parentSpan = _traceParentSpanId; }
-                SignalContext iterSignal;
-                if (sigId != null)
-                    iterSignal = Signal.Continue(sigId, parentSpan, $"channel:{channelId}", LogGroup.Engine, "频道轮次",
-                        new { channelId, mode = isWorkingMode ? "working" : "express" });
-                else
-                    iterSignal = Signal.Begin(LogGroup.Engine, $"channel:{channelId}", "频道轮次",
-                        new { channelId, mode = isWorkingMode ? "working" : "express" });
 
                 // ② CollectBuffer
                 var batch = CollectBuffer();
 
-                // ③ PrepareContext（含闸门评估）
+                // ③ 循环会话开始（信号级：承载适配器因果链）
+                SignalContext sessionCtx;
+                if (sigId != null)
+                    sessionCtx = Signal.Continue(sigId, parentSpan, $"channel:{channelId}", LogGroup.Engine, "循环开始",
+                        new { channelId, mode = isWorkingMode ? "working" : "express" });
+                else
+                    sessionCtx = Signal.Begin(LogGroup.Engine, $"channel:{channelId}", "循环开始",
+                        new { channelId, mode = isWorkingMode ? "working" : "express" });
+
+                // ④ PrepareContext（含闸门评估）
                 bool prepareResult;
                 using (var gateSpan = Signal.Open(LogGroup.Engine, "闸门评估",
                     new { hasMessages = batch?.Count ?? 0, isWorkingMode }))
@@ -313,19 +315,21 @@ namespace AgentCoreProcessor.Engine
 
                 if (!prepareResult)
                 {
-                    Signal.Event(LogGroup.Engine, "频道挂起", new { reason = "闸门拦截" });
-                    iterSignal.Close();
+                    sessionCtx.Close(new { reason = "闸门拦截" });
                     await componentHost.OnPauseAsync();
                     continue;
                 }
 
-                // ④⑤⑥⑦ BuildPrompt → CallModel → ProcessResponse → DecideNext
+                // ⑤ BuildPrompt → CallModel → ProcessResponse → DecideNext（单轮）
                 Interlocked.Exchange(ref _busyFlag, 1);
                 try
                 {
                     await componentHost.OnBeforeInvokeAsync();
                     var messages = BuildPromptMessages();
                     var mode = isWorkingMode ? EngineMode.Working : EngineMode.Express;
+
+                    using var roundSpan = Signal.Open(LogGroup.Engine, "轮次",
+                        new { channelId, mode = mode.ToString() });
 
                     ModelOutput output;
                     using (var modelSpan = Signal.Open(LogGroup.Model, "模型调用",
@@ -345,8 +349,7 @@ namespace AgentCoreProcessor.Engine
                     DecideNext(output);
                     consecutiveFailures = 0;
 
-                    if (!isInWorkingSession)
-                        Signal.Event(LogGroup.Engine, "频道挂起", new { reason = "轮次完成" });
+                    roundSpan.SetCloseDetail(new { totalRounds = processedMessageCount });
                 }
                 catch (Exception ex)
                 {
@@ -379,7 +382,7 @@ namespace AgentCoreProcessor.Engine
                 }
                 finally
                 {
-                    iterSignal.Close();
+                    sessionCtx.Close(new { reason = isInWorkingSession ? "继续处理" : "循环挂起" });
                     if (!isInWorkingSession)
                     {
                         Interlocked.Exchange(ref _busyFlag, 0);
