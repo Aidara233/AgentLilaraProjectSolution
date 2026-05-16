@@ -41,7 +41,8 @@ function initState() {
         _rafPending: false,  // rAF throttle flag
         _spans: null,        // pre-computed span map for vertical lines
         engineLifecycles: [], // engine start/stop pairs
-        startupSignalClosed: false // whether system:init has a close event
+        startupSignalClosed: false, // whether system:init has a close event
+        ceaseIndices: [] // row indices of cease events (process interruption markers)
     };
 }
 
@@ -110,6 +111,12 @@ function buildLookupMaps(rows) {
         }
     }
 
+    // Detect cease events (process interruption markers)
+    const ceaseIndices = [];
+    for (let i = 0; i < rows.length; i++) {
+        if (rows[i].type === 'cease') ceaseIndices.push(i);
+    }
+
     // Build closeToOpen: match close rows to their paired open rows by spanId
     const openBySpanId = {};
     for (const row of rows) {
@@ -123,7 +130,7 @@ function buildLookupMaps(rows) {
         }
     }
 
-    return { byId, childrenOf, closeToOpen, causeSpanIdToRowId, engineLifecycles, startupSignalClosed };
+    return { byId, childrenOf, closeToOpen, causeSpanIdToRowId, engineLifecycles, startupSignalClosed, ceaseIndices };
 }
 
 // --- Slot assignment ---
@@ -371,10 +378,24 @@ function buildSpanMap(rows, meta) {
         }
     }
 
+    // Fifth pass: cap unclosed spans at the nearest cease event after their open
+    const ceaseIndices = state.ceaseIndices || [];
+    if (ceaseIndices.length > 0) {
+        for (const [spanId, span] of spans) {
+            if (span.closeIdx >= 0) continue; // already closed
+            // Find first cease event after this span's open
+            for (const ci of ceaseIndices) {
+                if (ci > span.openIdx) {
+                    span.lastDescendantRow = Math.min(span.lastDescendantRow, ci);
+                    span._interrupted = true;
+                    break;
+                }
+            }
+        }
+    }
+
     return spans;
 }
-
-// --- Render vertical lines (range only) ---
 
 function renderVerticalLinesRange(g, columns, start, end) {
     const spans = state._spans;
@@ -507,10 +528,18 @@ function renderCrossLinesRange(g, rows, meta, columns, start, end) {
 function renderEngineLifecycleLines(g, rows, meta, columns, start, end) {
     const lifecycles = state.engineLifecycles;
     if (!lifecycles || lifecycles.length === 0) return;
+    const ceaseIndices = state.ceaseIndices || [];
 
     for (const lc of lifecycles) {
         const startIdx = lc.startIdx;
-        const endIdx = lc.endIdx >= 0 ? lc.endIdx : rows.length - 1;
+        let endIdx = lc.endIdx >= 0 ? lc.endIdx : rows.length - 1;
+
+        // Cap at cease event if unclosed
+        if (lc.endIdx < 0 && ceaseIndices.length > 0) {
+            for (const ci of ceaseIndices) {
+                if (ci > startIdx) { endIdx = ci; break; }
+            }
+        }
 
         // Skip if entirely outside visible range
         if (endIdx < start || startIdx >= end) continue;
@@ -546,19 +575,19 @@ function renderNodesRange(g, rows, meta, columns, start, end) {
         if (row.type === 'close') spanHasClose.add(row.spanId);
     }
 
-    // Color for unclosed spans: green/yellow/red
-    // Green: has close. Yellow: parent chain open (in progress). Red: parent closed or startup closed.
+    // Color for unclosed spans: green/yellow/red/gray
     function getOpenColor(spanId, row) {
         if (spanHasClose.has(spanId)) return 'var(--vis-ok)';
+        // Check if interrupted by cease event
+        const span = state._spans ? state._spans.get(spanId) : null;
+        if (span && span._interrupted) return 'var(--vis-debug)'; // gray = interrupted
         // No close — check parent chain
         if (row.parentId != null) {
-            // Has a parent span — check if parent is closed
-            if (spanHasClose.has(row.parentId)) return 'var(--vis-error)'; // parent closed, child didn't
-            return 'var(--vis-warn)'; // parent also open → in progress
+            if (spanHasClose.has(row.parentId)) return 'var(--vis-error)';
+            return 'var(--vis-warn)';
         }
-        // Root span (no parent) — check startupSignal
-        if (state.startupSignalClosed) return 'var(--vis-error)'; // program exited
-        return 'var(--vis-warn)'; // still running
+        if (state.startupSignalClosed) return 'var(--vis-error)';
+        return 'var(--vis-warn)';
     }
 
     for (let i = start; i < end; i++) {
@@ -1021,13 +1050,14 @@ export function renderTrace(graphEl, textEl, bodyEl, detailEl, scopes, rows) {
     if (!rows || rows.length === 0) return;
 
     // Build lookup maps for interaction
-    const { byId, childrenOf, closeToOpen, causeSpanIdToRowId, engineLifecycles, startupSignalClosed } = buildLookupMaps(rows);
+    const { byId, childrenOf, closeToOpen, causeSpanIdToRowId, engineLifecycles, startupSignalClosed, ceaseIndices } = buildLookupMaps(rows);
     state.byId = byId;
     state.childrenOf = childrenOf;
     state.closeToOpen = closeToOpen;
     state.causeSpanIdToRowId = causeSpanIdToRowId;
     state.engineLifecycles = engineLifecycles;
     state.startupSignalClosed = startupSignalClosed;
+    state.ceaseIndices = ceaseIndices;
 
     // Assign slots
     const { meta, maxSlots } = assignSlots(rows, scopes);
@@ -1140,13 +1170,14 @@ function rebuildState() {
     const scopes = [...new Set(rows.map(r => r.scope))];
     state.scopes = scopes;
 
-    const { byId, childrenOf, closeToOpen, causeSpanIdToRowId, engineLifecycles, startupSignalClosed } = buildLookupMaps(rows);
+    const { byId, childrenOf, closeToOpen, causeSpanIdToRowId, engineLifecycles, startupSignalClosed, ceaseIndices } = buildLookupMaps(rows);
     state.byId = byId;
     state.childrenOf = childrenOf;
     state.closeToOpen = closeToOpen;
     state.causeSpanIdToRowId = causeSpanIdToRowId;
     state.engineLifecycles = engineLifecycles;
     state.startupSignalClosed = startupSignalClosed;
+    state.ceaseIndices = ceaseIndices;
 
     const { meta, maxSlots } = assignSlots(rows, scopes);
     state.rowMeta = meta;

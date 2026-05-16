@@ -75,6 +75,30 @@ public class LogDatabase : IDisposable
             CREATE INDEX IF NOT EXISTS idx_token_caller ON token_usage(caller_tag, timestamp);
             """;
         cmd3.ExecuteNonQuery();
+
+        InsertCeaseIfNeeded();
+    }
+
+    private void InsertCeaseIfNeeded()
+    {
+        using var check = _conn.CreateCommand();
+        check.CommandText = """
+            SELECT COUNT(*) FROM events
+            WHERE type = 'open' AND span_id IS NOT NULL
+              AND span_id NOT IN (SELECT span_id FROM events WHERE type = 'close' AND span_id IS NOT NULL)
+            """;
+        var unclosed = (long)(check.ExecuteScalar() ?? 0);
+        if (unclosed == 0) return;
+
+        var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        using var insert = _conn.CreateCommand();
+        insert.CommandText = """
+            INSERT INTO events (signal_id, scope, branch, parent_id, span_id, cause_span_id, group_name, level, type, timestamp, name, detail)
+            VALUES ('system', 'system:init', @ts, NULL, NULL, NULL, 'Engine', 1, 'cease', @ts, '进程中断恢复', @detail)
+            """;
+        insert.Parameters.AddWithValue("@ts", ts);
+        insert.Parameters.AddWithValue("@detail", $"{{\"unclosed\":{unclosed}}}");
+        insert.ExecuteNonQuery();
     }
 
     private void MigrateParentIdToText()
