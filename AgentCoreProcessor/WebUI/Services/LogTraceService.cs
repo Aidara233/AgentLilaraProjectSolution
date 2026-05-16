@@ -105,7 +105,8 @@ internal class LogTraceService
                 Timestamp = evt.Timestamp,
                 Name = evt.Name,
                 Detail = evt.Detail,
-                GroupName = evt.GroupName
+                GroupName = evt.GroupName,
+                IsSignalOrigin = evt.IsSignalOrigin
             })
             .ToList();
 
