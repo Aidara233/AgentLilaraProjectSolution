@@ -259,7 +259,7 @@ namespace AgentCoreProcessor.Engine
             // 引擎生命周期信号（Continue 从调用者 signal，自动建立因果连线）
             var parentCtx = Logging.SignalContext.Current;
             var lifeCtx = Signal.Continue(
-                parentCtx?.SignalId ?? Signal.NewId(), parentCtx?.CurrentSpanId,
+                SignalContext.NewSignalId(), parentCtx?.CurrentSpanId,
                 $"channel:{channelId}", LogGroup.Engine, $"Channel引擎 [{channelName}]",
                 new { engineType = EngineType, channelId, channelName });
 
