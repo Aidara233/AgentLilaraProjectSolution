@@ -178,6 +178,7 @@ internal class TraceRow
     public long Timestamp { get; set; }
     public string Name { get; set; } = "";
     public string? Detail { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("isSignalOrigin")]
     public bool IsSignalOrigin { get; set; }
     public string GroupName { get; set; } = "";
 }
