@@ -507,9 +507,8 @@ function renderCrossLinesRange(g, rows, meta, columns, start, end) {
         // cause_span_id always means cross-scope by definition
         if (causeMeta._scopeIdx === effectMeta._scopeIdx) continue;
 
-        // From: cause span's close (if exists) or open
-        const causeSpan = _spans ? _spans.get(row.causeSpanId) : null;
-        const fromIdx = (causeSpan && causeSpan.closeIdx >= 0) ? causeSpan.closeIdx : causeIdx;
+        // From: cause span's open (signal source), not close
+        const fromIdx = causeIdx;
         const fromMeta = meta[fromIdx];
 
         const x1 = getNodeX(columns, fromMeta._scopeIdx, fromMeta._slotIdx);
@@ -541,8 +540,7 @@ function renderCrossLinesRange(g, rows, meta, columns, start, end) {
         const effectMeta = meta[effectIdx];
         if (causeMeta._scopeIdx === effectMeta._scopeIdx) continue;
 
-        const causeSpan = _spans ? _spans.get(row.causeSpanId) : null;
-        const fromIdx = (causeSpan && causeSpan.closeIdx >= 0) ? causeSpan.closeIdx : causeIdx;
+        const fromIdx = causeIdx;
         const fromMeta = meta[fromIdx];
 
         const x1 = getNodeX(columns, fromMeta._scopeIdx, fromMeta._slotIdx);
