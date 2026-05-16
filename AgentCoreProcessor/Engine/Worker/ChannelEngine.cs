@@ -434,6 +434,8 @@ namespace AgentCoreProcessor.Engine
                 if (currentLastMsg == null || currentLastSc == null || currentParticipantSnapshot == null) return;
                 unrespondedMessageCount = 0;
                 var (content, replyTo, mentions) = ParseBotOutput(rawText, currentParticipantSnapshot);
+                using var speakSpan = Signal.Open(LogGroup.Adapter, "发送消息",
+                    new { channelId, platform = currentLastMsg.Platform, content, replyTo, mentions });
                 var sentId = await ctx.Adapters.SendMessageAsync(currentLastMsg.Platform, new OutgoingMessage
                 {
                     ChannelId = currentLastMsg.ChannelId,
@@ -441,18 +443,22 @@ namespace AgentCoreProcessor.Engine
                     ReplyTo = replyTo,
                     Mentions = mentions
                 });
+                speakSpan.SetCloseDetail(new { messageId = sentId });
                 await ctx.Session.SaveBotMessageAsync(currentLastSc.Channel.Id, content, sentId);
             };
             speakModule.OnSendMedia = async (type, text, attachments) =>
             {
                 if (currentLastMsg == null || currentLastSc == null) return;
                 unrespondedMessageCount = 0;
+                using var mediaSpan = Signal.Open(LogGroup.Adapter, "发送媒体",
+                    new { channelId, platform = currentLastMsg.Platform, type, text, attachmentCount = attachments?.Count ?? 0 });
                 var sentId = await ctx.Adapters.SendMessageAsync(currentLastMsg.Platform, new OutgoingMessage
                 {
                     ChannelId = currentLastMsg.ChannelId,
                     Content = text ?? "",
                     Attachments = attachments
                 });
+                mediaSpan.SetCloseDetail(new { messageId = sentId });
                 var desc = $"[发送{type}]" + (string.IsNullOrEmpty(text) ? "" : $" {text}");
                 await ctx.Session.SaveBotMessageAsync(currentLastSc.Channel.Id, desc, sentId);
             };
@@ -1390,6 +1396,8 @@ namespace AgentCoreProcessor.Engine
                     await Task.Delay(rng.Next(600, 2000));
                 var (content, replyTo, mentions) = ParseBotOutput(segments[i], participantSnapshot);
                 if (i == 0) firstReplyTo = replyTo;
+                using var segSpan = Signal.Open(LogGroup.Adapter, "发送消息段",
+                    new { channelId = lastMsg.ChannelId, platform = lastMsg.Platform, segment = i + 1, total = segments.Count, content });
                 var sentId = await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
                 {
                     ChannelId = lastMsg.ChannelId,
@@ -1397,6 +1405,7 @@ namespace AgentCoreProcessor.Engine
                     ReplyTo = i == 0 ? firstReplyTo : null,
                     Mentions = mentions
                 });
+                segSpan.SetCloseDetail(new { messageId = sentId });
                 await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, content, sentId);
             }
         }
