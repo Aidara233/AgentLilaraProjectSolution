@@ -105,6 +105,10 @@ public class LogWriter : IDisposable
             var pName = cmd.Parameters.Add("@name", SqliteType.Text);
             var pDetail = cmd.Parameters.Add("@detail", SqliteType.Text);
 
+            using var idCmd = _db.Connection.CreateCommand();
+            idCmd.Transaction = tx;
+            idCmd.CommandText = "SELECT last_insert_rowid()";
+
             foreach (var evt in batch)
             {
                 pSig.Value = evt.SignalId;
@@ -120,6 +124,7 @@ public class LogWriter : IDisposable
                 pName.Value = evt.Name;
                 pDetail.Value = evt.Detail != null ? evt.Detail : DBNull.Value;
                 cmd.ExecuteNonQuery();
+                evt.Id = (long)idCmd.ExecuteScalar()!;
             }
 
             _tokenAggregator.ProcessBatch(batch, tx);
