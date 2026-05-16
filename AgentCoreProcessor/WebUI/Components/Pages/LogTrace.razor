@@ -180,8 +180,13 @@
         _subscription?.Dispose();
         if (_jsModule != null)
         {
-            try { await _jsModule.InvokeVoidAsync("dispose"); } catch { }
-            await _jsModule.DisposeAsync();
+            try
+            {
+                await _jsModule.InvokeVoidAsync("dispose");
+                await _jsModule.DisposeAsync();
+            }
+            catch (Microsoft.JSInterop.JSDisconnectedException) { }
+            catch (ObjectDisposedException) { }
         }
     }
 
