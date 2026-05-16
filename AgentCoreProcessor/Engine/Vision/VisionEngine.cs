@@ -57,7 +57,7 @@ namespace AgentCoreProcessor.Engine.Vision
             var parentCtx = AgentCoreProcessor.Logging.SignalContext.Current;
             var lifeCtx = Logging.Signal.Continue(
                 parentCtx?.SignalId ?? Logging.Signal.NewId(), parentCtx?.CurrentSpanId,
-                "vision:main", Logging.LogGroup.Engine, "引擎运行",
+                "vision:main", Logging.LogGroup.Engine, "Vision引擎",
                 new { engineType = EngineType });
 
             config = VisionEngineConfig.Load();

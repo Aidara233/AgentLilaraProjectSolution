@@ -74,7 +74,7 @@ namespace AgentCoreProcessor.Engine
             var parentCtx = AgentCoreProcessor.Logging.SignalContext.Current;
             var lifeCtx = Logging.Signal.Continue(
                 parentCtx?.SignalId ?? Logging.Signal.NewId(), parentCtx?.CurrentSpanId,
-                "dream:main", Logging.LogGroup.Engine, "引擎运行",
+                "dream:main", Logging.LogGroup.Engine, "Dream引擎",
                 new { engineType = EngineType, level = level.ToString() });
 
             // 清理过期记忆 + 孤立关联（纯机械操作，不消耗模型 token）

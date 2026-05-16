@@ -82,7 +82,7 @@ namespace AgentCoreProcessor.Engine
             var parentCtx = SignalContext.Current;
             var lifeCtx = Signal.Continue(
                 parentCtx?.SignalId ?? Signal.NewId(), parentCtx?.CurrentSpanId,
-                "review:main", LogGroup.Engine, "引擎运行",
+                "review:main", LogGroup.Engine, "Review引擎",
                 new { engineType = EngineType, mode = mode.ToString() });
 
             try

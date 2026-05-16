@@ -17,6 +17,7 @@ public class SignalContext : IDisposable
 
     private string? _rootSpanId;
     private string? _rootGroup;
+    private string? _rootName;
     private bool _disposed;
 
     public static void Init(LogWriter writer, int minLevel = LogLevel.Info)
@@ -44,6 +45,7 @@ public class SignalContext : IDisposable
         ctx.CurrentSpanId = spanId;
         ctx._rootSpanId = spanId;
         ctx._rootGroup = group;
+        ctx._rootName = name;
 
         var evt = new LogEvent
         {
@@ -78,6 +80,7 @@ public class SignalContext : IDisposable
         ctx.CurrentSpanId = spanId;
         ctx._rootSpanId = spanId;
         ctx._rootGroup = group;
+        ctx._rootName = name;
 
         var evt = new LogEvent
         {
@@ -124,10 +127,10 @@ public class SignalContext : IDisposable
 
         var prevSpanId = CurrentSpanId;
         CurrentSpanId = spanId;
-        return new SpanHandle(this, group, spanId, prevSpanId);
+        return new SpanHandle(this, group, spanId, prevSpanId, name);
     }
 
-    internal void CloseSpan(string group, string spanId, string? prevSpanId, object? detail)
+    internal void CloseSpan(string group, string spanId, string? prevSpanId, string name, object? detail)
     {
         var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var evt = new LogEvent
@@ -141,7 +144,7 @@ public class SignalContext : IDisposable
             Level = LogLevel.Info,
             Type = "close",
             Timestamp = ts,
-            Name = "",
+            Name = name,
             Detail = SerializeDetail(detail)
         };
         _writer?.EnqueueClose(evt);
@@ -185,7 +188,7 @@ public class SignalContext : IDisposable
             Level = LogLevel.Info,
             Type = "close",
             Timestamp = ts,
-            Name = "",
+            Name = _rootName ?? "",
             Detail = SerializeDetail(detail)
         };
         _writer?.EnqueueClose(evt);
@@ -211,17 +214,19 @@ public class SpanHandle : IDisposable
     private readonly string? _group;
     private readonly string? _spanId;
     private readonly string? _prevSpanId;
+    private readonly string _name;
     private object? _closeDetail;
     private bool _disposed;
 
-    private SpanHandle() { _disposed = true; } // Noop constructor
+    private SpanHandle() { _disposed = true; _name = ""; } // Noop constructor
 
-    internal SpanHandle(SignalContext ctx, string group, string spanId, string? prevSpanId)
+    internal SpanHandle(SignalContext ctx, string group, string spanId, string? prevSpanId, string name)
     {
         _ctx = ctx;
         _group = group;
         _spanId = spanId;
         _prevSpanId = prevSpanId;
+        _name = name;
     }
 
     public void SetCloseDetail(object detail) => _closeDetail = detail;
@@ -230,6 +235,6 @@ public class SpanHandle : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        _ctx?.CloseSpan(_group!, _spanId!, _prevSpanId, _closeDetail);
+        _ctx?.CloseSpan(_group!, _spanId!, _prevSpanId, _name, _closeDetail);
     }
 }

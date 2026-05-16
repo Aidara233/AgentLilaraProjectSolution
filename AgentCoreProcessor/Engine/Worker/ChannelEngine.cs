@@ -260,7 +260,7 @@ namespace AgentCoreProcessor.Engine
             var parentCtx = Logging.SignalContext.Current;
             var lifeCtx = Signal.Continue(
                 parentCtx?.SignalId ?? Signal.NewId(), parentCtx?.CurrentSpanId,
-                $"channel:{channelId}", LogGroup.Engine, "引擎运行",
+                $"channel:{channelId}", LogGroup.Engine, $"Channel引擎 [{channelName}]",
                 new { engineType = EngineType, channelId, channelName });
 
             WireModuleCallbacks();
@@ -297,7 +297,18 @@ namespace AgentCoreProcessor.Engine
                 // ② CollectBuffer
                 var batch = CollectBuffer();
 
-                // ③ Gate evaluation（会话外部：决定是否开闸）
+                // ③ 循环会话开始（如未在会话中则创建；闸门评估在会话内）
+                if (sessionCtx == null)
+                {
+                    if (sigId != null)
+                        sessionCtx = Signal.Continue(sigId, parentSpan, $"channel:{channelId}", LogGroup.Engine, "频道会话",
+                            new { channelId, mode = isWorkingMode ? "working" : "express" });
+                    else
+                        sessionCtx = Signal.Begin(LogGroup.Engine, $"channel:{channelId}", "频道会话",
+                            new { channelId, mode = isWorkingMode ? "working" : "express" });
+                }
+
+                // ④ Gate evaluation（会话内部：决定是否开闸）
                 bool prepareResult;
                 using (var gateSpan = Signal.Open(LogGroup.Engine, "闸门评估",
                     new { hasMessages = batch?.Count ?? 0, isWorkingMode }))
@@ -308,25 +319,12 @@ namespace AgentCoreProcessor.Engine
 
                 if (!prepareResult)
                 {
-                    // 闸门拦截：结束当前会话（如有）
-                    if (sessionCtx != null)
-                    {
-                        sessionCtx.Close(new { reason = "循环挂起" });
-                        sessionCtx = null;
-                    }
+                    // 闸门拦截：结束当前会话
+                    sessionCtx.Close(new { reason = "循环挂起" });
+                    sessionCtx = null;
+                    SignalContext.Restore(lifeCtx);
                     await componentHost.OnPauseAsync();
                     continue;
-                }
-
-                // ④ 循环会话开始（信号级：承载适配器因果链，跨多轮持久）
-                if (sessionCtx == null)
-                {
-                    if (sigId != null)
-                        sessionCtx = Signal.Continue(sigId, parentSpan, $"channel:{channelId}", LogGroup.Engine, "循环开始",
-                            new { channelId, mode = isWorkingMode ? "working" : "express" });
-                    else
-                        sessionCtx = Signal.Begin(LogGroup.Engine, $"channel:{channelId}", "循环开始",
-                            new { channelId, mode = isWorkingMode ? "working" : "express" });
                 }
 
                 // ⑤ 单轮处理（上下文组装 → 模型调用 → 工具执行 → 后续决策）
@@ -335,7 +333,7 @@ namespace AgentCoreProcessor.Engine
                 {
                     await componentHost.OnBeforeInvokeAsync();
 
-                    using var roundSpan = Signal.Open(LogGroup.Engine, "轮次",
+                    using var roundSpan = Signal.Open(LogGroup.Engine, "处理轮次",
                         new { channelId, mode = isWorkingMode ? "working" : "express" });
 
                     // 上下文组装（轮次内）
@@ -345,7 +343,7 @@ namespace AgentCoreProcessor.Engine
                     var mode = isWorkingMode ? EngineMode.Working : EngineMode.Express;
 
                     ModelOutput output;
-                    using (var modelSpan = Signal.Open(LogGroup.Model, "模型调用",
+                    using (var modelSpan = Signal.Open(LogGroup.Model, "AI模型调用",
                         new { mode = mode.ToString(), channelId }))
                     {
                         output = await agentCore.InvokeAsync(messages, mode);
@@ -360,6 +358,13 @@ namespace AgentCoreProcessor.Engine
                     await componentHost.OnAfterInvokeAsync();
                     await ProcessResponseAsync(output);
                     DecideNext(output);
+                    roundSpan.SetCloseDetail(new
+                    {
+                        mode = isWorkingMode ? "working" : "express",
+                        isInWorkingSession,
+                        hadSpeak = speakModule.HadSpeakThisRound,
+                        toolCount = output.ToolCalls?.Count ?? 0
+                    });
                     consecutiveFailures = 0;
                 }
                 catch (Exception ex)
@@ -368,7 +373,7 @@ namespace AgentCoreProcessor.Engine
                     totalErrorCount++;
                     lastErrorTime = DateTime.Now;
                     lastErrorMessage = $"{ex.GetType().Name}: {ex.Message}";
-                    Signal.Error(LogGroup.Engine, "轮次异常",
+                    Signal.Error(LogGroup.Engine, "处理异常",
                         new { error = ex.GetType().Name, message = ex.Message, consecutiveFailures });
 
                     if (currentLastMsg != null && consecutiveFailures <= 1)
@@ -398,6 +403,7 @@ namespace AgentCoreProcessor.Engine
                     {
                         sessionCtx.Close(new { reason = "循环挂起" });
                         sessionCtx = null;
+                        SignalContext.Restore(lifeCtx);
                     }
                     if (!isInWorkingSession)
                     {
@@ -616,7 +622,7 @@ namespace AgentCoreProcessor.Engine
             if (currentLastMsg == null || currentLastSc == null) return;
             currentParticipantSnapshot ??= new Dictionary<int, ParticipantInfo>(recentParticipants);
 
-            using (var ctxSpan = Signal.Open(LogGroup.Memory, "上下文组装",
+            using (var ctxSpan = Signal.Open(LogGroup.Memory, "组装对话上下文",
                 new { channelId, personId = currentLastSc.Person.Id }))
             {
                 var recentMessages = await ctx.Session.GetContextByChannelAsync(channelId);
@@ -879,7 +885,7 @@ namespace AgentCoreProcessor.Engine
                 };
 
                 List<ToolResult> results;
-                using (var toolSpan = Signal.Open(LogGroup.Tool, "工具执行",
+                using (var toolSpan = Signal.Open(LogGroup.Tool, "执行工具",
                     new { toolCount = toolCalls.Count, tools = string.Join(",", toolCalls.Select(c => c.Tool)) }))
                 {
                     results = await executor.ExecuteAsync(toolCalls);

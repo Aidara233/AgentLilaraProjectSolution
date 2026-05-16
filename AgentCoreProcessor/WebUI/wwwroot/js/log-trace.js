@@ -87,11 +87,11 @@ function buildLookupMaps(rows) {
         }
     }
 
-    // Build engine lifecycle ranges: pair open/close of "引擎运行" spans by scope
+    // Build engine lifecycle ranges: pair open/close of "*引擎*" spans by scope
     const engineLifecycles = [];
     for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
-        if (row.type === 'open' && row.name === '引擎运行') {
+        if (row.type === 'open' && row.name && row.name.includes('引擎')) {
             // Find matching close
             let endIdx = -1;
             for (let j = i + 1; j < rows.length; j++) {
@@ -268,6 +268,18 @@ function svgEl(tag, attrs) {
 // --- Render column headers (HTML) ---
 
 function formatScopeName(scope) {
+    const map = {
+        'system:init': '系统启动',
+        'system:main': '系统循环',
+        'timer:heartbeat': 'Timer心跳',
+        'dream:main': '做梦',
+        'vision:main': '视觉',
+        'review:main': '回顾',
+    };
+    if (map[scope]) return map[scope];
+    if (scope.startsWith('channel:')) return '频道 ' + scope.substring(8);
+    if (scope.startsWith('adapter:')) return '适配器 ' + scope.substring(8);
+    if (scope.startsWith('dream:')) return '做梦 ' + scope.substring(6);
     return scope;
 }
 
@@ -704,12 +716,16 @@ function renderTextRows(textEl, rows) {
     headerSpacer.className = 'log-trace-header';
     headerSpacer.style.borderBottom = '1px solid var(--vis-col-separator)';
     const timeLabel = document.createElement('span');
-    timeLabel.style.cssText = 'width:80px;flex-shrink:0;font-size:12px;color:var(--vis-text-dim);';
+    timeLabel.style.cssText = 'width:70px;flex-shrink:0;font-size:12px;color:var(--vis-text-dim);';
     timeLabel.textContent = '时间';
+    const scopeLabel = document.createElement('span');
+    scopeLabel.style.cssText = 'width:90px;flex-shrink:0;font-size:12px;color:var(--vis-text-dim);padding-left:0.5rem;';
+    scopeLabel.textContent = '来源';
     const nameLabel = document.createElement('span');
     nameLabel.style.cssText = 'flex:1;font-size:12px;color:var(--vis-text-dim);padding-left:0.5rem;';
     nameLabel.textContent = '事件';
     headerSpacer.appendChild(timeLabel);
+    headerSpacer.appendChild(scopeLabel);
     headerSpacer.appendChild(nameLabel);
     textEl.appendChild(headerSpacer);
 
@@ -723,6 +739,22 @@ function renderTextRows(textEl, rows) {
 }
 
 // --- Render text rows for a range ---
+
+function textScopeName(scope) {
+    const map = {
+        'system:init': '系统启动',
+        'system:main': '系统循环',
+        'timer:heartbeat': 'Timer',
+        'dream:main': '做梦',
+        'vision:main': '视觉',
+        'review:main': '回顾',
+    };
+    if (map[scope]) return map[scope];
+    if (scope.startsWith('channel:')) return '频道 ' + scope.substring(8);
+    if (scope.startsWith('adapter:')) return '适配器';
+    if (scope.startsWith('dream:')) return '做梦';
+    return scope;
+}
 
 function renderTextRange(start, end) {
     const container = state._textContainer;
@@ -750,6 +782,12 @@ function renderTextRange(start, end) {
         timeSpan.className = 'time';
         timeSpan.textContent = formatTime(row.timestamp);
         div.appendChild(timeSpan);
+
+        // Scope
+        const scopeSpan = document.createElement('span');
+        scopeSpan.className = 'scope';
+        scopeSpan.textContent = textScopeName(row.scope);
+        div.appendChild(scopeSpan);
 
         // Name with type label
         const nameSpan = document.createElement('span');
@@ -919,7 +957,7 @@ function setupInteraction(graphEl, textEl, bodyEl) {
             }
         }
 
-        // Upstream: walk cause chain straight up
+        // Upstream: walk cause chain
         let cur = targetId;
         while (true) {
             const causeId = causeSpanIdToRowId[cur];
@@ -929,7 +967,7 @@ function setupInteraction(graphEl, textEl, bodyEl) {
             cur = causeId;
         }
 
-        // Downstream: walk effects straight down (BFS, only from target)
+        // Downstream: walk effects
         const downQueue = [targetId];
         const downVisited = new Set([targetId]);
         while (downQueue.length > 0) {
@@ -1004,6 +1042,40 @@ function setupInteraction(graphEl, textEl, bodyEl) {
 
     state._applyHighlight = applyHighlight;
 
+    // Detail lock state
+    let _detailLockedId = -1;
+    function lockDetail(rowId) {
+        _detailLockedId = rowId;
+        if (state.detailEl) state.detailEl.classList.add('locked');
+        showDetail(rowId);
+    }
+    function unlockDetail() {
+        _detailLockedId = -1;
+        if (state.detailEl) {
+            state.detailEl.classList.remove('locked');
+            state.detailEl.innerHTML = '<div class="detail-hint">悬停查看详情 · 单击锁定 · 双击筛选信号 · 右键解锁</div>';
+        }
+    }
+    function isDetailLocked() { return _detailLockedId >= 0; }
+    unlockDetail(); // show hint initially
+
+    function getRowIdxFromEvent(e) {
+        // Try graph node first
+        const node = e.target.closest('.node');
+        if (node) {
+            const id = parseInt(node.dataset.id);
+            if (!isNaN(id)) return state.rows.findIndex(r => r.id === id);
+        }
+        // Try text row
+        const textRow = e.target.closest('.trace-text-row');
+        if (textRow) {
+            const ri = parseInt(textRow.dataset.row);
+            if (!isNaN(ri)) return ri;
+        }
+        return -1;
+    }
+
+    // --- Hover: highlight + show detail (if not locked) ---
     let _lastHoverRow = -1;
     graphEl.addEventListener('mousemove', e => {
         const svg = graphEl.querySelector('svg');
@@ -1018,13 +1090,16 @@ function setupInteraction(graphEl, textEl, bodyEl) {
             clearTimeout(state._resumeTimer);
             state._resumeTimer = null;
             applyHighlight(ri);
+            if (!isDetailLocked()) showDetail(state.rows[ri].id);
         } else {
             clearHighlight();
+            if (!isDetailLocked()) unlockDetail();
         }
     });
     graphEl.addEventListener('mouseleave', () => {
         _lastHoverRow = -1;
         clearHighlight();
+        if (!isDetailLocked()) unlockDetail();
         if (state.hoverPaused && !state._resumeTimer) {
             state._resumeTimer = setTimeout(resumeAutoScroll, 2000);
         }
@@ -1034,13 +1109,11 @@ function setupInteraction(graphEl, textEl, bodyEl) {
     textEl.addEventListener('mousemove', e => {
         const row = e.target.closest('.trace-text-row');
         if (!row) {
-            // Mouse over text panel but not on a row — start resume timer
             if (state.hoverPaused && !state._resumeTimer) {
                 state._resumeTimer = setTimeout(resumeAutoScroll, 2000);
             }
             return;
         }
-        // Hovering on a row — pause auto-scroll
         clearTimeout(state._resumeTimer);
         state._resumeTimer = null;
         state.hoverPaused = true;
@@ -1048,16 +1121,53 @@ function setupInteraction(graphEl, textEl, bodyEl) {
         if (isNaN(id) || id === _lastTextHoverId) return;
         _lastTextHoverId = id;
         const ri = state.rows.findIndex(r => r.id === id);
-        if (ri >= 0) applyHighlight(ri);
+        if (ri >= 0) {
+            applyHighlight(ri);
+            if (!isDetailLocked()) showDetail(state.rows[ri].id);
+        }
     });
     textEl.addEventListener('mouseleave', () => {
         _lastTextHoverId = -1;
         clearHighlight();
-        // Start resume timer if auto-scroll was paused
+        if (!isDetailLocked()) unlockDetail();
         if (state.hoverPaused && !state._resumeTimer) {
             state._resumeTimer = setTimeout(resumeAutoScroll, 2000);
         }
     });
+
+    // --- Click: toggle detail lock ---
+    function onClick(e) {
+        const ri = getRowIdxFromEvent(e);
+        if (ri < 0) return;
+        const rowId = state.rows[ri].id;
+        if (_detailLockedId === rowId) {
+            unlockDetail();
+        } else {
+            lockDetail(rowId);
+        }
+        e.stopPropagation();
+    }
+    graphEl.addEventListener('click', onClick);
+    textEl.addEventListener('click', onClick);
+
+    // --- Double-click: filter by signal ---
+    function onDblClick(e) {
+        const ri = getRowIdxFromEvent(e);
+        if (ri < 0) return;
+        filterSignal(state.rows[ri].signalId);
+    }
+    graphEl.addEventListener('dblclick', onDblClick);
+    textEl.addEventListener('dblclick', onDblClick);
+
+    // --- Right-click: unlock detail ---
+    function onContextMenu(e) {
+        if (isDetailLocked()) {
+            e.preventDefault();
+            unlockDetail();
+        }
+    }
+    graphEl.addEventListener('contextmenu', onContextMenu);
+    textEl.addEventListener('contextmenu', onContextMenu);
 
     // Wheel on either panel resumes auto-scroll immediately
     function resumeAutoScroll() {
@@ -1073,128 +1183,19 @@ function setupInteraction(graphEl, textEl, bodyEl) {
     graphEl.addEventListener('wheel', () => { state.hoverPaused = false; clearTimeout(state._resumeTimer); state._resumeTimer = null; });
 }
 
-// --- Context menu ---
+// --- Signal filter helper ---
 
-function setupContextMenu(graphEl, textEl) {
-    let menu = null;
-
-    function showMenu(e, rowIdx) {
-        e.preventDefault();
-        hideMenu();
-        const row = state.rows[rowIdx];
-        if (!row) return;
-
-        menu = document.createElement('div');
-        menu.className = 'trace-context-menu';
-
-        const items = [];
-        items.push({ label: '查看此信号', icon: 'bi-diagram-3', action: () => filterSignal(row.signalId) });
-
-        if ((row.type === 'open' || row.type === 'close') && row.spanId) {
-            const pairType = row.type === 'open' ? 'close' : 'open';
-            const pair = state.rows.findIndex(r => r.spanId === row.spanId && r.type === pairType);
-            if (pair >= 0) {
-                items.push({ label: '定位配对节点', icon: 'bi-arrow-left-right', action: () => scrollToRow(pair) });
-            }
-        }
-
-        if (row._resolvedParentId != null) {
-            const parentIdx = state.rows.findIndex(r => r.id === row._resolvedParentId);
-            if (parentIdx >= 0) {
-                items.push({ label: '跳转到父节点', icon: 'bi-arrow-up', action: () => scrollToRow(parentIdx) });
-            }
-        }
-
-        items.push({ sep: true });
-        items.push({ label: '复制详情', icon: 'bi-clipboard', action: () => copyDetail(row) });
-
-        for (const item of items) {
-            if (item.sep) {
-                const sep = document.createElement('div');
-                sep.className = 'menu-sep';
-                menu.appendChild(sep);
-            } else {
-                const div = document.createElement('div');
-                div.className = 'menu-item';
-                div.innerHTML = `<i class="bi ${item.icon}"></i>${item.label}`;
-                div.addEventListener('click', () => { item.action(); hideMenu(); });
-                menu.appendChild(div);
-            }
-        }
-
-        // Position menu
-        menu.style.left = e.clientX + 'px';
-        menu.style.top = e.clientY + 'px';
-        document.body.appendChild(menu);
-
-        // Adjust if off-screen
-        requestAnimationFrame(() => {
-            if (!menu) return;
-            const rect = menu.getBoundingClientRect();
-            if (rect.right > window.innerWidth) menu.style.left = (e.clientX - rect.width) + 'px';
-            if (rect.bottom > window.innerHeight) menu.style.top = (e.clientY - rect.height) + 'px';
-        });
-    }
-
-    function hideMenu() {
-        if (menu) { menu.remove(); menu = null; }
-    }
-
-    function scrollToRow(rowIdx) {
-        const y = rowIdx * ROW_HEIGHT - state.graphEl.clientHeight / 2;
-        state.graphEl.scrollTop = Math.max(0, y);
-        state.textEl.scrollTop = Math.max(0, y);
-        // Flash highlight
-        const textRow = state.textEl.querySelector(`[data-row="${rowIdx}"]`);
-        if (textRow) {
-            textRow.style.background = 'rgba(96,165,250,0.2)';
-            setTimeout(() => { textRow.style.background = ''; }, 1500);
-        }
-    }
-
-    function filterSignal(signalId) {
-        // Find the select element and change its value, then trigger change
-        const select = document.querySelector('.log-trace-toolbar select');
-        if (select) {
-            // Find option matching this signalId
-            for (const opt of select.options) {
-                if (opt.value === signalId) {
-                    select.value = signalId;
-                    select.dispatchEvent(new Event('change', { bubbles: true }));
-                    return;
-                }
+function filterSignal(signalId) {
+    const select = document.querySelector('.log-trace-toolbar select');
+    if (select) {
+        for (const opt of select.options) {
+            if (opt.value === signalId) {
+                select.value = signalId;
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+                return;
             }
         }
     }
-
-    function copyDetail(row) {
-        const text = row.detail || row.name || '';
-        navigator.clipboard.writeText(text).catch(() => {});
-    }
-
-    // Bind right-click on graph nodes
-    graphEl.addEventListener('contextmenu', e => {
-        const node = e.target.closest('.node');
-        if (!node) return;
-        const id = parseInt(node.dataset.id);
-        if (isNaN(id)) return;
-        const ri = state.rows.findIndex(r => r.id === id);
-        if (ri >= 0) showMenu(e, ri);
-    });
-
-    // Bind right-click on text rows
-    textEl.addEventListener('contextmenu', e => {
-        const row = e.target.closest('.trace-text-row');
-        if (!row) return;
-        const ri = parseInt(row.dataset.row);
-        if (!isNaN(ri)) showMenu(e, ri);
-    });
-
-    // Close on click anywhere
-    document.addEventListener('click', hideMenu);
-    document.addEventListener('contextmenu', e => {
-        if (!e.target.closest('.node') && !e.target.closest('.trace-text-row')) hideMenu();
-    });
 }
 
 // --- Exported functions ---
@@ -1244,26 +1245,18 @@ export function renderTrace(graphEl, textEl, bodyEl, detailEl, scopes, rows) {
     });
 
     setupInteraction(graphEl, textEl, bodyEl);
-    setupContextMenu(graphEl, textEl);
-    setupDetailPanel(graphEl, textEl);
 }
 
 // --- Detail panel ---
 
-function setupDetailPanel(graphEl, textEl) {
-    const handler = (e) => {
-        const node = e.target.closest('[data-id]');
-        if (!node) return;
-        const id = parseInt(node.dataset.id);
-        showDetail(id);
-    };
-    graphEl.addEventListener('click', handler);
-    textEl.addEventListener('click', (e) => {
-        const row = e.target.closest('.trace-text-row');
-        if (!row) return;
-        const id = parseInt(row.dataset.id);
-        if (!isNaN(id)) showDetail(id);
-    });
+function isSignalOrigin(row) {
+    if (row.parentId == null && row.causeSpanId == null) return true;
+    if (row.spanId != null && state.causeSpanIdToRowId) {
+        for (const [effectId, causeId] of Object.entries(state.causeSpanIdToRowId)) {
+            if (row.spanId === state.rows.find(r => r.id === causeId)?.spanId) return true;
+        }
+    }
+    return false;
 }
 
 function showDetail(rowId) {
@@ -1277,25 +1270,39 @@ function showDetail(rowId) {
     try { detail = row.detail ? JSON.stringify(JSON.parse(row.detail), null, 2) : ''; }
     catch { detail = row.detail || ''; }
 
+    const origin = isSignalOrigin(row);
+    const name = row.name || '(close)';
+    const prefix = row.type === 'open' ? '[开始] ' : row.type === 'close' ? '[完成] ' : '';
+    const scopeLabel = textScopeName(row.scope);
+
+    let html = `<div class="detail-title">${prefix}${escapeHtml(name)}</div>`;
+    html += `<div class="detail-subtitle">${escapeHtml(scopeLabel)} · ${escapeHtml(ts)}</div>`;
+
+    if (origin) {
+        html += `<div class="detail-signal-badge" title="${escapeHtml(row.signalId)}">◉ 信号源 · ${escapeHtml(row.signalId)}</div>`;
+    }
+
+    html += `<div class="detail-fields">`;
     const fields = [
         { label: '类型', value: row.type },
-        { label: '时间', value: ts },
-        { label: 'Scope', value: row.scope },
+        { label: 'Group', value: row.groupName },
         { label: 'Signal', value: row.signalId },
-        { label: 'Span ID', value: row.spanId || '-' },
+        { label: 'Span', value: row.spanId || '-' },
         { label: 'Parent', value: row.parentId || '-' },
         { label: 'Cause', value: row.causeSpanId || '-' },
-        { label: 'Group', value: row.groupName },
         { label: 'Level', value: ['Debug','Info','Warn','Error'][row.level] || row.level },
     ];
-
-    let html = `<div class="detail-title">${escapeHtml(row.name || '(close)')}</div>`;
     for (const f of fields) {
         html += `<div class="detail-field"><div class="detail-label">${f.label}</div><div class="detail-value">${escapeHtml(f.value ?? '')}</div></div>`;
     }
+    html += `</div>`;
+
     if (detail) {
         html += `<div class="detail-json">${escapeHtml(detail)}</div>`;
     }
+
+    html += `<button class="detail-copy-btn" title="复制详情" onclick="navigator.clipboard.writeText(this.previousElementSibling?.textContent || '')">📋 复制</button>`;
+
     el.innerHTML = html;
 }
 

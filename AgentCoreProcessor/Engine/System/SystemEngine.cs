@@ -184,7 +184,7 @@ namespace AgentCoreProcessor.Engine
             var parentCtx = SignalContext.Current;
             var lifeCtx = Signal.Continue(
                 parentCtx?.SignalId ?? Signal.NewId(), parentCtx?.CurrentSpanId,
-                "system:main", LogGroup.Engine, "引擎运行",
+                "system:main", LogGroup.Engine, "System引擎",
                 new { engineType = EngineType });
 
             // 初始化 ComponentHost
