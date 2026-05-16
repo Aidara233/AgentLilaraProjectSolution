@@ -947,7 +947,7 @@ function setupInteraction(graphEl, textEl, bodyEl) {
         graphEl.querySelectorAll('.cross-line').forEach(el => {
             const from = parseInt(el.dataset.from);
             const to = parseInt(el.dataset.to);
-            if (!highlighted.has(from) && !highlighted.has(to)) {
+            if (!highlighted.has(from) || !highlighted.has(to)) {
                 el.classList.add('dimmed');
             }
         });
