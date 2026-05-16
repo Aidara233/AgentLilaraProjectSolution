@@ -154,7 +154,17 @@ function assignSlots(rows, scopes) {
 
         let slotIdx = 0;
 
-        if (row.type === 'open') {
+        if (row.type === 'cease' || (row.type === 'open' && row.name === '程序启动')) {
+            // Process restart: release all active slots across all scopes
+            for (const [, scopeActive] of activePerScope) {
+                scopeActive.clear();
+            }
+            if (row.type === 'open') {
+                active.set(row.spanId, 0);
+                if (1 > maxSlots[scopeIdx]) maxSlots[scopeIdx] = 1;
+            }
+            slotIdx = 0;
+        } else if (row.type === 'open') {
             // Find first unused slot index
             const usedSlots = new Set(active.values());
             slotIdx = 0;
