@@ -54,6 +54,9 @@ namespace AgentCoreProcessor.Engine.Vision
 
         public async Task RunAsync()
         {
+            var startupCtx = AgentCoreProcessor.Logging.SignalContext.Current;
+            Logging.Signal.Event(Logging.LogGroup.Engine, "引擎启动", new { engineType = EngineType });
+
             config = VisionEngineConfig.Load();
             visionSemaphore = new SemaphoreSlim(config.VisionConcurrency);
             ocrSemaphore = new SemaphoreSlim(config.OcrConcurrency);
@@ -81,6 +84,9 @@ namespace AgentCoreProcessor.Engine.Vision
 
             visionSemaphore?.Dispose();
             ocrSemaphore?.Dispose();
+
+            AgentCoreProcessor.Logging.SignalContext.Restore(startupCtx);
+            Logging.Signal.Event(Logging.LogGroup.Engine, "引擎停止", new { engineType = EngineType, reason = "shutdown" });
         }
 
         // PLACEHOLDER_PROCESS_METHODS

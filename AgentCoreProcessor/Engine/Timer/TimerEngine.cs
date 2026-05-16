@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using AgentCoreProcessor.Logging;
 
 namespace AgentCoreProcessor.Engine
 {
@@ -27,6 +28,7 @@ namespace AgentCoreProcessor.Engine
         private int intervalSeconds = 30;
         private System.DateTime lastSystemHeartbeat = System.DateTime.Now;
         private bool alarmSent = false;
+        private CancellationTokenSource? _stopCts;
 
         public TimerEngine(ISystemContext ctx)
         {
@@ -35,32 +37,45 @@ namespace AgentCoreProcessor.Engine
 
         public async Task RunAsync()
         {
-            while (IsAlive)
+            _stopCts = new CancellationTokenSource();
+            var ct = _stopCts.Token;
+
+            var startupCtx = AgentCoreProcessor.Logging.SignalContext.Current;
+            Signal.Event(LogGroup.Engine, "引擎启动", new { engineType = EngineType });
+
+            try
             {
-                await Task.Delay(intervalSeconds * 1000);
-                if (!IsAlive) break;
-
-                // 发布定时器事件
-                ctx.EventBus.Publish(new TimerEvent { TimerName = "tick" });
-
-                // Phase 8: 检查 SystemEngine 心跳
-                if (ctx.HasActiveEngine("System"))
+                while (IsAlive && !ct.IsCancellationRequested)
                 {
-                    lastSystemHeartbeat = System.DateTime.Now;
-                    alarmSent = false; // 恢复后重置报警标志
-                }
-                else
-                {
-                    // SystemEngine 不存在，检查是否需要报警
-                    var elapsed = (System.DateTime.Now - lastSystemHeartbeat).TotalHours;
-                    if (elapsed > 1.0 && !alarmSent)
+                    try { await Task.Delay(intervalSeconds * 1000, ct); }
+                    catch (OperationCanceledException) { break; }
+                    if (!IsAlive) break;
+
+                    // 发布定时器事件
+                    ctx.EventBus.Publish(new TimerEvent { TimerName = "tick" });
+
+                    // Phase 8: 检查 SystemEngine 心跳
+                    if (ctx.HasActiveEngine("System"))
                     {
-
-                        // 发送报警通知到所有管理员频道
-                        await SendSystemCrashAlarmAsync();
-                        alarmSent = true; // 避免重复报警
+                        lastSystemHeartbeat = System.DateTime.Now;
+                        alarmSent = false;
+                    }
+                    else
+                    {
+                        var elapsed = (System.DateTime.Now - lastSystemHeartbeat).TotalHours;
+                        if (elapsed > 1.0 && !alarmSent)
+                        {
+                            await SendSystemCrashAlarmAsync();
+                            alarmSent = true;
+                        }
                     }
                 }
+            }
+            finally
+            {
+                IsAlive = false;
+                AgentCoreProcessor.Logging.SignalContext.Restore(startupCtx);
+                Signal.Event(LogGroup.Engine, "引擎停止", new { engineType = EngineType, reason = "shutdown" });
             }
         }
 
@@ -114,6 +129,10 @@ namespace AgentCoreProcessor.Engine
             }
         }
 
-        public void RequestStop() => IsAlive = false;
+        public void RequestStop()
+        {
+            IsAlive = false;
+            _stopCts?.Cancel();
+        }
     }
 }

@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Core;
+using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Tool;
 using Newtonsoft.Json;
@@ -78,6 +79,9 @@ namespace AgentCoreProcessor.Engine
 
         public async Task RunAsync()
         {
+            var startupCtx = SignalContext.Current;
+            Signal.Event(LogGroup.Engine, "引擎启动",
+                new { engineType = EngineType, mode = mode.ToString() });
 
             try
             {
@@ -98,6 +102,10 @@ namespace AgentCoreProcessor.Engine
                 catch { }
 
                 IsAlive = false;
+
+                SignalContext.Restore(startupCtx);
+                Signal.Event(LogGroup.Engine, "引擎停止",
+                    new { engineType = EngineType, reason = "completed" });
             }
         }
 

@@ -180,6 +180,10 @@ namespace AgentCoreProcessor.Engine
             stopCts = new CancellationTokenSource();
             var ct = stopCts.Token;
 
+            // 引擎生命周期标记（写入 startup signal scope）
+            var startupCtx = SignalContext.Current;
+            Signal.Event(LogGroup.Engine, "引擎启动", new { engineType = EngineType, scope = "system:main" });
+
             // 初始化 ComponentHost
             componentHost = new ComponentHost(
                 "system", "system", ctx.ComponentEventBus, ctx.ComponentServices,
@@ -290,6 +294,10 @@ namespace AgentCoreProcessor.Engine
 
                 IsAlive = false;
                 foreach (var m in modules) m.Reset();
+
+                // 引擎生命周期结束标记
+                SignalContext.Restore(startupCtx);
+                Signal.Event(LogGroup.Engine, "引擎停止", new { engineType = EngineType, reason = "shutdown" });
             }
         }
 
@@ -690,6 +698,7 @@ namespace AgentCoreProcessor.Engine
         public void RequestStop()
         {
             stopCts?.Cancel();
+            gate.Signal();
         }
 
         /// <summary>外部唤醒闸门（委托提交时调用）。</summary>

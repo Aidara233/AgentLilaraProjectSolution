@@ -110,6 +110,7 @@ namespace AgentCoreProcessor.Engine
         // ---- 引擎注册表 ----
         private readonly List<IEngineSpawnCheck> spawnChecks = new();
         private readonly List<ISubEngine> activeEngines = new();
+        private readonly List<(ISubEngine Engine, Task Task)> _engineTasks = new();
         private readonly object engineLock = new();
         private readonly SemaphoreSlim eventLock = new(1, 1);
         private SystemEngine? systemEngine; // Phase 5: 保存 SystemEngine 引用用于工具注册
@@ -569,7 +570,7 @@ namespace AgentCoreProcessor.Engine
         public ISubEngine StartEngine(ISubEngine engine)
         {
             lock (engineLock) { activeEngines.Add(engine); }
-            _ = Task.Run(async () =>
+            var task = Task.Run(async () =>
             {
                 try
                 {
@@ -584,12 +585,40 @@ namespace AgentCoreProcessor.Engine
                     });
                 }
             });
+            lock (engineLock) { _engineTasks.Add((engine, task)); }
             return engine;
         }
 
         public void RequestStopEngine(ISubEngine engine)
         {
             engine.RequestStop();
+        }
+
+        /// <summary>请求所有活跃引擎停止。</summary>
+        public void RequestStopAll()
+        {
+            lock (engineLock)
+            {
+                foreach (var e in activeEngines.Where(e => e.IsAlive))
+                    e.RequestStop();
+            }
+        }
+
+        /// <summary>等待所有引擎 Task 完成。返回 true 表示全部退出，false 表示超时。</summary>
+        public async Task<bool> WaitAllStoppedAsync(TimeSpan timeout)
+        {
+            List<Task> tasks;
+            lock (engineLock) { tasks = _engineTasks.Select(t => t.Task).ToList(); }
+            if (tasks.Count == 0) return true;
+            var allDone = Task.WhenAll(tasks);
+            var completed = await Task.WhenAny(allDone, Task.Delay(timeout));
+            return completed == allDone;
+        }
+
+        /// <summary>获取仍存活的引擎数量。</summary>
+        public int GetAliveCount()
+        {
+            lock (engineLock) { return activeEngines.Count(e => e.IsAlive); }
         }
 
         /// <summary>人设记忆种子加载：表空时从 Storage/PersonaMemorySeed.txt 导入。</summary>

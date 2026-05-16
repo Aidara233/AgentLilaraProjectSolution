@@ -38,7 +38,9 @@ function initState() {
         _contentGroup: null, // SVG <g> for dynamic content
         _textContainer: null, // div container for text rows
         _rafPending: false,  // rAF throttle flag
-        _spans: null         // pre-computed span map for vertical lines
+        _spans: null,        // pre-computed span map for vertical lines
+        engineLifecycles: [], // engine start/stop pairs
+        startupSignalClosed: false // whether system:init has a close event
     };
 }
 
@@ -79,6 +81,36 @@ function buildLookupMaps(rows) {
         }
     }
 
+    // Build engine lifecycle ranges: pair "引擎启动"/"引擎停止" events by scope
+    const engineLifecycles = [];
+    const engineStarts = {}; // scope → row index
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        if (row.type !== 'event') continue;
+        if (row.name === '引擎启动') {
+            engineStarts[row.scope] = i;
+        } else if (row.name === '引擎停止') {
+            const startIdx = engineStarts[row.scope];
+            if (startIdx != null) {
+                engineLifecycles.push({ scope: row.scope, startIdx, endIdx: i });
+                delete engineStarts[row.scope];
+            }
+        }
+    }
+    // Unpaired starts: engine still running (or crashed)
+    for (const [scope, startIdx] of Object.entries(engineStarts)) {
+        engineLifecycles.push({ scope, startIdx, endIdx: -1 });
+    }
+
+    // Detect if startupSignal has a close event (scope=system:init)
+    let startupSignalClosed = false;
+    for (const row of rows) {
+        if (row.scope === 'system:init' && row.type === 'close') {
+            startupSignalClosed = true;
+            break;
+        }
+    }
+
     // Build closeToOpen: match close rows to their paired open rows by spanId
     const openBySpanId = {};
     for (const row of rows) {
@@ -92,7 +124,7 @@ function buildLookupMaps(rows) {
         }
     }
 
-    return { byId, childrenOf, closeToOpen, causeSpanIdToRowId };
+    return { byId, childrenOf, closeToOpen, causeSpanIdToRowId, engineLifecycles, startupSignalClosed };
 }
 
 // --- Slot assignment ---
@@ -471,13 +503,63 @@ function renderCrossLinesRange(g, rows, meta, columns, start, end) {
     }
 }
 
+// --- Render engine lifecycle lines (gray dashed, annotation only) ---
+
+function renderEngineLifecycleLines(g, rows, meta, columns, start, end) {
+    const lifecycles = state.engineLifecycles;
+    if (!lifecycles || lifecycles.length === 0) return;
+
+    for (const lc of lifecycles) {
+        const startIdx = lc.startIdx;
+        const endIdx = lc.endIdx >= 0 ? lc.endIdx : rows.length - 1;
+
+        // Skip if entirely outside visible range
+        if (endIdx < start || startIdx >= end) continue;
+
+        const segStart = Math.max(startIdx, start);
+        const segEnd = Math.min(endIdx, end - 1);
+
+        // Use the scope column and slot 0 (leftmost) offset by -6px for the annotation line
+        const scopeIdx = meta[startIdx]._scopeIdx;
+        const x = getNodeX(columns, scopeIdx, 0) - 6;
+
+        const y1 = getNodeY(segStart) - (segStart === startIdx ? 0 : ROW_HEIGHT / 2);
+        const y2 = getNodeY(segEnd) + (segEnd === endIdx && lc.endIdx >= 0 ? 0 : ROW_HEIGHT / 2);
+
+        const line = svgEl('line', {
+            x1: x, y1, x2: x, y2,
+            stroke: 'var(--vis-debug)',
+            'stroke-width': 1,
+            'stroke-dasharray': '4,4',
+            opacity: '0.6',
+            class: 'engine-life'
+        });
+        g.appendChild(line);
+    }
+}
+
 // --- Render nodes (range only) ---
 
 function renderNodesRange(g, rows, meta, columns, start, end) {
-    // Build span map to check if open has paired close
+    // Build span close set
     const spanHasClose = new Set();
     for (const row of rows) {
         if (row.type === 'close') spanHasClose.add(row.spanId);
+    }
+
+    // Color for unclosed spans: green/yellow/red
+    // Green: has close. Yellow: parent chain open (in progress). Red: parent closed or startup closed.
+    function getOpenColor(spanId, row) {
+        if (spanHasClose.has(spanId)) return 'var(--vis-ok)';
+        // No close — check parent chain
+        if (row.parentId != null) {
+            // Has a parent span — check if parent is closed
+            if (spanHasClose.has(row.parentId)) return 'var(--vis-error)'; // parent closed, child didn't
+            return 'var(--vis-warn)'; // parent also open → in progress
+        }
+        // Root span (no parent) — check startupSignal
+        if (state.startupSignalClosed) return 'var(--vis-error)'; // program exited
+        return 'var(--vis-warn)'; // still running
     }
 
     for (let i = start; i < end; i++) {
@@ -490,8 +572,8 @@ function renderNodesRange(g, rows, meta, columns, start, end) {
         let node;
 
         if (row.type === 'open' && row.parentId == null && row.causeSpanId == null) {
-            // True signal origin: double circle (first open of a signal)
-            const originColor = spanHasClose.has(row.spanId) ? 'var(--vis-ok)' : 'var(--vis-error)';
+            // True signal origin: double circle
+            const originColor = getOpenColor(row.spanId, row);
             const g2 = svgEl('g', { class: 'node', 'data-row': i, 'data-id': row.id });
             g2.appendChild(svgEl('circle', {
                 cx, cy, r: r + 2,
@@ -503,7 +585,7 @@ function renderNodesRange(g, rows, meta, columns, start, end) {
             }));
             node = g2;
         } else if (row.type === 'open') {
-            const color = spanHasClose.has(row.spanId) ? 'var(--vis-ok)' : 'var(--vis-error)';
+            const color = getOpenColor(row.spanId, row);
             node = svgEl('circle', {
                 cx, cy, r,
                 fill: 'none', stroke: color, 'stroke-width': 1.5,
@@ -643,6 +725,7 @@ function renderVisibleRange() {
     _contentGroup.innerHTML = '';
 
     renderVerticalLinesRange(_contentGroup, columns, renderStart, renderEnd);
+    renderEngineLifecycleLines(_contentGroup, rows, rowMeta, columns, renderStart, renderEnd);
     renderCrossLinesRange(_contentGroup, rows, rowMeta, columns, renderStart, renderEnd);
     renderNodesRange(_contentGroup, rows, rowMeta, columns, renderStart, renderEnd);
 
@@ -938,11 +1021,13 @@ export function renderTrace(graphEl, textEl, bodyEl, scopes, rows) {
     if (!rows || rows.length === 0) return;
 
     // Build lookup maps for interaction
-    const { byId, childrenOf, closeToOpen, causeSpanIdToRowId } = buildLookupMaps(rows);
+    const { byId, childrenOf, closeToOpen, causeSpanIdToRowId, engineLifecycles, startupSignalClosed } = buildLookupMaps(rows);
     state.byId = byId;
     state.childrenOf = childrenOf;
     state.closeToOpen = closeToOpen;
     state.causeSpanIdToRowId = causeSpanIdToRowId;
+    state.engineLifecycles = engineLifecycles;
+    state.startupSignalClosed = startupSignalClosed;
 
     // Assign slots
     const { meta, maxSlots } = assignSlots(rows, scopes);
@@ -999,7 +1084,7 @@ function rebuildState() {
     const scopes = [...new Set(rows.map(r => r.scope))];
     state.scopes = scopes;
 
-    const { byId, childrenOf, closeToOpen, causeSpanIdToRowId } = buildLookupMaps(rows);
+    const { byId, childrenOf, closeToOpen, causeSpanIdToRowId, engineLifecycles, startupSignalClosed } = buildLookupMaps(rows);
     state.byId = byId;
     state.childrenOf = childrenOf;
     state.closeToOpen = closeToOpen;

@@ -351,6 +351,21 @@ namespace AgentCoreProcessor
             // 适配器后台启动（ConsoleAdapter.StartAsync 会阻塞，不能 await）
             _ = Task.Run(() => adapterManager.StartAllAsync(debugMode: false));
 
+            // 注册优雅退出钩子
+            var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+            lifetime.ApplicationStopping.Register(() =>
+            {
+                Signal.Event(LogGroup.Engine, "进程退出信号");
+                adapterManager.StopAllAsync().GetAwaiter().GetResult();
+                engine.RequestStopAll();
+                var allStopped = engine.WaitAllStoppedAsync(TimeSpan.FromSeconds(30)).GetAwaiter().GetResult();
+                if (!allStopped)
+                {
+                    var remaining = engine.GetAliveCount();
+                    Signal.Error(LogGroup.Engine, "引擎强杀", new { remaining });
+                }
+            });
+
             Console.WriteLine($"[WebUI] 管理面板: http://localhost:{webConfig.Port}");
 
             await app.RunAsync();
