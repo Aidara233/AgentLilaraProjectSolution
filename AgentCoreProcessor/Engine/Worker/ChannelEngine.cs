@@ -391,6 +391,7 @@ namespace AgentCoreProcessor.Engine
 
                     if (consecutiveFailures >= ChannelMaxConsecutiveBeforeBackoff)
                     {
+                        Signal.Warn(LogGroup.Engine, "连续失败退避", new { channelId, consecutiveFailures, backoffSeconds = ChannelBackoffSeconds });
                         await Task.Delay(TimeSpan.FromSeconds(ChannelBackoffSeconds));
                     }
 
@@ -509,6 +510,7 @@ namespace AgentCoreProcessor.Engine
 
                 if (ctx.MuteMode)
                 {
+                    Signal.Event(LogGroup.Engine, "静音跳过", new { channelId, messageCount = batch.Count });
                     TrackMemoryExtraction(batch, currentLastSc);
                     return false;
                 }
@@ -540,11 +542,13 @@ namespace AgentCoreProcessor.Engine
                         var result = await interceptor.OnBeforeProcessAsync(interceptCtx);
                         if (result.Action == AgentLilara.PluginSDK.InterceptAction.Skip)
                         {
+                            Signal.Event(LogGroup.Engine, "拦截器跳过", new { channelId, interceptor = interceptor.GetType().Name });
                             TrackMemoryExtraction(batch, currentLastSc);
                             return false;
                         }
                         if (result.Action == AgentLilara.PluginSDK.InterceptAction.Handled)
                         {
+                            Signal.Event(LogGroup.Engine, "拦截器处理", new { channelId, interceptor = interceptor.GetType().Name });
                             TrackMemoryExtraction(batch, currentLastSc);
                             return false;
                         }
@@ -553,7 +557,18 @@ namespace AgentCoreProcessor.Engine
                     }
                 }
 
-                if (!impulseTracker.ShouldRespond(batch, LastCompletionTime))
+                var shouldRespond = impulseTracker.ShouldRespond(batch, LastCompletionTime);
+                Signal.Event(LogGroup.Engine, "冲动值决策", new
+                {
+                    channelId,
+                    decision = shouldRespond ? "respond" : "skip",
+                    impulse = impulseTracker.Impulse,
+                    threshold = ctx.ImpulseConfig.Threshold,
+                    messageCount = batch.Count,
+                    hasMention = batch.Any(b => b.Message.IsMentioned),
+                    idleSeconds = (int)(DateTime.Now - (LastCompletionTime ?? DateTime.Now)).TotalSeconds
+                });
+                if (!shouldRespond)
                 {
                     TrackMemoryExtraction(batch, currentLastSc);
                     return false;
@@ -582,8 +597,14 @@ namespace AgentCoreProcessor.Engine
                 // 分类（仅 Express 模式下判断是否升级）
                 if (!isWorkingMode)
                 {
-                    var isTask = await preprocessingCore.IsTaskAsync(
-                        batch.Select(b => b.Message.Content).LastOrDefault() ?? "");
+                    var lastContent = batch.Select(b => b.Message.Content).LastOrDefault() ?? "";
+                    var isTask = await preprocessingCore.IsTaskAsync(lastContent);
+                    Signal.Event(LogGroup.Engine, "消息分类", new
+                    {
+                        channelId,
+                        result = isTask ? "task" : "chat",
+                        content_preview = lastContent.Length > 200 ? lastContent[..200] : lastContent
+                    });
                     if (isTask) { isWorkingMode = true; consecutiveExternalTriggers = 0; }
                 }
 
@@ -922,6 +943,7 @@ namespace AgentCoreProcessor.Engine
                     isWorkingMode = true;
                     isInWorkingSession = true;
                     consecutiveExternalTriggers = 0;
+                    Signal.Event(LogGroup.Engine, "模式切换", new { channelId, from = "Express", to = "Working", reason = escalationReason ?? "工具调用" });
                     gate.Signal();
                 }
                 // Fallback: 非 native 模式仍解析文本标记
@@ -932,6 +954,7 @@ namespace AgentCoreProcessor.Engine
                     isWorkingMode = true;
                     isInWorkingSession = true;
                     consecutiveExternalTriggers = 0;
+                    Signal.Event(LogGroup.Engine, "模式切换", new { channelId, from = "Express", to = "Working", reason = escalationReason ?? "文本标记" });
                     gate.Signal();
                 }
             }
@@ -968,6 +991,13 @@ namespace AgentCoreProcessor.Engine
 
         private void EndWorkingSession()
         {
+            Signal.Event(LogGroup.Engine, "Working会话结束", new
+            {
+                channelId,
+                totalRounds = loopControlModule.TotalRounds,
+                silentRounds = loopControlModule.SilentRounds,
+                hadSpeak = speakModule.HadSpeakThisRound
+            });
             isInWorkingSession = false;
         }
         public void OnEvent(EngineEvent e)
