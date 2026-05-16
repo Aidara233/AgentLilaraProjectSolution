@@ -103,13 +103,10 @@ namespace AgentCoreProcessor.Engine
         // 记忆提取计数（用于退出时判断是否需要收尾提取）
         private int processedMessageCount = 0;
         private int unrespondedMessageCount = 0;
-        private int lastExtractedMessageId = -1; // -1 表示未初始化，需从 DB 加载
-        private int latestMessageId = 0;
-        private int totalMessageCount = 0;
-        private int extractedMessageCount = 0;
-        private bool extractionRunning = false;
-        private CancellationTokenSource? extractionCts;
         private SessionContext? lastContext;
+
+        // 记忆提取 Worker（独立信号 + 独立文件）
+        private ChannelExtractionWorker extractionWorker = null!;
 
         // TrustProgress 每日自动增长跟踪
         private readonly Dictionary<int, (DateTime Date, float Accumulated)> dailyProgressTracker = new();
@@ -176,6 +173,10 @@ namespace AgentCoreProcessor.Engine
 
             _traceSignalId = Logging.SignalContext.Current?.SignalId;
             _traceParentSpanId = Logging.SignalContext.Current?.CurrentSpanId;
+
+            extractionWorker = new ChannelExtractionWorker(
+                ctx, channelId, channelConfig, recentParticipants,
+                () => LastCompletionTime);
 
             buffer.Add((initialMessage, initialContext));
             CollectImagePaths(initialMessage);
@@ -282,7 +283,7 @@ namespace AgentCoreProcessor.Engine
                 if (!triggered)
                 {
                     if (processedMessageCount > 0 && lastContext != null)
-                        await ExtractMemoryAsync(lastContext);
+                        extractionWorker.Trigger(lastContext, null);
                     IsAlive = false;
                     break;
                 }
@@ -1047,11 +1048,11 @@ namespace AgentCoreProcessor.Engine
             Importance = channelConfig.Importance,
             ActiveExtractionThreshold = channelConfig.ActiveExtractionThreshold,
             LurkingExtractionThreshold = channelConfig.LurkingExtractionThreshold,
-            LastExtractedMessageId = lastExtractedMessageId < 0 ? 0 : lastExtractedMessageId,
-            LatestMessageId = latestMessageId,
-            TotalMessageCount = totalMessageCount,
-            ExtractedMessageCount = extractedMessageCount,
-            ExtractionRunning = extractionRunning,
+            LastExtractedMessageId = extractionWorker.LastExtractedMessageId,
+            LatestMessageId = extractionWorker.LatestMessageId,
+            TotalMessageCount = extractionWorker.TotalMessageCount,
+            ExtractedMessageCount = extractionWorker.ExtractedMessageCount,
+            ExtractionRunning = extractionWorker.IsRunning,
             AutoExtractionEnabled = channelConfig.AutoExtractionEnabled,
             UnrespondedMessageCount = unrespondedMessageCount,
             ConsecutiveExternalTriggers = consecutiveExternalTriggers,
@@ -1078,9 +1079,7 @@ namespace AgentCoreProcessor.Engine
             processedMessageCount += messages.Count;
             unrespondedMessageCount += messages.Count;
 
-            if (!channelConfig.AutoExtractionEnabled) return;
-            if (extractionRunning) return;
-            _ = RunExtractionAsync(sc);
+            extractionWorker.Trigger(sc, SignalContext.Current);
         }
 
         private async Task<List<ScoredMemory>> GetCachedMemoryAsync(SessionContext context, string query)
@@ -1175,179 +1174,22 @@ namespace AgentCoreProcessor.Engine
             }
         }
 
-        public async Task TriggerLurkingExtractionAsync()
+        public void TriggerLurkingExtraction()
         {
             if (lastContext == null) return;
-            await RunExtractionAsync(lastContext);
+            extractionWorker.Trigger(lastContext, null);
         }
 
         public void SetAutoExtraction(bool enabled)
         {
-            channelConfig.AutoExtractionEnabled = enabled;
-            ChannelStateManager.SaveConfig(channelId, channelConfig);
+            extractionWorker.SetAutoExtraction(enabled);
         }
 
         public void CancelExtraction()
         {
-            extractionCts?.Cancel();
+            extractionWorker.Cancel();
         }
 
-        private async Task RunExtractionAsync(SessionContext context)
-        {
-            if (extractionRunning) return;
-            extractionRunning = true;
-            extractionCts = new CancellationTokenSource();
-            var ct = extractionCts.Token;
-            try
-            {
-                // 首次运行时从 DB 加载持久化进度
-                if (lastExtractedMessageId < 0)
-                {
-                    var channel = await ctx.Session.GetChannelAsync(channelId);
-                    lastExtractedMessageId = channel?.LastExtractedMessageId ?? 0;
-                }
-
-                totalMessageCount = await ctx.Session.GetMessageCountByChannelAsync(channelId);
-                extractedMessageCount = await ctx.Session.GetMessageCountUpToAsync(
-                    channelId, lastExtractedMessageId);
-
-                while (!ct.IsCancellationRequested)
-                {
-                    totalMessageCount = await ctx.Session.GetMessageCountByChannelAsync(channelId);
-                    extractedMessageCount = await ctx.Session.GetMessageCountUpToAsync(
-                        channelId, lastExtractedMessageId);
-
-                    // 取新消息（上次提取之后的）
-                    var newMessages = await ctx.Session.GetMessagesAfterIdAsync(
-                        channelId, lastExtractedMessageId, limit: 50);
-                    if (newMessages.Count < 2) break;
-
-                    // 更新最新消息 ID（用于 WebUI 进度显示）
-                    latestMessageId = newMessages[^1].Id;
-
-                    // 根据上次回复时间判断活跃/潜水阈值
-                    bool isActive = LastCompletionTime != null
-                        && (DateTime.Now - LastCompletionTime.Value).TotalMinutes < 5;
-                    int threshold = isActive
-                        ? channelConfig.ActiveExtractionThreshold
-                        : channelConfig.LurkingExtractionThreshold;
-
-                    if (newMessages.Count < threshold) break;
-
-                    // 取旧消息做参考上下文
-                    var contextMessages = lastExtractedMessageId > 0
-                        ? await ctx.Session.GetMessagesBeforeIdAsync(channelId, lastExtractedMessageId, limit: 20)
-                        : new List<UserMessage>();
-
-                    // 取近期记忆做去重
-                    var recentMems = await ctx.TempMemories.GetRecentByChannelAsync(channelId, 10);
-                    var recentMemContents = recentMems.Count > 0
-                        ? recentMems.ConvertAll(m => m.Content)
-                        : null;
-
-                    // 构造对话行
-                    var contextLines = contextMessages.Select(FormatMessageLine).ToList();
-                    var newLines = newMessages.Select(FormatMessageLine).ToList();
-
-                    var participantNames = recentParticipants.Values
-                        .Select(p => p.DisplayName)
-                        .Where(n => !string.IsNullOrEmpty(n))
-                        .Distinct().ToList();
-                    if (participantNames.Count > 0)
-                        contextLines.Insert(0, $"[群聊参与者: {string.Join("、", participantNames)}]");
-
-                    // 调用提取
-                    var core = new MemoryExtractionCore();
-                    var results = await core.ExtractAsync(contextLines, newLines, recentMemContents);
-
-                    int count = 0;
-                    foreach (var item in results)
-                    {
-                        if (item.Type == "knowledge")
-                        {
-                            await ctx.MemorySvc.StoreAsync(item.Content,
-                                personId: null, channelId: null,
-                                confidence: item.Confidence,
-                                type: MemoryType.Knowledge, subject: item.Subject);
-                        }
-                        else if (item.Type == "feedback" && item.Sentiment != null)
-                        {
-                            int personId = ResolveAboutToPersonId(item.About) ?? context.Person.Id;
-                            await ctx.MemorySvc.ApplyFeedbackAsync(
-                                personId, item.Content, item.Sentiment, item.Correction);
-                        }
-                        else
-                        {
-                            int personId = ResolveAboutToPersonId(item.About) ?? context.Person.Id;
-                            string memType = item.Type ?? MemoryType.Fact;
-                            await ctx.MemorySvc.StoreAsync(item.Content,
-                                personId, context.Channel.Id,
-                                confidence: item.Confidence,
-                                type: memType, subject: item.Subject);
-                        }
-                        count++;
-                    }
-
-                    // 更新进度标记并持久化
-                    lastExtractedMessageId = newMessages[^1].Id;
-                    await ctx.Session.UpdateExtractionProgressAsync(channelId, lastExtractedMessageId);
-                    extractedMessageCount = await ctx.Session.GetMessageCountUpToAsync(
-                        channelId, lastExtractedMessageId);
-
-                    if (count > 0)
-
-                    // 如果这批不满 50 条，说明已经追上了
-                    if (newMessages.Count < 50) break;
-                }
-            }
-            catch (Exception ex)
-            {
-            }
-            finally
-            {
-                extractionRunning = false;
-            }
-        }
-
-        private static string FormatMessageLine(UserMessage m)
-        {
-            if (m.IsFromBot) return $"Lilara: {m.Content}";
-            var name = !string.IsNullOrEmpty(m.SenderName) ? m.SenderName : "用户";
-            return $"{name}(#{m.UserId}): {m.Content}";
-        }
-
-        private async Task ExtractMemoryAsync(SessionContext context)
-        {
-            await RunExtractionAsync(context);
-        }
-
-        private int? ResolveAboutToPersonId(string? about)
-        {
-            if (string.IsNullOrEmpty(about)) return null;
-
-            // 优先解析 #userId 格式
-            if (about.StartsWith('#') && int.TryParse(about[1..], out var userId))
-            {
-                if (recentParticipants.TryGetValue(userId, out var info))
-                    return info.PersonId;
-            }
-
-            // 内容中可能包含 "名字(#id)" 格式，提取 id
-            var hashIdx = about.IndexOf('#');
-            if (hashIdx >= 0)
-            {
-                var idPart = about[(hashIdx + 1)..].TrimEnd(')');
-                if (int.TryParse(idPart, out var uid) && recentParticipants.TryGetValue(uid, out var info2))
-                    return info2.PersonId;
-            }
-
-            // fallback: 名字匹配
-            foreach (var (_, p) in recentParticipants)
-                if (p.DisplayName.Equals(about, StringComparison.OrdinalIgnoreCase))
-                    return p.PersonId;
-
-            return null;
-        }
 
         private static string? FormatMemory(List<ScoredMemory>? results, int topK)
         {

@@ -187,7 +187,7 @@ else
             {
                 var channels = spawnCheck.GetActiveChannels();
                 if (channels.TryGetValue(ChannelId, out var engine))
-                    await engine.TriggerLurkingExtractionAsync();
+                    engine.TriggerLurkingExtraction();
             }
         }
         finally
