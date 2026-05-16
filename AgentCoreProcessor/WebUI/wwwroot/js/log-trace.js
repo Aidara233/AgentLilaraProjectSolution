@@ -892,41 +892,38 @@ function setupInteraction(graphEl, textEl, bodyEl) {
             if (closeRow) highlighted.add(closeRow.id);
         }
 
-        // Follow causal chain (cross-scope) — both directions
-        const causalQueue = [targetId];
-        const visited = new Set([targetId]);
-        while (causalQueue.length > 0) {
-            const cid = causalQueue.shift();
-            // Upstream: who caused this?
-            const causeId = causeSpanIdToRowId[cid];
-            if (causeId != null && !visited.has(causeId)) {
-                visited.add(causeId);
-                highlighted.add(causeId);
-                for (const a of getAncestors(causeId)) highlighted.add(a);
-                for (const d of getDescendants(causeId)) highlighted.add(d);
-                // Include close pair
-                const causeRow = byId[causeId];
-                if (causeRow?.type === 'open' && causeRow.spanId) {
-                    const cp = rows.find(r => r.type === 'close' && r.spanId === causeRow.spanId);
-                    if (cp) highlighted.add(cp.id);
-                }
-                causalQueue.push(causeId);
+        // Follow causal chain — direct lineage only (up and down separately)
+        function addWithPair(id) {
+            highlighted.add(id);
+            const r = byId[id];
+            if (r?.type === 'open' && r.spanId) {
+                const cp = rows.find(x => x.type === 'close' && x.spanId === r.spanId);
+                if (cp) highlighted.add(cp.id);
             }
-            // Downstream: what did this cause?
+        }
+
+        // Upstream: walk cause chain straight up
+        let cur = targetId;
+        while (true) {
+            const causeId = causeSpanIdToRowId[cur];
+            if (causeId == null || highlighted.has(causeId)) break;
+            addWithPair(causeId);
+            for (const a of getAncestors(causeId)) highlighted.add(a);
+            cur = causeId;
+        }
+
+        // Downstream: walk effects straight down (BFS, only from target)
+        const downQueue = [targetId];
+        const downVisited = new Set([targetId]);
+        while (downQueue.length > 0) {
+            const cid = downQueue.shift();
             const effects = effectsOf[cid] || [];
             for (const eid of effects) {
-                if (!visited.has(eid)) {
-                    visited.add(eid);
-                    highlighted.add(eid);
-                    for (const a of getAncestors(eid)) highlighted.add(a);
-                    for (const d of getDescendants(eid)) highlighted.add(d);
-                    const effectRow = byId[eid];
-                    if (effectRow?.type === 'open' && effectRow.spanId) {
-                        const ep = rows.find(r => r.type === 'close' && r.spanId === effectRow.spanId);
-                        if (ep) highlighted.add(ep.id);
-                    }
-                    causalQueue.push(eid);
-                }
+                if (downVisited.has(eid)) continue;
+                downVisited.add(eid);
+                addWithPair(eid);
+                for (const d of getDescendants(eid)) highlighted.add(d);
+                downQueue.push(eid);
             }
         }
 
