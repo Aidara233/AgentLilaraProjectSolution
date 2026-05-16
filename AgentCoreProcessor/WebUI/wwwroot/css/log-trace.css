@@ -54,6 +54,9 @@
 }
 
 .log-trace-graph {
+    width: 40%;
+    max-width: 500px;
+    min-width: 200px;
     flex-shrink: 0;
     overflow-x: auto;
     overflow-y: auto;
