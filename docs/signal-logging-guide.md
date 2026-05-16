@@ -179,8 +179,17 @@ Both are `span_id` values (16-char hex GUID), generated synchronously before enq
 | Green | Completed | Span has a close event |
 | Yellow | In progress | No close, but parent span also has no close (still running) |
 | Red | Anomaly/crash | No close, but parent span IS closed (or startupSignal closed) |
+| Gray | Interrupted | No close, but a cease event exists after the open (process was killed) |
 
 **Graceful shutdown:** Program.cs registers `ApplicationStopping` hook → stops adapters → stops all engines → waits 30s → closes startupSignal. Engine lifecycle spans close with reason. On kill/crash, lifecycle spans stay open → red on trace page.
+
+**Cease event (process interruption recovery):** On startup, `LogDatabase.InsertCeaseIfNeeded()` checks for unclosed spans. If found, inserts a `type='cease'` event. The trace page uses cease events to:
+- Cap unclosed span vertical lines (gray color = interrupted)
+- Reset slot indentation (prevents progressive nesting across restarts)
+
+**Trace page scope ordering:** Columns are sorted by causal priority: `system:init → system:* → timer:* → dream:* → vision:* → review:* → adapter:* → channel:*`. New scopes from real-time push trigger re-sort.
+
+**Hover interaction:** Hovering highlights the direct causal lineage — upstream causes (via `cause_span_id`) and downstream effects, plus same-scope tree (via `parent_id`). Cross-scope lines only highlight when both endpoints are lit.
 
 ## Checklist for Adding Log Points
 
