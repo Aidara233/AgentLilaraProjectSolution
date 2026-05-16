@@ -181,6 +181,17 @@ Both are `span_id` values (16-char hex GUID), generated synchronously before enq
 | Red | Anomaly/crash | No close, but parent span IS closed (or startupSignal closed) |
 | Gray | Interrupted | No close, but a cease event exists after the open (process was killed) |
 
+**Node shape (signal origin):**
+
+| Shape | Meaning | Condition |
+|-------|---------|-----------|
+| Double circle | Signal origin | `is_signal_origin = 1` in database |
+| Single circle | Nested span or continuation | `is_signal_origin = 0` |
+
+`is_signal_origin` is set ONLY by `Signal.Begin()` — true entry points (program start,
+adapter message arrival, timer tick). `Signal.Continue()` and `Signal.Open()` do NOT
+set it. The trace page reads `row.isSignalOrigin` directly from the data, no heuristics.
+
 **Graceful shutdown:** Program.cs registers `ApplicationStopping` hook → stops adapters → stops all engines → waits 30s → closes startupSignal. Engine lifecycle spans close with reason. On kill/crash, lifecycle spans stay open → red on trace page.
 
 **Cease event (process interruption recovery):** On startup, `LogDatabase.InsertCeaseIfNeeded()` checks for unclosed spans. If found, inserts a `type='cease'` event. The trace page uses cease events to:
