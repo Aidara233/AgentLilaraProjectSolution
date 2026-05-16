@@ -133,6 +133,34 @@ function buildLookupMaps(rows) {
     return { byId, childrenOf, closeToOpen, causeSpanIdToRowId, engineLifecycles, startupSignalClosed, ceaseIndices };
 }
 
+// --- Scope ordering ---
+
+const SCOPE_PRIORITY = [
+    'system:init',
+    'system:',
+    'timer:',
+    'dream:',
+    'vision:',
+    'review:',
+    'adapter:',
+    'channel:'
+];
+
+function scopePriority(scope) {
+    for (let i = 0; i < SCOPE_PRIORITY.length; i++) {
+        if (scope === SCOPE_PRIORITY[i] || scope.startsWith(SCOPE_PRIORITY[i])) return i;
+    }
+    return SCOPE_PRIORITY.length;
+}
+
+function sortScopes(scopes) {
+    return [...scopes].sort((a, b) => {
+        const pa = scopePriority(a), pb = scopePriority(b);
+        if (pa !== pb) return pa - pb;
+        return a.localeCompare(b);
+    });
+}
+
 // --- Slot assignment ---
 
 function assignSlots(rows, scopes) {
@@ -1054,7 +1082,7 @@ export function renderTrace(graphEl, textEl, bodyEl, detailEl, scopes, rows) {
     state.textEl = textEl;
     state.bodyEl = bodyEl;
     state.detailEl = detailEl;
-    state.scopes = scopes;
+    state.scopes = sortScopes(scopes);
     state.rows = rows;
 
     if (!rows || rows.length === 0) return;
@@ -1070,11 +1098,11 @@ export function renderTrace(graphEl, textEl, bodyEl, detailEl, scopes, rows) {
     state.ceaseIndices = ceaseIndices;
 
     // Assign slots
-    const { meta, maxSlots } = assignSlots(rows, scopes);
+    const { meta, maxSlots } = assignSlots(rows, state.scopes);
     state.rowMeta = meta;
 
     // Compute column layout
-    const columns = computeColumns(scopes, maxSlots);
+    const columns = computeColumns(state.scopes, maxSlots);
     state.columns = columns;
 
     // Render
@@ -1177,7 +1205,7 @@ export function appendRows(rows, autoScroll) {
 function rebuildState() {
     if (!state || state.rows.length === 0) return;
     const rows = state.rows;
-    const scopes = [...new Set(rows.map(r => r.scope))];
+    const scopes = sortScopes([...new Set(rows.map(r => r.scope))]);
     state.scopes = scopes;
 
     const { byId, childrenOf, closeToOpen, causeSpanIdToRowId, engineLifecycles, startupSignalClosed, ceaseIndices } = buildLookupMaps(rows);
