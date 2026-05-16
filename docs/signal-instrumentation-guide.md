@@ -43,7 +43,7 @@ public async Task RunAsync()
 {
     var parentCtx = SignalContext.Current; // startup signal (flows via AsyncLocal)
     var lifeCtx = Signal.Continue(
-        parentCtx?.SignalId ?? Signal.NewId(), parentCtx?.CurrentSpanId,
+        SignalContext.NewSignalId(), parentCtx?.CurrentSpanId,
         $"myengine:{myId}", LogGroup.Engine, $"{EngineType}引擎",
         new { engineType = EngineType });
 
@@ -257,6 +257,47 @@ Signal.Error(LogGroup.Model, "模型调用失败", new
 **Exclude ONLY:** Binary data (raw image bytes), secrets/tokens/keys.
 
 Rationale: Signal logs go to a dedicated SQLite database. The trace page can render large detail fields. There is no size constraint that justifies truncating data useful for debugging. If you can reconstruct the exact state of the system from the log alone, the detail is sufficient.
+
+## Context Propagation Rules (Verified — 2026-05-17)
+
+These rules were validated by manually instrumenting ChannelEngine and verifying trace page correctness at each step.
+
+### Signal isolation
+
+- **Each engine lifecycle**: `Signal.Continue(NewSignalId(), causeSpanId, scope, ...)`
+  Creates independent signal tree. `cause_span_id` links to caller (diagonal line on trace page).
+  Never reuse parent's `signalId` — that merges trees and hides the engine's internal structure.
+- **Session spans**: use the engine's `signalId`, not the adapter's. The session belongs to the engine
+  lifecycle tree. `cause_span_id` points to the adapter span that triggered this wake-up.
+- **Do NOT use `parentCtx?.SignalId`** for engine lifecycle — use `SignalContext.NewSignalId()`.
+
+### Fire-and-forget context
+
+- **Entry rule**: always `SignalContext.Restore(null)` first, then create fresh context via
+  `Signal.Continue(NewSignalId(), causeSpanId, ...)`. This clears stale AsyncLocal from the caller.
+- **Background tasks** (extraction, etc.): independent signal + independent scope.
+  Example: `extraction:channel:{id}` instead of reusing `channel:{id}`.
+  This gives background work its own column on the trace page, making parallelism visible.
+
+### Context lifecycle
+
+- After `sessionCtx.Close()`: always `SignalContext.Restore(lifeCtx)` to return to the parent.
+  Without this, subsequent `Signal.Open()` calls create spans under the disposed context.
+- Capture lifecycle context in variables (e.g., `lifeCtx`). Never depend on
+  `SignalContext.Current` surviving across fire-and-forget `Task.Run` boundaries.
+- `cause_span_id` is decorative (diagonal lines on trace page).
+  `parent_id` determines nesting and color (green/yellow/red).
+  They are independent columns — one event can have both, either, or neither.
+
+### Scope naming for background tasks
+
+| Owner | Scope format | Example |
+|-------|-------------|---------|
+| Channel extraction | `extraction:channel:{id}` | `extraction:channel:group_12345` |
+| Channel lifecycle | `channel:{channelId}` | `channel:group_12345` |
+
+Background tasks get their own scope so they appear as separate columns, enabling
+parallelism visualization and preventing parent-close-before-child anomalies.
 
 ## Checklist for Sub-Agents
 
