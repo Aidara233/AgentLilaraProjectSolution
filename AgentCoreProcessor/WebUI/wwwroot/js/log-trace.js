@@ -907,45 +907,75 @@ function setupInteraction(graphEl, textEl, bodyEl) {
             }
         });
 
-        // Dim text rows
+        // Dim text rows + highlight active row
         textEl.querySelectorAll('.trace-text-row').forEach(el => {
             const id = parseInt(el.dataset.id);
             if (!isNaN(id) && !highlighted.has(id)) {
                 el.classList.add('dimmed');
             }
+            if (id === rows[rowIdx].id) {
+                el.classList.add('row-active');
+            }
         });
+
+        // SVG row highlight rect
+        let hlRect = graphEl.querySelector('.row-highlight');
+        if (!hlRect) {
+            hlRect = svgEl('rect', { class: 'row-highlight' });
+            state.svgEl.insertBefore(hlRect, state._contentGroup);
+        }
+        const totalWidth = state.columns.reduce((s, c) => s + c.width, 0);
+        hlRect.setAttribute('x', 0);
+        hlRect.setAttribute('y', rowIdx * ROW_HEIGHT);
+        hlRect.setAttribute('width', totalWidth);
+        hlRect.setAttribute('height', ROW_HEIGHT);
+        hlRect.style.display = '';
     }
 
     function clearHighlight() {
         bodyEl.classList.remove('has-hover');
         graphEl.querySelectorAll('.dimmed').forEach(el => el.classList.remove('dimmed'));
         textEl.querySelectorAll('.dimmed').forEach(el => el.classList.remove('dimmed'));
+        textEl.querySelectorAll('.row-active').forEach(el => el.classList.remove('row-active'));
+        const hlRect = graphEl.querySelector('.row-highlight');
+        if (hlRect) hlRect.style.display = 'none';
     }
 
-    // Event delegation on graph SVG
-    graphEl.addEventListener('mouseover', e => {
-        const node = e.target.closest('.node');
-        if (!node) return;
-        const id = parseInt(node.dataset.id);
-        if (isNaN(id)) return;
-        const ri = rows.findIndex(r => r.id === id);
-        if (ri >= 0) applyHighlight(ri);
+    // Event delegation on graph SVG — hover anywhere on a row
+    let _lastHoverRow = -1;
+    graphEl.addEventListener('mousemove', e => {
+        const svg = graphEl.querySelector('svg');
+        if (!svg) return;
+        const rect = svg.getBoundingClientRect();
+        const y = e.clientY - rect.top;
+        const ri = Math.floor(y / ROW_HEIGHT);
+        if (ri === _lastHoverRow) return;
+        _lastHoverRow = ri;
+        if (ri >= 0 && ri < rows.length) {
+            applyHighlight(ri);
+        } else {
+            clearHighlight();
+        }
     });
-    graphEl.addEventListener('mouseout', e => {
-        if (e.target.closest('.node')) clearHighlight();
+    graphEl.addEventListener('mouseleave', () => {
+        _lastHoverRow = -1;
+        clearHighlight();
     });
 
     // Event delegation on text rows
-    textEl.addEventListener('mouseover', e => {
+    let _lastTextHoverId = -1;
+    textEl.addEventListener('mousemove', e => {
         const row = e.target.closest('.trace-text-row');
         if (!row) return;
         const id = parseInt(row.dataset.id);
-        if (isNaN(id)) return;
+        if (isNaN(id) || id === _lastTextHoverId) return;
+        _lastTextHoverId = id;
         const ri = rows.findIndex(r => r.id === id);
         if (ri >= 0) applyHighlight(ri);
     });
-    textEl.addEventListener('mouseout', e => {
-        if (e.target.closest('.trace-text-row')) clearHighlight();
+    textEl.addEventListener('mouseleave', () => {
+        _lastTextHoverId = -1;
+        clearHighlight();
     });
 }
 

@@ -197,7 +197,6 @@
 }
 
 /* Hover dim */
-.log-trace-body.has-hover .trace-row.dimmed,
 .log-trace-body.has-hover .trace-text-row.dimmed {
     opacity: 0.15;
 }
@@ -211,7 +210,17 @@
     opacity: 0.12;
 }
 
-.trace-row, .trace-text-row, svg .v-line, svg .node, svg .cross-line {
+/* Row highlight (active row in both panels) */
+.trace-text-row.row-active {
+    background: rgba(96,165,250,0.12);
+}
+
+.log-trace-graph .row-highlight {
+    fill: rgba(96,165,250,0.10);
+    pointer-events: none;
+}
+
+.trace-text-row, svg .v-line, svg .node, svg .cross-line {
     transition: opacity 0.15s;
 }
 
