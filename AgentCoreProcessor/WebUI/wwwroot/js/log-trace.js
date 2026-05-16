@@ -887,6 +887,7 @@ function setupInteraction(graphEl, textEl, bodyEl) {
     }
 
     function applyHighlight(rowIdx) {
+        clearHighlight();
         const highlighted = getHighlightSet(rowIdx);
         bodyEl.classList.add('has-hover');
 
