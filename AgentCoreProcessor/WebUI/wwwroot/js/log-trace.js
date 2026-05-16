@@ -489,8 +489,8 @@ function renderNodesRange(g, rows, meta, columns, start, end) {
 
         let node;
 
-        if (row.type === 'open' && row.parentId == null) {
-            // Origin: double circle
+        if (row.type === 'open' && row.parentId == null && row.causeSpanId == null) {
+            // True signal origin: double circle (first open of a signal)
             const originColor = spanHasClose.has(row.spanId) ? 'var(--vis-ok)' : 'var(--vis-error)';
             const g2 = svgEl('g', { class: 'node', 'data-row': i, 'data-id': row.id });
             g2.appendChild(svgEl('circle', {
