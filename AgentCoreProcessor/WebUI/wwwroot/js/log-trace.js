@@ -1147,6 +1147,8 @@ function rebuildState() {
     state.childrenOf = childrenOf;
     state.closeToOpen = closeToOpen;
     state.causeSpanIdToRowId = causeSpanIdToRowId;
+    state.engineLifecycles = engineLifecycles;
+    state.startupSignalClosed = startupSignalClosed;
 
     const { meta, maxSlots } = assignSlots(rows, scopes);
     state.rowMeta = meta;
@@ -1157,7 +1159,9 @@ function rebuildState() {
     renderHeader(state.graphEl, columns);
     renderSvg(state.graphEl, columns, rows, meta);
     renderTextRows(state.textEl, rows);
-    requestAnimationFrame(() => renderVisibleRange());
+    state._renderStart = -1;
+    state._renderEnd = -1;
+    renderVisibleRange();
 }
 
 export function prependRows(olderRows, hasMore) {
