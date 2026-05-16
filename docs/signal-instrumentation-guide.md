@@ -8,7 +8,7 @@ Prerequisite: read `signal-logging-guide.md` for API usage.
 1. **Scope = execution context owner** (which engine/adapter is running)
 2. **LogGroup = nature of the operation** (model call, memory retrieval, tool execution)
 3. **Detail = everything useful** (IDs, counts, durations, states — no size limit)
-4. **Cross-scope lines only appear on Signal.Continue** (actual execution handoff)
+4. **Signal.Continue sets cause_span_id** (cross-scope causation), leaves parent_id=null (new scope root)
 
 ## Signal Boundaries (Signal.Begin)
 
@@ -49,6 +49,7 @@ AsyncLocal breaks when work crosses Task boundaries (producer-consumer queues, g
 if (SignalContext.Current == null && carrier.TraceSignalId != null)
     Signal.Continue(carrier.TraceSignalId, carrier.TraceParentSpanId,
         $"myengine:{myId}", LogGroup.Engine, "operation name", new { ... });
+    // → creates new root span in this scope, with cause_span_id = TraceParentSpanId
 else if (SignalContext.Current == null)
     Signal.Begin(...); // Fallback: truly no upstream (shouldn't happen normally)
 ```

@@ -73,10 +73,24 @@ Debug events are filtered by `minLevel` config (default: Info). Use Debug for hi
 ### 4. Signal Begin (rare — entry points only)
 
 ```csharp
-Signal.Begin(LogGroup.Adapter, $"adapter:{platform}", "消息接收", new { channelId, userId });
+var ctx = Signal.Begin(LogGroup.Adapter, $"adapter:{platform}", "消息接收", new { channelId, userId });
 ```
 
-Creates a **new signal** and sets it as the current context. Only call this at top-level entry points (message arrival, scheduled task start, etc.). Everything downstream automatically belongs to this signal.
+**Creates a new signal** and sets it as the current context. Only call this at top-level entry points (message arrival, scheduled task start, program startup, etc.). Everything downstream that shares the same async context automatically belongs to this signal.
+
+### 5. Signal Continue (rare — cross-scope handoff)
+
+```csharp
+Signal.Continue(signalId, causeSpanId, $"channel:{id}", LogGroup.Engine, "频道轮次");
+```
+
+Creates a new root span in a **different scope** that is **caused by** a span in another scope. The `causeSpanId` is the span_id of the triggering event. This sets `cause_span_id` (cross-scope causation) and leaves `parent_id = null` (new root in this scope).
+
+Use `Continue` when:
+- An adapter receives a message and the channel loop picks it up (adapter scope → channel scope)
+- A timer fires and triggers a channel action (timer scope → channel scope)
+
+Do NOT use `Continue` for same-scope nesting — use `Signal.Open` for that.
 
 ## LogGroup Constants
 
@@ -112,29 +126,34 @@ If `SignalContext.Current` is null (code running outside any signal), all `Signa
 
 If you need to ensure logging works, verify the call site is downstream of a `Signal.Begin()` (which happens at message arrival and engine startup).
 
-## Cross-Boundary Handoff
+## Cross-Scope Handoff (Signal Continuation)
 
-When work crosses async boundaries that break `AsyncLocal` (e.g., spawning a background task with a captured signal):
+When work crosses scopes (e.g., adapter receives message → channel loop processes it), `AsyncLocal` does NOT propagate because the Task boundary is crossed. Code in the channel loop starts with an empty `SignalContext.Current`. Use explicit trace carriers:
 
 ```csharp
+// In adapter (scope: adapter:qq-main):
 var signalId = SignalContext.Current?.SignalId;
-var parentSpan = SignalContext.Current?.CurrentSpanId; // string? (span_id hex)
+var parentSpan = SignalContext.Current?.CurrentSpanId;
 
-_ = Task.Run(() =>
-{
-    Signal.Continue(signalId, parentSpan, "background", LogGroup.Engine, "后台任务");
-    // ... work here is linked to the original signal
-});
+// Pass via EngineEvent.TraceSignalId / TraceParentSpanId
+var e = new MessageEvent(message);
+e.TraceSignalId = signalId;
+e.TraceParentSpanId = parentSpan;
+_eventBus.Publish(e);
+
+// In channel loop (scope: channel:2):
+Signal.Continue(sigId, parentSpan, $"channel:{channelId}", LogGroup.Engine, "频道轮次");
+// → creates a new root span in channel:2 with cause_span_id = parentSpan
 ```
 
-This is rare. Normal `async/await` chains propagate context automatically.
+**Data model:** `parent_id` stores same-scope nesting (vertical lines on trace page). `cause_span_id` stores cross-scope causation (diagonal lines). They are independent columns — one event can have both, either, or neither.
 
 ## How It Works (Brief)
 
 ```
 Signal.Event(...)
   → SignalContext.Current.Event(...)     // AsyncLocal lookup
-    → creates LogEvent { signal_id, scope, parent_id=CurrentSpanId, timestamp, ... }
+    → creates LogEvent { signal_id, scope, parent_id=CurrentSpanId, cause_span_id, timestamp, ... }
     → LogWriter.Enqueue(evt)            // lock-free queue
       → background thread batches INSERT into SQLite (logs.db)
 ```
@@ -144,7 +163,14 @@ Signal.Event(...)
 - **Non-blocking**: Enqueue is a ConcurrentQueue add; DB writes happen on a dedicated thread
 - **Crash-safe**: SQLite WAL mode; unflushed events in queue are lost (acceptable for logs)
 
-**Causal linking:** `parent_id` stores the `span_id` (16-char hex GUID) of the parent span. This is generated synchronously before enqueue, so no DB round-trip is needed. The visualization builds parent-child trees by indexing open events by their `span_id` and matching children's `parent_id` against that index.
+**Causal linking — two independent relationships:**
+
+| Column | Stores | Meaning | Visual |
+|--------|--------|---------|--------|
+| `parent_id` | parent's `span_id` | Same-scope nesting ("contained within") | Vertical line |
+| `cause_span_id` | trigger's `span_id` | Cross-scope causation ("triggered by") | Diagonal line |
+
+Both are `span_id` values (16-char hex GUID), generated synchronously before enqueue. The visualization builds trees from `parent_id` and cross-scope links from `cause_span_id`. A span with no close event has its vertical line terminated at the deepest descendant row (tree-based), not at page bottom.
 
 ## Checklist for Adding Log Points
 
