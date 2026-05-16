@@ -54,7 +54,8 @@ namespace AgentCoreProcessor.Engine
                     catch (OperationCanceledException) { break; }
                     if (!IsAlive) break;
 
-                    // 发布定时器事件
+                    // 每次心跳创建独立信号源，下游工作继承此信号
+                    using var tickSignal = Signal.Begin(LogGroup.Engine, "timer:heartbeat", "心跳");
                     ctx.EventBus.Publish(new TimerEvent { TimerName = "tick" });
 
                     // Phase 8: 检查 SystemEngine 心跳
