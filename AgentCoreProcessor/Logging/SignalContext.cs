@@ -96,8 +96,7 @@ public class SignalContext : IDisposable
             Type = "open",
             Timestamp = ts,
             Name = name,
-            Detail = SerializeDetail(detail),
-            IsSignalOrigin = true
+            Detail = SerializeDetail(detail)
         };
         _writer?.Enqueue(evt);
         return ctx;

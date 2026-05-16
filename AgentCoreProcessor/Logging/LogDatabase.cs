@@ -209,11 +209,11 @@ public class LogDatabase : IDisposable
             add.ExecuteNonQuery();
         }
 
-        // Backfill: mark existing signal origins (Begin: no parent, no cause)
+        // Backfill: only Signal.Begin events (no parent, no cause) are true origins
         using var backfill = _conn.CreateCommand();
         backfill.CommandText = """
             UPDATE events SET is_signal_origin = 1
-            WHERE type = 'open' AND parent_id IS NULL
+            WHERE type = 'open' AND parent_id IS NULL AND cause_span_id IS NULL
             """;
         backfill.ExecuteNonQuery();
     }
