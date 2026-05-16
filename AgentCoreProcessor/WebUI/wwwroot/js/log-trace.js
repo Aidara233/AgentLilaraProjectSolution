@@ -34,6 +34,7 @@ function initState() {
         childrenOf: {},   // parentId → [child ids]
         closeToOpen: {},  // close row id → paired open row id (matched by spanId)
         causeSpanIdToRowId: {}, // effectRowId → causeRowId (cross-scope causation)
+        effectsOf: {},       // causeRowId → [effectRowIds] (reverse causal map)
         _renderStart: -1, // virtual render range start
         _renderEnd: -1,   // virtual render range end
         _contentGroup: null, // SVG <g> for dynamic content
@@ -613,6 +614,12 @@ function renderNodesRange(g, rows, meta, columns, start, end) {
         if (row.type === 'close') spanHasClose.add(row.spanId);
     }
 
+    // Build set of spanIds that are causal sources (referenced by other rows' causeSpanId)
+    const isCausalSource = new Set();
+    for (const row of rows) {
+        if (row.causeSpanId != null) isCausalSource.add(row.causeSpanId);
+    }
+
     // Color for unclosed spans: green/yellow/red/gray
     function getOpenColor(spanId, row) {
         if (spanHasClose.has(spanId)) return 'var(--vis-ok)';
@@ -628,6 +635,12 @@ function renderNodesRange(g, rows, meta, columns, start, end) {
         return 'var(--vis-warn)';
     }
 
+    function isSignalOrigin(row) {
+        if (row.parentId == null && row.causeSpanId == null) return true;
+        if (row.spanId != null && isCausalSource.has(row.spanId)) return true;
+        return false;
+    }
+
     for (let i = start; i < end; i++) {
         const row = rows[i];
         const m = meta[i];
@@ -637,8 +650,8 @@ function renderNodesRange(g, rows, meta, columns, start, end) {
 
         let node;
 
-        if (row.type === 'open' && row.parentId == null && row.causeSpanId == null) {
-            // True signal origin: double circle
+        if (row.type === 'open' && isSignalOrigin(row)) {
+            // Signal origin: double circle
             const originColor = getOpenColor(row.spanId, row);
             const g2 = svgEl('g', { class: 'node', 'data-row': i, 'data-id': row.id });
             g2.appendChild(svgEl('circle', {
@@ -843,19 +856,19 @@ function setupScrollSync(graphEl, textEl) {
 
 // --- Causal chain hover interaction ---
 
-function setupInteraction(graphEl, textEl, bodyEl) {
-    const { rows, byId, childrenOf, closeToOpen } = state;
-    const causeSpanIdToRowId = state.causeSpanIdToRowId;
-
-    // Build reverse causal map: causeRowId → [effectRowIds]
+function buildEffectsOf(causeSpanIdToRowId) {
     const effectsOf = {};
     for (const [effectId, causeId] of Object.entries(causeSpanIdToRowId)) {
         const eid = parseInt(effectId);
         if (!effectsOf[causeId]) effectsOf[causeId] = [];
         effectsOf[causeId].push(eid);
     }
+    return effectsOf;
+}
 
+function setupInteraction(graphEl, textEl, bodyEl) {
     function getAncestors(id) {
+        const { byId } = state;
         const ancestors = new Set();
         let current = byId[id];
         while (current && current._resolvedParentId != null) {
@@ -866,6 +879,7 @@ function setupInteraction(graphEl, textEl, bodyEl) {
     }
 
     function getDescendants(id) {
+        const { childrenOf } = state;
         const desc = new Set();
         const queue = [...(childrenOf[id] || [])];
         while (queue.length > 0) {
@@ -878,10 +892,10 @@ function setupInteraction(graphEl, textEl, bodyEl) {
     }
 
     function getHighlightSet(rowIdx) {
+        const { rows, byId, closeToOpen, causeSpanIdToRowId, effectsOf } = state;
         const row = rows[rowIdx];
         let targetId = row.id;
 
-        // close → use paired open's id for tree traversal
         if (row.type === 'close' && closeToOpen[row.id]) {
             targetId = closeToOpen[row.id];
         }
@@ -889,14 +903,12 @@ function setupInteraction(graphEl, textEl, bodyEl) {
         const highlighted = new Set([targetId]);
         for (const a of getAncestors(targetId)) highlighted.add(a);
         for (const d of getDescendants(targetId)) highlighted.add(d);
-        // Also highlight the close/open pair itself
         if (row.type === 'close') highlighted.add(row.id);
         if (row.type === 'open' && row.spanId) {
             const closeRow = rows.find(r => r.type === 'close' && r.spanId === row.spanId);
             if (closeRow) highlighted.add(closeRow.id);
         }
 
-        // Follow causal chain — direct lineage only (up and down separately)
         function addWithPair(id) {
             highlighted.add(id);
             const r = byId[id];
@@ -936,10 +948,10 @@ function setupInteraction(graphEl, textEl, bodyEl) {
 
     function applyHighlight(rowIdx) {
         clearHighlight();
+        const { rows } = state;
         const highlighted = getHighlightSet(rowIdx);
         bodyEl.classList.add('has-hover');
 
-        // Dim SVG elements by data-id
         graphEl.querySelectorAll('.node, .v-line').forEach(el => {
             const id = parseInt(el.dataset.id);
             if (!isNaN(id) && !highlighted.has(id)) {
@@ -947,7 +959,6 @@ function setupInteraction(graphEl, textEl, bodyEl) {
             }
         });
 
-        // Dim cross lines
         graphEl.querySelectorAll('.cross-line').forEach(el => {
             const from = parseInt(el.dataset.from);
             const to = parseInt(el.dataset.to);
@@ -956,7 +967,6 @@ function setupInteraction(graphEl, textEl, bodyEl) {
             }
         });
 
-        // Dim text rows + highlight active row
         textEl.querySelectorAll('.trace-text-row').forEach(el => {
             const id = parseInt(el.dataset.id);
             if (!isNaN(id) && !highlighted.has(id)) {
@@ -967,7 +977,6 @@ function setupInteraction(graphEl, textEl, bodyEl) {
             }
         });
 
-        // SVG row highlight rect
         let hlRect = graphEl.querySelector('.row-highlight');
         if (!hlRect) {
             hlRect = svgEl('rect', { class: 'row-highlight' });
@@ -990,7 +999,6 @@ function setupInteraction(graphEl, textEl, bodyEl) {
         if (hlRect) hlRect.style.display = 'none';
     }
 
-    // Event delegation on graph SVG — hover anywhere on a row
     let _lastHoverRow = -1;
     graphEl.addEventListener('mousemove', e => {
         const svg = graphEl.querySelector('svg');
@@ -1000,7 +1008,7 @@ function setupInteraction(graphEl, textEl, bodyEl) {
         const ri = Math.floor(y / ROW_HEIGHT);
         if (ri === _lastHoverRow) return;
         _lastHoverRow = ri;
-        if (ri >= 0 && ri < rows.length) {
+        if (ri >= 0 && ri < state.rows.length) {
             applyHighlight(ri);
         } else {
             clearHighlight();
@@ -1011,7 +1019,6 @@ function setupInteraction(graphEl, textEl, bodyEl) {
         clearHighlight();
     });
 
-    // Event delegation on text rows
     let _lastTextHoverId = -1;
     textEl.addEventListener('mousemove', e => {
         const row = e.target.closest('.trace-text-row');
@@ -1019,7 +1026,7 @@ function setupInteraction(graphEl, textEl, bodyEl) {
         const id = parseInt(row.dataset.id);
         if (isNaN(id) || id === _lastTextHoverId) return;
         _lastTextHoverId = id;
-        const ri = rows.findIndex(r => r.id === id);
+        const ri = state.rows.findIndex(r => r.id === id);
         if (ri >= 0) applyHighlight(ri);
     });
     textEl.addEventListener('mouseleave', () => {
@@ -1172,6 +1179,7 @@ export function renderTrace(graphEl, textEl, bodyEl, detailEl, scopes, rows) {
     state.childrenOf = childrenOf;
     state.closeToOpen = closeToOpen;
     state.causeSpanIdToRowId = causeSpanIdToRowId;
+    state.effectsOf = buildEffectsOf(causeSpanIdToRowId);
     state.engineLifecycles = engineLifecycles;
     state.startupSignalClosed = startupSignalClosed;
     state.ceaseIndices = ceaseIndices;
@@ -1296,6 +1304,7 @@ function rebuildState() {
     state.childrenOf = childrenOf;
     state.closeToOpen = closeToOpen;
     state.causeSpanIdToRowId = causeSpanIdToRowId;
+    state.effectsOf = buildEffectsOf(causeSpanIdToRowId);
     state.engineLifecycles = engineLifecycles;
     state.startupSignalClosed = startupSignalClosed;
     state.ceaseIndices = ceaseIndices;
