@@ -43,7 +43,10 @@ function initState() {
         _spans: null,        // pre-computed span map for vertical lines
         engineLifecycles: [], // engine start/stop pairs
         startupSignalClosed: false, // whether system:init has a close event
-        ceaseIndices: [] // row indices of cease events (process interruption markers)
+        ceaseIndices: [], // row indices of cease events (process interruption markers)
+        hoverPaused: false,        // auto-scroll paused due to hover
+        _lastHighlightRowId: -1,   // restore highlight after rebuildState
+        _resumeTimer: null         // timer to resume auto-scroll after hover
     };
 }
 
@@ -947,6 +950,7 @@ function setupInteraction(graphEl, textEl, bodyEl) {
     function applyHighlight(rowIdx) {
         clearHighlight();
         const { rows } = state;
+        state._lastHighlightRowId = rows[rowIdx]?.id ?? -1;
         const highlighted = getHighlightSet(rowIdx);
         bodyEl.classList.add('has-hover');
 
@@ -989,6 +993,7 @@ function setupInteraction(graphEl, textEl, bodyEl) {
     }
 
     function clearHighlight() {
+        state._lastHighlightRowId = -1;
         bodyEl.classList.remove('has-hover');
         graphEl.querySelectorAll('.dimmed').forEach(el => el.classList.remove('dimmed'));
         textEl.querySelectorAll('.dimmed').forEach(el => el.classList.remove('dimmed'));
@@ -996,6 +1001,8 @@ function setupInteraction(graphEl, textEl, bodyEl) {
         const hlRect = graphEl.querySelector('.row-highlight');
         if (hlRect) hlRect.style.display = 'none';
     }
+
+    state._applyHighlight = applyHighlight;
 
     let _lastHoverRow = -1;
     graphEl.addEventListener('mousemove', e => {
@@ -1007,6 +1014,9 @@ function setupInteraction(graphEl, textEl, bodyEl) {
         if (ri === _lastHoverRow) return;
         _lastHoverRow = ri;
         if (ri >= 0 && ri < state.rows.length) {
+            state.hoverPaused = true;
+            clearTimeout(state._resumeTimer);
+            state._resumeTimer = null;
             applyHighlight(ri);
         } else {
             clearHighlight();
@@ -1015,12 +1025,25 @@ function setupInteraction(graphEl, textEl, bodyEl) {
     graphEl.addEventListener('mouseleave', () => {
         _lastHoverRow = -1;
         clearHighlight();
+        if (state.hoverPaused && !state._resumeTimer) {
+            state._resumeTimer = setTimeout(resumeAutoScroll, 2000);
+        }
     });
 
     let _lastTextHoverId = -1;
     textEl.addEventListener('mousemove', e => {
         const row = e.target.closest('.trace-text-row');
-        if (!row) return;
+        if (!row) {
+            // Mouse over text panel but not on a row — start resume timer
+            if (state.hoverPaused && !state._resumeTimer) {
+                state._resumeTimer = setTimeout(resumeAutoScroll, 2000);
+            }
+            return;
+        }
+        // Hovering on a row — pause auto-scroll
+        clearTimeout(state._resumeTimer);
+        state._resumeTimer = null;
+        state.hoverPaused = true;
         const id = parseInt(row.dataset.id);
         if (isNaN(id) || id === _lastTextHoverId) return;
         _lastTextHoverId = id;
@@ -1030,7 +1053,24 @@ function setupInteraction(graphEl, textEl, bodyEl) {
     textEl.addEventListener('mouseleave', () => {
         _lastTextHoverId = -1;
         clearHighlight();
+        // Start resume timer if auto-scroll was paused
+        if (state.hoverPaused && !state._resumeTimer) {
+            state._resumeTimer = setTimeout(resumeAutoScroll, 2000);
+        }
     });
+
+    // Wheel on either panel resumes auto-scroll immediately
+    function resumeAutoScroll() {
+        state.hoverPaused = false;
+        clearTimeout(state._resumeTimer);
+        state._resumeTimer = null;
+        if (state.textEl && state.graphEl) {
+            state.textEl.scrollTop = state.textEl.scrollHeight;
+            state.graphEl.scrollTop = state.graphEl.scrollHeight;
+        }
+    }
+    textEl.addEventListener('wheel', () => { state.hoverPaused = false; clearTimeout(state._resumeTimer); state._resumeTimer = null; });
+    graphEl.addEventListener('wheel', () => { state.hoverPaused = false; clearTimeout(state._resumeTimer); state._resumeTimer = null; });
 }
 
 // --- Context menu ---
@@ -1279,10 +1319,17 @@ export function appendRows(rows, autoScroll) {
     _appendAutoScroll = _appendAutoScroll || autoScroll;
     if (!_appendPending) {
         _appendPending = true;
+        const highlightId = state._lastHighlightRowId;
         requestAnimationFrame(() => {
             _appendPending = false;
             rebuildState();
-            if (_appendAutoScroll && state.textEl) {
+            // Restore highlight if one was active before rebuild
+            if (highlightId >= 0 && state._applyHighlight) {
+                const ri = state.rows.findIndex(r => r.id === highlightId);
+                if (ri >= 0) state._applyHighlight(ri);
+            }
+            // Skip auto-scroll if user is hovering on a row
+            if (_appendAutoScroll && state.textEl && !state.hoverPaused) {
                 state.textEl.scrollTop = state.textEl.scrollHeight;
                 state.graphEl.scrollTop = state.graphEl.scrollHeight;
             }
