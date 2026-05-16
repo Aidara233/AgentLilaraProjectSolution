@@ -32,6 +32,7 @@ function initState() {
         byId: {},         // id → row object
         childrenOf: {},   // parentId → [child ids]
         closeToOpen: {},  // close row id → paired open row id (matched by spanId)
+        causeSpanIdToRowId: {}, // effectRowId → causeRowId (cross-scope causation)
         _renderStart: -1, // virtual render range start
         _renderEnd: -1,   // virtual render range end
         _contentGroup: null, // SVG <g> for dynamic content
@@ -48,7 +49,7 @@ function buildLookupMaps(rows) {
     const childrenOf = {};
     const closeToOpen = {};
 
-    // Index rows by id and by spanId (for parent lookup)
+    // Index rows by id and by spanId
     const idBySpanId = {};
     for (const row of rows) {
         byId[row.id] = row;
@@ -57,15 +58,24 @@ function buildLookupMaps(rows) {
         }
     }
 
-    // Build childrenOf: parentId is now the span_id of the parent open event
+    // Build childrenOf: parent_id is now same-scope nesting only
     for (const row of rows) {
+        row._resolvedParentId = null;
         if (row.parentId != null) {
             const parentRowId = idBySpanId[row.parentId] ?? null;
-            row._resolvedParentId = parentRowId;
             if (parentRowId != null) {
+                row._resolvedParentId = parentRowId;
                 if (!childrenOf[parentRowId]) childrenOf[parentRowId] = [];
                 childrenOf[parentRowId].push(row.id);
             }
+        }
+    }
+
+    // Build causeSpanIdToRowId: cross-scope causation lookup
+    const causeSpanIdToRowId = {};
+    for (const row of rows) {
+        if (row.causeSpanId != null && idBySpanId[row.causeSpanId] != null) {
+            causeSpanIdToRowId[row.id] = idBySpanId[row.causeSpanId];
         }
     }
 
@@ -82,7 +92,7 @@ function buildLookupMaps(rows) {
         }
     }
 
-    return { byId, childrenOf, closeToOpen };
+    return { byId, childrenOf, closeToOpen, causeSpanIdToRowId };
 }
 
 // --- Slot assignment ---
@@ -261,16 +271,75 @@ function renderSvg(graphEl, columns, rows, meta) {
 
 function buildSpanMap(rows, meta) {
     const spans = new Map();
+
+    // First pass: create span entries
     for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
         const m = meta[i];
         if (row.type === 'open') {
-            spans.set(row.spanId, { openIdx: i, closeIdx: -1, scopeIdx: m._scopeIdx, slotIdx: m._slotIdx, openRowId: row.id });
+            spans.set(row.spanId, {
+                openIdx: i,
+                closeIdx: -1,
+                scopeIdx: m._scopeIdx,
+                slotIdx: m._slotIdx,
+                openRowId: row.id,
+                childSpanIds: [],
+                lastDescendantRow: i
+            });
         } else if (row.type === 'close') {
             const span = spans.get(row.spanId);
             if (span) span.closeIdx = i;
         }
     }
+
+    // Second pass: build child relationships (same-scope parent_id only)
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        if (row.type === 'open' && row.parentId != null) {
+            const parentSpan = spans.get(row.parentId);
+            if (parentSpan) {
+                parentSpan.childSpanIds.push(row.spanId);
+            }
+        }
+    }
+
+    // Third pass: compute lastDescendantRow bottom-up (post-order)
+    function computeLastDesc(spanId) {
+        const span = spans.get(spanId);
+        if (span._lastComputed) return span.lastDescendantRow;
+        span._lastComputed = true;
+
+        let maxRow = span.closeIdx >= 0 ? span.closeIdx : span.openIdx;
+        for (const childId of span.childSpanIds) {
+            maxRow = Math.max(maxRow, computeLastDesc(childId));
+        }
+        span.lastDescendantRow = maxRow;
+        return maxRow;
+    }
+
+    for (const [spanId, span] of spans) {
+        computeLastDesc(spanId);
+    }
+
+    // Fourth pass: extend lastDescendantRow for events parented under spans
+    // (non-span events still extend the visual range of their parent span)
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        if (row.parentId != null && row.type !== 'open' && row.type !== 'close') {
+            const parentSpan = spans.get(row.parentId);
+            if (parentSpan && parentSpan.lastDescendantRow < i) {
+                parentSpan.lastDescendantRow = i;
+                // Propagate upward: any ancestor span should also extend
+                let current = parentSpan;
+                while (current) {
+                    if (current.lastDescendantRow < i) current.lastDescendantRow = i;
+                    const grandparentId = rows[current.openIdx].parentId;
+                    current = grandparentId ? spans.get(grandparentId) : null;
+                }
+            }
+        }
+    }
+
     return spans;
 }
 
@@ -281,9 +350,13 @@ function renderVerticalLinesRange(g, columns, start, end) {
     if (!spans) return;
 
     for (const [spanId, span] of spans) {
-        const { openIdx, closeIdx, scopeIdx, slotIdx, openRowId } = span;
+        const { openIdx, closeIdx, scopeIdx, slotIdx, openRowId, lastDescendantRow } = span;
         const x = getNodeX(columns, scopeIdx, slotIdx);
-        const endIdx = closeIdx >= 0 ? closeIdx : state.rows.length - 1;
+        // End at close row; if no close, end at deepest descendant (tree-based)
+        const endIdx = lastDescendantRow;
+
+        // Skip spans where end is before open (degenerate: orphan open with no descendants)
+        if (endIdx <= openIdx && closeIdx < 0) continue;
 
         // Skip spans that don't overlap with [start, end)
         if (endIdx < start || openIdx >= end) continue;
@@ -320,6 +393,9 @@ function renderVerticalLinesRange(g, columns, start, end) {
 // --- Render cross-scope diagonal lines (range only) ---
 
 function renderCrossLinesRange(g, rows, meta, columns, start, end) {
+    const { causeSpanIdToRowId, _spans } = state;
+    if (!causeSpanIdToRowId) return;
+
     // Build row index by id for quick lookup
     const rowById = new Map();
     for (let i = 0; i < rows.length; i++) {
@@ -328,20 +404,26 @@ function renderCrossLinesRange(g, rows, meta, columns, start, end) {
 
     for (let i = start; i < end; i++) {
         const row = rows[i];
-        if (row._resolvedParentId == null) continue;
+        const causeRowId = causeSpanIdToRowId[row.id];
+        if (causeRowId == null) continue;
 
-        const parentIdx = rowById.get(row._resolvedParentId);
-        if (parentIdx == null) continue;
+        const causeIdx = rowById.get(causeRowId);
+        if (causeIdx == null) continue;
 
-        const parentMeta = meta[parentIdx];
-        const childMeta = meta[i];
+        const causeMeta = meta[causeIdx];
+        const effectMeta = meta[i];
 
-        // Only draw if different scope
-        if (parentMeta._scopeIdx === childMeta._scopeIdx) continue;
+        // cause_span_id always means cross-scope by definition
+        if (causeMeta._scopeIdx === effectMeta._scopeIdx) continue;
 
-        const x1 = getNodeX(columns, parentMeta._scopeIdx, parentMeta._slotIdx);
-        const y1 = getNodeY(parentIdx);
-        const x2 = getNodeX(columns, childMeta._scopeIdx, childMeta._slotIdx);
+        // From: cause span's close (if exists) or open
+        const causeSpan = _spans ? _spans.get(row.causeSpanId) : null;
+        const fromIdx = (causeSpan && causeSpan.closeIdx >= 0) ? causeSpan.closeIdx : causeIdx;
+        const fromMeta = meta[fromIdx];
+
+        const x1 = getNodeX(columns, fromMeta._scopeIdx, fromMeta._slotIdx);
+        const y1 = getNodeY(fromIdx);
+        const x2 = getNodeX(columns, effectMeta._scopeIdx, effectMeta._slotIdx);
         const y2 = getNodeY(i);
 
         const line = svgEl('line', {
@@ -349,37 +431,40 @@ function renderCrossLinesRange(g, rows, meta, columns, start, end) {
             stroke: 'var(--vis-line-cross)',
             'stroke-width': CROSS_LINE_WIDTH,
             class: 'cross-line',
-            'data-from': rows[parentIdx].id,
+            'data-from': rows[causeIdx].id,
             'data-to': row.id
         });
         g.appendChild(line);
     }
 
-    // Also render cross-lines where the PARENT is in range but child is outside
-    // (so lines originating from visible parents are drawn)
-    for (let i = 0; i < rows.length; i++) {
-        if (i >= start && i < end) continue; // already handled above
-        const row = rows[i];
-        if (row._resolvedParentId == null) continue;
+    // Also render lines where the CAUSE row is visible but effect row is outside range
+    for (const [effectRowId, causeRowId] of Object.entries(causeSpanIdToRowId)) {
+        const effectIdx = rowById.get(parseInt(effectRowId));
+        if (effectIdx == null || (effectIdx >= start && effectIdx < end)) continue; // already handled
 
-        const parentIdx = rowById.get(row._resolvedParentId);
-        if (parentIdx == null || parentIdx < start || parentIdx >= end) continue;
+        const causeIdx = rowById.get(causeRowId);
+        if (causeIdx == null || causeIdx < start || causeIdx >= end) continue;
 
-        const parentMeta = meta[parentIdx];
-        const childMeta = meta[i];
-        if (parentMeta._scopeIdx === childMeta._scopeIdx) continue;
+        const row = rows[effectIdx];
+        const causeMeta = meta[causeIdx];
+        const effectMeta = meta[effectIdx];
+        if (causeMeta._scopeIdx === effectMeta._scopeIdx) continue;
 
-        const x1 = getNodeX(columns, parentMeta._scopeIdx, parentMeta._slotIdx);
-        const y1 = getNodeY(parentIdx);
-        const x2 = getNodeX(columns, childMeta._scopeIdx, childMeta._slotIdx);
-        const y2 = getNodeY(i);
+        const causeSpan = _spans ? _spans.get(row.causeSpanId) : null;
+        const fromIdx = (causeSpan && causeSpan.closeIdx >= 0) ? causeSpan.closeIdx : causeIdx;
+        const fromMeta = meta[fromIdx];
+
+        const x1 = getNodeX(columns, fromMeta._scopeIdx, fromMeta._slotIdx);
+        const y1 = getNodeY(fromIdx);
+        const x2 = getNodeX(columns, effectMeta._scopeIdx, effectMeta._slotIdx);
+        const y2 = getNodeY(effectIdx);
 
         const line = svgEl('line', {
             x1, y1, x2, y2,
             stroke: 'var(--vis-line-cross)',
             'stroke-width': CROSS_LINE_WIDTH,
             class: 'cross-line',
-            'data-from': rows[parentIdx].id,
+            'data-from': rows[causeIdx].id,
             'data-to': row.id
         });
         g.appendChild(line);
@@ -406,14 +491,15 @@ function renderNodesRange(g, rows, meta, columns, start, end) {
 
         if (row.type === 'open' && row.parentId == null) {
             // Origin: double circle
+            const originColor = spanHasClose.has(row.spanId) ? 'var(--vis-ok)' : 'var(--vis-error)';
             const g2 = svgEl('g', { class: 'node', 'data-row': i, 'data-id': row.id });
             g2.appendChild(svgEl('circle', {
                 cx, cy, r: r + 2,
-                fill: 'none', stroke: 'var(--vis-info)', 'stroke-width': 1.5
+                fill: 'none', stroke: originColor, 'stroke-width': 1.5
             }));
             g2.appendChild(svgEl('circle', {
                 cx, cy, r: r - 1,
-                fill: 'none', stroke: 'var(--vis-info)', 'stroke-width': 1.5
+                fill: 'none', stroke: originColor, 'stroke-width': 1.5
             }));
             node = g2;
         } else if (row.type === 'open') {
@@ -852,10 +938,11 @@ export function renderTrace(graphEl, textEl, bodyEl, scopes, rows) {
     if (!rows || rows.length === 0) return;
 
     // Build lookup maps for interaction
-    const { byId, childrenOf, closeToOpen } = buildLookupMaps(rows);
+    const { byId, childrenOf, closeToOpen, causeSpanIdToRowId } = buildLookupMaps(rows);
     state.byId = byId;
     state.childrenOf = childrenOf;
     state.closeToOpen = closeToOpen;
+    state.causeSpanIdToRowId = causeSpanIdToRowId;
 
     // Assign slots
     const { meta, maxSlots } = assignSlots(rows, scopes);
@@ -912,10 +999,11 @@ function rebuildState() {
     const scopes = [...new Set(rows.map(r => r.scope))];
     state.scopes = scopes;
 
-    const { byId, childrenOf, closeToOpen } = buildLookupMaps(rows);
+    const { byId, childrenOf, closeToOpen, causeSpanIdToRowId } = buildLookupMaps(rows);
     state.byId = byId;
     state.childrenOf = childrenOf;
     state.closeToOpen = closeToOpen;
+    state.causeSpanIdToRowId = causeSpanIdToRowId;
 
     const { meta, maxSlots } = assignSlots(rows, scopes);
     state.rowMeta = meta;

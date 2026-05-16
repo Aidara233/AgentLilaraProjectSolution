@@ -8,6 +8,7 @@ public class LogEvent
     public long Branch { get; set; }
     public string? ParentId { get; set; }
     public string? SpanId { get; set; }
+    public string? CauseSpanId { get; set; }
     public string GroupName { get; set; } = "";
     public int Level { get; set; } = 1;
     public string Type { get; set; } = "event";

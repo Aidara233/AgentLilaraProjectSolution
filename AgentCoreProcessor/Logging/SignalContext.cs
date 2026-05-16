@@ -84,8 +84,9 @@ public class SignalContext : IDisposable
             SignalId = signalId,
             Scope = scope,
             Branch = ts,
-            ParentId = parentSpanId,
+            ParentId = null,           // new root span within this scope
             SpanId = spanId,
+            CauseSpanId = parentSpanId, // cross-scope causation
             GroupName = group,
             Level = LogLevel.Info,
             Type = "open",

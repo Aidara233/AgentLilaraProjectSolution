@@ -25,6 +25,7 @@ public class LogDatabase : IDisposable
         cmd.ExecuteNonQuery();
 
         MigrateParentIdToText();
+        MigrateCauseSpanId();
 
         using var cmd2 = _conn.CreateCommand();
         cmd2.CommandText = """
@@ -35,6 +36,7 @@ public class LogDatabase : IDisposable
                 branch      INTEGER NOT NULL DEFAULT 0,
                 parent_id   TEXT,
                 span_id     TEXT,
+                cause_span_id TEXT,
                 group_name  TEXT NOT NULL,
                 level       INTEGER NOT NULL DEFAULT 1,
                 type        TEXT NOT NULL DEFAULT 'event',
@@ -50,7 +52,12 @@ public class LogDatabase : IDisposable
             CREATE INDEX IF NOT EXISTS idx_events_group_time ON events(group_name, timestamp);
             CREATE INDEX IF NOT EXISTS idx_events_level_time ON events(level, timestamp);
             CREATE INDEX IF NOT EXISTS idx_events_parent ON events(parent_id);
+            CREATE INDEX IF NOT EXISTS idx_events_cause ON events(cause_span_id);
+            """;
+        cmd2.ExecuteNonQuery();
 
+        using var cmd3 = _conn.CreateCommand();
+        cmd3.CommandText = """
             CREATE TABLE IF NOT EXISTS token_usage (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp   INTEGER NOT NULL,
@@ -67,7 +74,7 @@ public class LogDatabase : IDisposable
             CREATE INDEX IF NOT EXISTS idx_token_model ON token_usage(model, timestamp);
             CREATE INDEX IF NOT EXISTS idx_token_caller ON token_usage(caller_tag, timestamp);
             """;
-        cmd2.ExecuteNonQuery();
+        cmd3.ExecuteNonQuery();
     }
 
     private void MigrateParentIdToText()
@@ -100,6 +107,52 @@ public class LogDatabase : IDisposable
             drop.CommandText = "DROP TABLE events";
             drop.ExecuteNonQuery();
         }
+    }
+
+    private void MigrateCauseSpanId()
+    {
+        // Check if column already exists
+        using var check = _conn.CreateCommand();
+        check.CommandText = "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='events'";
+        if ((long)check.ExecuteScalar()! == 0) return;
+
+        bool hasColumn = false;
+        using (var colCheck = _conn.CreateCommand())
+        {
+            colCheck.CommandText = "PRAGMA table_info(events)";
+            using var reader = colCheck.ExecuteReader();
+            while (reader.Read())
+            {
+                if (reader.GetString(1) == "cause_span_id")
+                {
+                    hasColumn = true;
+                    break;
+                }
+            }
+        }
+
+        if (!hasColumn)
+        {
+            using var add = _conn.CreateCommand();
+            add.CommandText = "ALTER TABLE events ADD COLUMN cause_span_id TEXT";
+            add.ExecuteNonQuery();
+        }
+
+        // Move cross-scope parent_id values to cause_span_id
+        using var migrate = _conn.CreateCommand();
+        migrate.CommandText = """
+            UPDATE events SET
+                cause_span_id = parent_id,
+                parent_id = NULL
+            WHERE parent_id IS NOT NULL
+              AND cause_span_id IS NULL
+              AND EXISTS (
+                  SELECT 1 FROM events e2
+                  WHERE e2.span_id = events.parent_id
+                    AND e2.scope != events.scope
+              )
+            """;
+        migrate.ExecuteNonQuery();
     }
 
     public SqliteConnection Connection => _conn;

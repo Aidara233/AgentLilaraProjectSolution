@@ -26,6 +26,7 @@ internal class LogTraceService
                     Scope = evt.Scope,
                     ParentId = evt.ParentId,
                     SpanId = evt.SpanId,
+                    CauseSpanId = evt.CauseSpanId,
                     Type = evt.Type,
                     Level = evt.Level,
                     Timestamp = evt.Timestamp,
@@ -97,6 +98,7 @@ internal class LogTraceService
                 Scope = evt.Scope,
                 ParentId = evt.ParentId,
                 SpanId = evt.SpanId,
+                CauseSpanId = evt.CauseSpanId,
                 Type = evt.Type,
                 Level = evt.Level,
                 Timestamp = evt.Timestamp,
@@ -169,6 +171,7 @@ internal class TraceRow
     public string Scope { get; set; } = "";
     public string? ParentId { get; set; }
     public string? SpanId { get; set; }
+    public string? CauseSpanId { get; set; }
     public string Type { get; set; } = "";
     public int Level { get; set; }
     public long Timestamp { get; set; }

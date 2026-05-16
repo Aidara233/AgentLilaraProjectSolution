@@ -88,8 +88,8 @@ public class LogWriter : IDisposable
             using var cmd = _db.Connection.CreateCommand();
             cmd.Transaction = tx;
             cmd.CommandText = """
-                INSERT INTO events (signal_id, scope, branch, parent_id, span_id, group_name, level, type, timestamp, name, detail)
-                VALUES (@sig, @scope, @branch, @parent, @span, @group, @level, @type, @ts, @name, @detail)
+                INSERT INTO events (signal_id, scope, branch, parent_id, span_id, cause_span_id, group_name, level, type, timestamp, name, detail)
+                VALUES (@sig, @scope, @branch, @parent, @span, @cause, @group, @level, @type, @ts, @name, @detail)
                 """;
 
             var pSig = cmd.Parameters.Add("@sig", SqliteType.Text);
@@ -97,6 +97,7 @@ public class LogWriter : IDisposable
             var pBranch = cmd.Parameters.Add("@branch", SqliteType.Integer);
             var pParent = cmd.Parameters.Add("@parent", SqliteType.Text);
             var pSpan = cmd.Parameters.Add("@span", SqliteType.Text);
+            var pCause = cmd.Parameters.Add("@cause", SqliteType.Text);
             var pGroup = cmd.Parameters.Add("@group", SqliteType.Text);
             var pLevel = cmd.Parameters.Add("@level", SqliteType.Integer);
             var pType = cmd.Parameters.Add("@type", SqliteType.Text);
@@ -111,6 +112,7 @@ public class LogWriter : IDisposable
                 pBranch.Value = evt.Branch;
                 pParent.Value = evt.ParentId != null ? evt.ParentId : DBNull.Value;
                 pSpan.Value = evt.SpanId != null ? evt.SpanId : DBNull.Value;
+                pCause.Value = evt.CauseSpanId != null ? evt.CauseSpanId : DBNull.Value;
                 pGroup.Value = evt.GroupName;
                 pLevel.Value = evt.Level;
                 pType.Value = evt.Type;
