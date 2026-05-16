@@ -256,9 +256,12 @@ namespace AgentCoreProcessor.Engine
 
         public async Task RunAsync()
         {
-            // 引擎生命周期标记（写入 startup signal scope）
-            var startupCtx = Logging.SignalContext.Current;
-            Signal.Event(LogGroup.Engine, "引擎启动", new { engineType = EngineType, channelId, channelName });
+            // 引擎生命周期信号（Continue 从调用者 signal，自动建立因果连线）
+            var parentCtx = Logging.SignalContext.Current;
+            var lifeCtx = Signal.Continue(
+                parentCtx?.SignalId ?? Signal.NewId(), parentCtx?.CurrentSpanId,
+                $"channel:{channelId}", LogGroup.Engine, "引擎运行",
+                new { engineType = EngineType, channelId, channelName });
 
             WireModuleCallbacks();
 
@@ -393,9 +396,7 @@ namespace AgentCoreProcessor.Engine
             // 清理模块状态
             foreach (var m in modules) m.Reset();
 
-            // 引擎生命周期结束标记
-            Logging.SignalContext.Restore(startupCtx);
-            Signal.Event(LogGroup.Engine, "引擎停止", new { engineType = EngineType, channelId, reason = "cold_timeout" });
+            lifeCtx.Close(new { engineType = EngineType, channelId, reason = "cold_timeout" });
         }
 
         private void WireModuleCallbacks()

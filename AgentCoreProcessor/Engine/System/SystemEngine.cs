@@ -180,9 +180,12 @@ namespace AgentCoreProcessor.Engine
             stopCts = new CancellationTokenSource();
             var ct = stopCts.Token;
 
-            // 引擎生命周期标记（写入 startup signal scope）
-            var startupCtx = SignalContext.Current;
-            Signal.Event(LogGroup.Engine, "引擎启动", new { engineType = EngineType, scope = "system:main" });
+            // 引擎生命周期信号（Continue 从 startup signal，自动建立因果连线）
+            var parentCtx = SignalContext.Current;
+            var lifeCtx = Signal.Continue(
+                parentCtx?.SignalId ?? Signal.NewId(), parentCtx?.CurrentSpanId,
+                "system:main", LogGroup.Engine, "引擎运行",
+                new { engineType = EngineType });
 
             // 初始化 ComponentHost
             componentHost = new ComponentHost(
@@ -295,9 +298,7 @@ namespace AgentCoreProcessor.Engine
                 IsAlive = false;
                 foreach (var m in modules) m.Reset();
 
-                // 引擎生命周期结束标记
-                SignalContext.Restore(startupCtx);
-                Signal.Event(LogGroup.Engine, "引擎停止", new { engineType = EngineType, reason = "shutdown" });
+                lifeCtx.Close(new { engineType = EngineType, reason = "shutdown" });
             }
         }
 

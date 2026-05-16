@@ -71,8 +71,10 @@ namespace AgentCoreProcessor.Engine
 
         public async Task RunAsync()
         {
-            var startupCtx = AgentCoreProcessor.Logging.SignalContext.Current;
-            Logging.Signal.Event(Logging.LogGroup.Engine, "引擎启动",
+            var parentCtx = AgentCoreProcessor.Logging.SignalContext.Current;
+            var lifeCtx = Logging.Signal.Continue(
+                parentCtx?.SignalId ?? Logging.Signal.NewId(), parentCtx?.CurrentSpanId,
+                "dream:main", Logging.LogGroup.Engine, "引擎运行",
                 new { engineType = EngineType, level = level.ToString() });
 
             // 清理过期记忆 + 孤立关联（纯机械操作，不消耗模型 token）
@@ -103,9 +105,7 @@ namespace AgentCoreProcessor.Engine
             ctx.CurrentSleepState = SleepState.None;
             IsAlive = false;
 
-            AgentCoreProcessor.Logging.SignalContext.Restore(startupCtx);
-            Logging.Signal.Event(Logging.LogGroup.Engine, "引擎停止",
-                new { engineType = EngineType, reason = "completed", fragments = executed });
+            lifeCtx.Close(new { engineType = EngineType, reason = "completed", fragments = executed });
         }
 
         public void OnEvent(EngineEvent e)

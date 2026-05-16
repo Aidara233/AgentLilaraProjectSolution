@@ -54,8 +54,11 @@ namespace AgentCoreProcessor.Engine.Vision
 
         public async Task RunAsync()
         {
-            var startupCtx = AgentCoreProcessor.Logging.SignalContext.Current;
-            Logging.Signal.Event(Logging.LogGroup.Engine, "引擎启动", new { engineType = EngineType });
+            var parentCtx = AgentCoreProcessor.Logging.SignalContext.Current;
+            var lifeCtx = Logging.Signal.Continue(
+                parentCtx?.SignalId ?? Logging.Signal.NewId(), parentCtx?.CurrentSpanId,
+                "vision:main", Logging.LogGroup.Engine, "引擎运行",
+                new { engineType = EngineType });
 
             config = VisionEngineConfig.Load();
             visionSemaphore = new SemaphoreSlim(config.VisionConcurrency);
@@ -85,8 +88,7 @@ namespace AgentCoreProcessor.Engine.Vision
             visionSemaphore?.Dispose();
             ocrSemaphore?.Dispose();
 
-            AgentCoreProcessor.Logging.SignalContext.Restore(startupCtx);
-            Logging.Signal.Event(Logging.LogGroup.Engine, "引擎停止", new { engineType = EngineType, reason = "shutdown" });
+            lifeCtx.Close(new { engineType = EngineType, reason = "shutdown" });
         }
 
         // PLACEHOLDER_PROCESS_METHODS

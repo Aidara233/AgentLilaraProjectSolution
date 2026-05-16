@@ -40,8 +40,11 @@ namespace AgentCoreProcessor.Engine
             _stopCts = new CancellationTokenSource();
             var ct = _stopCts.Token;
 
-            var startupCtx = AgentCoreProcessor.Logging.SignalContext.Current;
-            Signal.Event(LogGroup.Engine, "引擎启动", new { engineType = EngineType });
+            var parentCtx = SignalContext.Current;
+            var lifeCtx = Signal.Continue(
+                parentCtx?.SignalId ?? Signal.NewId(), parentCtx?.CurrentSpanId,
+                "timer:heartbeat", LogGroup.Engine, "引擎运行",
+                new { engineType = EngineType });
 
             try
             {
@@ -74,8 +77,7 @@ namespace AgentCoreProcessor.Engine
             finally
             {
                 IsAlive = false;
-                AgentCoreProcessor.Logging.SignalContext.Restore(startupCtx);
-                Signal.Event(LogGroup.Engine, "引擎停止", new { engineType = EngineType, reason = "shutdown" });
+                lifeCtx.Close(new { engineType = EngineType, reason = "shutdown" });
             }
         }
 

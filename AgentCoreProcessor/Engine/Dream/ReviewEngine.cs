@@ -79,8 +79,10 @@ namespace AgentCoreProcessor.Engine
 
         public async Task RunAsync()
         {
-            var startupCtx = SignalContext.Current;
-            Signal.Event(LogGroup.Engine, "引擎启动",
+            var parentCtx = SignalContext.Current;
+            var lifeCtx = Signal.Continue(
+                parentCtx?.SignalId ?? Signal.NewId(), parentCtx?.CurrentSpanId,
+                "review:main", LogGroup.Engine, "引擎运行",
                 new { engineType = EngineType, mode = mode.ToString() });
 
             try
@@ -103,9 +105,7 @@ namespace AgentCoreProcessor.Engine
 
                 IsAlive = false;
 
-                SignalContext.Restore(startupCtx);
-                Signal.Event(LogGroup.Engine, "引擎停止",
-                    new { engineType = EngineType, reason = "completed" });
+                lifeCtx.Close(new { engineType = EngineType, reason = "completed" });
             }
         }
 

@@ -82,30 +82,23 @@ function buildLookupMaps(rows) {
         }
     }
 
-    // Build engine lifecycle ranges: pair "引擎启动"/"引擎停止" events by engineType
+    // Build engine lifecycle ranges: pair open/close of "引擎运行" spans by scope
     const engineLifecycles = [];
-    const engineStarts = {}; // engineType → row index
     for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
-        if (row.type !== 'event') continue;
-        let engineType = null;
-        if (row.name === '引擎启动' || row.name === '引擎停止') {
-            try { engineType = JSON.parse(row.detail || '{}').engineType; } catch {}
-        }
-        if (!engineType) continue;
-        if (row.name === '引擎启动') {
-            engineStarts[engineType] = i;
-        } else if (row.name === '引擎停止') {
-            const startIdx = engineStarts[engineType];
-            if (startIdx != null) {
-                engineLifecycles.push({ engineType, scope: row.scope, startIdx, endIdx: i });
-                delete engineStarts[engineType];
+        if (row.type === 'open' && row.name === '引擎运行') {
+            // Find matching close
+            let endIdx = -1;
+            for (let j = i + 1; j < rows.length; j++) {
+                if (rows[j].type === 'close' && rows[j].spanId === row.spanId) {
+                    endIdx = j;
+                    break;
+                }
             }
+            let engineType = null;
+            try { engineType = JSON.parse(row.detail || '{}').engineType; } catch {}
+            engineLifecycles.push({ engineType, scope: row.scope, startIdx: i, endIdx });
         }
-    }
-    // Unpaired starts: engine still running (or crashed)
-    for (const [engineType, startIdx] of Object.entries(engineStarts)) {
-        engineLifecycles.push({ engineType, scope: rows[startIdx].scope, startIdx, endIdx: -1 });
     }
 
     // Detect if startupSignal has a close event (scope=system:init)
