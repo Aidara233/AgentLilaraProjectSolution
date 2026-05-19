@@ -20,17 +20,18 @@ lifeCtx.Close(new { reason = "shutdown" });
 
 Never use `parentCtx?.SignalId` — that merges your tree into the caller's.
 
-### 2. Session uses existing signalId
+### 2. Session uses new signal_id, linked via cause_span_id
 
 ```csharp
-sessionCtx = Signal.Continue(sigId, parentSpan, scope, LogGroup.Engine, "名称",
+sessionCtx = Signal.Continue(SignalContext.NewSignalId(), parentSpan, scope, LogGroup.Engine, "名称",
     new { ... });
-// OR fallback:
+// OR fallback (no upstream span):
 sessionCtx = Signal.Begin(LogGroup.Engine, scope, "名称", new { ... });
 ```
 
-Session inherits the adapter's signalId (belongs to that signal tree).
-cause_span_id points to the adapter span that triggered this wake-up.
+Session creates its own signal_id. Only `cause_span_id` links back to the adapter span.
+This keeps each session as an independent signal source, achieving 1:1 mapping of
+signal to processing cycle. The adapter's signal_id is never reused for sessions.
 
 ### 3. Fire-and-forget: clear stale context first
 

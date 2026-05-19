@@ -93,8 +93,8 @@ This ensures gate evaluations, idle checks, and other between-session work appea
 The channel engine's loop structure is the most heavily instrumented example:
 
 ```
-Channel引擎 [群名]          ← lifecycle, Continue from startup signal
-  └─ 频道会话                ← per-wakeup session, Continue from adapter signal
+Channel引擎 [群名]          ← lifecycle, Continue from startup signal (independent signal_id)
+  └─ 频道会话                ← per-wakeup session, new signal_id, cause_span_id → adapter
        ├─ 闸门评估            ← gate inside session (not outside)
        ├─ 处理轮次            ← one round per model interaction
        │    ├─ 组装对话上下文
