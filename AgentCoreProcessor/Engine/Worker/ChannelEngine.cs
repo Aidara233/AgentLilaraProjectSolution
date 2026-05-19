@@ -152,7 +152,6 @@ namespace AgentCoreProcessor.Engine
         private CancellationTokenSource? _bufferTimerCts;
 
         // 信号追踪：最近入队消息携带的上游信号
-        private string? _traceSignalId;
         private string? _traceParentSpanId;
         private string? _sessionRootSpanId; // session root span（提取 cause 指向此处，避免指向内部子 span）
 
@@ -177,7 +176,6 @@ namespace AgentCoreProcessor.Engine
             this.preprocessingCore = new PreprocessingCore(ctx.Embedding);
             agentCore.CallerTag = $"Channel:{channelId}";
 
-            _traceSignalId = Logging.SignalContext.Current?.SignalId;
             _traceParentSpanId = Logging.SignalContext.Current?.CurrentSpanId;
 
             // ── 持久化 ──
@@ -227,14 +225,13 @@ namespace AgentCoreProcessor.Engine
         }
 
         /// <summary>由 SpawnCheck 调用，将新消息加入缓冲。</summary>
-        public void EnqueueMessage(IncomingMessage msg, SessionContext sc, string? traceSignalId = null, string? traceParentSpanId = null)
+        public void EnqueueMessage(IncomingMessage msg, SessionContext sc, string? traceParentSpanId = null)
         {
             lock (bufferLock)
             {
                 buffer.Add((msg, sc));
                 lastBufferTime = DateTime.Now;
                 CollectImagePaths(msg);
-                _traceSignalId = traceSignalId ?? SignalContext.Current?.SignalId;
                 _traceParentSpanId = traceParentSpanId ?? SignalContext.Current?.CurrentSpanId;
             }
             recentParticipants.AddOrUpdate(
@@ -318,8 +315,8 @@ namespace AgentCoreProcessor.Engine
                 await componentHost.OnActivatedAsync();
 
                 // 收集 trace 信息（上游适配器信号的因果链接）
-                string? sigId, parentSpan;
-                lock (bufferLock) { sigId = _traceSignalId; parentSpan = _traceParentSpanId; }
+                string? parentSpan;
+                lock (bufferLock) { parentSpan = _traceParentSpanId; }
 
                 // ② CollectBuffer
                 var batch = CollectBuffer();
@@ -327,8 +324,8 @@ namespace AgentCoreProcessor.Engine
                 // ③ 循环会话开始（如未在会话中则创建；闸门评估在会话内）
                 if (sessionCtx == null)
                 {
-                    if (sigId != null)
-                        sessionCtx = Signal.Continue(sigId, parentSpan, $"channel:{channelId}", LogGroup.Engine, "频道会话",
+                    if (parentSpan != null)
+                        sessionCtx = Signal.Continue(SignalContext.NewSignalId(), parentSpan, $"channel:{channelId}", LogGroup.Engine, "频道会话",
                             new { channelId, mode = isWorkingMode ? "working" : "express" });
                     else
                         sessionCtx = Signal.Begin(LogGroup.Engine, $"channel:{channelId}", "频道会话",
