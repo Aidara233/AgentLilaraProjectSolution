@@ -89,7 +89,14 @@
 - 通信桥梁：Engine/Core/TaskBridge.cs
 - 委托注册：Engine/Core/DelegationRegistry.cs
 - 子agent会话：Engine/System/TaskSession.cs
-- Agent 循环：Core/WorkingCore.cs
+- 循环闸门：Engine/Core/Gate.cs（delegate 驱动，组合不继承）
+- Agent 循环：Engine/Core/Agent.cs（多轮推理，退避策略）
+- Agent 宿主接口：Engine/Core/IAgentHost.cs（BuildStartInjectAsync/BuildRoundInjectAsync）
+- Agent 配置：Engine/Core/AgentConfig.cs（轮次/退避/压缩阈值）
+- 三层压缩：Engine/Modules/CompressionTierModule.cs（L1提示/L2提醒/L3硬保底）
+- 压缩工具：Tool/Core/CompressTool.cs（模型可调用，所有模式可用）
+- 频道持久化：Engine/Worker/ChannelContextPersistence.cs（per-channel JSON 原子写入）
+- 统一模型调用：Core/AgentCore.cs（Express/Working 分流）
 - 记忆检索：Memory/MemoryService.cs
 - 做梦调度：Engine/Dream/DreamEngineSpawnCheck.cs
 - 做梦执行：Engine/Dream/DreamEngine.cs
