@@ -314,24 +314,30 @@ namespace AgentCoreProcessor.Engine
                 // 循环唤醒：通知组件
                 await componentHost.OnActivatedAsync();
 
-                // 收集 trace 信息（上游适配器信号的因果链接）
-                string? parentSpan;
-                lock (bufferLock) { parentSpan = _traceParentSpanId; }
-
-                // ② CollectBuffer
+                // ② CollectBuffer（在创建 session 之前 — 避免 Timer tick 等空唤醒创建无用 session）
                 var batch = CollectBuffer();
 
-                // ③ 循环会话开始（如未在会话中则创建；闸门评估在会话内）
+                // 没新消息且不在 Working 会话中 → 空唤醒（Timer 心跳等），直接跳过
+                if (batch == null && !isInWorkingSession)
+                {
+                    await componentHost.OnPauseAsync();
+                    continue;
+                }
+
+                // ③ 循环会话开始（有消息或 Working 会话持续中）
                 if (sessionCtx == null)
                 {
+                    string? parentSpan;
+                    lock (bufferLock) { parentSpan = _traceParentSpanId; }
+
                     if (parentSpan != null)
                         sessionCtx = Signal.Continue(SignalContext.NewSignalId(), parentSpan, $"channel:{channelId}", LogGroup.Engine, "频道会话",
                             new { channelId, mode = isWorkingMode ? "working" : "express" });
                     else
                         sessionCtx = Signal.Begin(LogGroup.Engine, $"channel:{channelId}", "频道会话",
                             new { channelId, mode = isWorkingMode ? "working" : "express" });
+                    _sessionRootSpanId = sessionCtx?.CurrentSpanId;
                 }
-                _sessionRootSpanId = sessionCtx?.CurrentSpanId;
 
                 // ④ Gate evaluation（会话内部：决定是否开闸）
                 bool prepareResult;
