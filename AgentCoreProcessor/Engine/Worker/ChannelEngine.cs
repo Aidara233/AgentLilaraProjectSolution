@@ -15,6 +15,7 @@ using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Component;
 using AgentCoreProcessor.Engine.Modules;
 using AgentCoreProcessor.Tool;
+using AgentCoreProcessor.Tool.Core;
 using AgentLilara.PluginSDK;
 
 namespace AgentCoreProcessor.Engine
@@ -23,7 +24,7 @@ namespace AgentCoreProcessor.Engine
     /// 频道引擎。长生命周期，一个活跃频道一个实例。
     /// 负责消息缓冲聚合、冲动值决策、参与者追踪、消息处理（分类→记忆→回复→提取）。
     /// </summary>
-    internal class ChannelEngine : ISubEngine
+    internal class ChannelEngine : ISubEngine, IAgentHost
     {
         public string EngineType => "Channel";
         public bool IsAlive { get; private set; } = true;
@@ -68,11 +69,19 @@ namespace AgentCoreProcessor.Engine
         // Core 实例
         private readonly AgentCore agentCore = new();
         private readonly PreprocessingCore preprocessingCore;
-        private readonly PromptBuilder promptBuilder = new();
-        private ContextBuilder contextBuilder = null!;
 
-        // 闸门 + 事件总线 + 内务模块
-        private readonly LoopGate gate = new();
+        // ── 统一循环（Phase 1）──
+        private Gate gate = null!;
+        private Agent? agent;
+        private AgentConfig agentConfig = null!;
+        private ChannelContextPersistence? persistence;
+        private CompressionTierModule? compressionTierModule;
+
+        // ── 堆叠式上下文 ──
+        private string? fixedPrefix;
+        private string? contextSummary;
+
+        // 事件总线 + 内务模块
         private readonly LoopBus bus = new();
         private readonly SpeakModule speakModule = new();
         private readonly TaskListModule taskListModule = new();
@@ -123,6 +132,14 @@ namespace AgentCoreProcessor.Engine
         private bool isWorkingMode = false;
         private int consecutiveExternalTriggers = 0;
 
+        // 当前处理批次（供 Agent host 注入使用）
+        private List<(IncomingMessage Message, SessionContext Context)>? activeBatch;
+        private Dictionary<int, ParticipantInfo>? currentParticipantSnapshot;
+        private IncomingMessage? currentLastMsg;
+        private SessionContext? currentLastSc;
+        private bool isInWorkingSession = false;
+        private string? escalationReason;
+
         // 错误追踪
         private int consecutiveFailures = 0;
         private DateTime? lastErrorTime = null;
@@ -130,17 +147,6 @@ namespace AgentCoreProcessor.Engine
         private int totalErrorCount = 0;
         private const int ChannelMaxConsecutiveBeforeBackoff = 3;
         private const int ChannelBackoffSeconds = 30;
-
-        // Working 会话状态（跨闸门轮次保持）
-        private string? currentContextXml;
-        private List<ImageEmbed>? currentImageEmbeds;
-        private Dictionary<int, ParticipantInfo>? currentParticipantSnapshot;
-        private IncomingMessage? currentLastMsg;
-        private SessionContext? currentLastSc;
-        private List<ToolCall>? lastRoundCalls;
-        private List<ToolResult>? lastRoundResults;
-        private bool isInWorkingSession = false;
-        private string? escalationReason;
 
         // 缓冲定时器
         private CancellationTokenSource? _bufferTimerCts;
@@ -169,11 +175,30 @@ namespace AgentCoreProcessor.Engine
             var now = DateTime.Now;
             this.lastBufferTime = now;
             this.preprocessingCore = new PreprocessingCore(ctx.Embedding);
-            this.contextBuilder = new ContextBuilder(ctx.Session, initialContext.Channel.Id);
             agentCore.CallerTag = $"Channel:{channelId}";
 
             _traceSignalId = Logging.SignalContext.Current?.SignalId;
             _traceParentSpanId = Logging.SignalContext.Current?.CurrentSpanId;
+
+            // ── 持久化 ──
+            persistence = new ChannelContextPersistence(channelId);
+
+            // ── Agent 配置 ──
+            agentConfig = new AgentConfig
+            {
+                MaxRounds = 20,
+                CompressL1Tokens = 30000,
+                CompressL2Tokens = 50000,
+                CompressL3Tokens = 70000,
+                CompressMinTokens = 5000,
+                CompressRetainedMessageCount = 6,
+                CompressRetainedMaxTokens = 2000
+            };
+
+            // ── Gate ──
+            gate = new Gate(ctx.EventBus);
+            gate.ShouldActivate = CheckShouldActivateAsync;
+            gate.ExecuteAsync = ExecuteChannelCycleAsync;
 
             extractionWorker = new ChannelExtractionWorker(
                 ctx, channelId, channelConfig, recentParticipants,
@@ -277,8 +302,8 @@ namespace AgentCoreProcessor.Engine
 
             while (IsAlive)
             {
-                // ① WaitGate
-                var triggered = await gate.WaitAsync(
+                // ① WaitGate（保留冷超时机制）
+                var triggered = await gate.WaitForTriggerAsync(
                     TimeSpan.FromSeconds(ctx.ImpulseConfig.ColdTimeoutSeconds));
 
                 if (!triggered)
@@ -309,20 +334,19 @@ namespace AgentCoreProcessor.Engine
                         sessionCtx = Signal.Begin(LogGroup.Engine, $"channel:{channelId}", "频道会话",
                             new { channelId, mode = isWorkingMode ? "working" : "express" });
                 }
-                _sessionRootSpanId = sessionCtx?.CurrentSpanId; // capture before sub-spans open
+                _sessionRootSpanId = sessionCtx?.CurrentSpanId;
 
                 // ④ Gate evaluation（会话内部：决定是否开闸）
                 bool prepareResult;
                 using (var gateSpan = Signal.Open(LogGroup.Engine, "闸门评估",
                     new { hasMessages = batch?.Count ?? 0, isWorkingMode }))
                 {
-                    prepareResult = await PrepareContextAsync(batch);
+                    prepareResult = await EvaluateGateAsync(batch);
                     gateSpan.SetCloseDetail(new { passed = prepareResult });
                 }
 
                 if (!prepareResult)
                 {
-                    // 闸门拦截：结束当前会话
                     sessionCtx.Close(new { reason = "循环挂起" });
                     sessionCtx = null;
                     SignalContext.Restore(lifeCtx);
@@ -330,7 +354,7 @@ namespace AgentCoreProcessor.Engine
                     continue;
                 }
 
-                // ⑤ 单轮处理（上下文组装 → 模型调用 → 工具执行 → 后续决策）
+                // ⑤ 执行本轮（统一循环：Working→Agent，Express→直接Core调用）
                 Interlocked.Exchange(ref _busyFlag, 1);
                 try
                 {
@@ -339,47 +363,26 @@ namespace AgentCoreProcessor.Engine
                     using var roundSpan = Signal.Open(LogGroup.Engine, "处理轮次",
                         new { channelId, mode = isWorkingMode ? "working" : "express" });
 
-                    // 上下文组装（轮次内）
-                    await AssembleRoundContextAsync(batch);
-
-                    var messages = BuildPromptMessages();
-                    var mode = isWorkingMode ? EngineMode.Working : EngineMode.Express;
-
-                    ModelOutput output;
-                    using (var modelSpan = Signal.Open(LogGroup.Model, "AI模型调用",
-                        new {
-                            mode = mode.ToString(),
-                            channelId,
-                            core = agentCore.CoreName,
-                            messageCount = messages.Count,
-                            messages = messages.Select(m => new { role = m.Role, content = m.Content }),
-                            imageCount = currentImageEmbeds?.Count ?? 0
-                        }))
+                    if (isWorkingMode)
                     {
-                        output = await agentCore.InvokeAsync(messages, mode);
-                        modelSpan.SetCloseDetail(new
-                        {
-                            isText = output.IsText,
-                            hasToolCalls = output.HasToolCalls,
-                            toolCount = output.ToolCalls?.Count ?? 0,
-                            responseText = output.IsText ? output.Text : null,
-                            thinking = output.Thinking,
-                            toolCalls = output.ToolCalls?.Select(tc => new { tool = tc.Tool, inputs = tc.Inputs })
-                        });
+                        await ExecuteWorkingCycleAsync();
+                    }
+                    else
+                    {
+                        await ExecuteExpressCycleAsync();
                     }
 
                     await componentHost.OnAfterInvokeAsync();
-                    await ProcessResponseAsync(output);
-                    DecideNext(output);
+
                     roundSpan.SetCloseDetail(new
                     {
                         mode = isWorkingMode ? "working" : "express",
                         isInWorkingSession,
-                        hadSpeak = speakModule.HadSpeakThisRound,
-                        toolCount = output.ToolCalls?.Count ?? 0
+                        hadSpeak = speakModule.HadSpeakThisRound
                     });
                     consecutiveFailures = 0;
                 }
+                catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
                 {
                     consecutiveFailures++;
@@ -404,7 +407,8 @@ namespace AgentCoreProcessor.Engine
 
                     if (consecutiveFailures >= ChannelMaxConsecutiveBeforeBackoff)
                     {
-                        Signal.Warn(LogGroup.Engine, "连续失败退避", new { channelId, consecutiveFailures, backoffSeconds = ChannelBackoffSeconds });
+                        Signal.Warn(LogGroup.Engine, "连续失败退避",
+                            new { channelId, consecutiveFailures, backoffSeconds = ChannelBackoffSeconds });
                         await Task.Delay(TimeSpan.FromSeconds(ChannelBackoffSeconds));
                     }
 
@@ -412,7 +416,6 @@ namespace AgentCoreProcessor.Engine
                 }
                 finally
                 {
-                    // 会话结束：非 working 模式时关闭 session span
                     if (!isInWorkingSession && sessionCtx != null)
                     {
                         sessionCtx.Close(new { reason = "循环挂起" });
@@ -511,21 +514,18 @@ namespace AgentCoreProcessor.Engine
             }
         }
 
-        /// <summary>
-        /// 统一上下文准备。每轮都重建 contextXml。
-        /// 返回 false 表示本轮应跳过（静音/冲动值不够/无事可做）。
-        /// </summary>
-        private async Task<bool> PrepareContextAsync(
+        /// <summary>闸门评估。复用原 PrepareContextAsync 逻辑，返回是否开闸。</summary>
+        private async Task<bool> EvaluateGateAsync(
             List<(IncomingMessage Message, SessionContext Context)>? batch)
         {
             bool hasNewMessages = batch != null && batch.Count > 0;
 
             if (hasNewMessages)
             {
+                activeBatch = batch;
                 currentLastMsg = batch![^1].Message;
                 currentLastSc = batch[^1].Context;
                 currentParticipantSnapshot = new Dictionary<int, ParticipantInfo>(recentParticipants);
-
 
                 if (ctx.MuteMode)
                 {
@@ -593,7 +593,7 @@ namespace AgentCoreProcessor.Engine
                     return false;
                 }
 
-                // 消费 pending 图片，检查描述缓存
+                // 消费 pending 图片
                 List<(string Path, string? Hash, string? Category)> pendingCopy;
                 lock (bufferLock)
                 {
@@ -601,9 +601,8 @@ namespace AgentCoreProcessor.Engine
                         ? new List<(string, string?, string?)>(pendingImageInfos) : new();
                     pendingImageInfos.Clear();
                 }
-                currentImageEmbeds = null;
                 if (pendingCopy.Count > 0)
-                    currentImageEmbeds = await ResolveImagePresentationAsync(pendingCopy);
+                    await ResolveImagePresentationAsync(pendingCopy);
 
                 // 标记已处理
                 foreach (var (msg, _) in batch)
@@ -628,26 +627,20 @@ namespace AgentCoreProcessor.Engine
                 }
 
                 // 重置 Working 轮次状态
-                lastRoundCalls = null;
-                lastRoundResults = null;
                 loopControlModule.OnNewMessage();
                 isInWorkingSession = false;
+                agent = null;     // 新消息到达时重置 Agent（确保重新生成 fixedPrefix）
+                fixedPrefix = null;
 
                 // 同步频道工具 profile
                 currentProfileName = ctx.ToolProfiles.GetProfileForChannel(currentLastMsg.ChannelId);
                 var profileTools = ctx.ToolProfiles.GetActiveTools(currentProfileName);
                 authorizedTools.Clear();
                 foreach (var t in profileTools) authorizedTools.Add(t);
-
-                // 冲动值扣减
-                impulseTracker.ApplyPostResponseUpdate();
-
-                // 记忆提取 + 信任增长
-                TrackMemoryExtraction(batch, currentLastSc);
-                await IncrementDailyProgressAsync(currentLastSc.Person);
             }
             else if (!isInWorkingSession)
             {
+                activeBatch = null;
                 return false;
             }
             // else: in working session, no new messages → continue processing
@@ -655,359 +648,390 @@ namespace AgentCoreProcessor.Engine
             return true;
         }
 
-        /// <summary>统一重建上下文 XML（在轮次 span 内调用）。</summary>
-        private async Task AssembleRoundContextAsync(
-            List<(IncomingMessage Message, SessionContext Context)>? batch)
+        /// <summary>Gate.ShouldActivate 委托。供 Gate 框架调用。</summary>
+        private async Task<bool> CheckShouldActivateAsync()
         {
-            if (currentLastMsg == null || currentLastSc == null) return;
-            currentParticipantSnapshot ??= new Dictionary<int, ParticipantInfo>(recentParticipants);
+            if (isInWorkingSession) return true;
+            var batch = CollectBuffer();
+            if (batch == null || batch.Count == 0) return false;
+            return await EvaluateGateAsync(batch);
+        }
 
-            using (var ctxSpan = Signal.Open(LogGroup.Memory, "组装对话上下文",
-                new { channelId, personId = currentLastSc.Person.Id }))
+        // ═══════════════════════════════════════════════════════════
+        // 统一循环执行（Working → Agent / Express → 直接 Core）
+        // ═══════════════════════════════════════════════════════════
+
+        /// <summary>Gate.ExecuteAsync 委托。统一循环入口，按模式分发。</summary>
+        private async Task ExecuteChannelCycleAsync(CancellationToken ct)
+        {
+            Interlocked.Exchange(ref _busyFlag, 1);
+            try
             {
-                var recentMessages = await ctx.Session.GetContextByChannelAsync(channelId);
-                var effectiveBatch = batch ?? new List<(IncomingMessage, SessionContext)>();
-                var (xml, imageEmbeds) = await contextBuilder.BuildContextXmlAsync(
-                    effectiveBatch, recentMessages, currentParticipantSnapshot);
+                await componentHost!.OnBeforeInvokeAsync();
 
-                // 图片直传列表：ContextBuilder 已根据规则收集
-                if (imageEmbeds.Count > 0)
+                if (isWorkingMode)
                 {
-                    currentImageEmbeds = imageEmbeds;
+                    await ExecuteWorkingCycleAsync();
                 }
                 else
                 {
-                    currentImageEmbeds = null;
+                    await ExecuteExpressCycleAsync();
                 }
-                currentContextXml = xml;
 
-                // 刷新记忆
-                var memoryResults = await GetCachedMemoryAsync(currentLastSc, currentLastMsg.Content);
-                memoryWindowModule.SetMemories(memoryResults);
+                consecutiveFailures = 0;
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                consecutiveFailures++;
+                totalErrorCount++;
+                lastErrorTime = DateTime.Now;
+                lastErrorMessage = $"{ex.GetType().Name}: {ex.Message}";
+                Signal.Error(LogGroup.Engine, "处理异常",
+                    new { error = ex.GetType().Name, message = ex.Message, consecutiveFailures });
 
-                ctxSpan.SetCloseDetail(new
+                if (currentLastMsg != null && consecutiveFailures <= 1)
                 {
-                    recentMsgCount = recentMessages.Count,
-                    memoryCount = memoryResults.Count,
-                    hasImages = imageEmbeds.Count > 0,
-                    contextXml = xml,
-                    memories = memoryResults.Select(m => new { id = m.Id, content = m.Content, score = m.Score, confidence = m.Confidence, type = m.IsPersona ? "persona" : m.IsTemp ? "temp" : "fact" })
-                });
+                    try
+                    {
+                        await ctx.Adapters.SendMessageAsync(currentLastMsg.Platform, new OutgoingMessage
+                        {
+                            ChannelId = currentLastMsg.ChannelId,
+                            Content = $"[错误] 处理消息时发生异常：{ex.Message}"
+                        });
+                    }
+                    catch { }
+                }
+
+                if (consecutiveFailures >= ChannelMaxConsecutiveBeforeBackoff)
+                {
+                    Signal.Warn(LogGroup.Engine, "连续失败退避",
+                        new { channelId, consecutiveFailures, backoffSeconds = ChannelBackoffSeconds });
+                    await Task.Delay(TimeSpan.FromSeconds(ChannelBackoffSeconds), ct);
+                }
+
+                isInWorkingSession = false;
+            }
+            finally
+            {
+                if (!isInWorkingSession)
+                {
+                    Interlocked.Exchange(ref _busyFlag, 0);
+                    Interlocked.Exchange(ref _completionTicks, DateTime.Now.Ticks);
+                    await componentHost!.OnPauseAsync();
+                }
             }
         }
 
-        /// <summary>统一 prompt 构建。Express/Working 都走 PromptBuilder。</summary>
-        private List<Models.Message> BuildPromptMessages()
+        /// <summary>Working 模式：Agent 多轮循环。</summary>
+        private async Task ExecuteWorkingCycleAsync()
         {
-            var mode = isWorkingMode ? EngineMode.Working : EngineMode.Express;
-            // 直接根据 WorkingCore 配置判断，不依赖当前 processor 状态（修复时序 bug）
-            var useNative = isWorkingMode;
+            EnsureAgent();
 
-            // Working 模式：使用工具白名单过滤
-            string toolDescs;
-            string? nativeContext = null;
-            if (isWorkingMode)
+            // Lazy register compress tool
+            if (compressionTierModule == null)
             {
-                var channelToolFilter = new Func<ITool, bool>(tool =>
-                {
-                    var allowedTools = new HashSet<string>
+                compressionTierModule = new CompressionTierModule(agentConfig,
+                    () => agent?.History ?? new List<Message>(),
+                    () =>
                     {
-                        "speak", "send_media", "thinking_notes", "memory", "pinboard", "retain_list", "task_management",
-                        "mark_review_hint", "alert", "wait", "read_file", "write_file", "delegate_task", "adapter_action",
-                        "view_image", "get_image_text"
-                    };
-                    return allowedTools.Contains(tool.Name);
-                });
+                        compressionTierModule!.CompressSyncAsync(
+                            agent?.History ?? new List<Message>(),
+                            (summary, retained) =>
+                            {
+                                contextSummary = summary;
+                                agent?.ClearHistory();
+                                agent?.AddToHistory(new Message { Role = "user", Content = fixedPrefix! });
+                                if (!string.IsNullOrEmpty(summary))
+                                    agent?.AddToHistory(new Message { Role = "user", Content = $"[上下文摘要]\n{summary}" });
+                                foreach (var m in retained) agent?.AddToHistory(m);
+                                PersistCurrentContext();
+                            }).GetAwaiter().GetResult();
+                    });
+                ToolRegistry.Register(new CompressTool(
+                    compressionTierModule,
+                    agent!.History,
+                    (summary, retained) =>
+                    {
+                        contextSummary = summary;
+                        agent.ClearHistory();
+                        agent.AddToHistory(new Message { Role = "user", Content = fixedPrefix! });
+                        if (!string.IsNullOrEmpty(summary))
+                            agent.AddToHistory(new Message { Role = "user", Content = $"[上下文摘要]\n{summary}" });
+                        foreach (var m in retained) agent.AddToHistory(m);
+                        PersistCurrentContext();
+                        gate.Signal();
+                    }));
+            }
 
-                if (useNative)
-                {
-                    // TODO: ToolFilter removed from AgentCore; will be replaced by ProfileManager
-                    // agentCore.ToolFilter = channelToolFilter;
-                    toolDescs = "";
-                    // 原生模式下工具描述跳过，额外上下文单独注入
-                    var ctxSb = new StringBuilder();
-                    if (!string.IsNullOrEmpty(escalationReason))
-                    {
-                        ctxSb.AppendLine($"[升级任务] {escalationReason}");
-                        escalationReason = null;
-                    }
-                    var botIdW = ctx.Adapters.GetBotPlatformId("qq");
-                    if (!string.IsNullOrEmpty(botIdW))
-                        ctxSb.AppendLine($"身份信息：你的QQ号是 {botIdW}。");
-                    ctxSb.Append("[图片标记说明]\n上下文中的 <img/> 标记表示用户发送的图片。其中 desc/text 属性为自动生成的摘要，仅供快速参考，可能存在误差或遗漏。涉及具体内容时请使用工具查看原图或获取完整文字。");
-                    nativeContext = ctxSb.ToString().TrimEnd();
-                }
+            await agent!.RunAsync(CancellationToken.None);
+
+            // Persist after agent finishes
+            PersistCurrentContext();
+
+            // Post-processing
+            impulseTracker.ApplyPostResponseUpdate();
+            if (activeBatch != null && currentLastSc != null)
+            {
+                TrackMemoryExtraction(activeBatch, currentLastSc);
+                await IncrementDailyProgressAsync(currentLastSc.Person);
+            }
+
+            // Handle agent stop reason
+            if (agent.StopReason == AgentStopReason.WaitRequested)
+            {
+                EndWorkingSession();
+            }
+            else if (agent.StopReason == AgentStopReason.MaxRounds)
+            {
+                loopControlModule.AdvanceRound(speakModule.HadSpeakThisRound);
+                if (!loopControlModule.IsMaxRoundsReached)
+                    gate.Signal();
                 else
-                {
-                    toolDescs = ToolRegistry.GenerateDescriptions(authorizedTools: authorizedTools, filter: channelToolFilter);
-                    if (!string.IsNullOrEmpty(escalationReason))
-                    {
-                        toolDescs += $"\n\n[升级任务] {escalationReason}";
-                        escalationReason = null;
-                    }
-                    var botIdW = ctx.Adapters.GetBotPlatformId("qq");
-                    if (!string.IsNullOrEmpty(botIdW))
-                        toolDescs += $"\n\n身份信息：你的QQ号是 {botIdW}。";
-                    toolDescs += "\n\n[图片标记说明]\n上下文中的 <img/> 标记表示用户发送的图片。其中 desc/text 属性为自动生成的摘要，仅供快速参考，可能存在误差或遗漏。涉及具体内容时请使用工具查看原图或获取完整文字。";
-                }
+                    EndWorkingSession();
             }
             else
             {
-                // Express 模式
-                var useExpressNative = agentCore.UseNativeTools
-                    && ToolRegistry.GetExpressToolDefinitions().Count > 0;
-
-                if (useExpressNative)
-                {
-                    // 原生 Express 工具：工具定义通过 API 传递，这里只注入上下文提示
-                    useNative = true;
-                    toolDescs = "";
-                    var ctxSb = new StringBuilder();
-                    ctxSb.AppendLine("你当前处于轻量对话模式。需要执行复杂操作时调用 escalate 工具切换到工作模式。");
-                    var botId = ctx.Adapters.GetBotPlatformId("qq");
-                    if (!string.IsNullOrEmpty(botId))
-                        ctxSb.AppendLine($"身份信息：你的QQ号是 {botId}，不要把自己的号当成别人的。");
-                    ctxSb.AppendLine("轻量动作（直接在回复中使用，不需要切换模式）：\n- [POKE:对方QQ号] 戳一戳对方");
-
-                    List<WatchRule> rules;
-                    lock (watchRulesLock) { rules = new List<WatchRule>(watchRules); }
-                    if (rules.Count > 0)
-                    {
-                        ctxSb.AppendLine("\n[关注规则]");
-                        ctxSb.AppendLine("以下规则已激活，当消息匹配时会自动触发相应动作：");
-                        foreach (var rule in rules)
-                            ctxSb.AppendLine($"- {rule.Description}（模式：{rule.Pattern}，动作：{rule.Action}）");
-                    }
-
-                    ctxSb.Append("[图片标记说明]\n上下文中的 <img/> 标记表示用户发送的图片。其中 desc/text 属性为自动生成的摘要，仅供快速参考，可能存在误差或遗漏。涉及具体内容时请使用工具查看原图或获取完整文字。");
-                    nativeContext = ctxSb.ToString().TrimEnd();
-                }
-                else
-                {
-                    // Fallback: 非 native 模式，使用文本能力摘要
-                    var channelToolFilter = new Func<ITool, bool>(tool =>
-                    {
-                        var allowedTools = new HashSet<string>
-                        {
-                            "speak", "send_media", "thinking_notes", "memory", "pinboard", "retain_list", "task_management",
-                            "mark_review_hint", "alert", "read_file", "write_file", "delegate_task", "adapter_action"
-                        };
-                        return allowedTools.Contains(tool.Name);
-                    });
-                    toolDescs = ToolRegistry.GenerateCapabilitySummary(filter: channelToolFilter);
-                    var botId = ctx.Adapters.GetBotPlatformId("qq");
-                    var pokeHint = "\n\n轻量动作（直接在回复中使用，不需要切换模式）：\n- [POKE:对方QQ号] 戳一戳对方";
-                    if (!string.IsNullOrEmpty(botId))
-                        pokeHint += $"\n\n身份信息：你的QQ号是 {botId}，不要把自己的号当成别人的。";
-                    toolDescs += pokeHint;
-
-                    List<WatchRule> rules;
-                    lock (watchRulesLock) { rules = new List<WatchRule>(watchRules); }
-                    if (rules.Count > 0)
-                    {
-                        var sb = new StringBuilder();
-                        sb.AppendLine("\n[关注规则]");
-                        sb.AppendLine("以下规则已激活，当消息匹配时会自动触发相应动作：");
-                        foreach (var rule in rules)
-                            sb.AppendLine($"- {rule.Description}（模式：{rule.Pattern}，动作：{rule.Action}）");
-                        toolDescs += "\n" + sb.ToString();
-                    }
-
-                    toolDescs += "\n\n[图片标记说明]\n上下文中的 <img/> 标记表示用户发送的图片。其中 desc/text 属性为自动生成的摘要，仅供快速参考，可能存在误差或遗漏。涉及具体内容时请使用工具查看原图或获取完整文字。";
-                }
+                EndWorkingSession();
             }
+        }
 
-            var messages = promptBuilder.BuildRoundMessages(
-                toolDescs, currentContextXml!, modules, mode,
-                lastRoundResults, lastRoundCalls,
-                currentImageEmbeds, useNative);
+        /// <summary>Express 模式：单次 Core 调用，不走 Agent。</summary>
+        private async Task ExecuteExpressCycleAsync()
+        {
+            // Build messages for single-shot call
+            var messages = new List<Message>();
+            if (fixedPrefix == null) fixedPrefix = BuildFixedPrefix();
+            messages.Add(new Message { Role = "user", Content = fixedPrefix! });
 
-            // 原生模式下：额外上下文（Bot ID、升级原因等）在 PromptBuilder 跳过工具描述后单独注入
-            if (useNative && nativeContext != null)
+            var startInject = await ((IAgentHost)this).BuildStartInjectAsync();
+            if (startInject != null) messages.AddRange(startInject);
+
+            var roundInject = await ((IAgentHost)this).BuildRoundInjectAsync();
+            if (roundInject != null) messages.AddRange(roundInject);
+
+            // Call model
+            ModelOutput output;
+            using (var modelSpan = Signal.Open(LogGroup.Model, "AI模型调用",
+                new { mode = "Express", channelId, messageCount = messages.Count }))
             {
-                // 插入到 contextXml 消息之后、模块消息之前（index = 工具描述被跳过后的第2个消息之后）
-                messages.Insert(1, new Models.Message { Role = "user", Content = nativeContext });
+                output = await agentCore.InvokeAsync(messages, EngineMode.Express);
+                modelSpan.SetCloseDetail(new { isText = output.IsText, hasToolCalls = output.HasToolCalls });
             }
 
-            // Component 系统 prompt 注入
+            // Process text output
+            if (output.IsText && currentLastMsg != null && currentLastSc != null && currentParticipantSnapshot != null)
+            {
+                var text = output.Text!;
+                text = await ProcessPokeMarkers(text, currentLastMsg);
+                if (!string.IsNullOrEmpty(text))
+                    await SendSegmentsAsync(text, currentLastMsg, currentLastSc, currentParticipantSnapshot);
+            }
+
+            // Fire-and-forget tools
+            if (output.HasToolCalls && output.ToolCalls != null)
+            {
+                Tool.Core.ManageComponentsTool.CurrentLoop.Value =
+                    new Tool.Core.ManageComponentsTool.LoopContext(currentProfileName, $"channel-{channelId}");
+                var executor = new ToolExecutor(null, null);
+                await executor.ExecuteAsync(output.ToolCalls);
+
+                // Check for escalate
+                foreach (var call in output.ToolCalls)
+                {
+                    if (call.Tool == "escalate")
+                    {
+                        escalationReason = call.Inputs.Count > 0 ? call.Inputs[0] : null;
+                        isWorkingMode = true;
+                        Signal.Event(LogGroup.Engine, "模式切换",
+                            new { channelId, from = "Express", to = "Working", reason = escalationReason ?? "工具调用" });
+                        gate.Signal();
+                        break;
+                    }
+                }
+            }
+
+            // Post-processing
+            impulseTracker.ApplyPostResponseUpdate();
+            if (activeBatch != null && currentLastSc != null)
+            {
+                TrackMemoryExtraction(activeBatch, currentLastSc);
+                await IncrementDailyProgressAsync(currentLastSc.Person);
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // Agent 相关（堆叠式上下文 + 持久化）
+        // ═══════════════════════════════════════════════════════════
+
+        private const string WorkingAuthorizedTools =
+            "speak,send_media,thinking_notes,memory,pinboard,retain_list,task_management," +
+            "mark_review_hint,alert,wait,read_file,write_file,delegate_task,adapter_action," +
+            "view_image,get_image_text,compress";
+
+        private string BuildFixedPrefix()
+        {
+            var sb = new StringBuilder();
+
+            if (agentCore.UseNativeTools)
+            {
+                sb.AppendLine("[系统配置]");
+                var botId = ctx.Adapters.GetBotPlatformId("qq");
+                if (!string.IsNullOrEmpty(botId))
+                    sb.AppendLine($"身份信息：你的QQ号是 {botId}。");
+                sb.AppendLine("[图片标记说明] 上下文中的 <img/> 标记表示用户发送的图片。desc/text 属性为自动生成的摘要，仅供快速参考。涉及具体内容时请使用工具查看原图或获取完整文字。");
+            }
+            else
+            {
+                var workingTools = new HashSet<string>(WorkingAuthorizedTools.Split(','));
+                sb.AppendLine(ToolRegistry.GenerateDescriptions(authorizedTools: workingTools));
+                var botId = ctx.Adapters.GetBotPlatformId("qq");
+                if (!string.IsNullOrEmpty(botId))
+                    sb.AppendLine($"\n身份信息：你的QQ号是 {botId}。");
+                sb.AppendLine("\n[图片标记说明] 上下文中的 <img/> 标记表示用户发送的图片。desc/text 属性为自动生成的摘要，仅供快速参考。涉及具体内容时请使用工具查看原图或获取完整文字。");
+            }
+
+            return sb.ToString();
+        }
+
+        private void EnsureAgent()
+        {
+            if (agent != null) return;
+
+            fixedPrefix = BuildFixedPrefix();
+
+            var authorized = new HashSet<string>(WorkingAuthorizedTools.Split(','));
+            agent = new Agent(this, agentCore, agentConfig, authorized);
+
+            if (fixedPrefix != null)
+                agent.AddToHistory(new Message { Role = "user", Content = fixedPrefix });
+
+            if (!string.IsNullOrEmpty(contextSummary))
+                agent.AddToHistory(new Message { Role = "user", Content = $"[上下文摘要]\n{contextSummary}" });
+
+            // Restore persisted history
+            if (persistence != null)
+            {
+                var (summary, mode, rounds) = persistence.LoadContext();
+                if (!string.IsNullOrEmpty(summary) && string.IsNullOrEmpty(contextSummary))
+                {
+                    contextSummary = summary;
+                    agent.AddToHistory(new Message { Role = "user", Content = $"[上下文摘要]\n{summary}" });
+                }
+                if (rounds.Count > 0)
+                {
+                    foreach (var round in rounds)
+                        foreach (var msg in round)
+                            agent.AddToHistory(msg);
+                }
+            }
+        }
+
+        public Task<List<Message>?> BuildStartInjectAsync()
+        {
+            var msgs = new List<Message>();
+
+            // Format new messages from buffer
+            if (currentLastMsg != null && activeBatch != null && activeBatch.Count > 0)
+            {
+                var sb = new StringBuilder("<新消息>\n");
+                foreach (var (msg, sc) in activeBatch)
+                {
+                    var name = sc.Person.Name ?? sc.User.PlatformId;
+                    sb.AppendLine($"{name}: {msg.Content}");
+                }
+                sb.Append("</新消息>");
+
+                // Interceptor injections
+                if (interceptorInjections.Count > 0)
+                {
+                    sb.AppendLine();
+                    sb.AppendLine("[系统提示]");
+                    foreach (var inj in interceptorInjections)
+                        sb.AppendLine(inj);
+                }
+
+                msgs.Add(new Message { Role = "user", Content = sb.ToString() });
+            }
+
+            // Escalation reason
+            if (!string.IsNullOrEmpty(escalationReason))
+            {
+                msgs.Add(new Message { Role = "user", Content = $"[升级任务] {escalationReason}" });
+                escalationReason = null;
+            }
+
+            // Component prompt sections
+            BuildComponentInjections(msgs);
+
+            return Task.FromResult<List<Message>?>(msgs);
+        }
+
+        public Task<List<Message>?> BuildRoundInjectAsync()
+        {
+            var msgs = new List<Message>();
+
+            // Module injections (per-round)
+            foreach (var module in modules.OrderBy(m => m.PromptPriority))
+            {
+                var section = module.BuildPromptSection(
+                    isWorkingMode ? EngineMode.Working : EngineMode.Express);
+                if (!string.IsNullOrEmpty(section))
+                    msgs.Add(new Message { Role = "user", Content = section });
+            }
+
+            // Compression tier hint
+            if (compressionTierModule != null && agent != null)
+            {
+                var estTokens = agent.History.Sum(m => (m.Content?.Length ?? 0)) / 3;
+                var text = compressionTierModule.GetInjectText(estTokens);
+                if (!string.IsNullOrEmpty(text))
+                {
+                    msgs.Add(new Message { Role = "user", Content = text });
+                    if (compressionTierModule.CurrentTier == CompressionTier.L1)
+                        compressionTierModule.MarkL1Injected();
+                }
+            }
+
+            // Component prompt sections (per-round)
+            BuildComponentInjections(msgs);
+
+            return Task.FromResult<List<Message>?>(msgs);
+        }
+
+        private void BuildComponentInjections(List<Message> msgs)
+        {
             if (componentHost != null)
             {
                 var groups = ToolListFormatter.CollectGroups(componentHost, ctx.GlobalComponentHost);
-                var toolOverview = ToolListFormatter.BuildToolOverviewSection(groups);
-                if (toolOverview != null)
-                    messages.Add(new Models.Message { Role = "user", Content = toolOverview });
+                var overview = ToolListFormatter.BuildToolOverviewSection(groups);
+                if (overview != null)
+                    msgs.Add(new Message { Role = "user", Content = overview });
 
-                var componentSections = componentHost.BuildPromptSections();
-                foreach (var section in componentSections)
-                    messages.Add(new Models.Message { Role = "user", Content = section });
+                var sections = componentHost.BuildPromptSections();
+                foreach (var s in sections)
+                    msgs.Add(new Message { Role = "user", Content = s });
 
                 var globalSections = ctx.GlobalComponentHost?.BuildPromptSections(
                     new LoopInfo(channelId.ToString(), "channel")) ?? new();
-                foreach (var section in globalSections)
-                    messages.Add(new Models.Message { Role = "user", Content = section });
-            }
-
-            // 拦截器注入的额外提示
-            if (interceptorInjections.Count > 0)
-            {
-                var injection = string.Join("\n", interceptorInjections);
-                messages.Add(new Models.Message { Role = "user", Content = injection });
-            }
-
-            // 图片只在首次使用后清除
-            currentImageEmbeds = null;
-            return messages;
-        }
-
-        /// <summary>统一输出处理。Express 发文本，Working 执行工具。</summary>
-        private async Task ProcessResponseAsync(ModelOutput output)
-        {
-            if (currentLastMsg == null || currentLastSc == null || currentParticipantSnapshot == null) return;
-
-            if (output.IsText)
-            {
-                var text = output.Text!;
-
-                // [ALERT] 检测 (fallback，非 native 模式)
-                if (!output.HasToolCalls && text.Contains("[ALERT]"))
-                {
-                    var reason = text.Replace("[ALERT]", "").Replace("[ESCALATE]", "").Trim();
-                    await HandleAlertAsync(currentLastSc.Person, currentLastSc,
-                        string.IsNullOrEmpty(reason) ? "聊天中触发" : reason);
-                    text = text.Replace("[ALERT]", "").Trim();
-                }
-
-                // 发送文本（fallback 模式下 ESCALATE 前的部分）
-                var sendText = (!output.HasToolCalls && text.Contains("[ESCALATE]"))
-                    ? text.Split("[ESCALATE]")[0].Trim()
-                    : text;
-
-                // [POKE:uid] 轻量动作：提取并执行戳一戳
-                sendText = await ProcessPokeMarkers(sendText, currentLastMsg);
-
-                if (!string.IsNullOrEmpty(sendText))
-                    await SendSegmentsAsync(sendText, currentLastMsg, currentLastSc, currentParticipantSnapshot);
-
-                // Fire-and-forget: 静默执行 Express 工具（结果不回注）
-                if (output.HasToolCalls)
-                {
-                    Tool.Core.ManageComponentsTool.CurrentLoop.Value =
-                        new Tool.Core.ManageComponentsTool.LoopContext(currentProfileName, $"channel-{channelId}");
-                    var executor = new ToolExecutor(authorizedTools: null);
-                    await executor.ExecuteAsync(output.ToolCalls!);
-
-                    foreach (var tc in output.ToolCalls!)
-                    {
-                        var inputSummary = tc.Inputs.Count > 0 ? string.Join(", ", tc.Inputs).Truncate(80) : "";
-                    }
-                }
-            }
-            else
-            {
-                // Working: 执行工具
-                isInWorkingSession = true;
-                if (lastRoundCalls == null) consecutiveExternalTriggers++;
-                var toolCalls = output.ToolCalls!;
-
-                if (toolCalls.Count == 0)
-                {
-                    EndWorkingSession();
-                    return;
-                }
-
-                speakModule.ResetRound();
-                Tool.Core.ManageComponentsTool.CurrentLoop.Value =
-                    new Tool.Core.ManageComponentsTool.LoopContext(currentProfileName, $"channel-{channelId}");
-                var executor = new ToolExecutor(authorizedTools: authorizedTools);
-                executor.OnToolExecuted = async (call, result) =>
-                {
-                    var toolDef = ToolRegistry.Get(call.Tool);
-                    bus.Publish(new ToolExecutedEvent(call, result, toolDef));
-                    await Task.CompletedTask;
-                };
-
-                List<ToolResult> results;
-                using (var toolSpan = Signal.Open(LogGroup.Tool, "执行工具",
-                    new { toolCount = toolCalls.Count, tools = string.Join(",", toolCalls.Select(c => c.Tool)) }))
-                {
-                    results = await executor.ExecuteAsync(toolCalls);
-                    toolSpan.SetCloseDetail(new
-                    {
-                        successCount = results.Count(r => r.Status == "ok"),
-                        errorCount = results.Count(r => r.Error != null)
-                    });
-                }
-
-                lastRoundCalls = toolCalls;
-                lastRoundResults = results;
-                loopControlModule.AdvanceRound(speakModule.HadSpeakThisRound);
-
-                foreach (var tc in toolCalls)
-                {
-                    var inputSummary = tc.Inputs.Count > 0 ? string.Join(", ", tc.Inputs).Truncate(80) : "";
-                    var r = results[toolCalls.IndexOf(tc)];
-                }
+                foreach (var s in globalSections)
+                    msgs.Add(new Message { Role = "user", Content = s });
             }
         }
 
-        /// <summary>统一后续决策。决定是否继续循环、切换模式、或 idle。</summary>
-        private void DecideNext(ModelOutput output)
+        private void PersistCurrentContext()
         {
-            if (output.IsText)
+            if (persistence == null || agent == null || agent.History.Count == 0) return;
+
+            var rounds = new List<List<Message>>();
+            for (int i = 0; i < agent.History.Count; i += 2)
             {
-                // Express 工具路径：检查 escalate 工具调用
-                if (output.HasToolCalls && output.ToolCalls!.Any(c => c.Tool == "escalate"))
-                {
-                    var call = output.ToolCalls!.First(c => c.Tool == "escalate");
-                    escalationReason = call.Inputs.Count > 0 && !string.IsNullOrWhiteSpace(call.Inputs[0])
-                        ? call.Inputs[0] : null;
-                    isWorkingMode = true;
-                    isInWorkingSession = true;
-                    consecutiveExternalTriggers = 0;
-                    Signal.Event(LogGroup.Engine, "模式切换", new { channelId, from = "Express", to = "Working", reason = escalationReason ?? "工具调用" });
-                    gate.Signal();
-                }
-                // Fallback: 非 native 模式仍解析文本标记
-                else if (!output.HasToolCalls && output.Text!.Contains("[ESCALATE]"))
-                {
-                    var parts = output.Text!.Split("[ESCALATE]", 2);
-                    escalationReason = parts.Length > 1 ? parts[1].Trim() : null;
-                    isWorkingMode = true;
-                    isInWorkingSession = true;
-                    consecutiveExternalTriggers = 0;
-                    Signal.Event(LogGroup.Engine, "模式切换", new { channelId, from = "Express", to = "Working", reason = escalationReason ?? "文本标记" });
-                    gate.Signal();
-                }
+                var pair = new List<Message> { agent.History[i] };
+                if (i + 1 < agent.History.Count)
+                    pair.Add(agent.History[i + 1]);
+                rounds.Add(pair);
             }
-            else
-            {
-                if (output.ToolCalls == null || output.ToolCalls.Count == 0) return;
-
-                // 安全上限
-                if (loopControlModule.IsMaxSilentReached || loopControlModule.IsMaxRoundsReached)
-                {
-                    if (loopControlModule.IsMaxSilentReached && speakModule.OnSpeak != null)
-                        speakModule.OnSpeak("（工作暂停，等待回应后继续）").GetAwaiter().GetResult();
-
-                    EndWorkingSession();
-                    return;
-                }
-
-                // 显式结束信号
-                bool hasWait = output.ToolCalls.Any(c => c.Tool == "wait");
-                if (hasWait)
-                {
-                    EndWorkingSession();
-                    return;
-                }
-
-                // 只调了输出工具 → 标记，下一轮提示确认
-                var outputOnlyTools = new HashSet<string> { "speak", "send_media" };
-                bool isOutputOnly = output.ToolCalls.All(c => outputOnlyTools.Contains(c.Tool));
-                loopControlModule.WasOutputOnly = isOutputOnly;
-
-                gate.Signal();
-            }
+            persistence.SaveContext(contextSummary, isWorkingMode ? "working" : "express", rounds);
         }
 
         private void EndWorkingSession()
@@ -1015,8 +1039,7 @@ namespace AgentCoreProcessor.Engine
             Signal.Event(LogGroup.Engine, "Working会话结束", new
             {
                 channelId,
-                totalRounds = loopControlModule.TotalRounds,
-                silentRounds = loopControlModule.SilentRounds,
+                totalRounds = agent?.TotalRounds ?? 0,
                 hadSpeak = speakModule.HadSpeakThisRound
             });
             isInWorkingSession = false;
