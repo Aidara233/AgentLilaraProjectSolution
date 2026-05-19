@@ -21,7 +21,7 @@ namespace AgentCoreProcessor.Engine
     /// 闸门模型：任何人可升闸（唤醒），只有模型调 Wait 才落闸。
     /// 追加式上下文：固定前缀 + 持续增长的对话历史 + 每轮新增的状态/事件。
     /// </summary>
-    internal class SystemEngine : ISubEngine
+    internal class SystemEngine : ISubEngine, IAgentHost
     {
         public string EngineType => "System";
         public bool IsAlive { get; private set; } = true;
@@ -31,7 +31,10 @@ namespace AgentCoreProcessor.Engine
 
         private readonly ISystemContext ctx;
         private readonly AgentCore agentCore;
-        private readonly LoopGate gate = new();
+        private Gate gate = null!;
+        private Agent? agent;
+        private AgentConfig agentConfig = null!;
+        private CompressionTierModule? compressionTierModule;
         private readonly LoopBus bus = new();
         private CancellationTokenSource? stopCts;
         private readonly DateTime startTime = DateTime.Now;
@@ -49,10 +52,6 @@ namespace AgentCoreProcessor.Engine
         // Component 系统
         private ComponentHost? componentHost;
 
-        // 追加式对话历史
-        private readonly List<Message> conversationHistory = new();
-        private string toolDescriptions = "";
-        private int estimatedTokens = 0;
         private const int MaxContextTokens = 80000;
         private const int SoftThresholdPercent = 60;
         private const int HardThresholdPercent = 85;
@@ -65,10 +64,7 @@ namespace AgentCoreProcessor.Engine
 
         // Agent 循环状态
         private const int MaxRoundsPerWake = 20;
-        private List<ToolCall>? lastRoundCalls;
-        private List<ToolResult>? lastRoundResults;
         private bool lastRoundNoAction;
-        private int waitTimeoutMinutes = 5;
 
         // 子 agent 管理
         private readonly Dictionary<string, IAgentSession> subAgents = new();
@@ -79,8 +75,6 @@ namespace AgentCoreProcessor.Engine
         private DateTime? lastErrorTime = null;
         private string? lastErrorMessage = null;
         private int totalErrorCount = 0;
-        private const int MaxConsecutiveFailures = 5;
-        private static readonly int[] BackoffSeconds = { 10, 30, 60, 120, 300 };
 
         // 睡觉评估和许可管理
         private class SleepRequest
@@ -124,22 +118,51 @@ namespace AgentCoreProcessor.Engine
 
             foreach (var m in modules) m.Attach(bus);
 
-            // 启动时生成工具描述（固定前缀，不再每轮重建）
-            var allowed = GetAuthorizedTools();
-            if (useNativeTools)
+            // ── Agent 配置 ──
+            agentConfig = new AgentConfig
             {
-                // 原生模式：工具通过 API 发送，不注入文本描述
-                toolDescriptions = "";
-                // TODO: ToolFilter removed from AgentCore; will be replaced by ProfileManager
-                // agentCore.ToolFilter = t => allowed.Contains(t.Name);
-            }
-            else
-            {
-                toolDescriptions = ToolRegistry.GenerateDescriptions(filter: t => allowed.Contains(t.Name));
-            }
+                MaxRounds = MaxRoundsPerWake,
+                CompressL1Tokens = MaxContextTokens * SoftThresholdPercent / 100,
+                CompressL2Tokens = MaxContextTokens * 70 / 100,
+                CompressL3Tokens = MaxContextTokens * HardThresholdPercent / 100,
+                CompressMinTokens = 5000,
+                CompressRetainedMessageCount = 10,
+                CompressRetainedMaxTokens = 2000
+            };
 
-            // 恢复持久化的对话历史
+            // ── 压缩模块 ──
+            compressionTierModule = new CompressionTierModule(agentConfig,
+                () => agent?.History ?? new List<Message>(),
+                () =>
+                {
+                    if (compressionTierModule != null && agent != null)
+                    {
+                        compressionTierModule.CompressSyncAsync(
+                            agent.History,
+                            (summary, retained) =>
+                            {
+                                compressionModule.SetSummary(summary);
+                                agent.ClearHistory();
+                                foreach (var m in retained)
+                                    agent.AddToHistory(m);
+                                // Persist after compression
+                                persistence.SaveSummaryAndClearContext(summary);
+                                PersistAgentHistory();
+                            }).GetAwaiter().GetResult();
+                    }
+                });
+            compressionTierModule.SetSummary(compressionModule.GetSummary());
+
+            // ── Agent ──
+            agent = new Agent(this, agentCore, agentConfig, GetAuthorizedTools());
+
+            // ── 恢复持久化上下文 ──
             RestoreContext();
+
+            // ── Gate（替代 LoopGate）──
+            gate = new Gate(ctx.EventBus);
+            gate.ShouldActivate = () => Task.FromResult(true);
+            gate.ExecuteAsync = ExecuteSystemCycleAsync;
 
             // 注册 TaskBridge 回调：任务提交时唤醒闸门 + 强制唤醒 DreamEngine
             ctx.TaskBridge.OnTaskSubmitted = () =>
@@ -156,23 +179,38 @@ namespace AgentCoreProcessor.Engine
         {
             var (summary, rounds) = persistence.LoadContext();
             compressionModule.SetSummary(summary);
+            compressionTierModule?.SetSummary(summary);
 
-            foreach (var round in rounds)
+            // Load persisted rounds into Agent
+            if (agent != null && rounds.Count > 0)
             {
-                conversationHistory.AddRange(round);
+                foreach (var round in rounds)
+                    foreach (var msg in round)
+                        agent.AddToHistory(msg);
             }
-
-            RecalculateTokens();
         }
 
-        private void RecalculateTokens()
+        private void PersistAgentHistory()
         {
-            estimatedTokens = conversationHistory.Sum(m => (m.Content?.Length ?? 0)) / 3;
+            if (agent == null) return;
+            var history = agent.History;
+            if (history.Count >= 2)
+            {
+                var lastUser = history[history.Count - 2];
+                var lastAsst = history[history.Count - 1];
+                if (lastUser.Role == "user" && lastAsst.Role == "assistant")
+                {
+                    persistence.AppendRound(
+                        new List<Message> { lastUser },
+                        new List<Message> { lastAsst });
+                }
+            }
         }
 
         private (int tokens, int percent) GetContextUsage()
         {
-            return (estimatedTokens, (int)(estimatedTokens * 100.0 / MaxContextTokens));
+            var estTokens = agent?.History.Sum(m => (m.Content?.Length ?? 0)) / 3 ?? 0;
+            return (estTokens, (int)(estTokens * 100.0 / MaxContextTokens));
         }
 
         public async Task RunAsync()
@@ -196,88 +234,7 @@ namespace AgentCoreProcessor.Engine
 
             try
             {
-                while (!ct.IsCancellationRequested)
-                {
-                    // ═══ 外层：闸门等待 ═══
-                    await gate.WaitAsync(TimeSpan.FromMinutes(waitTimeoutMinutes), ct);
-
-                    // 循环唤醒：通知组件
-                    await componentHost.OnActivatedAsync();
-
-                    // 定期自检（每 5 分钟）
-                    if ((DateTime.Now - lastSleepCheck).TotalMinutes >= 5)
-                    {
-                        await PerformHealthCheckAsync();
-                        lastSleepCheck = DateTime.Now;
-                    }
-
-                    // ═══ 收集所有待处理事件 ═══
-                    var tasks = DrainTasks();
-                    var notifications = DrainNotifications();
-                    var scheduledEvents = DrainScheduledEvents();
-                    var pendingDelegations = ctx.Delegations.GetPendingForEvaluation();
-                    var retryDelegations = ctx.Delegations.GetRetryPending();
-
-                    using var iterSignal = Signal.Begin(LogGroup.Engine, "system:main", "系统循环轮次", new
-                    {
-                        tasks = tasks.Count,
-                        notifications = notifications.Count,
-                        scheduled = scheduledEvents.Count,
-                        delegations = pendingDelegations.Count,
-                        retryDelegations = retryDelegations.Count
-                    });
-
-                    Signal.Event(LogGroup.Engine, "任务队列检查", new
-                    {
-                        pending = tasks.Count,
-                        notifications = notifications.Count,
-                        scheduled = scheduledEvents.Count
-                    });
-
-                    if (pendingDelegations.Count > 0 || retryDelegations.Count > 0)
-                    {
-                        Signal.Event(LogGroup.Engine, "委托待评估", new
-                        {
-                            pending = pendingDelegations.Count,
-                            retry = retryDelegations.Count
-                        });
-                    }
-
-                    // 填充 PendingEventsModule
-                    pendingEventsModule.SetPendingEvents(tasks, notifications, scheduledEvents, lastRoundNoAction);
-                    pendingEventsModule.SetPendingDelegations(pendingDelegations);
-                    pendingEventsModule.SetRetryPendingDelegations(retryDelegations);
-
-                    // ═══ 内层：Agent 循环 ═══
-                    Interlocked.Exchange(ref _busyFlag, 1);
-                    lastRoundNoAction = false;
-                    try
-                    {
-                        await RunAgentLoopAsync(ct);
-                        consecutiveFailures = 0;
-                    }
-                    catch (OperationCanceledException) { throw; }
-                    catch (Exception ex)
-                    {
-                        consecutiveFailures++;
-                        totalErrorCount++;
-                        lastErrorTime = DateTime.Now;
-                        lastErrorMessage = $"{ex.GetType().Name}: {ex.Message}";
-
-                        if (consecutiveFailures >= MaxConsecutiveFailures)
-                        {
-                            var backoff = BackoffSeconds[Math.Min(consecutiveFailures - 1, BackoffSeconds.Length - 1)];
-                            await Task.Delay(TimeSpan.FromSeconds(backoff), ct);
-                        }
-                    }
-                    finally
-                    {
-                        Interlocked.Exchange(ref _busyFlag, 0);
-                        lastRoundCalls = null;
-                        lastRoundResults = null;
-                        await componentHost.OnPauseAsync();
-                    }
-                }
+                await gate.RunAsync(ct);
             }
             catch (OperationCanceledException)
             {
@@ -302,187 +259,112 @@ namespace AgentCoreProcessor.Engine
             }
         }
 
-        /// <summary>内层 Agent 循环：模型推理 → 工具执行 → 结果回馈 → 直到 Wait 或上限。</summary>
-        private async Task RunAgentLoopAsync(CancellationToken ct)
+        /// <summary>系统循环执行体。Gate 每次开闸时调用一次。包含事件收集 + Agent 多轮推理。</summary>
+        private async Task ExecuteSystemCycleAsync(CancellationToken ct)
         {
-            for (int round = 0; round < MaxRoundsPerWake && !ct.IsCancellationRequested; round++)
+            // 定期自检（每 5 分钟）
+            if ((DateTime.Now - lastSleepCheck).TotalMinutes >= 5)
             {
-                using var roundSpan = Signal.Open(LogGroup.Engine, "agent轮次", new { round = round + 1 });
-
-                // ① 检查是否需要压缩（硬阈值）
-                var usagePercent = (int)(estimatedTokens * 100.0 / MaxContextTokens);
-                if (usagePercent >= HardThresholdPercent)
-                {
-                    await CompressContextAsync();
-                }
-
-                // ② 构建当前轮的 user 消息（状态 + 事件 + 上轮工具结果）
-                var currentTurnMsg = BuildCurrentTurnMsg();
-
-                // ③ 组装完整消息列表（固定前缀 + 历史 + 当前轮）
-                var messages = BuildFullMessages(currentTurnMsg);
-
-                // ④ 调用模型
-                if (componentHost != null) await componentHost.OnBeforeInvokeAsync();
-                var output = await agentCore.InvokeWithHistoryAsync(messages);
-                if (componentHost != null) await componentHost.OnAfterInvokeAsync();
-
-                // ⑤ 处理响应
-                if (output.IsText || output.ToolCalls == null || output.ToolCalls.Count == 0)
-                {
-                    var text = output.Thinking ?? output.Text ?? "";
-                    lastRoundNoAction = true;
-
-                    // 追加到历史
-                    AppendToHistory(currentTurnMsg, new Message { Role = "assistant", Content = text });
-
-                    if (round > 0 && lastRoundCalls == null)
-                    {
-                        break;
-                    }
-                    lastRoundCalls = null;
-                    lastRoundResults = null;
-                    continue;
-                }
-
-                // ⑥ 执行工具
-                lastRoundNoAction = false;
-                var toolCalls = output.ToolCalls;
-                Tool.Core.ManageComponentsTool.CurrentLoop.Value =
-                    new Tool.Core.ManageComponentsTool.LoopContext("system", "system-loop");
-                var executor = new ToolExecutor(authorizedTools: GetAuthorizedTools());
-
-                // 记录委托相关决策
-                var delegationTools = new HashSet<string> { "accept_delegation", "reject_delegation", "queue_delegation" };
-                var delegationCalls = toolCalls.Where(c => delegationTools.Contains(c.Tool)).ToList();
-                if (delegationCalls.Count > 0)
-                {
-                    Signal.Event(LogGroup.Engine, "委托决策", new
-                    {
-                        decisions = delegationCalls.Select(c => new { tool = c.Tool, arg = c.Inputs.FirstOrDefault() }).ToArray()
-                    });
-                }
-
-                var results = await executor.ExecuteAsync(toolCalls);
-
-                lastRoundCalls = toolCalls;
-                lastRoundResults = results;
-
-                // ⑦ 追加到历史（assistant 响应，含思考文本）
-                var assistantMsg = BuildAssistantMsg(toolCalls, output.Thinking);
-                AppendToHistory(currentTurnMsg, assistantMsg);
-
-                // ⑧ 自动感知：检查是否还有待处理事件
-                bool hasMoreWork = ctx.TaskBridge.HasPendingTasks()
-                    || ctx.TaskBridge.HasPendingNotifications()
-                    || ctx.Delegations.GetPendingForEvaluation().Count > 0
-                    || ctx.Delegations.GetRetryPending().Count > 0;
-
-                // 纯通知类工具（不产生后续工作）→ 本轮结束
-                var terminalTools = new HashSet<string> { "notify_channel", "check_notifications" };
-                bool isTerminalOnly = toolCalls.All(c => terminalTools.Contains(c.Tool));
-
-                if (isTerminalOnly && !hasMoreWork)
-                {
-                    break;
-                }
-
-                if (!hasMoreWork && toolCalls.Any(c => c.Tool == "wait"))
-                {
-                    var reason = toolCalls.First(c => c.Tool == "wait").Inputs.FirstOrDefault() ?? "";
-                    break;
-                }
-
-                // ⑨ 更新 PendingEventsModule（后续轮次无新事件）
-                pendingEventsModule.SetPendingEvents(
-                    new List<SystemTask>(), new List<Notification>(),
-                    new List<ScheduledTaskFiredEvent>(), false);
+                await PerformHealthCheckAsync();
+                lastSleepCheck = DateTime.Now;
             }
 
-            SaveModuleState();
-        }
+            // ═══ 收集所有待处理事件 ═══
+            var tasks = DrainTasks();
+            var notifications = DrainNotifications();
+            var scheduledEvents = DrainScheduledEvents();
+            var pendingDelegations = ctx.Delegations.GetPendingForEvaluation();
+            var retryDelegations = ctx.Delegations.GetRetryPending();
 
-        // ---- 追加式历史管理 ----
+            using var iterSignal = Signal.Begin(LogGroup.Engine, "system:main", "系统循环轮次", new
+            {
+                tasks = tasks.Count,
+                notifications = notifications.Count,
+                scheduled = scheduledEvents.Count,
+                delegations = pendingDelegations.Count,
+                retryDelegations = retryDelegations.Count
+            });
 
-        private void AppendToHistory(Message userMsg, Message assistantMsg)
-        {
-            conversationHistory.Add(userMsg);
-            conversationHistory.Add(assistantMsg);
+            Signal.Event(LogGroup.Engine, "任务队列检查", new
+            {
+                pending = tasks.Count,
+                notifications = notifications.Count,
+                scheduled = scheduledEvents.Count
+            });
 
-            var addedTokens = ((userMsg.Content?.Length ?? 0) + (assistantMsg.Content?.Length ?? 0)) / 3;
-            estimatedTokens += addedTokens;
+            if (pendingDelegations.Count > 0 || retryDelegations.Count > 0)
+            {
+                Signal.Event(LogGroup.Engine, "委托待评估", new
+                {
+                    pending = pendingDelegations.Count,
+                    retry = retryDelegations.Count
+                });
+            }
 
-            // 持久化
-            persistence.AppendRound(
-                new List<Message> { userMsg },
-                new List<Message> { assistantMsg });
+            // 填充 PendingEventsModule
+            pendingEventsModule.SetPendingEvents(tasks, notifications, scheduledEvents, lastRoundNoAction);
+            pendingEventsModule.SetPendingDelegations(pendingDelegations);
+            pendingEventsModule.SetRetryPendingDelegations(retryDelegations);
 
-            bus.Publish(new RoundCompletedEvent { Messages = new List<Message> { userMsg, assistantMsg } });
-        }
+            // Lazy register compress tool (agent guaranteed to exist here)
+            if (agent != null && compressionTierModule != null)
+            {
+                var existingTool = ToolRegistry.Get("compress");
+                if (existingTool == null)
+                {
+                    ToolRegistry.Register(new Tool.Core.CompressTool(
+                        compressionTierModule,
+                        agent.History,
+                        (summary, retained) =>
+                        {
+                            compressionModule.SetSummary(summary);
+                            agent.ClearHistory();
+                            foreach (var m in retained)
+                                agent.AddToHistory(m);
+                            PersistAgentHistory();
+                        }));
+                }
+            }
 
-        private async Task CompressContextAsync()
-        {
-            CurrentState = SystemLoopState.Compressing;
-            ctx.TaskBridge.SystemState = SystemLoopState.Compressing;
-
-            using var span = Signal.Open(LogGroup.Engine, "上下文压缩", new { tokensBefore = estimatedTokens });
+            // ═══ Agent 多轮推理 ═══
+            Interlocked.Exchange(ref _busyFlag, 1);
+            lastRoundNoAction = false;
             try
             {
-                await compressionModule.CompressAsync(conversationHistory);
+                await componentHost!.OnActivatedAsync();
+                await componentHost.OnBeforeInvokeAsync();
+                await agent!.RunAsync(ct);
+                await componentHost.OnAfterInvokeAsync();
+                consecutiveFailures = 0;
+                lastRoundNoAction = agent.StopReason == AgentStopReason.Completed;
 
-                // 压缩后更新历史
-                var kept = compressionModule.GetKeptMessages();
-                conversationHistory.Clear();
-                conversationHistory.AddRange(kept);
-                RecalculateTokens();
+                // Persist after agent round
+                PersistAgentHistory();
+                SaveModuleState();
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                consecutiveFailures++;
+                totalErrorCount++;
+                lastErrorTime = DateTime.Now;
+                lastErrorMessage = $"{ex.GetType().Name}: {ex.Message}";
 
-                // 持久化压缩结果
-                persistence.SaveSummaryAndClearContext(compressionModule.GetSummary() ?? "");
-                foreach (var msg in conversationHistory)
+                if (consecutiveFailures >= agentConfig.MaxRounds)
                 {
-                    persistence.AppendRound(
-                        msg.Role == "user" ? new List<Message> { msg } : new List<Message>(),
-                        msg.Role == "assistant" ? new List<Message> { msg } : new List<Message>());
+                    var backoff = agentConfig.BackoffSeconds[
+                        Math.Min(consecutiveFailures - 1, agentConfig.BackoffSeconds.Length - 1)];
+                    await Task.Delay(TimeSpan.FromSeconds(backoff), ct);
                 }
-
-                Signal.Event(LogGroup.Engine, "上下文压缩完成", new { tokensAfter = estimatedTokens });
             }
             finally
             {
-                CurrentState = SystemLoopState.Active;
-                ctx.TaskBridge.SystemState = SystemLoopState.Active;
+                Interlocked.Exchange(ref _busyFlag, 0);
+                await componentHost!.OnPauseAsync();
             }
         }
 
-        // ---- Prompt 构建 ----
-
-        /// <summary>
-        /// 组装完整消息列表：固定前缀 + 摘要 + 历史 + 当前轮。
-        /// 前缀（工具描述）不变，历史只增不减（除压缩），缓存友好。
-        /// </summary>
-        private List<Message> BuildFullMessages(Message currentTurnMsg)
-        {
-            var messages = new List<Message>();
-
-            // [固定前缀] 工具描述（启动时生成，不变）
-            if (!string.IsNullOrEmpty(toolDescriptions))
-                messages.Add(new Message { Role = "user", Content = toolDescriptions });
-
-            // [摘要] 压缩后的旧轮次摘要
-            var summary = compressionModule.GetSummary();
-            if (!string.IsNullOrEmpty(summary))
-                messages.Add(new Message { Role = "user", Content = $"[上下文摘要]\n{summary}" });
-
-            // [历史] 已发生的 user/assistant 对（不再碰）
-            messages.AddRange(conversationHistory);
-
-            // [当前轮] 状态 + 事件 + 工具结果
-            messages.Add(currentTurnMsg);
-
-            return messages;
-        }
-
-        /// <summary>构建当前轮的 user 消息：仪表盘 + 模块注入 + 组件注入 + 工具结果。</summary>
+        /// <summary>构建当前轮的 user 消息：仪表盘 + 模块注入 + 组件注入。</summary>
         private Message BuildCurrentTurnMsg()
         {
             var sb = new StringBuilder();
@@ -515,52 +397,7 @@ namespace AgentCoreProcessor.Engine
                     sb.AppendLine("\n" + section);
             }
 
-            // 上一轮工具结果
-            if (lastRoundResults != null && lastRoundCalls != null && lastRoundResults.Count > 0)
-            {
-                sb.AppendLine("\n[上一轮工具执行结果]");
-                for (int i = 0; i < lastRoundCalls.Count && i < lastRoundResults.Count; i++)
-                {
-                    var call = lastRoundCalls[i];
-                    var result = lastRoundResults[i];
-                    sb.Append($"[{call.Tool}");
-                    if (call.Inputs.Count > 0)
-                        sb.Append($"({string.Join(", ", call.Inputs).Truncate(80)})");
-                    sb.Append("]: ");
-                    if (result.IsSuccess)
-                        sb.AppendLine(result.Data ?? "成功");
-                    else
-                        sb.AppendLine($"失败 - {result.Error ?? result.Status}");
-                }
-            }
-
-            var content = sb.ToString();
-
-            // 原生模式：工具结果以 tool_result ContentParts 回传
-            if (useNativeTools && lastRoundResults != null && lastRoundCalls != null && lastRoundResults.Count > 0)
-            {
-                var parts = new List<ContentPart> { ContentPart.FromText(content) };
-                for (int i = 0; i < lastRoundCalls.Count && i < lastRoundResults.Count; i++)
-                {
-                    if (lastRoundCalls[i].ToolUseId != null)
-                    {
-                        var data = lastRoundResults[i].IsSuccess
-                            ? (lastRoundResults[i].Data ?? "成功")
-                            : $"失败: {lastRoundResults[i].Error ?? lastRoundResults[i].Status}";
-                        parts.Add(ContentPart.FromToolResult(
-                            lastRoundCalls[i].ToolUseId!, data, !lastRoundResults[i].IsSuccess));
-                    }
-                    else
-                    {
-                        // 无 ToolUseId 时退化为文本说明
-                        parts.Add(ContentPart.FromText(
-                            $"\n[{lastRoundCalls[i].Tool}]: {(lastRoundResults[i].IsSuccess ? "成功" : "失败")}"));
-                    }
-                }
-                return new Message { Role = "user", Content = content, ContentParts = parts };
-            }
-
-            return new Message { Role = "user", Content = content };
+            return new Message { Role = "user", Content = sb.ToString() };
         }
 
         private List<SystemTask> DrainTasks()
@@ -604,56 +441,49 @@ namespace AgentCoreProcessor.Engine
             return ctx.ToolProfiles.GetActiveTools("system");
         }
 
-        /// <summary>构建 assistant 消息。原生模式使用 tool_use ContentParts，否则使用文本格式。</summary>
-        private Message BuildAssistantMsg(List<ToolCall>? calls, string? thinking = null)
+        // ---- IAgentHost 实现 ----
+
+        Task<List<Message>?> IAgentHost.BuildStartInjectAsync()
         {
-            if (!useNativeTools || calls == null || calls.Count == 0)
+            var msgs = new List<Message>();
+
+            // 工具描述（固定前缀）
+            if (!useNativeTools)
             {
-                // 文本格式（兼容旧路径）
-                var parts = new List<string>();
-                if (!string.IsNullOrEmpty(thinking))
-                    parts.Add(thinking);
-                if (calls == null || calls.Count == 0)
-                    parts.Add("(无操作)");
-                else
-                    parts.AddRange(calls.Select(c =>
-                        $"{c.Tool}({string.Join(", ", c.Inputs).Truncate(100)})"));
-                return new Message { Role = "assistant", Content = string.Join("\n", parts) };
+                var allowed = GetAuthorizedTools();
+                var toolDescriptions = ToolRegistry.GenerateDescriptions(filter: t => allowed.Contains(t.Name));
+                if (!string.IsNullOrEmpty(toolDescriptions))
+                    msgs.Add(new Message { Role = "user", Content = toolDescriptions });
             }
 
-            // 原生格式：ContentParts 含 thinking text + tool_use 块
-            var contentParts = new List<ContentPart>();
-            if (!string.IsNullOrEmpty(thinking))
-                contentParts.Add(ContentPart.FromText(thinking));
+            // 上下文摘要
+            var summary = compressionModule.GetSummary();
+            if (!string.IsNullOrEmpty(summary))
+                msgs.Add(new Message { Role = "user", Content = $"[上下文摘要]\n{summary}" });
 
-            foreach (var call in calls)
-            {
-                if (call.ToolUseId != null)
-                {
-                    var inputJson = call.Inputs.Count > 0
-                        ? Newtonsoft.Json.JsonConvert.SerializeObject(call.Inputs)
-                        : "[]";
-                    contentParts.Add(ContentPart.FromToolUse(
-                        call.ToolUseId, call.Tool, inputJson));
-                }
-                else
-                {
-                    // 无 ToolUseId 时退化为文本
-                    contentParts.Add(ContentPart.FromText(
-                        $"\n{toolCallText(call)}"));
-                }
-            }
-
-            return new Message
-            {
-                Role = "assistant",
-                Content = thinking ?? "[tool calls]",
-                ContentParts = contentParts
-            };
+            return Task.FromResult<List<Message>?>(msgs);
         }
 
-        private static string toolCallText(ToolCall c)
-            => $"{c.Tool}({string.Join(", ", c.Inputs).Truncate(100)})";
+        Task<List<Message>?> IAgentHost.BuildRoundInjectAsync()
+        {
+            var msgs = new List<Message>();
+            var mainMsg = BuildCurrentTurnMsg();
+            msgs.Add(mainMsg);
+
+            // Compression tier hint
+            if (compressionTierModule != null && agent != null)
+            {
+                var estTokens = agent.History.Sum(m => (m.Content?.Length ?? 0)) / 3;
+                var compressText = compressionTierModule.GetInjectText(estTokens);
+                if (!string.IsNullOrEmpty(compressText))
+                {
+                    msgs.Add(new Message { Role = "user", Content = compressText });
+                    if (compressionTierModule.CurrentTier == CompressionTier.L1)
+                        compressionTierModule.MarkL1Injected();
+                }
+            }
+            return Task.FromResult<List<Message>?>(msgs);
+        }
 
         private void SaveModuleState()
         {
