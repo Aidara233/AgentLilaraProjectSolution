@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -28,6 +29,10 @@ namespace AgentCoreProcessor.Engine
         public bool IsInfrastructure => false;
         public bool IsBusy => Interlocked.Read(ref _busyFlag) == 1;
         private long _busyFlag = 0;
+
+        // ChannelSignal buffer + IInjectProvider collection (Task 9)
+        private readonly ConcurrentQueue<ChannelSignal> _signalBuffer = new();
+        private readonly List<IInjectProvider> _injectProviders = new();
 
         private readonly ISystemContext ctx;
         private readonly AgentCore agentCore;
@@ -232,6 +237,24 @@ namespace AgentCoreProcessor.Engine
                 () => gate.Signal());
             await componentHost.InitAsync();
 
+            // 收集 IInjectProvider：内部模块 + 插件实例
+            _injectProviders.Clear();
+            _injectProviders.AddRange(modules);  // EngineModule : IInjectProvider
+
+            if (ctx.PluginLoader != null)
+            {
+                var engineServices = BuildEngineServiceProvider();
+                foreach (var type in ctx.PluginLoader.InjectProviderTypes)
+                {
+                    try
+                    {
+                        var provider = ctx.PluginLoader.InstantiateInjectProvider(type, engineServices);
+                        if (provider != null)
+                            _injectProviders.Add(provider);
+                    }
+                    catch { /* 单个插件实例化失败不影响整体 */ }
+                }
+            }
 
             try
             {
@@ -365,6 +388,24 @@ namespace AgentCoreProcessor.Engine
             }
         }
 
+        private IServiceProvider BuildEngineServiceProvider()
+        {
+            var services = new Dictionary<Type, object>
+            {
+                [typeof(EventBus)] = ctx.EventBus,
+                [typeof(ModuleBus)] = _moduleBus,
+                [typeof(Gate)] = gate!,
+            };
+            return new SimpleServiceProvider(services);
+        }
+
+        private class SimpleServiceProvider : IServiceProvider
+        {
+            private readonly Dictionary<Type, object> _services;
+            public SimpleServiceProvider(Dictionary<Type, object> services) => _services = services;
+            public object? GetService(Type serviceType) => _services.TryGetValue(serviceType, out var s) ? s : null;
+        }
+
         /// <summary>构建当前轮的 user 消息：仪表盘 + 模块注入 + 组件注入。</summary>
         private Message BuildCurrentTurnMsg()
         {
@@ -444,11 +485,11 @@ namespace AgentCoreProcessor.Engine
 
         // ---- IAgentHost 实现 ----
 
-        Task<List<Message>?> IAgentHost.BuildStartInjectAsync()
+        async Task<List<Message>?> IAgentHost.BuildStartInjectAsync()
         {
             var msgs = new List<Message>();
 
-            // 工具描述（固定前缀）
+            // 工具描述（engine-level，不是 IInjectProvider）
             if (!useNativeTools)
             {
                 var allowed = GetAuthorizedTools();
@@ -457,33 +498,91 @@ namespace AgentCoreProcessor.Engine
                     msgs.Add(new Message { Role = "user", Content = toolDescriptions });
             }
 
-            // 上下文摘要
+            // 上下文摘要（engine-level，compressionModule.BuildPromptSection 返回 null）
             var summary = compressionModule.GetSummary();
             if (!string.IsNullOrEmpty(summary))
                 msgs.Add(new Message { Role = "user", Content = $"[上下文摘要]\n{summary}" });
 
-            return Task.FromResult<List<Message>?>(msgs);
+            // IInjectProvider start injections（内部模块 + 插件）
+            var ctx2 = new InjectContext
+            {
+                Mode = "system",
+                CurrentRound = 0,
+                MaxRounds = agentConfig.MaxRounds
+            };
+            foreach (var p in _injectProviders.OrderBy(p => p.InjectPriority))
+            {
+                try
+                {
+                    var s = await p.BuildStartInjectAsync(ctx2);
+                    if (!string.IsNullOrEmpty(s))
+                        msgs.Add(new Message { Role = "user", Content = s });
+                }
+                catch { /* 单provider失败不中断链 */ }
+            }
+
+            return msgs.Count > 0 ? msgs : null;
         }
 
-        Task<List<Message>?> IAgentHost.BuildRoundInjectAsync()
+        async Task<List<Message>?> IAgentHost.BuildRoundInjectAsync()
         {
             var msgs = new List<Message>();
-            var mainMsg = BuildCurrentTurnMsg();
-            msgs.Add(mainMsg);
 
-            // Compression tier hint
+            // Drain signal buffer — format each signal type
+            while (_signalBuffer.TryDequeue(out var signal))
+            {
+                switch (signal)
+                {
+                    case BusEventSignal bes:
+                        msgs.Add(new Message { Role = "user", Content = $"[系统事件] {bes.Event.GetType().Name}" });
+                        break;
+                    case CompressionSignal cs:
+                        compressionModule.SetSummary(cs.Summary);
+                        agent?.ClearHistory();
+                        agent?.AddToHistory(new Message { Role = "user", Content = $"[上下文摘要]\n{cs.Summary}" });
+                        foreach (var msg in cs.RetainedHistory)
+                            agent?.AddToHistory(msg);
+                        break;
+                    case ModeSwitchSignal mss:
+                        // SystemEngine 始终是 "system" 模式，但尊重切换
+                        break;
+                    default: break;
+                }
+            }
+
+            // IInjectProvider round injections（内部模块 + 插件）
+            var ctx2 = new InjectContext
+            {
+                Mode = "system",
+                CurrentRound = agent?.TotalRounds ?? 1,
+                MaxRounds = agentConfig.MaxRounds,
+                EstimatedTokens = agent?.History.Sum(m => (m.Content?.Length ?? 0)) / 3 ?? 0
+            };
+            foreach (var p in _injectProviders.OrderBy(p => p.InjectPriority))
+            {
+                try
+                {
+                    var s = await p.BuildRoundInjectAsync(ctx2);
+                    if (!string.IsNullOrEmpty(s))
+                        msgs.Add(new Message { Role = "user", Content = s });
+                }
+                catch { /* 单provider失败不中断链 */ }
+            }
+
+            // Compression tier hint（engine-level）
             if (compressionTierModule != null && agent != null)
             {
                 var estTokens = agent.History.Sum(m => (m.Content?.Length ?? 0)) / 3;
-                var compressText = compressionTierModule.GetInjectText(estTokens);
-                if (!string.IsNullOrEmpty(compressText))
+                var text = compressionTierModule.GetInjectText(estTokens);
+                if (!string.IsNullOrEmpty(text))
                 {
-                    msgs.Add(new Message { Role = "user", Content = compressText });
+                    msgs.Add(new Message { Role = "user", Content = text });
                     if (compressionTierModule.CurrentTier == CompressionTier.L1)
                         compressionTierModule.MarkL1Injected();
                 }
             }
-            return Task.FromResult<List<Message>?>(msgs);
+
+            return msgs.Count > 0 ? msgs : null;
         }
 
         private void SaveModuleState()
@@ -501,6 +600,9 @@ namespace AgentCoreProcessor.Engine
         public void OnEvent(EngineEvent e)
         {
             // TimerEvent 不再唤醒闸门 — 由 gate 超时（waitTimeoutMinutes）控制周期
+
+            // 入队信号供 BuildRoundInjectAsync 排空
+            _signalBuffer.Enqueue(new BusEventSignal(e));
 
             if (e is SignalEvent signal)
             {
