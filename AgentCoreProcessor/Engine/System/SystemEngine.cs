@@ -45,8 +45,6 @@ namespace AgentCoreProcessor.Engine
         private readonly DateTime startTime = DateTime.Now;
 
         // 模块
-        private readonly ThinkingNotesModule thinkingNotesModule = new("system");
-        private readonly PinboardModule pinboardModule = new();
         private readonly LoopControlModule loopControlModule = new();
         private readonly PendingEventsModule pendingEventsModule = new();
         private readonly SystemStatusModule systemStatusModule;
@@ -589,7 +587,7 @@ namespace AgentCoreProcessor.Engine
         {
             var state = new Dictionary<string, object>
             {
-                ["pinboard"] = pinboardModule.Entries,
+                ["pinboard"] = ReadPinboardEntries(),
                 ["timestamp"] = DateTime.Now
             };
             persistence.SaveState(state);
@@ -720,8 +718,8 @@ namespace AgentCoreProcessor.Engine
                 SleepRequestTime = pendingSleepRequest?.RequestTime,
                 LastHealthCheck = lastSleepCheck,
                 SubAgents = agentInfos,
-                PinboardEntries = new(pinboardModule.Entries),
-                ThinkingNotes = new(thinkingNotesModule.Notes),
+                PinboardEntries = new(ReadPinboardEntries()),
+                ThinkingNotes = new(ReadSystemThinkingNotes()),
                 ContextRoundCount = rounds.Count,
                 HasContextSummary = summary != null,
                 ConsecutiveFailures = consecutiveFailures,
@@ -888,9 +886,42 @@ namespace AgentCoreProcessor.Engine
             ctx.EventBus.PublishSignal("force-sleep", "deepsleep");
             return Task.CompletedTask;
         }
+    // ── 内联文件读取（原 PinboardModule / ThinkingNotesModule） ──
+
+    private static Dictionary<string, string> ReadPinboardEntries()
+    {
+        var path = Path.Combine(PathConfig.StoragePath, "PluginData", "_system", "pinboard.json");
+        if (!File.Exists(path)) return new();
+        try
+        {
+            var json = File.ReadAllText(path);
+            return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new();
+        }
+        catch { return new(); }
     }
 
-    /// <summary>系统循环状态（供频道循环感知）。</summary>
+    private static Dictionary<string, string> ReadSystemThinkingNotes()
+    {
+        var path = Path.Combine(PathConfig.StoragePath, "PluginData", "_system", "notebooks", "system.txt");
+        if (!File.Exists(path)) return new();
+        try
+        {
+            var content = File.ReadAllText(path);
+            return new Dictionary<string, string> { ["system"] = content };
+        }
+        catch { return new(); }
+    }
+
+    private static string SanitizeFileName(string name)
+    {
+        foreach (var c in Path.GetInvalidFileNameChars())
+            name = name.Replace(c, '_');
+        if (name.Length > 64) name = name[..64];
+        return name;
+    }
+}
+
+/// <summary>系统循环状态（供频道循环感知）。</summary>
     public enum SystemLoopState
     {
         Active,

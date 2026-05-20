@@ -83,11 +83,8 @@ namespace AgentCoreProcessor.Engine
 
         // 事件总线 + 内务模块
         private readonly LoopBus bus = new();
-        private readonly SpeakModule speakModule = new();
-        private readonly TaskListModule taskListModule = new();
         private readonly MemoryWindowModule memoryWindowModule = new();
         private readonly LoopControlModule loopControlModule = new();
-        private readonly SignalDispatchModule signalDispatchModule = new();
         private List<EngineModule> modules = null!;
 
         // Component 系统
@@ -143,6 +140,7 @@ namespace AgentCoreProcessor.Engine
         private IncomingMessage? currentLastMsg;
         private SessionContext? currentLastSc;
         private bool isInWorkingSession = false;
+        private bool hadSpeakThisRound;
 
         // 错误追踪
         private int consecutiveFailures = 0;
@@ -220,12 +218,53 @@ namespace AgentCoreProcessor.Engine
             loopControlModule.ChannelId = channelId.ToString();
             modules = new List<EngineModule>
             {
-                speakModule, taskListModule,
-                memoryWindowModule, loopControlModule, signalDispatchModule,
+                memoryWindowModule, loopControlModule,
                 new ToolStatusModule(),
                 new Modules.SystemNotificationModule(DrainSystemNotifications)
             };
             foreach (var m in modules) m.Attach(bus);
+
+            // 直接订阅 ToolExecutedEvent —— 原 SpeakModule/SignalDispatchModule 内联
+            bus.Subscribe<ToolExecutedEvent>(e =>
+            {
+                if (!e.Result.IsSuccess) return;
+                var data = e.Result.Data ?? "";
+                switch (e.Call.Tool)
+                {
+                    case "speak":
+                        HandleSpeakToolAsync(data).GetAwaiter().GetResult();
+                        hadSpeakThisRound = true;
+                        break;
+                    case "send_media":
+                        HandleSendMediaToolAsync(data).GetAwaiter().GetResult();
+                        hadSpeakThisRound = true;
+                        break;
+                    case "memory":
+                        HandleMemoryToolAsync(data).GetAwaiter().GetResult();
+                        break;
+                    case "dream_permission":
+                        ctx.EventBus.PublishSignal("dream-permission", null);
+                        break;
+                    case "force_sleep":
+                        ctx.EventBus.PublishSignal("force-sleep", null);
+                        break;
+                    case "dream_config":
+                        ctx.EventBus.PublishSignal("dream-config", data);
+                        break;
+                    case "adjust_sleep_score":
+                        ctx.EventBus.PublishSignal("sleep-score-offset", data);
+                        break;
+                    case "trigger_red_alert":
+                        ctx.EventBus.PublishSignal("red-alert", null);
+                        break;
+                    case "mark_review_hint":
+                        HandleReviewHintToolAsync(data).GetAwaiter().GetResult();
+                        break;
+                    case "alert":
+                        HandleAlertToolAsync(data).GetAwaiter().GetResult();
+                        break;
+                }
+            });
         }
 
         /// <summary>由 SpawnCheck 调用，将新消息加入缓冲。</summary>
@@ -290,8 +329,6 @@ namespace AgentCoreProcessor.Engine
                 SignalContext.NewSignalId(), parentCtx?.CurrentSpanId,
                 $"channel:{channelId}", LogGroup.Engine, $"Channel引擎 [{channelName}]",
                 new { engineType = EngineType, channelId, channelName });
-
-            WireModuleCallbacks();
 
             // 收集 IInjectProvider：内部模块 + 插件实例
             _injectProviders.Clear();
@@ -404,7 +441,7 @@ namespace AgentCoreProcessor.Engine
                     {
                         mode = isWorkingMode ? "working" : "express",
                         isInWorkingSession,
-                        hadSpeak = speakModule.HadSpeakThisRound
+                        hadSpeak = hadSpeakThisRound
                     });
                     consecutiveFailures = 0;
                 }
@@ -463,37 +500,63 @@ namespace AgentCoreProcessor.Engine
 
             // 清理模块状态
             foreach (var m in modules) m.Reset();
+            hadSpeakThisRound = false;
 
             lifeCtx.Close(new { engineType = EngineType, channelId, reason = "cold_timeout" });
         }
 
-        private void WireModuleCallbacks()
+        // ── 内联工具事件处理（原 SpeakModule / SignalDispatchModule 回调） ──
+
+        private async Task HandleSpeakToolAsync(string rawText)
         {
-            // 回调在每次 RunAsync 启动时绑定，生命周期 = 引擎实例
-            // 实际的 lastMsg/lastSc 在 PrepareContextAsync 中更新
-            speakModule.OnSpeak = async (rawText) =>
+            if (currentLastMsg == null || currentLastSc == null || currentParticipantSnapshot == null) return;
+            unrespondedMessageCount = 0;
+            var (content, replyTo, mentions) = ParseBotOutput(rawText, currentParticipantSnapshot);
+            using var speakSpan = Signal.Open(LogGroup.Adapter, "发送消息",
+                new { channelId, platform = currentLastMsg.Platform, content, replyTo, mentions });
+            var sentId = await ctx.Adapters.SendMessageAsync(currentLastMsg.Platform, new OutgoingMessage
             {
-                if (currentLastMsg == null || currentLastSc == null || currentParticipantSnapshot == null) return;
-                unrespondedMessageCount = 0;
-                var (content, replyTo, mentions) = ParseBotOutput(rawText, currentParticipantSnapshot);
-                using var speakSpan = Signal.Open(LogGroup.Adapter, "发送消息",
-                    new { channelId, platform = currentLastMsg.Platform, content, replyTo, mentions });
-                var sentId = await ctx.Adapters.SendMessageAsync(currentLastMsg.Platform, new OutgoingMessage
+                ChannelId = currentLastMsg.ChannelId,
+                Content = content,
+                ReplyTo = replyTo,
+                Mentions = mentions
+            });
+            speakSpan.SetCloseDetail(new { messageId = sentId });
+            await ctx.Session.SaveBotMessageAsync(currentLastSc.Channel.Id, content, sentId);
+        }
+
+        private async Task HandleSendMediaToolAsync(string jsonData)
+        {
+            if (currentLastMsg == null || currentLastSc == null) return;
+            unrespondedMessageCount = 0;
+            try
+            {
+                var json = Newtonsoft.Json.Linq.JObject.Parse(jsonData);
+                var type = json["type"]?.ToString() ?? "";
+                var path = json["path"]?.ToString() ?? "";
+                var text = json["text"]?.ToString();
+
+                var attachmentType = type switch
                 {
-                    ChannelId = currentLastMsg.ChannelId,
-                    Content = content,
-                    ReplyTo = replyTo,
-                    Mentions = mentions
-                });
-                speakSpan.SetCloseDetail(new { messageId = sentId });
-                await ctx.Session.SaveBotMessageAsync(currentLastSc.Channel.Id, content, sentId);
-            };
-            speakModule.OnSendMedia = async (type, text, attachments) =>
-            {
-                if (currentLastMsg == null || currentLastSc == null) return;
-                unrespondedMessageCount = 0;
+                    "image" or "sticker" => AttachmentType.Image,
+                    "voice" => AttachmentType.Audio,
+                    "file" => AttachmentType.File,
+                    _ => AttachmentType.Image
+                };
+
+                var attachments = new List<MessageAttachment>
+                {
+                    new()
+                    {
+                        Type = attachmentType,
+                        LocalPath = IsLocalPath(path) ? path : null,
+                        SourceUrl = IsLocalPath(path) ? null : path,
+                        Category = type == "sticker" ? "sticker" : null
+                    }
+                };
+
                 using var mediaSpan = Signal.Open(LogGroup.Adapter, "发送媒体",
-                    new { channelId, platform = currentLastMsg.Platform, type, text, attachmentCount = attachments?.Count ?? 0 });
+                    new { channelId, platform = currentLastMsg.Platform, type, text, attachmentCount = attachments.Count });
                 var sentId = await ctx.Adapters.SendMessageAsync(currentLastMsg.Platform, new OutgoingMessage
                 {
                     ChannelId = currentLastMsg.ChannelId,
@@ -503,28 +566,32 @@ namespace AgentCoreProcessor.Engine
                 mediaSpan.SetCloseDetail(new { messageId = sentId });
                 var desc = $"[发送{type}]" + (string.IsNullOrEmpty(text) ? "" : $" {text}");
                 await ctx.Session.SaveBotMessageAsync(currentLastSc.Channel.Id, desc, sentId);
-            };
-            signalDispatchModule.OnMemory = async (content) =>
-            {
-                if (currentLastSc == null) return;
-                await ctx.MemorySvc.StoreAsync(content, currentLastSc.Person.Id, currentLastSc.Channel.Id,
-                    type: MemoryType.Fact);
-            };
-            signalDispatchModule.OnSignal = async (signalName, payload) =>
-            {
-                ctx.EventBus.PublishSignal(signalName, payload);
-                await Task.CompletedTask;
-            };
-            signalDispatchModule.OnReviewHint = async (content) =>
-            {
-                if (currentLastSc == null) return;
-                await ctx.ReviewHints.CreateAsync(content, currentLastSc.Person.Id, currentLastSc.Channel.Id);
-            };
-            signalDispatchModule.OnAlert = async (reason) =>
-            {
-                if (currentLastSc == null) return;
-                await HandleAlertAsync(currentLastSc.Person, currentLastSc, reason);
-            };
+            }
+            catch (Exception) { }
+        }
+
+        private async Task HandleMemoryToolAsync(string content)
+        {
+            if (currentLastSc == null) return;
+            await ctx.MemorySvc.StoreAsync(content, currentLastSc.Person.Id, currentLastSc.Channel.Id,
+                type: MemoryType.Fact);
+        }
+
+        private async Task HandleReviewHintToolAsync(string content)
+        {
+            if (currentLastSc == null) return;
+            await ctx.ReviewHints.CreateAsync(content, currentLastSc.Person.Id, currentLastSc.Channel.Id);
+        }
+
+        private async Task HandleAlertToolAsync(string reason)
+        {
+            if (currentLastSc == null) return;
+            await HandleAlertAsync(currentLastSc.Person, currentLastSc, reason);
+        }
+
+        private static bool IsLocalPath(string path)
+        {
+            return path.Length > 1 && (path[1] == ':' || path.StartsWith('/') || path.StartsWith("\\\\"));
         }
 
 
@@ -810,7 +877,7 @@ namespace AgentCoreProcessor.Engine
             }
             else if (agent.StopReason == AgentStopReason.MaxRounds)
             {
-                loopControlModule.AdvanceRound(speakModule.HadSpeakThisRound);
+                loopControlModule.AdvanceRound(hadSpeakThisRound);
                 if (!loopControlModule.IsMaxRoundsReached)
                     gate.Signal();
                 else
@@ -1135,7 +1202,7 @@ namespace AgentCoreProcessor.Engine
             {
                 channelId,
                 totalRounds = agent?.TotalRounds ?? 0,
-                hadSpeak = speakModule.HadSpeakThisRound
+                hadSpeak = hadSpeakThisRound
             });
             isInWorkingSession = false;
         }
