@@ -95,6 +95,10 @@
 - Agent 配置：Engine/Core/AgentConfig.cs（轮次/退避/压缩阈值）
 - 三层压缩：Engine/Modules/CompressionTierModule.cs（L1提示/L2提醒/L3硬保底）
 - 压缩工具：Tool/Core/CompressTool.cs（模型可调用，所有模式可用）
+- 注入接口：Engine/Core/IInjectProvider.cs（IInjectProvider + InjectContext，替代 BuildPromptSection）
+- 生命周期：Engine/Core/IEngineLifecycle.cs（OnInitializeAsync/OnShutdownAsync）
+- 信号类型：Engine/Core/ChannelSignal.cs（NewMessageSignal/BusEventSignal/CompressionSignal/ModeSwitchSignal）
+- 模块总线：Engine/Core/ModuleBus.cs（每引擎独立 pub/sub，替代 ILoopBus + ComponentEventBus）
 - 频道持久化：Engine/Worker/ChannelContextPersistence.cs（per-channel JSON 原子写入）
 - 统一模型调用：Core/AgentCore.cs（Express/Working 分流）
 - 记忆检索：Memory/MemoryService.cs
