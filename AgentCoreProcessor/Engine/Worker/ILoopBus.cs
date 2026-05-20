@@ -7,7 +7,7 @@ namespace AgentCoreProcessor.Engine
     /// 循环内事件总线。生命周期 = ChannelEngine 实例。
     /// 与全局 EventBus 独立，用于内务模块之间的通信。
     /// </summary>
-    internal interface ILoopBus
+    public interface ILoopBus
     {
         void Subscribe<TEvent>(Action<TEvent> handler) where TEvent : class;
         void Publish<TEvent>(TEvent e) where TEvent : class;

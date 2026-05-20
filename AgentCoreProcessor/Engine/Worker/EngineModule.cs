@@ -1,36 +1,69 @@
+using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using AgentCoreProcessor.Tool;
 
 namespace AgentCoreProcessor.Engine
 {
-    internal enum EngineMode
+    public enum EngineMode
     {
         Express,
         Working
     }
 
     /// <summary>
-    /// 内务模块基类。内务模块双向依赖框架，通过 ILoopBus 通信。
-    /// 外务模块（文件、终端等）不继承此基类，只实现 ITool。
+    /// 模块基类。实现 IInjectProvider + IEngineLifecycle。
+    /// BuildPromptSection / Attach / GetTools / Reset 标记 [Obsolete]，逐步移除。
     /// </summary>
-    internal abstract class EngineModule
+    public abstract class EngineModule : IInjectProvider, IEngineLifecycle
     {
-        /// <summary>模块名称。</summary>
         public abstract string Name { get; }
 
-        /// <summary>Prompt 注入优先级（越小越靠前）。</summary>
-        public virtual int PromptPriority => 50;
+        /// <summary>注入优先级（越小越靠前）。默认 50。</summary>
+        public virtual int InjectPriority => 50;
 
-        /// <summary>注册到事件总线（模块自己决定订阅哪些事件）。</summary>
-        public abstract void Attach(ILoopBus bus);
+        // ── IInjectProvider ──
 
-        /// <summary>提供当前模式下的工具（无工具的模块返回空）。</summary>
-        public virtual IEnumerable<ITool> GetTools(EngineMode mode) => [];
+        public virtual Task<string?> BuildStartInjectAsync(InjectContext ctx)
+            => Task.FromResult(BuildPromptSection(MapMode(ctx.Mode)));
 
-        /// <summary>注入 prompt 内容（返回 null 表示本轮不注入）。</summary>
+        public virtual Task<string?> BuildRoundInjectAsync(InjectContext ctx)
+            => Task.FromResult<string?>(null);
+
+        // ── IEngineLifecycle ──
+
+        public virtual Task OnInitializeAsync(IServiceProvider services)
+            => Task.CompletedTask;
+
+        public virtual Task OnShutdownAsync()
+        {
+            Reset();
+            return Task.CompletedTask;
+        }
+
+        // ── 废弃接口（保留编译兼容） ──
+
+        [Obsolete("Use InjectPriority instead")]
+        public virtual int PromptPriority => InjectPriority;
+
+        [Obsolete("Use IEngineLifecycle.OnInitializeAsync")]
+        public virtual void Attach(ILoopBus bus) { }
+
+        [Obsolete("Override BuildStartInjectAsync instead")]
         public virtual string? BuildPromptSection(EngineMode mode) => null;
 
-        /// <summary>引擎生命周期结束，清理状态。</summary>
+        [Obsolete("Use ITool directly")]
+        public virtual IEnumerable<ITool> GetTools(EngineMode mode) => [];
+
+        [Obsolete("Use IEngineLifecycle.OnShutdownAsync")]
         public virtual void Reset() { }
+
+        // ── helpers ──
+
+        private static EngineMode MapMode(string mode) => mode switch
+        {
+            "express" => EngineMode.Express,
+            _ => EngineMode.Working
+        };
     }
 }
