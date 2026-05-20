@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using AgentCoreProcessor.Component;
 using AgentCoreProcessor.Engine;
 using AgentLilara.PluginSDK;
+using AgentLilara.PluginSDK.Services;
 
 namespace AgentCoreProcessor.Tool.Host
 {
@@ -24,9 +25,13 @@ namespace AgentCoreProcessor.Tool.Host
         private readonly IToolContext toolContext;
         private readonly WebUI.Shell.ProviderRegistry? _providerRegistry;
         private readonly List<PluginEntry> loadedPlugins = new();
+        private readonly List<Type> _injectProviderTypes = new();
+        private readonly List<Type> _lifecycleTypes = new();
 
         public int LoadedToolCount => loadedPlugins.Sum(p => p.ToolNames.Count);
         public IReadOnlyList<PluginEntry> LoadedPlugins => loadedPlugins;
+        public IReadOnlyList<Type> InjectProviderTypes => _injectProviderTypes.AsReadOnly();
+        public IReadOnlyList<Type> LifecycleTypes => _lifecycleTypes.AsReadOnly();
 
         public PluginLoader(IToolContext toolContext, WebUI.Shell.ProviderRegistry? providerRegistry = null)
         {
@@ -78,6 +83,8 @@ namespace AgentCoreProcessor.Tool.Host
                 entry.LoadContext.Unload();
             }
             loadedPlugins.Clear();
+            _injectProviderTypes.Clear();
+            _lifecycleTypes.Clear();
         }
 
         private void LoadPlugin(string dllPath)
@@ -92,8 +99,11 @@ namespace AgentCoreProcessor.Tool.Host
                 var toolTypes = DiscoverToolTypes(assembly);
                 var componentTypes = DiscoverComponentTypes(assembly);
                 var earlyProviderTypes = DiscoverProviderTypes(assembly);
+                var injectProviderTypes = DiscoverInjectProviderTypes(assembly);
+                var lifecycleTypes = DiscoverLifecycleTypes(assembly);
 
-                if (toolTypes.Count == 0 && componentTypes.Count == 0 && earlyProviderTypes.Count == 0)
+                if (toolTypes.Count == 0 && componentTypes.Count == 0 && earlyProviderTypes.Count == 0
+                    && injectProviderTypes.Count == 0 && lifecycleTypes.Count == 0)
                 {
                     loadContext.Unload();
                     return;
@@ -105,7 +115,9 @@ namespace AgentCoreProcessor.Tool.Host
                     FileName = fileName,
                     LoadContext = loadContext,
                     ToolNames = new List<string>(),
-                    ComponentNames = new List<string>()
+                    ComponentNames = new List<string>(),
+                    InjectProviderNames = new List<string>(),
+                    LifecycleNames = new List<string>()
                 };
 
                 // 如果 DLL 有 Component，工具由 Component 管理，PluginLoader 不独立注册
@@ -152,7 +164,13 @@ namespace AgentCoreProcessor.Tool.Host
                     }
                 }
 
-                if (entry.ToolNames.Count > 0 || entry.ComponentNames.Count > 0 || entry.ProviderIds.Count > 0)
+                entry.InjectProviderNames.AddRange(injectProviderTypes.Select(t => t.Name));
+                entry.LifecycleNames.AddRange(lifecycleTypes.Select(t => t.Name));
+                _injectProviderTypes.AddRange(injectProviderTypes);
+                _lifecycleTypes.AddRange(lifecycleTypes);
+
+                if (entry.ToolNames.Count > 0 || entry.ComponentNames.Count > 0 || entry.ProviderIds.Count > 0
+                    || entry.InjectProviderNames.Count > 0 || entry.LifecycleNames.Count > 0)
                 {
                     loadedPlugins.Add(entry);
                 }
@@ -191,6 +209,22 @@ namespace AgentCoreProcessor.Tool.Host
                 .ToList();
         }
 
+        private static List<Type> DiscoverInjectProviderTypes(Assembly assembly)
+        {
+            var iType = typeof(Engine.IInjectProvider);
+            return assembly.GetExportedTypes()
+                .Where(t => t.IsClass && !t.IsAbstract && iType.IsAssignableFrom(t))
+                .ToList();
+        }
+
+        private static List<Type> DiscoverLifecycleTypes(Assembly assembly)
+        {
+            var iType = typeof(Engine.IEngineLifecycle);
+            return assembly.GetExportedTypes()
+                .Where(t => t.IsClass && !t.IsAbstract && iType.IsAssignableFrom(t))
+                .ToList();
+        }
+
         private AgentLilara.PluginSDK.ITool? InstantiateTool(Type type)
         {
             try
@@ -212,6 +246,55 @@ namespace AgentCoreProcessor.Tool.Host
                 return null;
             }
         }
+
+        private static readonly Dictionary<Type, Func<IServiceProvider, object?>> s_injectableResolvers = new()
+        {
+            [typeof(Engine.EventBus)] = sp => sp.GetService(typeof(Engine.EventBus)),
+            [typeof(Engine.ModuleBus)] = sp => sp.GetService(typeof(Engine.ModuleBus)),
+            [typeof(Engine.Gate)] = sp => sp.GetService(typeof(Engine.Gate)),
+            [typeof(AgentLilara.PluginSDK.Services.IMemoryAccess)] = sp => sp.GetService(typeof(AgentLilara.PluginSDK.Services.IMemoryAccess)),
+        };
+
+        public object? InstantiateWithInjection(Type type, IServiceProvider services)
+        {
+            var ctors = type.GetConstructors()
+                .OrderByDescending(c => c.GetParameters().Length);
+
+            foreach (var ctor in ctors)
+            {
+                var parms = ctor.GetParameters();
+                var args = new object?[parms.Length];
+                bool ok = true;
+                for (int i = 0; i < parms.Length; i++)
+                {
+                    var pType = parms[i].ParameterType;
+                    if (s_injectableResolvers.TryGetValue(pType, out var resolver))
+                        args[i] = resolver(services);
+                    else if (pType == typeof(IServiceProvider))
+                        args[i] = services;
+                    else
+                    {
+                        args[i] = services.GetService(pType);
+                        if (args[i] == null && !parms[i].IsOptional)
+                        {
+                            ok = false;
+                            break;
+                        }
+                    }
+                }
+                if (!ok) continue;
+
+                try { return Activator.CreateInstance(type, args); }
+                catch { continue; }
+            }
+            return null;
+        }
+
+        public Engine.IInjectProvider? InstantiateInjectProvider(Type type, IServiceProvider engineServices)
+            => InstantiateWithInjection(type, engineServices) as Engine.IInjectProvider;
+
+        public Engine.IEngineLifecycle? InstantiateLifecycle(Type type, IServiceProvider engineServices)
+            => InstantiateWithInjection(type, engineServices) as Engine.IEngineLifecycle;
     }
 
     internal class PluginEntry
@@ -222,6 +305,8 @@ namespace AgentCoreProcessor.Tool.Host
         public List<string> ToolNames { get; set; } = new();
         public List<string> ComponentNames { get; set; } = new();
         public List<string> ProviderIds { get; set; } = new();
+        public List<string> InjectProviderNames { get; set; } = new();
+        public List<string> LifecycleNames { get; set; } = new();
     }
 
     /// <summary>
