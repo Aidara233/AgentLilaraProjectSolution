@@ -36,6 +36,9 @@ namespace AgentCoreProcessor.Engine
         /// <summary>工具执行完毕后的回调。Host 用此发布事件到总线。</summary>
         public Func<ToolCall, ToolResult, ITool?, Task>? OnToolExecuted { get; set; }
 
+        /// <summary>对话内容在 history 中的起始偏移（跳过框架注入部分）。</summary>
+        public int ConversationOffset { get; private set; }
+
         public Agent(IAgentHost host, AgentCore core, AgentConfig config, HashSet<string> authorizedTools)
         {
             _host = host;
@@ -59,6 +62,7 @@ namespace AgentCoreProcessor.Engine
                 foreach (var m in startInject)
                     _history.Add(m);
             }
+            ConversationOffset = _history.Count;
 
             for (int round = 0; round < _config.MaxRounds && !ct.IsCancellationRequested; round++)
             {

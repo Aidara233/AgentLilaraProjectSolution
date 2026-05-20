@@ -885,8 +885,6 @@ namespace AgentCoreProcessor.Engine
         {
             // Build messages for single-shot call
             var messages = new List<Message>();
-            if (fixedPrefix == null) fixedPrefix = BuildFixedPrefix();
-            messages.Add(new Message { Role = "user", Content = fixedPrefix! });
 
             var startInject = await ((IAgentHost)this).BuildStartInjectAsync();
             if (startInject != null) messages.AddRange(startInject);
@@ -993,21 +991,12 @@ namespace AgentCoreProcessor.Engine
                 return Task.CompletedTask;
             };
 
-            if (fixedPrefix != null)
-                agent.AddToHistory(new Message { Role = "user", Content = fixedPrefix });
-
-            if (!string.IsNullOrEmpty(contextSummary))
-                agent.AddToHistory(new Message { Role = "user", Content = $"[上下文摘要]\n{contextSummary}" });
-
-            // Restore persisted history
+            // Restore persisted history (only conversation rounds, no framework injections)
             if (persistence != null)
             {
                 var (summary, mode, rounds) = persistence.LoadContext();
                 if (!string.IsNullOrEmpty(summary) && string.IsNullOrEmpty(contextSummary))
-                {
                     contextSummary = summary;
-                    agent.AddToHistory(new Message { Role = "user", Content = $"[上下文摘要]\n{summary}" });
-                }
                 if (rounds.Count > 0)
                 {
                     foreach (var round in rounds)
@@ -1038,6 +1027,14 @@ namespace AgentCoreProcessor.Engine
         public async Task<List<Message>?> BuildStartInjectAsync()
         {
             var msgs = new List<Message>();
+
+            // 框架前缀（系统配置、工具描述等）
+            if (fixedPrefix == null) fixedPrefix = BuildFixedPrefix();
+            msgs.Add(new Message { Role = "user", Content = fixedPrefix });
+
+            // 上下文摘要（压缩后的历史）
+            if (!string.IsNullOrEmpty(contextSummary))
+                msgs.Add(new Message { Role = "user", Content = $"[上下文摘要]\n{contextSummary}" });
 
             // Format new messages from buffer (interceptor flow)
             if (currentLastMsg != null && activeBatch != null && activeBatch.Count > 0)
@@ -1118,6 +1115,8 @@ namespace AgentCoreProcessor.Engine
                         contextSummary = cs.Summary;
                         EnsureAgent();
                         agent!.ClearHistory();
+                        if (fixedPrefix == null) fixedPrefix = BuildFixedPrefix();
+                        agent.AddToHistory(new Message { Role = "user", Content = fixedPrefix });
                         agent.AddToHistory(new Message { Role = "user", Content = $"[上下文摘要]\n{cs.Summary}" });
                         foreach (var msg in cs.RetainedHistory)
                             agent.AddToHistory(msg);
@@ -1187,13 +1186,26 @@ namespace AgentCoreProcessor.Engine
         {
             if (persistence == null || agent == null || agent.History.Count == 0) return;
 
+            // Only persist conversation content (skip framework injections)
+            var startIdx = agent.ConversationOffset;
+            if (startIdx >= agent.History.Count) return;
+
             var rounds = new List<List<Message>>();
-            for (int i = 0; i < agent.History.Count; i += 2)
+            var conversation = agent.History.Skip(startIdx).ToList();
+            for (int i = 0; i < conversation.Count; i += 2)
             {
-                var pair = new List<Message> { agent.History[i] };
-                if (i + 1 < agent.History.Count)
-                    pair.Add(agent.History[i + 1]);
-                rounds.Add(pair);
+                var msg = conversation[i];
+                // Skip empty messages
+                if (string.IsNullOrEmpty(msg.Content)) continue;
+                var pair = new List<Message> { msg };
+                if (i + 1 < conversation.Count)
+                {
+                    var asst = conversation[i + 1];
+                    if (!string.IsNullOrEmpty(asst.Content))
+                        pair.Add(asst);
+                }
+                if (pair.Count > 0)
+                    rounds.Add(pair);
             }
             persistence.SaveContext(contextSummary, isWorkingMode ? "working" : "express", rounds);
         }
