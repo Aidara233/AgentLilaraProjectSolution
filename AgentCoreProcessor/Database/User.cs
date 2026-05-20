@@ -6,7 +6,7 @@ namespace AgentCoreProcessor.Database
     /// 用户实体（账号级）。每个平台账号对应一条记录，通过 PersonId 关联到自然人。
     /// </summary>
     [Table("Users")]
-    internal class User
+    public class User
     {
         [PrimaryKey, AutoIncrement]
         public int Id { get; set; }

@@ -8,7 +8,7 @@ namespace AgentCoreProcessor.Database
     /// 信任等级挂在 Person 上，由模型在"做梦"时评估调整。
     /// </summary>
     [Table("Persons")]
-    internal class Person
+    public class Person
     {
         [PrimaryKey, AutoIncrement]
         public int Id { get; set; }

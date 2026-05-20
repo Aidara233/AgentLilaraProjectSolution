@@ -4,7 +4,7 @@ using SQLite;
 namespace AgentCoreProcessor.Database
 {
     [Table("UserMessages")]
-    internal class UserMessage
+    public class UserMessage
     {
         [PrimaryKey, AutoIncrement]
         public int Id { get; set; }// 消息ID，唯一标识一条消息

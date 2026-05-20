@@ -6,7 +6,7 @@ namespace AgentCoreProcessor.Engine
     /// <summary>
     /// 一次消息处理所需的会话上下文，由 SessionManager 构建后传递给引擎。
     /// </summary>
-    internal class SessionContext
+    public class SessionContext
     {
         /// <summary>发送消息的用户（内部实体，账号级）</summary>
         public required User User { get; set; }

@@ -4,7 +4,7 @@ using System;
 namespace AgentCoreProcessor.Database
 {
     [Table ("Channels")]
-    internal class Channel
+    public class Channel
     {
         [PrimaryKey, AutoIncrement]
         public int Id { get; set; }
