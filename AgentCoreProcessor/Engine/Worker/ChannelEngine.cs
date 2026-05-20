@@ -987,6 +987,11 @@ namespace AgentCoreProcessor.Engine
 
             var authorized = new HashSet<string>(WorkingAuthorizedTools.Split(','));
             agent = new Agent(this, agentCore, agentConfig, authorized);
+            agent.OnToolExecuted = (call, result, toolDef) =>
+            {
+                bus.Publish(new ToolExecutedEvent(call, result, toolDef));
+                return Task.CompletedTask;
+            };
 
             if (fixedPrefix != null)
                 agent.AddToHistory(new Message { Role = "user", Content = fixedPrefix });
@@ -1055,6 +1060,15 @@ namespace AgentCoreProcessor.Engine
                 }
 
                 msgs.Add(new Message { Role = "user", Content = sb.ToString() });
+            }
+
+            // 记忆检索注入
+            if (currentLastSc != null && activeBatch != null && activeBatch.Count > 0)
+            {
+                var query = string.Join(" ", activeBatch.Select(b => b.Message.Content));
+                var memorySection = await BuildMemorySection(currentLastSc, query);
+                if (!string.IsNullOrEmpty(memorySection))
+                    msgs.Add(new Message { Role = "user", Content = memorySection });
             }
 
             // IInjectProvider start injections
@@ -1145,9 +1159,6 @@ namespace AgentCoreProcessor.Engine
                         compressionTierModule.MarkL1Injected();
                 }
             }
-
-            // Component prompt sections (per-round)
-            BuildComponentInjections(msgs);
 
             return msgs.Count > 0 ? msgs : null;
         }
@@ -1249,6 +1260,41 @@ namespace AgentCoreProcessor.Engine
 
 
         // ---- 记忆 ----
+
+        private async Task<string?> BuildMemorySection(SessionContext sc, string query)
+        {
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                var task = ctx.MemorySvc.RecallAsync(
+                    sc.Person.Id, sc.Channel.Id,
+                    query, topK: isWorkingMode ? 10 : 5, includeLinks: true, includePersona: true);
+                var completed = await Task.WhenAny(task, Task.Delay(10000, cts.Token));
+
+                if (completed != task) return null;
+                cts.Cancel();
+
+                var results = await task;
+                if (results == null || results.Count == 0) return null;
+
+                var items = results.Where(m => !m.IsPersona).ToList();
+                if (items.Count == 0) return null;
+
+                var sb = new StringBuilder("[记忆参考]\n");
+                foreach (var m in items)
+                {
+                    if (m.Confidence == "low")
+                        sb.AppendLine($"- {m.Content}（不太确定）");
+                    else
+                        sb.AppendLine($"- {m.Content}");
+                }
+                return sb.ToString().TrimEnd();
+            }
+            catch
+            {
+                return null;
+            }
+        }
 
         private void TrackMemoryExtraction(
             List<(IncomingMessage Message, SessionContext Context)> messages, SessionContext sc)

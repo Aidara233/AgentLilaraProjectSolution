@@ -33,6 +33,9 @@ namespace AgentCoreProcessor.Engine
         public List<ToolCall>? LastRoundCalls { get; private set; }
         public List<ToolResult>? LastRoundResults { get; private set; }
 
+        /// <summary>工具执行完毕后的回调。Host 用此发布事件到总线。</summary>
+        public Func<ToolCall, ToolResult, ITool?, Task>? OnToolExecuted { get; set; }
+
         public Agent(IAgentHost host, AgentCore core, AgentConfig config, HashSet<string> authorizedTools)
         {
             _host = host;
@@ -129,6 +132,14 @@ namespace AgentCoreProcessor.Engine
                     new { toolCount = output.ToolCalls.Count, tools = string.Join(",", output.ToolCalls.Select(c => c.Tool)) }))
                 {
                     var executor = new ToolExecutor(null, _authorizedTools);
+                    if (OnToolExecuted != null)
+                    {
+                        executor.OnToolExecuted = async (call, result) =>
+                        {
+                            var toolDef = ToolRegistry.Get(call.Tool);
+                            await OnToolExecuted(call, result, toolDef);
+                        };
+                    }
                     results = await executor.ExecuteAsync(output.ToolCalls);
                     toolSpan.SetCloseDetail(new
                     {
