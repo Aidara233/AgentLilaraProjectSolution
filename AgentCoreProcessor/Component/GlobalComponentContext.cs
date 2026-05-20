@@ -1,27 +1,29 @@
 // AgentCoreProcessor/Component/GlobalComponentContext.cs
+using AgentCoreProcessor.Engine;
 using AgentLilara.PluginSDK;
 
 namespace AgentCoreProcessor.Component;
 
 internal class GlobalComponentContext : IGlobalComponentContext
 {
-    private readonly ComponentEventBus _eventBus;
+    private readonly ModuleBus _moduleBus;
     private readonly IServiceProvider _services;
     private readonly IPluginStorage _storage;
     private readonly Action<string> _wakeLoop;
     private readonly Action<bool> _setEnabled;
+    private readonly Dictionary<object, IDisposable> _subscriptions = new();
 
     private bool _isEnabled;
 
     public GlobalComponentContext(
-        ComponentEventBus eventBus,
+        ModuleBus moduleBus,
         IServiceProvider services,
         IPluginStorage storage,
         Action<string> wakeLoop,
         Action<bool> setEnabled,
         bool initialEnabled)
     {
-        _eventBus = eventBus;
+        _moduleBus = moduleBus;
         _services = services;
         _storage = storage;
         _wakeLoop = wakeLoop;
@@ -49,13 +51,22 @@ internal class GlobalComponentContext : IGlobalComponentContext
     public void WakeLoop(string loopId) => _wakeLoop(loopId);
 
     public void PublishGlobal<TEvent>(TEvent e) where TEvent : class
-        => _ = _eventBus.PublishGlobalAsync(e);
+        => _moduleBus.Publish(e);
 
     public void Subscribe<TEvent>(Func<TEvent, Task> handler) where TEvent : class
-        => _eventBus.SubscribeGlobal(handler);
+    {
+        var sub = _moduleBus.Subscribe<TEvent>(e => { _ = handler(e); });
+        _subscriptions[handler] = sub;
+    }
 
     public void Unsubscribe<TEvent>(Func<TEvent, Task> handler) where TEvent : class
-        => _eventBus.UnsubscribeGlobal(handler);
+    {
+        if (_subscriptions.TryGetValue(handler, out var sub))
+        {
+            sub.Dispose();
+            _subscriptions.Remove(handler);
+        }
+    }
 
     public T? GetService<T>() where T : class
         => _services.GetService(typeof(T)) as T;

@@ -124,8 +124,8 @@ namespace AgentCoreProcessor.Engine
         /// <summary>工具 Profile 管理器。</summary>
         Tool.Host.ToolProfileManager ToolProfiles { get; }
 
-        /// <summary>组件事件总线（全局单例）。</summary>
-        ComponentEventBus ComponentEventBus { get; }
+        /// <summary>模块间通信总线（全局单例）。替代 ComponentEventBus。</summary>
+        ModuleBus ModuleBus { get; }
 
         /// <summary>全局组件宿主（MasterEngine 持有）。</summary>
         GlobalComponentHost? GlobalComponentHost { get; }

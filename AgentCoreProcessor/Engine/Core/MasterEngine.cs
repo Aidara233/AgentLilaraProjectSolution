@@ -103,7 +103,7 @@ namespace AgentCoreProcessor.Engine
         public Tool.Host.ToolProfileManager ToolProfiles { get; } = new();
 
         // ---- ISystemContext: Component 系统 ----
-        public ComponentEventBus ComponentEventBus => componentEventBus;
+        public ModuleBus ModuleBus => _moduleBus;
         public GlobalComponentHost? GlobalComponentHost => globalComponentHost;
         public IServiceProvider ComponentServices => componentServices;
 
@@ -116,7 +116,7 @@ namespace AgentCoreProcessor.Engine
         private SystemEngine? systemEngine; // Phase 5: 保存 SystemEngine 引用用于工具注册
 
         // ---- Component 系统 ----
-        private readonly ComponentEventBus componentEventBus = new();
+        private readonly ModuleBus _moduleBus = new();
         private GlobalComponentHost? globalComponentHost;
         private readonly SimpleServiceProvider componentServices = new();
 
@@ -409,7 +409,7 @@ namespace AgentCoreProcessor.Engine
                 new Component.ChannelAccessAdapter(this));
 
             globalComponentHost = new GlobalComponentHost(
-                componentEventBus, componentServices,
+                _moduleBus, componentServices,
                 loopId => WakeLoop(loopId));
             await globalComponentHost.InitAsync();
 

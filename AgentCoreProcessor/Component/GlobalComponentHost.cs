@@ -11,7 +11,7 @@ namespace AgentCoreProcessor.Component;
 /// </summary>
 internal class GlobalComponentHost
 {
-    private readonly ComponentEventBus _eventBus;
+    private readonly ModuleBus _moduleBus;
     private readonly IServiceProvider _services;
     private readonly Action<string> _wakeLoop;
     private readonly ComponentConfig _config;
@@ -19,11 +19,11 @@ internal class GlobalComponentHost
     private readonly List<GlobalComponentInstance> _components = new();
 
     public GlobalComponentHost(
-        ComponentEventBus eventBus,
+        ModuleBus moduleBus,
         IServiceProvider services,
         Action<string> wakeLoop)
     {
-        _eventBus = eventBus;
+        _moduleBus = moduleBus;
         _services = services;
         _wakeLoop = wakeLoop;
         _config = ComponentConfig.Load();
@@ -146,14 +146,18 @@ internal class GlobalComponentHost
 
     private GlobalComponentInstance? CreateInstance(ComponentRegistration reg)
     {
-        var component = (IGlobalComponent?)Activator.CreateInstance(reg.Type);
-        if (component == null) return null;
+        // Try constructor injection via PluginLoader if available, fall back to Activator
+        var pluginLoader = _services.GetService(typeof(Tool.Host.PluginLoader)) as Tool.Host.PluginLoader;
+        var instance = pluginLoader?.InstantiateWithInjection(reg.Type, _services)
+                       ?? Activator.CreateInstance(reg.Type);
+
+        if (instance is not IGlobalComponent component) return null;
 
         var defaultEnabled = _config.IsEnabled(component.Meta.Name, component.Meta.DefaultEnabled);
         var storage = new ComponentStorage(component.Meta.Name, "_global");
 
         var context = new GlobalComponentContext(
-            _eventBus, _services, storage, _wakeLoop,
+            _moduleBus, _services, storage, _wakeLoop,
             enabled =>
             {
                 if (enabled) _ = EnableComponentAsync(component.Meta.Name);

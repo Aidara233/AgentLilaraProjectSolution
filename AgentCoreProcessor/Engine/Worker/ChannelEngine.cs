@@ -91,6 +91,7 @@ namespace AgentCoreProcessor.Engine
         private List<EngineModule> modules = null!;
 
         // Component 系统
+        private readonly ModuleBus _moduleBus = new();
         private ComponentHost? componentHost;
 
         // 已处理消息标记
@@ -291,7 +292,7 @@ namespace AgentCoreProcessor.Engine
 
             // 初始化 ComponentHost
             componentHost = new ComponentHost(
-                channelId.ToString(), "channel", ctx.ComponentEventBus, ctx.ComponentServices,
+                channelId.ToString(), "channel", _moduleBus, ctx.ComponentServices,
                 () => gate.Signal());
             await componentHost.InitAsync();
 

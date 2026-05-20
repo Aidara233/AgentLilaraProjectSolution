@@ -1,4 +1,5 @@
 // AgentCoreProcessor/Component/LoopComponentContext.cs
+using AgentCoreProcessor.Engine;
 using AgentLilara.PluginSDK;
 
 namespace AgentCoreProcessor.Component;
@@ -7,18 +8,19 @@ internal class LoopComponentContext : ILoopComponentContext
 {
     private readonly string _loopId;
     private readonly string _loopType;
-    private readonly ComponentEventBus _eventBus;
+    private readonly ModuleBus _moduleBus;
     private readonly IServiceProvider _services;
     private readonly IPluginStorage _storage;
     private readonly Action _wakeLoop;
     private readonly Action<string, bool> _setEnabled;
+    private readonly Dictionary<object, IDisposable> _subscriptions = new();
 
     private bool _isEnabled;
 
     public LoopComponentContext(
         string loopId,
         string loopType,
-        ComponentEventBus eventBus,
+        ModuleBus moduleBus,
         IServiceProvider services,
         IPluginStorage storage,
         Action wakeLoop,
@@ -27,7 +29,7 @@ internal class LoopComponentContext : ILoopComponentContext
     {
         _loopId = loopId;
         _loopType = loopType;
-        _eventBus = eventBus;
+        _moduleBus = moduleBus;
         _services = services;
         _storage = storage;
         _wakeLoop = wakeLoop;
@@ -57,16 +59,25 @@ internal class LoopComponentContext : ILoopComponentContext
     public void WakeLoop() => _wakeLoop();
 
     public void PublishLocal<TEvent>(TEvent e) where TEvent : class
-        => _ = _eventBus.PublishLocalAsync(_loopId, e);
+        => _moduleBus.Publish(e);
 
     public void PublishGlobal<TEvent>(TEvent e) where TEvent : class
-        => _ = _eventBus.PublishGlobalAsync(e);
+        => _moduleBus.Publish(e);
 
     public void Subscribe<TEvent>(Func<TEvent, Task> handler) where TEvent : class
-        => _eventBus.SubscribeLocal<TEvent>(_loopId, handler);
+    {
+        var sub = _moduleBus.Subscribe<TEvent>(e => { _ = handler(e); });
+        _subscriptions[handler] = sub;
+    }
 
     public void Unsubscribe<TEvent>(Func<TEvent, Task> handler) where TEvent : class
-        => _eventBus.UnsubscribeLocal<TEvent>(_loopId, handler);
+    {
+        if (_subscriptions.TryGetValue(handler, out var sub))
+        {
+            sub.Dispose();
+            _subscriptions.Remove(handler);
+        }
+    }
 
     public T? GetService<T>() where T : class
         => _services.GetService(typeof(T)) as T;

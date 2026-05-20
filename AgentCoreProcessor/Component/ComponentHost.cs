@@ -15,7 +15,7 @@ internal class ComponentHost
 {
     private readonly string _loopId;
     private readonly string _loopType;
-    private readonly ComponentEventBus _eventBus;
+    private readonly ModuleBus _moduleBus;
     private readonly IServiceProvider _services;
     private readonly Action _wakeLoop;
 
@@ -25,13 +25,13 @@ internal class ComponentHost
     public ComponentHost(
         string loopId,
         string loopType,
-        ComponentEventBus eventBus,
+        ModuleBus moduleBus,
         IServiceProvider services,
         Action wakeLoop)
     {
         _loopId = loopId;
         _loopType = loopType;
-        _eventBus = eventBus;
+        _moduleBus = moduleBus;
         _services = services;
         _wakeLoop = wakeLoop;
         _config = ComponentConfig.Load();
@@ -164,7 +164,6 @@ internal class ComponentHost
             catch (Exception ex) { LogError(inst, "OnShutdown", ex); }
         }
 
-        _eventBus.RemoveLoop(_loopId);
         _loopComponents.Clear();
     }
 
@@ -185,14 +184,18 @@ internal class ComponentHost
 
     private LoopComponentInstance? CreateInstance(ComponentRegistration reg)
     {
-        var component = (ILoopComponent?)Activator.CreateInstance(reg.Type);
-        if (component == null) return null;
+        // Try constructor injection via PluginLoader if available, fall back to Activator
+        var pluginLoader = _services.GetService(typeof(Tool.Host.PluginLoader)) as Tool.Host.PluginLoader;
+        var instance = pluginLoader?.InstantiateWithInjection(reg.Type, _services)
+                       ?? Activator.CreateInstance(reg.Type);
+
+        if (instance is not ILoopComponent component) return null;
 
         var defaultEnabled = _config.IsEnabled(component.Meta.Name, component.Meta.DefaultEnabled);
         var storage = new ComponentStorage(component.Meta.Name, _loopId);
 
         var context = new LoopComponentContext(
-            _loopId, _loopType, _eventBus, _services, storage,
+            _loopId, _loopType, _moduleBus, _services, storage,
             _wakeLoop,
             (loopId, enabled) =>
             {
