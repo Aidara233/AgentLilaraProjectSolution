@@ -83,7 +83,6 @@ namespace AgentCoreProcessor.Engine
 
         // 事件总线 + 内务模块
         private readonly LoopBus bus = new();
-        private readonly MemoryWindowModule memoryWindowModule = new();
         private readonly LoopControlModule loopControlModule = new();
         private List<EngineModule> modules = null!;
 
@@ -98,14 +97,6 @@ namespace AgentCoreProcessor.Engine
         // 系统通知队列（系统循环注入，频道循环消费）
         private readonly ConcurrentQueue<string> systemNotifications = new();
 
-        // 记忆缓存：per-person
-        private readonly Dictionary<int, (List<ScoredMemory> Results, DateTime Time)> memoryCache = new();
-        private const float MemoryCacheTtlSeconds = 60f;
-
-        // 记忆检索意图缓存（同一轮对话内不重复调用 MemoryQueryCore）
-        private MemoryQueryIntent? cachedQueryIntent;
-        private DateTime cachedQueryIntentTime = DateTime.MinValue;
-        private const float QueryIntentCacheTtlSeconds = 30f;
 
         // 记忆提取计数（用于退出时判断是否需要收尾提取）
         private int processedMessageCount = 0;
@@ -218,7 +209,7 @@ namespace AgentCoreProcessor.Engine
             loopControlModule.ChannelId = channelId.ToString();
             modules = new List<EngineModule>
             {
-                memoryWindowModule, loopControlModule,
+                loopControlModule,
                 new ToolStatusModule(),
                 new Modules.SystemNotificationModule(DrainSystemNotifications)
             };
@@ -1269,98 +1260,6 @@ namespace AgentCoreProcessor.Engine
             extractionWorker.Trigger(sc, _sessionRootSpanId);
         }
 
-        private async Task<List<ScoredMemory>> GetCachedMemoryAsync(SessionContext context, string query)
-        {
-            int personId = context.Person.Id;
-
-            if (memoryCache.TryGetValue(personId, out var cached) &&
-                (DateTime.Now - cached.Time).TotalSeconds < MemoryCacheTtlSeconds)
-            {
-                return cached.Results;
-            }
-
-            try
-            {
-                // 整体 15s 超时保护，防止 API 调用拖慢回复
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-                var task = FetchMemoryAsync(personId, context.Channel.Id, query);
-                var completed = await Task.WhenAny(task, Task.Delay(15000, cts.Token));
-
-                if (completed == task)
-                {
-                    cts.Cancel();
-                    var results = await task;
-                    memoryCache[personId] = (results, DateTime.Now);
-                    return results;
-                }
-
-                return new List<ScoredMemory>();
-            }
-            catch
-            {
-                return new List<ScoredMemory>();
-            }
-        }
-
-        private async Task<List<ScoredMemory>> FetchMemoryAsync(int personId, int channelId, string query)
-        {
-            var intent = await GetCachedQueryIntentAsync();
-
-            if (intent != null && (intent.Keywords.Count > 0 || intent.Subjects.Count > 0))
-            {
-                return await ctx.MemorySvc.RecallAsync(
-                    personId, channelId,
-                    query, intent, topK: 10, includeLinks: true, includePersona: true);
-            }
-            else
-            {
-                return await ctx.MemorySvc.RecallAsync(
-                    personId, channelId,
-                    query, topK: 10, includeLinks: true, includePersona: true);
-            }
-        }
-
-        private async Task<MemoryQueryIntent?> GetCachedQueryIntentAsync()
-        {
-            if (cachedQueryIntent != null &&
-                (DateTime.Now - cachedQueryIntentTime).TotalSeconds < QueryIntentCacheTtlSeconds)
-            {
-                return cachedQueryIntent;
-            }
-
-            try
-            {
-                var recent = await ctx.Session.GetContextByChannelAsync(channelId, limit: 5);
-                if (recent.Count < 1) return null;
-
-                var lines = recent.Select(m =>
-                {
-                    var name = m.IsFromBot ? "Lilara" : (m.SenderName ?? $"User{m.UserId}");
-                    return $"{name}: {m.Content}";
-                }).ToList();
-
-                var core = new MemoryQueryCore();
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                var intentTask = core.ExtractIntentAsync(lines);
-                var completed = await Task.WhenAny(intentTask, Task.Delay(5000, cts.Token));
-
-                if (completed == intentTask)
-                {
-                    cts.Cancel();
-                    var intent = await intentTask;
-                    cachedQueryIntent = intent;
-                    cachedQueryIntentTime = DateTime.Now;
-                    return intent;
-                }
-
-                return null;
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
         public void TriggerLurkingExtraction()
         {
             if (lastContext == null) return;
@@ -1375,21 +1274,6 @@ namespace AgentCoreProcessor.Engine
         public void CancelExtraction()
         {
             extractionWorker.Cancel();
-        }
-
-
-        private static string? FormatMemory(List<ScoredMemory>? results, int topK)
-        {
-            if (results == null || results.Count == 0) return null;
-            var sb = new StringBuilder();
-            foreach (var m in results.Take(topK))
-            {
-                if (m.Confidence == "low")
-                    sb.AppendLine($"- {m.Content}（不太确定）");
-                else
-                    sb.AppendLine($"- {m.Content}");
-            }
-            return sb.ToString().TrimEnd();
         }
 
 
