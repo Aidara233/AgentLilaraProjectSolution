@@ -6,6 +6,7 @@ using AgentCoreProcessor.Component;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.MCP;
 using AgentCoreProcessor.Memory;
+using AgentCoreProcessor.Tool.Host;
 
 namespace AgentCoreProcessor.Engine
 {
@@ -132,5 +133,8 @@ namespace AgentCoreProcessor.Engine
 
         /// <summary>组件系统的服务提供者。</summary>
         IServiceProvider ComponentServices { get; }
+
+        /// <summary>插件加载器。提供 InjectProviderTypes/LifecycleTypes 及实例化方法。</summary>
+        PluginLoader PluginLoader { get; }
     }
 }

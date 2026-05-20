@@ -107,6 +107,9 @@ namespace AgentCoreProcessor.Engine
         public GlobalComponentHost? GlobalComponentHost => globalComponentHost;
         public IServiceProvider ComponentServices => componentServices;
 
+        // ---- ISystemContext: Plugin 系统 ----
+        public Tool.Host.PluginLoader PluginLoader => _pluginLoader;
+
         // ---- 引擎注册表 ----
         private readonly List<IEngineSpawnCheck> spawnChecks = new();
         private readonly List<ISubEngine> activeEngines = new();
@@ -119,6 +122,7 @@ namespace AgentCoreProcessor.Engine
         private readonly ModuleBus _moduleBus = new();
         private GlobalComponentHost? globalComponentHost;
         private readonly SimpleServiceProvider componentServices = new();
+        private Tool.Host.PluginLoader _pluginLoader = null!;
 
         // SpawnCheck 工厂（有序列表，Command 在 Channel 之前拦截命令消息）
         private static readonly List<(string Name, Func<IEngineSpawnCheck> Factory)> SpawnCheckFactory =
@@ -393,8 +397,8 @@ namespace AgentCoreProcessor.Engine
             var toolContext = new Tool.Host.ToolContextImpl(new Tool.Host.PluginStorageImpl("_system"));
             toolContext.Register<AgentLilara.PluginSDK.Services.IMemoryAccess>(
                 new Tool.Host.MemoryAccessImpl(Memories, TempMemories, MemoryLinks, Embedding));
-            var pluginLoader = new Tool.Host.PluginLoader(toolContext, ProviderRegistry);
-            pluginLoader.LoadAll();
+            _pluginLoader = new Tool.Host.PluginLoader(toolContext, ProviderRegistry);
+            _pluginLoader.LoadAll();
             Signal.Event(LogGroup.Plugin, "插件加载完成", new { count = Tool.ToolRegistry.All.Count });
 
             // 工具 Profile 加载（在插件加载后，引擎启动前）

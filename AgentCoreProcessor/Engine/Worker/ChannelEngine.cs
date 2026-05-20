@@ -133,13 +133,16 @@ namespace AgentCoreProcessor.Engine
         private bool isWorkingMode = false;
         private int consecutiveExternalTriggers = 0;
 
+        // ── 统一循环 Phase 2：信号缓冲 + 双源注入 ──
+        private readonly ConcurrentQueue<ChannelSignal> _signalBuffer = new();
+        private readonly List<IInjectProvider> _injectProviders = new();
+
         // 当前处理批次（供 Agent host 注入使用）
         private List<(IncomingMessage Message, SessionContext Context)>? activeBatch;
         private Dictionary<int, ParticipantInfo>? currentParticipantSnapshot;
         private IncomingMessage? currentLastMsg;
         private SessionContext? currentLastSc;
         private bool isInWorkingSession = false;
-        private string? escalationReason;
 
         // 错误追踪
         private int consecutiveFailures = 0;
@@ -289,6 +292,25 @@ namespace AgentCoreProcessor.Engine
                 new { engineType = EngineType, channelId, channelName });
 
             WireModuleCallbacks();
+
+            // 收集 IInjectProvider：内部模块 + 插件实例
+            _injectProviders.Clear();
+            _injectProviders.AddRange(modules);  // EngineModule : IInjectProvider
+            var pluginLoader = ctx.PluginLoader;
+            if (pluginLoader != null)
+            {
+                var engineServices = BuildEngineServiceProvider();
+                foreach (var type in pluginLoader.InjectProviderTypes)
+                {
+                    try
+                    {
+                        var provider = pluginLoader.InstantiateInjectProvider(type, engineServices);
+                        if (provider != null)
+                            _injectProviders.Add(provider);
+                    }
+                    catch { /* 单个插件实例化失败不影响整体 */ }
+                }
+            }
 
             // 初始化 ComponentHost
             componentHost = new ComponentHost(
@@ -845,10 +867,11 @@ namespace AgentCoreProcessor.Engine
                 {
                     if (call.Tool == "escalate")
                     {
-                        escalationReason = call.Inputs.Count > 0 ? call.Inputs[0] : null;
+                        var reason = call.Inputs.Count > 0 ? call.Inputs[0] : null;
+                        _signalBuffer.Enqueue(new ModeSwitchSignal("working", reason));
                         isWorkingMode = true;
                         Signal.Event(LogGroup.Engine, "模式切换",
-                            new { channelId, from = "Express", to = "Working", reason = escalationReason ?? "工具调用" });
+                            new { channelId, from = "Express", to = "Working", reason = reason ?? "工具调用" });
                         gate.Signal();
                         break;
                     }
@@ -931,11 +954,29 @@ namespace AgentCoreProcessor.Engine
             }
         }
 
-        public Task<List<Message>?> BuildStartInjectAsync()
+        private IServiceProvider BuildEngineServiceProvider()
+        {
+            var services = new Dictionary<Type, object>
+            {
+                [typeof(EventBus)] = ctx.EventBus,
+                [typeof(ModuleBus)] = _moduleBus,
+                [typeof(Gate)] = gate!,
+            };
+            return new SimpleServiceProviderImpl(services);
+        }
+
+        private class SimpleServiceProviderImpl : IServiceProvider
+        {
+            private readonly Dictionary<Type, object> _services;
+            public SimpleServiceProviderImpl(Dictionary<Type, object> services) => _services = services;
+            public object? GetService(Type serviceType) => _services.TryGetValue(serviceType, out var s) ? s : null;
+        }
+
+        public async Task<List<Message>?> BuildStartInjectAsync()
         {
             var msgs = new List<Message>();
 
-            // Format new messages from buffer
+            // Format new messages from buffer (interceptor flow)
             if (currentLastMsg != null && activeBatch != null && activeBatch.Count > 0)
             {
                 var sb = new StringBuilder("<新消息>\n");
@@ -958,30 +999,80 @@ namespace AgentCoreProcessor.Engine
                 msgs.Add(new Message { Role = "user", Content = sb.ToString() });
             }
 
-            // Escalation reason
-            if (!string.IsNullOrEmpty(escalationReason))
+            // IInjectProvider start injections
+            var iCtx = new InjectContext
             {
-                msgs.Add(new Message { Role = "user", Content = $"[升级任务] {escalationReason}" });
-                escalationReason = null;
+                Mode = isWorkingMode ? "working" : "express",
+                CurrentRound = 0,
+                MaxRounds = agentConfig.MaxRounds
+            };
+            foreach (var p in _injectProviders.OrderBy(p => p.InjectPriority))
+            {
+                try
+                {
+                    var s = await p.BuildStartInjectAsync(iCtx);
+                    if (!string.IsNullOrEmpty(s))
+                        msgs.Add(new Message { Role = "user", Content = s });
+                }
+                catch { /* 单provider失败不中断链 */ }
             }
 
             // Component prompt sections
             BuildComponentInjections(msgs);
 
-            return Task.FromResult<List<Message>?>(msgs);
+            return msgs.Count > 0 ? msgs : null;
         }
 
-        public Task<List<Message>?> BuildRoundInjectAsync()
+        public async Task<List<Message>?> BuildRoundInjectAsync()
         {
             var msgs = new List<Message>();
 
-            // Module injections (per-round)
-            foreach (var module in modules.OrderBy(m => m.PromptPriority))
+            // Drain signal buffer — format each signal type
+            while (_signalBuffer.TryDequeue(out var signal))
             {
-                var section = module.BuildPromptSection(
-                    isWorkingMode ? EngineMode.Working : EngineMode.Express);
-                if (!string.IsNullOrEmpty(section))
-                    msgs.Add(new Message { Role = "user", Content = section });
+                switch (signal)
+                {
+                    case NewMessageSignal nms:
+                        var sb2 = new StringBuilder("<新消息>\n");
+                        sb2.AppendLine($"{nms.Session.Person.Name ?? nms.Session.User.PlatformId}: {nms.Message.Content}");
+                        sb2.Append("</新消息>");
+                        msgs.Add(new Message { Role = "user", Content = sb2.ToString() });
+                        break;
+                    case BusEventSignal bes:
+                        msgs.Add(new Message { Role = "user", Content = $"[系统事件] {bes.Event.GetType().Name}" });
+                        break;
+                    case CompressionSignal cs:
+                        // Rebuild Agent with new summary + retained history
+                        contextSummary = cs.Summary;
+                        EnsureAgent();
+                        agent!.ClearHistory();
+                        agent.AddToHistory(new Message { Role = "user", Content = $"[上下文摘要]\n{cs.Summary}" });
+                        foreach (var msg in cs.RetainedHistory)
+                            agent.AddToHistory(msg);
+                        break;
+                    case ModeSwitchSignal mss:
+                        isWorkingMode = mss.NewMode == "working";
+                        break;
+                }
+            }
+
+            // IInjectProvider round injections
+            var roundCtx = new InjectContext
+            {
+                Mode = isWorkingMode ? "working" : "express",
+                CurrentRound = agent?.TotalRounds ?? 1,
+                MaxRounds = agentConfig.MaxRounds,
+                EstimatedTokens = agent?.History.Sum(m => (m.Content?.Length ?? 0)) / 3 ?? 0
+            };
+            foreach (var p in _injectProviders.OrderBy(p => p.InjectPriority))
+            {
+                try
+                {
+                    var s = await p.BuildRoundInjectAsync(roundCtx);
+                    if (!string.IsNullOrEmpty(s))
+                        msgs.Add(new Message { Role = "user", Content = s });
+                }
+                catch { }
             }
 
             // Compression tier hint
@@ -1000,7 +1091,7 @@ namespace AgentCoreProcessor.Engine
             // Component prompt sections (per-round)
             BuildComponentInjections(msgs);
 
-            return Task.FromResult<List<Message>?>(msgs);
+            return msgs.Count > 0 ? msgs : null;
         }
 
         private void BuildComponentInjections(List<Message> msgs)
