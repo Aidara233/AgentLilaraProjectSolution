@@ -12,7 +12,7 @@ namespace Plugin.WorkingTools
     /// notebook 参数由调用方指定（系统循环用 "system"，频道循环用 channelId）。
     /// </summary>
     [ToolMeta(Group = null, ContinueLoop = true, CapabilitySummary = "思考笔记：记录推理过程和待办事项")]
-    public class ThinkingNotesTool : ITool
+    public class ThinkingNotesTool : ITool, AgentCoreProcessor.Engine.IInjectProvider
     {
         private readonly string _baseDir;
         private static readonly object _lock = new();
@@ -129,6 +129,13 @@ namespace Plugin.WorkingTools
             if (name.Length > 64) name = name[..64];
             return name;
         }
+
+        // IInjectProvider
+        public int InjectPriority => 45;
+        public System.Threading.Tasks.Task<string?> BuildStartInjectAsync(AgentCoreProcessor.Engine.InjectContext ctx)
+            => System.Threading.Tasks.Task.FromResult(BuildSection());
+        public System.Threading.Tasks.Task<string?> BuildRoundInjectAsync(AgentCoreProcessor.Engine.InjectContext ctx)
+            => System.Threading.Tasks.Task.FromResult<string?>(null);
 
         private static Task<ToolResult> Ok(string data) =>
             Task.FromResult(new ToolResult { Status = "success", Data = data });

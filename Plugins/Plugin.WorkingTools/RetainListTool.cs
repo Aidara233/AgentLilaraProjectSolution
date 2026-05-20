@@ -14,7 +14,7 @@ namespace Plugin.WorkingTools
     /// 每个 notebook（频道/引擎）独立存储。
     /// </summary>
     [ToolMeta(Group = null, ContinueLoop = true, CapabilitySummary = "缓存列表：钉住重要的工具结果，避免滚出上下文")]
-    public class RetainListTool : ITool
+    public class RetainListTool : ITool, AgentCoreProcessor.Engine.IInjectProvider
     {
         private readonly string _baseDir;
         private static readonly object _lock = new();
@@ -146,6 +146,13 @@ namespace Plugin.WorkingTools
             File.WriteAllText(tmp, JsonSerializer.Serialize(items, new JsonSerializerOptions { WriteIndented = true }));
             File.Move(tmp, FilePath, overwrite: true);
         }
+
+        // IInjectProvider
+        public int InjectPriority => 60;
+        public System.Threading.Tasks.Task<string?> BuildStartInjectAsync(AgentCoreProcessor.Engine.InjectContext ctx)
+            => System.Threading.Tasks.Task.FromResult(BuildSection());
+        public System.Threading.Tasks.Task<string?> BuildRoundInjectAsync(AgentCoreProcessor.Engine.InjectContext ctx)
+            => System.Threading.Tasks.Task.FromResult<string?>(null);
 
         private static Task<ToolResult> Ok(string data) =>
             Task.FromResult(new ToolResult { Status = "success", Data = data });

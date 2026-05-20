@@ -12,7 +12,7 @@ namespace Plugin.WorkingTools
     /// 便签板工具。全局共享的 key-value 存储，系统循环和频道循环都可读写。
     /// </summary>
     [ToolMeta(Group = null, ContinueLoop = true, CapabilitySummary = "便签板：持久化的笔记板，可跨轮次保留关键信息")]
-    public class PinboardTool : ITool
+    public class PinboardTool : ITool, AgentCoreProcessor.Engine.IInjectProvider
     {
         private readonly string _filePath;
         private static readonly object _lock = new();
@@ -115,6 +115,13 @@ namespace Plugin.WorkingTools
             File.WriteAllText(tmp, JsonSerializer.Serialize(board, new JsonSerializerOptions { WriteIndented = true }));
             File.Move(tmp, _filePath, overwrite: true);
         }
+
+        // IInjectProvider
+        public int InjectPriority => 55;
+        public System.Threading.Tasks.Task<string?> BuildStartInjectAsync(AgentCoreProcessor.Engine.InjectContext ctx)
+            => System.Threading.Tasks.Task.FromResult(BuildSection());
+        public System.Threading.Tasks.Task<string?> BuildRoundInjectAsync(AgentCoreProcessor.Engine.InjectContext ctx)
+            => System.Threading.Tasks.Task.FromResult<string?>(null);
 
         private static Task<ToolResult> Ok(string data) =>
             Task.FromResult(new ToolResult { Status = "success", Data = data });

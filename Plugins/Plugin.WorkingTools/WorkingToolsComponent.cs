@@ -12,6 +12,7 @@ public class WorkingToolsComponent : LoopComponentBase
     private ThinkingNotesTool? _thinkingNotes;
     private PinboardTool? _pinboard;
     private RetainListTool? _retainList;
+    private TaskListTool? _taskList;
 
     public override ComponentMeta Meta => new()
     {
@@ -28,6 +29,7 @@ public class WorkingToolsComponent : LoopComponentBase
             if (_thinkingNotes != null) yield return _thinkingNotes;
             if (_pinboard != null) yield return _pinboard;
             if (_retainList != null) yield return _retainList;
+            if (_taskList != null) yield return _taskList;
         }
     }
 
@@ -37,6 +39,7 @@ public class WorkingToolsComponent : LoopComponentBase
         _thinkingNotes = new ThinkingNotesTool(context.Storage, context.LoopId);
         _pinboard = new PinboardTool(context.Storage);
         _retainList = new RetainListTool(context.Storage);
+        _taskList = new TaskListTool(context.Storage);
         return Task.CompletedTask;
     }
 
@@ -52,6 +55,9 @@ public class WorkingToolsComponent : LoopComponentBase
 
         var retain = _retainList?.BuildSection();
         if (retain != null) sections.Add(retain);
+
+        var tasks = _taskList?.BuildSection();
+        if (tasks != null) sections.Add(tasks);
 
         return sections.Count > 0 ? string.Join("\n", sections) : null;
     }

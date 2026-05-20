@@ -11,6 +11,9 @@
     <ProjectReference Include="..\..\AgentLilara.PluginSDK\AgentLilara.PluginSDK.csproj">
       <Private>false</Private>
     </ProjectReference>
+    <ProjectReference Include="..\..\AgentCoreProcessor\AgentCoreProcessor.csproj">
+      <Private>false</Private>
+    </ProjectReference>
   </ItemGroup>
 
   <Target Name="CopyToHostPlugins" AfterTargets="Build">
