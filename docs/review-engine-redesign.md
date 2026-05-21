@@ -362,3 +362,60 @@ Source        string    来源（"model" = 工作端标记, "framework" = 自动
 ### span name 规范
 - 带计数器：`"review:round R3"`、`"模型调用 R3"`
 - 一眼可读，不需点进 detail
+
+## ReviewLog（业务摘要）
+
+与 Signal（技术追踪）互补，记录 Review 的业务级成果。结构平行于 DreamLog。
+
+### 数据表
+
+```sql
+-- ReviewSessions 表
+CREATE TABLE ReviewSessions (
+    Id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    SignalId        TEXT,           -- 关联 Signal lifecycle span
+    StartTime       DATETIME,
+    EndTime         DATETIME,
+    SeedType        TEXT,           -- beacon / random / resume
+    StopReason      TEXT,           -- completed / budget / interrupted
+    TokensUsed      INTEGER,
+    RoundsExecuted  INTEGER,
+    ChannelsVisited TEXT,           -- JSON array of channel IDs
+    PersonsEncountered TEXT,        -- JSON array of person IDs
+    ThinkingNotes   TEXT,           -- 最终笔记内容
+    EvaluationCount INTEGER         -- 评价应用次数
+);
+
+-- ReviewActions 表
+CREATE TABLE ReviewActions (
+    Id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    SessionId       INTEGER,        -- FK → ReviewSessions.Id
+    SeqIndex        INTEGER,        -- 顺序号
+    Time            DATETIME,
+    ActionType      TEXT,           -- write_memory / update_person / evaluate / link_memory
+    Summary         TEXT,           -- 一句话描述
+    Detail          TEXT            -- JSON：具体参数和结果
+);
+```
+
+### ActionType 详情
+
+| ActionType | Detail 内容 |
+|------------|-------------|
+| write_memory | {memoryId, content, importance, personId?} |
+| update_person | {personId, field, oldValue, newValue} |
+| evaluate | {targetType, targetId, dimension, averagedRating, coefficient, delta, newValue} |
+| link_memory | {memoryIdA, memoryIdB, action} |
+
+### 写入时机
+
+- 每次行动工具执行成功时，立即写入 ReviewActions
+- review_complete 时，写入 ReviewSessions 汇总记录
+- save_progress 时不写 session（未完成），但 actions 已经在过程中写入了
+
+### 与 WebUI 的关系
+
+- 复盘历史页面：展示 ReviewSessions 列表（时间、种子类型、行动数、token 用量）
+- 点击某次复盘：展示 ReviewActions 时间线 + ThinkingNotes
+- 可跳转到 Signal trace 页面查看技术细节（通过 SignalId 关联）
+- 评价趋势图：从 ReviewActions(type=evaluate) 聚合，展示各人物/频道维度分数变化曲线
