@@ -57,7 +57,7 @@ ReviewEngine 实例内存维护一个阅读游标（currentMessageId → 隐含 
 |------|------|------|
 | review_write_memory | content, importance?, person_id? | 写入记忆（描述要求先 search 确认无重复） |
 | review_update_person | person_id, name?, aliases?, fast_memory? | 更新人物基础信息（描述要求先 get_person） |
-| review_evaluate | target_type(person/channel), target_id, dimension, direction(positive/negative) | 统一评价工具，每目标每维度每次复盘限一次 |
+| review_evaluate | target_type(person/channel), target_id, dimension, rating(++/+/0/-/--) | 统一评价工具，每目标每维度每次复盘限一次 |
 | review_link_memory | memory_id_a, memory_id_b, action(create/delete) | 创建/删除记忆关联 |
 | review_get_links | memory_id | 查看某条记忆的关联列表 |
 
@@ -82,22 +82,43 @@ ReviewEngine 实例内存维护一个阅读游标（currentMessageId → 隐含 
 
 人物和频道使用同一套评价公式，通过 `review_evaluate` 工具触发。
 
+**评价等级（5级）：**
+
+| rating | coefficient | 含义 |
+|--------|-------------|------|
+| `++` | 1.0 | 强正面（明确的好表现） |
+| `+` | 0.4 | 轻正面（还行，没什么问题） |
+| `0` | 0（仅重置 LastEvaluatedAt） | 中性（看了，没变化） |
+| `-` | 0.4 | 轻负面（有点不舒服但不严重） |
+| `--` | 1.0 | 强负面（明确的差表现） |
+
 **公式：**
 ```
-delta = direction == Positive
-    ? (ceiling - current) * rate * freshness
-    : (floor - current) * rate * freshness
+delta = (boundary - current) * rate * averaged_coefficient
 
-freshness = min(daysSinceLastEval / freshnessWindow, 1.0)
+boundary: 正面 → ceiling, 负面 → floor
+rate = 0.05
+averaged_coefficient: 本次 review 中对该目标该维度所有评价的平均系数
 ```
 
-**性质：**
-- 边界阻力：接近天花板/地板时效果趋近 0
-- 位置不对称：正值区域跌比涨容易，负值区域涨比跌容易（"增慢衰减快"）
-- 新鲜度：刚评过的目标再评效果小，长期未评的效果大
-- 无需额外衰减机制
+系数映射：`++`=1.0, `+`=0.4, `0`=0, `-`=-0.4, `--`=-1.0，取平均后作为 averaged_coefficient。
+正值用 ceiling 计算，负值用 floor 计算。
 
-**限制：每个目标每个维度每次复盘周期只能评价一次。** 重复调用返回失败。该限制跨 save/resume 保持。
+**应用时机：** review_complete 时，每目标每维度取平均，应用一次 delta。即时写入 EvaluationScore 表。
+
+**性质：**
+- 边界阻力：接近天花板/地板时效果趋近 0（唯一的刹车）
+- 位置不对称：正值区域跌比涨容易，负值区域涨比跌容易
+- 无新鲜度、无衰减、无日结
+- 频率差异接受：被评价越多的目标变化越快（互动多本身就是信号）
+- session 内可多次评价同一目标同维度，最终取平均
+
+**`0` 与不评价的区别：**
+- 不调用工具：没看到相关信息，不做判断
+- 评价 `0`：看了足够证据确认"没变化"，重置 LastEvaluatedAt
+
+**提示词引导：**
+> "随时记录你对人物/频道的印象。可以多次评价同一目标，最终会取平均值应用。不用纠结，跟着感觉走。"
 
 ### 维度定义
 
@@ -122,21 +143,20 @@ freshness = min(daysSinceLastEval / freshnessWindow, 1.0)
 |------|------|------|
 | 值域 | 0.1 ~ 3.0 | -50 ~ +50 |
 | 基准 | 1.0 | 0 |
-| rate | 0.1 | 0.1 |
-| freshnessWindow | 7 天 | 7 天 |
+| rate | 0.05 | 0.05 |
 
 ### 信任等级升级条件（修订）
 
 | 升级路径 | 硬性条件 | 维度条件 |
 |----------|----------|----------|
-| Stranger → Understanding | 记忆数 ≥ 5 | 任一维度 ≥ 5 |
-| Understanding → Familiarity | 天数 ≥ 7，记忆 ≥ 20 | 多数维度 ≥ 15 |
-| Familiarity → Trust | 天数 ≥ 30 | 所有维度 ≥ 30 |
-| → Wary | — | 任一维度 ≤ -15 |
-| → Hostile | — | 任一维度 ≤ -30 |
+| Unknown → Stranger | 消息数 ≥ 3 | 无 |
+| Stranger → Understanding | 记忆 ≥ 5，互动天数 ≥ 3 | 任一维度 ≥ 8 |
+| Understanding → Familiarity | 互动天数 ≥ 14，无活跃警报 | 多数维度(3/4) ≥ 20 |
+| Familiarity → Trust | 互动天数 ≥ 30，无警报历史(近30天)，Review 至少评估过 3 次 | 所有维度 ≥ 35 |
+| Trust → AbsoluteTrust | — | — | 管理员手动 |
 
+"互动天数"= 实际发过消息的天数（非注册天数）。
 降级自动执行（维度跌破门槛即降）。升级需要硬性条件 + 维度条件同时满足，由框架在做梦信任评估时检查。
-
 当人物满足硬性条件但维度未达标时，框架自动生成信标引导 Review 评估。
 
 ### 持久化
@@ -157,7 +177,7 @@ LastEvaluatedAt DateTime
 
 - **review_write_memory**: "写入前请先 search_memory 确认无重复或高度相似的记忆。"
 - **review_update_person**: "更新前请先 get_person 了解当前状态，确认有实质变化再修改。仅用于基础信息（称呼/别称/快速记忆），评价请用 evaluate。"
-- **review_evaluate**: "每个目标每个维度每次复盘只能评价一次。请确保你有充分依据再评价。不要为了评价而评价。"
+- **review_evaluate**: "随时记录你对人物/频道的印象。可以多次评价同一目标同维度，最终取平均应用。不用纠结，跟着感觉走。"
 - **review_thinking_notes**: "browse 的原始内容可能会被压缩，但 notes 始终保留。养成边读边记的习惯。"
 - **review_get_person**: "当你在消息中注意到某个人物并想了解更多时使用。不要仅凭单条消息下结论。"
 - **review_focus**: "使用 offset 时建议偏大（如 -30 ~ -50）。多读几条无关消息的代价远小于错过关键上下文。"
@@ -220,7 +240,7 @@ LastEvaluatedAt DateTime
 ## 习惯
 - 边读边记：看到重要信息先写 thinking_notes，browse 的原文可能会被压缩
 - 先查再写：写记忆前搜索确认无重复，更新人物前先查看现状
-- 评价慎重：每个目标每个维度只能评价一次，确保有充分依据
+- 随手评价：看到某人的表现就记录印象，可以多次评价同一目标，最终取平均
 - 批量操作：你可以一次调用多个工具，不需要一个一个来
 
 ## 预算
@@ -271,9 +291,10 @@ Source        string    来源（"model" = 工作端标记, "framework" = 自动
 {
   "cursorMessageId": 12345,
   "cursorChannelId": 3,
-  "evaluatedSet": [
-    {"targetType": "person", "targetId": 5, "dimension": "reliability"},
-    {"targetType": "channel", "targetId": 3, "dimension": "value"}
+  "evaluationBuffer": [
+    {"targetType": "person", "targetId": 5, "dimension": "reliability", "rating": "+"},
+    {"targetType": "person", "targetId": 5, "dimension": "reliability", "rating": "++"},
+    {"targetType": "channel", "targetId": 3, "dimension": "value", "rating": "+"}
   ],
   "thinkingNotes": "...",
   "findings": ["发现1", "发现2"],
@@ -285,9 +306,11 @@ Source        string    来源（"model" = 工作端标记, "framework" = 自动
 
 恢复时：
 - 游标回到上次位置
-- 评价限制继续生效（已评过的不能重复）
+- 评价缓冲保留（继续累积，最终取平均）
 - notes 和 findings 注入上下文
 - token 计数从上次继续累加
+
+应用时机：review_complete 时，按 (targetType, targetId, dimension) 分组取平均 coefficient，应用公式计算 delta。
 
 ## 与现有代码的关系
 
