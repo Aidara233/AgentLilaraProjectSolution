@@ -104,6 +104,15 @@
 - 记忆检索：Memory/MemoryService.cs
 - 做梦调度：Engine/Dream/DreamEngineSpawnCheck.cs
 - 做梦执行：Engine/Dream/DreamEngine.cs
+- 复盘引擎：Engine/Dream/ReviewEngine.cs（自由探索模式，游标浏览，评价缓冲）
+- 复盘配置：Engine/Dream/ReviewConfig.cs + Storage/Dream/ReviewConfig.json
+- 评价引擎：Engine/Dream/EvaluationEngine.cs（边界阻力公式，session取平均）
+- 复盘进度：Engine/Dream/ReviewProgress.cs + Storage/Dream/ReviewProgress.json
+- 复盘工具：Plugins/Plugin.ReviewTools/（15个工具，review-tools 组件）
+- 复盘SDK：AgentLilara.PluginSDK/Services/IReviewAccess.cs + IBeaconAccess.cs
+- 复盘宿主：Tool/Host/ReviewAccessImpl.cs + BeaconAccessImpl.cs + ReviewControlImpl.cs
+- 评价存储：Database/EvaluationScore.cs + EvaluationScoreRepository.cs
+- 复盘日志：Database/ReviewLog.cs + ReviewLogRepository.cs
 - 睡眠状态：Engine/Core/SleepState.cs
 - 视觉引擎：Engine/Vision/VisionEngine.cs（图片描述+OCR调度）
 - 视觉模型：Client/SiliconFlowVisionProvider.cs + Storage/Core/VisionProvider.json

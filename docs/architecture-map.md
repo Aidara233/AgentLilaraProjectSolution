@@ -341,10 +341,18 @@ EMA 社交满足度 (per Channel):
 
 五种片段: Consolidation / Weight / Link / Combine / Dedup
 ReviewEngine (由DreamEngine孵化，不注册SpawnCheck):
-  独立Agent循环 + 9个专用工具 + 4种复盘模式(频道日报/人物回顾/跨域关联/矛盾检测)
-  工具调用: 支持原生 tool_use (ReviewCore.UseNativeTools) 和文本 JSON 双路径
-  Token预算制: 基础预算 + 显式请求备用 + 预算外收尾
-  产出写临时记忆 → 下次Consolidation整合
+  独立Agent循环 + 15个专用工具 + 自由探索模式（无固定目标）
+  游标机制: focus(message_id/offset/channel_id) + browse(count) 正序阅读
+  种子: 有信标→列出候选 / 无信标→随机频道 / 有进度→恢复
+  评价系统: review_evaluate(++/+/0/-/--) → session内缓冲 → complete时取平均应用
+    公式: delta = (boundary - current) * rate * averaged_coefficient
+    人物4维度(reliability/respect/value/stability) + 频道1维度(value)
+  Token预算制: ReviewConfig.json (基础50k + 备用15k + 压缩阈值30k)
+  空转检测: 连续N轮只有导航没有行动 → 提醒
+  信标来源: 工作端 mark_for_review 工具 + 框架自动(信任升级候选)
+  信任升级: 多维度检查(EvaluationScore) + 硬性条件(天数/记忆数/review次数)
+  日志: ReviewSessions + ReviewActions 表（业务级）+ Signal（技术级）
+  进度持久化: ReviewProgress.json (游标/评价缓冲/笔记/token计数)
 ```
 
 ## 记忆系统
@@ -373,7 +381,9 @@ ReviewEngine (由DreamEngine孵化，不注册SpawnCheck):
 低置信: Confidence(high/low) + Feedback(positive/negative)，低置信记忆标注"不太确定"
 ```
 
-12张表: Person / User / Channel / UserMessage / MemoryEntry / TempMemoryEntry / MemoryLink / PersonaMemoryEntry / ReviewHint / ImageRecord / (Topics 保留但不再使用)
+12张表: Person / User / Channel / UserMessage / MemoryEntry / TempMemoryEntry / MemoryLink / PersonaMemoryEntry / ReviewHint / ImageRecord / EvaluationScore / (Topics 保留但不再使用)
+日志库(logs.db): events / token_usage
+复盘库(主库): ReviewSessions / ReviewActions
 
 ## 工具系统（插件化架构）
 
@@ -391,6 +401,8 @@ AgentLilara.PluginSDK (共享契约，独立类库):
              IAgentMessaging / IDelegationAccess / ISubAgentAccess
              IChannelAccess / IAdapterAccess / ISchedulingAccess / IEngineAccess
              ISleepAccess / IEventBusAccess / IToolHistoryAccess / ILoopControl
+             IReviewAccess（游标/浏览/评价/笔记/进度）/ IReviewControl（预算/完成）
+             IBeaconAccess（信标创建）/ IPersonAccess（人物查询/更新）
 
 主程序 Tool/ (宿主层):
   Core/CoreTools.cs          — 核心工具（continue_loop + wait + manage_components + escalate），不可卸载
@@ -404,7 +416,7 @@ AgentLilara.PluginSDK (共享契约，独立类库):
 
 插件项目 (独立 DLL，输出到 {BaseDirectory}/Plugins/):
   Plugin.BasicTools      — speak + send_media（输出能力）[GlobalComponent: basic-tools]
-  Plugin.WorkingTools    — pinboard + thinking_notes + retain_list + task_management（工作状态）[LoopComponent: working-tools, IInjectProvider]
+  Plugin.WorkingTools    — pinboard + thinking_notes + retain_list + task_management + mark_for_review（工作状态+复盘标记）[LoopComponent: working-tools, IInjectProvider]
   Plugin.MemoryTools     — memory（记忆读写，依赖 IMemoryAccess 服务）[GlobalComponent: memory-tools]
   Plugin.FileTools       — read_text + write_text + list_dir + move/delete/copy（文件系统）[GlobalComponent: file-tools]
   Plugin.DelegationTools — delegate_task + cancel_delegation（频道循环委托提交）[LoopComponent: delegation]
@@ -482,9 +494,10 @@ Person (自然人)          User (账号)
 TrustLevel: Hostile(-2) / Wary(-1) / Unknown(0) / Stranger(1) /
             Understanding(2) / Familiarity(3) / Trust(4) / AbsoluteTrust(5)
 
-信任升级: Unknown→Stranger(首条消息) → Understanding(记忆数) → Familiarity(互动跨度) → Trust(模型评估)
-实际等级 = min(硬性条件等级, TrustProgress允许等级)
-TrustProgress 可负 → 等级被压到 Wary/Hostile
+信任升级: Unknown→Stranger(消息数≥3) → Understanding(记忆≥5+天数≥3+任一维度≥8) → Familiarity(天数≥14+无警报+3/4维度≥20) → Trust(天数≥30+无近期警报+review≥3+全维度≥35)
+降级: 维度跌破门槛即降（自动执行）
+AbsoluteTrust: 仅管理员手动
+评价存储: EvaluationScore 表 (TargetType/TargetId/Dimension/Value/LastEvaluatedAt)
 
 报警按钮: alertLevel 递增惩罚(记录→扣分→限制+通知管理员)，冷却恢复(1/3/7/14天)
 participants XML: <user name="..." relation="好友" memo="..."/>
@@ -513,9 +526,10 @@ Storage/
 ├── Core/VisionProvider.json  视觉模型配置(apiKey/endpoint/model)
 ├── Core/OcrProvider.json     OCR模型配置(apiKey/endpoint/model)
 ├── Dream/
-│     ├── DreamConfig.json    做梦调度参数+预算配置
+│     ├── DreamConfig.json    做梦调度参数+片段预算配置
+│     ├── ReviewConfig.json   复盘引擎配置（评价参数/信任门槛/预算/空转检测）
 │     ├── DreamStats.json     滚动7天统计+自适应基线
-│     └── DreamProgress.json  复盘进度存档
+│     └── ReviewProgress.json 复盘进度存档（游标/评价缓冲/笔记）
 ├── Engine/
 │     ├── EngineConfig.json          自启动引擎列表 {"autoStart":["Timer"]}
 │     ├── ImpulseConfig.json         冲动值全参数配置
