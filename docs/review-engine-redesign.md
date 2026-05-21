@@ -58,7 +58,7 @@ ReviewEngine 实例内存维护一个阅读游标（currentMessageId → 隐含 
 |------|------|------|
 | review_write_memory | content, importance?, person_id? | 写入记忆（描述要求先 search 确认无重复） |
 | review_update_person | person_id, name?, aliases?, fast_memory? | 更新人物基础信息（描述要求先 get_person） |
-| review_evaluate | target_type(person/channel), target_id, dimension, rating(++/+/0/-/--) | 统一评价工具，每目标每维度每次复盘限一次 |
+| review_evaluate | target_type(person/channel), target_id, dimension, rating(++/+/0/-/--) | 统一评价工具，可多次评价同目标同维度，complete 时取平均应用 |
 | review_link_memory | memory_id_a, memory_id_b, action(create/delete) | 创建/删除记忆关联 |
 | review_get_links | memory_id | 查看某条记忆的关联列表 |
 
