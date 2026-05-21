@@ -30,10 +30,14 @@
 
 ReviewEngine 实例内存维护一个阅读游标（currentMessageId → 隐含 channelId）。
 
-- `review_focus(message_id)` — 移动游标到指定消息
-- `review_browse(count=20)` — 从游标处顺序读取当前频道消息，游标前进
+- `review_focus(message_id?, offset?, channel_id?)` — 移动游标
+  - message_id：跳到指定消息
+  - message_id + offset：跳到该消息前/后 N 条的位置（负值=往前）
+  - channel_id（无 message_id）：跳到该频道最新消息
+- `review_browse(count=20)` — 从游标处正序读取当前频道消息，游标前进
 - browse 输出不带消息 ID（干净的阅读流：时间+发言人(P#ID)+内容）
 - search 输出带消息 ID（供 focus 跳转用）
+- browse 永远正序，需要看前因时用 focus + offset 回退后再正序读
 
 ## 工具集（14个）
 
@@ -41,7 +45,7 @@ ReviewEngine 实例内存维护一个阅读游标（currentMessageId → 隐含 
 
 | 工具 | 参数 | 说明 |
 |------|------|------|
-| review_focus | message_id | 设置游标到指定消息 |
+| review_focus | message_id?, offset?, channel_id? | 移动游标（支持偏移，offset 负值=往前） |
 | review_browse | count? (默认20) | 从游标顺序读取，游标前进 |
 | review_search_messages | query, channel_id?, person_id?, time_start?, time_end? | 按条件搜索消息，结果带 ID |
 | review_search_memory | query, person_id?, limit? | 语义搜索记忆库（返回 ID+内容+重要度+时间+PersonId） |
@@ -156,6 +160,7 @@ LastEvaluatedAt DateTime
 - **review_evaluate**: "每个目标每个维度每次复盘只能评价一次。请确保你有充分依据再评价。不要为了评价而评价。"
 - **review_thinking_notes**: "browse 的原始内容可能会被压缩，但 notes 始终保留。养成边读边记的习惯。"
 - **review_get_person**: "当你在消息中注意到某个人物并想了解更多时使用。不要仅凭单条消息下结论。"
+- **review_focus**: "使用 offset 时建议偏大（如 -30 ~ -50）。多读几条无关消息的代价远小于错过关键上下文。"
 
 ## 每轮注入（BuildRoundInjectAsync）
 
