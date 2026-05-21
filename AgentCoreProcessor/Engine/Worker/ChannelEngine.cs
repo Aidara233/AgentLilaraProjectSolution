@@ -895,10 +895,22 @@ namespace AgentCoreProcessor.Engine
             // Call model
             ModelOutput output;
             using (var modelSpan = Signal.Open(LogGroup.Model, "AI模型调用",
-                new { mode = "Express", channelId, messageCount = messages.Count }))
+                new
+                {
+                    mode = "Express", channelId,
+                    messageCount = messages.Count,
+                    messages = messages.Select(m => m.ContentParts != null
+                        ? (object)new { m.Role, parts = m.ContentParts.Select(p => new { p.Type, p.Text, p.ToolName, p.ToolInput, p.ToolUseId, p.IsError }) }
+                        : new { m.Role, content = m.Content })
+                }))
             {
                 output = await agentCore.InvokeAsync(messages, EngineMode.Express);
-                modelSpan.SetCloseDetail(new { isText = output.IsText, hasToolCalls = output.HasToolCalls });
+                modelSpan.SetCloseDetail(new
+                {
+                    responseText = output.Text,
+                    thinking = output.Thinking,
+                    toolCalls = output.ToolCalls?.Select(tc => new { tc.Tool, tc.Inputs, tc.ToolUseId })
+                });
             }
 
             // Process text output
@@ -915,8 +927,17 @@ namespace AgentCoreProcessor.Engine
             {
                 Tool.Core.ManageComponentsTool.CurrentLoop.Value =
                     new Tool.Core.ManageComponentsTool.LoopContext(currentProfileName, $"channel-{channelId}");
+                using var expressToolSpan = Signal.Open(LogGroup.Tool, "Express工具执行",
+                    new { calls = output.ToolCalls.Select(c => new { c.Tool, c.Inputs }) });
                 var executor = new ToolExecutor(null, null);
-                await executor.ExecuteAsync(output.ToolCalls);
+                var expressResults = await executor.ExecuteAsync(output.ToolCalls);
+                expressToolSpan.SetCloseDetail(new
+                {
+                    results = output.ToolCalls.Zip(expressResults, (c, r) => new
+                    {
+                        tool = c.Tool, status = r.Status, data = r.Data, error = r.Error
+                    })
+                });
 
                 // Check for escalate
                 foreach (var call in output.ToolCalls)

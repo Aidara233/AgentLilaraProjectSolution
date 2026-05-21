@@ -86,7 +86,14 @@ namespace AgentCoreProcessor.Engine
                 // 调模型
                 ModelOutput output;
                 using (var modelSpan = Signal.Open(LogGroup.Model, "core:invoke",
-                    new { messageCount = messages.Count, round = round + 1 }))
+                    new
+                    {
+                        round = round + 1,
+                        messageCount = messages.Count,
+                        messages = messages.Select(m => m.ContentParts != null
+                            ? (object)new { m.Role, parts = m.ContentParts.Select(p => new { p.Type, p.Text, p.ToolName, p.ToolInput, p.ToolUseId, p.IsError }) }
+                            : new { m.Role, content = m.Content })
+                    }))
                 {
                     try
                     {
@@ -95,9 +102,9 @@ namespace AgentCoreProcessor.Engine
                         _backoffUntil = null;
                         modelSpan.SetCloseDetail(new
                         {
-                            isText = output.IsText,
-                            hasToolCalls = output.HasToolCalls,
-                            toolCount = output.ToolCalls?.Count ?? 0
+                            responseText = output.Text,
+                            thinking = output.Thinking,
+                            toolCalls = output.ToolCalls?.Select(tc => new { tc.Tool, tc.Inputs, tc.ToolUseId })
                         });
                     }
                     catch (OperationCanceledException) { throw; }
@@ -133,7 +140,11 @@ namespace AgentCoreProcessor.Engine
                 // 执行工具
                 List<ToolResult> results;
                 using (var toolSpan = Signal.Open(LogGroup.Tool, "agent:tools",
-                    new { toolCount = output.ToolCalls.Count, tools = string.Join(",", output.ToolCalls.Select(c => c.Tool)) }))
+                    new
+                    {
+                        toolCount = output.ToolCalls.Count,
+                        calls = output.ToolCalls.Select(c => new { c.Tool, c.Inputs, c.ToolUseId })
+                    }))
                 {
                     var executor = new ToolExecutor(null, _authorizedTools);
                     if (OnToolExecuted != null)
@@ -147,8 +158,13 @@ namespace AgentCoreProcessor.Engine
                     results = await executor.ExecuteAsync(output.ToolCalls);
                     toolSpan.SetCloseDetail(new
                     {
-                        successCount = results.Count(r => r.Status == "success"),
-                        errorCount = results.Count(r => r.Error != null)
+                        results = output.ToolCalls.Zip(results, (c, r) => new
+                        {
+                            tool = c.Tool,
+                            status = r.Status,
+                            data = r.Data,
+                            error = r.Error
+                        })
                     });
                 }
 
