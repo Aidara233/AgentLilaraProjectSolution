@@ -337,19 +337,8 @@ namespace AgentCoreProcessor.Engine
                 // 信任等级评估（不消耗 token，纯框架逻辑）
                 await ExecuteTrustEvaluationAsync();
 
-                try
-                {
-                    var (mode, preContext, progress) =
-                        await ReviewModeSelector.SelectAndPrepareAsync(ctx);
-                    reviewEngine = new ReviewEngine(ctx, mode, preContext,
-                        cfg.ReviewTokenBudget, cfg.ReviewReserveBudget, progress);
-                    ctx.StartEngine(reviewEngine);
-                    Signal.Event(LogGroup.Engine, "ReviewEngine启动", new { mode = mode.ToString() });
-                }
-                catch (Exception ex)
-                {
-                    Signal.Warn(LogGroup.Engine, "ReviewEngine启动失败", new { error = ex.GetType().Name, message = ex.Message });
-                }
+                // ReviewEngine 已禁用：工具全部注释，启动只浪费一次模型调用。
+                // 待复盘机制重新设计后恢复。
 
                 // Phase 2 循环：继续跑 Weight/Link/Combine，陪跑 ReviewEngine
                 int nullCount = 0;
