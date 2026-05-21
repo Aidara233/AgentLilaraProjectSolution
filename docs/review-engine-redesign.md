@@ -39,9 +39,9 @@ ReviewEngine 实例内存维护一个阅读游标（currentMessageId → 隐含 
 - search 输出带消息 ID（供 focus 跳转用）
 - browse 永远正序，需要看前因时用 focus + offset 回退后再正序读
 
-## 工具集（14个）
+## 工具集（15个）
 
-### 导航（5个）
+### 导航（6个）
 
 | 工具 | 参数 | 说明 |
 |------|------|------|
@@ -50,6 +50,7 @@ ReviewEngine 实例内存维护一个阅读游标（currentMessageId → 隐含 
 | review_search_messages | query, channel_id?, person_id?, time_start?, time_end? | 按条件搜索消息，结果带 ID |
 | review_search_memory | query, person_id?, limit? | 语义搜索记忆库（返回 ID+内容+重要度+时间+PersonId） |
 | review_get_person | person_id | 查询人物详情（信任等级/维度分数/称呼/快速记忆/关联账号） |
+| review_list_beacons | (无) | 获取未处理信标列表（处理完初始种子后可主动拉取更多） |
 
 ### 行动（5个）
 
