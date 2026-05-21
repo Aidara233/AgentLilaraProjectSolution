@@ -70,7 +70,7 @@ namespace AgentCoreProcessor.Engine
                     await Task.Delay(TimeSpan.FromSeconds(5), ct);
 
                 TotalRounds++;
-                using var roundSpan = Signal.Open(LogGroup.Engine, "agent:round",
+                using var roundSpan = Signal.Open(LogGroup.Engine, $"agent:round R{round + 1}",
                     new { round = round + 1 });
 
                 // 本轮注入

@@ -53,6 +53,7 @@ namespace AgentCoreProcessor.Engine
         private readonly ChannelConfig channelConfig;
         private long _busyFlag = 0;
         private long _completionTicks = 0;
+        private int _totalGateCycles = 0;
 
         // ---- 消息缓冲 ----
         private readonly object bufferLock = new();
@@ -363,6 +364,7 @@ namespace AgentCoreProcessor.Engine
                 }
 
                 // 循环唤醒：通知组件
+                _totalGateCycles++;
                 await componentHost.OnActivatedAsync();
 
                 // ② CollectBuffer（在创建 session 之前 — 避免 Timer tick 等空唤醒创建无用 session）
@@ -392,7 +394,7 @@ namespace AgentCoreProcessor.Engine
 
                 // ④ Gate evaluation（会话内部：决定是否开闸）
                 bool prepareResult;
-                using (var gateSpan = Signal.Open(LogGroup.Engine, $"闸门评估 ({batch?.Count ?? 0}条消息)",
+                using (var gateSpan = Signal.Open(LogGroup.Engine, $"闸门评估 #{_totalGateCycles} ({batch?.Count ?? 0}条消息)",
                     new { hasMessages = batch?.Count ?? 0, isWorkingMode }))
                 {
                     prepareResult = await EvaluateGateAsync(batch);
@@ -414,7 +416,7 @@ namespace AgentCoreProcessor.Engine
                 {
                     await componentHost.OnBeforeInvokeAsync();
 
-                    using var roundSpan = Signal.Open(LogGroup.Engine, $"处理轮次 [{(isWorkingMode ? "Working" : "Express")}]",
+                    using var roundSpan = Signal.Open(LogGroup.Engine, $"处理轮次 #{_totalGateCycles} [{(isWorkingMode ? "Working" : "Express")}]",
                         new { channelId, mode = isWorkingMode ? "working" : "express" });
 
                     if (isWorkingMode)
