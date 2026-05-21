@@ -85,7 +85,7 @@ namespace AgentCoreProcessor.Engine
 
                 // 调模型
                 ModelOutput output;
-                using (var modelSpan = Signal.Open(LogGroup.Model, "core:invoke",
+                using (var modelSpan = Signal.Open(LogGroup.Model, $"模型调用 R{round + 1}",
                     new
                     {
                         round = round + 1,
@@ -139,7 +139,8 @@ namespace AgentCoreProcessor.Engine
 
                 // 执行工具
                 List<ToolResult> results;
-                using (var toolSpan = Signal.Open(LogGroup.Tool, "agent:tools",
+                var toolNames = string.Join(", ", output.ToolCalls.Select(c => c.Tool));
+                using (var toolSpan = Signal.Open(LogGroup.Tool, $"工具: {toolNames}",
                     new
                     {
                         toolCount = output.ToolCalls.Count,

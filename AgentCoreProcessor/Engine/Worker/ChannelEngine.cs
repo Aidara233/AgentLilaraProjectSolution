@@ -894,7 +894,7 @@ namespace AgentCoreProcessor.Engine
 
             // Call model
             ModelOutput output;
-            using (var modelSpan = Signal.Open(LogGroup.Model, "AI模型调用",
+            using (var modelSpan = Signal.Open(LogGroup.Model, $"Express模型调用 ch:{channelId}",
                 new
                 {
                     mode = "Express", channelId,
@@ -1296,6 +1296,8 @@ namespace AgentCoreProcessor.Engine
 
         private async Task<string?> BuildMemorySection(SessionContext sc, string query)
         {
+            using var memSpan = Signal.Open(LogGroup.Memory, $"记忆检索 p:{sc.Person.Id}",
+                new { personId = sc.Person.Id, channelId = sc.Channel.Id, query });
             try
             {
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -1304,14 +1306,26 @@ namespace AgentCoreProcessor.Engine
                     query, topK: isWorkingMode ? 10 : 5, includeLinks: true, includePersona: true);
                 var completed = await Task.WhenAny(task, Task.Delay(10000, cts.Token));
 
-                if (completed != task) return null;
+                if (completed != task)
+                {
+                    memSpan.SetCloseDetail(new { result = "timeout" });
+                    return null;
+                }
                 cts.Cancel();
 
                 var results = await task;
-                if (results == null || results.Count == 0) return null;
+                if (results == null || results.Count == 0)
+                {
+                    memSpan.SetCloseDetail(new { result = "empty", count = 0 });
+                    return null;
+                }
 
                 var items = results.Where(m => !m.IsPersona).ToList();
-                if (items.Count == 0) return null;
+                if (items.Count == 0)
+                {
+                    memSpan.SetCloseDetail(new { result = "persona_only", totalCount = results.Count });
+                    return null;
+                }
 
                 var sb = new StringBuilder("[记忆参考]\n");
                 foreach (var m in items)
@@ -1321,10 +1335,17 @@ namespace AgentCoreProcessor.Engine
                     else
                         sb.AppendLine($"- {m.Content}");
                 }
+                memSpan.SetCloseDetail(new
+                {
+                    result = "ok",
+                    count = items.Count,
+                    memories = items.Select(m => new { m.Content, m.Confidence, m.Score })
+                });
                 return sb.ToString().TrimEnd();
             }
-            catch
+            catch (Exception ex)
             {
+                memSpan.SetCloseDetail(new { result = "error", error = ex.GetType().Name, message = ex.Message });
                 return null;
             }
         }
