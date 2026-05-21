@@ -71,8 +71,9 @@ namespace AgentCoreProcessor.Engine.Modules
             _compressing = true;
             try
             {
-                using var span = Signal.Open(LogGroup.Engine, "compress",
-                    new { historyCount = history.Count, tier = _currentTier.ToString() });
+                var totalTokens = history.Sum(m => (m.Content?.Length ?? 0)) / 3;
+                using var span = Signal.Open(LogGroup.Engine, $"上下文压缩 ({totalTokens}t, {_currentTier})",
+                    new { historyCount = history.Count, estimatedTokens = totalTokens, tier = _currentTier.ToString(), hasPriorSummary = _currentSummary != null });
 
                 var retained = new List<Message>();
                 int tokenCount = 0;
@@ -94,12 +95,19 @@ namespace AgentCoreProcessor.Engine.Modules
                 }
 
                 _l1Injected = false;
-                span.SetCloseDetail(new { compressedCount = toCompress.Count, retainedCount = retained.Count });
+                span.SetCloseDetail(new
+                {
+                    compressedCount = toCompress.Count,
+                    retainedCount = retained.Count,
+                    retainedTokens = tokenCount,
+                    summaryLength = _currentSummary?.Length ?? 0,
+                    summary = _currentSummary
+                });
                 onComplete(_currentSummary ?? "", retained);
             }
             catch (Exception ex)
             {
-                Signal.Warn(LogGroup.Engine, "压缩失败", new { error = ex.Message });
+                Signal.Error(LogGroup.Engine, "压缩失败", new { error = ex.GetType().Name, message = ex.Message });
             }
             finally
             {
