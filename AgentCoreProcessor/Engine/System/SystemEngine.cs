@@ -360,6 +360,14 @@ namespace AgentCoreProcessor.Engine
                 consecutiveFailures = 0;
                 lastRoundNoAction = agent.StopReason == AgentStopReason.Completed;
 
+                Signal.Event(LogGroup.Engine, "Agent轮次完成", new
+                {
+                    stopReason = agent.StopReason?.ToString(),
+                    totalRounds = agent.TotalRounds,
+                    historyCount = agent.History.Count,
+                    estimatedTokens = agent.History.Sum(m => (m.Content?.Length ?? 0)) / 3
+                });
+
                 // Persist after agent round
                 PersistAgentHistory();
                 SaveModuleState();
@@ -523,6 +531,17 @@ namespace AgentCoreProcessor.Engine
                 catch (Exception ex) { Signal.Warn(LogGroup.Engine, $"InjectProvider.Start失败: {p.GetType().Name}", new { provider = p.GetType().Name, error = ex.Message }); }
             }
 
+            if (msgs.Count > 0)
+            {
+                Signal.Event(LogGroup.Engine, "上下文组装完成", new
+                {
+                    mode = "system",
+                    totalMessages = msgs.Count,
+                    hasSummary = !string.IsNullOrEmpty(compressionModule.GetSummary()),
+                    estimatedTokens = msgs.Sum(m => (m.Content?.Length ?? 0)) / 3
+                });
+            }
+
             return msgs.Count > 0 ? msgs : null;
         }
 
@@ -652,6 +671,7 @@ namespace AgentCoreProcessor.Engine
                 subAgents[session.SessionId] = session;
             }
             session.Start(instruction);
+            Signal.Event(LogGroup.Engine, "子agent创建", new { sessionId = session.SessionId, instructionPreview = instruction.Length > 100 ? instruction[..100] : instruction });
             return session;
         }
 
@@ -665,6 +685,7 @@ namespace AgentCoreProcessor.Engine
                 subAgents[session.SessionId] = session;
             }
             session.Start(instruction);
+            Signal.Event(LogGroup.Engine, "子agent创建(委托)", new { sessionId = session.SessionId, delegationId, instructionPreview = instruction.Length > 100 ? instruction[..100] : instruction });
             return session;
         }
 
@@ -744,7 +765,8 @@ namespace AgentCoreProcessor.Engine
                 var elapsed = (DateTime.Now - pendingSleepRequest.RequestTime).TotalMinutes;
                 if (elapsed > 10 && pendingSleepRequest.Status == SleepRequestStatus.Pending)
                 {
-                    // 超时自动批准
+                    Signal.Event(LogGroup.Engine, "睡觉请求超时自动批准",
+                        new { requestId = pendingSleepRequest.RequestId, elapsedMinutes = elapsed });
                     pendingSleepRequest.Status = SleepRequestStatus.Approved;
                     await StartDreamEngineAsync();
                     pendingSleepRequest = null;
@@ -754,6 +776,7 @@ namespace AgentCoreProcessor.Engine
 
             // 评估睡觉需求
             var score = await EvaluateSleepNeedAsync();
+            Signal.Event(LogGroup.Engine, "睡觉评估", new { score, threshold = 60f, triggered = score >= 60f });
             if (score >= 60f)
             {
                 await RequestSleepPermissionAsync(score);
