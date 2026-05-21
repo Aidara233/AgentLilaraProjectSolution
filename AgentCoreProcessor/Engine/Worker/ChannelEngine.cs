@@ -336,7 +336,7 @@ namespace AgentCoreProcessor.Engine
                         if (provider != null)
                             _injectProviders.Add(provider);
                     }
-                    catch { /* 单个插件实例化失败不影响整体 */ }
+                    catch (Exception ex) { Signal.Warn(LogGroup.Engine, $"插件实例化失败: {type.Name}", new { type = type.FullName, error = ex.Message }); }
                 }
             }
 
@@ -456,7 +456,7 @@ namespace AgentCoreProcessor.Engine
                                 Content = $"[错误] 处理消息时发生异常：{ex.Message}"
                             });
                         }
-                        catch { }
+                        catch (Exception notifyEx) { Signal.Warn(LogGroup.Adapter, "错误通知发送失败", new { channelId, error = notifyEx.Message }); }
                     }
 
                     if (consecutiveFailures >= ChannelMaxConsecutiveBeforeBackoff)
@@ -558,7 +558,7 @@ namespace AgentCoreProcessor.Engine
                 var desc = $"[发送{type}]" + (string.IsNullOrEmpty(text) ? "" : $" {text}");
                 await ctx.Session.SaveBotMessageAsync(currentLastSc.Channel.Id, desc, sentId);
             }
-            catch (Exception) { }
+            catch (Exception ex) { Signal.Error(LogGroup.Adapter, "发送媒体失败", new { channelId, error = ex.GetType().Name, message = ex.Message }); }
         }
 
         private async Task HandleMemoryToolAsync(string content)
@@ -784,7 +784,7 @@ namespace AgentCoreProcessor.Engine
                             Content = $"[错误] 处理消息时发生异常：{ex.Message}"
                         });
                     }
-                    catch { }
+                    catch (Exception notifyEx) { Signal.Warn(LogGroup.Adapter, "错误通知发送失败", new { channelId, error = notifyEx.Message }); }
                 }
 
                 if (consecutiveFailures >= ChannelMaxConsecutiveBeforeBackoff)
@@ -1104,7 +1104,7 @@ namespace AgentCoreProcessor.Engine
                     if (!string.IsNullOrEmpty(s))
                         msgs.Add(new Message { Role = "user", Content = s });
                 }
-                catch { /* 单provider失败不中断链 */ }
+                catch (Exception ex) { Signal.Warn(LogGroup.Engine, $"InjectProvider.Start失败: {p.GetType().Name}", new { provider = p.GetType().Name, error = ex.Message }); }
             }
 
             // Component prompt sections
@@ -1164,7 +1164,7 @@ namespace AgentCoreProcessor.Engine
                     if (!string.IsNullOrEmpty(s))
                         msgs.Add(new Message { Role = "user", Content = s });
                 }
-                catch { }
+                catch (Exception ex) { Signal.Warn(LogGroup.Engine, $"InjectProvider.Round失败: {p.GetType().Name}", new { provider = p.GetType().Name, error = ex.Message }); }
             }
 
             // Compression tier hint
