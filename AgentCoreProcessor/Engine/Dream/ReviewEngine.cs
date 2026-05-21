@@ -236,6 +236,10 @@ namespace AgentCoreProcessor.Engine
                 return Task.FromResult<List<Message>?>(null);
             }
 
+            // 压缩检查
+            if (_agent != null)
+                TryCompressHistory();
+
             var msgs = new List<Message>();
 
             // 预算状态
@@ -301,6 +305,207 @@ namespace AgentCoreProcessor.Engine
         {
             if (File.Exists(ReviewProgressPath))
                 File.Delete(ReviewProgressPath);
+        }
+
+        // ---- 压缩 ----
+
+        private static readonly HashSet<string> NavigationTools = new()
+        {
+            "review_browse", "review_search_messages", "review_search_memory",
+            "review_focus", "review_get_person", "review_list_beacons", "review_get_links"
+        };
+
+        private bool _compressionApplied;
+
+        private void TryCompressHistory()
+        {
+            var history = _agent!.History;
+            var estimatedTokens = EstimateTokens(history);
+            if (estimatedTokens < _cfg.CompressionThreshold)
+                return;
+
+            using var span = Signal.Open(LogGroup.Engine, $"review:压缩 ({estimatedTokens}t)",
+                new { estimatedTokens, threshold = _cfg.CompressionThreshold, historyCount = history.Count });
+
+            // 保留最近 3 轮（每轮 = 1 assistant + 1 user tool_result）
+            const int retainRounds = 3;
+            int retainMessages = retainRounds * 2;
+            int conversationStart = _agent.ConversationOffset;
+            int compressEnd = Math.Max(conversationStart, history.Count - retainMessages);
+
+            int compressed = 0;
+            for (int i = conversationStart; i < compressEnd; i++)
+            {
+                var msg = history[i];
+                if (msg.ContentParts == null) continue;
+
+                if (msg.Role == "assistant")
+                {
+                    // assistant 消息中的 tool_use：如果是导航工具，标记对应 result 待压缩
+                    // 不修改 assistant 消息本身（保持 tool_use 结构完整）
+                    continue;
+                }
+
+                if (msg.Role == "user" && msg.Content == "[tool results]")
+                {
+                    // 找到对应的 assistant 消息获取工具名
+                    var prevAssistant = i > 0 ? history[i - 1] : null;
+                    if (prevAssistant?.ContentParts == null) continue;
+
+                    var newParts = new List<ContentPart>();
+                    bool anyCompressed = false;
+
+                    foreach (var part in msg.ContentParts)
+                    {
+                        if (part.Type != "tool_result" || part.ToolUseId == null)
+                        {
+                            newParts.Add(part);
+                            continue;
+                        }
+
+                        // 找到对应的 tool_use 获取工具名和参数
+                        var toolUsePart = prevAssistant.ContentParts
+                            .FirstOrDefault(p => p.Type == "tool_use" && p.ToolUseId == part.ToolUseId);
+                        if (toolUsePart == null)
+                        {
+                            newParts.Add(part);
+                            continue;
+                        }
+
+                        var toolName = toolUsePart.ToolName ?? "";
+
+                        if (NavigationTools.Contains(toolName))
+                        {
+                            // 导航工具结果 → 一行摘要
+                            var summary = BuildToolSummary(toolName, toolUsePart.ToolInput, part.Text);
+                            newParts.Add(ContentPart.FromToolResult(part.ToolUseId, summary, part.IsError ?? false));
+                            anyCompressed = true;
+                        }
+                        else if (_compressionApplied && ActionTools.Contains(toolName))
+                        {
+                            // 二次压缩：action 工具结果也压缩为一行
+                            var summary = BuildActionSummary(toolName, toolUsePart.ToolInput, part.Text);
+                            newParts.Add(ContentPart.FromToolResult(part.ToolUseId, summary, part.IsError ?? false));
+                            anyCompressed = true;
+                        }
+                        else
+                        {
+                            newParts.Add(part);
+                        }
+                    }
+
+                    if (anyCompressed)
+                    {
+                        msg.ContentParts = newParts;
+                        compressed++;
+                    }
+                }
+            }
+
+            // 在 conversationStart 位置插入压缩提示（替换旧的压缩提示如果有）
+            if (compressed > 0)
+            {
+                var notice = new Message
+                {
+                    Role = "user",
+                    Content = "[系统] 早期阅读内容已压缩。你的 thinking_notes 和所有行动记录完整保留。"
+                };
+
+                // 移除旧的压缩提示
+                for (int i = conversationStart; i < compressEnd && i < history.Count; i++)
+                {
+                    if (history[i].Role == "user" && history[i].Content?.StartsWith("[系统] 早期阅读内容已压缩") == true)
+                    {
+                        history[i] = notice;
+                        notice = null!;
+                        break;
+                    }
+                }
+                if (notice != null)
+                    history.Insert(conversationStart, notice);
+
+                _compressionApplied = true;
+            }
+
+            var afterTokens = EstimateTokens(history);
+            span.SetCloseDetail(new
+            {
+                compressedResults = compressed,
+                beforeTokens = estimatedTokens,
+                afterTokens,
+                secondPass = _compressionApplied && compressed > 0
+            });
+        }
+
+        private static int EstimateTokens(List<Message> messages)
+        {
+            int total = 0;
+            foreach (var msg in messages)
+            {
+                if (msg.ContentParts != null)
+                {
+                    foreach (var p in msg.ContentParts)
+                        total += (p.Text?.Length ?? 0) + (p.ToolInput?.Length ?? 0) + (p.ToolName?.Length ?? 0);
+                }
+                else
+                {
+                    total += msg.Content?.Length ?? 0;
+                }
+            }
+            return total / 3; // 粗估：3 字符 ≈ 1 token
+        }
+
+        private static string BuildToolSummary(string toolName, string? toolInput, string? resultText)
+        {
+            var inputInfo = ParseInputBrief(toolInput);
+            var resultLen = resultText?.Split('\n').Length ?? 0;
+
+            return toolName switch
+            {
+                "review_browse" => $"[已压缩] 浏览了 {resultLen} 行消息{inputInfo}",
+                "review_search_messages" => $"[已压缩] 搜索消息{inputInfo}，返回 {resultLen} 行结果",
+                "review_search_memory" => $"[已压缩] 搜索记忆{inputInfo}，返回 {resultLen} 行结果",
+                "review_focus" => $"[已压缩] 移动游标{inputInfo}",
+                "review_get_person" => $"[已压缩] 查看人物信息{inputInfo}",
+                "review_list_beacons" => $"[已压缩] 列出信标，返回 {resultLen} 行",
+                "review_get_links" => $"[已压缩] 查看记忆关联{inputInfo}",
+                _ => $"[已压缩] {toolName}{inputInfo}"
+            };
+        }
+
+        private static string BuildActionSummary(string toolName, string? toolInput, string? resultText)
+        {
+            var inputInfo = ParseInputBrief(toolInput);
+            return toolName switch
+            {
+                "review_evaluate" => $"[已压缩] 评价{inputInfo}",
+                "review_write_memory" => $"[已压缩] 写入记忆{inputInfo}",
+                "review_update_person" => $"[已压缩] 更新人物{inputInfo}",
+                "review_link_memory" => $"[已压缩] 关联记忆{inputInfo}",
+                "review_thinking_notes" => resultText ?? "[已压缩] 更新笔记",
+                _ => $"[已压缩] {toolName}"
+            };
+        }
+
+        private static string ParseInputBrief(string? toolInput)
+        {
+            if (string.IsNullOrEmpty(toolInput)) return "";
+            try
+            {
+                var obj = Newtonsoft.Json.Linq.JObject.Parse(toolInput);
+                var parts = new List<string>();
+                if (obj["channel_id"] != null) parts.Add($"频道#{obj["channel_id"]}");
+                if (obj["person_id"] != null) parts.Add($"P#{obj["person_id"]}");
+                if (obj["query"] != null) parts.Add($"query=\"{obj["query"]}\"");
+                if (obj["target_type"] != null && obj["target_id"] != null)
+                    parts.Add($"{obj["target_type"]}#{obj["target_id"]}");
+                if (obj["dimension"] != null) parts.Add($"{obj["dimension"]}");
+                if (obj["rating"] != null) parts.Add($"{obj["rating"]}");
+                if (obj["count"] != null) parts.Add($"{obj["count"]}条");
+                if (obj["memory_id"] != null) parts.Add($"mem#{obj["memory_id"]}");
+                return parts.Count > 0 ? $" ({string.Join(", ", parts)})" : "";
+            }
+            catch { return ""; }
         }
 
         // ---- 私有方法 ----
