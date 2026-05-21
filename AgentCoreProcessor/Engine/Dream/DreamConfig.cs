@@ -61,12 +61,6 @@ namespace AgentCoreProcessor.Engine
         /// <summary>大睡 DreamEngine 片段调用的 token 预算</summary>
         public int DeepSleepTokenBudget { get; set; } = 100000;
 
-        /// <summary>ReviewEngine 基础 token 预算</summary>
-        public int ReviewTokenBudget { get; set; } = 50000;
-
-        /// <summary>ReviewEngine 备用 token 预算（不自动补充，需显式请求）</summary>
-        public int ReviewReserveBudget { get; set; } = 15000;
-
         /// <summary>大睡硬性时间上限（分钟）</summary>
         public int DeepSleepMaxMinutes { get; set; } = 120;
 

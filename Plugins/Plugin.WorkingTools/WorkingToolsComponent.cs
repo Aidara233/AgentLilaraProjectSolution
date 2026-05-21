@@ -1,5 +1,6 @@
 // Plugins/Plugin.WorkingTools/WorkingToolsComponent.cs
 using AgentLilara.PluginSDK;
+using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.WorkingTools;
 
@@ -13,11 +14,12 @@ public class WorkingToolsComponent : LoopComponentBase
     private PinboardTool? _pinboard;
     private RetainListTool? _retainList;
     private TaskListTool? _taskList;
+    private MarkForReviewTool? _markForReview;
 
     public override ComponentMeta Meta => new()
     {
         Name = "working-tools",
-        Description = "思考笔记、便签板、缓存列表",
+        Description = "思考笔记、便签板、缓存列表、复盘标记",
         DefaultEnabled = true,
         PromptPriority = 45
     };
@@ -30,6 +32,7 @@ public class WorkingToolsComponent : LoopComponentBase
             if (_pinboard != null) yield return _pinboard;
             if (_retainList != null) yield return _retainList;
             if (_taskList != null) yield return _taskList;
+            if (_markForReview != null) yield return _markForReview;
         }
     }
 
@@ -40,6 +43,11 @@ public class WorkingToolsComponent : LoopComponentBase
         _pinboard = new PinboardTool(context.Storage);
         _retainList = new RetainListTool(context.Storage);
         _taskList = new TaskListTool(context.Storage);
+
+        var beacon = context.GetService<IBeaconAccess>();
+        if (beacon != null)
+            _markForReview = new MarkForReviewTool(beacon);
+
         return Task.CompletedTask;
     }
 

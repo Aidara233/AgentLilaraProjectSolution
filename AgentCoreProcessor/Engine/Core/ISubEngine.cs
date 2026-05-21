@@ -81,6 +81,12 @@ namespace AgentCoreProcessor.Engine
         // 做梦日志
         DreamLogRepository DreamLogs { get; }
 
+        // 复盘日志
+        ReviewLogRepository ReviewLogs { get; }
+
+        // 评价分数
+        EvaluationScoreRepository EvaluationScores { get; }
+
         // 定时任务
         ScheduledTaskRepository ScheduledTasks { get; }
 

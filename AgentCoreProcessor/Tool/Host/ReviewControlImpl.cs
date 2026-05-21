@@ -1,7 +1,4 @@
-using System.IO;
-using AgentCoreProcessor.Config;
 using AgentLilara.PluginSDK.Services;
-using Newtonsoft.Json;
 
 namespace AgentCoreProcessor.Tool.Host
 {
@@ -11,9 +8,6 @@ namespace AgentCoreProcessor.Tool.Host
         private volatile bool _reserveUsed;
         private volatile bool _completed;
         private readonly int _reserveBudget;
-
-        private static string ProgressPath =>
-            Path.Combine(PathConfig.StoragePath, "Dream", "DreamProgress.json");
 
         public bool IsCompleted => _completed;
         public bool ReserveGranted => _reserveUsed;
@@ -35,18 +29,5 @@ namespace AgentCoreProcessor.Tool.Host
         }
 
         public void MarkComplete() => _completed = true;
-
-        public void SaveProgress(string progressJson)
-        {
-            var dir = Path.GetDirectoryName(ProgressPath);
-            if (dir != null) Directory.CreateDirectory(dir);
-            File.WriteAllText(ProgressPath, progressJson);
-        }
-
-        public string? LoadProgress()
-        {
-            if (!File.Exists(ProgressPath)) return null;
-            return File.ReadAllText(ProgressPath);
-        }
     }
 }

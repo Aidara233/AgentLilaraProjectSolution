@@ -193,5 +193,27 @@ namespace AgentCoreProcessor.Engine
 
         public Task<User?> GetUserByIdAsync(int id)
             => users.GetByIdAsync(id);
+
+        /// <summary>获取某人物关联的所有用户发送的消息总数。</summary>
+        public async Task<int> GetMessageCountByPersonAsync(int personId)
+        {
+            var personUsers = await users.GetByPersonIdAsync(personId);
+            int total = 0;
+            foreach (var u in personUsers)
+            {
+                var count = await messages.GetCountByUserAsync(u.Id);
+                total += count;
+            }
+            return total;
+        }
+
+        /// <summary>获取某人物实际发过消息的天数。</summary>
+        public async Task<int> GetInteractionDaysAsync(int personId)
+        {
+            var personUsers = await users.GetByPersonIdAsync(personId);
+            if (personUsers.Count == 0) return 0;
+            var userIds = personUsers.Select(u => u.Id).ToList();
+            return await messages.GetDistinctDaysByUsersAsync(userIds);
+        }
     }
 }

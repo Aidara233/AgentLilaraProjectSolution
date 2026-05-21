@@ -1,42 +1,56 @@
 using AgentLilara.PluginSDK;
+using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.ReviewTools;
 
 [ToolMeta(Group = "review")]
 public class ReviewThinkingNotesTool : ITool
 {
+    private readonly IReviewAccess _review;
+
+    public ReviewThinkingNotesTool(IToolContext ctx) => _review = ctx.Require<IReviewAccess>();
+
     public string Name => "review_thinking_notes";
-    public string Description => "管理思考笔记。write 写入/覆盖，delete 删除，list 列出所有。笔记在复盘期间跨轮保持。";
+    public string Description => "思考草稿，跨轮保留，压缩不丢。browse 的原始内容可能会被压缩，但 notes 始终保留。养成边读边记的习惯。";
     public IReadOnlyList<ToolParameter> Parameters =>
     [
-        new("action", "操作：write / delete / list", 0),
-        new("key", "笔记键名", 1, false),
-        new("value", "笔记内容（write 时必填）", 2, false)
+        new("action", "操作: read/append/clear", 0),
+        new("content", "追加内容（append 时必填）", 1, false)
     ];
     public TimeSpan Timeout => TimeSpan.FromSeconds(5);
 
     public Task<ToolResult> ExecuteAsync(List<string> inputs, CancellationToken ct)
     {
-        var action = inputs.Count > 0 ? inputs[0]?.Trim().ToLower() : null;
+        var action = inputs.Count > 0 ? inputs[0] : "read";
 
-        return Task.FromResult(action switch
+        switch (action)
         {
-            "write" => new ToolResult
-            {
-                Status = "success",
-                Data = $"笔记已保存: {(inputs.Count > 1 ? inputs[1] : "")}"
-            },
-            "delete" => new ToolResult
-            {
-                Status = "success",
-                Data = $"笔记已删除: {(inputs.Count > 1 ? inputs[1] : "")}"
-            },
-            "list" => new ToolResult
-            {
-                Status = "success",
-                Data = "（笔记内容保存在对话历史中，请回顾之前的工具调用结果）"
-            },
-            _ => new ToolResult { Status = "failed", Error = "action 必须是 write/delete/list" }
-        });
+            case "read":
+                var notes = _review.ThinkingNotes;
+                return Task.FromResult(new ToolResult
+                {
+                    Status = "success",
+                    Data = string.IsNullOrEmpty(notes) ? "（笔记为空）" : notes
+                });
+
+            case "append":
+                var content = inputs.Count > 1 ? inputs[1] : null;
+                if (string.IsNullOrWhiteSpace(content))
+                    return Task.FromResult(new ToolResult { Status = "failed", Error = "append 需要 content 参数" });
+
+                if (!string.IsNullOrEmpty(_review.ThinkingNotes))
+                    _review.ThinkingNotes += "\n" + content;
+                else
+                    _review.ThinkingNotes = content;
+
+                return Task.FromResult(new ToolResult { Status = "success", Data = "已追加到笔记。" });
+
+            case "clear":
+                _review.ThinkingNotes = "";
+                return Task.FromResult(new ToolResult { Status = "success", Data = "笔记已清空。" });
+
+            default:
+                return Task.FromResult(new ToolResult { Status = "failed", Error = "action 必须为 read/append/clear" });
+        }
     }
 }

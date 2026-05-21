@@ -117,6 +117,22 @@ namespace AgentCoreProcessor.Database
             results.Reverse();
             return results;
         }
+
+        public async Task<int> GetCountByUserAsync(int userId)
+        {
+            var result = await db.QueryAsync<CountResult>(
+                "SELECT COUNT(*) AS Value FROM UserMessages WHERE UserId = ?", userId);
+            return result.Count > 0 ? result[0].Value : 0;
+        }
+
+        public async Task<int> GetDistinctDaysByUsersAsync(List<int> userIds)
+        {
+            if (userIds.Count == 0) return 0;
+            var ids = string.Join(",", userIds);
+            var result = await db.QueryAsync<CountResult>(
+                $"SELECT COUNT(DISTINCT date(Time)) AS Value FROM UserMessages WHERE UserId IN ({ids})");
+            return result.Count > 0 ? result[0].Value : 0;
+        }
     }
 
     internal class CountResult { public int Value { get; set; } }

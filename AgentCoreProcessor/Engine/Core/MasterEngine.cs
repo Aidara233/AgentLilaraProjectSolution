@@ -61,6 +61,8 @@ namespace AgentCoreProcessor.Engine
         public PersonaMemoryRepository PersonaMemories { get; private set; } = null!;
         public ReviewHintRepository ReviewHints { get; private set; } = null!;
         public DreamLogRepository DreamLogs { get; private set; } = null!;
+        public ReviewLogRepository ReviewLogs { get; private set; } = null!;
+        public EvaluationScoreRepository EvaluationScores { get; private set; } = null!;
         public ScheduledTaskRepository ScheduledTasks { get; private set; } = null!;
         public ModelCallLogRepository ModelCallLogs { get; private set; } = null!;
         public MemoryService MemorySvc { get; private set; } = null!;
@@ -276,6 +278,8 @@ namespace AgentCoreProcessor.Engine
             PersonaMemories = new PersonaMemoryRepository(db);
             ReviewHints = new ReviewHintRepository(db);
             DreamLogs = new DreamLogRepository(db);
+            ReviewLogs = new ReviewLogRepository(db);
+            EvaluationScores = new EvaluationScoreRepository(db);
             ScheduledTasks = new ScheduledTaskRepository(db);
             var images = new ImageRepository(db);
             ImageStorage.Init(images, eventBus);
@@ -403,6 +407,8 @@ namespace AgentCoreProcessor.Engine
                 new Tool.Host.PersonAccessImpl(this));
             _toolContext.Register<AgentLilara.PluginSDK.Services.IChannelAccess>(
                 new Tool.Host.ChannelAccessImpl(this));
+            _toolContext.Register<AgentLilara.PluginSDK.Services.IBeaconAccess>(
+                new Tool.Host.BeaconAccessImpl(ReviewHints));
             _pluginLoader = new Tool.Host.PluginLoader(_toolContext, ProviderRegistry);
             _pluginLoader.LoadAll();
             Signal.Event(LogGroup.Plugin, "插件加载完成", new { count = Tool.ToolRegistry.All.Count });
@@ -418,6 +424,8 @@ namespace AgentCoreProcessor.Engine
             componentServices.Register<AgentLilara.PluginSDK.Services.IChannelAccess>(
                 new Component.ChannelAccessAdapter(this));
             componentServices.Register<AgentLilara.PluginSDK.IToolContext>(_toolContext);
+            componentServices.Register<AgentLilara.PluginSDK.Services.IBeaconAccess>(
+                new Tool.Host.BeaconAccessImpl(ReviewHints));
 
             globalComponentHost = new GlobalComponentHost(
                 _moduleBus, componentServices,

@@ -14,13 +14,16 @@ namespace AgentCoreProcessor.Database
         }
 
         public async Task<ReviewHint> CreateAsync(string content,
-            int? personId = null, int? channelId = null)
+            int? personId = null, int? channelId = null,
+            int? messageId = null, string source = "model")
         {
             var hint = new ReviewHint
             {
                 Content = content,
                 PersonId = personId,
-                ChannelId = channelId
+                ChannelId = channelId,
+                MessageId = messageId,
+                Source = source
             };
             await db.InsertAsync(hint);
             return hint;

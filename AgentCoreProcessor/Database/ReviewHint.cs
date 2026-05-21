@@ -15,9 +15,15 @@ namespace AgentCoreProcessor.Database
 
         public string Content { get; set; } = "";
 
+        /// <summary>标记位置（消息 ID）</summary>
+        public int? MessageId { get; set; }
+
         public int? PersonId { get; set; }
         public int? ChannelId { get; set; }
         public int? TopicId { get; set; }
+
+        /// <summary>model = 工作端标记, framework = 自动生成</summary>
+        public string Source { get; set; } = "model";
 
         public bool IsProcessed { get; set; } = false;
 

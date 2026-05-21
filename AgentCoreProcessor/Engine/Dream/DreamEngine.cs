@@ -339,11 +339,9 @@ namespace AgentCoreProcessor.Engine
                 // 启动 ReviewEngine（独立生命周期，不再陪跑）
                 try
                 {
-                    var (mode, preContext, progress) =
-                        await ReviewModeSelector.SelectAndPrepareAsync(ctx);
-                    var reviewEngine = new ReviewEngine(ctx, mode, preContext, cfg, progress);
+                    var reviewEngine = new ReviewEngine(ctx);
                     ctx.StartEngine(reviewEngine);
-                    Signal.Event(LogGroup.Engine, "ReviewEngine启动", new { mode = mode.ToString() });
+                    Signal.Event(LogGroup.Engine, "ReviewEngine启动", new { seedType = "auto" });
                 }
                 catch (Exception ex)
                 {
@@ -893,60 +891,125 @@ namespace AgentCoreProcessor.Engine
         {
             try
             {
-                var tcfg = ctx.TrustConfig;
+                var reviewCfg = ReviewConfig.Load(
+                    System.IO.Path.Combine(Config.PathConfig.StoragePath, "Dream", "ReviewConfig.json"));
                 var persons = await ctx.Session.GetAllPersonsAsync();
 
                 foreach (var person in persons)
                 {
                     bool changed = false;
 
-                    // 1. 硬性条件升级检查
-                    if (person.TrustLevel == TrustLevel.Stranger)
+                    // 获取该人物的所有维度分数
+                    var scores = await ctx.EvaluationScores.GetByTargetAsync("person", person.Id);
+                    var dimValues = scores.ToDictionary(s => s.Dimension, s => s.Value);
+
+                    // 1. 升级检查（硬性条件 + 维度条件）
+                    if (person.TrustLevel == TrustLevel.Unknown)
+                    {
+                        var msgCount = await ctx.Session.GetMessageCountByPersonAsync(person.Id);
+                        if (msgCount >= reviewCfg.StrangerMinMessages)
+                        {
+                            person.TrustLevel = TrustLevel.Stranger;
+                            changed = true;
+                        }
+                    }
+                    else if (person.TrustLevel == TrustLevel.Stranger)
                     {
                         var memCount = (await ctx.Memories.GetByPersonAsync(person.Id)).Count;
-                        if (memCount >= tcfg.UnderstandingMemoryCount
-                            && person.TrustProgress >= 0)
+                        var interactionDays = await ctx.Session.GetInteractionDaysAsync(person.Id);
+                        var hardMet = memCount >= reviewCfg.UnderstandingMinMemories
+                            && interactionDays >= reviewCfg.UnderstandingMinDays;
+
+                        var anyDimMet = dimValues.Values.Any(v => v >= reviewCfg.UnderstandingAnyDimension);
+
+                        if (hardMet && anyDimMet)
                         {
                             person.TrustLevel = TrustLevel.Understanding;
                             changed = true;
-                            // 触发 FastMemory 生成提示
-                            if (string.IsNullOrEmpty(person.FastMemory))
-                                await ctx.ReviewHints.CreateAsync(
-                                    $"Person [{person.Id}] 升级为 Understanding，需要生成 FastMemory", person.Id);
+                        }
+                        else if (hardMet && !anyDimMet)
+                        {
+                            // 硬性条件满足但维度不够 → 生成信标引导 Review 评估
+                            await ctx.ReviewHints.CreateAsync(
+                                $"P#{person.Id} 满足 Understanding 硬性条件但维度未达标，需要评估",
+                                person.Id, null, null, "framework");
                         }
                     }
                     else if (person.TrustLevel == TrustLevel.Understanding)
                     {
-                        var daysSinceCreation = (DateTime.Now - person.CreatedAt).TotalDays;
-                        if (daysSinceCreation >= tcfg.FamiliarityDays
-                            && person.TrustProgress >= 0)
+                        var interactionDays = await ctx.Session.GetInteractionDaysAsync(person.Id);
+                        var hardMet = interactionDays >= reviewCfg.FamiliarityMinDays
+                            && person.AlertLevel == 0;
+
+                        // 多数维度(3/4) >= 阈值
+                        var qualifiedDims = dimValues.Count(kv => kv.Value >= reviewCfg.FamiliarityMajorityDimension);
+                        var dimMet = qualifiedDims >= 3;
+
+                        if (hardMet && dimMet)
                         {
-                            var memCount = (await ctx.Memories.GetByPersonAsync(person.Id)).Count;
-                            if (memCount >= tcfg.FamiliarityInteractionCount)
-                            {
-                                person.TrustLevel = TrustLevel.Familiarity;
-                                changed = true;
-                            }
+                            person.TrustLevel = TrustLevel.Familiarity;
+                            changed = true;
+                        }
+                        else if (hardMet && !dimMet)
+                        {
+                            await ctx.ReviewHints.CreateAsync(
+                                $"P#{person.Id} 满足 Familiarity 硬性条件但维度未达标（{qualifiedDims}/3），需要评估",
+                                person.Id, null, null, "framework");
+                        }
+                    }
+                    else if (person.TrustLevel == TrustLevel.Familiarity)
+                    {
+                        var interactionDays = await ctx.Session.GetInteractionDaysAsync(person.Id);
+                        var reviewCount = await ctx.ReviewLogs.GetSessionCountAsync();
+                        var noRecentAlert = person.AlertLevel == 0
+                            && (person.LastAlertTime == null
+                                || (DateTime.Now - person.LastAlertTime.Value).TotalDays >= 30);
+                        var hardMet = interactionDays >= reviewCfg.TrustMinDays
+                            && noRecentAlert
+                            && reviewCount >= reviewCfg.TrustMinReviewCount;
+
+                        // 所有维度 >= 阈值
+                        var allDimMet = dimValues.Count >= 4
+                            && dimValues.Values.All(v => v >= reviewCfg.TrustAllDimensions);
+
+                        if (hardMet && allDimMet)
+                        {
+                            person.TrustLevel = TrustLevel.Trust;
+                            changed = true;
+                        }
+                        else if (hardMet && !allDimMet)
+                        {
+                            await ctx.ReviewHints.CreateAsync(
+                                $"P#{person.Id} 满足 Trust 硬性条件但维度未达标，需要评估",
+                                person.Id, null, null, "framework");
                         }
                     }
 
-                    // 2. TrustProgress 压低等级检查
-                    if (person.TrustProgress <= tcfg.ProgressForHostile
-                        && person.TrustLevel > TrustLevel.Hostile)
+                    // 2. 降级检查：维度跌破门槛即降
+                    if (person.TrustLevel == TrustLevel.Trust)
                     {
-                        person.TrustLevel = TrustLevel.Hostile;
-                        changed = true;
+                        var allAbove = dimValues.Count >= 4
+                            && dimValues.Values.All(v => v >= reviewCfg.TrustAllDimensions);
+                        if (!allAbove && dimValues.Count >= 4)
+                        {
+                            person.TrustLevel = TrustLevel.Familiarity;
+                            changed = true;
+                        }
                     }
-                    else if (person.TrustProgress <= tcfg.ProgressForWary
-                        && person.TrustLevel > TrustLevel.Wary)
+                    else if (person.TrustLevel == TrustLevel.Familiarity)
                     {
-                        person.TrustLevel = TrustLevel.Wary;
-                        changed = true;
+                        var qualifiedDims = dimValues.Count(kv => kv.Value >= reviewCfg.FamiliarityMajorityDimension);
+                        if (qualifiedDims < 3 && dimValues.Count >= 4)
+                        {
+                            person.TrustLevel = TrustLevel.Understanding;
+                            changed = true;
+                        }
                     }
 
                     // 3. 警报冷却恢复
                     if (person.AlertLevel > 0 && person.LastAlertTime != null)
                     {
+                        var tcfg = ctx.TrustConfig;
                         var daysSinceAlert = (DateTime.Now - person.LastAlertTime.Value).TotalDays;
                         var requiredDays = tcfg.GetAlertCooldownDays(person.AlertLevel);
                         if (daysSinceAlert >= requiredDays)
