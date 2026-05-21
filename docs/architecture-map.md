@@ -55,10 +55,11 @@ MasterEngine (内核，实现 ISystemContext)
   │     _root → channel/system/sub-agent 继承链
   │     channelMapping: channelId → profileName
   │     会话级组件激活: manage_components 工具
-  ├── ComponentEventBus + GlobalComponentHost + ComponentHost(per-loop)
+  ├── GlobalComponentHost + ComponentHost(per-loop) + ModuleBus(per-loop)
   │     Component 系统: IGlobalComponent(全局) / ILoopComponent(per-loop)
   │     ComponentRegistry: 类型注册，PluginLoader 扫描 [Component] 标记
-  │     ComponentHost: 实例管理 + 工具注册/反注册 ToolRegistry
+  │     ComponentHost: 实例管理 + 工具注册/反注册 ToolRegistry + ModuleBus 订阅
+  │     ModuleBus: 每引擎独立 pub/sub（替代旧 ILoopBus + ComponentEventBus）
   └── 事件流水线: EventBus → HandleEventAsync
         ① 内核更新 (lastMessageTime)
         ② SpawnCheck: OnEventAsync → ShouldSpawnAsync → Create → StartEngine
@@ -67,8 +68,54 @@ MasterEngine (内核，实现 ISystemContext)
 ```
 
 ISubEngine: EngineType / RunAsync / OnEvent / IsAlive / RequestStop / IsInfrastructure(默认false)
-ISystemContext: 数据访问 + 适配器 + EventBus + 引擎查询 + StartEngine/RequestStopEngine + TaskBridge + Delegations + CurrentSleepState + MuteMode + NotifyChannel + ToolProfiles + ComponentEventBus + GlobalComponentHost + ComponentServices
+ISystemContext: 数据访问 + 适配器 + EventBus + 引擎查询 + StartEngine/RequestStopEngine + TaskBridge + Delegations + CurrentSleepState + MuteMode + NotifyChannel + ToolProfiles + GlobalComponentHost + ComponentServices
 IAgentSession: 统一会话接口 (ChannelSession/TaskSession/MonitorSession)
+
+### 引擎内部循环架构（Phase 1+2 统一模型）
+
+```
+每个引擎（Channel/System）内部结构:
+  Gate (闸门)
+    ├── delegate 驱动，组合不继承
+    ├── WaitAsync(timeout) → 放行后立即重置
+    └── Signal() 升闸（任何人可唤醒）
+
+  Agent (多轮推理循环)
+    ├── 构建上下文 → 调模型 → 执行工具 → 是否继续
+    ├── 退避策略: 连续失败 → exponential backoff
+    ├── OnToolExecuted 回调 → 宿主发布事件到总线
+    ├── ConversationOffset: 区分框架注入和对话内容
+    └── StopReason: Completed / MaxRounds / WaitRequested / ForceStopped / Error
+
+  IAgentHost (宿主接口，引擎实现)
+    ├── BuildStartInjectAsync(): 每次唤醒注入一次（固定前缀/摘要/记忆/新消息/组件目录）
+    └── BuildRoundInjectAsync(): 每轮注入（实时状态/工具结果/信号缓冲）
+
+  IInjectProvider (插件/组件注入接口)
+    ├── BuildStartInjectAsync(InjectContext): 稳定快照，Start 时机
+    ├── BuildRoundInjectAsync(InjectContext): 实时数据，每轮
+    └── InjectPriority: 排序
+
+  ModuleBus (每引擎独立 pub/sub)
+    ├── Subscribe<T>(Action<T>): 订阅事件
+    ├── Publish<T>(T): 发布事件
+    └── 事件类型: ToolExecutedEvent / RoundEndingEvent / SpeakRequestedEvent / MemoryStoreEvent / SignalEmitEvent
+
+  ChannelSignal (类型化信号缓冲)
+    ├── NewMessageSignal: 新消息到达
+    ├── BusEventSignal: EventBus 事件（委托完成等）
+    ├── CompressionSignal: 压缩完成（新摘要 + 保留历史）
+    └── ModeSwitchSignal: Express ↔ Working 切换
+
+  CompressionTierModule (三层压缩)
+    ├── L1 提示: 接近阈值时注入提示
+    ├── L2 提醒: 超过软阈值时强提醒
+    └── L3 硬保底: 超过硬阈值时强制压缩（模型调 compress 工具）
+
+  ChannelContextPersistence (per-channel JSON 原子写入)
+    ├── SaveContext(summary, mode, rounds): 只保存 ConversationOffset 之后的对话
+    └── LoadContext(): 恢复摘要 + 模式 + 对话轮次
+```
 
 ## 消息处理流
 
@@ -80,36 +127,29 @@ Adapter → EventBus(MessageEvent) → ChannelEngineSpawnCheck
   （睡眠行为由 ChannelEngine 内部通过 IMessageInterceptor 插件处理，SpawnCheck 不拦截）
 
 ChannelEngine (频道循环，常驻，一个活跃频道一个):
-  闸门驱动循环 (LoopGate, auto-reset):
+  实现 ISubEngine + IAgentHost
+
+  闸门驱动循环 (Gate, auto-reset):
     gate.WaitAsync(coldTimeout) → 放行后立即重置 → 收集 → 执行 → 回到等待
-    触发源: 缓冲定时器(新消息) / ContinueLoop自唤醒 / ESCALATE切模式
+    触发源: 缓冲定时器(新消息) / ContinueLoop自唤醒 / ESCALATE切模式 / EventBus信号
     超时 → 冷却退出
 
-  内务模块体系 (EngineModule + LoopBus):
-    SpeakModule / ThinkingNotesModule / TaskListModule / PinboardModule
-    RetainListModule / MemoryWindowModule / LoopControlModule / SignalDispatchModule
-    WatchRulesModule / DelegationModule / ToolStatusModule / SystemNotificationModule
-    模块通过 LoopBus 订阅 ToolExecutedEvent 处理副作用
-    模块通过 BuildPromptSection 注入 prompt（按 PromptPriority 排序）
-  
-  关注列表 (WatchRules):
-    系统循环通过 SetWatchRuleTool 下发规则到频道循环
-    规则含自主权级别: NotifyOnly / AutoRespond / Escalate
-    频道循环在 Express prompt 注入规则，模型语义匹配
-    命中后通过 TaskBridge.SendNotification 上报系统循环
+  堆叠式上下文模型:
+    fixedPrefix: 系统配置 + 工具描述 + 人设 + 组件目录（BuildStartInjectAsync 注入）
+    contextSummary: 压缩后的历史摘要（BuildStartInjectAsync 注入）
+    记忆检索: BuildMemorySection → MemorySvc.RecallAsync（10s 超时，topK=5/10）
+    IInjectProvider 收集: 组件 + 插件的 BuildStartInjectAsync/BuildRoundInjectAsync
+    Agent.History: 追加式对话历史（ConversationOffset 之后为对话内容）
 
-  统一管线（主循环零分叉，每步根据 EngineMode 走不同实现）:
-  ① WaitGate → 闸门放行
-  ② CollectBuffer → drain 缓冲消息
-  ③ PrepareContext → 每轮重建 contextXml（从DB拉最新历史）+ 记忆 + 授权
-  ④ BuildPrompt → PromptBuilder（Express/Working 都走此路径）
-  ⑤ CallModel → AgentCore.InvokeAsync（Express返回文本+Express工具，Working返回工具调用）
-  ⑥ ProcessResponse → Express发文本+静默执行Express工具 / Working执行工具+发布事件
-  ⑦ DecideNext → escalate工具(切模式+signal) / ContinueLoop(signal) / idle
+  Agent 循环 (Working 模式):
+    EnsureAgent() → 创建 Agent + 恢复持久化上下文
+    Agent.RunAsync(): BuildStartInject → [多轮: BuildRoundInject → 调模型 → 执行工具]
+    OnToolExecuted → bus.Publish(ToolExecutedEvent) → 组件/模块响应
+    StopReason: Completed(无工具) / WaitRequested(wait工具) / MaxRounds
 
-  Express 工具 (fire-and-forget):
-    ToolMetaAttribute.ExpressAvailable=true 标记的工具在 Express 模式下可用
-    模型返回文本+tool_use → 文本发送，工具静默执行，结果不回注，不续轮
+  Express 模式 (直接调 Core，不走 Agent):
+    ExecuteExpressCycleAsync: 构建上下文 → AgentCore.InvokeAsync → 发文本 + 静默执行 Express 工具
+    Express 工具 (fire-and-forget): ToolMetaAttribute.ExpressAvailable=true
     核心 Express 工具: escalate(切Working) / manage_components(组件管理)
     非 native 提供商 fallback: 仍解析 [ESCALATE] 文本标记
 
@@ -117,9 +157,28 @@ ChannelEngine (频道循环，常驻，一个活跃频道一个):
     Express escalate工具 → 切 Working + gate.Signal()，下轮自然走 Working
     Working 连续3次外部触发 → 回退 Express
     分类检测任务 → 直接进入 Working
-  ⑧ ParseBotOutput 解析 <at/>/<reply/> 标签 → OutgoingMessage
-  ⑨ MemoryExtractionCore 异步提取记忆 (每3条触发)
-  ⑩ TrustProgress 每日自动增长 (per-person 日上限)
+
+  模块/组件体系:
+    LoopControlModule: 轮次控制（MaxRounds/MaxSilentRounds）
+    CompressionTierModule: 三层压缩（L1/L2/L3）
+    ComponentHost + ModuleBus: 组件实例管理 + 事件订阅
+    IInjectProvider 插件: Plugin.WorkingTools（pinboard/thinking_notes/retain_list/task_management）
+    Plugin.BasicTools: speak + send_media（通过 ToolExecutedEvent 触发发送）
+
+  关注列表 (WatchRules):
+    系统循环通过 SetWatchRuleTool 下发规则到频道循环
+    规则含自主权级别: NotifyOnly / AutoRespond / Escalate
+    频道循环在 Express prompt 注入规则，模型语义匹配
+    命中后通过 TaskBridge.SendNotification 上报系统循环
+
+  持久化 + 压缩:
+    ChannelContextPersistence: 只保存 ConversationOffset 之后的对话内容
+    CompressionSignal → ClearHistory + 新摘要 + fixedPrefix 重注入
+    
+  后处理:
+    ParseBotOutput 解析 <at/>/<reply/> 标签 → OutgoingMessage
+    MemoryExtractionCore 异步提取记忆 (每3条触发，独立 Worker)
+    TrustProgress 每日自动增长 (per-person 日上限)
 
   图片处理 (ContextBuilder 图片感知):
     适配器层: [IMG:N] 占位符保留图片在消息中的位置
@@ -163,47 +222,44 @@ VisionEngine (视觉引擎，单例，基础设施):
 ```
 
 SystemEngine (系统循环，单例，纯调度者):
-  闸门驱动循环 (LoopGate, auto-reset):
+  实现 ISubEngine + IAgentHost
+
+  闸门驱动循环 (Gate, auto-reset):
     gate.WaitAsync(coldTimeout) → 放行后立即重置 → 收集 → 执行 → 回到等待
     触发源: TaskBridge 任务/通知 / 委托提交 / ContinueLoop自唤醒 / 定时器
     超时 → 冷却退出
   
+  堆叠式上下文 (同 ChannelEngine 模型):
+    BuildStartInjectAsync: 固定前缀 + 上下文摘要 + 状态快照 + IInjectProvider 收集
+    BuildRoundInjectAsync: 实时状态 + 信号缓冲 drain + IInjectProvider 收集
+    Agent 循环: 多轮推理 + OnToolExecuted → bus.Publish
+    CompressionTierModule: 三层压缩（同频道循环）
+
   容错与自愈:
     内层 Agent 循环异常: catch → 记录错误 → 退出当前轮（不杀外层 while）
     连续失败 ≥5 次: exponential backoff (10s→30s→60s→120s→300s)
     外层致命异常: IsAlive=false → SpawnCheck 检测到死亡 → 10s 后自动重启
     错误状态暴露: Snapshot 含 ConsecutiveFailures/TotalErrorCount/LastErrorMessage
   
-  统一管线 (每轮重建上下文):
-  ① WaitGate → 闸门放行
-  ② CollectTasks → drain TaskBridge 任务队列和通知队列 + 待评估委托
-  ③ PrepareContext → 重建上下文（活跃子agent/频道列表/任务队列/通知摘要/委托列表）
-  ④ BuildPrompt → PromptBuilder（注入工具描述+上下文+便签板+思考笔记）
-  ⑤ CallModel → AgentCore.InvokeAsync（返回工具调用）
-  ⑥ ProcessResponse → 执行工具+发布事件
-  ⑦ DecideNext → ContinueLoop(signal) / idle
-  
   通信规则（不直接发消息）:
     系统循环不持有发消息能力，一律通过频道循环间接实现
-    通知频道: NotifyChannel(channelId, content) → 注入频道循环 SystemNotificationModule
+    通知频道: NotifyChannel(channelId, content) → 注入频道循环 systemNotifications 队列
     委托结果: 子agent完成 → MarkCompleted → delegation-completed 信号 → 频道循环自动感知
     适配器操作: 拦截 send_* 类操作，仅允许查询类（获取群列表等）
   
   上下文持久化:
-    每轮结束写入 Storage/SystemContext.json（WAL 模式）
+    ContextPersistence 模块: Storage/SystemContext.json（WAL 模式）
     重启时恢复上下文（便签板/思考笔记/任务队列）
   
   上下文压缩:
-    超过 MaxContextMessages(50) 触发压缩
-    保留最近 10 条 + 压缩摘要（模型生成）
-    压缩后写入持久化文件
+    超过 80k tokens 触发（CompressionTierModule L1/L2/L3）
+    模型调 compress 工具 → 生成摘要 → ClearHistory + 重注入
   
   委托系统 (DelegationRegistry):
     频道循环 → DelegateTaskTool → 提交委托 → 唤醒系统循环
     系统循环 → EvaluateDelegationTool → accept/queue/reject
     accept → 创建 TaskSession(delegationId) → 执行 → MarkCompleted/MarkFailed
     完成 → EventBus 发 delegation-completed 信号 → 唤醒源频道循环
-    频道循环 DelegationModule 注入结果到 prompt
     DelegateTaskTool 同步等待评估结果(15s超时)，返回 verdict 给频道循环
   
   子 agent 管理:
@@ -213,6 +269,12 @@ SystemEngine (系统循环，单例，纯调度者):
     失败恢复: TaskSession 内部 API 重试(max 3, 指数退避) → 失败标记 RetryPending + 双通知
     系统循环看到 RetryPending → 决定重试(IncrementRetry + 新建子agent) 或放弃(MarkFailed)
   
+  模块/组件体系:
+    LoopControlModule / PendingEventsModule / SystemStatusModule
+    ContextPersistence / ContextCompressionModule
+    ComponentHost + ModuleBus: 组件实例管理
+    IInjectProvider 插件: Plugin.WorkingTools（pinboard/thinking_notes/retain_list/task_management）
+
   工具集 (纯调度+轻量执行):
     调度类: CreateSubAgent / SendToSubAgent / StopSubAgent / DeleteSubAgent
     通信类: 通知频道 / CheckNotifications / SetWatchRule / CheckTaskQueue
@@ -342,7 +404,7 @@ AgentLilara.PluginSDK (共享契约，独立类库):
 
 插件项目 (独立 DLL，输出到 {BaseDirectory}/Plugins/):
   Plugin.BasicTools      — speak + send_media（输出能力）[GlobalComponent: basic-tools]
-  Plugin.WorkingTools    — pinboard + thinking_notes + retain_list（工作状态）[LoopComponent: working-tools]
+  Plugin.WorkingTools    — pinboard + thinking_notes + retain_list + task_management（工作状态）[LoopComponent: working-tools, IInjectProvider]
   Plugin.MemoryTools     — memory（记忆读写，依赖 IMemoryAccess 服务）[GlobalComponent: memory-tools]
   Plugin.FileTools       — read_text + write_text + list_dir + move/delete/copy（文件系统）[GlobalComponent: file-tools]
   Plugin.DelegationTools — delegate_task + cancel_delegation（频道循环委托提交）[LoopComponent: delegation]
@@ -366,7 +428,9 @@ ToolCall: 原生 tool_use (Claude API) 为主路径
 插件加载:
   目录: {程序目录}/Plugins/（跟程序走，不跟 Storage 走）
   每个 DLL 用独立 AssemblyLoadContext（支持卸载）
-  实例化: 优先找 (IToolContext) 构造函数，其次无参构造
+  多类型发现: ITool / IInjectProvider / IWebUIProvider / ILoopComponent / IGlobalComponent
+  构造注入: EventBus / ModuleBus / Gate / IMemoryAccess / IServiceProvider
+  延迟实例化: IInjectProvider/Component 由引擎创建（非全局单例），ITool 是全局单例
   启动时 MasterEngine.InitAsync 调用 PluginLoader.LoadAll()
   服务注入: ToolContext.Register<IMemoryAccess>(impl) 在插件加载前完成
 ```
@@ -482,13 +546,14 @@ Storage/
 
 数据桥接:
   SystemMonitor — 2s 周期采集 SystemSnapshot（引擎摘要/Worker快照/Dream状态）
-  LogStreamService — FrameworkLogger.OnLogWritten 事件 → 环形缓冲(2000条) → 实时推送
+  LogStreamService — 旧日志推送（待 Phase 3 迁移后移除）
   快照方法: WorkerEngine.GetSnapshot() / DreamEngineSpawnCheck.GetDreamSnapshot()
            MasterEngine.GetSpawnCheck<T>() / GetActiveEnginesSnapshot()
 
 页面:
   Dashboard    — 系统状态/引擎摘要/活跃Worker表格/做梦状态/实时日志尾部
-  Logs         — 实时日志流 + 来源过滤 + 关键词搜索 + 暂停/恢复
+  Logs/Trace   — Signal 信号追踪（SVG渲染/虚拟化/实时推送/因果链高亮）
+  Logs         — 旧实时日志流（待迁移到卡片系统后移除）
   Console      — 频道选择/创建 + 聊天式消息流 + 模拟用户/替Bot说话/自定义发送者 + @提及/私聊模拟
   EngineControl — 引擎启停/静音模式开关
   DreamControl  — 睡眠许可/强制睡觉/睡意偏移/红色警报
