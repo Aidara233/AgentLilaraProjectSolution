@@ -9,6 +9,7 @@ using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Database;
+using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Util;
 using Newtonsoft.Json.Linq;
 
@@ -185,6 +186,7 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
+                Signal.Warn(LogGroup.Engine, "梦话发送失败", new { error = ex.GetType().Name, message = ex.Message });
             }
         }
 
@@ -198,7 +200,11 @@ namespace AgentCoreProcessor.Engine
             FragmentsTotal = maxFragments;
             for (int i = 0; i < maxFragments; i++)
             {
-                if (shouldWake) { break; }
+                if (shouldWake)
+                {
+                    Signal.Event(LogGroup.Engine, "睡眠打断", new { level = level.ToString(), fragment = i + 1, total = maxFragments });
+                    break;
+                }
                 var fragment = await SelectFragment(isPhase2: false);
                 if (fragment == null) { break; }
                 try
@@ -206,6 +212,10 @@ namespace AgentCoreProcessor.Engine
                     CurrentFragment = fragment.ToString();
                     CurrentFragmentStartTime = DateTime.Now;
                     currentDetails = new(); currentInputIds = null; currentOutputRaw = null;
+
+                    using var fragSpan = Signal.Open(LogGroup.Engine, $"片段 #{i + 1}/{maxFragments} {fragment}",
+                        new { index = i + 1, total = maxFragments, type = fragment.ToString(), level = level.ToString() });
+
                     var summary = await ExecuteFragment(fragment.Value);
                     var duration = (DateTime.Now - CurrentFragmentStartTime.Value).TotalSeconds;
                     fragmentRecords.Add(new FragmentRecord
@@ -222,10 +232,14 @@ namespace AgentCoreProcessor.Engine
                     executed++;
                     FragmentsCompleted = executed;
                     LastCompletedRecord = fragmentRecords[^1];
+
+                    fragSpan.SetCloseDetail(new { success = true, summary, durationSeconds = duration });
+
                     await MaybeSleepTalkAsync(summary);
                 }
                 catch (Exception ex)
                 {
+                    Signal.Error(LogGroup.Engine, $"片段执行失败 #{i + 1} {fragment}", new { type = fragment.ToString(), error = ex.GetType().Name, message = ex.Message });
                     fragmentRecords.Add(new FragmentRecord
                     {
                         Type = fragment.ToString()!,
@@ -252,6 +266,7 @@ namespace AgentCoreProcessor.Engine
             int phase1Budget = cfg.DeepSleepTokenBudget / 3;
 
             // ========== Phase 1: 浅睡 — 集中清临时记忆 ==========
+            Signal.Event(LogGroup.Engine, "大睡 Phase1 开始", new { tokenBudget = phase1Budget, maxMinutes = cfg.DeepSleepMaxMinutes });
 
             while (!shouldWake)
             {
@@ -272,6 +287,10 @@ namespace AgentCoreProcessor.Engine
                     CurrentFragment = fragment.ToString();
                     CurrentFragmentStartTime = DateTime.Now;
                     currentDetails = new();
+
+                    using var fragSpan = Signal.Open(LogGroup.Engine, $"片段 #{executed + 1} {fragment} (P1)",
+                        new { index = executed + 1, type = fragment.ToString(), phase = 1, tokensUsed });
+
                     var summary = await ExecuteFragment(fragment.Value);
                     var duration = (DateTime.Now - CurrentFragmentStartTime.Value).TotalSeconds;
                     fragmentRecords.Add(new FragmentRecord
@@ -287,10 +306,14 @@ namespace AgentCoreProcessor.Engine
                     executed++;
                     FragmentsCompleted = executed;
                     LastCompletedRecord = fragmentRecords[^1];
+
+                    fragSpan.SetCloseDetail(new { success = true, summary, durationSeconds = duration, tokensUsed });
+
                     await MaybeSleepTalkAsync(summary);
                 }
                 catch (Exception ex)
                 {
+                    Signal.Error(LogGroup.Engine, $"片段执行失败 #{executed + 1} {fragment} (P1)", new { error = ex.GetType().Name, message = ex.Message });
                     fragmentRecords.Add(new FragmentRecord
                     {
                         Type = fragment.ToString()!,
@@ -309,6 +332,7 @@ namespace AgentCoreProcessor.Engine
 
             if (!shouldWake && ElapsedMinutes(startTime) < cfg.DeepSleepMaxMinutes)
             {
+                Signal.Event(LogGroup.Engine, "大睡 Phase2 开始", new { phase1Executed = executed, phase1Tokens = tokensUsed, remainingBudget = cfg.DeepSleepTokenBudget - tokensUsed });
 
                 // 信任等级评估（不消耗 token，纯框架逻辑）
                 await ExecuteTrustEvaluationAsync();
@@ -320,9 +344,11 @@ namespace AgentCoreProcessor.Engine
                     reviewEngine = new ReviewEngine(ctx, mode, preContext,
                         cfg.ReviewTokenBudget, cfg.ReviewReserveBudget, progress);
                     ctx.StartEngine(reviewEngine);
+                    Signal.Event(LogGroup.Engine, "ReviewEngine启动", new { mode = mode.ToString() });
                 }
                 catch (Exception ex)
                 {
+                    Signal.Warn(LogGroup.Engine, "ReviewEngine启动失败", new { error = ex.GetType().Name, message = ex.Message });
                 }
 
                 // Phase 2 循环：继续跑 Weight/Link/Combine，陪跑 ReviewEngine
@@ -352,6 +378,10 @@ namespace AgentCoreProcessor.Engine
                                 CurrentFragment = fragment.ToString();
                                 CurrentFragmentStartTime = DateTime.Now;
                                 currentDetails = new();
+
+                                using var fragSpan = Signal.Open(LogGroup.Engine, $"片段 #{executed + 1} {fragment} (P2)",
+                                    new { index = executed + 1, type = fragment.ToString(), phase = 2, tokensUsed });
+
                                 var summary = await ExecuteFragment(fragment.Value);
                                 var duration = (DateTime.Now - CurrentFragmentStartTime.Value).TotalSeconds;
                                 fragmentRecords.Add(new FragmentRecord
@@ -366,10 +396,14 @@ namespace AgentCoreProcessor.Engine
                                 tokensUsed += EstimatedTokensPerFragment;
                                 executed++;
                                 FragmentsCompleted = executed;
+
+                                fragSpan.SetCloseDetail(new { success = true, summary, durationSeconds = duration, tokensUsed });
+
                                 await MaybeSleepTalkAsync(summary);
                             }
                             catch (Exception ex)
                             {
+                                Signal.Error(LogGroup.Engine, $"片段执行失败 #{executed + 1} {fragment} (P2)", new { error = ex.GetType().Name, message = ex.Message });
                                 fragmentRecords.Add(new FragmentRecord
                                 {
                                     Type = fragment.ToString()!,
@@ -667,6 +701,7 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
+                Signal.Warn(LogGroup.Engine, "整合初筛解析失败", new { error = ex.GetType().Name, message = ex.Message });
             }
             return candidates;
         }
@@ -731,6 +766,7 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
+                Signal.Error(LogGroup.Engine, "整合入库失败", new { error = ex.GetType().Name, message = ex.Message });
             }
         }
 
@@ -773,7 +809,7 @@ namespace AgentCoreProcessor.Engine
                     });
                 }
             }
-            catch (Exception ex) { }
+            catch (Exception ex) { Signal.Warn(LogGroup.Engine, "权重评估解析失败", new { error = ex.Message }); }
             return $"评估{batch.Count}条，调整{adjusted}条";
         }
 
@@ -826,7 +862,7 @@ namespace AgentCoreProcessor.Engine
                         }
                     }
                 }
-                catch (Exception ex) { }
+                catch (Exception ex) { Signal.Warn(LogGroup.Engine, "关联分析解析失败", new { targetId = target.Id, error = ex.Message }); }
                 target.LastDreamTime = DateTime.Now;
                 await ctx.Memories.UpdateAsync(target);
             }
@@ -959,6 +995,7 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
+                Signal.Warn(LogGroup.Engine, "信任评估失败", new { error = ex.GetType().Name, message = ex.Message });
             }
         }
 
@@ -1007,6 +1044,7 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
+                Signal.Warn(LogGroup.Engine, "梦话发送失败(概率)", new { error = ex.GetType().Name, message = ex.Message });
             }
         }
 
@@ -1058,6 +1096,7 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
+                Signal.Warn(LogGroup.Engine, "做梦日志持久化失败", new { error = ex.GetType().Name, message = ex.Message });
             }
         }
 
@@ -1194,6 +1233,7 @@ namespace AgentCoreProcessor.Engine
                 }
                 catch (Exception ex)
                 {
+                    Signal.Warn(LogGroup.Engine, "去重解析失败", new { seedId = seed.Id, error = ex.Message });
                 }
 
                 // 标记参与的记忆为 dreamed
@@ -1229,7 +1269,7 @@ namespace AgentCoreProcessor.Engine
                     await ctx.MemoryLinks.DeleteAsync(link);
                 }
             }
-            catch { }
+            catch (Exception ex) { Signal.Warn(LogGroup.Engine, "关联重定向失败", new { oldId, survivorId, error = ex.Message }); }
         }
 
         // ---- 过期清理 ----
@@ -1240,9 +1280,12 @@ namespace AgentCoreProcessor.Engine
             {
                 var expiredCount = await ctx.Memories.DeleteExpiredAsync();
                 var orphanedCount = await ctx.MemoryLinks.DeleteOrphanedAsync();
+                if (expiredCount > 0 || orphanedCount > 0)
+                    Signal.Event(LogGroup.Engine, "过期清理", new { expiredMemories = expiredCount, orphanedLinks = orphanedCount });
             }
             catch (Exception ex)
             {
+                Signal.Warn(LogGroup.Engine, "过期清理失败", new { error = ex.GetType().Name, message = ex.Message });
             }
         }
     }

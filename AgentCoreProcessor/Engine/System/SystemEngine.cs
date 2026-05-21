@@ -79,6 +79,7 @@ namespace AgentCoreProcessor.Engine
         private DateTime? lastErrorTime = null;
         private string? lastErrorMessage = null;
         private int totalErrorCount = 0;
+        private int _totalCycles = 0;
 
         // 睡觉评估和许可管理
         private class SleepRequest
@@ -284,6 +285,8 @@ namespace AgentCoreProcessor.Engine
         /// <summary>系统循环执行体。Gate 每次开闸时调用一次。包含事件收集 + Agent 多轮推理。</summary>
         private async Task ExecuteSystemCycleAsync(CancellationToken ct)
         {
+            _totalCycles++;
+
             // 定期自检（每 5 分钟）
             if ((DateTime.Now - lastSleepCheck).TotalMinutes >= 5)
             {
@@ -298,7 +301,7 @@ namespace AgentCoreProcessor.Engine
             var pendingDelegations = ctx.Delegations.GetPendingForEvaluation();
             var retryDelegations = ctx.Delegations.GetRetryPending();
 
-            using var iterSignal = Signal.Begin(LogGroup.Engine, "system:main", "系统循环轮次", new
+            using var iterSignal = Signal.Begin(LogGroup.Engine, "system:main", $"系统循环 #{_totalCycles}", new
             {
                 tasks = tasks.Count,
                 notifications = notifications.Count,
