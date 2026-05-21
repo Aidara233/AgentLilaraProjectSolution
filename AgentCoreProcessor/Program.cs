@@ -77,6 +77,7 @@ namespace AgentCoreProcessor
             // ProviderRegistry（在 InitAsync 前创建，以便 PluginLoader 可以注册插件 Provider）
             var providerRegistry = new AgentCoreProcessor.WebUI.Shell.ProviderRegistry();
             engine.ProviderRegistry = providerRegistry;
+            providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.DashboardProvider(engine), builtIn: true);
             providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.TestProvider(), builtIn: true);
             providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.LogTraceProvider(), builtIn: true);
 
