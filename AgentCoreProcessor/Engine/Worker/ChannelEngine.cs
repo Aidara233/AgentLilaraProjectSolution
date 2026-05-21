@@ -392,7 +392,7 @@ namespace AgentCoreProcessor.Engine
 
                 // ④ Gate evaluation（会话内部：决定是否开闸）
                 bool prepareResult;
-                using (var gateSpan = Signal.Open(LogGroup.Engine, "闸门评估",
+                using (var gateSpan = Signal.Open(LogGroup.Engine, $"闸门评估 ({batch?.Count ?? 0}条消息)",
                     new { hasMessages = batch?.Count ?? 0, isWorkingMode }))
                 {
                     prepareResult = await EvaluateGateAsync(batch);
@@ -414,7 +414,7 @@ namespace AgentCoreProcessor.Engine
                 {
                     await componentHost.OnBeforeInvokeAsync();
 
-                    using var roundSpan = Signal.Open(LogGroup.Engine, "处理轮次",
+                    using var roundSpan = Signal.Open(LogGroup.Engine, $"处理轮次 [{(isWorkingMode ? "Working" : "Express")}]",
                         new { channelId, mode = isWorkingMode ? "working" : "express" });
 
                     if (isWorkingMode)
@@ -927,7 +927,7 @@ namespace AgentCoreProcessor.Engine
             {
                 Tool.Core.ManageComponentsTool.CurrentLoop.Value =
                     new Tool.Core.ManageComponentsTool.LoopContext(currentProfileName, $"channel-{channelId}");
-                using var expressToolSpan = Signal.Open(LogGroup.Tool, "Express工具执行",
+                using var expressToolSpan = Signal.Open(LogGroup.Tool, $"Express工具: {string.Join(", ", output.ToolCalls.Select(c => c.Tool))}",
                     new { calls = output.ToolCalls.Select(c => new { c.Tool, c.Inputs }) });
                 var executor = new ToolExecutor(null, null);
                 var expressResults = await executor.ExecuteAsync(output.ToolCalls);
