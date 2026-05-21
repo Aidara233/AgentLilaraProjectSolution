@@ -4,7 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
-using AgentCoreProcessor.Client;
+using AgentCoreProcessor.Logging;
 
 namespace AgentCoreProcessor.Engine.Vision
 {
@@ -42,6 +42,7 @@ namespace AgentCoreProcessor.Engine.Vision
         private int _totalProcessed;
         private int _visionErrors;
         private int _ocrErrors;
+        private int _totalCycles;
         private volatile bool _visionSuspended;
         private string? _suspendReason;
 
@@ -76,12 +77,28 @@ namespace AgentCoreProcessor.Engine.Vision
                 await gate.WaitAsync(TimeSpan.FromSeconds(60));
                 if (!IsAlive) break;
 
+                _totalCycles++;
+                var processedBefore = _totalProcessed;
+                var visionErrBefore = _visionErrors;
+                var ocrErrBefore = _ocrErrors;
+
+                using var cycleSpan = Signal.Open(LogGroup.Engine, $"Vision处理 #{_totalCycles}",
+                    new { cycle = _totalCycles, visionEnabled = config.VisionEnabled, ocrEnabled = config.OcrEnabled });
                 try
                 {
                     await ProcessPendingImagesAsync();
+                    cycleSpan.SetCloseDetail(new
+                    {
+                        processed = _totalProcessed - processedBefore,
+                        visionErrors = _visionErrors - visionErrBefore,
+                        ocrErrors = _ocrErrors - ocrErrBefore,
+                        suspended = _visionSuspended,
+                        suspendReason = _suspendReason
+                    });
                 }
                 catch (Exception ex)
                 {
+                    Signal.Error(LogGroup.Engine, $"Vision处理异常 #{_totalCycles}", new { error = ex.GetType().Name, message = ex.Message });
                 }
             }
 
@@ -176,12 +193,15 @@ namespace AgentCoreProcessor.Engine.Vision
                     {
                         _visionSuspended = true;
                         _suspendReason = $"认证失败 ({ex.Message})，本轮 Vision 处理已暂停";
+                        Signal.Warn(LogGroup.Engine, "Vision认证失败暂停", new { hash = record.Hash, error = ex.Message });
                         return;
                     }
                     catch (Exception ex)
                     {
                         if (attempt < config.VisionRetryCount)
                             await Task.Delay(config.VisionRetryDelayMs);
+                        else
+                            Signal.Warn(LogGroup.Engine, "Vision描述失败", new { hash = record.Hash, attempts = attempt + 1, error = ex.Message });
                     }
                 }
 
