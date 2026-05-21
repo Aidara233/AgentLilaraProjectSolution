@@ -1110,6 +1110,17 @@ namespace AgentCoreProcessor.Engine
             // Component prompt sections
             BuildComponentInjections(msgs);
 
+            Signal.Event(LogGroup.Engine, "上下文组装完成", new
+            {
+                channelId,
+                mode = isWorkingMode ? "working" : "express",
+                totalMessages = msgs.Count,
+                prefixLen = fixedPrefix?.Length ?? 0,
+                summaryLen = contextSummary?.Length ?? 0,
+                newMessageCount = activeBatch?.Count ?? 0,
+                estimatedTokens = msgs.Sum(m => (m.Content?.Length ?? 0)) / 3
+            });
+
             return msgs.Count > 0 ? msgs : null;
         }
 
