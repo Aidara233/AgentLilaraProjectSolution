@@ -12,5 +12,8 @@ namespace AgentCoreProcessor.Engine
         public int CompressMinTokens { get; set; } = 5000;
         public int CompressRetainedMessageCount { get; set; } = 6;
         public int CompressRetainedMaxTokens { get; set; } = 2000;
+
+        /// <summary>工具 Profile 名称。非空时 Agent 调模型只发送该 profile 的工具定义。</summary>
+        public string? ProfileName { get; set; }
     }
 }

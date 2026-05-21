@@ -190,5 +190,8 @@ namespace AgentCoreProcessor.Engine
 
         public Task<List<User>> GetUsersByPersonIdAsync(int personId)
             => users.GetByPersonIdAsync(personId);
+
+        public Task<User?> GetUserByIdAsync(int id)
+            => users.GetByIdAsync(id);
     }
 }

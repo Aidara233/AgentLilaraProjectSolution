@@ -1,80 +1,51 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
-using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Tool;
-using Newtonsoft.Json;
+using AgentCoreProcessor.Tool.Host;
+using AgentLilara.PluginSDK.Services;
 
 namespace AgentCoreProcessor.Engine
 {
-    /// <summary>
-    /// 复盘引擎。由 DreamEngine 在大睡 Phase 2 孵化，实现独立的 Agent 循环进行深度分析。
-    /// 不注册 SpawnCheck——通过 ISystemContext.StartEngine() 直接启动。
-    /// </summary>
-    internal class ReviewEngine : ISubEngine
+    internal class ReviewEngine : ISubEngine, IAgentHost
     {
         public string EngineType => "Review";
         public bool IsAlive { get; private set; } = true;
 
-        private readonly ISystemContext ctx;
-        private readonly ReviewMode mode;
-        private readonly string preInjectedContext;
-        private readonly int baseBudget;
-        private readonly int reserveBudget;
-        private readonly DreamProgress progress;
+        private readonly ISystemContext _ctx;
+        private readonly ReviewMode _mode;
+        private readonly string _preInjectedContext;
+        private readonly DreamConfig _cfg;
+        private readonly DreamProgress _progress;
 
-        private readonly ReviewCore reviewCore = new();
-        private readonly Dictionary<string, ITool> tools;
-        private readonly string toolDescriptions;
-        private readonly bool useNativeTools;
-        private List<ToolDefinition>? _nativeToolDefs;
+        private readonly AgentCore _core;
+        private Agent? _agent;
+        private ReviewControlImpl? _reviewControl;
+        private readonly CancellationTokenSource _cts = new();
 
-        private volatile bool shouldWake = false;
-        private volatile bool shouldStop = false;
-
-        private int totalTokens = 0;
-        private int effectiveBudget;
-        private bool reserveUsed = false;
-
-        private static string DreamProgressPath =>
-            Path.Combine(PathConfig.StoragePath, "Dream", "DreamProgress.json");
+        private static readonly HashSet<string> AuthorizedTools = new()
+        {
+            "review_search_memory", "review_read_messages", "review_view_links",
+            "review_write_memory", "review_update_person", "review_update_affinity",
+            "review_thinking_notes", "review_save_progress",
+            "review_request_reinforcement", "review_complete"
+        };
 
         public ReviewEngine(ISystemContext ctx, ReviewMode mode, string preInjectedContext,
-            int baseBudget, int reserveBudget, DreamProgress progress)
+            DreamConfig cfg, DreamProgress progress)
         {
-            this.ctx = ctx;
-            this.mode = mode;
-            this.preInjectedContext = preInjectedContext;
-            this.baseBudget = baseBudget;
-            this.reserveBudget = reserveBudget;
-            this.progress = progress;
-            this.effectiveBudget = baseBudget;
-
-            // 初始化工具集（不注册到全局 ToolRegistry）
-            tools = BuildToolSet();
-            useNativeTools = reviewCore.UseNativeTools;
-            if (useNativeTools)
-            {
-                toolDescriptions = "";
-                _nativeToolDefs = tools.Values.Select(t =>
-                    new ToolDefinition
-                    {
-                        Name = t.Name,
-                        Description = t.Description,
-                        Parameters = t.GetInputSchema()
-                    }).ToList();
-            }
-            else
-            {
-                toolDescriptions = GenerateToolDescriptions();
-            }
-            reviewCore.CallerTag = $"Review:{mode}";
+            _ctx = ctx;
+            _mode = mode;
+            _preInjectedContext = preInjectedContext;
+            _cfg = cfg;
+            _progress = progress;
+            _core = new AgentCore("ReviewCore", usePersona: false);
+            _core.CallerTag = $"Review:{mode}";
         }
 
         public async Task RunAsync()
@@ -83,407 +54,133 @@ namespace AgentCoreProcessor.Engine
             var lifeCtx = Signal.Continue(
                 parentCtx?.SignalId ?? Signal.NewId(), parentCtx?.CurrentSpanId,
                 "review:main", LogGroup.Engine, "Review引擎",
-                new { engineType = EngineType, mode = mode.ToString() });
+                new { engineType = EngineType, mode = _mode.ToString() });
+
+            _reviewControl = new ReviewControlImpl(_cfg.ReviewReserveBudget);
+            _ctx.ToolContext.Register<IReviewControl>(_reviewControl);
 
             try
             {
-                await RunAgentLoopAsync();
+                _core.ProfileManager = _ctx.ToolProfiles;
+
+                var agentConfig = new AgentConfig
+                {
+                    MaxRounds = 20,
+                    BackoffSeconds = new[] { 10, 30 },
+                    ModelCallMaxAttempts = 3,
+                    ModelCallRetryDelaySeconds = new[] { 5, 15 },
+                    ProfileName = "review"
+                };
+
+                _agent = new Agent(this, _core, agentConfig, AuthorizedTools);
+                await _agent.RunAsync(_cts.Token);
+
+                Signal.Event(LogGroup.Engine, "Review完成", new
+                {
+                    mode = _mode.ToString(),
+                    rounds = _agent.TotalRounds,
+                    stopReason = _agent.StopReason?.ToString(),
+                    completed = _reviewControl.IsCompleted,
+                    reserveUsed = _reviewControl.ReserveGranted
+                });
             }
+            catch (OperationCanceledException) { }
             catch (Exception ex)
             {
+                Signal.Error(LogGroup.Engine, "Review异常", new { error = ex.GetType().Name, message = ex.Message });
             }
             finally
             {
-                // 标记已处理的 ReviewHint
-                try
-                {
-                    var hints = await ctx.ReviewHints.GetUnprocessedAsync();
-                    foreach (var hint in hints)
-                        await ctx.ReviewHints.MarkProcessedAsync(hint.Id);
-                }
-                catch { }
-
+                _ctx.ToolContext.Unregister<IReviewControl>();
                 IsAlive = false;
-
-                lifeCtx.Close(new { engineType = EngineType, reason = "completed" });
+                lifeCtx.Close(new { engineType = EngineType, reason = _reviewControl?.IsCompleted == true ? "completed" : "budget_or_rounds" });
             }
         }
 
         public void OnEvent(EngineEvent e)
         {
-            if (e is MessageEvent) shouldWake = true;
+            if (e is MessageEvent)
+                _reviewControl?.NotifyWake();
         }
 
-        public void RequestStop() => shouldStop = true;
-
-        // ---- Agent 循环 ----
-
-        private async Task RunAgentLoopAsync()
+        public void RequestStop()
         {
-            var thinkingNotes = new Dictionary<string, string>();
-            var retainedResults = new List<(ToolCall call, ToolResult result)>();
-            List<ToolCall>? lastRoundCalls = null;
-            List<ToolResult>? lastRoundResults = null;
-
-            int round = 0;
-            while (!shouldStop && totalTokens < effectiveBudget)
-            {
-                if (shouldWake)
-                {
-                    shouldStop = true; // 完成本轮后退出
-                }
-
-                // 1. 构建提示词
-                var messages = BuildRoundMessages(
-                    round, thinkingNotes, lastRoundResults, lastRoundCalls, retainedResults);
-
-                reviewCore.ResetProcessor();
-                reviewCore.SetConversation(messages);
-
-                // 2. 调用模型，解析工具调用
-                List<ToolCall> toolCalls;
-                Models.Usage usage;
-                if (useNativeTools && _nativeToolDefs != null)
-                {
-                    (toolCalls, _, usage) = await reviewCore.GenerateToolCallsWithToolsAsync(_nativeToolDefs);
-                }
-                else
-                {
-                    toolCalls = new List<ToolCall>();
-                    usage = await reviewCore.GenerateAsync(onBreak: (block) =>
-                    {
-                        var raw = block.Content.Trim();
-                        if (string.IsNullOrEmpty(raw)) return;
-
-                        var jsonStart = raw.IndexOf('{');
-                        var jsonEnd = raw.LastIndexOf('}');
-
-                        if (jsonStart >= 0 && jsonEnd > jsonStart)
-                        {
-                            var json = raw[jsonStart..(jsonEnd + 1)];
-                            try
-                            {
-                                var call = ToolCall.FromJson(json);
-                                if (!call.Validate().Any())
-                                    toolCalls.Add(call);
-                            }
-                            catch { }
-                        }
-                    });
-                }
-
-                // 累加 token
-                totalTokens += usage.TotalTokens;
-
-                // 3. 空输出检查
-                if (toolCalls.Count == 0)
-                {
-                    if (round == 0)
-                    {
-                        break;
-                    }
-                    break; // 隐式完成
-                }
-
-                // 4. 执行（使用自有工具集）
-                Func<string, ITool?> resolver = name =>
-                    tools.TryGetValue(name, out var t) ? t : null;
-                var executor = new ToolExecutor(resolver);
-                var results = await executor.ExecuteAsync(toolCalls);
-
-                // 5. 处理特殊工具
-                for (int i = 0; i < toolCalls.Count; i++)
-                {
-                    var call = toolCalls[i];
-                    var result = results[i];
-                    if (!result.IsSuccess) continue;
-
-                    switch (call.Tool)
-                    {
-                        case "complete":
-                            shouldStop = true;
-                            break;
-
-                        case "thinking_notes":
-                            ApplyThinkingNotes(call, thinkingNotes);
-                            break;
-
-                        case "write_temp_memory":
-                            try
-                            {
-                                await ctx.MemorySvc.StoreAsync(result.Data ?? "");
-                            }
-                            catch (Exception ex)
-                            {
-                            }
-                            break;
-
-                        case "mark_review_hint":
-                            try
-                            {
-                                await ctx.ReviewHints.CreateAsync(result.Data ?? "");
-                            }
-                            catch { }
-                            break;
-
-                        case "request_reinforcement":
-                            if (!reserveUsed)
-                            {
-                                reserveUsed = true;
-                                effectiveBudget += reserveBudget;
-                            }
-                            break;
-
-                        case "save_progress":
-                            try
-                            {
-                                var investigation = JsonConvert.DeserializeObject<ReviewInvestigation>(
-                                    result.Data ?? "{}") ?? new ReviewInvestigation();
-                                investigation.Mode = mode.ToString();
-                                investigation.SavedAt = DateTime.Now;
-                                progress.ActiveInvestigations.Clear();
-                                progress.ActiveInvestigations.Add(investigation);
-                                progress.Save(DreamProgressPath);
-                            }
-                            catch (Exception ex)
-                            {
-                            }
-                            break;
-                    }
-                }
-
-                if (shouldStop) break;
-
-                // 6. 收集 retain 结果
-                for (int i = 0; i < toolCalls.Count; i++)
-                {
-                    var tool = tools.TryGetValue(toolCalls[i].Tool, out var t) ? t : null;
-                    if (tool?.GetRetainResult() == true && results[i].IsSuccess)
-                        retainedResults.Add((toolCalls[i], results[i]));
-                }
-
-                // 7. 更新滚动状态
-                lastRoundCalls = toolCalls;
-                lastRoundResults = results;
-                round++;
-            }
-
-            // 预算外收尾：如果是预算耗尽退出（非主动完成），给一轮总结机会
-            if (!shouldStop && totalTokens >= effectiveBudget)
-            {
-                await RunFinalRound(thinkingNotes, retainedResults,
-                    lastRoundCalls, lastRoundResults, round);
-            }
+            _cts.Cancel();
         }
 
-        private async Task RunFinalRound(
-            Dictionary<string, string> thinkingNotes,
-            List<(ToolCall, ToolResult)> retainedResults,
-            List<ToolCall>? lastCalls, List<ToolResult>? lastResults, int round)
+        // ---- IAgentHost ----
+
+        public Task<List<Message>?> BuildStartInjectAsync()
         {
-            try
+            var msgs = new List<Message>();
+
+            // 系统提示
+            msgs.Add(new Message { Role = "user", Content = BuildSystemPrompt() });
+
+            // 预注入上下文（ReviewModeSelector 构建的数据）
+            if (!string.IsNullOrEmpty(_preInjectedContext))
+                msgs.Add(new Message { Role = "user", Content = _preInjectedContext });
+
+            // 预算信息
+            var budget = _cfg.ReviewTokenBudget;
+            msgs.Add(new Message
             {
-                var messages = BuildRoundMessages(
-                    round, thinkingNotes, lastResults, lastCalls, retainedResults,
-                    extraNote: "【预算已耗尽】这是最后一轮。请立即保存进度或写入总结，然后调用「完成」。");
+                Role = "user",
+                Content = $"[复盘资源] 基础预算: {budget} tokens | 备用预算: {_cfg.ReviewReserveBudget} tokens（需主动申请）"
+            });
 
-                reviewCore.ResetProcessor();
-                reviewCore.SetConversation(messages);
-
-                List<ToolCall> toolCalls;
-                if (useNativeTools && _nativeToolDefs != null)
-                {
-                    (toolCalls, _, _) = await reviewCore.GenerateToolCallsWithToolsAsync(_nativeToolDefs);
-                }
-                else
-                {
-                    toolCalls = new List<ToolCall>();
-                    await reviewCore.GenerateAsync(onBreak: (block) =>
-                    {
-                        var json = block.Content.Trim();
-                        if (string.IsNullOrEmpty(json)) return;
-                        try
-                        {
-                            var call = ToolCall.FromJson(json);
-                            if (call.Validate().Count() == 0) toolCalls.Add(call);
-                        }
-                        catch { }
-                    });
-                }
-
-                if (toolCalls.Count > 0)
-                {
-                    Func<string, ITool?> resolver = name =>
-                        tools.TryGetValue(name, out var t) ? t : null;
-                    var executor = new ToolExecutor(resolver);
-                    var results = await executor.ExecuteAsync(toolCalls);
-
-                    for (int i = 0; i < toolCalls.Count; i++)
-                    {
-                        var call = toolCalls[i];
-                        var result = results[i];
-                        if (!result.IsSuccess) continue;
-
-                        if (call.Tool == "write_temp_memory")
-                            try { await ctx.MemorySvc.StoreAsync(result.Data ?? ""); } catch { }
-                        else if (call.Tool == "save_progress")
-                        {
-                            try
-                            {
-                                var inv = JsonConvert.DeserializeObject<ReviewInvestigation>(
-                                    result.Data ?? "{}") ?? new ReviewInvestigation();
-                                inv.Mode = mode.ToString();
-                                inv.SavedAt = DateTime.Now;
-                                progress.ActiveInvestigations.Clear();
-                                progress.ActiveInvestigations.Add(inv);
-                                progress.Save(DreamProgressPath);
-                            }
-                            catch { }
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-            }
+            return Task.FromResult<List<Message>?>(msgs);
         }
 
-        // ---- 提示词构建 ----
-
-        private List<Message> BuildRoundMessages(
-            int round,
-            Dictionary<string, string> thinkingNotes,
-            List<ToolResult>? lastResults,
-            List<ToolCall>? lastCalls,
-            List<(ToolCall, ToolResult)> retainedResults,
-            string? extraNote = null)
+        public Task<List<Message>?> BuildRoundInjectAsync()
         {
-            var messages = new List<Message>();
+            if (_reviewControl?.IsCompleted == true)
+                return Task.FromResult<List<Message>?>(null);
 
-            // 工具描述（native 模式跳过，工具通过 API 发送）
-            if (!useNativeTools && !string.IsNullOrEmpty(toolDescriptions))
-                messages.Add(new Message { Role = "user", Content = toolDescriptions });
+            var msgs = new List<Message>();
 
-            // 预注入上下文（首轮）
-            if (round == 0)
-                messages.Add(new Message { Role = "user", Content = preInjectedContext });
+            if (_reviewControl is { WakeNotified: true })
+                msgs.Add(new Message { Role = "user", Content = "[系统提示] 系统即将醒来，请尽快收尾。备用预算不可用。" });
 
-            // 预算进度
-            var budgetInfo = new StringBuilder();
-            budgetInfo.Append($"[复盘资源] 累计消耗: {totalTokens} / {effectiveBudget}");
-            if (!reserveUsed)
-                budgetInfo.Append(" | 备用预算: 可用");
-            else
-                budgetInfo.Append(" | 备用预算: 已使用");
-            if (totalTokens > effectiveBudget * 0.8f && !shouldStop)
-                budgetInfo.Append(" | ⚠ 预算即将耗尽，考虑收尾或请求增援");
-            messages.Add(new Message { Role = "user", Content = budgetInfo.ToString() });
-
-            // 额外提示（如收尾轮）
-            if (extraNote != null)
-                messages.Add(new Message { Role = "user", Content = extraNote });
-
-            // 思考笔记
-            if (thinkingNotes.Count > 0)
-            {
-                var sb = new StringBuilder("你的思考笔记：\n");
-                foreach (var (key, value) in thinkingNotes)
-                    sb.AppendLine($"- {key}: {value}");
-                messages.Add(new Message { Role = "user", Content = sb.ToString() });
-            }
-
-            // 保留结果
-            if (retainedResults.Count > 0)
-            {
-                var sb = new StringBuilder("历史轮次保留的工具结果：\n");
-                foreach (var (call, result) in retainedResults)
-                    FormatResult(sb, call, result);
-                messages.Add(new Message { Role = "user", Content = sb.ToString() });
-            }
-
-            // 上一轮结果
-            if (lastResults != null && lastCalls != null && lastResults.Count > 0)
-            {
-                var sb = new StringBuilder("上一轮工具执行结果：\n");
-                for (int i = 0; i < lastCalls.Count && i < lastResults.Count; i++)
-                    FormatResult(sb, lastCalls[i], lastResults[i]);
-                messages.Add(new Message { Role = "user", Content = sb.ToString() });
-            }
-
-            return messages;
+            return Task.FromResult<List<Message>?>(msgs.Count > 0 ? msgs : null);
         }
 
-        private static void FormatResult(StringBuilder sb, ToolCall call, ToolResult result)
+        private string BuildSystemPrompt()
         {
-            if (result.IsSuccess)
-                sb.AppendLine($"[{call.Tool}]: 成功，返回值：{result.Data}");
-            else
-                sb.AppendLine($"[{call.Tool}]: {result.Status}" +
-                    (result.Error != null ? $" - {result.Error}" : ""));
-        }
-
-        // ---- 工具管理 ----
-
-        private Dictionary<string, ITool> BuildToolSet()
-        {
-            // TODO: Review tool classes removed during tool system refactor.
-            // Rebuild with new tool architecture when ReviewEngine is re-enabled.
-            var toolList = new ITool[]
+            var modeDesc = _mode switch
             {
-                // new ReviewSearchMemoryTool(ctx),
-                // new ReviewViewLinksTool(ctx),
-                // new ReviewReadMessagesTool(ctx),
-                // new ReviewUpdateAffinityTool(ctx),
-                // new ReviewUpdateFastMemoryTool(ctx),
-                // new ReviewUpdatePersonNameTool(ctx),
-                // new ReviewUpdateTrustProgressTool(ctx),
-                // new ReviewWriteTempMemoryTool(),
-                // new ReviewThinkingNotesTool(),
-                // new ReviewMarkHintTool(),
-                // new ReviewRequestReinforcementTool(),
-                // new ReviewSaveProgressTool(),
-                // new ReviewCompletionTool()
+                ReviewMode.ChannelDaily => "频道日报：分析频道近期活动，提炼要点，调整亲和度。",
+                ReviewMode.PersonProfile => "人物回顾：聚焦某人的近期互动，更新称呼、快速记忆、好感度。",
+                ReviewMode.CrossDomain => "跨域关联：跨频道发现被忽略的联系和共同趋势。",
+                ReviewMode.ContradictionDetect => "矛盾检测：检查记忆库中互相矛盾的信息，清理或标注。",
+                _ => "自由复盘"
             };
-            return toolList.ToDictionary(t => t.Name);
-        }
 
-        private string GenerateToolDescriptions()
-        {
-            var sb = new StringBuilder();
-            int i = 1;
-            foreach (var tool in tools.Values)
-            {
-                sb.AppendLine($"工具{i}：{tool.Name}");
-                sb.AppendLine($"描述：{tool.Description}");
-                if (tool.Parameters.Count > 0)
-                {
-                    var paramParts = tool.Parameters
-                        .Select(p => $"inputs[{p.Index}] = {p.Name}");
-                    sb.AppendLine($"参数：{string.Join(", ", paramParts)}");
-                }
-                var example = new
-                {
-                    tool = tool.Name,
-                    inputs = tool.Parameters.Select(p => $"({p.Name})").ToArray()
-                };
-                sb.AppendLine($"示例：{JsonConvert.SerializeObject(example, Formatting.None)}<over>");
-                sb.AppendLine();
-                i++;
-            }
-            return sb.ToString().TrimEnd();
-        }
+            return $"""
+你是 Lilara 的复盘模块。当前处于深度睡眠期间，正在进行离线分析。
 
-        // ---- 辅助 ----
+## 当前模式
+{modeDesc}
 
-        private static void ApplyThinkingNotes(ToolCall call, Dictionary<string, string> notes)
-        {
-            if (call.Inputs.Count < 2) return;
-            var action = call.Inputs[0]?.Trim().ToLower();
-            var key = call.Inputs[1] ?? "";
-            if (action == "write" && call.Inputs.Count >= 3)
-                notes[key] = call.Inputs[2] ?? "";
-            else if (action == "delete")
-                notes.Remove(key);
+## 可用工具
+- review_search_memory：语义搜索记忆库
+- review_read_messages：读取频道消息历史
+- review_view_links：查看记忆关联
+- review_write_memory：将发现写入主记忆
+- review_update_person：更新人物信息（称呼/别称/快速记忆）
+- review_update_affinity：调整频道亲和度
+- review_thinking_notes：管理思考笔记（跨轮保持）
+- review_save_progress：保存调查进度（下次继续）
+- review_request_reinforcement：请求备用预算（仅一次）
+- review_complete：标记复盘完成
+
+## 工作指引
+1. 先阅读预注入的上下文数据，理解当前任务
+2. 使用工具深入调查，记录思考笔记
+3. 将有价值的发现写入主记忆
+4. 完成后调用 review_complete，或预算不足时保存进度
+5. 不要浪费 token 在无意义的重复搜索上
+""";
         }
     }
 }

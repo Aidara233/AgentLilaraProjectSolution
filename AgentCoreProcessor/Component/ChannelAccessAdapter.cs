@@ -33,4 +33,10 @@ internal class ChannelAccessAdapter : IChannelAccess
         // TODO: implement when needed
         return Task.FromResult(new List<MessageSummary>());
     }
+
+    public Task UpdateAffinityAsync(int channelId, float delta)
+    {
+        // TODO: implement when needed (component side uses ChannelAccessImpl)
+        return Task.CompletedTask;
+    }
 }

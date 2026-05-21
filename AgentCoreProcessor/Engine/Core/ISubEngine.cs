@@ -136,5 +136,8 @@ namespace AgentCoreProcessor.Engine
 
         /// <summary>插件加载器。提供 InjectProviderTypes/LifecycleTypes 及实例化方法。</summary>
         PluginLoader PluginLoader { get; }
+
+        /// <summary>插件工具上下文（服务容器）。引擎可动态注册/注销服务。</summary>
+        Tool.Host.ToolContextImpl ToolContext { get; }
     }
 }

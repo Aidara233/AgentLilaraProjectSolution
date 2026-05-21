@@ -109,6 +109,7 @@ namespace AgentCoreProcessor.Engine
 
         // ---- ISystemContext: Plugin 系统 ----
         public Tool.Host.PluginLoader PluginLoader => _pluginLoader;
+        public Tool.Host.ToolContextImpl ToolContext => _toolContext;
 
         // ---- 引擎注册表 ----
         private readonly List<IEngineSpawnCheck> spawnChecks = new();
@@ -123,6 +124,7 @@ namespace AgentCoreProcessor.Engine
         private GlobalComponentHost? globalComponentHost;
         private readonly SimpleServiceProvider componentServices = new();
         private Tool.Host.PluginLoader _pluginLoader = null!;
+        private Tool.Host.ToolContextImpl _toolContext = null!;
 
         // SpawnCheck 工厂（有序列表，Command 在 Channel 之前拦截命令消息）
         private static readonly List<(string Name, Func<IEngineSpawnCheck> Factory)> SpawnCheckFactory =
@@ -394,10 +396,14 @@ namespace AgentCoreProcessor.Engine
             Tool.ToolRegistry.Register(new Tool.Core.EscalateTool());
 
             // 插件加载
-            var toolContext = new Tool.Host.ToolContextImpl(new Tool.Host.PluginStorageImpl("_system"));
-            toolContext.Register<AgentLilara.PluginSDK.Services.IMemoryAccess>(
+            _toolContext = new Tool.Host.ToolContextImpl(new Tool.Host.PluginStorageImpl("_system"));
+            _toolContext.Register<AgentLilara.PluginSDK.Services.IMemoryAccess>(
                 new Tool.Host.MemoryAccessImpl(Memories, TempMemories, MemoryLinks, Embedding));
-            _pluginLoader = new Tool.Host.PluginLoader(toolContext, ProviderRegistry);
+            _toolContext.Register<AgentLilara.PluginSDK.Services.IPersonAccess>(
+                new Tool.Host.PersonAccessImpl(this));
+            _toolContext.Register<AgentLilara.PluginSDK.Services.IChannelAccess>(
+                new Tool.Host.ChannelAccessImpl(this));
+            _pluginLoader = new Tool.Host.PluginLoader(_toolContext, ProviderRegistry);
             _pluginLoader.LoadAll();
             Signal.Event(LogGroup.Plugin, "插件加载完成", new { count = Tool.ToolRegistry.All.Count });
 
@@ -411,6 +417,7 @@ namespace AgentCoreProcessor.Engine
                 new Component.SubAgentAccessAdapter(this));
             componentServices.Register<AgentLilara.PluginSDK.Services.IChannelAccess>(
                 new Component.ChannelAccessAdapter(this));
+            componentServices.Register<AgentLilara.PluginSDK.IToolContext>(_toolContext);
 
             globalComponentHost = new GlobalComponentHost(
                 _moduleBus, componentServices,

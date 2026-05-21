@@ -328,7 +328,6 @@ namespace AgentCoreProcessor.Engine
 
 
             // ========== Phase 2: 深睡 — 信任评估 + 启动 ReviewEngine + 继续做梦 ==========
-            ISubEngine? reviewEngine = null;
 
             if (!shouldWake && ElapsedMinutes(startTime) < cfg.DeepSleepMaxMinutes)
             {
@@ -337,101 +336,80 @@ namespace AgentCoreProcessor.Engine
                 // 信任等级评估（不消耗 token，纯框架逻辑）
                 await ExecuteTrustEvaluationAsync();
 
-                // ReviewEngine 已禁用：工具全部注释，启动只浪费一次模型调用。
-                // 待复盘机制重新设计后恢复。
+                // 启动 ReviewEngine（独立生命周期，不再陪跑）
+                try
+                {
+                    var (mode, preContext, progress) =
+                        await ReviewModeSelector.SelectAndPrepareAsync(ctx);
+                    var reviewEngine = new ReviewEngine(ctx, mode, preContext, cfg, progress);
+                    ctx.StartEngine(reviewEngine);
+                    Signal.Event(LogGroup.Engine, "ReviewEngine启动", new { mode = mode.ToString() });
+                }
+                catch (Exception ex)
+                {
+                    Signal.Warn(LogGroup.Engine, "ReviewEngine启动失败", new { error = ex.GetType().Name, message = ex.Message });
+                }
 
-                // Phase 2 循环：继续跑 Weight/Link/Combine，陪跑 ReviewEngine
+                // Phase 2 循环：继续跑 Weight/Link/Combine
                 int nullCount = 0;
                 while (true)
                 {
-                    // 时间超限
-                    if (ElapsedMinutes(startTime) > cfg.DeepSleepMaxMinutes)
-                    {
-                        reviewEngine?.RequestStop();
-                        break;
-                    }
+                    if (ElapsedMinutes(startTime) > cfg.DeepSleepMaxMinutes) break;
+                    if (shouldWake) break;
+                    if (tokensUsed >= cfg.DeepSleepTokenBudget) break;
 
-                    // shouldWake 时不立刻退——等 ReviewEngine 完成当前轮
-                    if (shouldWake && (reviewEngine == null || !reviewEngine.IsAlive))
-                        break;
-
-                    // DreamEngine 自己还有预算
-                    if (tokensUsed < cfg.DeepSleepTokenBudget)
+                    var fragment = await SelectFragment(isPhase2: true);
+                    if (fragment != null)
                     {
-                        var fragment = await SelectFragment(isPhase2: true);
-                        if (fragment != null)
+                        nullCount = 0;
+                        try
                         {
-                            nullCount = 0;
-                            try
+                            CurrentFragment = fragment.ToString();
+                            CurrentFragmentStartTime = DateTime.Now;
+                            currentDetails = new();
+
+                            using var fragSpan = Signal.Open(LogGroup.Engine, $"片段 #{executed + 1} {fragment} (P2)",
+                                new { index = executed + 1, type = fragment.ToString(), phase = 2, tokensUsed });
+
+                            var summary = await ExecuteFragment(fragment.Value);
+                            var duration = (DateTime.Now - CurrentFragmentStartTime.Value).TotalSeconds;
+                            fragmentRecords.Add(new FragmentRecord
                             {
-                                CurrentFragment = fragment.ToString();
-                                CurrentFragmentStartTime = DateTime.Now;
-                                currentDetails = new();
+                                Type = fragment.ToString()!,
+                                StartTime = CurrentFragmentStartTime.Value,
+                                DurationSeconds = duration,
+                                Success = true,
+                                Summary = summary,
+                                Details = currentDetails
+                            });
+                            tokensUsed += EstimatedTokensPerFragment;
+                            executed++;
+                            FragmentsCompleted = executed;
 
-                                using var fragSpan = Signal.Open(LogGroup.Engine, $"片段 #{executed + 1} {fragment} (P2)",
-                                    new { index = executed + 1, type = fragment.ToString(), phase = 2, tokensUsed });
+                            fragSpan.SetCloseDetail(new { success = true, summary, durationSeconds = duration, tokensUsed });
 
-                                var summary = await ExecuteFragment(fragment.Value);
-                                var duration = (DateTime.Now - CurrentFragmentStartTime.Value).TotalSeconds;
-                                fragmentRecords.Add(new FragmentRecord
-                                {
-                                    Type = fragment.ToString()!,
-                                    StartTime = CurrentFragmentStartTime.Value,
-                                    DurationSeconds = duration,
-                                    Success = true,
-                                    Summary = summary,
-                                    Details = currentDetails
-                                });
-                                tokensUsed += EstimatedTokensPerFragment;
-                                executed++;
-                                FragmentsCompleted = executed;
-
-                                fragSpan.SetCloseDetail(new { success = true, summary, durationSeconds = duration, tokensUsed });
-
-                                await MaybeSleepTalkAsync(summary);
-                            }
-                            catch (Exception ex)
-                            {
-                                Signal.Error(LogGroup.Engine, $"片段执行失败 #{executed + 1} {fragment} (P2)", new { error = ex.GetType().Name, message = ex.Message });
-                                fragmentRecords.Add(new FragmentRecord
-                                {
-                                    Type = fragment.ToString()!,
-                                    StartTime = CurrentFragmentStartTime ?? DateTime.Now,
-                                    DurationSeconds = 0,
-                                    Success = false,
-                                    Summary = ex.Message,
-                                    Details = currentDetails
-                                });
-                            }
+                            await MaybeSleepTalkAsync(summary);
                         }
-                        else
+                        catch (Exception ex)
                         {
-                            nullCount++;
-                            if (reviewEngine == null || !reviewEngine.IsAlive)
+                            Signal.Error(LogGroup.Engine, $"片段执行失败 #{executed + 1} {fragment} (P2)", new { error = ex.GetType().Name, message = ex.Message });
+                            fragmentRecords.Add(new FragmentRecord
                             {
-                                if (nullCount >= 3)
-                                {
-                                    break;
-                                }
-                            }
-                            await Task.Delay(5000);
+                                Type = fragment.ToString()!,
+                                StartTime = CurrentFragmentStartTime ?? DateTime.Now,
+                                DurationSeconds = 0,
+                                Success = false,
+                                Summary = ex.Message,
+                                Details = currentDetails
+                            });
                         }
                     }
                     else
                     {
-                        // DreamEngine 预算用完，陪跑等 Review
-                        if (reviewEngine == null || !reviewEngine.IsAlive)
-                            break;
+                        nullCount++;
+                        if (nullCount >= 3) break;
                         await Task.Delay(5000);
                     }
-                }
-
-                // 等待 ReviewEngine 完成当前轮（最多 30 秒）
-                if (reviewEngine?.IsAlive == true)
-                {
-                    var waitStart = DateTime.Now;
-                    while (reviewEngine.IsAlive && (DateTime.Now - waitStart).TotalSeconds < 30)
-                        await Task.Delay(1000);
                 }
             }
 

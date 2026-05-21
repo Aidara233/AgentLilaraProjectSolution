@@ -19,6 +19,9 @@ namespace AgentLilara.PluginSDK.Services
 
         /// <summary>获取频道消息历史。</summary>
         Task<List<MessageSummary>> GetMessagesAsync(int channelId, int count = 20);
+
+        /// <summary>调整频道亲和度（delta 正值增加，负值降低）。</summary>
+        Task UpdateAffinityAsync(int channelId, float delta);
     }
 
     public class ChannelSummary

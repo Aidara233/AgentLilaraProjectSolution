@@ -412,6 +412,14 @@ namespace AgentCoreProcessor.Tool.Host
                             ["file-tools"] = "enabled"
                         },
                         BlockedTools = ["delegate_task", "cancel_delegation"]
+                    },
+                    ["review"] = new ToolProfile
+                    {
+                        Description = "复盘引擎",
+                        Components = new Dictionary<string, string>
+                        {
+                            ["review-tools"] = "enabled"
+                        }
                     }
                 },
                 ChannelMapping = new Dictionary<string, string>

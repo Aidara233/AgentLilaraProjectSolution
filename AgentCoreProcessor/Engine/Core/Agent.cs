@@ -111,7 +111,7 @@ namespace AgentCoreProcessor.Engine
                                     new { round = round + 1, attempt = attempt + 1, delaySeconds = retryDelay, lastError = lastEx?.Message });
                                 await Task.Delay(TimeSpan.FromSeconds(retryDelay), ct);
                             }
-                            output = await _core.InvokeAsync(messages, EngineMode.Working);
+                            output = await _core.InvokeAsync(messages, EngineMode.Working, _config.ProfileName);
                             modelSuccess = true;
                             _consecutiveFailures = 0;
                             _backoffUntil = null;
