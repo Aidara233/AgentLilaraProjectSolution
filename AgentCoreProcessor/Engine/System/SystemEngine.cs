@@ -250,7 +250,7 @@ namespace AgentCoreProcessor.Engine
                         if (provider != null)
                             _injectProviders.Add(provider);
                     }
-                    catch { /* 单个插件实例化失败不影响整体 */ }
+                    catch (Exception ex) { Signal.Warn(LogGroup.Engine, $"插件实例化失败: {type.Name}", new { type = type.FullName, error = ex.Message }); }
                 }
             }
 
@@ -263,10 +263,10 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
-                // 致命异常兜底：标记死亡后由 SpawnCheck 重启
                 totalErrorCount++;
                 lastErrorTime = DateTime.Now;
                 lastErrorMessage = $"[致命] {ex.GetType().Name}: {ex.Message}";
+                Signal.Error(LogGroup.Engine, "系统引擎致命异常", new { error = ex.GetType().Name, message = ex.Message });
             }
             finally
             {
@@ -371,11 +371,15 @@ namespace AgentCoreProcessor.Engine
                 totalErrorCount++;
                 lastErrorTime = DateTime.Now;
                 lastErrorMessage = $"{ex.GetType().Name}: {ex.Message}";
+                Signal.Error(LogGroup.Engine, "系统循环处理异常",
+                    new { error = ex.GetType().Name, message = ex.Message, consecutiveFailures });
 
                 if (consecutiveFailures >= agentConfig.MaxRounds)
                 {
                     var backoff = agentConfig.BackoffSeconds[
                         Math.Min(consecutiveFailures - 1, agentConfig.BackoffSeconds.Length - 1)];
+                    Signal.Warn(LogGroup.Engine, "系统循环退避",
+                        new { consecutiveFailures, backoffSeconds = backoff });
                     await Task.Delay(TimeSpan.FromSeconds(backoff), ct);
                 }
             }
@@ -516,7 +520,7 @@ namespace AgentCoreProcessor.Engine
                     if (!string.IsNullOrEmpty(s))
                         msgs.Add(new Message { Role = "user", Content = s });
                 }
-                catch { /* 单provider失败不中断链 */ }
+                catch (Exception ex) { Signal.Warn(LogGroup.Engine, $"InjectProvider.Start失败: {p.GetType().Name}", new { provider = p.GetType().Name, error = ex.Message }); }
             }
 
             return msgs.Count > 0 ? msgs : null;
@@ -564,7 +568,7 @@ namespace AgentCoreProcessor.Engine
                     if (!string.IsNullOrEmpty(s))
                         msgs.Add(new Message { Role = "user", Content = s });
                 }
-                catch { /* 单provider失败不中断链 */ }
+                catch (Exception ex) { Signal.Warn(LogGroup.Engine, $"InjectProvider.Round失败: {p.GetType().Name}", new { provider = p.GetType().Name, error = ex.Message }); }
             }
 
             // Compression tier hint（engine-level）
@@ -819,8 +823,9 @@ namespace AgentCoreProcessor.Engine
 
                 return null;
             }
-            catch
+            catch (Exception ex)
             {
+                Signal.Warn(LogGroup.Engine, "读取DreamStats失败", new { error = ex.Message });
                 return null;
             }
         }
@@ -897,7 +902,7 @@ namespace AgentCoreProcessor.Engine
             var json = File.ReadAllText(path);
             return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new();
         }
-        catch { return new(); }
+        catch (Exception ex) { Signal.Warn(LogGroup.Engine, "读取Pinboard失败", new { error = ex.Message }); return new(); }
     }
 
     private static Dictionary<string, string> ReadSystemThinkingNotes()
@@ -909,7 +914,7 @@ namespace AgentCoreProcessor.Engine
             var content = File.ReadAllText(path);
             return new Dictionary<string, string> { ["system"] = content };
         }
-        catch { return new(); }
+        catch (Exception ex) { Signal.Warn(LogGroup.Engine, "读取ThinkingNotes失败", new { error = ex.Message }); return new(); }
     }
 
     private static string SanitizeFileName(string name)

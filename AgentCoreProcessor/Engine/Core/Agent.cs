@@ -83,8 +83,9 @@ namespace AgentCoreProcessor.Engine
                 if (LastRoundResults != null && LastRoundCalls != null && LastRoundResults.Count > 0)
                     messages.Add(FormatToolResults(LastRoundCalls, LastRoundResults));
 
-                // 调模型
+                // 调模型（内层重试：同样 messages 最多尝试 MaxAttempts 次）
                 ModelOutput output;
+                bool modelSuccess = false;
                 using (var modelSpan = Signal.Open(LogGroup.Model, $"模型调用 R{round + 1}",
                     new
                     {
@@ -95,23 +96,50 @@ namespace AgentCoreProcessor.Engine
                             : new { m.Role, content = m.Content })
                     }))
                 {
-                    try
+                    output = default!;
+                    Exception? lastEx = null;
+                    for (int attempt = 0; attempt < _config.ModelCallMaxAttempts; attempt++)
                     {
-                        output = await _core.InvokeAsync(messages, EngineMode.Working);
-                        _consecutiveFailures = 0;
-                        _backoffUntil = null;
-                        modelSpan.SetCloseDetail(new
+                        ct.ThrowIfCancellationRequested();
+                        try
                         {
-                            responseText = output.Text,
-                            thinking = output.Thinking,
-                            toolCalls = output.ToolCalls?.Select(tc => new { tc.Tool, tc.Inputs, tc.ToolUseId })
-                        });
+                            if (attempt > 0)
+                            {
+                                var retryDelay = _config.ModelCallRetryDelaySeconds[
+                                    Math.Min(attempt - 1, _config.ModelCallRetryDelaySeconds.Length - 1)];
+                                Signal.Warn(LogGroup.Model, $"模型调用重试 R{round + 1} #{attempt + 1}",
+                                    new { round = round + 1, attempt = attempt + 1, delaySeconds = retryDelay, lastError = lastEx?.Message });
+                                await Task.Delay(TimeSpan.FromSeconds(retryDelay), ct);
+                            }
+                            output = await _core.InvokeAsync(messages, EngineMode.Working);
+                            modelSuccess = true;
+                            _consecutiveFailures = 0;
+                            _backoffUntil = null;
+                            modelSpan.SetCloseDetail(new
+                            {
+                                responseText = output.Text,
+                                thinking = output.Thinking,
+                                toolCalls = output.ToolCalls?.Select(tc => new { tc.Tool, tc.Inputs, tc.ToolUseId }),
+                                attempts = attempt + 1
+                            });
+                            break;
+                        }
+                        catch (OperationCanceledException) { throw; }
+                        catch (Exception ex)
+                        {
+                            lastEx = ex;
+                        }
                     }
-                    catch (OperationCanceledException) { throw; }
-                    catch (Exception ex)
+
+                    if (!modelSuccess)
                     {
                         _consecutiveFailures++;
-                        modelSpan.SetCloseDetail(new { error = ex.GetType().Name, message = ex.Message });
+                        modelSpan.SetCloseDetail(new
+                        {
+                            error = lastEx!.GetType().Name,
+                            message = lastEx.Message,
+                            attempts = _config.ModelCallMaxAttempts
+                        });
 
                         if (_consecutiveFailures > _config.BackoffSeconds.Length)
                         {

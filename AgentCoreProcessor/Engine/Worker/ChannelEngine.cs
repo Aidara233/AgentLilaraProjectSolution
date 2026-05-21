@@ -892,7 +892,7 @@ namespace AgentCoreProcessor.Engine
             var roundInject = await ((IAgentHost)this).BuildRoundInjectAsync();
             if (roundInject != null) messages.AddRange(roundInject);
 
-            // Call model
+            // Call model (with retry)
             ModelOutput output;
             using (var modelSpan = Signal.Open(LogGroup.Model, $"Express模型调用 ch:{channelId}",
                 new
@@ -904,13 +904,40 @@ namespace AgentCoreProcessor.Engine
                         : new { m.Role, content = m.Content })
                 }))
             {
-                output = await agentCore.InvokeAsync(messages, EngineMode.Express);
-                modelSpan.SetCloseDetail(new
+                output = default!;
+                Exception? lastEx = null;
+                bool success = false;
+                for (int attempt = 0; attempt < agentConfig.ModelCallMaxAttempts; attempt++)
                 {
-                    responseText = output.Text,
-                    thinking = output.Thinking,
-                    toolCalls = output.ToolCalls?.Select(tc => new { tc.Tool, tc.Inputs, tc.ToolUseId })
-                });
+                    try
+                    {
+                        if (attempt > 0)
+                        {
+                            var retryDelay = agentConfig.ModelCallRetryDelaySeconds[
+                                Math.Min(attempt - 1, agentConfig.ModelCallRetryDelaySeconds.Length - 1)];
+                            Signal.Warn(LogGroup.Model, $"Express模型重试 ch:{channelId} #{attempt + 1}",
+                                new { channelId, attempt = attempt + 1, delaySeconds = retryDelay, lastError = lastEx?.Message });
+                            await Task.Delay(TimeSpan.FromSeconds(retryDelay));
+                        }
+                        output = await agentCore.InvokeAsync(messages, EngineMode.Express);
+                        success = true;
+                        modelSpan.SetCloseDetail(new
+                        {
+                            responseText = output.Text,
+                            thinking = output.Thinking,
+                            toolCalls = output.ToolCalls?.Select(tc => new { tc.Tool, tc.Inputs, tc.ToolUseId }),
+                            attempts = attempt + 1
+                        });
+                        break;
+                    }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex) { lastEx = ex; }
+                }
+                if (!success)
+                {
+                    modelSpan.SetCloseDetail(new { error = lastEx!.GetType().Name, message = lastEx.Message, attempts = agentConfig.ModelCallMaxAttempts });
+                    throw lastEx;
+                }
             }
 
             // Process text output
