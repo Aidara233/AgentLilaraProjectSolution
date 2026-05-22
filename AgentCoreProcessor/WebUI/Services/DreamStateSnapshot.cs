@@ -22,6 +22,9 @@ namespace AgentCoreProcessor.WebUI.Services
         public string? LastFragmentType { get; init; }
         public string? LastFragmentSummary { get; init; }
         public List<FragmentDetailSnapshot>? LastFragmentDetails { get; init; }
+
+        // 活跃做梦时内存中所有已完成的片段（未入库）
+        public List<FragmentRecord>? CompletedFragments { get; init; }
     }
 
     internal class FragmentDetailSnapshot

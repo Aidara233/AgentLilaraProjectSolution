@@ -149,7 +149,8 @@ namespace AgentCoreProcessor.Engine
                     OldValue = d.OldValue,
                     NewValue = d.NewValue,
                     Note = d.Note
-                }).ToList()
+                }).ToList(),
+                CompletedFragments = active?.CompletedFragments.ToList()
             };
         }
 

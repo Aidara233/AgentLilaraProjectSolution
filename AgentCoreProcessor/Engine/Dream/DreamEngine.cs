@@ -50,6 +50,7 @@ namespace AgentCoreProcessor.Engine
         internal DateTime? CurrentFragmentStartTime { get; private set; }
         internal string? CurrentInputDescription { get; private set; }
         internal FragmentRecord? LastCompletedRecord { get; private set; }
+        internal IReadOnlyList<FragmentRecord> CompletedFragments => fragmentRecords;
 
         // 片段执行记录
         private readonly List<FragmentRecord> fragmentRecords = new();

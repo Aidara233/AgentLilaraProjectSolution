@@ -433,35 +433,51 @@ internal class DreamActiveFragmentsSource : IDataSource
         var hasActive = _engine.HasActiveEngine("Dream");
         var snap = check?.GetDreamSnapshot(hasActive);
 
-        // 如果有活跃 session，从数据库拿已完成片段 + 实时正在执行的
-        // 如果没有活跃 session，显示最近一次 session 的片段
-        var sessions = await _engine.DreamLogs.GetRecentSessionsAsync(1);
-        int? sessionId = null;
-
-        if (hasActive && sessions.Count > 0)
-            sessionId = sessions[0].Id;
-        else if (!hasActive && sessions.Count > 0)
-            sessionId = sessions[0].Id;
-
         var arr = new JsonArray();
 
-        if (sessionId.HasValue)
+        if (hasActive && snap?.CompletedFragments != null)
         {
-            var fragments = await _engine.DreamLogs.GetFragmentsBySessionAsync(sessionId.Value);
-            foreach (var f in fragments)
+            // 活跃做梦时用引擎内存中的片段（未入库）
+            int seq = 1;
+            foreach (var rec in snap.CompletedFragments)
             {
                 arr.Add(new JsonObject
                 {
-                    ["seq"] = (f.SeqIndex + 1).ToString(),
-                    ["type"] = f.Type,
-                    ["status"] = f.Success ? "完成" : "失败",
-                    ["duration"] = $"{f.DurationSeconds:F1}s",
-                    ["summary"] = f.Summary.Length > 120 ? f.Summary[..120] + "…" : f.Summary
+                    ["seq"] = seq.ToString(),
+                    ["type"] = rec.Type,
+                    ["status"] = rec.Success ? "完成" : "失败",
+                    ["duration"] = $"{rec.DurationSeconds:F1}s",
+                    ["summary"] = (rec.Summary?.Length > 120 ? rec.Summary[..120] + "…" : rec.Summary) ?? ""
                 });
+                seq++;
+            }
+        }
+        else if (!hasActive)
+        {
+            // 无活跃做梦时显示最近一次 session 的已入库片段
+            var sessions = await _engine.DreamLogs.GetRecentSessionsAsync(1);
+            if (sessions.Count > 0)
+            {
+                var sessionId = sessions[0].Id;
+                var fragments = await _engine.DreamLogs.GetFragmentsBySessionAsync(sessionId);
+                var seq = 1;
+                foreach (var f in fragments)
+                {
+                    arr.Add(new JsonObject
+                    {
+                        ["seq"] = seq.ToString(),
+                        ["type"] = f.Type,
+                        ["status"] = f.Success ? "完成" : "失败",
+                        ["duration"] = $"{f.DurationSeconds:F1}s",
+                        ["summary"] = f.Summary.Length > 120 ? f.Summary[..120] + "…" : f.Summary,
+                        ["_link"] = $"/p/dream/history/{sessionId}"
+                    });
+                    seq++;
+                }
             }
         }
 
-        // 追加当前正在执行的片段（未入库）
+        // 追加当前正在执行的片段
         if (hasActive && snap?.CurrentFragment != null)
         {
             var elapsed = snap.CurrentFragmentStartTime.HasValue
