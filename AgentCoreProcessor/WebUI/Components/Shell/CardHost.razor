@@ -1,7 +1,7 @@
 @using AgentLilara.PluginSDK.WebUI
 @using AgentCoreProcessor.WebUI.Shell
 
-<div class="card card-grid-item" style="grid-column: span @Layout.PreferredCols; @HeightStyle @MinWidthStyle">
+<div class="card card-grid-item" style="grid-column: span @Layout.PreferredCols; @RowSpanStyle @HeightStyle @MinWidthStyle @OverflowStyle">
     @if (!string.IsNullOrEmpty(Title))
     {
         <div class="card-header d-flex align-items-center">
@@ -11,7 +11,7 @@
             </button>
         </div>
     }
-    <div class="card-body">
+    <div class="card-body" style="@BodyOverflowStyle">
         @if (State?.Error != null)
         {
             <div class="card-error-state">
@@ -43,6 +43,9 @@
 
     private string HeightStyle => Layout.Height != null ? $"height:{Layout.Height};" : "";
     private string MinWidthStyle => Layout.MinWidth != null ? $"min-width:{Layout.MinWidth};" : "";
+    private string RowSpanStyle => Layout.RowSpan > 1 ? $"grid-row: span {Layout.RowSpan};" : "";
+    private string OverflowStyle => Layout.Height != null ? "overflow: hidden;" : "";
+    private string BodyOverflowStyle => Layout.Height != null ? "overflow-y: auto; flex: 1; min-height: 0;" : "";
 
     private async Task OnRefreshClick() => await OnRefresh.InvokeAsync();
 }

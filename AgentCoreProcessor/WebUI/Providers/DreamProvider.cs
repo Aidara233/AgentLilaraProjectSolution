@@ -55,6 +55,12 @@ internal class DreamProvider : IWebUIProvider
                         new() { Field = "fragment_elapsed", Label = "片段耗时" },
                         new() { Field = "input_desc", Label = "输入描述" },
                         new() { Field = "force_flag", Label = "强制触发", Type = StatusFieldType.Badge }
+                    },
+                    Actions = new()
+                    {
+                        new() { Id = "force-deep", Label = "强制大睡", Icon = "bi-moon" },
+                        new() { Id = "force-nap", Label = "强制小睡", Icon = "bi-cloud" },
+                        new() { Id = "force-daydream", Label = "强制走神", Icon = "bi-cloud-haze" }
                     }
                 },
                 Layout = new CardLayout { PreferredCols = 6 }
@@ -126,11 +132,43 @@ internal class DreamProvider : IWebUIProvider
                     DefaultPageSize = 20
                 },
                 Layout = new CardLayout { PreferredCols = 12 }
+            },
+            new()
+            {
+                Id = "dream-daily-table", Type = CardType.Table, DataSourceId = "dream-daily-table", Title = "每日统计（近7天）",
+                Schema = new TableSchema
+                {
+                    Columns = new()
+                    {
+                        new() { Field = "date", Header = "日期", Width = "100px" },
+                        new() { Field = "temp_peak", Header = "临时峰值", Width = "80px" },
+                        new() { Field = "processed", Header = "已处理", Width = "70px" },
+                        new() { Field = "undreamed_peak", Header = "未做梦峰值", Width = "90px" }
+                    },
+                    Paginated = false
+                },
+                Layout = new CardLayout { PreferredCols = 8 }
+            },
+            new()
+            {
+                Id = "dream-stats-cards", Type = CardType.Status, DataSourceId = "dream-stats-cards", Title = "统计概览",
+                Schema = new StatusSchema
+                {
+                    Fields = new()
+                    {
+                        new() { Field = "baseline_avg", Label = "基线均值" },
+                        new() { Field = "baseline_update", Label = "基线更新" },
+                        new() { Field = "red_days", Label = "连续红天", Type = StatusFieldType.Badge }
+                    }
+                },
+                Layout = new CardLayout { PreferredCols = 4 }
             }
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "dream-sessions", Source = new DreamSessionsSource(_engine) }
+            new() { Id = "dream-sessions", Source = new DreamSessionsSource(_engine) },
+            new() { Id = "dream-daily-table", Source = new DreamDailyStatsSource(_engine) },
+            new() { Id = "dream-stats-cards", Source = new DreamStatsCardsSource(_engine) }
         }
     };
 
@@ -155,7 +193,7 @@ internal class DreamProvider : IWebUIProvider
                         new() { Field = "interrupted", Label = "被打断", Type = StatusFieldType.Badge }
                     }
                 },
-                Layout = new CardLayout { PreferredCols = 12 }
+                Layout = new CardLayout { PreferredCols = 7 }
             },
             new()
             {
@@ -173,7 +211,7 @@ internal class DreamProvider : IWebUIProvider
                     },
                     DefaultPageSize = 50
                 },
-                Layout = new CardLayout { PreferredCols = 12 }
+                Layout = new CardLayout { PreferredCols = 7, Height = "380px" }
             },
             new()
             {
@@ -188,11 +226,11 @@ internal class DreamProvider : IWebUIProvider
                         new() { Field = "duration", Label = "耗时" },
                         new() { Field = "success", Label = "结果", Type = StatusFieldType.Badge },
                         new() { Field = "summary", Label = "摘要" },
-                        new() { Field = "input", Label = "输入素材" },
-                        new() { Field = "changes", Label = "变更明细" }
+                        new() { Field = "input_memories", Label = "输入素材", IsMultiline = true },
+                        new() { Field = "changes", Label = "变更明细", IsMultiline = true }
                     }
                 },
-                Layout = new CardLayout { PreferredCols = 12 }
+                Layout = new CardLayout { PreferredCols = 5, RowSpan = 2 }
             }
         },
         DataSources = new List<DataSourceDefinition>
@@ -314,7 +352,27 @@ internal class DreamStatusSource : IDataSource
     }
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-        => Task.FromResult(new ActionResult { Success = true });
+    {
+        var signal = action switch
+        {
+            "force-deep" => "force-sleep",
+            "force-nap" => "force-sleep",
+            "force-daydream" => "force-sleep",
+            _ => null
+        };
+        if (signal != null)
+        {
+            var arg = action switch
+            {
+                "force-nap" => "nap",
+                "force-daydream" => "daydream",
+                _ => null
+            };
+            _engine.EventBus.PublishSignal(signal, arg);
+            return Task.FromResult(new ActionResult { Success = true, Message = $"已发送{action}信号" });
+        }
+        return Task.FromResult(new ActionResult { Success = true });
+    }
 }
 
 internal class DreamStatsSource : IDataSource
@@ -586,21 +644,19 @@ internal class FragmentDetailSource : IDataSource
                     ["duration"] = "—",
                     ["success"] = "—",
                     ["summary"] = "—",
-                    ["input"] = "—",
+                    ["input_memories"] = "—",
                     ["changes"] = "—"
                 }
             };
         }
 
-        var fragments = await _engine.DreamLogs.GetFragmentByIdAsync(fragmentId);
-        if (fragments == null)
-            return new DataResult { Data = new JsonObject { ["type"] = "未找到", ["time"] = "—", ["duration"] = "—", ["success"] = "—", ["summary"] = "—", ["input"] = "—", ["changes"] = "—" } };
+        var fragment = await _engine.DreamLogs.GetFragmentByIdAsync(fragmentId);
+        if (fragment == null)
+            return new DataResult { Data = new JsonObject { ["type"] = "未找到", ["time"] = "—", ["duration"] = "—", ["success"] = "—", ["summary"] = "—", ["input_memories"] = "—", ["changes"] = "—" } };
 
         var details = await _engine.DreamLogs.GetDetailsByFragmentAsync(fragmentId);
 
-        var inputDesc = string.IsNullOrEmpty(fragments.InputMemoryIds)
-            ? "—"
-            : FormatInputMemories(fragments.InputMemoryIds);
+        var inputMemoriesStr = await FormatInputMemoriesAsync(fragment.InputMemoryIds);
 
         var changesStr = details.Count > 0
             ? string.Join("\n", details.Select(FormatDetailLine))
@@ -608,28 +664,69 @@ internal class FragmentDetailSource : IDataSource
 
         var data = new JsonObject
         {
-            ["type"] = fragments.Type,
-            ["time"] = fragments.StartTime.ToString("HH:mm:ss"),
-            ["duration"] = $"{fragments.DurationSeconds:F1}s",
-            ["success"] = fragments.Success ? "成功" : "失败",
-            ["summary"] = fragments.Summary,
-            ["input"] = inputDesc,
+            ["type"] = FragmentTypeLabel(fragment.Type),
+            ["time"] = fragment.StartTime.ToString("HH:mm:ss"),
+            ["duration"] = $"{fragment.DurationSeconds:F1}s",
+            ["success"] = fragment.Success ? "成功" : "失败",
+            ["summary"] = fragment.Summary,
+            ["input_memories"] = inputMemoriesStr,
             ["changes"] = changesStr
         };
         return new DataResult { Data = data };
     }
 
-    private static string FormatInputMemories(string input)
+    private async Task<string> FormatInputMemoriesAsync(string? inputMemoryIds)
     {
-        if (input.Contains("target:"))
+        if (string.IsNullOrEmpty(inputMemoryIds))
+            return "—";
+
+        var ids = ParseAllIds(inputMemoryIds);
+        if (ids.Count == 0) return inputMemoryIds;
+
+        var memEntries = await _engine.Memories.GetByIdsAsync(ids);
+        var memMap = memEntries.ToDictionary(m => m.Id, m => m.Content);
+
+        var tempIds = ids.Where(id => !memMap.ContainsKey(id)).ToList();
+        if (tempIds.Count > 0)
         {
-            var parts = input.Split(';');
-            var target = parts.FirstOrDefault(p => p.StartsWith("target:"))?.Replace("target:", "目标#");
-            var candidates = parts.FirstOrDefault(p => p.StartsWith("candidates:"))?.Replace("candidates:", "候选: #");
-            return $"{target}  {candidates}";
+            var tempEntries = await _engine.TempMemories.GetByIdsAsync(tempIds);
+            foreach (var t in tempEntries)
+                memMap[t.Id] = $"[临时] {t.Content}";
         }
-        return $"记忆: #{input.Replace(",", ", #")}";
+
+        var lines = new List<string>();
+        foreach (var id in ids)
+        {
+            var content = memMap.TryGetValue(id, out var c)
+                ? (c.Length > 200 ? c[..200] + "…" : c)
+                : "(未找到)";
+            lines.Add($"#{id}  {content}");
+        }
+        return string.Join("\n", lines);
     }
+
+    private static List<int> ParseAllIds(string input)
+    {
+        var ids = new List<int>();
+        foreach (var part in input.Split('|', ',', ';', ':'))
+        {
+            var trimmed = part.Trim();
+            if (trimmed == "target" || trimmed == "candidates") continue;
+            if (int.TryParse(trimmed, out var id))
+                ids.Add(id);
+        }
+        return ids.Distinct().ToList();
+    }
+
+    private static string FragmentTypeLabel(string type) => type switch
+    {
+        "Consolidation" => "整合",
+        "Weight" => "权重",
+        "Link" => "关联",
+        "Combine" => "组合",
+        "Dedup" => "去重",
+        _ => type
+    };
 
     private static string FormatDetailLine(DreamFragmentDetail d)
     {
@@ -644,6 +741,59 @@ internal class FragmentDetailSource : IDataSource
             "consolidate_group" => $"整合分组 #{d.MemoryId}: {d.Note}",
             _ => $"{d.Action} #{d.MemoryId}" + (d.Note != null ? $" ({d.Note})" : "")
         };
+    }
+
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+        => Task.FromResult(new ActionResult { Success = true });
+}
+
+internal class DreamDailyStatsSource : IDataSource
+{
+    private readonly MasterEngine _engine;
+    public DreamDailyStatsSource(MasterEngine engine) => _engine = engine;
+    public bool SupportsPush => false;
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        var statsPath = Path.Combine(PathConfig.StoragePath, "Dream", "DreamStats.json");
+        var stats = DreamStats.Load(statsPath);
+        var arr = new JsonArray();
+        foreach (var r in stats.DailyRecords.OrderByDescending(r => r.Date).Take(7))
+        {
+            arr.Add(new JsonObject
+            {
+                ["date"] = r.Date,
+                ["temp_peak"] = r.TempPeak.ToString(),
+                ["processed"] = r.Processed.ToString(),
+                ["undreamed_peak"] = r.UndreamedPeak.ToString()
+            });
+        }
+        return Task.FromResult(new DataResult { Data = arr, TotalCount = arr.Count });
+    }
+
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+        => Task.FromResult(new ActionResult { Success = true });
+}
+
+internal class DreamStatsCardsSource : IDataSource
+{
+    private readonly MasterEngine _engine;
+    public DreamStatsCardsSource(MasterEngine engine) => _engine = engine;
+    public bool SupportsPush => false;
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        var statsPath = Path.Combine(PathConfig.StoragePath, "Dream", "DreamStats.json");
+        var stats = DreamStats.Load(statsPath);
+        var data = new JsonObject
+        {
+            ["baseline_avg"] = $"{stats.Baseline.AvgDailyTempIntake:F1} 条/天",
+            ["baseline_update"] = string.IsNullOrEmpty(stats.Baseline.LastUpdate) ? "—" : stats.Baseline.LastUpdate,
+            ["red_days"] = stats.ConsecutiveRedDays > 0 ? $"{stats.ConsecutiveRedDays} 天" : "0"
+        };
+        return Task.FromResult(new DataResult { Data = data });
     }
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)

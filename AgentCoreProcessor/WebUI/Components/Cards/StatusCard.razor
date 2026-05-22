@@ -7,9 +7,16 @@
         {
             <div class="status-field-row">
                 <span class="status-field-label">@field.Label</span>
-                <span class="status-field-value @GetValueClass(field)">
-                    @GetFieldValue(field)
-                </span>
+                @if (field.IsMultiline)
+                {
+                    <pre class="status-field-multiline">@GetFieldValue(field)</pre>
+                }
+                else
+                {
+                    <span class="status-field-value @GetValueClass(field)">
+                        @GetFieldValue(field)
+                    </span>
+                }
             </div>
         }
     </div>

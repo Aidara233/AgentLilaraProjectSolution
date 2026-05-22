@@ -25,4 +25,5 @@ public class CardLayout
     public int PreferredCols { get; init; } = 12;
     public string? Height { get; init; }
     public int Order { get; init; }
+    public int RowSpan { get; init; } = 1;
 }

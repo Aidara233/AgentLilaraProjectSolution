@@ -56,6 +56,7 @@ public class StatusField
     public required string Field { get; init; }
     public required string Label { get; init; }
     public StatusFieldType Type { get; init; } = StatusFieldType.Text;
+    public bool IsMultiline { get; init; }
 }
 
 public enum StatusFieldType { Text, Badge, Progress, Indicator, DateTime }

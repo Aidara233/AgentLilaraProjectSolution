@@ -1798,6 +1798,27 @@ select.config-input option {
     font-weight: 600;
 }
 
+.status-card .status-field-multiline {
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    font-family: var(--font-mono);
+    background: var(--bg-tertiary);
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--radius-sm);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 300px;
+    overflow-y: auto;
+    margin: 0;
+    width: 100%;
+}
+
+.status-card .status-field-row:has(.status-field-multiline) {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+}
+
 .status-card .status-actions {
     display: flex;
     flex-wrap: wrap;
