@@ -52,6 +52,11 @@ internal class VisionProvider : IWebUIProvider
                         new() { Field = "vision_errors", Label = "识图错误" },
                         new() { Field = "ocr_errors", Label = "OCR错误" },
                         new() { Field = "suspended", Label = "暂停", Type = StatusFieldType.Badge }
+                    },
+                    Actions = new()
+                    {
+                        new() { Id = "wake", Label = "立即处理", Confirm = "" },
+                        new() { Id = "stop", Label = "停止引擎", Danger = true, Confirm = "确认停止视觉引擎？下次心跳会自动重启。" }
                     }
                 },
                 Layout = new CardLayout { PreferredCols = 6 }
@@ -159,7 +164,8 @@ internal class VisionStatusSource : IDataSource
                 ["ocr_status"] = "—",
                 ["vision_errors"] = "—",
                 ["ocr_errors"] = "—",
-                ["suspended"] = "—"
+                ["suspended"] = "—",
+                ["_disabled_actions"] = new JsonArray("wake", "stop")
             };
             return Task.FromResult(new DataResult { Data = data });
         }
@@ -179,7 +185,26 @@ internal class VisionStatusSource : IDataSource
     }
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-        => Task.FromResult(new ActionResult { Success = true });
+    {
+        var check = _engine.GetSpawnCheck<VisionEngineSpawnCheck>();
+        var instance = check?.ActiveInstance;
+
+        switch (action)
+        {
+            case "wake":
+                if (instance == null)
+                    return Task.FromResult(new ActionResult { Success = false, Message = "引擎未运行" });
+                instance.SignalGate();
+                return Task.FromResult(new ActionResult { Success = true, Message = "已触发立即处理" });
+            case "stop":
+                if (instance == null)
+                    return Task.FromResult(new ActionResult { Success = false, Message = "引擎未运行" });
+                instance.RequestStop();
+                return Task.FromResult(new ActionResult { Success = true, Message = "已请求停止，下次心跳会自动重启" });
+            default:
+                return Task.FromResult(new ActionResult { Success = false, Message = $"未知操作: {action}" });
+        }
+    }
 }
 
 internal class VisionConfigSource : IDataSource
