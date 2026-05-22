@@ -86,8 +86,13 @@ internal class EngineSummarySource : IDataSource
     private readonly MasterEngine _engine;
     public EngineSummarySource(MasterEngine engine) => _engine = engine;
 
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+    public bool SupportsPush => true;
+
+    public IDisposable? Subscribe(Action<JsonNode?> callback)
+    {
+        var timer = new System.Threading.Timer(_ => callback(null), null, 5000, 5000);
+        return new TimerDisposable(timer);
+    }
 
     public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
@@ -120,8 +125,13 @@ internal class EngineListSource : IDataSource
     private readonly MasterEngine _engine;
     public EngineListSource(MasterEngine engine) => _engine = engine;
 
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+    public bool SupportsPush => true;
+
+    public IDisposable? Subscribe(Action<JsonNode?> callback)
+    {
+        var timer = new System.Threading.Timer(_ => callback(null), null, 5000, 5000);
+        return new TimerDisposable(timer);
+    }
 
     public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
@@ -141,7 +151,7 @@ internal class EngineListSource : IDataSource
                     ["name"] = snap.ChannelName ?? $"#{snap.ChannelId}",
                     ["status"] = snap.IsBusy ? "处理中" : "等待",
                     ["detail"] = $"冲动 {snap.Impulse:F1} | 轮次 {snap.TotalRounds} | {(snap.IsWorkingMode ? "Working" : "Express")}",
-                    ["_link"] = $"/p/channels/{snap.ChannelId}"
+                    ["_link"] = $"/p/engines/channel_{snap.ChannelId}"
                 });
             }
         }
