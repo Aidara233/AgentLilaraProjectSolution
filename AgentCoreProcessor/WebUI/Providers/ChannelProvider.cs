@@ -233,6 +233,8 @@ internal class ChannelInfoSource : IDataSource
             ["extraction"] = $"{channel.LastExtractedMessageId} / {msgCount}",
             ["config"] = $"活跃 {config.ActiveExtractionThreshold} | 潜水 {config.LurkingExtractionThreshold}"
         };
+        if (!hasEngine)
+            data["_disabled_actions"] = new JsonArray("view-engine");
         return new DataResult { Data = data };
     }
 

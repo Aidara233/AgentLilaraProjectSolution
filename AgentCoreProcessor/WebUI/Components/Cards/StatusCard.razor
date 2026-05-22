@@ -19,7 +19,9 @@
         <div class="status-actions">
             @foreach (var action in Schema.Actions)
             {
+                var disabled = IsActionDisabled(action.Id);
                 <button class="btn btn-sm @(action.Danger ? "btn-outline-danger" : "btn-ghost")"
+                        disabled="@disabled"
                         @onclick="() => HandleAction(action)">
                     @if (!string.IsNullOrEmpty(action.Icon))
                     {
@@ -66,5 +68,12 @@
     private async Task HandleAction(ActionButton action)
     {
         await OnAction.InvokeAsync(action.Id);
+    }
+
+    private bool IsActionDisabled(string actionId)
+    {
+        if (Data is not JsonObject obj) return false;
+        if (obj["_disabled_actions"] is not JsonArray arr) return false;
+        return arr.Any(a => a?.ToString() == actionId);
     }
 }
