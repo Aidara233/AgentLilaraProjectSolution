@@ -230,7 +230,7 @@ internal class DreamProvider : IWebUIProvider
                     },
                     DefaultPageSize = 50
                 },
-                Layout = new CardLayout { PreferredCols = 7, Height = "calc(100vh - 350px)", Order = 2 }
+                Layout = new CardLayout { PreferredCols = 7, Height = "calc(100vh - 480px)", Order = 2 }
             }
         },
         DataSources = new List<DataSourceDefinition>
