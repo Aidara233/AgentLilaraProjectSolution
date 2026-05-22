@@ -168,6 +168,7 @@ namespace AgentCoreProcessor.Engine
             gate = new Gate(ctx.EventBus);
             gate.ShouldActivate = () => Task.FromResult(true);
             gate.ExecuteAsync = ExecuteSystemCycleAsync;
+            gate.EventFilter = e => e is TimerEvent or SignalEvent;
 
             // 注册 TaskBridge 回调：任务提交时唤醒闸门 + 强制唤醒 DreamEngine
             ctx.TaskBridge.OnTaskSubmitted = () =>

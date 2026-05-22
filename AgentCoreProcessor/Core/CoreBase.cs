@@ -187,6 +187,9 @@ namespace AgentCoreProcessor.Core
                 error = callError?.Message
             });
 
+            if (callError != null)
+                throw callError;
+
             return usage;
         }
 

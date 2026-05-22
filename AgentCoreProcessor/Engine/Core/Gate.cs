@@ -37,6 +37,9 @@ namespace AgentCoreProcessor.Engine
         /// <summary>引擎注入：评估是否开闸。返回 true 开闸。</summary>
         public Func<Task<bool>>? ShouldActivate { get; set; }
 
+        /// <summary>引擎注入：事件过滤器。返回 true 表示此事件应唤醒闸门。为 null 时所有事件都唤醒。</summary>
+        public Func<EngineEvent, bool>? EventFilter { get; set; }
+
         /// <summary>引擎注入：执行本轮工作。</summary>
         public Func<CancellationToken, Task>? ExecuteAsync { get; set; }
 
@@ -49,6 +52,8 @@ namespace AgentCoreProcessor.Engine
 
             void handler(EngineEvent e)
             {
+                if (EventFilter != null && !EventFilter(e))
+                    return;
                 LastTriggerSignalId = e.TraceSignalId;
                 LastTriggerSpanId = e.TraceParentSpanId;
                 busTcs.TrySetResult(true);
