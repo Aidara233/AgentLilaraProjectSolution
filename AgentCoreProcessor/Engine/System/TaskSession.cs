@@ -30,7 +30,7 @@ namespace AgentCoreProcessor.Engine
         private readonly Channel<string> instructionQueue = Channel.CreateUnbounded<string>();
         private readonly List<Message> conversationHistory = new();
         private readonly HashSet<string>? toolWhitelist;
-        private readonly string? delegationId;
+        internal string? DelegationId { get; }
         private CancellationTokenSource? stopCts;
         private Task? backgroundTask;
 
@@ -40,7 +40,7 @@ namespace AgentCoreProcessor.Engine
         public TaskSession(ISystemContext ctx, string? delegationId = null, HashSet<string>? toolWhitelist = null)
         {
             this.ctx = ctx;
-            this.delegationId = delegationId;
+            this.DelegationId = delegationId;
             this.toolWhitelist = toolWhitelist;
             this.SessionId = $"task-{Guid.NewGuid().ToString("N")[..8]}";
             agentCore.CallerTag = $"SubAgent:{SessionId}";
@@ -235,25 +235,22 @@ namespace AgentCoreProcessor.Engine
                 var isFailed = result.StartsWith("异常终止") || result == "达到最大轮次限制"
                     || result == "API 调用连续失败，子 agent 中止";
 
-                if (!string.IsNullOrEmpty(delegationId))
+                if (!string.IsNullOrEmpty(DelegationId))
                 {
                     if (isFailed)
                     {
-                        // 失败：标记 RetryPending，双通知
-                        ctx.Delegations.MarkRetryPending(delegationId, result);
+                        ctx.Delegations.MarkRetryPending(DelegationId, result);
 
-                        // 通知系统循环：子 agent 失败，需决策
                         ctx.TaskBridge.PostNotification(new Notification
                         {
                             Type = NotificationType.SubAgentFailed,
                             SourceId = SessionId,
-                            DelegationId = delegationId,
+                            DelegationId = DelegationId,
                             Summary = $"子 agent 执行失败: {result.Truncate(100)}",
                             Timestamp = DateTime.Now
                         });
 
-                        // 通知频道循环：让用户知情
-                        var delegation = ctx.Delegations.Get(delegationId);
+                        var delegation = ctx.Delegations.Get(DelegationId);
                         if (delegation != null)
                         {
                             var channelMsg = $"[系统] 委托「{delegation.Description.Truncate(30)}」执行遇到问题: {result.Truncate(60)}。系统正在评估是否重试（已重试 {delegation.RetryCount}/{DelegationRegistry.MaxRetries} 次）。";
@@ -262,7 +259,7 @@ namespace AgentCoreProcessor.Engine
                     }
                     else
                     {
-                        ctx.Delegations.MarkCompleted(delegationId, result);
+                        ctx.Delegations.MarkCompleted(DelegationId, result);
                     }
                 }
                 else

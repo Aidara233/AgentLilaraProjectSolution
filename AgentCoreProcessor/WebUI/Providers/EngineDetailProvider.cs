@@ -361,8 +361,13 @@ internal class EngineContextSource : IDataSource
 {
     private readonly Func<EngineContextSnapshot?> _getSnapshot;
     public EngineContextSource(Func<EngineContextSnapshot?> getSnapshot) => _getSnapshot = getSnapshot;
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+    public bool SupportsPush => true;
+
+    public IDisposable? Subscribe(Action<JsonNode?> callback)
+    {
+        var timer = new System.Threading.Timer(_ => callback(null), null, 10000, 10000);
+        return new TimerDisposable(timer);
+    }
 
     public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {

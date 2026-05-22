@@ -822,11 +822,15 @@ namespace AgentCoreProcessor.Engine
             {
                 foreach (var kv in subAgents)
                 {
+                    var session = kv.Value as TaskSession;
                     agentInfos.Add(new WebUI.Services.SubAgentInfo
                     {
                         SessionId = kv.Value.SessionId,
                         Type = kv.Value.Type.ToString(),
-                        IsAlive = kv.Value.IsAlive
+                        IsAlive = kv.Value.IsAlive,
+                        CurrentInstruction = session?.CurrentInstruction,
+                        LastResult = session?.LastResult,
+                        DelegationId = session?.DelegationId
                     });
                 }
             }

@@ -36,5 +36,8 @@ namespace AgentCoreProcessor.WebUI.Services
         public string SessionId { get; init; } = "";
         public string Type { get; init; } = "";
         public bool IsAlive { get; init; }
+        public string? CurrentInstruction { get; init; }
+        public string? LastResult { get; init; }
+        public string? DelegationId { get; init; }
     }
 }

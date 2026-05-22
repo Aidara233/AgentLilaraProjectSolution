@@ -68,8 +68,9 @@
 每轮代码改动完成后，必须立即执行：
 1. 编译：先杀进程再 build 再启动，一气呵成避免 exe 锁定问题
    ```bash
-   taskkill /IM AgentCoreProcessor.exe /F 2>/dev/null; dotnet build && dotnet run
+   cmd //c "taskkill /IM AgentCoreProcessor.exe /T /F" 2>/dev/null; dotnet build && dotnet run
    ```
+   注意：Git Bash 会把 `/IM` `/F` 等斜杠参数误解为路径，必须用 `cmd //c "..."` 包裹 taskkill 命令。
    杀进程不会造成数据损坏（SQLite WAL 模式 + 配置文件原子写入）。
 2. `git commit` 提交改动，仓库在 solution 内而非工作目录内
 3. `--test` 模式试运行验证（需要模拟对话节奏时加 `--delay N`）
