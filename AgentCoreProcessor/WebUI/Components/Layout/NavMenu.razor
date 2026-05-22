@@ -140,6 +140,13 @@
         {
             ExpandIfContains(item, path);
         }
+        foreach (var group in navGroups)
+        {
+            if (group.IsSinglePage) continue;
+            var navItem = ToNavItem(group);
+            if (ContainsPathOrPrefix(navItem, path))
+                expandedSet.Add(navItem.Title);
+        }
     }
 
     private void ExpandIfContains(NavItem item, string currentPath)
@@ -170,6 +177,17 @@
                 return true;
         }
 
+        return false;
+    }
+
+    private static bool ContainsPathOrPrefix(NavItem item, string currentPath)
+    {
+        if (ContainsPath(item, currentPath)) return true;
+        foreach (var child in item.Children)
+        {
+            if (child.Href != null && currentPath.StartsWith(child.Href + "/", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
         return false;
     }
 

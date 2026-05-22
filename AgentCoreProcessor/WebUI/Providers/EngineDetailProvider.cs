@@ -37,14 +37,14 @@ internal class EngineDetailProvider : IWebUIProvider
             if (systemCheck?.GetSystemSnapshot()?.IsAlive == true)
                 pages.Add(BuildSystemPage(systemCheck));
 
-            // Channel (multi-instance)
+            // Channel (multi-instance) — 引擎监视页面
             var channelCheck = _engine.GetSpawnCheck<ChannelEngineSpawnCheck>();
             if (channelCheck != null)
             {
                 foreach (var (id, ch) in channelCheck.GetActiveChannels())
                 {
                     if (!ch.IsAlive) continue;
-                    pages.Add(BuildChannelPage(ch, id));
+                    pages.Add(BuildChannelEnginePage(ch, id));
                 }
             }
 
@@ -92,14 +92,14 @@ internal class EngineDetailProvider : IWebUIProvider
         };
     }
 
-    private PageDefinition BuildChannelPage(ChannelEngine ch, int channelId)
+    private PageDefinition BuildChannelEnginePage(ChannelEngine ch, int channelId)
     {
         var snap = ch.GetSnapshot();
         var name = snap.ChannelName ?? $"#{channelId}";
         return new PageDefinition
         {
             Route = $"engines/channel_{channelId}",
-            Meta = new PageMeta { Title = $"频道: {name}", Icon = "bi-chat-dots", Group = "", Order = -88, ShowInNav = false },
+            Meta = new PageMeta { Title = $"频道引擎: {name}", Icon = "bi-chat-dots", Group = "", Order = -88, ShowInNav = false },
             Cards = new List<CardDefinition>
             {
                 StatusCard("engine-status", "引擎状态", "engine-detail-status"),
@@ -108,7 +108,7 @@ internal class EngineDetailProvider : IWebUIProvider
             },
             DataSources = new List<DataSourceDefinition>
             {
-                new() { Id = "engine-detail-status", Source = new ChannelDetailStatusSource(ch) },
+                new() { Id = "engine-detail-status", Source = new ChannelEngineStatusSource(ch) },
                 new() { Id = "engine-detail-context", Source = new EngineContextSource(() => ch.GetContextSnapshot()) },
                 new() { Id = "engine-detail-actions", Source = new EngineActionSource(
                     () => ch.ForceWake(), () => ch.ForceCompress()) }
@@ -246,10 +246,10 @@ internal class SystemDetailStatusSource : IDataSource
         => Task.FromResult(new ActionResult { Success = true });
 }
 
-internal class ChannelDetailStatusSource : IDataSource
+internal class ChannelEngineStatusSource : IDataSource
 {
     private readonly ChannelEngine _ch;
-    public ChannelDetailStatusSource(ChannelEngine ch) => _ch = ch;
+    public ChannelEngineStatusSource(ChannelEngine ch) => _ch = ch;
     public bool SupportsPush => false;
     public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
 
@@ -264,7 +264,7 @@ internal class ChannelDetailStatusSource : IDataSource
             ["rounds"] = $"{snap.TotalRounds} (静默 {snap.SilentRounds})",
             ["tokens"] = ctx != null ? $"{ctx.EstimatedTokens / 1000}k ({ctx.MessageCount} 条)" : "—",
             ["compression"] = ctx?.CompressionTier.ToString() ?? "None",
-            ["backoff"] = ctx?.IsInBackoff == true ? "退避中" : "正常",
+            ["backoff"] = ctx?.IsInBackoff == true ? "退避中" : (snap.ConsecutiveFailures > 0 ? $"失败{snap.ConsecutiveFailures}次" : "正常"),
             ["extra"] = $"{mode} | 冲动 {snap.Impulse:F1}/{snap.Threshold:F1} | 工具 {snap.AuthorizedToolCount} | 参与者 {snap.ParticipantCount}"
         };
         return Task.FromResult(new DataResult { Data = data });

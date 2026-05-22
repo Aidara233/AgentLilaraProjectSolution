@@ -80,6 +80,7 @@ namespace AgentCoreProcessor
             providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.DashboardProvider(engine), builtIn: true);
             providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.EnginesProvider(engine), builtIn: true);
             providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.EngineDetailProvider(engine), builtIn: true);
+            providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.ChannelProvider(engine), builtIn: true);
             providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.TestProvider(), builtIn: true);
             providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.LogTraceProvider(), builtIn: true);
 

@@ -159,7 +159,12 @@ else
 
     private async Task OnSubmitAction(string dsId, string action, JsonNode? data)
     {
-        await dsManager.SubmitAsync(dsId, action, data);
+        var result = await dsManager.SubmitAsync(dsId, action, data);
+        if (result.Success && result.Message is string msg && msg.StartsWith("/"))
+        {
+            Nav.NavigateTo(msg);
+            return;
+        }
         await dsManager.FetchAsync(dsId);
         StateHasChanged();
     }
