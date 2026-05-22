@@ -29,6 +29,7 @@ public class DataQuery
     public bool SortDesc { get; init; }
     public List<DataFilter>? Filters { get; init; }
     public JsonNode? Extra { get; init; }
+    public Dictionary<string, string>? RouteParams { get; init; }
 }
 
 public class DataFilter

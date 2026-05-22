@@ -38,6 +38,7 @@ else
     private PageDefinition? page;
     private DataSourceManager dsManager = new();
     private PageContext? pageContext;
+    private Dictionary<string, string>? routeParams;
 
     protected override void OnInitialized()
     {
@@ -46,18 +47,19 @@ else
 
     private void OnRegistryChanged()
     {
-        var newPage = Registry.FindPage(Route ?? "");
+        var newPage = Registry.FindPage(Route ?? "", out var newRouteParams);
         if (newPage == page) return;
 
         InvokeAsync(async () =>
         {
             Cleanup();
             page = newPage;
+            routeParams = newRouteParams;
             if (page != null)
             {
                 pageContext = new PageContext(Nav);
                 dsManager = new DataSourceManager();
-                dsManager.Initialize(page.DataSources);
+                dsManager.Initialize(page.DataSources, routeParams);
                 dsManager.OnDataChanged += OnDataSourceChanged;
                 dsManager.SubscribeAll();
                 foreach (var ds in page.DataSources)
@@ -71,12 +73,12 @@ else
     {
         Cleanup();
 
-        page = Registry.FindPage(Route ?? "");
+        page = Registry.FindPage(Route ?? "", out routeParams);
         if (page == null) return;
 
         pageContext = new PageContext(Nav);
         dsManager = new DataSourceManager();
-        dsManager.Initialize(page.DataSources);
+        dsManager.Initialize(page.DataSources, routeParams);
         dsManager.OnDataChanged += OnDataSourceChanged;
         dsManager.SubscribeAll();
 

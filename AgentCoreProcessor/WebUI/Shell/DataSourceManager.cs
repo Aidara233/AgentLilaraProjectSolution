@@ -13,11 +13,13 @@ internal class DataSourceManager : IDisposable
     private readonly ConcurrentDictionary<string, IDataSource> _sources = new();
     private readonly ConcurrentDictionary<string, IDisposable?> _subscriptions = new();
     private readonly ConcurrentDictionary<string, DataSourceState> _states = new();
+    private Dictionary<string, string>? _routeParams;
 
     public event Action<string>? OnDataChanged;
 
-    public void Initialize(IReadOnlyList<DataSourceDefinition> definitions)
+    public void Initialize(IReadOnlyList<DataSourceDefinition> definitions, Dictionary<string, string>? routeParams = null)
     {
+        _routeParams = routeParams;
         foreach (var def in definitions)
         {
             _sources[def.Id] = def.Source;
@@ -34,6 +36,19 @@ internal class DataSourceManager : IDisposable
             return null;
         state.IsLoading = true;
         state.Error = null;
+
+        // 注入路由参数
+        if (_routeParams != null && _routeParams.Count > 0)
+        {
+            query = query == null
+                ? new DataQuery { RouteParams = _routeParams }
+                : new DataQuery
+                {
+                    Page = query.Page, PageSize = query.PageSize, Search = query.Search,
+                    SortBy = query.SortBy, SortDesc = query.SortDesc, Filters = query.Filters,
+                    Extra = query.Extra, RouteParams = _routeParams
+                };
+        }
 
         for (int attempt = 0; attempt < 3; attempt++)
         {

@@ -40,15 +40,49 @@ internal class ProviderRegistry
 
     public PageDefinition? FindPage(string route)
     {
+        return FindPage(route, out _);
+    }
+
+    public PageDefinition? FindPage(string route, out Dictionary<string, string>? routeParams)
+    {
+        routeParams = null;
         foreach (var entry in _providers.Values)
         {
             foreach (var page in entry.Provider.Pages)
             {
                 if (string.Equals(page.Route, route, StringComparison.OrdinalIgnoreCase))
                     return page;
+
+                if (page.Route.Contains('{') && TryMatchTemplate(page.Route, route, out var extracted))
+                {
+                    routeParams = extracted;
+                    return page;
+                }
             }
         }
         return null;
+    }
+
+    private static bool TryMatchTemplate(string template, string actual, out Dictionary<string, string> parameters)
+    {
+        parameters = new();
+        var tParts = template.Split('/');
+        var aParts = actual.Split('/');
+        if (tParts.Length != aParts.Length) return false;
+
+        for (int i = 0; i < tParts.Length; i++)
+        {
+            if (tParts[i].StartsWith('{') && tParts[i].EndsWith('}'))
+            {
+                var paramName = tParts[i][1..^1];
+                parameters[paramName] = aParts[i];
+            }
+            else if (!string.Equals(tParts[i], aParts[i], StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     public List<NavGroup> BuildNavTree()
