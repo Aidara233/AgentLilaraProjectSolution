@@ -14,6 +14,11 @@ namespace AgentCoreProcessor.Engine
         private readonly EventBus _eventBus;
         private volatile bool _forceWake;
 
+        /// <summary>最近一次触发事件的信号追踪 ID（供引擎建立因果链）。</summary>
+        public string? LastTriggerSignalId { get; private set; }
+        /// <summary>最近一次触发事件的父 span ID。</summary>
+        public string? LastTriggerSpanId { get; private set; }
+
         public Gate(EventBus eventBus)
         {
             _eventBus = eventBus;
@@ -44,6 +49,8 @@ namespace AgentCoreProcessor.Engine
 
             void handler(EngineEvent e)
             {
+                LastTriggerSignalId = e.TraceSignalId;
+                LastTriggerSpanId = e.TraceParentSpanId;
                 busTcs.TrySetResult(true);
             }
 

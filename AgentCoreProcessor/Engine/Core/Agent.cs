@@ -67,7 +67,12 @@ namespace AgentCoreProcessor.Engine
             for (int round = 0; round < _config.MaxRounds && !ct.IsCancellationRequested; round++)
             {
                 if (IsInBackoff)
-                    await Task.Delay(TimeSpan.FromSeconds(5), ct);
+                {
+                    var remaining = _backoffUntil!.Value - DateTime.Now;
+                    if (remaining > TimeSpan.Zero)
+                        await Task.Delay(remaining, ct);
+                    _backoffUntil = null;
+                }
 
                 TotalRounds++;
                 using var roundSpan = Signal.Open(LogGroup.Engine, $"agent:round R{round + 1}",

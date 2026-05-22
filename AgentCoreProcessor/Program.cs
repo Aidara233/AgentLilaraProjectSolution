@@ -78,6 +78,7 @@ namespace AgentCoreProcessor
             var providerRegistry = new AgentCoreProcessor.WebUI.Shell.ProviderRegistry();
             engine.ProviderRegistry = providerRegistry;
             providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.DashboardProvider(engine), builtIn: true);
+            providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.EnginesProvider(engine), builtIn: true);
             providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.TestProvider(), builtIn: true);
             providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.LogTraceProvider(), builtIn: true);
 

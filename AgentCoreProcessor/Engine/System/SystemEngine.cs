@@ -301,14 +301,26 @@ namespace AgentCoreProcessor.Engine
             var pendingDelegations = ctx.Delegations.GetPendingForEvaluation();
             var retryDelegations = ctx.Delegations.GetRetryPending();
 
-            using var iterSignal = Signal.Begin(LogGroup.Engine, "system:main", $"系统循环 #{_totalCycles}", new
-            {
-                tasks = tasks.Count,
-                notifications = notifications.Count,
-                scheduled = scheduledEvents.Count,
-                delegations = pendingDelegations.Count,
-                retryDelegations = retryDelegations.Count
-            });
+            // 从 Gate 触发事件继承因果链（Timer 心跳 / 任务提交等）
+            var triggerSignalId = gate.LastTriggerSignalId;
+            var triggerSpanId = gate.LastTriggerSpanId;
+            using var iterSignal = triggerSignalId != null
+                ? Signal.Continue(triggerSignalId, triggerSpanId, "system:main", LogGroup.Engine, $"系统循环 #{_totalCycles}", new
+                {
+                    tasks = tasks.Count,
+                    notifications = notifications.Count,
+                    scheduled = scheduledEvents.Count,
+                    delegations = pendingDelegations.Count,
+                    retryDelegations = retryDelegations.Count
+                })
+                : Signal.Begin(LogGroup.Engine, "system:main", $"系统循环 #{_totalCycles}", new
+                {
+                    tasks = tasks.Count,
+                    notifications = notifications.Count,
+                    scheduled = scheduledEvents.Count,
+                    delegations = pendingDelegations.Count,
+                    retryDelegations = retryDelegations.Count
+                });
 
             Signal.Event(LogGroup.Engine, "任务队列检查", new
             {

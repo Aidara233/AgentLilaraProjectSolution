@@ -25,7 +25,7 @@ namespace AgentCoreProcessor.Engine
         public bool IsInfrastructure => true;
 
         private readonly ISystemContext ctx;
-        private int intervalSeconds = 30;
+        private int intervalSeconds = 240;
         private System.DateTime lastSystemHeartbeat = System.DateTime.Now;
         private bool alarmSent = false;
         private CancellationTokenSource? _stopCts;
