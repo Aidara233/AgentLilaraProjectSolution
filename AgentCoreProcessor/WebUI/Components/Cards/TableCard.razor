@@ -38,7 +38,9 @@
                 {
                     @foreach (var row in _rows)
                     {
-                        <tr>
+                        var link = row["_link"]?.ToString();
+                        <tr class="@(link != null ? "row-clickable" : "")"
+                            @onclick="() => { if (link != null) Nav.NavigateTo(link); }">
                             @foreach (var col in Schema.Columns)
                             {
                                 <td>@RenderCell(row, col)</td>
@@ -49,7 +51,7 @@
                                     @foreach (var action in Schema.RowActions)
                                     {
                                         <button class="btn btn-sm @(action.Danger ? "btn-outline-danger" : "btn-outline-secondary") me-1"
-                                                @onclick="() => HandleRowAction(action, row)">
+                                                @onclick="() => HandleRowAction(action, row)" @onclick:stopPropagation>
                                             @action.Label
                                         </button>
                                     }

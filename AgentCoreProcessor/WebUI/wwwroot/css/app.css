@@ -421,6 +421,12 @@ body {
     text-decoration: underline;
     color: var(--accent-hover, var(--accent-primary));
 }
+.row-clickable {
+    cursor: pointer;
+}
+.row-clickable:hover {
+    background: var(--hover-bg, rgba(255,255,255,0.05));
+}
 
 /* ===== Badges ===== */
 
