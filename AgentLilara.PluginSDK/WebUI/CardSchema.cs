@@ -21,6 +21,15 @@ public class TableSchema : CardSchema
     public bool Paginated { get; init; } = true;
     public int DefaultPageSize { get; init; } = 20;
     public List<RowAction>? RowActions { get; init; }
+    public List<FilterDef>? Filters { get; init; }
+}
+
+public class FilterDef
+{
+    public required string Field { get; init; }
+    public required string Label { get; init; }
+    public required List<SelectOption> Options { get; init; }
+    public bool AllowEmpty { get; init; } = true;
 }
 
 public class ColumnDef

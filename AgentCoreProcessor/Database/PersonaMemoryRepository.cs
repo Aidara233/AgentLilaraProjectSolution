@@ -29,6 +29,8 @@ namespace AgentCoreProcessor.Database
 
         public Task<int> DeleteAsync(PersonaMemoryEntry entry) => db.DeleteAsync(entry);
 
+        public Task<int> UpdateAsync(PersonaMemoryEntry entry) => db.UpdateAsync(entry);
+
         public async Task<int> GetCountAsync()
         {
             var all = await GetAllAsync();

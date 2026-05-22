@@ -46,13 +46,22 @@ internal class ProviderRegistry
     public PageDefinition? FindPage(string route, out Dictionary<string, string>? routeParams)
     {
         routeParams = null;
+
+        // 第一遍：精确匹配优先
         foreach (var entry in _providers.Values)
         {
             foreach (var page in entry.Provider.Pages)
             {
                 if (string.Equals(page.Route, route, StringComparison.OrdinalIgnoreCase))
                     return page;
+            }
+        }
 
+        // 第二遍：模板匹配（{param} 段）
+        foreach (var entry in _providers.Values)
+        {
+            foreach (var page in entry.Provider.Pages)
+            {
                 if (page.Route.Contains('{') && TryMatchTemplate(page.Route, route, out var extracted))
                 {
                     routeParams = extracted;
@@ -60,6 +69,7 @@ internal class ProviderRegistry
                 }
             }
         }
+
         return null;
     }
 

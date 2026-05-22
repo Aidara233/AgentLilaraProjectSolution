@@ -3,11 +3,31 @@
 @inject NavigationManager Nav
 
 <div class="table-card">
-    @if (Schema.Searchable)
+    @if (Schema.Searchable || Schema.Filters?.Count > 0)
     {
-        <div class="table-card-toolbar mb-2 d-flex gap-2">
-            <input class="form-control form-control-sm" placeholder="搜索..." @bind="_search" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
-            <button class="btn btn-sm btn-outline-secondary" @onclick="ApplySearch">搜索</button>
+        <div class="table-card-toolbar mb-2 d-flex gap-2 flex-wrap align-items-center">
+            @if (Schema.Searchable)
+            {
+                <input class="form-control form-control-sm" style="max-width:200px" placeholder="搜索..." @bind="_search" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
+                <button class="btn btn-sm btn-outline-secondary" @onclick="ApplySearch">搜索</button>
+            }
+            @if (Schema.Filters != null)
+            {
+                foreach (var filter in Schema.Filters)
+                {
+                    <select class="form-select form-select-sm" style="max-width:140px"
+                            @bind="_filters[filter.Field]" @bind:after="ApplyFilter">
+                        @if (filter.AllowEmpty)
+                        {
+                            <option value="">@filter.Label</option>
+                        }
+                        @foreach (var opt in filter.Options)
+                        {
+                            <option value="@opt.Value">@opt.Label</option>
+                        }
+                    </select>
+                }
+            }
         </div>
     }
 
@@ -101,6 +121,7 @@
     private int _page = 1;
     private int _pageSize;
     private int _selectedIndex = -1;
+    private Dictionary<string, string> _filters = new();
 
     private int TotalPages => _pageSize > 0 && TotalCount.HasValue
         ? Math.Max(1, (int)Math.Ceiling((double)TotalCount.Value / _pageSize))
@@ -113,6 +134,16 @@
             _rows = arr.Where(n => n != null).Select(n => n!).ToList();
         else
             _rows = null;
+
+        // 初始化筛选器字典中不存在的 key
+        if (Schema.Filters != null)
+        {
+            foreach (var filter in Schema.Filters)
+            {
+                if (!_filters.ContainsKey(filter.Field))
+                    _filters[filter.Field] = "";
+            }
+        }
     }
 
     private string GetCellValue(JsonNode row, ColumnDef col)
@@ -161,18 +192,36 @@
         await EmitQuery();
     }
 
+    private async Task ApplyFilter()
+    {
+        _page = 1;
+        await EmitQuery();
+    }
+
     private async Task PrevPage() { if (_page > 1) { _page--; await EmitQuery(); } }
     private async Task NextPage() { if (_page < TotalPages) { _page++; await EmitQuery(); } }
 
     private async Task EmitQuery()
     {
+        List<DataFilter>? filters = null;
+        if (_filters.Count > 0)
+        {
+            filters = new List<DataFilter>();
+            foreach (var (field, value) in _filters)
+            {
+                if (!string.IsNullOrEmpty(value))
+                    filters.Add(new DataFilter { Field = field, Operator = "eq", Value = value });
+            }
+        }
+
         await OnQueryChanged.InvokeAsync(new DataQuery
         {
             Page = _page,
             PageSize = _pageSize,
             Search = _search,
             SortBy = _sortBy,
-            SortDesc = _sortDesc
+            SortDesc = _sortDesc,
+            Filters = filters
         });
     }
 
