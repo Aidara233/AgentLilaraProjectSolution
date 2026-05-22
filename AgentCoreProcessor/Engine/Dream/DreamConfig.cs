@@ -37,10 +37,10 @@ namespace AgentCoreProcessor.Engine
         public int ScheduleInterval { get; set; } = 30;
 
         /// <summary>小睡最大片段数</summary>
-        public int MaxFragmentsPerNap { get; set; } = 5;
+        public int MaxFragmentsPerNap { get; set; } = 12;
 
         /// <summary>大睡最大片段数</summary>
-        public int MaxFragmentsPerDeepSleep { get; set; } = 50;
+        public int MaxFragmentsPerDeepSleep { get; set; } = 120;
 
         // ---- 大睡分级配置 ----
 

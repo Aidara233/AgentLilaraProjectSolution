@@ -94,7 +94,8 @@ namespace AgentCoreProcessor.Client
                     {
                         PromptTokens = update.Usage.InputTokenCount,
                         CompletionTokens = update.Usage.OutputTokenCount,
-                        TotalTokens = update.Usage.TotalTokenCount
+                        TotalTokens = update.Usage.TotalTokenCount,
+                        PromptCacheHitTokens = update.Usage.InputTokenDetails?.CachedTokenCount ?? 0
                     };
                     onDelta(usageResp);
                 }
@@ -202,7 +203,8 @@ namespace AgentCoreProcessor.Client
                         {
                             PromptTokens = update.Usage.InputTokenCount,
                             CompletionTokens = update.Usage.OutputTokenCount,
-                            TotalTokens = update.Usage.TotalTokenCount
+                            TotalTokens = update.Usage.TotalTokenCount,
+                            PromptCacheHitTokens = update.Usage.InputTokenDetails?.CachedTokenCount ?? 0
                         }
                     });
                 }

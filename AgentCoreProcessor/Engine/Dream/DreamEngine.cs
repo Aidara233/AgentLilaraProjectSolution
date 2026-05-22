@@ -781,59 +781,60 @@ namespace AgentCoreProcessor.Engine
         private async Task<string?> ExecuteLinkWithSummary()
         {
             var cfg = spawnCheck.GetConfig();
-            var targets = await ctx.Memories.GetUndreamedAsync(cfg.LinkTargetCount);
-            if (targets.Count == 0) targets = await ctx.Memories.GetOldestDreamedAsync(cfg.LinkTargetCount);
+            var targets = await ctx.Memories.GetUndreamedAsync(1);
+            if (targets.Count == 0) targets = await ctx.Memories.GetOldestDreamedAsync(1);
             if (targets.Count == 0) return "无记忆可关联";
-            int linksCreated = 0;
-            var inputParts = new List<string>();
-            var outputParts = new List<string>();
-            CurrentInputDescription = $"关联重建: {targets.Count} 个目标";
-            foreach (var target in targets)
+
+            var target = targets[0];
+            List<MemoryEntry> filtered;
+            if (target.Embedding != null)
             {
-                if (shouldWake) break;
-                List<MemoryEntry> filtered;
-                if (target.Embedding != null)
-                {
-                    filtered = await ctx.Memories.FindSimilarAsync(
-                        target.Embedding, cfg.LinkTopK, cfg.LinkCosineThreshold, excludeId: target.Id);
-                }
-                else
-                {
-                    var candidates = await ctx.Memories.GetRecentAsync(cfg.LinkCandidatePoolSize);
-                    filtered = candidates.Where(c => c.Id != target.Id).Take(cfg.LinkTopK).ToList();
-                }
-                if (filtered.Count == 0) { target.LastDreamTime = DateTime.Now; await ctx.Memories.UpdateAsync(target); continue; }
-                inputParts.Add($"{target.Id}:{string.Join(",", filtered.Select(f => f.Id))}");
-                CurrentInputDescription = $"分析 #{target.Id} 与 {filtered.Count} 个候选的关联: {(target.Content.Length > 30 ? target.Content[..30] + "…" : target.Content)}";                var result = await linkCore.AnalyzeLinksAsync(target, filtered);
-                outputParts.Add(result);
-                try
-                {
-                    var links = JArray.Parse(TextUtil.StripMarkdownCodeFence(result));
-                    foreach (var item in links)
-                    {
-                        var ci = item["candidateIndex"]?.Value<int>() ?? -1;
-                        var lt = item["linkType"]?.Value<string>() ?? "semantic";
-                        var st = item["strength"]?.Value<float>() ?? 0f;
-                        if (ci >= 0 && ci < filtered.Count && st >= 0.3f)
-                        {
-                            await ctx.MemoryLinks.CreateOrUpdateAsync(target.Id, filtered[ci].Id, st, lt);
-                            linksCreated++;
-                            currentDetails.Add(new FragmentDetailRecord
-                            {
-                                Action = "link_create",
-                                MemoryId = target.Id,
-                                Note = $"→#{filtered[ci].Id}, type={lt}, strength={st:F2}"
-                            });
-                        }
-                    }
-                }
-                catch (Exception ex) { Signal.Warn(LogGroup.Engine, "关联分析解析失败", new { targetId = target.Id, error = ex.Message }); }
+                filtered = await ctx.Memories.FindSimilarAsync(
+                    target.Embedding, cfg.LinkTopK, cfg.LinkCosineThreshold, excludeId: target.Id);
+            }
+            else
+            {
+                var candidates = await ctx.Memories.GetRecentAsync(cfg.LinkCandidatePoolSize);
+                filtered = candidates.Where(c => c.Id != target.Id).Take(cfg.LinkTopK).ToList();
+            }
+            if (filtered.Count == 0)
+            {
                 target.LastDreamTime = DateTime.Now;
                 await ctx.Memories.UpdateAsync(target);
+                return $"#{target.Id} 无候选关联";
             }
-            currentInputIds = string.Join("|", inputParts);
-            currentOutputRaw = string.Join("\n---\n", outputParts);
-            return $"分析{targets.Count}条，建立{linksCreated}个关联";
+
+            currentInputIds = $"{target.Id}:{string.Join(",", filtered.Select(f => f.Id))}";
+            CurrentInputDescription = $"分析 #{target.Id} 与 {filtered.Count} 个候选的关联: {(target.Content.Length > 30 ? target.Content[..30] + "…" : target.Content)}";
+
+            var result = await linkCore.AnalyzeLinksAsync(target, filtered);
+            currentOutputRaw = result;
+            int linksCreated = 0;
+            try
+            {
+                var links = JArray.Parse(TextUtil.StripMarkdownCodeFence(result));
+                foreach (var item in links)
+                {
+                    var ci = item["candidateIndex"]?.Value<int>() ?? -1;
+                    var lt = item["linkType"]?.Value<string>() ?? "semantic";
+                    var st = item["strength"]?.Value<float>() ?? 0f;
+                    if (ci >= 0 && ci < filtered.Count && st >= 0.3f)
+                    {
+                        await ctx.MemoryLinks.CreateOrUpdateAsync(target.Id, filtered[ci].Id, st, lt);
+                        linksCreated++;
+                        currentDetails.Add(new FragmentDetailRecord
+                        {
+                            Action = "link_create",
+                            MemoryId = target.Id,
+                            Note = $"→#{filtered[ci].Id}, type={lt}, strength={st:F2}"
+                        });
+                    }
+                }
+            }
+            catch (Exception ex) { Signal.Warn(LogGroup.Engine, "关联分析解析失败", new { targetId = target.Id, error = ex.Message }); }
+            target.LastDreamTime = DateTime.Now;
+            await ctx.Memories.UpdateAsync(target);
+            return $"#{target.Id} 建立{linksCreated}个关联";
         }
 
         private async Task<string?> ExecuteCombineWithSummary()
@@ -845,38 +846,41 @@ namespace AgentCoreProcessor.Engine
             var links = await ctx.MemoryLinks.GetLinksForAsync(ids, cfg.CombineStrengthThreshold);
             if (links.Count == 0) return "无强关联";
 
-            int derived = 0;
-            var topPairs = links.OrderByDescending(l => l.Strength).Take(cfg.CombineMaxPairs).ToList();
-            currentInputIds = string.Join("|", topPairs.Select(p => $"{p.SourceId},{p.TargetId}"));
-            CurrentInputDescription = $"尝试组合 {topPairs.Count} 对强关联记忆";
-            var outputParts = new List<string>();
-            foreach (var pair in topPairs)
+            // 取强度最高的一对，跳过已合并的
+            MemoryEntry? src = null, tgt = null;
+            string? hash = null;
+            foreach (var pair in links.OrderByDescending(l => l.Strength))
             {
-                if (shouldWake) break;
-                var src = recent.FirstOrDefault(m => m.Id == pair.SourceId);
-                var tgt = recent.FirstOrDefault(m => m.Id == pair.TargetId);
-                if (src == null || tgt == null) continue;
+                src = recent.FirstOrDefault(m => m.Id == pair.SourceId);
+                tgt = recent.FirstOrDefault(m => m.Id == pair.TargetId);
+                if (src == null || tgt == null) { src = null; tgt = null; continue; }
                 var sids = new List<int> { src.Id, tgt.Id }; sids.Sort();
-                var hash = ComputeHash(string.Join(",", sids));
-                if (await ctx.Memories.GetBySourceHashAsync(hash) != null) continue;
-                var result = await combineCore.CombineAsync([src, tgt]);
-                outputParts.Add(result);
-                if (result.Trim().Equals("none", StringComparison.OrdinalIgnoreCase)) continue;
-                byte[]? emb = null;
-                try { emb = VectorUtil.FloatsToBytes(await ctx.Embedding.GetEmbeddingAsync(result)); } catch { }
-                await ctx.Memories.CreateDerivedAsync(result, emb,
-                    System.Text.Json.JsonSerializer.Serialize(sids), hash,
-                    src.PersonId ?? tgt.PersonId, src.ChannelId ?? tgt.ChannelId);
-                derived++;
-                currentDetails.Add(new FragmentDetailRecord
-                {
-                    Action = "combine_derive",
-                    MemoryId = src.Id,
-                    Note = $"#{src.Id}+#{tgt.Id} → {(result.Length > 60 ? result[..60] : result)}"
-                });
+                hash = ComputeHash(string.Join(",", sids));
+                if (await ctx.Memories.GetBySourceHashAsync(hash) != null) { src = null; tgt = null; continue; }
+                break;
             }
-            currentOutputRaw = string.Join("\n---\n", outputParts);
-            return derived > 0 ? $"生成{derived}条衍生记忆" : "无有价值组合";
+            if (src == null || tgt == null) return "无可组合对";
+
+            currentInputIds = $"{src.Id},{tgt.Id}";
+            CurrentInputDescription = $"组合 #{src.Id}「{(src.Content.Length > 20 ? src.Content[..20] + "…" : src.Content)}」+ #{tgt.Id}「{(tgt.Content.Length > 20 ? tgt.Content[..20] + "…" : tgt.Content)}」";
+
+            var result = await combineCore.CombineAsync([src, tgt]);
+            currentOutputRaw = result;
+            if (result.Trim().Equals("none", StringComparison.OrdinalIgnoreCase))
+                return $"#{src.Id}+#{tgt.Id} 无有价值组合";
+
+            byte[]? emb = null;
+            try { emb = VectorUtil.FloatsToBytes(await ctx.Embedding.GetEmbeddingAsync(result)); } catch { }
+            await ctx.Memories.CreateDerivedAsync(result, emb,
+                System.Text.Json.JsonSerializer.Serialize(new List<int> { src.Id, tgt.Id }),
+                hash!, src.PersonId ?? tgt.PersonId, src.ChannelId ?? tgt.ChannelId);
+            currentDetails.Add(new FragmentDetailRecord
+            {
+                Action = "combine_derive",
+                MemoryId = src.Id,
+                Note = $"#{src.Id}+#{tgt.Id} → {(result.Length > 60 ? result[..60] : result)}"
+            });
+            return $"#{src.Id}+#{tgt.Id} → 衍生记忆";
         }
 
         private static string ComputeHash(string input)
