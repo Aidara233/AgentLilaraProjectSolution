@@ -852,6 +852,9 @@ namespace AgentCoreProcessor.Engine
 
             await agent!.RunAsync(CancellationToken.None);
 
+            if (agent.StopReason == AgentStopReason.Error)
+                throw new InvalidOperationException("Agent 连续模型调用失败");
+
             // Persist after agent finishes
             PersistCurrentContext();
 

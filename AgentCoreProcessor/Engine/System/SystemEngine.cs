@@ -383,7 +383,23 @@ namespace AgentCoreProcessor.Engine
                 await componentHost.OnBeforeInvokeAsync();
                 await agent!.RunAsync(ct);
                 await componentHost.OnAfterInvokeAsync();
-                consecutiveFailures = 0;
+
+                if (agent.StopReason == AgentStopReason.Error)
+                {
+                    consecutiveFailures++;
+                    totalErrorCount++;
+                    lastErrorTime = DateTime.Now;
+                    lastErrorMessage = "Agent 连续模型调用失败";
+                    var backoff = agentConfig.BackoffSeconds[
+                        Math.Min(consecutiveFailures - 1, agentConfig.BackoffSeconds.Length - 1)];
+                    Signal.Warn(LogGroup.Engine, "系统循环退避（Agent Error）",
+                        new { consecutiveFailures, backoffSeconds = backoff });
+                    await Task.Delay(TimeSpan.FromSeconds(backoff), ct);
+                }
+                else
+                {
+                    consecutiveFailures = 0;
+                }
                 lastRoundNoAction = agent.StopReason == AgentStopReason.Completed;
 
                 Signal.Event(LogGroup.Engine, "Agent轮次完成", new
