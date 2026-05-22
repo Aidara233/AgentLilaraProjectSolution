@@ -215,8 +215,18 @@ namespace AgentCoreProcessor.Engine
 
         private (int tokens, int percent) GetContextUsage()
         {
-            var estTokens = agent?.History.Sum(m => (m.Content?.Length ?? 0)) / 3 ?? 0;
+            var estTokens = agent?.History.Sum(m => EstimateMessageTokens(m)) / 3 ?? 0;
             return (estTokens, (int)(estTokens * 100.0 / MaxContextTokens));
+        }
+
+        private static int EstimateMessageTokens(Message m)
+        {
+            if (m.Content != null)
+                return m.Content.Length;
+            if (m.ContentParts != null)
+                return m.ContentParts.Sum(p =>
+                    (p.Text?.Length ?? 0) + (p.ToolInput?.Length ?? 0) + (p.ToolName?.Length ?? 0));
+            return 0;
         }
 
         public async Task RunAsync()
@@ -609,7 +619,7 @@ namespace AgentCoreProcessor.Engine
             // Compression tier hint（engine-level）
             if (compressionTierModule != null && agent != null)
             {
-                var estTokens = agent.History.Sum(m => (m.Content?.Length ?? 0)) / 3;
+                var estTokens = agent.History.Sum(m => EstimateMessageTokens(m)) / 3;
                 var text = compressionTierModule.GetInjectText(estTokens);
                 if (!string.IsNullOrEmpty(text))
                 {

@@ -71,7 +71,7 @@ namespace AgentCoreProcessor.Engine.Modules
             _compressing = true;
             try
             {
-                var totalTokens = history.Sum(m => (m.Content?.Length ?? 0)) / 3;
+                var totalTokens = history.Sum(m => EstimateChars(m)) / 3;
                 using var span = Signal.Open(LogGroup.Engine, $"上下文压缩 ({totalTokens}t, {_currentTier})",
                     new { historyCount = history.Count, estimatedTokens = totalTokens, tier = _currentTier.ToString(), hasPriorSummary = _currentSummary != null });
 
@@ -79,7 +79,7 @@ namespace AgentCoreProcessor.Engine.Modules
                 int tokenCount = 0;
                 for (int i = history.Count - 1; i >= 0; i--)
                 {
-                    var t = (history[i].Content?.Length ?? 0) / 3;
+                    var t = EstimateChars(history[i]) / 3;
                     if (retained.Count >= _config.CompressRetainedMessageCount
                         || tokenCount + t > _config.CompressRetainedMaxTokens)
                         break;
@@ -89,7 +89,7 @@ namespace AgentCoreProcessor.Engine.Modules
 
                 var toCompress = history.Take(history.Count - retained.Count).ToList();
                 if (toCompress.Count > 0
-                    && toCompress.Sum(m => (m.Content?.Length ?? 0)) / 3 >= _config.CompressMinTokens)
+                    && toCompress.Sum(m => EstimateChars(m)) / 3 >= _config.CompressMinTokens)
                 {
                     _currentSummary = await _summarizer.SummarizeContextAsync(toCompress, _currentSummary);
                 }
@@ -118,6 +118,16 @@ namespace AgentCoreProcessor.Engine.Modules
         /// <summary>同步压缩（L3 硬保底）。</summary>
         public Task CompressSyncAsync(List<Message> history, Action<string, List<Message>> onComplete)
             => CompressAsync(history, onComplete);
+
+        private static int EstimateChars(Message m)
+        {
+            if (m.Content != null)
+                return m.Content.Length;
+            if (m.ContentParts != null)
+                return m.ContentParts.Sum(p =>
+                    (p.Text?.Length ?? 0) + (p.ToolInput?.Length ?? 0) + (p.ToolName?.Length ?? 0));
+            return 0;
+        }
     }
 
     internal enum CompressionTier { None, L1, L2, L3 }
