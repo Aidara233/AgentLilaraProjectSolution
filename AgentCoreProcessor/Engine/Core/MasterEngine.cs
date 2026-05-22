@@ -267,6 +267,18 @@ namespace AgentCoreProcessor.Engine
                 await File.WriteAllTextAsync(schemaV5, "migrated");
             }
 
+            var dreamSchemaV1 = Path.Combine(databaseDirectory, ".dream_schema_v1");
+            if (!File.Exists(dreamSchemaV1))
+            {
+                try
+                {
+                    await db.ExecuteAsync("ALTER TABLE DreamFragments ADD COLUMN InputMemoryIds TEXT");
+                    await db.ExecuteAsync("ALTER TABLE DreamFragments ADD COLUMN OutputRaw TEXT");
+                }
+                catch { }
+                await File.WriteAllTextAsync(dreamSchemaV1, "migrated");
+            }
+
             // Repository
             var persons = new PersonRepository(db);
             var users = new UserRepository(db, persons);
