@@ -412,6 +412,16 @@ body {
     color: var(--text-primary);
 }
 
+.table-link {
+    color: var(--accent-primary);
+    text-decoration: none;
+    cursor: pointer;
+}
+.table-link:hover {
+    text-decoration: underline;
+    color: var(--accent-hover, var(--accent-primary));
+}
+
 /* ===== Badges ===== */
 
 .badge-status {

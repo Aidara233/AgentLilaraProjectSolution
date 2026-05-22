@@ -59,7 +59,7 @@ internal class EnginesProvider : IWebUIProvider
                             Columns = new()
                             {
                                 new() { Field = "type", Header = "类型", Width = "100px", Format = ColumnFormat.Badge },
-                                new() { Field = "name", Header = "标识" },
+                                new() { Field = "name", Header = "标识", Format = ColumnFormat.Link },
                                 new() { Field = "status", Header = "状态", Width = "80px", Format = ColumnFormat.Badge },
                                 new() { Field = "detail", Header = "详情" }
                             }
@@ -140,7 +140,8 @@ internal class EngineListSource : IDataSource
                     ["type"] = "Channel",
                     ["name"] = snap.ChannelName ?? $"#{snap.ChannelId}",
                     ["status"] = snap.IsBusy ? "处理中" : "等待",
-                    ["detail"] = $"冲动 {snap.Impulse:F1} | 轮次 {snap.TotalRounds} | {(snap.IsWorkingMode ? "Working" : "Express")}"
+                    ["detail"] = $"冲动 {snap.Impulse:F1} | 轮次 {snap.TotalRounds} | {(snap.IsWorkingMode ? "Working" : "Express")}",
+                    ["_link"] = $"/p/engines/channel_{snap.ChannelId}"
                 });
             }
         }
@@ -155,7 +156,8 @@ internal class EngineListSource : IDataSource
                 ["type"] = "System",
                 ["name"] = "系统循环",
                 ["status"] = "运行中",
-                ["detail"] = $"任务队列 {systemSnap.TaskQueueDepth} | 子agent {systemSnap.ActiveSubAgentCount}"
+                ["detail"] = $"任务队列 {systemSnap.TaskQueueDepth} | 子agent {systemSnap.ActiveSubAgentCount}",
+                ["_link"] = "/p/engines/system"
             });
         }
 
@@ -174,7 +176,8 @@ internal class EngineListSource : IDataSource
                 ["type"] = "Dream",
                 ["name"] = "做梦",
                 ["status"] = "进行中",
-                ["detail"] = $"片段 {progress} | 当前: {fragment}"
+                ["detail"] = $"片段 {progress} | 当前: {fragment}",
+                ["_link"] = "/p/engines/dream"
             });
         }
 
@@ -189,7 +192,8 @@ internal class EngineListSource : IDataSource
                 ["type"] = "Vision",
                 ["name"] = "视觉",
                 ["status"] = vSnap.IsBusy ? "处理中" : "空闲",
-                ["detail"] = $"已处理 {vSnap.TotalProcessed} | 错误 {vSnap.VisionErrors + vSnap.OcrErrors}"
+                ["detail"] = $"已处理 {vSnap.TotalProcessed} | 错误 {vSnap.VisionErrors + vSnap.OcrErrors}",
+                ["_link"] = "/p/engines/vision"
             });
         }
 
@@ -207,7 +211,8 @@ internal class EngineListSource : IDataSource
                 ["type"] = "Review",
                 ["name"] = "复盘",
                 ["status"] = "运行中",
-                ["detail"] = detail
+                ["detail"] = detail,
+                ["_link"] = "/p/engines/review"
             });
         }
 

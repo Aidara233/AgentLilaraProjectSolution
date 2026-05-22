@@ -1,5 +1,6 @@
 @using AgentLilara.PluginSDK.WebUI
 @using System.Text.Json.Nodes
+@inject NavigationManager Nav
 
 <div class="table-card">
     @if (Schema.Searchable)
@@ -40,7 +41,7 @@
                         <tr>
                             @foreach (var col in Schema.Columns)
                             {
-                                <td>@GetCellValue(row, col)</td>
+                                <td>@RenderCell(row, col)</td>
                             }
                             @if (Schema.RowActions?.Count > 0)
                             {
@@ -110,6 +111,27 @@
         var val = row[col.Field];
         return val?.ToString() ?? "";
     }
+
+    private RenderFragment RenderCell(JsonNode row, ColumnDef col) => __builder =>
+    {
+        var val = row[col.Field]?.ToString() ?? "";
+        if (col.Format == ColumnFormat.Link)
+        {
+            var href = row["_link"]?.ToString();
+            if (href != null)
+            {
+                <a href="@href" class="table-link" @onclick="() => Nav.NavigateTo(href)" @onclick:preventDefault>@val</a>
+            }
+            else
+            {
+                @val
+            }
+        }
+        else
+        {
+            @val
+        }
+    };
 
     private async Task ToggleSort(string field)
     {

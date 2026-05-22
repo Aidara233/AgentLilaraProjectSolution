@@ -101,5 +101,10 @@ namespace AgentCoreProcessor.Engine
                 LastDeathTime = lastDeathTime
             };
         }
+        internal WebUI.Services.EngineContextSnapshot? GetContextSnapshot()
+            => activeInstance?.GetContextSnapshot();
+
+        internal void ForceWake() => activeInstance?.ForceWake();
+        internal void ForceCompress() => activeInstance?.ForceCompress();
     }
 }

@@ -685,6 +685,65 @@ namespace AgentCoreProcessor.Engine
         /// <summary>外部唤醒闸门（委托提交时调用）。</summary>
         public void SignalGate() => gate.Signal();
 
+        /// <summary>强制唤醒（跳过 ShouldActivate）。</summary>
+        public void ForceWake() => gate.ForceWake();
+
+        /// <summary>强制触发上下文压缩。</summary>
+        public void ForceCompress()
+        {
+            if (agent == null || compressionTierModule == null || compressionTierModule.IsCompressing) return;
+            _ = compressionTierModule.CompressAsync(agent.History, (summary, retained) =>
+            {
+                agent.History.Clear();
+                foreach (var m in retained) agent.AddToHistory(m);
+                compressionTierModule.SetSummary(summary);
+            });
+        }
+
+        /// <summary>获取上下文快照（供 WebUI 详情页）。</summary>
+        internal WebUI.Services.EngineContextSnapshot? GetContextSnapshot()
+        {
+            if (agent == null) return null;
+            var history = agent.History;
+            var messages = new List<WebUI.Services.ContextMessageSnapshot>();
+            int totalChars = 0;
+            foreach (var m in history)
+            {
+                var est = EstimateMessageTokens(m);
+                totalChars += est;
+                var snap = new WebUI.Services.ContextMessageSnapshot
+                {
+                    Role = m.Role,
+                    Content = m.Content,
+                    EstimatedTokens = est / 3
+                };
+                if (m.ContentParts != null)
+                {
+                    snap.Parts = m.ContentParts.Select(p => new WebUI.Services.ContextPartSnapshot
+                    {
+                        Type = p.Type ?? "text",
+                        Text = p.Text?.Truncate(500),
+                        ToolName = p.ToolName,
+                        ToolInput = p.ToolInput?.Truncate(200),
+                        IsError = p.IsError
+                    }).ToList();
+                }
+                messages.Add(snap);
+            }
+            return new WebUI.Services.EngineContextSnapshot
+            {
+                EstimatedTokens = totalChars / 3,
+                MessageCount = history.Count,
+                ConversationOffset = agent.ConversationOffset,
+                CompressionTier = compressionTierModule?.CurrentTier ?? CompressionTier.None,
+                IsCompressing = compressionTierModule?.IsCompressing ?? false,
+                Summary = compressionTierModule?.CurrentSummary,
+                TotalRounds = agent.TotalRounds,
+                IsInBackoff = agent.IsInBackoff,
+                Messages = messages
+            };
+        }
+
         // ---- 子 agent 管理 ----
 
         /// <summary>创建并启动子 agent。</summary>

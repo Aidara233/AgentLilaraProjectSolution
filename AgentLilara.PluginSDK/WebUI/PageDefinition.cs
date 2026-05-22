@@ -17,5 +17,6 @@ public class PageMeta
     public string? Group { get; init; }
     public int Order { get; init; }
     public bool DefaultCollapsed { get; init; }
+    public bool ShowInNav { get; init; } = true;
 }
 

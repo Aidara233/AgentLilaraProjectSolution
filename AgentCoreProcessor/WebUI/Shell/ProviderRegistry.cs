@@ -60,6 +60,7 @@ internal class ProviderRegistry
         {
             foreach (var page in entry.Provider.Pages)
             {
+                if (!page.Meta.ShowInNav) continue;
                 var group = page.Meta.Group;
                 if (string.IsNullOrEmpty(group))
                 {

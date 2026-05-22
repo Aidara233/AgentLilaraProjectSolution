@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Database;
+using AgentCoreProcessor.Engine.Modules;
 using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Tool;
@@ -198,6 +199,50 @@ namespace AgentCoreProcessor.Engine
         public void RequestStop()
         {
             _cts.Cancel();
+        }
+
+        internal WebUI.Services.EngineContextSnapshot? GetContextSnapshot()
+        {
+            if (_agent == null) return null;
+            var history = _agent.History;
+            var messages = new List<WebUI.Services.ContextMessageSnapshot>();
+            int totalChars = 0;
+            foreach (var m in history)
+            {
+                var est = m.Content?.Length ?? m.ContentParts?.Sum(p =>
+                    (p.Text?.Length ?? 0) + (p.ToolInput?.Length ?? 0) + (p.ToolName?.Length ?? 0)) ?? 0;
+                totalChars += est;
+                var snap = new WebUI.Services.ContextMessageSnapshot
+                {
+                    Role = m.Role,
+                    Content = m.Content,
+                    EstimatedTokens = est / 3
+                };
+                if (m.ContentParts != null)
+                {
+                    snap.Parts = m.ContentParts.Select(p => new WebUI.Services.ContextPartSnapshot
+                    {
+                        Type = p.Type ?? "text",
+                        Text = p.Text?.Truncate(500),
+                        ToolName = p.ToolName,
+                        ToolInput = p.ToolInput?.Truncate(200),
+                        IsError = p.IsError
+                    }).ToList();
+                }
+                messages.Add(snap);
+            }
+            return new WebUI.Services.EngineContextSnapshot
+            {
+                EstimatedTokens = totalChars / 3,
+                MessageCount = history.Count,
+                ConversationOffset = _agent.ConversationOffset,
+                CompressionTier = Modules.CompressionTier.None,
+                IsCompressing = false,
+                Summary = null,
+                TotalRounds = _agent.TotalRounds,
+                IsInBackoff = _agent.IsInBackoff,
+                Messages = messages
+            };
         }
 
         // ---- IAgentHost ----
