@@ -53,5 +53,15 @@ namespace AgentCoreProcessor.Database
 
         public Task<int> GetSessionCountAsync()
             => db.Table<DreamSession>().CountAsync();
+
+        public async Task<DreamSession?> GetSessionByIdAsync(int id)
+        {
+            var results = await db.QueryAsync<DreamSession>(
+                "SELECT * FROM DreamSessions WHERE Id = ? LIMIT 1", id);
+            return results.Count > 0 ? results[0] : null;
+        }
+
+        public Task UpdateSessionAsync(DreamSession session)
+            => db.UpdateAsync(session);
     }
 }

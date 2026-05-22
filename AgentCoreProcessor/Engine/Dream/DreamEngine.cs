@@ -58,6 +58,7 @@ namespace AgentCoreProcessor.Engine
         private List<FragmentDetailRecord> currentDetails = new();
         private string? currentInputIds;
         private string? currentOutputRaw;
+        private int currentSessionId;
 
         /// <summary>每个片段的估算 token 消耗（粗略值，用于预算控制）。</summary>
         private const int EstimatedTokensPerFragment = 2000;
@@ -81,6 +82,14 @@ namespace AgentCoreProcessor.Engine
 
             // 清理过期记忆 + 孤立关联（纯机械操作，不消耗模型 token）
             await CleanupExpiredMemoriesAsync();
+
+            // 立即创建会话（崩溃时保留已入库片段）
+            var session = await ctx.DreamLogs.CreateSessionAsync(new DreamSession
+            {
+                Level = level.ToString(),
+                StartTime = DateTime.Now,
+            });
+            currentSessionId = session.Id;
 
             ctx.CurrentSleepState = level switch
             {
@@ -237,6 +246,7 @@ namespace AgentCoreProcessor.Engine
                     fragSpan.SetCloseDetail(new { success = true, summary, durationSeconds = duration });
 
                     await MaybeSleepTalkAsync(summary);
+                    await PersistFragmentAsync(fragmentRecords[^1], fragmentRecords.Count - 1);
                 }
                 catch (Exception ex)
                 {
@@ -250,6 +260,7 @@ namespace AgentCoreProcessor.Engine
                         Summary = ex.Message,
                         Details = currentDetails
                     });
+                    await PersistFragmentAsync(fragmentRecords[^1], fragmentRecords.Count - 1);
                 }
             }
             CurrentFragment = null;
@@ -311,6 +322,7 @@ namespace AgentCoreProcessor.Engine
                     fragSpan.SetCloseDetail(new { success = true, summary, durationSeconds = duration, tokensUsed });
 
                     await MaybeSleepTalkAsync(summary);
+                    await PersistFragmentAsync(fragmentRecords[^1], fragmentRecords.Count - 1);
                 }
                 catch (Exception ex)
                 {
@@ -324,6 +336,7 @@ namespace AgentCoreProcessor.Engine
                         Summary = ex.Message,
                         Details = currentDetails
                     });
+                    await PersistFragmentAsync(fragmentRecords[^1], fragmentRecords.Count - 1);
                 }
             }
 
@@ -388,6 +401,7 @@ namespace AgentCoreProcessor.Engine
                             fragSpan.SetCloseDetail(new { success = true, summary, durationSeconds = duration, tokensUsed });
 
                             await MaybeSleepTalkAsync(summary);
+                            await PersistFragmentAsync(fragmentRecords[^1], fragmentRecords.Count - 1);
                         }
                         catch (Exception ex)
                         {
@@ -401,6 +415,7 @@ namespace AgentCoreProcessor.Engine
                                 Summary = ex.Message,
                                 Details = currentDetails
                             });
+                            await PersistFragmentAsync(fragmentRecords[^1], fragmentRecords.Count - 1);
                         }
                     }
                     else
@@ -1085,53 +1100,60 @@ namespace AgentCoreProcessor.Engine
 
         // ---- 持久化做梦日志 ----
 
-        private async Task PersistSessionAsync(DateTime startTime, int executed)
+        /// <summary>即时持久化单个片段（崩溃时最多丢失当前执行中的片段）。</summary>
+        private async Task PersistFragmentAsync(FragmentRecord rec, int seqIndex)
         {
             try
             {
-                var session = await ctx.DreamLogs.CreateSessionAsync(new DreamSession
+                var fragment = await ctx.DreamLogs.CreateFragmentAsync(new DreamFragment
                 {
-                    Level = level.ToString(),
-                    StartTime = startTime,
-                    EndTime = DateTime.Now,
-                    FragmentsExecuted = executed,
-                    WasInterrupted = shouldWake
+                    SessionId = currentSessionId,
+                    Type = rec.Type,
+                    SeqIndex = seqIndex,
+                    StartTime = rec.StartTime,
+                    DurationSeconds = rec.DurationSeconds,
+                    Success = rec.Success,
+                    Summary = rec.Summary ?? "",
+                    InputMemoryIds = rec.InputMemoryIds,
+                    OutputRaw = rec.OutputRaw
                 });
 
-                for (int i = 0; i < fragmentRecords.Count; i++)
+                if (rec.Details.Count > 0)
                 {
-                    var rec = fragmentRecords[i];
-                    var fragment = await ctx.DreamLogs.CreateFragmentAsync(new DreamFragment
+                    var details = rec.Details.Select(d => new DreamFragmentDetail
                     {
-                        SessionId = session.Id,
-                        Type = rec.Type,
-                        SeqIndex = i,
-                        StartTime = rec.StartTime,
-                        DurationSeconds = rec.DurationSeconds,
-                        Success = rec.Success,
-                        Summary = rec.Summary ?? "",
-                        InputMemoryIds = rec.InputMemoryIds,
-                        OutputRaw = rec.OutputRaw
-                    });
-
-                    if (rec.Details.Count > 0)
-                    {
-                        var details = rec.Details.Select(d => new DreamFragmentDetail
-                        {
-                            FragmentId = fragment.Id,
-                            Action = d.Action,
-                            MemoryId = d.MemoryId,
-                            OldValue = d.OldValue,
-                            NewValue = d.NewValue,
-                            Note = d.Note
-                        }).ToList();
-                        await ctx.DreamLogs.CreateDetailsAsync(details);
-                    }
+                        FragmentId = fragment.Id,
+                        Action = d.Action,
+                        MemoryId = d.MemoryId,
+                        OldValue = d.OldValue,
+                        NewValue = d.NewValue,
+                        Note = d.Note
+                    }).ToList();
+                    await ctx.DreamLogs.CreateDetailsAsync(details);
                 }
             }
             catch (Exception ex)
             {
-                Signal.Warn(LogGroup.Engine, "做梦日志持久化失败", new { error = ex.GetType().Name, message = ex.Message });
+                Signal.Warn(LogGroup.Engine, "片段即时持久化失败", new { seqIndex, type = rec.Type, error = ex.Message });
+            }
+        }
+
+        private async Task PersistSessionAsync(DateTime startTime, int executed)
+        {
+            try
+            {
+                var session = await ctx.DreamLogs.GetSessionByIdAsync(currentSessionId);
+                if (session != null)
+                {
+                    session.EndTime = DateTime.Now;
+                    session.FragmentsExecuted = executed;
+                    session.WasInterrupted = shouldWake;
+                    await ctx.DreamLogs.UpdateSessionAsync(session);
+                }
+            }
+            catch (Exception ex)
+            {
+                Signal.Warn(LogGroup.Engine, "会话结束更新失败", new { error = ex.GetType().Name, message = ex.Message });
             }
         }
 
