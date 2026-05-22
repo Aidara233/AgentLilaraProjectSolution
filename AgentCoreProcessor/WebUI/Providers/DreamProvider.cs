@@ -160,6 +160,7 @@ internal class DreamProvider : IWebUIProvider
             new()
             {
                 Id = "session-fragments", Type = CardType.Table, DataSourceId = "session-fragments", Title = "片段列表",
+                LinkEvent = "fragment-selected",
                 Schema = new TableSchema
                 {
                     Columns = new()
@@ -168,10 +169,28 @@ internal class DreamProvider : IWebUIProvider
                         new() { Field = "type", Header = "类型", Width = "100px", Format = ColumnFormat.Badge },
                         new() { Field = "success", Header = "结果", Width = "60px", Format = ColumnFormat.Badge },
                         new() { Field = "duration", Header = "耗时", Width = "70px" },
-                        new() { Field = "summary", Header = "摘要" },
-                        new() { Field = "details", Header = "变更", Width = "300px" }
+                        new() { Field = "summary", Header = "摘要" }
                     },
                     DefaultPageSize = 50
+                },
+                Layout = new CardLayout { PreferredCols = 12 }
+            },
+            new()
+            {
+                Id = "fragment-detail", Type = CardType.Status, DataSourceId = "fragment-detail", Title = "片段详情",
+                ListenEvent = "fragment-selected",
+                Schema = new StatusSchema
+                {
+                    Fields = new()
+                    {
+                        new() { Field = "type", Label = "类型", Type = StatusFieldType.Badge },
+                        new() { Field = "time", Label = "时间" },
+                        new() { Field = "duration", Label = "耗时" },
+                        new() { Field = "success", Label = "结果", Type = StatusFieldType.Badge },
+                        new() { Field = "summary", Label = "摘要" },
+                        new() { Field = "input", Label = "输入素材" },
+                        new() { Field = "changes", Label = "变更明细" }
+                    }
                 },
                 Layout = new CardLayout { PreferredCols = 12 }
             }
@@ -179,7 +198,8 @@ internal class DreamProvider : IWebUIProvider
         DataSources = new List<DataSourceDefinition>
         {
             new() { Id = "session-info", Source = new DreamSessionInfoSource(_engine) },
-            new() { Id = "session-fragments", Source = new DreamSessionFragmentsSource(_engine) }
+            new() { Id = "session-fragments", Source = new DreamSessionFragmentsSource(_engine) },
+            new() { Id = "fragment-detail", Source = new FragmentDetailSource(_engine) }
         }
     };
 
@@ -512,20 +532,14 @@ internal class DreamSessionFragmentsSource : IDataSource
 
         foreach (var f in fragments)
         {
-            var details = await _engine.DreamLogs.GetDetailsByFragmentAsync(f.Id);
-            var detailStr = details.Count > 0
-                ? string.Join("; ", details.Take(5).Select(FormatDetail))
-                  + (details.Count > 5 ? $" (+{details.Count - 5})" : "")
-                : "—";
-
             arr.Add(new JsonObject
             {
+                ["_id"] = f.Id.ToString(),
                 ["seq"] = (f.SeqIndex + 1).ToString(),
                 ["type"] = f.Type,
                 ["success"] = f.Success ? "成功" : "失败",
                 ["duration"] = $"{f.DurationSeconds:F1}s",
-                ["summary"] = f.Summary.Length > 100 ? f.Summary[..100] + "…" : f.Summary,
-                ["details"] = detailStr
+                ["summary"] = f.Summary.Length > 120 ? f.Summary[..120] + "…" : f.Summary
             });
         }
 
@@ -550,6 +564,91 @@ internal class DreamSessionFragmentsSource : IDataSource
 }
 
 // PLACEHOLDER_SLEEP_SOURCES
+
+internal class FragmentDetailSource : IDataSource
+{
+    private readonly MasterEngine _engine;
+    public FragmentDetailSource(MasterEngine engine) => _engine = engine;
+    public bool SupportsPush => false;
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        var fragmentIdStr = query?.Extra?["_id"]?.ToString();
+        if (!int.TryParse(fragmentIdStr, out var fragmentId))
+        {
+            return new DataResult
+            {
+                Data = new JsonObject
+                {
+                    ["type"] = "—",
+                    ["time"] = "点击左侧片段查看详情",
+                    ["duration"] = "—",
+                    ["success"] = "—",
+                    ["summary"] = "—",
+                    ["input"] = "—",
+                    ["changes"] = "—"
+                }
+            };
+        }
+
+        var fragments = await _engine.DreamLogs.GetFragmentByIdAsync(fragmentId);
+        if (fragments == null)
+            return new DataResult { Data = new JsonObject { ["type"] = "未找到", ["time"] = "—", ["duration"] = "—", ["success"] = "—", ["summary"] = "—", ["input"] = "—", ["changes"] = "—" } };
+
+        var details = await _engine.DreamLogs.GetDetailsByFragmentAsync(fragmentId);
+
+        var inputDesc = string.IsNullOrEmpty(fragments.InputMemoryIds)
+            ? "—"
+            : FormatInputMemories(fragments.InputMemoryIds);
+
+        var changesStr = details.Count > 0
+            ? string.Join("\n", details.Select(FormatDetailLine))
+            : "无变更记录";
+
+        var data = new JsonObject
+        {
+            ["type"] = fragments.Type,
+            ["time"] = fragments.StartTime.ToString("HH:mm:ss"),
+            ["duration"] = $"{fragments.DurationSeconds:F1}s",
+            ["success"] = fragments.Success ? "成功" : "失败",
+            ["summary"] = fragments.Summary,
+            ["input"] = inputDesc,
+            ["changes"] = changesStr
+        };
+        return new DataResult { Data = data };
+    }
+
+    private static string FormatInputMemories(string input)
+    {
+        if (input.Contains("target:"))
+        {
+            var parts = input.Split(';');
+            var target = parts.FirstOrDefault(p => p.StartsWith("target:"))?.Replace("target:", "目标#");
+            var candidates = parts.FirstOrDefault(p => p.StartsWith("candidates:"))?.Replace("candidates:", "候选: #");
+            return $"{target}  {candidates}";
+        }
+        return $"记忆: #{input.Replace(",", ", #")}";
+    }
+
+    private static string FormatDetailLine(DreamFragmentDetail d)
+    {
+        return d.Action switch
+        {
+            "weight_adjust" => $"权重调整 #{d.MemoryId}: {d.OldValue} → {d.NewValue}" + (d.Note != null ? $" ({d.Note})" : ""),
+            "link_create" => $"建立关联 #{d.MemoryId}: {d.Note}",
+            "link_strengthen" => $"强化关联 #{d.MemoryId}: {d.OldValue} → {d.NewValue}",
+            "combine_derive" => $"合并衍生 → #{d.MemoryId}" + (d.Note != null ? $" ({d.Note})" : ""),
+            "dedup_merge" => $"去重合并 #{d.MemoryId}: {d.Note}",
+            "dedup_discard" => $"去重丢弃 #{d.MemoryId}",
+            "consolidate_group" => $"整合分组 #{d.MemoryId}: {d.Note}",
+            _ => $"{d.Action} #{d.MemoryId}" + (d.Note != null ? $" ({d.Note})" : "")
+        };
+    }
+
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+        => Task.FromResult(new ActionResult { Success = true });
+}
 
 internal class SleepEvalSource : IDataSource
 {

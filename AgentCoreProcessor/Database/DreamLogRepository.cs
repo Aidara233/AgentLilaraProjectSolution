@@ -44,6 +44,13 @@ namespace AgentCoreProcessor.Database
             => db.QueryAsync<DreamFragmentDetail>(
                 "SELECT * FROM DreamFragmentDetails WHERE FragmentId = ? ORDER BY Id ASC", fragmentId);
 
+        public async Task<DreamFragment?> GetFragmentByIdAsync(int fragmentId)
+        {
+            var results = await db.QueryAsync<DreamFragment>(
+                "SELECT * FROM DreamFragments WHERE Id = ? LIMIT 1", fragmentId);
+            return results.Count > 0 ? results[0] : null;
+        }
+
         public Task<int> GetSessionCountAsync()
             => db.Table<DreamSession>().CountAsync();
     }

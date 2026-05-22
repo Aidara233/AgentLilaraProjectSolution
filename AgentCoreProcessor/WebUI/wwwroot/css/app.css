@@ -427,6 +427,16 @@ body {
 .row-clickable:hover {
     background: var(--hover-bg, rgba(255,255,255,0.05));
 }
+.row-selectable {
+    cursor: pointer;
+}
+.row-selectable:hover {
+    background: var(--hover-bg, rgba(255,255,255,0.05));
+}
+.row-selected {
+    background: var(--selected-bg, rgba(100,149,237,0.15)) !important;
+    border-left: 3px solid var(--accent-color, #6495ed);
+}
 
 /* ===== Badges ===== */
 

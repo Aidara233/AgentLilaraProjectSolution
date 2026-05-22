@@ -4,6 +4,7 @@
 @using AgentCoreProcessor.WebUI.Shell
 @using AgentCoreProcessor.WebUI.Components.Cards
 @using System.Text.Json.Nodes
+@using System.Linq
 @inject ProviderRegistry Registry
 @inject NavigationManager Nav
 @implements IDisposable
@@ -39,6 +40,7 @@ else
     private DataSourceManager dsManager = new();
     private PageContext? pageContext;
     private Dictionary<string, string>? routeParams;
+    private List<IDisposable> _linkSubscriptions = new();
 
     protected override void OnInitialized()
     {
@@ -62,6 +64,7 @@ else
                 dsManager.Initialize(page.DataSources, routeParams);
                 dsManager.OnDataChanged += OnDataSourceChanged;
                 dsManager.SubscribeAll();
+                SetupLinkSubscriptions();
                 foreach (var ds in page.DataSources)
                     await dsManager.FetchAsync(ds.Id);
             }
@@ -81,6 +84,7 @@ else
         dsManager.Initialize(page.DataSources, routeParams);
         dsManager.OnDataChanged += OnDataSourceChanged;
         dsManager.SubscribeAll();
+        SetupLinkSubscriptions();
 
         foreach (var ds in page.DataSources)
         {
@@ -115,7 +119,8 @@ else
             case CardType.Table:
                 <TableCard Schema="@((TableSchema)card.Schema)" Data="@data" TotalCount="@totalCount"
                            OnQueryChanged="@(q => OnQuery(dsId, q))"
-                           OnRowAction="@(e => OnRowAction(dsId, e))" />
+                           OnRowAction="@(e => OnRowAction(dsId, e))"
+                           OnRowSelect="@(card.LinkEvent != null ? EventCallback.Factory.Create<JsonNode>(this, row => EmitLinkEvent(pc, card.LinkEvent, row)) : default)" />
                 break;
             case CardType.Status:
                 <StatusCard Schema="@((StatusSchema)card.Schema)" Data="@data"
@@ -146,6 +151,9 @@ else
     private static void EmitNodeSelected(PageContext? pc, string id)
         => pc?.Emit("node-selected", JsonValue.Create(id));
 
+    private static void EmitLinkEvent(PageContext? pc, string eventName, JsonNode row)
+        => pc?.Emit(eventName, row);
+
     private async Task OnQuery(string dsId, DataQuery query)
     {
         await dsManager.FetchAsync(dsId, query);
@@ -171,8 +179,30 @@ else
         StateHasChanged();
     }
 
+    private void SetupLinkSubscriptions()
+    {
+        if (page == null || pageContext == null) return;
+        foreach (var card in page.Cards.Where(c => c.ListenEvent != null))
+        {
+            var dsId = card.DataSourceId;
+            var sub = pageContext.On(card.ListenEvent!, payload =>
+            {
+                InvokeAsync(async () =>
+                {
+                    var query = new DataQuery { Extra = payload };
+                    await dsManager.FetchAsync(dsId, query);
+                    StateHasChanged();
+                });
+            });
+            _linkSubscriptions.Add(sub);
+        }
+    }
+
     private void Cleanup()
     {
+        foreach (var sub in _linkSubscriptions)
+            sub.Dispose();
+        _linkSubscriptions.Clear();
         dsManager.OnDataChanged -= OnDataSourceChanged;
         dsManager.Dispose();
         pageContext?.Dispose();
