@@ -193,25 +193,7 @@ internal class DreamProvider : IWebUIProvider
                         new() { Field = "interrupted", Label = "被打断", Type = StatusFieldType.Badge }
                     }
                 },
-                Layout = new CardLayout { PreferredCols = 7 }
-            },
-            new()
-            {
-                Id = "session-fragments", Type = CardType.Table, DataSourceId = "session-fragments", Title = "片段列表",
-                LinkEvent = "fragment-selected",
-                Schema = new TableSchema
-                {
-                    Columns = new()
-                    {
-                        new() { Field = "seq", Header = "#", Width = "40px" },
-                        new() { Field = "type", Header = "类型", Width = "100px", Format = ColumnFormat.Badge },
-                        new() { Field = "success", Header = "结果", Width = "60px", Format = ColumnFormat.Badge },
-                        new() { Field = "duration", Header = "耗时", Width = "70px" },
-                        new() { Field = "summary", Header = "摘要" }
-                    },
-                    DefaultPageSize = 50
-                },
-                Layout = new CardLayout { PreferredCols = 7, Height = "380px" }
+                Layout = new CardLayout { PreferredCols = 7, Order = 0 }
             },
             new()
             {
@@ -230,7 +212,25 @@ internal class DreamProvider : IWebUIProvider
                         new() { Field = "changes", Label = "变更明细", IsMultiline = true }
                     }
                 },
-                Layout = new CardLayout { PreferredCols = 5, RowSpan = 2 }
+                Layout = new CardLayout { PreferredCols = 5, RowSpan = 2, Order = 1 }
+            },
+            new()
+            {
+                Id = "session-fragments", Type = CardType.Table, DataSourceId = "session-fragments", Title = "片段列表",
+                LinkEvent = "fragment-selected",
+                Schema = new TableSchema
+                {
+                    Columns = new()
+                    {
+                        new() { Field = "seq", Header = "#", Width = "40px" },
+                        new() { Field = "type", Header = "类型", Width = "100px", Format = ColumnFormat.Badge },
+                        new() { Field = "success", Header = "结果", Width = "60px", Format = ColumnFormat.Badge },
+                        new() { Field = "duration", Header = "耗时", Width = "70px" },
+                        new() { Field = "summary", Header = "摘要" }
+                    },
+                    DefaultPageSize = 50
+                },
+                Layout = new CardLayout { PreferredCols = 7, Height = "calc(100vh - 350px)", Order = 2 }
             }
         },
         DataSources = new List<DataSourceDefinition>
