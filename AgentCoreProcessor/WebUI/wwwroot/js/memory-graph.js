@@ -27,14 +27,37 @@ window.initMemoryGraph = function (containerId, data, coreId, dotnet) {
             maxZoom: 10
         });
 
-        // Start centered on core at readable zoom
+        // Keep node size screen-absolute via zoom compensation
+        var targetNodePx = 10;   // target screen-pixel node radius
+        var targetFontPx = 13;   // target screen-pixel font size
+
+        function updateSizes() {
+            var z = cy.zoom();
+            if (z <= 0) return;
+            // Model size = screen pixels / zoom
+            var ns = targetNodePx / z;
+            var fs = targetFontPx / z;
+            cy.style().selector('node').style({
+                'width': ns * 2, 'height': ns * 2,
+                'font-size': fs
+            }).selector('node[?isMeta]').style({
+                'width': ns * 3, 'height': ns * 3,
+                'font-size': fs + 1
+            }).update();
+        }
+
+        cy.on('zoom', updateSizes);
+
+        // Start centered on core at readable zoom, then compensate
         setTimeout(function () {
             var core = cy.getElementById(coreId.toString());
             if (core.length) {
                 cy.center(core);
                 cy.zoom(0.5);
+                updateSizes();
             } else {
                 cy.fit(null, 80);
+                updateSizes();
             }
         }, 50);
 
@@ -147,13 +170,14 @@ function makeStyles(isMeta) {
     return [
         { selector: 'node', style: {
             'background-color': '#90a4ae', 'border-width': 1, 'border-color': '#555',
-            'opacity': 0.95, 'label': 'data(label)', 'font-size': 14, 'color': '#e0e0e0',
+            'opacity': 0.95, 'label': 'data(label)', 'color': '#e0e0e0',
             'text-valign': 'center', 'text-halign': 'center',
             'text-wrap': 'wrap', 'text-max-width': '80px',
-            'text-overflow-wrap': 'anywhere'
+            'text-overflow-wrap': 'anywhere',
+            // width/height/font-size set dynamically by zoom handler
         }},
         { selector: 'node[?isMeta]', style: {
-            'border-width': 2, 'font-size': 14, 'font-weight': 'bold',
+            'border-width': 2, 'font-weight': 'bold',
             'label': 'data(label)', 'text-wrap': 'wrap', 'text-max-width': '120px',
             'color': '#ffd54f', 'text-valign': 'center', 'text-halign': 'center',
             'shape': 'round-rectangle'
