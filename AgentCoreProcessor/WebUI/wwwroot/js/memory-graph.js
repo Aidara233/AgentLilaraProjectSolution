@@ -1,14 +1,8 @@
 var cy = null;
 var dotNetRef = null;
-var subDataCache = {};
-var isMetaView = false;
-var currentViewId = null;
 
 window.initMemoryGraph = function (containerId, data, coreId, dotnet) {
     dotNetRef = dotnet;
-    subDataCache = data.subData || {};
-    isMetaView = data.isMeta === true;
-    currentViewId = coreId;
 
     var container = document.getElementById(containerId);
     if (!container) return;
@@ -20,7 +14,7 @@ window.initMemoryGraph = function (containerId, data, coreId, dotnet) {
         cy = cytoscape({
             container: container,
             elements: els,
-            style: makeStyles(data.isMeta),
+            style: makeStyles(),
             layout: { name: 'preset', fit: false, padding: 0 },
             wheelSensitivity: 0.3,
             minZoom: 0.02,
@@ -28,11 +22,10 @@ window.initMemoryGraph = function (containerId, data, coreId, dotnet) {
         });
 
         // Screen-absolute sizing via zoom compensation
-        var targetNodePx = 14;     // screen-pixel node radius
-        var targetMetaPx = 20;     // screen-pixel meta-node radius
-        var targetFontPx = 13;     // screen-pixel font size
-        var targetEdgeWidth = 1.5;  // screen-pixel edge width
-        var targetEdgeFont = 9;     // screen-pixel edge label font
+        var targetNodePx = 14;
+        var targetFontPx = 13;
+        var targetEdgeWidth = 1.5;
+        var targetEdgeFont = 9;
 
         function updateSizes() {
             var z = cy.zoom();
@@ -41,9 +34,6 @@ window.initMemoryGraph = function (containerId, data, coreId, dotnet) {
             cy.style().selector('node').style({
                 'width': targetNodePx * 2 / z, 'height': targetNodePx * 2 / z,
                 'font-size': targetFontPx / z, 'border-width': bw
-            }).selector('node[?isMeta]').style({
-                'width': targetMetaPx * 2 / z, 'height': targetMetaPx * 2 / z,
-                'font-size': (targetFontPx + 1) / z, 'border-width': bw * 1.5
             }).selector('node[?isCore]').style({
                 'border-width': bw * 2.5, 'border-color': '#ffd54f'
             }).selector('node:selected').style({
@@ -59,7 +49,7 @@ window.initMemoryGraph = function (containerId, data, coreId, dotnet) {
 
         cy.on('zoom', updateSizes);
 
-        // Start centered on core at readable zoom
+        // Center on core at readable zoom
         var initZoom = 0.8;
         setTimeout(function () {
             var core = cy.getElementById(coreId.toString());
@@ -72,19 +62,14 @@ window.initMemoryGraph = function (containerId, data, coreId, dotnet) {
             updateSizes();
         }, 50);
 
-        // Click meta-node to drill in
-        cy.on('tap', 'node[?isMeta]', function (evt) {
-            var node = evt.target;
-            var subId = node.id();
-            if (subDataCache[subId]) {
-                loadSubGraph(subDataCache[subId]);
-            }
-        });
-
-        // Click regular node (sub-cluster view)
-        cy.on('tap', 'node[!isMeta]', function (evt) {
+        // Click node → focus + notify C#
+        cy.on('tap', 'node', function (evt) {
             var node = evt.target;
             highlightAround(node);
+            cy.animate({
+                fit: { eles: node.closedNeighborhood(), padding: 100 },
+                center: { eles: node }, duration: 400, easing: 'ease-in-out'
+            });
             if (dotNetRef) {
                 dotNetRef.invokeMethodAsync('OnNodeSelected', parseInt(node.id()));
             }
@@ -93,9 +78,7 @@ window.initMemoryGraph = function (containerId, data, coreId, dotnet) {
         cy.on('tap', function (evt) {
             if (evt.target === cy) {
                 resetHighlight();
-                if (dotNetRef) {
-                    dotNetRef.invokeMethodAsync('OnCanvasClicked');
-                }
+                if (dotNetRef) { dotNetRef.invokeMethodAsync('OnCanvasClicked'); }
             }
         });
 
@@ -134,7 +117,6 @@ window.resetGraphView = function () {
 window.destroyMemoryGraph = function () {
     if (cy) { cy.destroy(); cy = null; }
     dotNetRef = null;
-    subDataCache = {};
 };
 
 // --- internal ---
@@ -142,7 +124,6 @@ window.destroyMemoryGraph = function () {
 function buildElements(nodes, edges) {
     var els = [];
     var nodeIndex = {};
-
     for (var i = 0; i < nodes.length; i++) {
         var n = nodes[i];
         var id = n.id.toString();
@@ -152,8 +133,7 @@ function buildElements(nodes, edges) {
             data: {
                 id: id, label: n.label || '', title: n.title || '',
                 type: n.type || 'fact', importance: n.importance || 0.5,
-                isDerived: n.isDerived || false, isCore: n.isCore || false,
-                isMeta: n.isMeta || false, memberCount: n.memberCount || 0
+                isDerived: n.isDerived || false, isCore: n.isCore || false
             }
         };
         if (n.x !== undefined && n.y !== undefined) {
@@ -161,7 +141,6 @@ function buildElements(nodes, edges) {
         }
         els.push(el);
     }
-
     for (var j = 0; j < edges.length; j++) {
         var e = edges[j];
         var src = e.from.toString(), tgt = e.to.toString();
@@ -177,21 +156,14 @@ function buildElements(nodes, edges) {
     return els;
 }
 
-function makeStyles(isMeta) {
+function makeStyles() {
     return [
         { selector: 'node', style: {
             'background-color': '#90a4ae', 'border-color': '#555',
             'opacity': 0.95, 'label': 'data(label)', 'color': '#e0e0e0',
             'text-valign': 'center', 'text-halign': 'center',
             'text-wrap': 'wrap', 'text-max-width': '80px',
-            'text-overflow-wrap': 'anywhere',
-            // width/height/font-size/border-width set dynamically by zoom handler
-        }},
-        { selector: 'node[?isMeta]', style: {
-            'font-weight': 'bold',
-            'label': 'data(label)', 'text-wrap': 'wrap', 'text-max-width': '120px',
-            'color': '#ffd54f', 'text-valign': 'center', 'text-halign': 'center',
-            'shape': 'round-rectangle'
+            'text-overflow-wrap': 'anywhere'
         }},
         { selector: 'node[?isCore]', style: { 'border-color': '#ffd54f', 'font-weight': 'bold' }},
         { selector: 'node[?isDerived]', style: { 'border-style': 'dashed' }},
@@ -206,31 +178,10 @@ function makeStyles(isMeta) {
         { selector: 'edge', style: {
             'line-color': '#556', 'opacity': 0.35, 'curve-style': 'bezier',
             'label': 'data(label)', 'color': '#666'
-            // width/font-size set by zoom handler
         }},
         { selector: 'edge.highlight', style: { 'opacity': 0.8 }},
         { selector: 'edge.dimmed', style: { 'opacity': 0.05 }}
     ];
-}
-
-function loadSubGraph(subData) {
-    if (!cy) return;
-    cy.elements().remove();
-    var els = buildElements(subData.nodes, subData.edges);
-    cy.add(els);
-    cy.layout({ name: 'preset', fit: false, padding: 0 }).run();
-    isMetaView = false;
-    // Center on sub-cluster core
-    setTimeout(function () {
-        var core = cy.getElementById(subData.coreId.toString());
-        if (core.length) {
-            cy.center(core);
-            cy.zoom(0.8);
-        } else {
-            cy.fit(null, 60);
-        }
-        updateSizes();
-    }, 50);
 }
 
 function highlightAround(node) {

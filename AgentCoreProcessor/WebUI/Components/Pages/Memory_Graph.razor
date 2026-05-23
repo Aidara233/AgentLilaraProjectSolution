@@ -83,8 +83,16 @@ else
             <i class="bi bi-arrow-left me-1"></i>返回簇列表
         </button>
         <span class="text-muted-custom" style="font-size:0.9rem;">
-            <strong>@_currentClusterName</strong> — @_currentCluster.NodeCount 节点 · @_currentCluster.EdgeCount 关联
+            <strong>@_currentClusterName</strong> — 可见 <strong>@_visibleNodeCount</strong> / @_currentCluster.NodeCount 节点
         </span>
+        @if (_totalNodeCount > _maxVisibleDefault)
+        {
+            <div class="d-flex gap-1 align-items-center ms-2">
+                <label class="text-muted-custom" style="font-size:0.75rem; white-space:nowrap;">显示范围:</label>
+                <input type="range" min="@_distMin" max="@_distMax" step="1" @bind="_showDistance"
+                       @bind:after="RefilterGraph" style="width:100px;" />
+            </div>
+        }
         <div class="ms-auto d-flex gap-2 align-items-center">
             <input type="text" class="form-control form-control-sm" style="width:200px;" placeholder="搜索节点..."
                    @bind="_searchText" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
@@ -473,187 +481,98 @@ else
 
     // ======== 图谱渲染 ========
 
+    // Cached layout for distance-based re-filtering without recomputation
+    private Dictionary<int, (double x, double y)> _cachedPositions = new();
+    private List<MemoryLink> _cachedEdges = new();
+    private double _showDistance = 200;
+    private double _distMin, _distMax;
+    private int _visibleNodeCount;
+    private int _totalNodeCount;
+    private const int _maxVisibleDefault = 80;
+
     private async Task RenderGraph(MemoryCluster cluster)
     {
         _clusterMemories = _allMemories.Where(m => cluster.NodeIds.Contains(m.Id)).ToList();
         var nodeIdSet = cluster.NodeIds.ToHashSet();
-        var edgesList = _allLinks
+        _cachedEdges = _allLinks
             .Where(l => nodeIdSet.Contains(l.SourceId) && nodeIdSet.Contains(l.TargetId))
             .ToList();
 
-        // Compute positions server-side
-        var positions = ComputeForceLayout(cluster.NodeIds, edgesList, cluster.CoreNodeId);
+        // Compute layout and cache for re-filtering
+        _cachedPositions = ComputeForceLayout(cluster.NodeIds, _cachedEdges, cluster.CoreNodeId);
+        _totalNodeCount = cluster.NodeIds.Count;
 
-        // Radial clustering: inner ring = individuals, outer rings = collapsed meta-nodes
-        var (coreX, coreY) = positions.GetValueOrDefault(cluster.CoreNodeId, (0.0, 0.0));
-        var nodeDist = cluster.NodeIds.ToDictionary(id => id, id =>
+        // Default threshold: show closest ~80 nodes
+        var (coreX, coreY) = _cachedPositions.GetValueOrDefault(cluster.CoreNodeId, (0.0, 0.0));
+        var distList = cluster.NodeIds
+            .Select(id => Math.Sqrt(
+                Math.Pow(_cachedPositions[id].x - coreX, 2) +
+                Math.Pow(_cachedPositions[id].y - coreY, 2)))
+            .OrderBy(d => d).ToList();
+
+        _distMin = 1;
+        _distMax = distList.LastOrDefault() + 10;
+
+        if (_totalNodeCount <= _maxVisibleDefault)
+            _showDistance = _distMax;
+        else
+            _showDistance = distList[Math.Min(_maxVisibleDefault, distList.Count - 1)];
+
+        await SendFilteredGraph();
+    }
+
+    private async Task RefilterGraph()
+    {
+        await SendFilteredGraph();
+    }
+
+    private async Task SendFilteredGraph()
+    {
+        var (coreX, coreY) = _cachedPositions.GetValueOrDefault(_currentCluster.CoreNodeId, (0.0, 0.0));
+        var visibleIds = _currentCluster.NodeIds.Where(id =>
         {
-            var (x, y) = positions[id];
-            return Math.Sqrt((x - coreX) * (x - coreX) + (y - coreY) * (y - coreY));
-        });
+            var (x, y) = _cachedPositions[id];
+            return Math.Sqrt((x - coreX) * (x - coreX) + (y - coreY) * (y - coreY)) <= _showDistance;
+        }).ToHashSet();
 
-        var n = cluster.NodeIds.Count;
-        var innerRadius = n > 300 ? 100.0 : (n > 100 ? 130.0 : 9999.0);
-        var midCellSize = n > 300 ? 160.0 : 130.0;
-        var farCellSize = n > 300 ? 260.0 : 200.0;
+        _visibleNodeCount = visibleIds.Count;
 
-        var innerNodes = nodeDist.Where(kv => kv.Value < innerRadius).Select(kv => kv.Key).ToHashSet();
-        var outerNodes = cluster.NodeIds.Where(id => !innerNodes.Contains(id)).ToList();
-
-        var metaNodes = new List<object>();
-        var subDataMap = new Dictionary<string, object>();
-        var memberToMeta = new Dictionary<int, string>();
-        var metaEdges = new List<object>();
-        int scIdx = 0;
-
-        // Inner ring: individual nodes
-        foreach (var id in innerNodes)
+        var nodes = _clusterMemories.Where(m => visibleIds.Contains(m.Id)).Select(m =>
         {
-            var mem = _memDict.GetValueOrDefault(id);
-            var (x, y) = positions[id];
-            memberToMeta[id] = id.ToString();
-            metaNodes.Add(new
+            var (x, y) = _cachedPositions[m.Id];
+            return (object)new
             {
-                id = id.ToString(),
-                label = mem?.Content != null ? (mem.Content.Length > 30 ? mem.Content[..30] + "…" : mem.Content) : $"#{id}",
-                type = mem?.Type ?? "fact", title = $"#{id} [{mem?.Type}] {mem?.Content}",
-                importance = mem?.Importance ?? 0.5,
-                isDerived = mem?.IsDerived ?? false,
-                isCore = id == cluster.CoreNodeId,
+                id = m.Id.ToString(),
+                label = m.Content.Length > 30 ? m.Content[..30] + "…" : m.Content,
+                type = m.Type ?? "fact",
+                title = $"#{m.Id} [{m.Type}] {m.Content}",
+                importance = m.Importance,
+                isDerived = m.IsDerived,
+                isCore = m.Id == _currentCluster.CoreNodeId,
                 x = x, y = y
-            });
-        }
+            };
+        }).ToArray();
 
-        // Outer rings: group by spatial grid
-        if (outerNodes.Count > 0)
-        {
-            var midGrid = new Dictionary<(int, int), List<int>>();
-            var farGrid = new Dictionary<(int, int), List<int>>();
-            foreach (var id in outerNodes)
+        var edges = _cachedEdges
+            .Where(l => visibleIds.Contains(l.SourceId) && visibleIds.Contains(l.TargetId))
+            .Select(l => (object)new
             {
-                var (x, y) = positions[id];
-                if (nodeDist[id] < innerRadius * 2.5)
-                {
-                    var key = ((int)(x / midCellSize), (int)(y / midCellSize));
-                    if (!midGrid.ContainsKey(key)) midGrid[key] = new(); midGrid[key].Add(id);
-                }
-                else
-                {
-                    var key = ((int)(x / farCellSize), (int)(y / farCellSize));
-                    if (!farGrid.ContainsKey(key)) farGrid[key] = new(); farGrid[key].Add(id);
-                }
-            }
+                from = l.SourceId.ToString(),
+                to = l.TargetId.ToString(),
+                label = l.LinkType ?? "",
+                width = l.Strength
+            }).ToArray();
 
-            var allCells = midGrid.Select(kv => (nodes: kv.Value, isFar: false))
-                .Concat(farGrid.Select(kv => (nodes: kv.Value, isFar: true)));
-            foreach (var (cellNodes, isFar) in allCells)
-            {
-                var members = cellNodes.ToList();
-                if (members.Count == 0) continue;
-                scIdx++;
-                var metaId = $"sc-{scIdx}";
-                foreach (var m in members) memberToMeta[m] = metaId;
-
-                // Find local core
-                int localCore = members.First();
-                double bestW = 0;
-                foreach (var m in members)
-            {
-                double w = 0;
-                if (_nodeLinks.TryGetValue(m, out var l))
-                    w = l.Where(lnk => members.Contains(lnk.SourceId) && members.Contains(lnk.TargetId))
-                       .Sum(lnk => lnk.Strength);
-                if (w > bestW) { bestW = w; localCore = m; }
-            }
-
-            var coreMem = _memDict.GetValueOrDefault(localCore);
-            var label = coreMem?.Content ?? $"#{localCore}";
-            if (label.Length > 35) label = label[..35] + "…";
-
-            // Dominant type
-            var types = new Dictionary<string, int>();
-            foreach (var m in members)
-            {
-                if (_memDict.TryGetValue(m, out var mem))
-                {
-                    var t = mem.Type ?? "fact";
-                    types[t] = types.GetValueOrDefault(t) + 1;
-                }
-            }
-            var topType = types.OrderByDescending(kv => kv.Value).First().Key;
-
-                metaNodes.Add(new
-                {
-                    id = metaId,
-                    label = isFar ? $"{members.Count}条远距" : $"{label} (+{members.Count - 1})",
-                    type = topType,
-                    importance = Math.Min(1.0, members.Count / 20.0),
-                    isCore = false,
-                    x = positions[localCore].x, y = positions[localCore].y,
-                    isMeta = true, memberCount = members.Count
-                });
-
-                var memberSet = members.ToHashSet();
-                subDataMap[metaId] = new
-                {
-                    nodes = members.Select(m =>
-                    {
-                        var p = positions[m]; var mem = _memDict.GetValueOrDefault(m);
-                        return (object)new
-                        {
-                            id = m.ToString(),
-                            label = mem?.Content != null ? (mem.Content.Length > 25 ? mem.Content[..25] + "…" : mem.Content) : $"#{m}",
-                            type = mem?.Type ?? "fact",
-                            title = $"#{m} [{mem?.Type}] {mem?.Content}",
-                            importance = mem?.Importance ?? 0.5,
-                            isDerived = mem?.IsDerived ?? false,
-                            isCore = m == localCore,
-                            x = p.x, y = p.y
-                        };
-                    }).ToList(),
-                    edges = edgesList.Where(l => memberSet.Contains(l.SourceId) && memberSet.Contains(l.TargetId))
-                        .Select(l => (object)new
-                        {
-                            from = l.SourceId.ToString(), to = l.TargetId.ToString(),
-                            label = l.LinkType ?? "", width = l.Strength
-                        }).ToList(),
-                    coreId = localCore.ToString()
-                };
-            }
-        }
-
-        // Build edges between all meta elements
-        var edgeKeys = new HashSet<string>();
-        foreach (var link in edgesList)
-        {
-            var sa = memberToMeta.GetValueOrDefault(link.SourceId);
-            var sb = memberToMeta.GetValueOrDefault(link.TargetId);
-            if (sa == null || sb == null || sa == sb) continue;
-            if (sa.CompareTo(sb) > 0) { (sa, sb) = (sb, sa); }
-            var ek = sa + "||" + sb;
-            if (edgeKeys.Contains(ek)) continue;
-            edgeKeys.Add(ek);
-            metaEdges.Add(new { from = sa, to = sb, label = link.LinkType ?? "", width = link.Strength });
-        }
-
-        var coreMetaId = memberToMeta.GetValueOrDefault(cluster.CoreNodeId);
-        if (coreMetaId == null && metaNodes.Count > 0)
-            coreMetaId = (string)((dynamic)metaNodes[0]).id;
-
-        var data = new
-        {
-            nodes = metaNodes,
-            edges = metaEdges,
-            isMeta = true,
-            subData = subDataMap
-        };
+        var data = new { nodes, edges };
 
         _dotNetRef?.Dispose();
         _dotNetRef = DotNetObjectReference.Create(this);
 
         await JS.InvokeVoidAsync("initMemoryGraph",
-            "memory-graph-container", data, coreMetaId, _dotNetRef);
+            "memory-graph-container", data, _currentCluster.CoreNodeId.ToString(), _dotNetRef);
         _graphRendered = true;
+
+        StateHasChanged();
     }
 
     private static Dictionary<int, (double x, double y)> ComputeForceLayout(
