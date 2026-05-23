@@ -27,7 +27,8 @@ AgentLilaraProjectSolution/
 │     ├── WebUI/       Blazor Server 管理面板（嵌入式，同进程）
 │     └── Program.cs   入口（WebApplication 宿主，默认启动 Web 服务器 + 适配器）
 └── Plugins/
-      └── Plugin.BasicTools/  第一个插件（speak + send_media）
+      ├── Plugin.BasicTools/      speak + send_media
+      └── Plugin.CrossLoopTools/  跨循环委托与通信
 ```
 
 ## 引擎生态
@@ -42,14 +43,14 @@ MasterEngine (内核，实现 ISystemContext)
   │     Vision  → VisionEngine (图片描述+OCR，IsInfrastructure=true)
   │     Command → CommandSpawnCheck (指令拦截)
   ├── 活跃引擎表 (List<ISubEngine>)
-  ├── TaskBridge (频道循环 ↔ 系统循环异步通信)
-  │     TaskQueue (重量请求: DelegateTask/RequestApproval/Escalate)
-  │     NotificationQueue (轻量信号: Notify/ProgressUpdate/WatchHit)
-  ├── DelegationRegistry (频道循环 → 系统循环委托生命周期管理)
-  │     Submit → WaitForEvaluation → MarkExecuting → MarkCompleted/MarkFailed/MarkRetryPending
-  │     RetryPending: 子agent失败后等待系统循环决策（MaxRetries=2）
-  │     OnDelegationSubmitted → 唤醒系统循环
-  │     OnDelegationCompleted → EventBus 信号唤醒源频道循环
+  ├── CrossRequestRegistry (跨循环请求生命周期管理)
+  │     Submit → Respond(Accept/Reject/Progress/Complete) → Idle → Archive
+  │     广播: TargetId=null → 所有活跃循环见摘要
+  │     定向: 指定TargetId → 目标循环见详情，自动激活或排队
+  │     JSONL 追加持久化，重启恢复
+  ├── DelegationBus (跨循环定向路由总线)
+  │     引擎注册/注销 handler → Deliver 精准投递
+  │     非全局广播，无关循环不感知
   ├── ToolProfileManager (组件状态模型，链式继承)
   │     Profile: components(enabled/disabled/unavailable) + blockedTools/unblockedTools
   │     _root → channel/system/sub-agent 继承链
@@ -68,7 +69,7 @@ MasterEngine (内核，实现 ISystemContext)
 ```
 
 ISubEngine: EngineType / RunAsync / OnEvent / IsAlive / RequestStop / IsInfrastructure(默认false)
-ISystemContext: 数据访问 + 适配器 + EventBus + 引擎查询 + StartEngine/RequestStopEngine + TaskBridge + Delegations + CurrentSleepState + MuteMode + NotifyChannel + ToolProfiles + GlobalComponentHost + ComponentServices
+ISystemContext: 数据访问 + 适配器 + EventBus + 引擎查询 + StartEngine/RequestStopEngine + CrossRequests + DelegationBus + CurrentSleepState + MuteMode + ToolProfiles + GlobalComponentHost + ComponentServices
 IAgentSession: 统一会话接口 (ChannelSession/TaskSession/MonitorSession)
 
 ### 引擎内部循环架构（Phase 1+2 统一模型）
@@ -169,7 +170,7 @@ ChannelEngine (频道循环，常驻，一个活跃频道一个):
     系统循环通过 SetWatchRuleTool 下发规则到频道循环
     规则含自主权级别: NotifyOnly / AutoRespond / Escalate
     频道循环在 Express prompt 注入规则，模型语义匹配
-    命中后通过 TaskBridge.SendNotification 上报系统循环
+    命中后通过 IAgentMessaging.SubmitFireAndForget 上报系统循环
 
   持久化 + 压缩:
     ChannelContextPersistence: 只保存 ConversationOffset 之后的对话内容
@@ -226,7 +227,7 @@ SystemEngine (系统循环，单例，纯调度者):
 
   闸门驱动循环 (Gate, auto-reset):
     gate.WaitAsync(coldTimeout) → 放行后立即重置 → 收集 → 执行 → 回到等待
-    触发源: TaskBridge 任务/通知 / 委托提交 / ContinueLoop自唤醒 / 定时器
+    触发源: CrossRequests.OnRequestSubmitted / DelegationBus投递 / ContinueLoop自唤醒 / 定时器
     超时 → 冷却退出
   
   堆叠式上下文 (同 ChannelEngine 模型):
@@ -243,8 +244,8 @@ SystemEngine (系统循环，单例，纯调度者):
   
   通信规则（不直接发消息）:
     系统循环不持有发消息能力，一律通过频道循环间接实现
-    通知频道: NotifyChannel(channelId, content) → 注入频道循环 systemNotifications 队列
-    委托结果: 子agent完成 → MarkCompleted → delegation-completed 信号 → 频道循环自动感知
+    通知频道: IAgentMessaging.SubmitFireAndForget → DelegationBus 路由 → 目标循环代理 prompt
+    委托结果: 子agent完成 → OnCompleted回调 → CrossRequestRegistry.Respond(Complete) → 发起者自动唤醒
     适配器操作: 拦截 send_* 类操作，仅允许查询类（获取群列表等）
   
   上下文持久化:
@@ -255,19 +256,6 @@ SystemEngine (系统循环，单例，纯调度者):
     超过 80k tokens 触发（CompressionTierModule L1/L2/L3）
     模型调 compress 工具 → 生成摘要 → ClearHistory + 重注入
   
-  委托系统 (DelegationRegistry):
-    频道循环 → DelegateTaskTool → 提交委托 → 唤醒系统循环
-    系统循环 → EvaluateDelegationTool → accept/queue/reject
-    accept → 创建 TaskSession(delegationId) → 执行 → MarkCompleted/MarkFailed
-    完成 → EventBus 发 delegation-completed 信号 → 唤醒源频道循环
-    DelegateTaskTool 同步等待评估结果(15s超时)，返回 verdict 给频道循环
-  
-  子 agent 管理:
-    通过 CreateSubAgentTool 创建 TaskSession（工具集从 sub-agent profile 获取）
-    通过 StopSubAgentTool 停止子agent
-    禁止套娃（子agent 不能创建子agent）
-    失败恢复: TaskSession 内部 API 重试(max 3, 指数退避) → 失败标记 RetryPending + 双通知
-    系统循环看到 RetryPending → 决定重试(IncrementRetry + 新建子agent) 或放弃(MarkFailed)
   
   模块/组件体系:
     LoopControlModule / PendingEventsModule / SystemStatusModule
@@ -278,7 +266,7 @@ SystemEngine (系统循环，单例，纯调度者):
   工具集 (纯调度+轻量执行):
     调度类: CreateSubAgent / SendToSubAgent / StopSubAgent / DeleteSubAgent
     通信类: 通知频道 / CheckNotifications / SetWatchRule / CheckTaskQueue
-    委托类: EvaluateDelegation（评估频道循环提交的委托）
+    委托类: evaluate_request / complete_request（跨循环请求）
     自用类: 便签板 / 思考笔记 / 继续 / 等待
     轻量执行: 记忆读写 / 频道信息 / 引擎管理 / 适配器操作(仅查询)
 ```
@@ -398,7 +386,7 @@ AgentLilara.PluginSDK (共享契约，独立类库):
   ToolParameter: Name / Description / Index / IsRequired（控制 JSON Schema required 数组）
   EngineMode: Express / Working（SDK 枚举，供 ILoopControl 使用）
   Services/: IMemoryAccess（完整数据访问：语义搜索/向量操作/批量读取/临时库/关联图）
-             IAgentMessaging / IDelegationAccess / ISubAgentAccess
+             IAgentMessaging / IChannelAccess / ISubAgentAccess
              IChannelAccess / IAdapterAccess / ISchedulingAccess / IEngineAccess
              ISleepAccess / IEventBusAccess / IToolHistoryAccess / ILoopControl
              IReviewAccess（游标/浏览/评价/笔记/进度）/ IReviewControl（预算/完成）
@@ -419,7 +407,7 @@ AgentLilara.PluginSDK (共享契约，独立类库):
   Plugin.WorkingTools    — pinboard + thinking_notes + retain_list + task_management + mark_for_review（工作状态+复盘标记）[LoopComponent: working-tools, IInjectProvider]
   Plugin.MemoryTools     — memory（记忆读写，依赖 IMemoryAccess 服务）[GlobalComponent: memory-tools]
   Plugin.FileTools       — read_text + write_text + list_dir + move/delete/copy（文件系统）[GlobalComponent: file-tools]
-  Plugin.DelegationTools — delegate_task + cancel_delegation（频道循环委托提交）[LoopComponent: delegation]
+  Plugin.CrossLoopTools -- send_request + evaluate_request + complete_request + send_notify + report_progress + list_loops 等（跨循环委托与通信）[LoopComponent: cross-loop]
   Plugin.SystemTools     — evaluate_delegation + complete_delegation + notify_channel + create/stop_sub_agent（系统循环调度）[LoopComponent: system-ops]
 
 ToolCall: 原生 tool_use (Claude API) 为主路径

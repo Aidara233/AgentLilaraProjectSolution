@@ -12,7 +12,7 @@ public class EvaluateRequestTool : ITool
     public EvaluateRequestTool(IAgentMessaging messaging) => _messaging = messaging;
 
     public string Name => "evaluate_request";
-    public string Description => "评估收到的跨循环请求：接受、拒绝或排队。";
+    public string Description => "评估收到的跨循环请求。accept=接受并开始执行；reject=拒绝并附理由；queue 暂不支持（按 reject 处理）。接受后应通过 report_progress 汇报进度，完成后调用 complete_request。";
 
     public IReadOnlyList<ToolParameter> Parameters =>
     [

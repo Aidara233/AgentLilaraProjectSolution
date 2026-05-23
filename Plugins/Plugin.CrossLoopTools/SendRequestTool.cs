@@ -12,7 +12,7 @@ public class SendRequestTool : ITool
     public SendRequestTool(IAgentMessaging messaging) => _messaging = messaging;
 
     public string Name => "send_request";
-    public string Description => "向指定目标循环（或广播）发起委托请求，等待评估结果。target_id 留空则广播给所有活跃循环。";
+    public string Description => "向指定目标循环（或广播）发起委托请求并等待评估结果。\n使用指南：target_id 留空 = 广播（所有循环见摘要）；填 system = 向系统循环发起；填 channel:N = 向指定频道发起。\n广播时仅标题和截断内容对接收者可见，定向时完整内容可见。超时后请求进入 Idle 状态。";
 
     public IReadOnlyList<ToolParameter> Parameters =>
     [

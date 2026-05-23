@@ -12,7 +12,7 @@ public class RespondToRequestTool : ITool
     public RespondToRequestTool(IAgentMessaging messaging) => _messaging = messaging;
 
     public string Name => "respond_to_request";
-    public string Description => "对收到的跨循环请求做出回应。类型: accept/reject/progress/complete/ignore。";
+    public string Description => "对收到的跨循环请求做出回应。accept=接受委托；reject=拒绝（附理由）；progress=汇报进度（不改变状态）；complete=标记完成（附结果）；ignore=仅广播可用，忽略后从视野消失。";
 
     public IReadOnlyList<ToolParameter> Parameters =>
     [
