@@ -444,7 +444,7 @@ internal class AdapterCreateSource : IDataSource
     public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
 
     public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-        => Task.FromResult(new DataResult { Data = null });
+        => Task.FromResult(new DataResult { Data = null! });
 
     public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
     {
@@ -623,11 +623,11 @@ internal class AdapterConfigSource : IDataSource
         var id = query?.Extra?["id"]?.ToString() ?? _selectedId;
         _selectedId = id;
         if (string.IsNullOrEmpty(id))
-            return Task.FromResult(new DataResult { Data = null });
+            return Task.FromResult(new DataResult { Data = null! });
 
         var cfg = _adapters.GetConfigById(id);
         if (cfg == null)
-            return Task.FromResult(new DataResult { Data = null });
+            return Task.FromResult(new DataResult { Data = null! });
 
         var s = cfg.Settings;
         return Task.FromResult(new DataResult
@@ -716,7 +716,7 @@ internal class ActionExecSource : IDataSource
         var id = query?.Extra?["id"]?.ToString() ?? _selectedId;
         if (id != _selectedId) _lastData = null; // 切换实例清除旧结果
         _selectedId = id;
-        return Task.FromResult(new DataResult { Data = _lastData });
+        return Task.FromResult(new DataResult { Data = _lastData! });
     }
 
     public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)

@@ -494,7 +494,7 @@ internal class TestActionDataSource : IDataSource
 
     public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
-        return Task.FromResult(new DataResult { Data = _lastData });
+        return Task.FromResult(new DataResult { Data = _lastData! });
     }
 
     public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)

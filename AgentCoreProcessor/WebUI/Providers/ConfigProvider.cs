@@ -289,8 +289,9 @@ internal class ConfigListSource : IDataSource
         {
             var search = query.Search.ToLowerInvariant();
             rows = new JsonArray(rows.Where(r =>
+                r != null && (
                 (r["name"]?.ToString() ?? "").ToLowerInvariant().Contains(search) ||
-                (r["path"]?.ToString() ?? "").ToLowerInvariant().Contains(search)
+                (r["path"]?.ToString() ?? "").ToLowerInvariant().Contains(search))
             ).ToArray());
         }
 

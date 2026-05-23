@@ -170,8 +170,8 @@ namespace AgentCoreProcessor.Engine
                     seedType = _seedType,
                     rounds = _agent.TotalRounds,
                     stopReason = session.StopReason,
-                    completed = _reviewControl.IsCompleted,
-                    reserveUsed = _reviewControl.ReserveGranted,
+                    completed = _reviewControl?.IsCompleted,
+                    reserveUsed = _reviewControl?.ReserveGranted,
                     tokensUsed = TokensUsed,
                     evaluationsApplied = evalCount
                 });

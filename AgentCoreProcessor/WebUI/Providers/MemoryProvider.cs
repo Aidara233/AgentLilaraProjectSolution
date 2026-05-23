@@ -1086,7 +1086,7 @@ internal class PeopleEditSource : IDataSource
         if (obj.TryGetPropertyValue("name", out var nameNode))
             person.Name = nameNode?.ToString() ?? "";
         if (obj.TryGetPropertyValue("aliases", out var aliasesNode))
-            person.Aliases = aliasesNode?.ToString();
+            person.Aliases = aliasesNode?.ToString() ?? "";
         if (obj.TryGetPropertyValue("trustLevel", out var tlNode) && int.TryParse(tlNode?.ToString(), out var tlVal) && Enum.IsDefined(typeof(TrustLevel), tlVal))
             person.TrustLevel = (TrustLevel)tlVal;
         if (obj.TryGetPropertyValue("trustProgress", out var tpNode) && float.TryParse(tpNode?.ToString(), out var tpVal))
@@ -1094,7 +1094,7 @@ internal class PeopleEditSource : IDataSource
         if (obj.TryGetPropertyValue("alertLevel", out var alNode) && int.TryParse(alNode?.ToString(), out var alVal) && alVal >= 0 && alVal <= 4)
             person.AlertLevel = alVal;
         if (obj.TryGetPropertyValue("fastMemory", out var fmNode))
-            person.FastMemory = fmNode?.ToString();
+            person.FastMemory = fmNode?.ToString() ?? "";
 
         await _engine.Session.UpdatePersonAsync(person);
         return new ActionResult { Success = true, Message = "已保存" };

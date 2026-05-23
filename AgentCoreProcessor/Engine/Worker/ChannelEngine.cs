@@ -403,7 +403,7 @@ namespace AgentCoreProcessor.Engine
 
                 if (!prepareResult)
                 {
-                    sessionCtx.Close(new { reason = "循环挂起" });
+                    sessionCtx?.Close(new { reason = "循环挂起" });
                     sessionCtx = null;
                     SignalContext.Restore(lifeCtx);
                     await componentHost.OnPauseAsync();
@@ -474,7 +474,7 @@ namespace AgentCoreProcessor.Engine
                 {
                     if (!isInWorkingSession && sessionCtx != null)
                     {
-                        sessionCtx.Close(new { reason = "循环挂起" });
+                        sessionCtx?.Close(new { reason = "循环挂起" });
                         sessionCtx = null;
                         SignalContext.Restore(lifeCtx);
                     }
