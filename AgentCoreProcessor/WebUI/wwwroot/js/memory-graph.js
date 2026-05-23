@@ -147,6 +147,7 @@ function makeStyles(isMeta) {
         { selector: 'node', style: {
             'background-color': '#90a4ae', 'border-width': 1.5, 'border-color': '#555',
             'opacity': 0.95, 'label': 'data(label)', 'font-size': 13, 'color': '#e0e0e0',
+            'min-zoomed-font-size': 10,
             'text-valign': 'bottom', 'text-halign': 'center', 'text-margin-y': 8,
             'text-wrap': 'wrap', 'text-max-width': '100px',
             'text-overflow-wrap': 'anywhere',
