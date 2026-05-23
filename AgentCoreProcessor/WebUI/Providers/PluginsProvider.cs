@@ -759,7 +759,6 @@ internal class ProfileListSource : IDataSource
                 ["name"] = name,
                 ["inherits"] = p?.Inherits ?? "—",
                 ["isDefault"] = name == defaultProfile ? "★" : "",
-                ["_link"] = "", // 留空，用 LinkEvent 而非路由跳转
             });
         }
         return Task.FromResult(new DataResult { Data = arr, TotalCount = arr.Count });
