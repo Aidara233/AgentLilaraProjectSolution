@@ -499,7 +499,7 @@ else
             .ToList();
 
         // Compute layout and cache for re-filtering
-        _cachedPositions = ComputeForceLayout(cluster.NodeIds, _cachedEdges, cluster.CoreNodeId);
+        _cachedPositions = ComputeLayout(cluster.NodeIds, _cachedEdges, cluster.CoreNodeId, _memDict);
         _totalNodeCount = cluster.NodeIds.Count;
 
         // Default threshold: show closest ~80 nodes
@@ -575,101 +575,85 @@ else
         StateHasChanged();
     }
 
-    private static Dictionary<int, (double x, double y)> ComputeForceLayout(
-        List<int> nodeIds, List<MemoryLink> links, int coreId)
+    private static Dictionary<int, (double x, double y)> ComputeLayout(
+        List<int> nodeIds, List<MemoryLink> links, int coreId,
+        Dictionary<int, MemoryEntry> memDict)
     {
         var pos = new Dictionary<int, (double x, double y)>();
-        var rng = new Random(42);
-        int n = nodeIds.Count;
-        // Each node gets generous space
-        var area = Math.Sqrt(n) * 100;
-
-        // Random initial positions
-        foreach (var id in nodeIds)
-            pos[id] = (rng.NextDouble() * area - area / 2, rng.NextDouble() * area - area / 2);
-
         var nodeSet = nodeIds.ToHashSet();
-        var adj = new Dictionary<int, List<(int target, double strength)>>();
+
+        // Build adjacency from links
+        var adj = new Dictionary<int, List<int>>();
         foreach (var id in nodeIds) adj[id] = new();
         foreach (var link in links)
         {
             if (nodeSet.Contains(link.SourceId) && nodeSet.Contains(link.TargetId))
             {
-                adj[link.SourceId].Add((link.TargetId, link.Strength));
-                adj[link.TargetId].Add((link.SourceId, link.Strength));
+                adj[link.SourceId].Add(link.TargetId);
+                adj[link.TargetId].Add(link.SourceId);
             }
         }
 
-        // Standard Fruchterman-Reingold with per-iteration displacement cap
-        double k = Math.Sqrt(area / n) * 2.0;  // optimal edge length
-        int iterations = Math.Max(200, n);
-        double t = area * 0.1;  // temperature (max displacement per iteration)
-        double cooling = Math.Pow(0.01 / t, 1.0 / iterations);
+        // BFS layers from core
+        var layers = new List<List<int>>();
+        var visited = new HashSet<int>();
+        var queue = new Queue<int>();
+        queue.Enqueue(coreId);
+        visited.Add(coreId);
+        layers.Add(new List<int> { coreId });
 
-        for (int iter = 0; iter < iterations; iter++)
+        while (queue.Count > 0)
         {
-            // Collect displacements (apply after computing to avoid order bias)
-            var disp = new Dictionary<int, (double x, double y)>();
-            foreach (var id in nodeIds) disp[id] = (0, 0);
-
-            // Repulsive forces: k²/d
-            for (int i = 0; i < n; i++)
+            var currentLayer = new List<int>();
+            int levelSize = queue.Count;
+            for (int i = 0; i < levelSize; i++)
             {
-                for (int j = i + 1; j < n; j++)
+                var node = queue.Dequeue();
+                if (!adj.TryGetValue(node, out var neighbors)) continue;
+                foreach (var neighbor in neighbors)
                 {
-                    var a = nodeIds[i]; var b = nodeIds[j];
-                    var dx = pos[a].x - pos[b].x;
-                    var dy = pos[a].y - pos[b].y;
-                    var dist = Math.Sqrt(dx * dx + dy * dy);
-                    if (dist < 1) { dist = 1; dx = 1; dy = 0; }
-                    var force = k * k / dist;
-                    var fx = dx / dist * force;
-                    var fy = dy / dist * force;
-                    disp[a] = (disp[a].x + fx, disp[a].y + fy);
-                    disp[b] = (disp[b].x - fx, disp[b].y - fy);
+                    if (visited.Add(neighbor))
+                    {
+                        currentLayer.Add(neighbor);
+                        queue.Enqueue(neighbor);
+                    }
                 }
             }
+            if (currentLayer.Count > 0)
+                layers.Add(currentLayer);
+        }
 
-            // Attractive forces: d²/k along edges
-            foreach (var id in nodeIds)
+        // Also include unvisited (unconnected) nodes in a final layer
+        var unvisited = nodeIds.Where(id => !visited.Contains(id)).ToList();
+        if (unvisited.Count > 0)
+        {
+            visited.UnionWith(unvisited);
+            layers.Add(unvisited);
+        }
+
+        // Place nodes on concentric circles, grouped by type within each layer
+        double baseRadius = 90;
+        for (int layerIdx = 0; layerIdx < layers.Count; layerIdx++)
+        {
+            var layer = layers[layerIdx];
+            double radius = layerIdx * baseRadius + 40;  // layer 0 (core) gets 40px offset
+
+            // Group by type within layer (same type adjacent = fewer crossing edges)
+            var ordered = layer
+                .GroupBy(id => memDict.GetValueOrDefault(id)?.Type ?? "fact")
+                .OrderBy(g => g.Key)  // stable type order
+                .SelectMany(g => g)
+                .ToList();
+
+            int nodeCount = ordered.Count;
+            for (int i = 0; i < nodeCount; i++)
             {
-                foreach (var (target, strength) in adj[id])
-                {
-                    var dx = pos[target].x - pos[id].x;
-                    var dy = pos[target].y - pos[id].y;
-                    var dist = Math.Sqrt(dx * dx + dy * dy);
-                    if (dist < 1) { dist = 1; dx = 1; dy = 0; }
-                    var force = dist * dist / k * strength;
-                    var fx = dx / dist * force;
-                    var fy = dy / dist * force;
-                    disp[id] = (disp[id].x + fx, disp[id].y + fy);
-                    disp[target] = (disp[target].x - fx, disp[target].y - fy);
-                }
+                double angle = (2 * Math.PI * i) / Math.Max(nodeCount, 1);
+                // Slight radius jitter per node to reduce edge crossings
+                double r = radius + (i % 3) * 8;
+                int id = ordered[i];
+                pos[id] = (Math.Cos(angle) * r, Math.Sin(angle) * r);
             }
-
-            // Apply displacements with temperature cap, clamp to safe range
-            double maxDisp = 0;
-            foreach (var id in nodeIds)
-            {
-                var (dx, dy) = disp[id];
-                var len = Math.Sqrt(dx * dx + dy * dy);
-                if (len > t) { dx = dx / len * t; dy = dy / len * t; }
-                if (len > maxDisp) maxDisp = len;
-                pos[id] = (ClampCoord(pos[id].x + dx), ClampCoord(pos[id].y + dy));
-            }
-
-            // Gravity toward center
-            var (cx, cy) = pos.GetValueOrDefault(coreId, (0.0, 0.0));
-            foreach (var id in nodeIds)
-            {
-                if (id == coreId) continue;
-                pos[id] = (pos[id].x + (cx - pos[id].x) * 0.01, pos[id].y + (cy - pos[id].y) * 0.01);
-            }
-
-            // Early stop if converged
-            if (maxDisp < 0.5) break;
-
-            t *= cooling;
         }
 
         return pos;
