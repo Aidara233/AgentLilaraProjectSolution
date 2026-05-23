@@ -29,7 +29,8 @@ internal class MemoryProvider : IWebUIProvider
         BuildMainPage(),
         BuildDetailPage(),
         BuildTempPage(),
-        BuildPersonaPage()
+        BuildPersonaPage(),
+        BuildPeoplePage()
     };
 
     // ================ 主库浏览 ================
@@ -332,6 +333,76 @@ internal class MemoryProvider : IWebUIProvider
             new() { Id = "persona-form", Source = new PersonaFormSource(_engine) },
             new() { Id = "persona-stats", Source = new PersonaStatsSource(_engine) },
             new() { Id = "persona-table", Source = new PersonaTableSource(_engine) }
+        }
+    };
+
+    // ================ 自然人管理 ================
+
+    private PageDefinition BuildPeoplePage() => new()
+    {
+        Route = "memory/people",
+        Meta = new PageMeta { Title = "自然人管理", Icon = "bi-people", Group = "记忆", Order = 66 },
+        Cards = new List<CardDefinition>
+        {
+            new()
+            {
+                Id = "people-table", Type = CardType.Table, DataSourceId = "people-list", Title = "自然人列表",
+                LinkEvent = "people-selected",
+                Schema = new TableSchema
+                {
+                    Columns = new()
+                    {
+                        new() { Field = "id", Header = "ID", Width = "60px" },
+                        new() { Field = "name", Header = "名称" },
+                        new() { Field = "trustLevel", Header = "信任", Width = "90px", Format = ColumnFormat.Badge },
+                        new() { Field = "alertLevel", Header = "警报", Width = "60px", Format = ColumnFormat.Badge },
+                        new() { Field = "fastMemory", Header = "速记" },
+                    },
+                    Searchable = true, Paginated = false
+                },
+                Layout = new CardLayout { PreferredCols = 7 }
+            },
+            new()
+            {
+                Id = "people-edit", Type = CardType.Form, DataSourceId = "people-edit", Title = "编辑自然信息",
+                ListenEvent = "people-selected",
+                Schema = new FormSchema
+                {
+                    Fields = new()
+                    {
+                        new() { Field = "name", Label = "名称", Type = FormFieldType.Text },
+                        new() { Field = "aliases", Label = "别称", Type = FormFieldType.Text, Placeholder = "逗号分隔" },
+                        new() { Field = "trustLevel", Label = "信任等级", Type = FormFieldType.Select, Options = new()
+                        {
+                            new() { Value = "-2", Label = "敌对 (-2)" },
+                            new() { Value = "-1", Label = "警惕 (-1)" },
+                            new() { Value = "0", Label = "未知 (0)" },
+                            new() { Value = "1", Label = "陌生人 (1)" },
+                            new() { Value = "2", Label = "理解 (2)" },
+                            new() { Value = "3", Label = "熟悉 (3)" },
+                            new() { Value = "4", Label = "信任 (4)" },
+                            new() { Value = "5", Label = "绝对信任 (5)" },
+                        }},
+                        new() { Field = "trustProgress", Label = "好感度", Type = FormFieldType.Number, Placeholder = "可负" },
+                        new() { Field = "alertLevel", Label = "警报等级", Type = FormFieldType.Select, Options = new()
+                        {
+                            new() { Value = "0", Label = "0 - 无" },
+                            new() { Value = "1", Label = "1 - 低" },
+                            new() { Value = "2", Label = "2 - 中" },
+                            new() { Value = "3", Label = "3 - 高" },
+                            new() { Value = "4", Label = "4 - 紧急" },
+                        }},
+                        new() { Field = "fastMemory", Label = "速记", Type = FormFieldType.TextArea, Placeholder = "一句话概括" },
+                    },
+                    ShowReset = false
+                },
+                Layout = new CardLayout { PreferredCols = 5 }
+            }
+        },
+        DataSources = new List<DataSourceDefinition>
+        {
+            new() { Id = "people-list", Source = new PeopleListSource(_engine) },
+            new() { Id = "people-edit", Source = new PeopleEditSource(_engine) }
         }
     };
 }
@@ -907,5 +978,111 @@ internal class PersonaTableSource : IDataSource
         }
 
         return new ActionResult { Success = false, Message = $"未知操作: {action}" };
+    }
+}
+
+// ================ 自然人管理数据源 ================
+
+internal class PeopleListSource : IDataSource
+{
+    private readonly MasterEngine _engine;
+    public PeopleListSource(MasterEngine engine) => _engine = engine;
+    public bool SupportsPush => false;
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        var persons = await _engine.Session.GetAllPersonsAsync();
+        var filtered = persons.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(query?.Search))
+        {
+            var kw = query.Search.Trim().ToLowerInvariant();
+            filtered = filtered.Where(p =>
+                p.Name.Contains(kw, StringComparison.OrdinalIgnoreCase) ||
+                (p.Aliases?.Contains(kw, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (p.FastMemory?.Contains(kw, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+
+        var list = filtered.OrderBy(p => p.Id).ToList();
+        var arr = new JsonArray();
+        foreach (var p in list)
+        {
+            arr.Add(new JsonObject
+            {
+                ["id"] = p.Id,
+                ["name"] = string.IsNullOrEmpty(p.Name) ? $"(无名称 #{p.Id})" : p.Name,
+                ["trustLevel"] = p.TrustLevel.ToString(),
+                ["trustProgress"] = p.TrustProgress,
+                ["alertLevel"] = p.AlertLevel.ToString(),
+                ["fastMemory"] = string.IsNullOrEmpty(p.FastMemory) ? "—" : (p.FastMemory.Length > 60 ? p.FastMemory[..60] + "..." : p.FastMemory),
+            });
+        }
+        return new DataResult { Data = arr, TotalCount = arr.Count };
+    }
+
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+        => Task.FromResult(new ActionResult { Success = false, Message = "不支持" });
+}
+
+internal class PeopleEditSource : IDataSource
+{
+    private readonly MasterEngine _engine;
+    private int _selectedId;
+    public PeopleEditSource(MasterEngine engine) => _engine = engine;
+    public bool SupportsPush => false;
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        if (query?.Extra is JsonObject extra)
+            _selectedId = (int?)extra["id"] ?? _selectedId;
+
+        if (_selectedId == 0)
+            return new DataResult { Data = new JsonObject() };
+
+        var person = await _engine.Session.GetPersonByIdAsync(_selectedId);
+        if (person == null)
+            return new DataResult { Data = new JsonObject() };
+
+        return new DataResult
+        {
+            Data = new JsonObject
+            {
+                ["id"] = person.Id,
+                ["name"] = person.Name ?? "",
+                ["aliases"] = person.Aliases ?? "",
+                ["trustLevel"] = ((int)person.TrustLevel).ToString(),
+                ["trustProgress"] = person.TrustProgress,
+                ["alertLevel"] = person.AlertLevel.ToString(),
+                ["fastMemory"] = person.FastMemory ?? "",
+            }
+        };
+    }
+
+    public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+    {
+        if (action != "save" || _selectedId == 0 || data is not JsonObject obj)
+            return new ActionResult { Success = false, Message = "无效请求" };
+
+        var person = await _engine.Session.GetPersonByIdAsync(_selectedId);
+        if (person == null)
+            return new ActionResult { Success = false, Message = "自然人不存在" };
+
+        if (obj.TryGetPropertyValue("name", out var nameNode))
+            person.Name = nameNode?.ToString() ?? "";
+        if (obj.TryGetPropertyValue("aliases", out var aliasesNode))
+            person.Aliases = aliasesNode?.ToString();
+        if (obj.TryGetPropertyValue("trustLevel", out var tlNode) && int.TryParse(tlNode?.ToString(), out var tlVal) && Enum.IsDefined(typeof(TrustLevel), tlVal))
+            person.TrustLevel = (TrustLevel)tlVal;
+        if (obj.TryGetPropertyValue("trustProgress", out var tpNode) && float.TryParse(tpNode?.ToString(), out var tpVal))
+            person.TrustProgress = tpVal;
+        if (obj.TryGetPropertyValue("alertLevel", out var alNode) && int.TryParse(alNode?.ToString(), out var alVal) && alVal >= 0 && alVal <= 4)
+            person.AlertLevel = alVal;
+        if (obj.TryGetPropertyValue("fastMemory", out var fmNode))
+            person.FastMemory = fmNode?.ToString();
+
+        await _engine.Session.UpdatePersonAsync(person);
+        return new ActionResult { Success = true, Message = "已保存" };
     }
 }
