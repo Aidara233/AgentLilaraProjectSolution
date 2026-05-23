@@ -88,6 +88,7 @@ namespace AgentCoreProcessor
             providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.MemoryProvider(engine), builtIn: true);
             providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.AdapterProvider(engine), builtIn: true);
             providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.ConfigProvider(), builtIn: true);
+            providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.ConsoleProvider(engine), builtIn: true);
             providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.TestProvider(), builtIn: true);
             providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.LogTraceProvider(), builtIn: true);
 
