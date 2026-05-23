@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -188,6 +189,67 @@ internal class TestProvider : IWebUIProvider
                         Expandable = true
                     },
                     Layout = new CardLayout { PreferredCols = 12 }
+                },
+                new()
+                {
+                    Id = "test-action-simple",
+                    Type = CardType.Action,
+                    DataSourceId = "test-action-simple",
+                    Title = "动作卡片（无参）",
+                    Schema = new ActionCardSchema
+                    {
+                        ActionId = "get_group_list",
+                        ActionLabel = "获取群列表",
+                        Description = "返回所有已加入的群。无需参数。",
+                        SubmitLabel = "获取"
+                    },
+                    Layout = new CardLayout { PreferredCols = 4 }
+                },
+                new()
+                {
+                    Id = "test-action-params",
+                    Type = CardType.Action,
+                    DataSourceId = "test-action-params",
+                    Title = "动作卡片（含参数）",
+                    Schema = new ActionCardSchema
+                    {
+                        ActionId = "set_group_card",
+                        ActionLabel = "设置群名片",
+                        Description = "修改指定群成员的显示名片。",
+                        Params = new()
+                        {
+                            new() { Name = "group_id", Label = "群号", Type = "text", Required = true },
+                            new() { Name = "user_id", Label = "用户QQ", Type = "text", Required = true },
+                            new() { Name = "card", Label = "新名片", Type = "text", Required = true }
+                        }
+                    },
+                    Layout = new CardLayout { PreferredCols = 4 }
+                },
+                new()
+                {
+                    Id = "test-action-select",
+                    Type = CardType.Action,
+                    DataSourceId = "test-action-select",
+                    Title = "动作卡片（下拉选择）",
+                    Schema = new ActionCardSchema
+                    {
+                        ActionId = "send_template",
+                        ActionLabel = "发送模板消息",
+                        Description = "选择预设模板发送到指定频道。",
+                        Params = new()
+                        {
+                            new() { Name = "template", Label = "模板", Type = "select", Required = true,
+                                Options = new()
+                                {
+                                    new() { Value = "welcome", Label = "欢迎消息" },
+                                    new() { Value = "help", Label = "帮助提示" },
+                                    new() { Value = "goodbye", Label = "告别消息" }
+                                }},
+                            new() { Name = "channel", Label = "目标频道（可选）", Type = "text", Required = false }
+                        },
+                        SubmitLabel = "发送"
+                    },
+                    Layout = new CardLayout { PreferredCols = 4 }
                 }
             },
             DataSources = new List<DataSourceDefinition>
@@ -196,7 +258,10 @@ internal class TestProvider : IWebUIProvider
                 new() { Id = "test-detail-data", Source = new TestDetailDataSource() },
                 new() { Id = "test-stream-data", Source = new TestStreamDataSource() },
                 new() { Id = "test-chat-data",   Source = new TestChatDataSource() },
-                new() { Id = "test-tree-data",   Source = new TestTreeDataSource() }
+                new() { Id = "test-tree-data",   Source = new TestTreeDataSource() },
+                new() { Id = "test-action-simple", Source = new TestActionDataSource() },
+                new() { Id = "test-action-params", Source = new TestActionDataSource() },
+                new() { Id = "test-action-select", Source = new TestActionDataSource() }
             }
         }
     };
@@ -418,4 +483,41 @@ internal class TestTreeDataSource : IDataSource
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
         => Task.FromResult(new ActionResult { Success = true });
+}
+
+internal class TestActionDataSource : IDataSource
+{
+    public bool SupportsPush => false;
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    private JsonNode? _lastData;
+
+    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        return Task.FromResult(new DataResult { Data = _lastData });
+    }
+
+    public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+    {
+        await Task.Delay(800, ct);
+
+        if (data == null)
+            return new ActionResult { Success = false, Message = "缺少请求数据" };
+
+        var actionId = data["actionId"]?.ToString() ?? "(未知)";
+        var paramObj = data["params"] as JsonObject;
+        var paramList = paramObj?.Select(kv => $"  {kv.Key} = {kv.Value}")
+            .ToList() ?? new List<string>();
+
+        var result = paramList.Count > 0
+            ? $"[{DateTime.Now:HH:mm:ss}] 执行动作: {actionId}\n参数:\n{string.Join("\n", paramList)}\n\n✓ 执行成功 (mock)"
+            : $"[{DateTime.Now:HH:mm:ss}] 执行动作: {actionId}\n\n✓ 执行成功 (mock)";
+
+        _lastData = new JsonObject
+        {
+            ["_result"] = result
+        };
+
+        return new ActionResult { Success = true, Message = "执行完成" };
+    }
 }
