@@ -35,7 +35,7 @@ internal class ConsoleProvider : IWebUIProvider
         {
             Title = "频道控制台",
             Icon = "bi-terminal",
-            Group = "频道",
+            Group = "频道引擎",
             Order = 50,
         },
         Cards = new List<CardDefinition>
