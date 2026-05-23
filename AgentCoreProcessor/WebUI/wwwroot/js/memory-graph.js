@@ -27,38 +27,42 @@ window.initMemoryGraph = function (containerId, data, coreId, dotnet) {
             maxZoom: 10
         });
 
-        // Keep node size screen-absolute via zoom compensation
-        var targetNodePx = 10;   // target screen-pixel node radius
-        var targetFontPx = 13;   // target screen-pixel font size
+        // Screen-absolute sizing via zoom compensation
+        var targetNodePx = 14;     // screen-pixel node radius
+        var targetMetaPx = 20;     // screen-pixel meta-node radius
+        var targetFontPx = 13;     // screen-pixel font size
+        var targetEdgeWidth = 1.5;  // screen-pixel edge width
+        var targetEdgeFont = 9;     // screen-pixel edge label font
 
         function updateSizes() {
             var z = cy.zoom();
             if (z <= 0) return;
             // Model size = screen pixels / zoom
-            var ns = targetNodePx / z;
-            var fs = targetFontPx / z;
             cy.style().selector('node').style({
-                'width': ns * 2, 'height': ns * 2,
-                'font-size': fs
+                'width': targetNodePx * 2 / z, 'height': targetNodePx * 2 / z,
+                'font-size': targetFontPx / z
             }).selector('node[?isMeta]').style({
-                'width': ns * 3, 'height': ns * 3,
-                'font-size': fs + 1
+                'width': targetMetaPx * 2 / z, 'height': targetMetaPx * 2 / z,
+                'font-size': (targetFontPx + 1) / z
+            }).selector('edge').style({
+                'width': targetEdgeWidth / z,
+                'font-size': targetEdgeFont / z
             }).update();
         }
 
         cy.on('zoom', updateSizes);
 
-        // Start centered on core at readable zoom, then compensate
+        // Start centered on core at readable zoom
+        var initZoom = 0.8;
         setTimeout(function () {
             var core = cy.getElementById(coreId.toString());
             if (core.length) {
                 cy.center(core);
-                cy.zoom(0.5);
-                updateSizes();
+                cy.zoom(initZoom);
             } else {
                 cy.fit(null, 80);
-                updateSizes();
             }
+            updateSizes();
         }, 50);
 
         // Click meta-node to drill in
@@ -212,10 +216,11 @@ function loadSubGraph(subData) {
         var core = cy.getElementById(subData.coreId.toString());
         if (core.length) {
             cy.center(core);
-            cy.zoom(0.5);
+            cy.zoom(0.8);
         } else {
             cy.fit(null, 60);
         }
+        updateSizes();
     }, 50);
 }
 
