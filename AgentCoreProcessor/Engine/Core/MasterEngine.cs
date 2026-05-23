@@ -99,7 +99,6 @@ namespace AgentCoreProcessor.Engine
         public SleepState CurrentSleepState { get; set; } = SleepState.None;
         public McpServerManager? McpManager => mcpManager;
         public TaskBridge TaskBridge { get; private set; } = null!;
-        public DelegationRegistry Delegations { get; private set; } = null!;
         public CrossRequestRegistry CrossRequests { get; private set; } = null!;
         public DelegationBus DelegationBus { get; private set; } = null!;
 
@@ -393,23 +392,7 @@ namespace AgentCoreProcessor.Engine
             Directory.CreateDirectory(systemLoopPath);
             TaskBridge = new TaskBridge(systemLoopPath);
 
-            // 创建 DelegationRegistry
-            Delegations = new DelegationRegistry(systemLoopPath);
-            Delegations.OnDelegationSubmitted = () =>
-            {
-                // 委托提交时唤醒系统循环
-                if (systemEngine != null)
-                    systemEngine.SignalGate();
-            };
-            Delegations.OnDelegationCompleted = (channelId) =>
-            {
-                // 委托完成时唤醒对应频道循环
-                eventBus.PublishSignal("delegation-completed", channelId);
-                // 同时通过 NotifyChannel 确保频道循环被唤醒（即使当前不活跃）
-                NotifyChannel(channelId, "[系统] 委托任务已完成，请查看委托状态。");
-            };
-
-            // 创建 DelegationBus + CrossRequestRegistry（新委托系统）
+            // 创建 DelegationBus + CrossRequestRegistry（委托系统）
             DelegationBus = new DelegationBus();
             CrossRequests = new CrossRequestRegistry(systemLoopPath, DelegationBus);
             CrossRequests.OnRequestSubmitted = initiatorId =>

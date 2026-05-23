@@ -280,45 +280,17 @@ internal class SystemEventsSource : IDataSource
     {
         var arr = new JsonArray();
 
-        // 待评估委派
-        var pendingDelegations = _engine.Delegations.GetPendingForEvaluation();
-        foreach (var d in pendingDelegations)
+        // 跨循环请求
+        var crossRequests = _engine.CrossRequests.GetVisible(LoopId.System);
+        foreach (var r in crossRequests)
         {
             arr.Add(new JsonObject
             {
-                ["time"] = d.SubmittedAt.ToString("MM-dd HH:mm:ss"),
-                ["type"] = "委派",
-                ["source"] = $"频道#{d.SourceChannelId}",
-                ["description"] = d.Description.Length > 100 ? d.Description[..100] + "..." : d.Description,
-                ["status"] = "待评估"
-            });
-        }
-
-        // 执行中委派
-        var acceptedDelegations = _engine.Delegations.GetAcceptedForExecution();
-        foreach (var d in acceptedDelegations)
-        {
-            arr.Add(new JsonObject
-            {
-                ["time"] = (d.EvaluatedAt ?? d.SubmittedAt).ToString("MM-dd HH:mm:ss"),
-                ["type"] = "委派",
-                ["source"] = $"频道#{d.SourceChannelId}",
-                ["description"] = d.Description.Length > 100 ? d.Description[..100] + "..." : d.Description,
-                ["status"] = "待执行"
-            });
-        }
-
-        // 重试中委派
-        var retryDelegations = _engine.Delegations.GetRetryPending();
-        foreach (var d in retryDelegations)
-        {
-            arr.Add(new JsonObject
-            {
-                ["time"] = (d.CompletedAt ?? d.SubmittedAt).ToString("MM-dd HH:mm:ss"),
-                ["type"] = "委派",
-                ["source"] = $"频道#{d.SourceChannelId}",
-                ["description"] = $"[重试{d.RetryCount}/{DelegationRegistry.MaxRetries}] {(d.Description.Length > 80 ? d.Description[..80] + "..." : d.Description)}",
-                ["status"] = "重试中"
+                ["time"] = r.SubmittedAt.ToString("MM-dd HH:mm:ss"),
+                ["type"] = "请求",
+                ["source"] = r.InitiatorId,
+                ["description"] = r.Title.Length > 100 ? r.Title[..100] + "..." : r.Title,
+                ["status"] = r.State.ToString()
             });
         }
 

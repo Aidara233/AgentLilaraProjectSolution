@@ -736,6 +736,21 @@ namespace AgentCoreProcessor.Engine
         {
             var pool = ctx.ToolProfiles.GetActiveTools("sub-agent");
             var session = new TaskSession(ctx, toolWhitelist: pool);
+
+            session.OnCompleted = s =>
+            {
+                var result = s.LastResult ?? "(无结果)";
+                var isFailed = result.StartsWith("异常终止") || result == "达到最大轮次限制"
+                    || result == "API 调用连续失败，子 agent 中止";
+                ctx.TaskBridge.PostNotification(new Notification
+                {
+                    Type = isFailed ? NotificationType.SubAgentFailed : NotificationType.ProgressUpdate,
+                    SourceId = s.SessionId,
+                    Summary = $"子 agent {(isFailed ? "失败" : "完成")}: {result.Truncate(100)}",
+                    Timestamp = DateTime.Now
+                });
+            };
+
             lock (subAgentLock)
             {
                 subAgents[session.SessionId] = session;

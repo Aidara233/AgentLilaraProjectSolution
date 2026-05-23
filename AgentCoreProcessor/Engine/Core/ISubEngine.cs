@@ -122,9 +122,6 @@ namespace AgentCoreProcessor.Engine
         /// <summary>任务桥梁：频道循环 ↔ 系统循环异步通信。// TODO: 废弃，由 CrossRequestRegistry + DelegationBus 替代</summary>
         TaskBridge TaskBridge { get; }
 
-        /// <summary>委托注册表：频道循环 ↔ 系统循环的委托生命周期管理。// TODO: 废弃，由 CrossRequestRegistry 替代</summary>
-        DelegationRegistry Delegations { get; }
-
         /// <summary>跨循环请求注册表。统一管理请求的完整生命周期。</summary>
         CrossRequestRegistry CrossRequests { get; }
 
