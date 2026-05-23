@@ -10,6 +10,7 @@ namespace AgentLilara.PluginSDK.WebUI;
 [JsonDerivedType(typeof(ChatSchema), "chat")]
 [JsonDerivedType(typeof(TreeSchema), "tree")]
 [JsonDerivedType(typeof(DetailSchema), "detail")]
+[JsonDerivedType(typeof(ActionCardSchema), "action")]
 public abstract class CardSchema { }
 
 // --- Table ---
@@ -165,4 +166,24 @@ public class DetailField
     public required string Label { get; init; }
     public ColumnFormat Format { get; init; } = ColumnFormat.Text;
     public bool Editable { get; init; }
+}
+
+// --- Action ---
+
+public class ActionCardSchema : CardSchema
+{
+    public required string ActionId { get; init; }
+    public string ActionLabel { get; init; } = "";
+    public string? Description { get; init; }
+    public List<ActionParamDef> Params { get; init; } = new();
+    public string SubmitLabel { get; init; } = "执行";
+}
+
+public class ActionParamDef
+{
+    public required string Name { get; init; }
+    public required string Label { get; init; }
+    public string Type { get; init; } = "text";
+    public List<SelectOption>? Options { get; init; }
+    public bool Required { get; init; } = true;
 }

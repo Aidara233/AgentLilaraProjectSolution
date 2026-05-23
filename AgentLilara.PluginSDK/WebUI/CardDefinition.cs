@@ -16,7 +16,7 @@ public class CardDefinition
 
 public enum CardType
 {
-    Table, Status, Form, Stream, Chat, Tree, Detail, Custom
+    Table, Status, Form, Stream, Chat, Tree, Detail, Action, Custom
 }
 
 public class CardLayout

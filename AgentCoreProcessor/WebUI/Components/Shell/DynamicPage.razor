@@ -145,6 +145,10 @@ else
                 <DetailCard Schema="@((DetailSchema)card.Schema)" Data="@data"
                             OnSubmit='@(d => OnSubmitAction(dsId, "update", d))' />
                 break;
+            case CardType.Action:
+                <ActionCard Schema="@((ActionCardSchema)card.Schema)" Data="@data"
+                            OnSubmit='@(d => OnSubmitAction(dsId, "exec", d))' />
+                break;
         }
     };
 

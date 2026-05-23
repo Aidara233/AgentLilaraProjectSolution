@@ -1,0 +1,122 @@
+@using AgentLilara.PluginSDK.WebUI
+@using System.Text.Json.Nodes
+
+<div class="action-card">
+    @if (!string.IsNullOrEmpty(Schema.Description))
+    {
+        <p class="text-muted small mb-2">@Schema.Description</p>
+    }
+
+    @foreach (var param in Schema.Params)
+    {
+        <div class="mb-2">
+            <label class="form-label small mb-1">
+                @param.Label
+                @if (param.Required) { <span class="text-danger">*</span> }
+            </label>
+            @if (param.Type == "select" && param.Options?.Count > 0)
+            {
+                <select class="form-select form-select-sm"
+                        value="@GetValue(param.Name)"
+                        @onchange="e => OnParamChanged(param.Name, e)">
+                    @if (!param.Required)
+                    {
+                        <option value="">--</option>
+                    }
+                    @foreach (var opt in param.Options)
+                    {
+                        <option value="@opt.Value">@opt.Label</option>
+                    }
+                </select>
+            }
+            else
+            {
+                <input type="text" class="form-control form-control-sm"
+                       placeholder="@param.Label"
+                       value="@GetValue(param.Name)"
+                       @oninput="e => OnParamChanged(param.Name, e)" />
+            }
+        </div>
+    }
+
+    <div class="d-flex gap-2 align-items-center">
+        <button class="btn btn-sm btn-primary" @onclick="HandleSubmit"
+                disabled="@(_isRunning)">
+            @if (_isRunning)
+            {
+                <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+            }
+            @Schema.SubmitLabel
+        </button>
+    </div>
+
+    @if (_error != null)
+    {
+        <div class="alert alert-danger mt-2 mb-0 py-1 px-2 small">@_error</div>
+    }
+    @if (_result != null)
+    {
+        <div class="mt-2">
+            <pre class="action-result mb-0"><code>@_result</code></pre>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ActionCardSchema Schema { get; set; } = null!;
+    [Parameter] public JsonNode? Data { get; set; }
+    [Parameter] public EventCallback<JsonNode> OnSubmit { get; set; }
+
+    private Dictionary<string, string> _values = new();
+    private string? _result;
+    private string? _error;
+    private bool _isRunning;
+
+    protected override void OnParametersSet()
+    {
+        foreach (var param in Schema.Params)
+        {
+            if (!_values.ContainsKey(param.Name))
+                _values[param.Name] = "";
+        }
+
+        if (Data is JsonObject obj)
+        {
+            foreach (var param in Schema.Params)
+            {
+                var val = obj[param.Name];
+                if (val != null) _values[param.Name] = val.ToString();
+            }
+            var r = obj["_result"];
+            if (r != null) _result = r.ToString();
+            var e = obj["_error"];
+            if (e != null) _error = e.ToString();
+        }
+    }
+
+    private string GetValue(string name) => _values.TryGetValue(name, out var v) ? v : "";
+
+    private void OnParamChanged(string name, ChangeEventArgs e)
+    {
+        _values[name] = e.Value?.ToString() ?? "";
+    }
+
+    private async Task HandleSubmit()
+    {
+        _error = null;
+        _result = null;
+        _isRunning = true;
+
+        var payload = new JsonObject
+        {
+            ["actionId"] = Schema.ActionId
+        };
+        var paramObj = new JsonObject();
+        foreach (var kv in _values)
+            paramObj[kv.Key] = JsonValue.Create(kv.Value);
+        payload["params"] = paramObj;
+
+        await OnSubmit.InvokeAsync(payload);
+        _isRunning = false;
+    }
+}
