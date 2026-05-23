@@ -31,14 +31,6 @@ namespace AgentCoreProcessor.WebUI.Navigation
                 new() { Title = "引擎管理", Icon = "bi-gear", Href = "/engine/manage" },
             }},
 
-            new() { Title = "记忆", Icon = "bi-brain", Children = new()
-            {
-                new() { Title = "主库浏览", Href = "/memories" },
-                new() { Title = "关联图谱", Href = "/memories/graph" },
-                new() { Title = "临时库", Href = "/memories/temp" },
-                new() { Title = "人物", Href = "/people" },
-            }},
-
             new() { Title = "消息", Icon = "bi-chat-dots", Children = new()
             {
                 new() { Title = "消息历史", Href = "/messages" },

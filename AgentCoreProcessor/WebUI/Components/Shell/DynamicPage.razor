@@ -118,7 +118,13 @@ else
 
         foreach (var ds in page.DataSources)
         {
-            await dsManager.FetchAsync(ds.Id);
+            var result = await dsManager.FetchAsync(ds.Id);
+            var redirect = result?.Meta?["redirect"]?.ToString();
+            if (!string.IsNullOrEmpty(redirect))
+            {
+                Nav.NavigateTo(redirect);
+                return;
+            }
         }
     }
 

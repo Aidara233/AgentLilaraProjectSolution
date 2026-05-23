@@ -30,7 +30,8 @@ internal class MemoryProvider : IWebUIProvider
         BuildDetailPage(),
         BuildTempPage(),
         BuildPersonaPage(),
-        BuildPeoplePage()
+        BuildPeoplePage(),
+        BuildGraphPage(),
     };
 
     // ================ 主库浏览 ================
@@ -403,6 +404,19 @@ internal class MemoryProvider : IWebUIProvider
         {
             new() { Id = "people-list", Source = new PeopleListSource(_engine) },
             new() { Id = "people-edit", Source = new PeopleEditSource(_engine) }
+        }
+    };
+
+    // ================ 关联图谱（重定向） ================
+
+    private PageDefinition BuildGraphPage() => new()
+    {
+        Route = "memory/graph",
+        Meta = new PageMeta { Title = "关联图谱", Icon = "bi-diagram-3", Group = "记忆", Order = 70 },
+        Cards = new List<CardDefinition>(),
+        DataSources = new List<DataSourceDefinition>
+        {
+            new() { Id = "graph-redirect", Source = new MemoryGraphRedirectSource() }
         }
     };
 }
@@ -1085,4 +1099,22 @@ internal class PeopleEditSource : IDataSource
         await _engine.Session.UpdatePersonAsync(person);
         return new ActionResult { Success = true, Message = "已保存" };
     }
+}
+
+internal class MemoryGraphRedirectSource : IDataSource
+{
+    public bool SupportsPush => false;
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        return Task.FromResult(new DataResult
+        {
+            Data = new JsonObject(),
+            Meta = new JsonObject { ["redirect"] = "/memory/graph" }
+        });
+    }
+
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+        => Task.FromResult(new ActionResult { Success = false });
 }

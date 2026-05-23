@@ -34,7 +34,6 @@ window.initMemoryGraph = function (containerId, data, coreId, dotnet) {
         };
     });
 
-    var edgeMap = colorMap;
     var elements = [];
 
     nodes.forEach(function (n) {
