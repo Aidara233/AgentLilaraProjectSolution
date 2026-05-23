@@ -662,8 +662,8 @@ else
         var pos = new Dictionary<int, (double x, double y)>();
         var rng = new Random(42);
         int n = nodeIds.Count;
-        // Large initial spread: each node needs its own space
-        var area = n * 8;
+        // Each node gets 50x50 space
+        var area = Math.Sqrt(n) * 50;
 
         // Random initial positions
         foreach (var id in nodeIds)
@@ -681,14 +681,18 @@ else
             }
         }
 
-        // Standard Fruchterman-Reingold algorithm
-        double k = Math.Sqrt(area / n) * 2.5;  // optimal edge length, scaled for readability
+        // Standard Fruchterman-Reingold with per-iteration displacement cap
+        double k = Math.Sqrt(area / n) * 2.0;  // optimal edge length
         int iterations = Math.Max(200, n);
-        double t = area * 0.1;  // initial temperature
-        double cooling = Math.Pow(0.001 / t, 1.0 / iterations);
+        double t = area * 0.1;  // temperature (max displacement per iteration)
+        double cooling = Math.Pow(0.01 / t, 1.0 / iterations);
 
         for (int iter = 0; iter < iterations; iter++)
         {
+            // Collect displacements (apply after computing to avoid order bias)
+            var disp = new Dictionary<int, (double x, double y)>();
+            foreach (var id in nodeIds) disp[id] = (0, 0);
+
             // Repulsive forces: k²/d
             for (int i = 0; i < n; i++)
             {
@@ -700,12 +704,14 @@ else
                     var dist = Math.Sqrt(dx * dx + dy * dy);
                     if (dist < 1) { dist = 1; dx = 1; dy = 0; }
                     var force = k * k / dist;
-                    pos[a] = (pos[a].x + dx / dist * force, pos[a].y + dy / dist * force);
-                    pos[b] = (pos[b].x - dx / dist * force, pos[b].y - dy / dist * force);
+                    var fx = dx / dist * force;
+                    var fy = dy / dist * force;
+                    disp[a] = (disp[a].x + fx, disp[a].y + fy);
+                    disp[b] = (disp[b].x - fx, disp[b].y - fy);
                 }
             }
 
-            // Attractive forces: d²/k (springs along edges, scaled by strength)
+            // Attractive forces: d²/k along edges
             foreach (var id in nodeIds)
             {
                 foreach (var (target, strength) in adj[id])
@@ -714,26 +720,26 @@ else
                     var dy = pos[target].y - pos[id].y;
                     var dist = Math.Sqrt(dx * dx + dy * dy);
                     if (dist < 1) { dist = 1; dx = 1; dy = 0; }
-                    // Stronger edges pull harder
-                    var force = dist * dist / k * strength * 1.5;
-                    pos[id] = (pos[id].x + dx / dist * force, pos[id].y + dy / dist * force);
-                    pos[target] = (pos[target].x - dx / dist * force, pos[target].y - dy / dist * force);
+                    var force = dist * dist / k * strength;
+                    var fx = dx / dist * force;
+                    var fy = dy / dist * force;
+                    disp[id] = (disp[id].x + fx, disp[id].y + fy);
+                    disp[target] = (disp[target].x - fx, disp[target].y - fy);
                 }
             }
 
-            // Temperature clamping
-            for (int i = 0; i < n; i++)
+            // Apply displacements with temperature cap, clamp to safe range
+            double maxDisp = 0;
+            foreach (var id in nodeIds)
             {
-                var id = nodeIds[i];
-                var dist = Math.Sqrt(pos[id].x * pos[id].x + pos[id].y * pos[id].y);
-                if (dist > t)
-                {
-                    var scale = t / dist;
-                    pos[id] = (pos[id].x * scale, pos[id].y * scale);
-                }
+                var (dx, dy) = disp[id];
+                var len = Math.Sqrt(dx * dx + dy * dy);
+                if (len > t) { dx = dx / len * t; dy = dy / len * t; }
+                if (len > maxDisp) maxDisp = len;
+                pos[id] = (ClampCoord(pos[id].x + dx), ClampCoord(pos[id].y + dy));
             }
 
-            // Center gravity on core
+            // Gravity toward center
             var (cx, cy) = pos.GetValueOrDefault(coreId, (0.0, 0.0));
             foreach (var id in nodeIds)
             {
@@ -741,11 +747,17 @@ else
                 pos[id] = (pos[id].x + (cx - pos[id].x) * 0.01, pos[id].y + (cy - pos[id].y) * 0.01);
             }
 
+            // Early stop if converged
+            if (maxDisp < 0.5) break;
+
             t *= cooling;
         }
 
         return pos;
     }
+
+    private static double ClampCoord(double v)
+        => double.IsFinite(v) ? Math.Clamp(v, -50000, 50000) : 0;
 
     // ======== JS 回调 ========
 
