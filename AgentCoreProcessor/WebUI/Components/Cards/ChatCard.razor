@@ -88,8 +88,8 @@
         if (string.IsNullOrEmpty(_selectedSender) && Schema.Senders?.Count > 0)
             _selectedSender = Schema.Senders[0];
 
-        // Auto-scroll when new messages arrive
-        if (_autoScroll && _messages.Count > prevCount)
+        // 初始加载或新消息到达时自动滚动
+        if (_autoScroll && _messages.Count > 0 && (prevCount == 0 || _messages.Count > prevCount))
             _needsScroll = true;
     }
 
@@ -106,7 +106,10 @@
     {
         try
         {
-            await JS.InvokeVoidAsync("eval", "arguments[0].scrollTop = arguments[0].scrollHeight", _msgContainer);
+            // 双重滚动：立即滚 + requestAnimationFrame 补滚（防止渲染未完成留缝）
+            await JS.InvokeVoidAsync("eval",
+                "const el=arguments[0];el.scrollTop=el.scrollHeight;requestAnimationFrame(()=>el.scrollTop=el.scrollHeight)",
+                _msgContainer);
         }
         catch { }
     }

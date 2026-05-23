@@ -52,7 +52,7 @@ internal class ConsoleProvider : IWebUIProvider
                     },
                     Searchable = true, Paginated = false,
                 },
-                Layout = new CardLayout { PreferredCols = 4, MinWidth = "280px" },
+                Layout = new CardLayout { PreferredCols = 3, MinWidth = "240px" },
             },
             new()
             {
@@ -84,7 +84,7 @@ internal class ConsoleProvider : IWebUIProvider
                     },
                     ShowReset = false,
                 },
-                Layout = new CardLayout { PreferredCols = 4, MinWidth = "280px", Order = 1 },
+                Layout = new CardLayout { PreferredCols = 3, MinWidth = "240px" },
             },
             new()
             {
@@ -105,14 +105,14 @@ internal class ConsoleProvider : IWebUIProvider
                         new() { Id = "force-compress", Label = "强制压缩", Icon = "bi-arrow-down-up" },
                     },
                 },
-                Layout = new CardLayout { PreferredCols = 4, MinWidth = "280px", Order = 2 },
+                Layout = new CardLayout { PreferredCols = 3, MinWidth = "240px" },
             },
             new()
             {
                 Id = "console-chat", Type = CardType.Chat, Title = "实时对话",
                 DataSourceId = "console-chat", ListenEvent = "console-channel-selected",
                 Schema = new ChatSchema { ShowSenderSwitch = false, ShowInput = true },
-                Layout = new CardLayout { PreferredCols = 8, MinWidth = "400px", Height = "calc(100vh - 180px)" },
+                Layout = new CardLayout { PreferredCols = 12, MinWidth = "400px", Height = "calc(100vh - 370px)", Order = 1 },
             },
         },
         DataSources = new List<DataSourceDefinition>
