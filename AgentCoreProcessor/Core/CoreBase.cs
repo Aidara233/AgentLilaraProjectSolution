@@ -433,8 +433,9 @@ namespace AgentCoreProcessor.Core
                     });
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                Signal.Warn(LogGroup.Engine, "模型日志写入失败", new { error = ex.Message });
             }
             return fileName;
         }

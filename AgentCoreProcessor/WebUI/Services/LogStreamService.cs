@@ -18,8 +18,6 @@ namespace AgentCoreProcessor.WebUI.Services
         private readonly ConcurrentQueue<LogEntry> buffer = new();
         private const int MaxBufferSize = 2000;
 
-        public event Action<LogEntry>? OnNewEntry;
-
         public List<LogEntry> GetRecent(int count, string? sourceFilter = null)
         {
             var items = buffer.ToArray().AsEnumerable();

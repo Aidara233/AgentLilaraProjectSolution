@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Engine;
+using AgentCoreProcessor.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -86,6 +87,12 @@ namespace AgentCoreProcessor.Adapter
             connectionState = AdapterConnectionState.Connecting;
             cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
+            var parentCtx = SignalContext.Current;
+            using var lifeCtx = Signal.Continue(
+                parentCtx?.SignalId ?? Signal.NewId(), parentCtx?.CurrentSpanId,
+                $"adapter:onebot:{Id}", LogGroup.Adapter, "OneBot适配器",
+                new { id = Id, wsUrl = config.WsUrl });
+
             try
             {
                 await ConnectAsync(cts.Token);
@@ -93,6 +100,7 @@ namespace AgentCoreProcessor.Adapter
             }
             catch (Exception ex)
             {
+                Signal.Warn(LogGroup.Adapter, "OneBot初始连接失败", new { error = ex.Message });
                 connectionState = AdapterConnectionState.Reconnecting;
                 lastError = ex.Message;
                 lastErrorAt = DateTime.Now;
@@ -106,8 +114,9 @@ namespace AgentCoreProcessor.Adapter
                 {
                     selfId = await GetSelfIdAsync();
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    Signal.Warn(LogGroup.Adapter, "获取Bot ID失败", new { error = ex.Message });
                 }
             }
         }
@@ -222,6 +231,7 @@ namespace AgentCoreProcessor.Adapter
                 }
                 catch (Exception ex)
                 {
+                    Signal.Error(LogGroup.Adapter, "OneBot接收循环异常，即将重连", new { error = ex.Message });
                 }
 
                 if (ct.IsCancellationRequested) break;
@@ -245,6 +255,7 @@ namespace AgentCoreProcessor.Adapter
                 catch (OperationCanceledException) { break; }
                 catch (Exception ex)
                 {
+                    Signal.Warn(LogGroup.Adapter, "OneBot重连失败", new { error = ex.Message, retryMs = reconnectDelayMs });
                     lastError = ex.Message;
                     lastErrorAt = DateTime.Now;
                     reconnectDelayMs = Math.Min(reconnectDelayMs * 2, MaxReconnectDelayMs);

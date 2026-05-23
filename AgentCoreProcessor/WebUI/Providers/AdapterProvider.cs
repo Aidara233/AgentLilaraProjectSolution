@@ -658,14 +658,14 @@ internal class AdapterConfigSource : IDataSource
         return "";
     }
 
-    public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
     {
         var id = _selectedId;
-        if (string.IsNullOrEmpty(id)) return new ActionResult { Success = false, Message = "未选择实例" };
-        if (data == null) return new ActionResult { Success = false, Message = "缺少配置数据" };
+        if (string.IsNullOrEmpty(id)) return Task.FromResult(new ActionResult { Success = false, Message = "未选择实例" });
+        if (data == null) return Task.FromResult(new ActionResult { Success = false, Message = "缺少配置数据" });
 
         var cfg = _adapters.GetConfigById(id);
-        if (cfg == null) return new ActionResult { Success = false, Message = "配置不存在" };
+        if (cfg == null) return Task.FromResult(new ActionResult { Success = false, Message = "配置不存在" });
 
         var s = cfg.Settings;
         // OneBot 字段
@@ -691,7 +691,7 @@ internal class AdapterConfigSource : IDataSource
         if (data["poll_ms"] != null) s["poll_ms"] = data["poll_ms"]!.ToString();
 
         _adapters.UpdateConfig(cfg);
-        return new ActionResult { Success = true, Message = "配置已保存" };
+        return Task.FromResult(new ActionResult { Success = true, Message = "配置已保存" });
     }
 }
 

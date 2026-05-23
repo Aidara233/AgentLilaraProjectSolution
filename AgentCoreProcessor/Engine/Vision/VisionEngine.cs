@@ -236,10 +236,12 @@ namespace AgentCoreProcessor.Engine.Vision
                 ex.Message.Contains("401") || ex.Message.Contains("403"))
             {
                 Interlocked.Increment(ref _ocrErrors);
+                Signal.Warn(LogGroup.Engine, "OCR认证失败", new { hash = record.Hash, error = ex.Message });
             }
             catch (Exception ex)
             {
                 Interlocked.Increment(ref _ocrErrors);
+                Signal.Warn(LogGroup.Engine, "OCR处理失败", new { hash = record.Hash, error = ex.Message });
                 await ImageStorage.UpdateOcrAsync(record.Hash, false, null);
             }
             finally

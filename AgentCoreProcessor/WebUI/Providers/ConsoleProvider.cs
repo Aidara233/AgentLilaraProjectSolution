@@ -334,7 +334,7 @@ internal class ConsoleChatSource : IDataSource
                         callback(null);
                     }
                 }
-                catch { }
+                catch (Exception ex) { Console.Error.WriteLine($"[ConsoleProvider] 轮询失败: {ex.Message}"); }
             }
         }, null, 2000, 2000);
         return new ActionDisposable(() => { _pollTimer?.Dispose(); _callback = null; });

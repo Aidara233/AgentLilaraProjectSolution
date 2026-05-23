@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Engine.Modules;
+using AgentCoreProcessor.Logging;
 using Newtonsoft.Json;
 
 namespace AgentCoreProcessor.Engine
@@ -251,6 +252,7 @@ namespace AgentCoreProcessor.Engine
                 }
                 catch (Exception ex)
                 {
+                    Signal.Error(LogGroup.Engine, "委托持久化失败", new { error = ex.Message });
                 }
             }
         }
@@ -276,6 +278,7 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
+                Signal.Error(LogGroup.Engine, "委托加载失败", new { error = ex.Message });
             }
         }
     }

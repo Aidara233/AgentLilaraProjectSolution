@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Logging;
 using Newtonsoft.Json;
 
 namespace AgentCoreProcessor.Adapter
@@ -60,6 +61,12 @@ namespace AgentCoreProcessor.Adapter
             Directory.CreateDirectory(inputDir);
             Directory.CreateDirectory(outputDir);
 
+            var parentCtx = SignalContext.Current;
+            using var lifeCtx = Signal.Continue(
+                parentCtx?.SignalId ?? Signal.NewId(), parentCtx?.CurrentSpanId,
+                $"adapter:file:{Id}", LogGroup.Adapter, "FileAdapter",
+                new { id = Id });
+
             // 启动标记
             File.WriteAllText(
                 Path.Combine(outputDir, $"000_system_{DateTime.Now:HHmmss}.txt"),
@@ -78,6 +85,7 @@ namespace AgentCoreProcessor.Adapter
                 }
                 catch (Exception ex)
                 {
+                    Signal.Warn(LogGroup.Adapter, "FileAdapter轮询异常", new { id = Id, error = ex.Message });
                     File.WriteAllText(
                         Path.Combine(outputDir, $"{Interlocked.Increment(ref outputSeq):D3}_error_{DateTime.Now:HHmmss}.txt"),
                         $"[{DateTime.Now:HH:mm:ss}] FileAdapter 错误: {ex.Message}\n");
@@ -129,6 +137,7 @@ namespace AgentCoreProcessor.Adapter
                 }
                 catch (Exception ex)
                 {
+                    Signal.Warn(LogGroup.Adapter, "文件消息解析失败", new { file = Path.GetFileName(file), error = ex.Message });
                     try { File.Delete(file); } catch { }
                     File.WriteAllText(
                         Path.Combine(outputDir, $"{Interlocked.Increment(ref outputSeq):D3}_error_{DateTime.Now:HHmmss}.txt"),
@@ -167,6 +176,7 @@ namespace AgentCoreProcessor.Adapter
                 }
                 catch (Exception ex)
                 {
+                    Signal.Warn(LogGroup.Adapter, "文件消息解析失败", new { file = Path.GetFileName(file), error = ex.Message });
                     // 解析失败的文件也删除，避免反复报错
                     try { File.Delete(file); } catch { }
                     File.WriteAllText(

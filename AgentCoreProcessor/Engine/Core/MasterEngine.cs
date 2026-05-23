@@ -341,6 +341,7 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
+                Signal.Warn(LogGroup.Engine, "视觉提供者初始化失败", new { error = ex.Message });
             }
 
             // OCR（从 OcrProvider.json 读取，不依赖 Base.json）
@@ -369,6 +370,7 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
+                Signal.Warn(LogGroup.Engine, "OCR提供者初始化失败", new { error = ex.Message });
             }
 
             // 服务
@@ -481,6 +483,7 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
+                Signal.Warn(LogGroup.Engine, "MCP管理器初始化失败", new { error = ex.Message });
             }
 
             Signal.Event(LogGroup.Engine, "引擎就绪");
@@ -529,6 +532,7 @@ namespace AgentCoreProcessor.Engine
                 }
                 catch (Exception ex)
                 {
+                    Signal.Error(LogGroup.Engine, "SpawnCheck异常", new { checkType = check.GetType().Name, error = ex.Message });
                 }
             }
 
@@ -542,6 +546,7 @@ namespace AgentCoreProcessor.Engine
                     try { engine.OnEvent(e); }
                     catch (Exception ex)
                     {
+                        Signal.Error(LogGroup.Engine, "引擎事件处理异常", new { engineType = engine.EngineType, error = ex.Message });
                     }
                 }
             }
@@ -688,6 +693,7 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
+                Signal.Warn(LogGroup.Engine, "人设记忆种子加载失败", new { error = ex.Message });
             }
         }
 

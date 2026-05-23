@@ -114,11 +114,12 @@ namespace AgentCoreProcessor.Engine
                             Content = message
                         });
                     }
-                    catch { }
+                    catch { /* 单频道告警失败跳过，继续通知其他频道 */ }
                 }
             }
             catch (Exception ex)
             {
+                Signal.Error(LogGroup.Engine, "系统崩溃告警发送失败", new { error = ex.Message });
             }
         }
 

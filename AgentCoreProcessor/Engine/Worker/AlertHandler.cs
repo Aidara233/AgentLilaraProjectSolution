@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Database;
+using AgentCoreProcessor.Logging;
 
 namespace AgentCoreProcessor.Engine
 {
@@ -57,6 +58,7 @@ namespace AgentCoreProcessor.Engine
                     }
                     catch (Exception ex)
                     {
+                        Signal.Error(LogGroup.Engine, "管理员告警通知失败", new { personId = person.Id, error = ex.Message });
                     }
                     break;
             }

@@ -38,6 +38,7 @@ namespace AgentCoreProcessor.Tool.Host
             }
             catch (Exception ex)
             {
+                Console.Error.WriteLine($"[ToolProfileManager] 配置加载失败，使用默认配置: {ex.Message}");
                 config = GetDefaultConfig();
             }
 
@@ -54,6 +55,7 @@ namespace AgentCoreProcessor.Tool.Host
             }
             catch (Exception ex)
             {
+                Console.Error.WriteLine($"[ToolProfileManager] 配置保存失败: {ex.Message}");
             }
         }
 

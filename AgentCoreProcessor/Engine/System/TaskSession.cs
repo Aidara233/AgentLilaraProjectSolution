@@ -8,6 +8,7 @@ using System.Threading.Channels;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Engine.Modules;
+using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Tool;
 
@@ -162,6 +163,8 @@ namespace AgentCoreProcessor.Engine
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
                 {
+                    Signal.Warn(LogGroup.Model, "子Agent调用重试中",
+                        new { sessionId = SessionId, attempt, error = ex.Message });
                     if (attempt < MaxInvokeRetries - 1)
                     {
                         var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt + 1));
@@ -276,6 +279,8 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
+                Signal.Error(LogGroup.Engine, "子Agent完成通知失败",
+                    new { sessionId = SessionId, delegationId = DelegationId, error = ex.Message });
             }
         }
     }

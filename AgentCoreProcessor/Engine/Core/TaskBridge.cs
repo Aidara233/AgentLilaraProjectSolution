@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Logging;
 
 namespace AgentCoreProcessor.Engine
 {
@@ -188,6 +189,7 @@ namespace AgentCoreProcessor.Engine
                 }
                 catch (Exception ex)
                 {
+                    Signal.Warn(LogGroup.Engine, "任务队列持久化失败", new { error = ex.Message });
                 }
             }
         }
@@ -208,6 +210,7 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
+                Signal.Warn(LogGroup.Engine, "任务队列加载失败", new { error = ex.Message });
             }
         }
     }

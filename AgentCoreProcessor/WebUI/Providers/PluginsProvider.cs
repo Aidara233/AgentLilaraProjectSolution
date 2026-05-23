@@ -537,22 +537,22 @@ internal class PluginToolsSource : IDataSource
         return Task.FromResult(new DataResult { Data = arr, TotalCount = arr.Count });
     }
 
-    public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
     {
         var toolName = data?["_row_id"]?.ToString() ?? "";
         if (string.IsNullOrEmpty(toolName))
-            return new ActionResult { Success = false, Message = "未指定工具" };
+            return Task.FromResult(new ActionResult { Success = false, Message = "未指定工具" });
 
         switch (action)
         {
             case "disable":
                 ToolRegistry.DisableTool(toolName, "管理员手动禁用");
-                return new ActionResult { Success = true, Message = $"已禁用 {toolName}" };
+                return Task.FromResult(new ActionResult { Success = true, Message = $"已禁用 {toolName}" });
             case "enable":
                 ToolRegistry.EnableTool(toolName);
-                return new ActionResult { Success = true, Message = $"已启用 {toolName}" };
+                return Task.FromResult(new ActionResult { Success = true, Message = $"已启用 {toolName}" });
             default:
-                return new ActionResult { Success = false, Message = "未知操作" };
+                return Task.FromResult(new ActionResult { Success = false, Message = "未知操作" });
         }
     }
 

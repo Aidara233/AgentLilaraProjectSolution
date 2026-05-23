@@ -161,6 +161,7 @@ namespace AgentCoreProcessor.Tool.Host
                     }
                     catch (Exception ex)
                     {
+                        Console.Error.WriteLine($"[PluginLoader] Provider 注册失败: {ex.Message}");
                     }
                 }
 
@@ -181,6 +182,7 @@ namespace AgentCoreProcessor.Tool.Host
             }
             catch (Exception ex)
             {
+                Console.Error.WriteLine($"[PluginLoader] 插件加载失败 {dllPath}: {ex.Message}");
                 loadContext?.Unload();
             }
         }
@@ -243,6 +245,7 @@ namespace AgentCoreProcessor.Tool.Host
             }
             catch (Exception ex)
             {
+                Console.Error.WriteLine($"[PluginLoader] 工具实例化失败 {type.Name}: {ex.Message}");
                 return null;
             }
         }

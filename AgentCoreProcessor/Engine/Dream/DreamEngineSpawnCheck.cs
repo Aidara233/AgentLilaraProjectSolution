@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Config;
+using AgentCoreProcessor.Logging;
 using Newtonsoft.Json;
 
 namespace AgentCoreProcessor.Engine
@@ -60,6 +61,7 @@ namespace AgentCoreProcessor.Engine
                             }
                             catch (Exception ex)
                             {
+                                Signal.Warn(LogGroup.Engine, "梦境配置信号解析失败", new { error = ex.Message });
                             }
                         }
                         break;

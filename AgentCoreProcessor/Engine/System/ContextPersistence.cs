@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Models;
 using Newtonsoft.Json;
 
@@ -47,6 +48,7 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
+                Signal.Warn(LogGroup.Engine, "上下文轮次追加失败", new { error = ex.Message });
             }
         }
 
@@ -62,6 +64,7 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
+                Signal.Warn(LogGroup.Engine, "模块状态保存失败", new { error = ex.Message });
             }
         }
 
@@ -82,6 +85,7 @@ namespace AgentCoreProcessor.Engine
                 }
                 catch (Exception ex)
                 {
+                    Signal.Warn(LogGroup.Engine, "上下文摘要加载失败", new { error = ex.Message });
                 }
             }
 
@@ -124,6 +128,7 @@ namespace AgentCoreProcessor.Engine
                 }
                 catch (Exception ex)
                 {
+                    Signal.Warn(LogGroup.Engine, "上下文JSONL加载失败", new { error = ex.Message });
                 }
             }
 
@@ -144,6 +149,7 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
+                Signal.Warn(LogGroup.Engine, "模块状态加载失败", new { error = ex.Message });
                 return null;
             }
         }
@@ -161,6 +167,7 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
+                Signal.Warn(LogGroup.Engine, "摘要保存+清理失败", new { error = ex.Message });
             }
         }
 
@@ -175,6 +182,7 @@ namespace AgentCoreProcessor.Engine
             }
             catch (Exception ex)
             {
+                Signal.Warn(LogGroup.Engine, "上下文清理失败", new { error = ex.Message });
             }
         }
     }

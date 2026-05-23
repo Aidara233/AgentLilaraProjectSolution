@@ -318,7 +318,7 @@ namespace AgentCoreProcessor.Adapter
                 data.SaveTo(output);
                 return thumbPath;
             }
-            catch (Exception ex)
+            catch
             {
                 return null;
             }

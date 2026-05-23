@@ -2,6 +2,7 @@
 using System.Reflection;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Engine;
+using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Tool;
 using AgentLilara.PluginSDK;
 
@@ -224,6 +225,8 @@ internal class ComponentHost
 
     private static void LogError(LoopComponentInstance inst, string hook, Exception ex)
     {
+        Signal.Error(LogGroup.Engine, $"组件{inst.Component.Meta.Name}.{hook}异常",
+            new { component = inst.Component.Meta.Name, hook, error = ex.Message, type = ex.GetType().Name });
     }
 }
 
