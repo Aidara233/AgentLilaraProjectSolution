@@ -475,6 +475,7 @@ else
     {
         _view = GraphView.clusters;
         _selectedNode = null;
+        _focusId = 0;
         JS.InvokeVoidAsync("destroyMemoryGraph");
         _graphRendered = false;
         RebuildClusters();
@@ -585,12 +586,19 @@ else
 
         var data = new { nodes, edges };
 
-        _dotNetRef?.Dispose();
-        _dotNetRef = DotNetObjectReference.Create(this);
+        if (!_graphRendered)
+        {
+            _dotNetRef?.Dispose();
+            _dotNetRef = DotNetObjectReference.Create(this);
 
-        await JS.InvokeVoidAsync("initMemoryGraph",
-            "memory-graph-container", data, _focusId.ToString(), _dotNetRef);
-        _graphRendered = true;
+            await JS.InvokeVoidAsync("initMemoryGraph",
+                "memory-graph-container", data, _focusId.ToString(), _dotNetRef);
+            _graphRendered = true;
+        }
+        else
+        {
+            await JS.InvokeVoidAsync("updateMemoryGraph", data, _focusId.ToString());
+        }
 
         StateHasChanged();
     }
