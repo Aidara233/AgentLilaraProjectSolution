@@ -11,6 +11,7 @@ namespace AgentLilara.PluginSDK.WebUI;
 [JsonDerivedType(typeof(TreeSchema), "tree")]
 [JsonDerivedType(typeof(DetailSchema), "detail")]
 [JsonDerivedType(typeof(ActionCardSchema), "action")]
+[JsonDerivedType(typeof(PropertyGridSchema), "property-grid")]
 public abstract class CardSchema { }
 
 // --- Table ---
@@ -187,3 +188,23 @@ public class ActionParamDef
     public List<SelectOption>? Options { get; init; }
     public bool Required { get; init; } = true;
 }
+
+// --- PropertyGrid ---
+
+public class PropertyGridSchema : CardSchema
+{
+    public string? Description { get; init; }
+    public string SubmitLabel { get; init; } = "保存";
+    public List<PropertyFieldDef>? Fields { get; init; }
+}
+
+public class PropertyFieldDef
+{
+    public required string Name { get; init; }
+    public required string Label { get; init; }
+    public PropertyFieldType Type { get; init; } = PropertyFieldType.Text;
+    public bool Sensitive { get; init; }
+    public bool ReadOnly { get; init; }
+}
+
+public enum PropertyFieldType { Text, Number, Toggle, Password, Json }

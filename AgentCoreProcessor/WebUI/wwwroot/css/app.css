@@ -2123,3 +2123,81 @@ select.config-input option {
     color: var(--text-primary);
     border-color: var(--text-muted);
 }
+
+/* PropertyGrid */
+.property-grid .property-table { margin-bottom: 0.5rem; }
+.property-grid .prop-name { color: var(--accent); font-size: var(--font-size-sm); }
+.property-grid .prop-json-preview {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 240px;
+    display: inline-block;
+}
+
+.prop-json-modal {
+    width: 540px;
+    max-width: 90vw;
+}
+.modal-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1055;
+}
+.modal-content {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+.modal-header {
+    border-bottom: 1px solid var(--border);
+}
+.modal-body { padding: 1rem; }
+.prop-json-textarea {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border-color: var(--border);
+    resize: vertical;
+}
+
+/* Toggle Switch */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 20px;
+    cursor: pointer;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: var(--bg-tertiary);
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    transition: background 0.2s, border-color 0.2s;
+}
+.toggle-slider::before {
+    content: "";
+    position: absolute;
+    height: 14px; width: 14px;
+    left: 2px; bottom: 2px;
+    background: var(--text-muted);
+    border-radius: 50%;
+    transition: transform 0.2s, background 0.2s;
+}
+.toggle-switch input:checked + .toggle-slider {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+.toggle-switch input:checked + .toggle-slider::before {
+    transform: translateX(20px);
+    background: #fff;
+}

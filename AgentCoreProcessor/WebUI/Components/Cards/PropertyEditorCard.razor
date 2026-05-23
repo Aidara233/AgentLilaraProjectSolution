@@ -1,0 +1,313 @@
+@using AgentLilara.PluginSDK.WebUI
+@using System.Text.Json.Nodes
+
+<div class="property-grid">
+    @if (!string.IsNullOrEmpty(Schema.Description))
+    {
+        <p class="text-muted small mb-2">@Schema.Description</p>
+    }
+
+    @if (_properties.Count == 0)
+    {
+        <p class="text-muted-custom text-center py-3">无属性</p>
+    }
+    else
+    {
+        <table class="table-dark-custom property-table mb-2">
+            <thead>
+                <tr>
+                    <th style="width:35%">属性</th>
+                    <th>值</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var prop in _properties)
+                {
+                    var fieldDef = GetFieldDef(prop.Name);
+                    var displayType = ResolveType(prop);
+                    if (fieldDef?.ReadOnly == true && displayType != PropertyFieldType.Json) continue;
+
+                    <tr>
+                        <td>
+                            <code class="prop-name">@(fieldDef?.Label ?? prop.Name)</code>
+                            @if (IsSensitive(prop))
+                            {
+                                <span class="badge bg-warning ms-1" style="font-size:0.6rem">🔒</span>
+                            }
+                        </td>
+                        <td>
+                            @switch (displayType)
+                            {
+                                case PropertyFieldType.Toggle:
+                                    <label class="toggle-switch mb-0">
+                                        <input type="checkbox" checked="@(prop.Value is JsonValue jv && jv.ToString() == "True")"
+                                               @onchange="e => OnToggleChanged(prop.Name, e)" />
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                    break;
+
+                                case PropertyFieldType.Number:
+                                    <input type="number" class="form-control form-control-sm" step="any"
+                                           value="@(prop.Value?.ToString())"
+                                           @oninput="e => OnValueChanged(prop.Name, e.Value?.ToString())" />
+                                    break;
+
+                                case PropertyFieldType.Password:
+                                    <div class="d-flex gap-1">
+                                        <input type="@(_revealed.Contains(prop.Name) ? "text" : "password")"
+                                               class="form-control form-control-sm"
+                                               value="@(prop.Value?.ToString())"
+                                               @oninput="e => OnValueChanged(prop.Name, e.Value?.ToString())" />
+                                        <button class="btn-ghost btn-sm" @onclick="() => ToggleReveal(prop.Name)">
+                                            <i class="bi @(_revealed.Contains(prop.Name) ? "bi-eye-slash" : "bi-eye")"></i>
+                                        </button>
+                                    </div>
+                                    break;
+
+                                case PropertyFieldType.Json:
+                                    <div class="d-flex gap-1 align-items-center">
+                                        <code class="text-muted-custom small flex-grow-1 prop-json-preview"
+                                              title="@prop.Value?.ToString()">@Truncate(prop.Value?.ToString(), 60)</code>
+                                        <button class="btn-ghost btn-sm" @onclick="() => OpenJsonEditor(prop.Name)">
+                                            <i class="bi bi-pencil-square"></i>
+                                        </button>
+                                    </div>
+                                    break;
+
+                                default:
+                                    <input type="text" class="form-control form-control-sm"
+                                           value="@(prop.Value?.ToString())"
+                                           placeholder="@(prop.Value == null ? "(null)" : "")"
+                                           @oninput="e => OnValueChanged(prop.Name, e.Value?.ToString())" />
+                                    break;
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <div class="d-flex gap-2 align-items-center">
+            <button class="btn btn-sm btn-primary" @onclick="HandleSave"
+                    disabled="@(_isSaving || !_hasChanges)">
+                @if (_isSaving)
+                {
+                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                }
+                @Schema.SubmitLabel
+            </button>
+            @if (_hasChanges)
+            {
+                <span class="text-muted-custom small">有未保存的更改</span>
+            }
+        </div>
+    }
+
+    @if (_error != null)
+    {
+        <div class="alert alert-danger mt-2 mb-0 py-1 px-2 small">@_error</div>
+    }
+    @if (_statusMessage != null)
+    {
+        <div class="alert alert-success mt-2 mb-0 py-1 px-2 small">@_statusMessage</div>
+    }
+</div>
+
+@* JSON Editor Modal *@
+@if (_jsonEditorOpen)
+{
+    <div class="modal-overlay" @onclick="CloseJsonEditor">
+        <div class="modal-content prop-json-modal" @onclick:stopPropagation="true">
+            <div class="modal-header d-flex justify-content-between align-items-center p-2">
+                <span class="fw-bold">编辑: @_jsonEditorProp</span>
+                <button class="btn-ghost btn-sm" @onclick="CloseJsonEditor"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <div class="modal-body p-2">
+                <textarea class="form-control prop-json-textarea"
+                          @bind="_jsonEditorText"
+                          rows="12"></textarea>
+                <div class="d-flex gap-2 mt-2">
+                    <button class="btn btn-sm btn-accent" @onclick="ApplyJsonEdit">应用</button>
+                    <button class="btn btn-sm btn-secondary" @onclick="CloseJsonEditor">取消</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public PropertyGridSchema Schema { get; set; } = null!;
+    [Parameter] public JsonNode? Data { get; set; }
+    [Parameter] public EventCallback<JsonNode> OnSubmit { get; set; }
+
+    private class PropertyEntry
+    {
+        public string Name { get; init; } = "";
+        public JsonNode? Value { get; set; }
+        public string DisplayType { get; set; } = "text";
+        public bool Sensitive { get; set; }
+    }
+
+    private List<PropertyEntry> _properties = new();
+    private Dictionary<string, string> _originalValues = new();
+    private HashSet<string> _revealed = new();
+    private bool _hasChanges;
+    private bool _isSaving;
+    private string? _error;
+    private string? _statusMessage;
+
+    private string? _jsonEditorProp;
+    private string _jsonEditorText = "";
+    private bool _jsonEditorOpen;
+
+    protected override void OnParametersSet()
+    {
+        if (Data is JsonObject obj)
+        {
+            var propsArr = obj["properties"]?.AsArray();
+            if (propsArr != null)
+            {
+                _properties = new();
+                _originalValues = new();
+                _hasChanges = false;
+                _revealed = new();
+                _error = null;
+                _statusMessage = null;
+
+                foreach (var item in propsArr)
+                {
+                    if (item is not JsonObject po) continue;
+                    var name = po["name"]?.ToString() ?? "";
+                    var value = po["value"];
+                    var dataType = po["type"]?.ToString() ?? "text";
+                    var sensitive = po["sensitive"]?.GetValueKind() == System.Text.Json.JsonValueKind.True;
+                    _properties.Add(new PropertyEntry { Name = name, Value = value, DisplayType = dataType, Sensitive = sensitive });
+                    _originalValues[name] = value?.ToString() ?? "";
+                }
+            }
+        }
+    }
+
+    private PropertyFieldDef? GetFieldDef(string name)
+        => Schema.Fields?.FirstOrDefault(f => f.Name == name);
+
+    /// <summary>Resolve display type: schema override > data-driven > value inference</summary>
+    private PropertyFieldType ResolveType(PropertyEntry prop)
+    {
+        var schemaDef = GetFieldDef(prop.Name);
+        if (schemaDef?.Type != null && schemaDef.Type != PropertyFieldType.Text) return schemaDef.Type;
+
+        // Use data-driven type from the source
+        if (Enum.TryParse<PropertyFieldType>(prop.DisplayType, ignoreCase: true, out var dt))
+            return dt;
+
+        return InferType(prop.Value);
+    }
+
+    private static PropertyFieldType InferType(JsonNode? value)
+    {
+        if (value == null) return PropertyFieldType.Text;
+        if (value is JsonValue jv)
+        {
+            if (jv.TryGetValue<bool>(out _)) return PropertyFieldType.Toggle;
+            if (jv.TryGetValue<long>(out _) || jv.TryGetValue<double>(out _)) return PropertyFieldType.Number;
+        }
+        return PropertyFieldType.Text;
+    }
+
+    private bool IsSensitive(PropertyEntry prop)
+    {
+        var def = GetFieldDef(prop.Name);
+        if (def?.Sensitive == true) return true;
+        return prop.Sensitive;
+    }
+
+    private void OnValueChanged(string name, string? newValue)
+    {
+        if (newValue == null) return;
+        var prop = _properties.FirstOrDefault(p => p.Name == name);
+        if (prop == null) return;
+        prop.Value = JsonValue.Create(newValue);
+        _hasChanges = true;
+        _statusMessage = null;
+    }
+
+    private void OnToggleChanged(string name, ChangeEventArgs e)
+    {
+        var val = (bool)(e.Value ?? false);
+        var prop = _properties.FirstOrDefault(p => p.Name == name);
+        if (prop == null) return;
+        prop.Value = JsonValue.Create(val);
+        _hasChanges = true;
+        _statusMessage = null;
+    }
+
+    private void ToggleReveal(string name)
+    {
+        if (!_revealed.Remove(name)) _revealed.Add(name);
+    }
+
+    private void OpenJsonEditor(string name)
+    {
+        _jsonEditorProp = name;
+        var prop = _properties.FirstOrDefault(p => p.Name == name);
+        _jsonEditorText = prop?.Value?.ToString() ?? "";
+        _jsonEditorOpen = true;
+    }
+
+    private void CloseJsonEditor()
+    {
+        _jsonEditorOpen = false;
+        _jsonEditorProp = null;
+    }
+
+    private void ApplyJsonEdit()
+    {
+        if (_jsonEditorProp == null) return;
+        var prop = _properties.FirstOrDefault(p => p.Name == _jsonEditorProp);
+        if (prop == null) return;
+        prop.Value = JsonValue.Create(_jsonEditorText);
+        _hasChanges = true;
+        _statusMessage = null;
+        _jsonEditorOpen = false;
+    }
+
+    private async Task HandleSave()
+    {
+        _isSaving = true;
+        _error = null;
+        _statusMessage = null;
+
+        var changed = new JsonObject();
+        foreach (var prop in _properties)
+        {
+            var curVal = prop.Value?.ToString() ?? "";
+            var origVal = _originalValues.GetValueOrDefault(prop.Name, "");
+            if (curVal != origVal)
+            {
+                changed[prop.Name] = prop.Value?.DeepClone();
+            }
+        }
+
+        var payload = new JsonObject
+        {
+            ["action"] = "save",
+            ["changes"] = changed
+        };
+
+        await OnSubmit.InvokeAsync(payload);
+        _isSaving = false;
+        _hasChanges = false;
+
+        foreach (var prop in _properties)
+            _originalValues[prop.Name] = prop.Value?.ToString() ?? "";
+
+        _statusMessage = "已保存";
+    }
+
+    private static string Truncate(string? s, int max)
+    {
+        if (string.IsNullOrEmpty(s)) return "(null)";
+        return s.Length <= max ? s : s[..max] + "…";
+    }
+}

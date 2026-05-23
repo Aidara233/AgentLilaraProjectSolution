@@ -149,6 +149,10 @@ else
                 <ActionCard Schema="@((ActionCardSchema)card.Schema)" Data="@data"
                             OnSubmit='@(d => OnSubmitAction(dsId, "exec", d))' />
                 break;
+            case CardType.PropertyGrid:
+                <PropertyEditorCard Schema="@((PropertyGridSchema)card.Schema)" Data="@data"
+                                    OnSubmit='@(d => OnSubmitAction(dsId, "save", d))' />
+                break;
         }
     };
 
