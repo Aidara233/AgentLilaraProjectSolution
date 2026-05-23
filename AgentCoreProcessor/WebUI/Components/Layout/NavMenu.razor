@@ -10,25 +10,6 @@
         <i class="bi bi-robot"></i>
         <span>Lilara</span>
     </a>
-    <hr class="sidebar-divider" />
-    <ul class="sidebar-nav">
-        @foreach (var item in NavConfig.Items)
-        {
-            @if (item.Children.Count == 0)
-            {
-                <li @key="item.Href">
-                    <NavLink class="nav-link" href="@item.Href"
-                             Match="@(item.Href == "/" ? NavLinkMatch.All : NavLinkMatch.Prefix)">
-                        <i class="bi @item.Icon"></i> @item.Title
-                    </NavLink>
-                </li>
-            }
-            else
-            {
-                <NavSection @key="item.Title" Item="item" ExpandedSet="expandedSet" Version="version" />
-            }
-        }
-    </ul>
     @if (navGroups.Count > 0)
     {
         <hr class="sidebar-divider" />
@@ -136,31 +117,12 @@
     private void ExpandForCurrentPath()
     {
         var path = "/" + Nav.ToBaseRelativePath(Nav.Uri);
-        foreach (var item in NavConfig.Items)
-        {
-            ExpandIfContains(item, path);
-        }
         foreach (var group in navGroups)
         {
             if (group.IsSinglePage) continue;
             var navItem = ToNavItem(group);
             if (ContainsPathOrPrefix(navItem, path))
                 expandedSet.Add(navItem.Title);
-        }
-    }
-
-    private void ExpandIfContains(NavItem item, string currentPath)
-    {
-        if (item.Children.Count == 0) return;
-
-        if (ContainsPath(item, currentPath))
-        {
-            expandedSet.Add(item.Title);
-        }
-
-        foreach (var child in item.Children)
-        {
-            ExpandIfContains(child, currentPath);
         }
     }
 
