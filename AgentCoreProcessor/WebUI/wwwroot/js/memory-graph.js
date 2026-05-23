@@ -78,11 +78,19 @@ window.updateMemoryGraph = function (data, newFocusId) {
             el.classes = 'fade-in';
             toAdd.push(el);
         } else {
-            // Update existing node data (focus/core status may have changed)
+            // Update existing node: data and position may have changed
             var existing = cy.getElementById(id);
             if (existing.length) {
+                existing.data('label', n.label || '');
+                existing.data('title', n.title || '');
+                existing.data('type', n.type || 'fact');
+                existing.data('importance', n.importance || 0.5);
+                existing.data('isDerived', n.isDerived || false);
                 existing.data('isCore', n.isCore || false);
                 existing.data('isFocus', n.isFocus || false);
+                if (n.x !== undefined && n.y !== undefined) {
+                    existing.position({ x: n.x, y: n.y });
+                }
             }
         }
     }

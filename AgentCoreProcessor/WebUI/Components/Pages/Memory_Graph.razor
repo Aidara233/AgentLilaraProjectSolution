@@ -1,4 +1,4 @@
-@page "/memory/graph"
+﻿@page "/memory/graph"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using AgentCoreProcessor.Engine
 @using AgentCoreProcessor.Database
@@ -483,14 +483,22 @@ else
 
     // ======== 图谱渲染 ========
 
-    // Stable layout (computed once per cluster, never changes)
+    // Layout + grid state (positions mutable on focus change)
     private Dictionary<int, (double x, double y)> _cachedPositions = new();
+    private Dictionary<int, int> _nodeGridIndex = new();       // nodeId → hex grid index
+    private List<bool> _gridOccupied = new();                  // true = occupied
+    private List<int> _gridOwner = new();                      // nodeId owning each grid spot, -1 = none
+    private List<(int q, int r)> _hexPoints = new();
+    private List<(double x, double y)> _hexCartesian = new();
     private List<MemoryLink> _cachedEdges = new();
-    // Weight-based visibility from current focus
+    // Visibility tracking
+    private HashSet<int> _currentlyVisibleIds = new();
     private int _focusId;
     private int _maxVisible = 60;
     private int _visibleNodeCount;
     private int _totalNodeCount;
+    // Cached adjacency for placement
+    private Dictionary<int, List<(int nb, double w)>> _adj = new();
 
     private async Task RenderGraph(MemoryCluster cluster)
     {
@@ -500,24 +508,276 @@ else
             .Where(l => nodeIdSet.Contains(l.SourceId) && nodeIdSet.Contains(l.TargetId))
             .ToList();
 
-        // Stable global layout from cluster core (never recomputed)
-        _cachedPositions = ComputeLayout(cluster.NodeIds, _cachedEdges, cluster.CoreNodeId, _memDict);
         _totalNodeCount = cluster.NodeIds.Count;
         _focusId = cluster.CoreNodeId;
 
-        await SendWeightFilteredGraph();
+        // Build adjacency cache for this cluster
+        _adj.Clear();
+        foreach (var id in cluster.NodeIds) _adj[id] = new();
+        foreach (var link in _cachedEdges)
+        {
+            if (_adj.ContainsKey(link.SourceId) && _adj.ContainsKey(link.TargetId))
+            {
+                _adj[link.SourceId].Add((link.TargetId, link.Strength));
+                _adj[link.TargetId].Add((link.SourceId, link.Strength));
+            }
+        }
+
+        // Full layout (fills grid state fields)
+        _cachedPositions = ComputeLayout(cluster.NodeIds, cluster.CoreNodeId);
+
+        // Initial visible set
+        _currentlyVisibleIds = GetTopWeightNodes(_focusId, _maxVisible).ToHashSet();
+
+        // Only visible nodes claim grid spots — leave rest vacant for focus changes
+        for (int i = 0; i < _gridOccupied.Count; i++) { _gridOccupied[i] = false; _gridOwner[i] = -1; }
+        foreach (var id in _currentlyVisibleIds)
+        {
+            if (_nodeGridIndex.TryGetValue(id, out int gIdx))
+            { _gridOccupied[gIdx] = true; _gridOwner[gIdx] = id; }
+        }
+
+        await SendVisibleGraph();
     }
 
     private async Task RefilterGraph()
     {
-        // Slider changed _maxVisible → re-filter from same focus
-        await SendWeightFilteredGraph();
+        // Slider changed _maxVisible → recalc visible set from same focus
+        var newVisible = GetTopWeightNodes(_focusId, _maxVisible).ToHashSet();
+
+        // Free positions of nodes leaving the visible set
+        foreach (var id in _currentlyVisibleIds)
+        {
+            if (!newVisible.Contains(id) && _nodeGridIndex.TryGetValue(id, out int gIdx))
+                { _gridOccupied[gIdx] = false; _gridOwner[gIdx] = -1; }
+        }
+
+        // Place newly visible nodes
+        var stayingIds = _currentlyVisibleIds.Where(id => newVisible.Contains(id)).ToHashSet();
+        var newNodes = newVisible.Where(id => !_currentlyVisibleIds.Contains(id)).ToList();
+        if (newNodes.Count > 0)
+        {
+            PlaceNewlyVisible(newNodes, _focusId, stayingIds);
+        }
+
+        _currentlyVisibleIds = newVisible;
+        await SendVisibleGraph();
     }
 
-    private void SetFocus(int nodeId)
+    private async Task RelayoutOnFocusChange(int newFocusId)
     {
-        if (_focusId == nodeId) return;
-        _focusId = nodeId;
+        if (_focusId == newFocusId) return;
+        _focusId = newFocusId;
+
+        var newVisible = GetTopWeightNodes(newFocusId, _maxVisible).ToHashSet();
+
+        // Free positions of nodes leaving the visible set
+        foreach (var id in _currentlyVisibleIds)
+        {
+            if (!newVisible.Contains(id) && _nodeGridIndex.TryGetValue(id, out int gIdx))
+                { _gridOccupied[gIdx] = false; _gridOwner[gIdx] = -1; }
+        }
+
+        var stayingIds = _currentlyVisibleIds.Where(id => newVisible.Contains(id)).ToHashSet();
+        var newNodes = newVisible.Where(id => !_currentlyVisibleIds.Contains(id)).ToList();
+
+        if (newNodes.Count > 0)
+        {
+            PlaceNewlyVisible(newNodes, newFocusId, stayingIds);
+        }
+
+        _currentlyVisibleIds = newVisible;
+        await SendVisibleGraph();
+    }
+
+    private void PlaceNewlyVisible(List<int> newNodes, int focusId, HashSet<int> stayingIds)
+    {
+        // Pre-reserve old grid positions of new nodes so they can't be
+        // stolen by other new nodes. Released on successful re-placement.
+        foreach (var nodeId in newNodes)
+        {
+            if (_nodeGridIndex.TryGetValue(nodeId, out int oldIdx))
+            {
+                // Only reserve if spot is unclaimed or still ours
+                if (_gridOwner[oldIdx] == -1 || _gridOwner[oldIdx] == nodeId)
+                { _gridOccupied[oldIdx] = true; _gridOwner[oldIdx] = nodeId; }
+            }
+        }
+
+        // Get focus position (it's a staying node, position locked)
+        var focusPos = _cachedPositions.GetValueOrDefault(focusId);
+
+        // All vacant grid indices, sorted by distance to focus
+        var vacant = Enumerable.Range(0, _hexCartesian.Count)
+            .Where(i => !_gridOccupied[i])
+            .OrderBy(i =>
+            {
+                double dx = _hexCartesian[i].x - focusPos.x;
+                double dy = _hexCartesian[i].y - focusPos.y;
+                return dx * dx + dy * dy;
+            })
+            .ToList();
+
+        // Focus-direct new nodes: place in closest vacant spots
+        var focusDirect = newNodes
+            .Where(id => _adj[id].Any(x => x.nb == focusId))
+            .OrderByDescending(id => _adj[id].First(x => x.nb == focusId).w)
+            .ToList();
+
+        var others = newNodes.Except(focusDirect)
+            .OrderByDescending(id => _adj[id]
+                .Where(x => stayingIds.Contains(x.nb))
+                .Select(x => x.w).DefaultIfEmpty(0).Max())
+            .ToList();
+
+        var placedSet = new HashSet<int>(stayingIds);
+
+        // Place focus-direct nodes
+        int vacIdx = 0;
+        foreach (var nodeId in focusDirect)
+        {
+            if (vacIdx >= vacant.Count) break;
+            int gIdx = vacant[vacIdx++];
+
+            if (_nodeGridIndex.TryGetValue(nodeId, out int oldIdx) && oldIdx != gIdx
+                && _gridOwner[oldIdx] == nodeId)
+            { _gridOccupied[oldIdx] = false; _gridOwner[oldIdx] = -1; }
+
+            _cachedPositions[nodeId] = _hexCartesian[gIdx];
+            _gridOccupied[gIdx] = true;
+            _gridOwner[gIdx] = nodeId;
+            _nodeGridIndex[nodeId] = gIdx;
+            placedSet.Add(nodeId);
+        }
+
+        // Place others by weighted centroid
+        foreach (var nodeId in others)
+        {
+            var placedNb = _adj[nodeId].Where(x => placedSet.Contains(x.nb)).ToList();
+
+            if (placedNb.Count > 0)
+            {
+                double sumW = 0, cx = 0, cy = 0;
+                foreach (var (nb, w) in placedNb)
+                {
+                    sumW += w;
+                    cx += w * _cachedPositions[nb].x;
+                    cy += w * _cachedPositions[nb].y;
+                }
+                cx /= sumW;
+                cy /= sumW;
+
+                // Find closest remaining vacant spot to centroid
+                int bestV = -1;
+                double bestD = double.MaxValue;
+                foreach (int vi in vacant.Skip(vacIdx))
+                {
+                    if (_gridOccupied[vi]) continue;
+                    double dx = cx - _hexCartesian[vi].x;
+                    double dy = cy - _hexCartesian[vi].y;
+                    double d = dx * dx + dy * dy;
+                    if (d < bestD) { bestD = d; bestV = vi; }
+                }
+
+                if (bestV >= 0)
+                {
+                    if (_nodeGridIndex.TryGetValue(nodeId, out int oldIdx) && oldIdx != bestV
+                        && _gridOwner[oldIdx] == nodeId)
+                    { _gridOccupied[oldIdx] = false; _gridOwner[oldIdx] = -1; }
+
+                    _cachedPositions[nodeId] = _hexCartesian[bestV];
+                    _gridOccupied[bestV] = true;
+                    _gridOwner[bestV] = nodeId;
+                    _nodeGridIndex[nodeId] = bestV;
+                    placedSet.Add(nodeId);
+                }
+            }
+            else if (vacIdx < vacant.Count)
+            {
+                // Isolated: take closest remaining vacant
+                int gIdx = vacant[vacIdx++];
+
+                if (_nodeGridIndex.TryGetValue(nodeId, out int oldIdx) && oldIdx != gIdx
+                    && _gridOwner[oldIdx] == nodeId)
+                { _gridOccupied[oldIdx] = false; _gridOwner[oldIdx] = -1; }
+
+                _cachedPositions[nodeId] = _hexCartesian[gIdx];
+                _gridOccupied[gIdx] = true;
+                _gridOwner[gIdx] = nodeId;
+                _nodeGridIndex[nodeId] = gIdx;
+                placedSet.Add(nodeId);
+            }
+        }
+    }
+
+    private (double x, double y) VisualOffset(int nodeId, double rawX, double rawY)
+    {
+        // Stagger based on hex grid position to prevent label overlap
+        double sx = 0, sy = 0;
+        if (_nodeGridIndex.TryGetValue(nodeId, out int gIdx) && gIdx < _hexPoints.Count)
+        {
+            var (q, r) = _hexPoints[gIdx];
+            if ((q & 1) != 0) sy -= 60;          // odd q → shift up
+            if ((r & 1) != 0) sx += 16;          // odd r → shift right
+        }
+
+        // Deterministic jitter based on nodeId (prevents edge overlap)
+        uint h = (uint)nodeId * 2654435761u;
+        double jx = ((int)(h & 0xFFFF) / 65535.0 - 0.5) * 22;
+        double jy = ((int)((h >> 16) & 0xFFFF) / 65535.0 - 0.5) * 22;
+
+        return (rawX + sx + jx, rawY + sy + jy);
+    }
+
+    private async Task SendVisibleGraph()
+    {
+        _visibleNodeCount = _currentlyVisibleIds.Count;
+
+        var nodes = _clusterMemories.Where(m => _currentlyVisibleIds.Contains(m.Id)).Select(m =>
+        {
+            var (rx, ry) = _cachedPositions[m.Id];
+            var (x, y) = VisualOffset(m.Id, rx, ry);
+            return (object)new
+            {
+                id = m.Id.ToString(),
+                label = WrapLabel(m.Content),
+                type = m.Type ?? "fact",
+                title = $"#{m.Id} [{m.Type}] {m.Content}",
+                importance = m.Importance,
+                isDerived = m.IsDerived,
+                isCore = m.Id == _currentCluster.CoreNodeId,
+                isFocus = m.Id == _focusId,
+                x = x, y = y
+            };
+        }).ToArray();
+
+        var edges = _cachedEdges
+            .Where(l => _currentlyVisibleIds.Contains(l.SourceId) && _currentlyVisibleIds.Contains(l.TargetId))
+            .Select(l => (object)new
+            {
+                from = l.SourceId.ToString(),
+                to = l.TargetId.ToString(),
+                label = l.LinkType ?? "",
+                width = l.Strength
+            }).ToArray();
+
+        var data = new { nodes, edges };
+
+        if (!_graphRendered)
+        {
+            _dotNetRef?.Dispose();
+            _dotNetRef = DotNetObjectReference.Create(this);
+
+            await JS.InvokeVoidAsync("initMemoryGraph",
+                "memory-graph-container", data, _focusId.ToString(), _dotNetRef);
+            _graphRendered = true;
+        }
+        else
+        {
+            await JS.InvokeVoidAsync("updateMemoryGraph", data, _focusId.ToString());
+        }
+
+        StateHasChanged();
     }
 
     private List<int> GetTopWeightNodes(int focusId, int topN)
@@ -552,175 +812,182 @@ else
         return weights.OrderByDescending(kv => kv.Value).Take(topN).Select(kv => kv.Key).ToList();
     }
 
-    private async Task SendWeightFilteredGraph()
+    // ======== 三角网格贪心布局 ========
+
+    private static List<(int q, int r)> GenerateHexGrid(int maxRings)
     {
-        var visibleIds = GetTopWeightNodes(_focusId, _maxVisible).ToHashSet();
-        _visibleNodeCount = visibleIds.Count;
-
-        var nodes = _clusterMemories.Where(m => visibleIds.Contains(m.Id)).Select(m =>
+        var points = new List<(int q, int r)> { (0, 0) };
+        for (int d = 1; d <= maxRings; d++)
         {
-            var (x, y) = _cachedPositions[m.Id];
-            return (object)new
+            int q = d, r = 0;
+            (int dq, int dr)[] dirs = { (-1, 1), (-1, 0), (0, -1), (1, -1), (1, 0), (0, 1) };
+            foreach (var (dq, dr) in dirs)
             {
-                id = m.Id.ToString(),
-                label = WrapLabel(m.Content),
-                type = m.Type ?? "fact",
-                title = $"#{m.Id} [{m.Type}] {m.Content}",
-                importance = m.Importance,
-                isDerived = m.IsDerived,
-                isCore = m.Id == _currentCluster.CoreNodeId,
-                isFocus = m.Id == _focusId,
-                x = x, y = y
-            };
-        }).ToArray();
-
-        var edges = _cachedEdges
-            .Where(l => visibleIds.Contains(l.SourceId) && visibleIds.Contains(l.TargetId))
-            .Select(l => (object)new
-            {
-                from = l.SourceId.ToString(),
-                to = l.TargetId.ToString(),
-                label = l.LinkType ?? "",
-                width = l.Strength
-            }).ToArray();
-
-        var data = new { nodes, edges };
-
-        if (!_graphRendered)
-        {
-            _dotNetRef?.Dispose();
-            _dotNetRef = DotNetObjectReference.Create(this);
-
-            await JS.InvokeVoidAsync("initMemoryGraph",
-                "memory-graph-container", data, _focusId.ToString(), _dotNetRef);
-            _graphRendered = true;
+                for (int step = 0; step < d; step++)
+                {
+                    points.Add((q, r));
+                    q += dq;
+                    r += dr;
+                }
+            }
         }
-        else
-        {
-            await JS.InvokeVoidAsync("updateMemoryGraph", data, _focusId.ToString());
-        }
-
-        StateHasChanged();
+        return points;
     }
 
-    private static Dictionary<int, (double x, double y)> ComputeLayout(
-        List<int> nodeIds, List<MemoryLink> links, int coreId,
-        Dictionary<int, MemoryEntry> memDict)
+    private static (double x, double y) HexToCartesian(int q, int r, double spacing)
+        => (spacing * (q + r * 0.5), spacing * (r * Math.Sqrt(3) / 2));
+
+    private static int HexDist(int q, int r)
+        => (Math.Abs(q) + Math.Abs(r) + Math.Abs(q + r)) / 2;
+
+    private Dictionary<int, (double x, double y)> ComputeLayout(
+        List<int> nodeIds, int coreId)
     {
-        var pos = new Dictionary<int, (double x, double y)>();
-        var rng = new Random(42);
-        const double minGap = 150;
-        const double neighborRadius = 250;
-        const int minNeighbors = 3;
-        const int maxAttempts = 3000;
-        double jitterRange = 50;
-
+        const double spacing = 150;
         int n = nodeIds.Count;
-        bool isSmall = n < 4;
 
-        // Place core first at origin
-        pos[coreId] = (0, 0);
-        var placed = new List<int> { coreId };
+        // 1. Generate hex grid large enough for all nodes
+        int maxRings = 1;
+        while (1 + 3 * maxRings * (maxRings + 1) < Math.Max(n, 200)) maxRings++;
 
-        // Prefer placing connected nodes near their already-placed neighbors
-        var adj = new Dictionary<int, List<int>>();
-        foreach (var id in nodeIds) adj[id] = new();
-        foreach (var link in links)
+        _hexPoints = GenerateHexGrid(maxRings);
+        _hexCartesian = _hexPoints.Select(h => HexToCartesian(h.q, h.r, spacing)).ToList();
+        _gridOccupied = Enumerable.Repeat(false, _hexCartesian.Count).ToList();
+        _gridOwner = Enumerable.Repeat(-1, _hexCartesian.Count).ToList();
+        _nodeGridIndex.Clear();
+        var pos = new Dictionary<int, (double x, double y)>();
+        var remaining = new HashSet<int>(nodeIds);
+
+        // 2. Place core at center
+        pos[coreId] = _hexCartesian[0];
+        _gridOccupied[0] = true;
+        _gridOwner[0] = coreId;
+        _nodeGridIndex[coreId] = 0;
+        remaining.Remove(coreId);
+
+        // 3. Index grid points by ring distance, sort clockwise
+        var ringIndices = new Dictionary<int, List<int>>();
+        for (int i = 1; i < _hexPoints.Count; i++)
         {
-            var ns = nodeIds.ToHashSet();
-            if (ns.Contains(link.SourceId) && ns.Contains(link.TargetId))
+            int dist = HexDist(_hexPoints[i].q, _hexPoints[i].r);
+            if (!ringIndices.ContainsKey(dist))
+                ringIndices[dist] = new();
+            ringIndices[dist].Add(i);
+        }
+        foreach (int r in ringIndices.Keys)
+            ringIndices[r] = ringIndices[r]
+                .OrderBy(i => Math.Atan2(_hexCartesian[i].y, _hexCartesian[i].x))
+                .ToList();
+
+        // 4. Focus-connected nodes: assign to rings by weight rank
+        var focusDirect = _adj[coreId]
+            .Where(x => remaining.Contains(x.nb))
+            .OrderByDescending(x => x.w)
+            .Select(x => x.nb)
+            .ToList();
+
+        int directIdx = 0;
+        for (int ring = 1; ring <= maxRings && directIdx < focusDirect.Count; ring++)
+        {
+            if (!ringIndices.ContainsKey(ring)) continue;
+            var slots = ringIndices[ring];
+            int? prevId = null;
+
+            for (int si = 0; si < slots.Count && directIdx < focusDirect.Count; si++)
             {
-                adj[link.SourceId].Add(link.TargetId);
-                adj[link.TargetId].Add(link.SourceId);
+                int gIdx = slots[si];
+                if (_gridOccupied[gIdx]) continue;
+
+                int? bestNode = null;
+                double bestW = -1;
+
+                if (prevId.HasValue)
+                {
+                    for (int di = directIdx; di < focusDirect.Count; di++)
+                    {
+                        int cand = focusDirect[di];
+                        if (!remaining.Contains(cand)) continue;
+                        double w = _adj[cand].FirstOrDefault(x => x.nb == prevId.Value).w;
+                        if (w > bestW) { bestW = w; bestNode = cand; }
+                    }
+                }
+
+                if (bestNode == null)
+                {
+                    while (directIdx < focusDirect.Count && !remaining.Contains(focusDirect[directIdx]))
+                        directIdx++;
+                    if (directIdx < focusDirect.Count)
+                        bestNode = focusDirect[directIdx];
+                }
+
+                if (bestNode.HasValue)
+                {
+                    pos[bestNode.Value] = _hexCartesian[gIdx];
+                    _gridOccupied[gIdx] = true;
+                    _gridOwner[gIdx] = bestNode.Value;
+                    _nodeGridIndex[bestNode.Value] = gIdx;
+                    remaining.Remove(bestNode.Value);
+                    prevId = bestNode.Value;
+                }
             }
         }
 
-        var remaining = nodeIds.Where(id => id != coreId).ToList();
-        // Shuffle to avoid systematic bias
-        for (int i = remaining.Count - 1; i > 0; i--)
-        { var j = rng.Next(i + 1); var tmp = remaining[i]; remaining[i] = remaining[j]; remaining[j] = tmp; }
-
-        foreach (var id in remaining)
+        // 5. Multi-hop nodes: weighted centroid → nearest vacant grid
+        var multiHop = remaining.ToList();
+        multiHop.Sort((a, b) =>
         {
-            (double x, double y) best = (0, 0);
-            bool found = false;
+            double maxA = _adj[a].Where(x => pos.ContainsKey(x.nb)).Select(x => x.w).DefaultIfEmpty(0).Max();
+            double maxB = _adj[b].Where(x => pos.ContainsKey(x.nb)).Select(x => x.w).DefaultIfEmpty(0).Max();
+            return maxB.CompareTo(maxA);
+        });
 
-            // Seed attempts from connected nodes' positions if any
-            var neighbors = adj.GetValueOrDefault(id);
-            var seeds = new List<(double x, double y)>();
-            if (neighbors != null)
+        var vacant = Enumerable.Range(0, _hexCartesian.Count).Where(i => !_gridOccupied[i]).ToList();
+
+        foreach (var nodeId in multiHop)
+        {
+            var placedNb = _adj[nodeId].Where(x => pos.ContainsKey(x.nb)).ToList();
+
+            if (placedNb.Count > 0)
             {
-                seeds.AddRange(neighbors.Where(p => pos.ContainsKey(p)).Select(p => pos[p]));
-            }
-            if (seeds.Count == 0)
-                seeds.Add((rng.NextDouble() * 400 - 200, rng.NextDouble() * 400 - 200));
-
-            for (int attempt = 0; attempt < maxAttempts; attempt++)
-            {
-                // Pick a random seed and jitter
-                var seed = seeds[rng.Next(seeds.Count)];
-                double x = seed.x + (rng.NextDouble() - 0.5) * jitterRange * 2;
-                double y = seed.y + (rng.NextDouble() - 0.5) * jitterRange * 2;
-
-                // Every 100 failures, expand search area
-                if (attempt > 0 && attempt % 200 == 0)
-                    jitterRange += 30;
-
-                // Check constraints
-                bool tooClose = false;
-                int within250 = 0;
-                foreach (var pid in placed)
+                double sumW = 0, cx = 0, cy = 0;
+                foreach (var (nb, w) in placedNb)
                 {
-                    var (px, py) = pos[pid];
-                    double dx = x - px, dy = y - py;
-                    double d = Math.Sqrt(dx * dx + dy * dy);
-                    if (d < minGap) { tooClose = true; break; }
-                    if (d < neighborRadius) within250++;
+                    sumW += w;
+                    cx += w * pos[nb].x;
+                    cy += w * pos[nb].y;
+                }
+                cx /= sumW;
+                cy /= sumW;
+
+                int bestV = -1;
+                double bestD = double.MaxValue;
+                foreach (int vi in vacant)
+                {
+                    if (_gridOccupied[vi]) continue;
+                    double dx = cx - _hexCartesian[vi].x;
+                    double dy = cy - _hexCartesian[vi].y;
+                    double d = dx * dx + dy * dy;
+                    if (d < bestD) { bestD = d; bestV = vi; }
                 }
 
-                if (tooClose) continue;
-                if (!isSmall && within250 < minNeighbors) continue;
-
-                best = (x, y);
-                found = true;
-                break;
+                pos[nodeId] = _hexCartesian[bestV];
+                _gridOccupied[bestV] = true;
+                _gridOwner[bestV] = nodeId;
+                _nodeGridIndex[nodeId] = bestV;
+                vacant.Remove(bestV);
             }
-
-            // If can't satisfy constraints, relax: just enforce min gap
-            if (!found)
+            else if (vacant.Count > 0)
             {
-                for (int attempt = 0; attempt < 1000; attempt++)
-                {
-                    var seed = seeds[rng.Next(seeds.Count)];
-                    double x = seed.x + (rng.NextDouble() - 0.5) * 400;
-                    double y = seed.y + (rng.NextDouble() - 0.5) * 400;
-                    bool ok = true;
-                    foreach (var pid in placed)
-                    {
-                        var (px, py) = pos[pid];
-                        double d = Math.Sqrt((x - px) * (x - px) + (y - py) * (y - py));
-                        if (d < minGap * 0.7) { ok = false; break; }
-                    }
-                    if (ok) { best = (x, y); found = true; break; }
-                }
+                pos[nodeId] = _hexCartesian[vacant[0]];
+                _gridOccupied[vacant[0]] = true;
+                _gridOwner[vacant[0]] = nodeId;
+                _nodeGridIndex[nodeId] = vacant[0];
+                vacant.RemoveAt(0);
             }
-
-            // Last resort: place at random offset
-            if (!found)
-                best = (rng.NextDouble() * 800 - 400, rng.NextDouble() * 800 - 400);
-
-            pos[id] = best;
-            placed.Add(id);
-            // Once we have 10+ nodes placed, we have enough seeds
-            if (seeds.Count == 0 && placed.Count > 10)
-                seeds.Add(best);
         }
 
         return pos;
     }
-
-    private static double ClampCoord(double v)
-        => double.IsFinite(v) ? Math.Clamp(v, -50000, 50000) : 0;
 
     /// <summary>Wrap text to 20 chars per line, max 3 lines.</summary>
     private static string WrapLabel(string text)
@@ -771,43 +1038,44 @@ else
     [JSInvokable]
     public async Task OnNodeSelected(int nodeId)
     {
-        // Shift focus → re-filter visible set
-        SetFocus(nodeId);
-        await SendWeightFilteredGraph();
-
+        // Build detail panel data FIRST (before RelayoutOnFocusChange
+        // triggers StateHasChanged via SendVisibleGraph)
         var mem = _clusterMemories.FirstOrDefault(m => m.Id == nodeId);
-        if (mem == null) return;
-
-        var neighbors = new List<NeighborRef>();
-        if (_nodeLinks.TryGetValue(nodeId, out var links))
+        if (mem != null)
         {
-            foreach (var link in links)
+            var neighbors = new List<NeighborRef>();
+            if (_nodeLinks.TryGetValue(nodeId, out var links))
             {
-                var nbId = link.SourceId == nodeId ? link.TargetId : link.SourceId;
-                if (_memDict.TryGetValue(nbId, out var nb) && _currentCluster.NodeIds.Contains(nbId))
+                foreach (var link in links)
                 {
-                    neighbors.Add(new NeighborRef
+                    var nbId = link.SourceId == nodeId ? link.TargetId : link.SourceId;
+                    if (_memDict.TryGetValue(nbId, out var nb) && _currentCluster.NodeIds.Contains(nbId))
                     {
-                        Id = nbId,
-                        Content = nb.Content,
-                        Type = nb.Type ?? "fact"
-                    });
+                        neighbors.Add(new NeighborRef
+                        {
+                            Id = nbId,
+                            Content = nb.Content,
+                            Type = nb.Type ?? "fact"
+                        });
+                    }
                 }
             }
+
+            _selectedNode = new NodeDetail
+            {
+                Id = mem.Id,
+                Content = mem.Content,
+                Type = mem.Type ?? "fact",
+                Importance = mem.Importance,
+                Confidence = mem.Confidence ?? "high",
+                IsCore = mem.Id == _currentCluster.CoreNodeId,
+                IsDerived = mem.IsDerived,
+                LinkCount = neighbors.Count,
+                Neighbors = neighbors
+            };
         }
 
-        _selectedNode = new NodeDetail
-        {
-            Id = mem.Id,
-            Content = mem.Content,
-            Type = mem.Type ?? "fact",
-            Importance = mem.Importance,
-            Confidence = mem.Confidence ?? "high",
-            IsCore = mem.Id == _currentCluster.CoreNodeId,
-            IsDerived = mem.IsDerived,
-            LinkCount = neighbors.Count,
-            Neighbors = neighbors
-        };
+        await RelayoutOnFocusChange(nodeId);
     }
 
     [JSInvokable]

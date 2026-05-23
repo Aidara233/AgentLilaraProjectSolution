@@ -20,7 +20,7 @@ namespace AgentCoreProcessor.WebUI.Services.Alerts
                         (snapshot.SystemEngine?.RestartCount > 0
                             ? $" (已重启 {snapshot.SystemEngine.RestartCount} 次)"
                             : ""),
-                    LinkHref = "/engine/system"
+                    LinkHref = "/p/system"
                 };
             }
             else
@@ -34,7 +34,7 @@ namespace AgentCoreProcessor.WebUI.Services.Alerts
                             ? AlertLevel.Error : AlertLevel.Warning,
                         Source = "系统循环",
                         Message = $"API 连续失败 {snapshot.SystemEngine.ConsecutiveFailures} 次: {Truncate(snapshot.SystemEngine.LastErrorMessage, 80)}",
-                        LinkHref = "/engine/system"
+                        LinkHref = "/p/system"
                     };
                 }
 
@@ -49,7 +49,7 @@ namespace AgentCoreProcessor.WebUI.Services.Alerts
                         Level = AlertLevel.Warning,
                         Source = "睡觉",
                         Message = $"睡觉请求待审批 ({elapsed:F0} 分钟前)",
-                        LinkHref = "/engine/system/sleep"
+                        LinkHref = "/p/dream/sleep"
                     };
                 }
 
@@ -61,7 +61,7 @@ namespace AgentCoreProcessor.WebUI.Services.Alerts
                         Level = AlertLevel.Warning,
                         Source = "任务",
                         Message = $"任务队列积压: {snapshot.SystemEngine.TaskQueueDepth} 个待处理",
-                        LinkHref = "/engine/system/tasks"
+                        LinkHref = "/p/system/events"
                     };
                 }
             }
@@ -78,7 +78,7 @@ namespace AgentCoreProcessor.WebUI.Services.Alerts
                     Message = errorWorkers.Count == 1
                         ? $"频道 #{worst.ChannelId} API 失败 {worst.ConsecutiveFailures} 次"
                         : $"{errorWorkers.Count} 个频道出现 API 错误",
-                    LinkHref = $"/engine/channels/{worst.ChannelId}"
+                    LinkHref = $"/p/channels/{worst.ChannelId}"
                 };
             }
         }
