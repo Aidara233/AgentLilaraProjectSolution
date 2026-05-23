@@ -1,4 +1,4 @@
-@page "/memories/graph"
+@page "/memory/graph"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using AgentCoreProcessor.Engine
 @using AgentCoreProcessor.Database
@@ -12,106 +12,600 @@
     <i class="bi bi-diagram-3"></i> 记忆关联图谱
 </div>
 
-<div class="d-flex gap-2 mb-3 align-items-center flex-wrap">
-    <div class="d-flex gap-1 align-items-center">
-        <label class="text-muted-custom" style="font-size:0.8rem;">最低强度:</label>
-        <input type="range" min="0" max="100" @bind="minStrengthPct" @bind:after="RebuildGraph" style="width:100px;" />
-        <span class="text-muted-custom" style="font-size:0.8rem;">@((minStrengthPct / 100f).ToString("F2"))</span>
+@if (_view == GraphView.clusters)
+{
+    @* ======== 簇列表层 ======== *@
+    <div class="d-flex gap-3 align-items-center mb-3 flex-wrap">
+        <div class="d-flex gap-1 align-items-center">
+            <label class="text-muted-custom" style="font-size:0.8rem; white-space:nowrap;">最低节点数:</label>
+            <input type="range" min="1" max="50" @bind="_minNodes" @bind:after="RebuildClusters" style="width:120px;" />
+            <span class="text-muted-custom" style="font-size:0.8rem; min-width:2rem;">@_minNodes</span>
+        </div>
+        <span class="text-muted-custom" style="font-size:0.8rem;">
+            显示 @_filteredClusters.Count / @_allClusters.Count 个簇 |
+            总节点 @_filteredClusters.Sum(c => c.NodeCount) |
+            碎屑桶 @_scrapNodes 个节点
+        </span>
     </div>
-    <div class="d-flex gap-1 align-items-center">
-        <label class="text-muted-custom" style="font-size:0.8rem;">最低重要度:</label>
-        <input type="range" min="0" max="100" @bind="minImportancePct" @bind:after="RebuildGraph" style="width:100px;" />
-        <span class="text-muted-custom" style="font-size:0.8rem;">@((minImportancePct / 100f).ToString("F2"))</span>
-    </div>
-    <span class="text-muted-custom" style="font-size:0.8rem;">节点: @nodeCount | 边: @edgeCount</span>
-</div>
 
-<div id="memory-graph-container" style="width:100%; height:calc(100vh - 200px); border:1px solid var(--bg-elevated); border-radius:8px; background:var(--bg-primary);"></div>
-<!-- PLACEHOLDER_CODE -->
+    <div class="cluster-grid">
+        @foreach (var cluster in _filteredClusters)
+        {
+            <div class="cluster-card" @onclick="() => OpenCluster(cluster)">
+                <div class="cluster-card-header">
+                    <span class="cluster-core-label" title="@cluster.CoreContent">
+                        @(cluster.CoreContent.Length > 60 ? cluster.CoreContent[..60] + "…" : cluster.CoreContent)
+                    </span>
+                </div>
+                <div class="cluster-card-body">
+                    <div class="cluster-stat">
+                        <i class="bi bi-diagram-2"></i> @cluster.NodeCount 节点
+                    </div>
+                    <div class="cluster-stat">
+                        <i class="bi bi-arrow-left-right"></i> @cluster.EdgeCount 关联
+                    </div>
+                    <div class="cluster-types">
+                        @foreach (var (type, count) in cluster.TypeCounts.OrderByDescending(t => t.Value).Take(4))
+                        {
+                            <span class="badge-type" style="background:@GetTypeColor(type)">@type @count</span>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+        @if (_scrapNodes > 0)
+        {
+            <div class="cluster-card cluster-scrap" @onclick="OpenScrapBucket">
+                <div class="cluster-card-header">
+                    <span class="cluster-core-label" style="color:var(--text-secondary);">
+                        <i class="bi bi-recycle me-1"></i>碎屑桶
+                    </span>
+                </div>
+                <div class="cluster-card-body">
+                    <div class="cluster-stat"><i class="bi bi-diagram-2"></i> @_scrapNodes 节点</div>
+                    <div class="cluster-stat"><i class="bi bi-arrow-left-right"></i> @_scrapEdges 关联</div>
+                    <div class="cluster-types">
+                        @foreach (var (type, count) in _scrapTypeCounts.OrderByDescending(t => t.Value).Take(4))
+                        {
+                            <span class="badge-type" style="background:@GetTypeColor(type)">@type @count</span>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+else
+{
+    @* ======== 簇内图谱层 ======== *@
+    <div class="d-flex gap-2 mb-3 align-items-center flex-wrap">
+        <button class="btn-ghost" @onclick="BackToClusters">
+            <i class="bi bi-arrow-left me-1"></i>返回簇列表
+        </button>
+        <span class="text-muted-custom" style="font-size:0.9rem;">
+            <strong>@_currentClusterName</strong> — @_currentCluster.NodeCount 节点 · @_currentCluster.EdgeCount 关联
+        </span>
+        <div class="ms-auto d-flex gap-2 align-items-center">
+            <input type="text" class="form-control form-control-sm" style="width:200px;" placeholder="搜索节点..."
+                   @bind="_searchText" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
+            <button class="btn-ghost btn-sm" @onclick="ResetGraphView" title="重置视图">
+                <i class="bi bi-arrows-fullscreen"></i>
+            </button>
+        </div>
+    </div>
+
+    <div class="d-flex" style="height:calc(100vh - 200px);">
+        @* 图区域 *@
+        <div id="memory-graph-container"
+             style="flex:1; min-width:0; border:1px solid var(--bg-elevated); border-radius:8px; background:var(--bg-primary);">
+        </div>
+
+        @* 右侧详情面板 *@
+        @if (_selectedNode != null)
+        {
+            <div class="graph-detail-panel">
+                <div class="graph-detail-header">
+                    <span class="badge-type" style="background:@GetTypeColor(_selectedNode.Type)">
+                        @_selectedNode.Type
+                    </span>
+                    @if (_selectedNode.IsCore)
+                    {
+                        <span class="badge-type" style="background:#ffd54f; color:#000;">核心</span>
+                    }
+                    @if (_selectedNode.IsDerived)
+                    {
+                        <span class="text-muted-custom ms-1" title="衍生记忆">衍生</span>
+                    }
+                    <button class="btn-ghost btn-sm ms-auto" @onclick="ClearSelection" title="关闭">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </div>
+                <div class="graph-detail-body">
+                    <div class="detail-label">#@_selectedNode.Id</div>
+                    <div class="detail-content">@_selectedNode.Content</div>
+                    <div class="detail-meta">
+                        <div>置信度: @_selectedNode.Confidence</div>
+                        <div>重要度: @(_selectedNode.Importance.ToString("F2"))</div>
+                        <div>关联数: @_selectedNode.LinkCount</div>
+                    </div>
+                    @if (_selectedNode.Neighbors?.Count > 0)
+                    {
+                        <div class="detail-neighbors">
+                            <div class="detail-label mb-1">关联记忆</div>
+                            @foreach (var nb in _selectedNode.Neighbors.Take(8))
+                            {
+                                <div class="neighbor-item" @onclick="() => FocusNode(nb.Id)" @onclick:stopPropagation>
+                                    <span class="badge-type" style="background:@GetTypeColor(nb.Type); font-size:0.65rem;">@nb.Type</span>
+                                    <span class="ms-1" style="font-size:0.75rem;">@(nb.Content.Length > 30 ? nb.Content[..30] + "…" : nb.Content)</span>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+                <div class="graph-detail-footer">
+                    <button class="btn-ghost btn-sm" @onclick="GoToDetail">
+                        <i class="bi bi-box-arrow-up-right me-1"></i>查看详情
+                    </button>
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="d-flex gap-3 align-items-center mt-2 flex-wrap" style="font-size:0.75rem;">
+        <span class="text-muted-custom">图例:</span>
+        @foreach (var kv in new Dictionary<string, string> {
+            ["knowledge"] = "知识", ["fact"] = "事实", ["feedback"] = "反馈", ["inference"] = "推理", ["event"] = "事件"
+        })
+        {
+            <span class="d-flex align-items-center gap-1">
+                <span style="width:10px;height:10px;border-radius:50%;background:@GetTypeColor(kv.Key);display:inline-block;"></span>
+                @kv.Value
+            </span>
+        }
+        <span class="ms-2 text-muted-custom">| 节点大小 = 重要度 | 边距 = 关联强度 | 箭头 = 方向</span>
+    </div>
+}
+
+@* ======== 样式 ======== *@
+<style>
+    .cluster-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:1rem; }
+    .cluster-card {
+        background:var(--bg-elevated); border:1px solid var(--border-color); border-radius:8px;
+        padding:1rem; cursor:pointer; transition: all 0.2s;
+        display:flex; flex-direction:column; gap:0.6rem;
+    }
+    .cluster-card:hover { border-color:var(--accent-color); background:var(--accent-color-dim); transform:translateY(-2px); }
+    .cluster-scrap { opacity:0.6; }
+    .cluster-scrap:hover { opacity:0.9; }
+
+    .cluster-card-header { }
+    .cluster-core-label { font-size:0.9rem; font-weight:500; color:var(--text-primary); line-height:1.4; }
+
+    .cluster-card-body { display:flex; gap:1rem; align-items:center; flex-wrap:wrap; }
+    .cluster-stat { font-size:0.8rem; color:var(--text-secondary); display:flex; align-items:center; gap:0.3rem; }
+    .cluster-types { display:flex; gap:0.3rem; flex-wrap:wrap; }
+
+    .badge-type {
+        padding:0.1rem 0.5rem; border-radius:10px; font-size:0.7rem; color:#fff;
+        text-transform:uppercase; white-space:nowrap;
+    }
+
+    /* 右侧详情面板 */
+    .graph-detail-panel {
+        width:320px; min-width:320px; border-left:1px solid var(--border-color);
+        background:var(--bg-elevated); display:flex; flex-direction:column; overflow:hidden;
+    }
+    .graph-detail-header { display:flex; align-items:center; gap:0.4rem; padding:0.8rem; border-bottom:1px solid var(--border-color); }
+    .graph-detail-body { flex:1; overflow-y:auto; padding:0.8rem; }
+    .graph-detail-footer { padding:0.8rem; border-top:1px solid var(--border-color); }
+
+    .detail-label { font-size:0.75rem; color:var(--text-secondary); }
+    .detail-content { font-size:0.85rem; color:var(--text-primary); margin:0.5rem 0; line-height:1.5; }
+    .detail-meta { font-size:0.75rem; color:var(--text-secondary); display:flex; flex-direction:column; gap:0.2rem; margin-bottom:0.5rem; }
+    .detail-neighbors { margin-top:0.5rem; }
+    .neighbor-item {
+        padding:0.3rem 0.5rem; border-radius:4px; cursor:pointer; transition: background 0.15s;
+        display:flex; align-items:center; gap:0.3rem; margin-bottom:2px;
+    }
+    .neighbor-item:hover { background:var(--bg-hover); }
+</style>
 
 @code {
-    private int minStrengthPct = 30;
-    private int minImportancePct = 0;
-    private int nodeCount;
-    private int edgeCount;
-    private List<MemoryLink> allLinks = new();
-    private List<MemoryEntry> allMemories = new();
-    private DotNetObjectReference<Memory_Graph>? dotNetRef;
-    private bool rendered;
+    private enum GraphView { clusters, graph }
+    private GraphView _view = GraphView.clusters;
+    private int _minNodes = 3;
+    private string _searchText = "";
+
+    // 簇数据
+    private List<MemoryCluster> _allClusters = new();
+    private List<MemoryCluster> _filteredClusters = new();
+    private int _scrapNodes;
+    private int _scrapEdges;
+    private Dictionary<string, int> _scrapTypeCounts = new();
+
+    // 当前打开的簇
+    private MemoryCluster _currentCluster = null!;
+    private string _currentClusterName = "";
+    private List<MemoryEntry> _clusterMemories = new();
+    private DotNetObjectReference<Memory_Graph>? _dotNetRef;
+    private bool _graphRendered;
+
+    // 选中节点
+    private NodeDetail? _selectedNode;
+
+    // 原始数据
+    private List<MemoryEntry> _allMemories = new();
+    private List<MemoryLink> _allLinks = new();
+    private Dictionary<int, MemoryEntry> _memDict = new();
+    private Dictionary<int, List<MemoryLink>> _nodeLinks = new();
+
+    // ======== 数据模型 ========
+
+    private class MemoryCluster
+    {
+        public List<int> NodeIds { get; init; } = new();
+        public int CoreNodeId { get; set; }
+        public string CoreContent { get; set; } = "";
+        public int NodeCount => NodeIds.Count;
+        public int EdgeCount { get; set; }
+        public Dictionary<string, int> TypeCounts { get; set; } = new();
+        public bool IsScrap;
+    }
+
+    private class NodeDetail
+    {
+        public int Id { get; set; }
+        public string Content { get; set; } = "";
+        public string Type { get; set; } = "";
+        public float Importance { get; set; }
+        public string Confidence { get; set; } = "";
+        public bool IsCore { get; set; }
+        public bool IsDerived { get; set; }
+        public int LinkCount { get; set; }
+        public List<NeighborRef>? Neighbors { get; set; }
+    }
+
+    private class NeighborRef
+    {
+        public int Id { get; set; }
+        public string Content { get; set; } = "";
+        public string Type { get; set; } = "";
+    }
+
+    // ======== 初始化 ========
 
     protected override async Task OnInitializedAsync()
     {
-        allLinks = await Engine.MemoryLinks.GetAllLinksAsync();
+        _allLinks = await Engine.MemoryLinks.GetAllLinksAsync();
         var nodeIds = new HashSet<int>();
-        foreach (var l in allLinks) { nodeIds.Add(l.SourceId); nodeIds.Add(l.TargetId); }
+        foreach (var l in _allLinks) { nodeIds.Add(l.SourceId); nodeIds.Add(l.TargetId); }
         if (nodeIds.Count > 0)
-            allMemories = await Engine.Memories.GetByIdsAsync(nodeIds.ToList());
-    }
+            _allMemories = await Engine.Memories.GetByIdsAsync(nodeIds.ToList());
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
+        _memDict = _allMemories.ToDictionary(m => m.Id);
+
+        _nodeLinks = new();
+        foreach (var link in _allLinks)
         {
-            rendered = true;
-            dotNetRef = DotNetObjectReference.Create(this);
-            await RenderGraph();
+            if (!_nodeLinks.ContainsKey(link.SourceId)) _nodeLinks[link.SourceId] = new();
+            if (!_nodeLinks.ContainsKey(link.TargetId)) _nodeLinks[link.TargetId] = new();
+            _nodeLinks[link.SourceId].Add(link);
+            _nodeLinks[link.TargetId].Add(link);
         }
+
+        ComputeClusters();
+        RebuildClusters();
     }
 
-    private async Task RebuildGraph()
+    // ======== 连通分量计算 ========
+
+    private void ComputeClusters()
     {
-        if (rendered) await RenderGraph();
+        var visited = new HashSet<int>();
+        var allNodeIds = new HashSet<int>(_nodeLinks.Keys);
+        // 也包含只在 Memory 表中有但无 link 的节点
+        foreach (var m in _allMemories) allNodeIds.Add(m.Id);
+
+        _allClusters.Clear();
+
+        foreach (var nodeId in allNodeIds)
+        {
+            if (visited.Contains(nodeId)) continue;
+
+            // BFS 收集当前连通分量
+            var component = new HashSet<int>();
+            var queue = new Queue<int>();
+            queue.Enqueue(nodeId);
+            component.Add(nodeId);
+
+            while (queue.Count > 0)
+            {
+                var current = queue.Dequeue();
+                if (!_nodeLinks.TryGetValue(current, out var links)) continue;
+
+                foreach (var link in links)
+                {
+                    var neighbor = link.SourceId == current ? link.TargetId : link.SourceId;
+                    if (!visited.Contains(neighbor) && component.Add(neighbor))
+                        queue.Enqueue(neighbor);
+                }
+            }
+
+            foreach (var n in component) visited.Add(n);
+
+            // 计算核心节点（边权重总和最高）
+            int bestNode = component.First();
+            double bestWeight = 0;
+            foreach (var n in component)
+            {
+                double totalWeight = 0;
+                if (_nodeLinks.TryGetValue(n, out var l))
+                    totalWeight = l.Sum(link => link.Strength);
+                if (totalWeight > bestWeight)
+                {
+                    bestWeight = totalWeight;
+                    bestNode = n;
+                }
+            }
+
+            // 统计该簇的边数（两端都在簇内）
+            var edgeCount = 0;
+            foreach (var n in component)
+            {
+                if (_nodeLinks.TryGetValue(n, out var l))
+                    edgeCount += l.Count(link => component.Contains(link.SourceId) && component.Contains(link.TargetId));
+            }
+            edgeCount /= 2; // 每条边被算了两次
+
+            // 类型分布
+            var typeCounts = new Dictionary<string, int>();
+            foreach (var n in component)
+            {
+                if (_memDict.TryGetValue(n, out var mem))
+                {
+                    var t = mem.Type ?? "fact";
+                    typeCounts[t] = typeCounts.GetValueOrDefault(t) + 1;
+                }
+            }
+
+            var coreContent = _memDict.TryGetValue(bestNode, out var coreMem)
+                ? coreMem.Content : $"记忆 #{bestNode}";
+
+            _allClusters.Add(new MemoryCluster
+            {
+                NodeIds = component.ToList(),
+                CoreNodeId = bestNode,
+                CoreContent = coreContent,
+                EdgeCount = edgeCount,
+                TypeCounts = typeCounts
+            });
+        }
+
+        // 按节点数降序
+        _allClusters = _allClusters.OrderByDescending(c => c.NodeCount).ToList();
     }
 
-    private async Task RenderGraph()
+    private void RebuildClusters()
     {
-        float minStr = minStrengthPct / 100f;
-        float minImp = minImportancePct / 100f;
+        _filteredClusters = _allClusters.Where(c => c.NodeCount >= _minNodes).ToList();
+        var scrap = _allClusters.Where(c => c.NodeCount < _minNodes).ToList();
+        _scrapNodes = scrap.Sum(c => c.NodeCount);
+        _scrapEdges = scrap.Sum(c => c.EdgeCount);
+        _scrapTypeCounts = new();
+        foreach (var c in scrap)
+            foreach (var (t, n) in c.TypeCounts)
+                _scrapTypeCounts[t] = _scrapTypeCounts.GetValueOrDefault(t) + n;
 
-        var filteredLinks = allLinks.Where(l => l.Strength >= minStr).ToList();
-        var nodeIds = new HashSet<int>();
-        foreach (var l in filteredLinks) { nodeIds.Add(l.SourceId); nodeIds.Add(l.TargetId); }
+        StateHasChanged();
+    }
 
-        var memDict = allMemories
-            .Where(m => nodeIds.Contains(m.Id) && m.Importance >= minImp)
-            .ToDictionary(m => m.Id);
+    // ======== 簇操作 ========
 
-        var validNodeIds = memDict.Keys.ToHashSet();
-        filteredLinks = filteredLinks
-            .Where(l => validNodeIds.Contains(l.SourceId) && validNodeIds.Contains(l.TargetId))
-            .ToList();
+    private async Task OpenCluster(MemoryCluster cluster)
+    {
+        _currentCluster = cluster;
+        _currentClusterName = cluster.CoreContent.Length > 40
+            ? cluster.CoreContent[..40] + "…"
+            : cluster.CoreContent;
+        _selectedNode = null;
+        _view = GraphView.graph;
+        StateHasChanged();
 
-        var nodes = memDict.Values.Select(m => new {
+        // 等 DOM 渲染
+        await Task.Delay(100);
+        await RenderGraph(cluster);
+    }
+
+    private async Task OpenScrapBucket()
+    {
+        var scrap = _allClusters.Where(c => c.NodeCount < _minNodes).ToList();
+        var allNodeIds = scrap.SelectMany(c => c.NodeIds).ToList();
+        if (allNodeIds.Count == 0) return;
+
+        // 碎屑桶里找核心
+        var coreId = allNodeIds.First();
+        double bestWeight = 0;
+        foreach (var n in allNodeIds)
+        {
+            double w = 0;
+            if (_nodeLinks.TryGetValue(n, out var l))
+                w = l.Sum(link => link.Strength);
+            if (w > bestWeight) { bestWeight = w; coreId = n; }
+        }
+
+        var coreContent = _memDict.TryGetValue(coreId, out var cm) ? cm.Content : $"记忆 #{coreId}";
+        var edgeCount = scrap.Sum(c => c.EdgeCount);
+        var typeCounts = new Dictionary<string, int>();
+        foreach (var c in scrap) foreach (var (t, n) in c.TypeCounts) typeCounts[t] = typeCounts.GetValueOrDefault(t) + n;
+
+        _currentCluster = new MemoryCluster
+        {
+            NodeIds = allNodeIds,
+            CoreNodeId = coreId,
+            CoreContent = coreContent,
+            EdgeCount = edgeCount,
+            TypeCounts = typeCounts,
+            IsScrap = true
+        };
+        _currentClusterName = "碎屑桶";
+        _selectedNode = null;
+        _view = GraphView.graph;
+        StateHasChanged();
+
+        await Task.Delay(100);
+        await RenderGraph(_currentCluster);
+    }
+
+    private void BackToClusters()
+    {
+        _view = GraphView.clusters;
+        _selectedNode = null;
+        JS.InvokeVoidAsync("destroyMemoryGraph");
+        _graphRendered = false;
+        RebuildClusters();
+    }
+
+    // ======== 图谱渲染 ========
+
+    private async Task RenderGraph(MemoryCluster cluster)
+    {
+        _clusterMemories = _allMemories.Where(m => cluster.NodeIds.Contains(m.Id)).ToList();
+
+        var nodes = _clusterMemories.Select(m => new {
             id = m.Id,
-            label = m.Content.Length > 15 ? m.Content[..15] + "…" : m.Content,
-            group = m.Type ?? "fact",
+            label = m.Content.Length > 12 ? m.Content[..12] + "…" : m.Content,
+            type = m.Type ?? "fact",
             title = $"#{m.Id} [{m.Type}] {m.Content}",
-            importance = m.Importance
+            importance = m.Importance,
+            isDerived = m.IsDerived
         }).ToArray();
 
-        var edges = filteredLinks.Select(l => new {
-            from = l.SourceId,
-            to = l.TargetId,
-            label = l.LinkType,
-            width = l.Strength * 3f
-        }).ToArray();
-
-        nodeCount = nodes.Length;
-        edgeCount = edges.Length;
+        var nodeIdSet = cluster.NodeIds.ToHashSet();
+        var edges = _allLinks
+            .Where(l => nodeIdSet.Contains(l.SourceId) && nodeIdSet.Contains(l.TargetId))
+            .Select(l => new {
+                from = l.SourceId,
+                to = l.TargetId,
+                label = l.LinkType ?? "",
+                width = l.Strength
+            }).ToArray();
 
         var data = new { nodes, edges };
-        await JS.InvokeVoidAsync("initMemoryGraph", "memory-graph-container", data, dotNetRef);
+
+        _dotNetRef?.Dispose();
+        _dotNetRef = DotNetObjectReference.Create(this);
+
+        await JS.InvokeVoidAsync("initMemoryGraph",
+            "memory-graph-container", data, cluster.CoreNodeId, _dotNetRef);
+        _graphRendered = true;
+    }
+
+    // ======== JS 回调 ========
+
+    [JSInvokable]
+    public async Task OnNodeSelected(int nodeId)
+    {
+        var mem = _clusterMemories.FirstOrDefault(m => m.Id == nodeId);
+        if (mem == null) return;
+
+        var neighbors = new List<NeighborRef>();
+        if (_nodeLinks.TryGetValue(nodeId, out var links))
+        {
+            foreach (var link in links)
+            {
+                var nbId = link.SourceId == nodeId ? link.TargetId : link.SourceId;
+                if (_memDict.TryGetValue(nbId, out var nb) && _currentCluster.NodeIds.Contains(nbId))
+                {
+                    neighbors.Add(new NeighborRef
+                    {
+                        Id = nbId,
+                        Content = nb.Content,
+                        Type = nb.Type ?? "fact"
+                    });
+                }
+            }
+        }
+
+        _selectedNode = new NodeDetail
+        {
+            Id = mem.Id,
+            Content = mem.Content,
+            Type = mem.Type ?? "fact",
+            Importance = mem.Importance,
+            Confidence = mem.Confidence ?? "high",
+            IsCore = mem.Id == _currentCluster.CoreNodeId,
+            IsDerived = mem.IsDerived,
+            LinkCount = neighbors.Count,
+            Neighbors = neighbors
+        };
+
+        StateHasChanged();
     }
 
     [JSInvokable]
-    public void OnNodeClicked(int nodeId)
+    public void OnCanvasClicked()
     {
-        Nav.NavigateTo($"/memories/detail/{nodeId}");
+        _selectedNode = null;
+        StateHasChanged();
     }
+
+    // ======== 用户操作 ========
+
+    private async Task FocusNode(int nodeId)
+    {
+        if (_selectedNode?.Id == nodeId)
+        {
+            _selectedNode = null;
+        }
+        await JS.InvokeVoidAsync("focusOnNode", nodeId);
+        StateHasChanged();
+    }
+
+    private async void OnSearchKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_searchText))
+        {
+            var match = _clusterMemories.FirstOrDefault(m =>
+                m.Content.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
+            if (match != null)
+            {
+                await JS.InvokeVoidAsync("focusOnNode", match.Id);
+            }
+        }
+    }
+
+    private async Task ResetGraphView()
+    {
+        await JS.InvokeVoidAsync("resetGraphView");
+    }
+
+    private void ClearSelection()
+    {
+        _selectedNode = null;
+        StateHasChanged();
+    }
+
+    private void GoToDetail()
+    {
+        if (_selectedNode != null)
+            Nav.NavigateTo($"/p/memory/{_selectedNode.Id}");
+    }
+
+    // ======== 辅助 ========
+
+    private static string GetTypeColor(string? type) => type switch
+    {
+        "knowledge" => "#4fc3f7",
+        "fact" => "#81c784",
+        "feedback" => "#ffb74d",
+        "inference" => "#ce93d8",
+        "event" => "#f06292",
+        _ => "#90a4ae"
+    };
 
     public void Dispose()
     {
         JS.InvokeVoidAsync("destroyMemoryGraph");
-        dotNetRef?.Dispose();
+        _dotNetRef?.Dispose();
     }
 }
