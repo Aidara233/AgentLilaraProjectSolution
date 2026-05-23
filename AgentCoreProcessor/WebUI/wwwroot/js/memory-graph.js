@@ -166,6 +166,7 @@ function makeStyles() {
             'text-overflow-wrap': 'anywhere'
         }},
         { selector: 'node[?isCore]', style: { 'border-color': '#ffd54f', 'font-weight': 'bold' }},
+        { selector: 'node[?isFocus]', style: { 'border-color': '#64ffda', 'border-width': 3 }},
         { selector: 'node[?isDerived]', style: { 'border-style': 'dashed' }},
         { selector: 'node[type="knowledge"]', style: { 'background-color': '#4fc3f7' }},
         { selector: 'node[type="fact"]', style: { 'background-color': '#81c784' }},

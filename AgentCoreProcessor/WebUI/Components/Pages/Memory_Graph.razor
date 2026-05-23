@@ -85,12 +85,13 @@ else
         <span class="text-muted-custom" style="font-size:0.9rem;">
             <strong>@_currentClusterName</strong> — 可见 <strong>@_visibleNodeCount</strong> / @_currentCluster.NodeCount 节点
         </span>
-        @if (_totalNodeCount > _maxVisibleDefault)
+        @if (_totalNodeCount > 20)
         {
             <div class="d-flex gap-1 align-items-center ms-2">
-                <label class="text-muted-custom" style="font-size:0.75rem; white-space:nowrap;">显示范围:</label>
-                <input type="range" min="@_distMin" max="@_distMax" step="1" @bind="_showDistance"
+                <label class="text-muted-custom" style="font-size:0.75rem; white-space:nowrap;">显示:</label>
+                <input type="range" min="10" max="200" step="10" @bind="_maxVisible"
                        @bind:after="RefilterGraph" style="width:100px;" />
+                <span class="text-muted-custom" style="font-size:0.75rem;">@_maxVisible</span>
             </div>
         }
         <div class="ms-auto d-flex gap-2 align-items-center">
@@ -481,14 +482,14 @@ else
 
     // ======== 图谱渲染 ========
 
-    // Cached layout for distance-based re-filtering without recomputation
+    // Stable layout (computed once per cluster, never changes)
     private Dictionary<int, (double x, double y)> _cachedPositions = new();
     private List<MemoryLink> _cachedEdges = new();
-    private double _showDistance = 200;
-    private double _distMin, _distMax;
+    // Weight-based visibility from current focus
+    private int _focusId;
+    private int _maxVisible = 60;
     private int _visibleNodeCount;
     private int _totalNodeCount;
-    private const int _maxVisibleDefault = 80;
 
     private async Task RenderGraph(MemoryCluster cluster)
     {
@@ -498,43 +499,61 @@ else
             .Where(l => nodeIdSet.Contains(l.SourceId) && nodeIdSet.Contains(l.TargetId))
             .ToList();
 
-        // Compute layout and cache for re-filtering
+        // Stable global layout from cluster core (never recomputed)
         _cachedPositions = ComputeLayout(cluster.NodeIds, _cachedEdges, cluster.CoreNodeId, _memDict);
         _totalNodeCount = cluster.NodeIds.Count;
+        _focusId = cluster.CoreNodeId;
 
-        // Default threshold: show closest ~80 nodes
-        var (coreX, coreY) = _cachedPositions.GetValueOrDefault(cluster.CoreNodeId, (0.0, 0.0));
-        var distList = cluster.NodeIds
-            .Select(id => Math.Sqrt(
-                Math.Pow(_cachedPositions[id].x - coreX, 2) +
-                Math.Pow(_cachedPositions[id].y - coreY, 2)))
-            .OrderBy(d => d).ToList();
-
-        _distMin = 1;
-        _distMax = distList.LastOrDefault() + 10;
-
-        if (_totalNodeCount <= _maxVisibleDefault)
-            _showDistance = _distMax;
-        else
-            _showDistance = distList[Math.Min(_maxVisibleDefault, distList.Count - 1)];
-
-        await SendFilteredGraph();
+        await SendWeightFilteredGraph();
     }
 
     private async Task RefilterGraph()
     {
-        await SendFilteredGraph();
+        // Slider changed _maxVisible → re-filter from same focus
+        await SendWeightFilteredGraph();
     }
 
-    private async Task SendFilteredGraph()
+    private void SetFocus(int nodeId)
     {
-        var (coreX, coreY) = _cachedPositions.GetValueOrDefault(_currentCluster.CoreNodeId, (0.0, 0.0));
-        var visibleIds = _currentCluster.NodeIds.Where(id =>
-        {
-            var (x, y) = _cachedPositions[id];
-            return Math.Sqrt((x - coreX) * (x - coreX) + (y - coreY) * (y - coreY)) <= _showDistance;
-        }).ToHashSet();
+        if (_focusId == nodeId) return;
+        _focusId = nodeId;
+    }
 
+    private List<int> GetTopWeightNodes(int focusId, int topN)
+    {
+        // BFS with cumulative weight product: path weight = product of edge strengths
+        var weights = new Dictionary<int, double>();
+        var prev = new Dictionary<int, int>(); // for debugging only
+        var queue = new Queue<int>();
+        weights[focusId] = 1.0;
+        queue.Enqueue(focusId);
+
+        while (queue.Count > 0)
+        {
+            var node = queue.Dequeue();
+            var w = weights[node];
+            if (!_nodeLinks.TryGetValue(node, out var links)) continue;
+            foreach (var link in links)
+            {
+                var nb = link.SourceId == node ? link.TargetId : link.SourceId;
+                if (!_currentCluster.NodeIds.Contains(nb)) continue;
+                double edgeWeight = Math.Max(0.05, link.Strength);
+                double newWeight = w * edgeWeight;
+                if (!weights.ContainsKey(nb) || newWeight > weights[nb])
+                {
+                    weights[nb] = newWeight;
+                    prev[nb] = node;
+                    queue.Enqueue(nb);
+                }
+            }
+        }
+
+        return weights.OrderByDescending(kv => kv.Value).Take(topN).Select(kv => kv.Key).ToList();
+    }
+
+    private async Task SendWeightFilteredGraph()
+    {
+        var visibleIds = GetTopWeightNodes(_focusId, _maxVisible).ToHashSet();
         _visibleNodeCount = visibleIds.Count;
 
         var nodes = _clusterMemories.Where(m => visibleIds.Contains(m.Id)).Select(m =>
@@ -549,6 +568,7 @@ else
                 importance = m.Importance,
                 isDerived = m.IsDerived,
                 isCore = m.Id == _currentCluster.CoreNodeId,
+                isFocus = m.Id == _focusId,
                 x = x, y = y
             };
         }).ToArray();
@@ -569,7 +589,7 @@ else
         _dotNetRef = DotNetObjectReference.Create(this);
 
         await JS.InvokeVoidAsync("initMemoryGraph",
-            "memory-graph-container", data, _currentCluster.CoreNodeId.ToString(), _dotNetRef);
+            "memory-graph-container", data, _focusId.ToString(), _dotNetRef);
         _graphRendered = true;
 
         StateHasChanged();
@@ -718,6 +738,10 @@ else
     [JSInvokable]
     public async Task OnNodeSelected(int nodeId)
     {
+        // Shift focus → re-filter visible set
+        SetFocus(nodeId);
+        await SendWeightFilteredGraph();
+
         var mem = _clusterMemories.FirstOrDefault(m => m.Id == nodeId);
         if (mem == null) return;
 
@@ -751,8 +775,6 @@ else
             LinkCount = neighbors.Count,
             Neighbors = neighbors
         };
-
-        StateHasChanged();
     }
 
     [JSInvokable]
