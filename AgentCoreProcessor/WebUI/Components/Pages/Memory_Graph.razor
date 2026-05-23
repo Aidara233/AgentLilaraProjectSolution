@@ -662,8 +662,8 @@ else
         var pos = new Dictionary<int, (double x, double y)>();
         var rng = new Random(42);
         int n = nodeIds.Count;
-        // Initial area scales with n for natural spacing
-        var area = Math.Max(500, Math.Sqrt(n) * 80);
+        // Large initial spread: each node needs its own space
+        var area = n * 8;
 
         // Random initial positions
         foreach (var id in nodeIds)
@@ -681,14 +681,15 @@ else
             }
         }
 
-        int iterations = n > 300 ? 120 : (n > 100 ? 150 : 200);
-        double temp = area * 0.2;
-        double cooling = Math.Pow(0.005 / temp, 1.0 / iterations);
+        // Standard Fruchterman-Reingold algorithm
+        double k = Math.Sqrt(area / n) * 2.5;  // optimal edge length, scaled for readability
+        int iterations = Math.Max(200, n);
+        double t = area * 0.1;  // initial temperature
+        double cooling = Math.Pow(0.001 / t, 1.0 / iterations);
 
         for (int iter = 0; iter < iterations; iter++)
         {
-            // Repulsive forces between all node pairs
-            var repCoeff = temp * temp * 0.8;
+            // Repulsive forces: k²/d
             for (int i = 0; i < n; i++)
             {
                 for (int j = i + 1; j < n; j++)
@@ -697,47 +698,50 @@ else
                     var dx = pos[a].x - pos[b].x;
                     var dy = pos[a].y - pos[b].y;
                     var dist = Math.Sqrt(dx * dx + dy * dy);
-                    if (dist < 1) dist = 1;
-                    var force = repCoeff / dist;
-                    var fx = dx / dist * force;
-                    var fy = dy / dist * force;
-                    pos[a] = (pos[a].x + fx, pos[a].y + fy);
-                    pos[b] = (pos[b].x - fx, pos[b].y - fy);
+                    if (dist < 1) { dist = 1; dx = 1; dy = 0; }
+                    var force = k * k / dist;
+                    pos[a] = (pos[a].x + dx / dist * force, pos[a].y + dy / dist * force);
+                    pos[b] = (pos[b].x - dx / dist * force, pos[b].y - dy / dist * force);
                 }
             }
 
-            // Attractive forces (springs along edges)
+            // Attractive forces: d²/k (springs along edges, scaled by strength)
             foreach (var id in nodeIds)
             {
-                var deg = adj[id].Count;
-                if (deg == 0) continue;
                 foreach (var (target, strength) in adj[id])
                 {
                     var dx = pos[target].x - pos[id].x;
                     var dy = pos[target].y - pos[id].y;
                     var dist = Math.Sqrt(dx * dx + dy * dy);
-                    if (dist < 1) dist = 1;
-                    // Springs: ideal length based on strength
-                    var idealLen = (1 - strength) * 120 + 30;
-                    var attractForce = (dist - idealLen) * 0.02;
-                    var fx = dx / dist * attractForce;
-                    var fy = dy / dist * attractForce;
-                    pos[id] = (pos[id].x + fx, pos[id].y + fy);
-                    pos[target] = (pos[target].x - fx, pos[target].y - fy);
+                    if (dist < 1) { dist = 1; dx = 1; dy = 0; }
+                    // Stronger edges pull harder
+                    var force = dist * dist / k * strength * 1.5;
+                    pos[id] = (pos[id].x + dx / dist * force, pos[id].y + dy / dist * force);
+                    pos[target] = (pos[target].x - dx / dist * force, pos[target].y - dy / dist * force);
                 }
             }
 
-            // Weak centering gravity
+            // Temperature clamping
+            for (int i = 0; i < n; i++)
+            {
+                var id = nodeIds[i];
+                var dist = Math.Sqrt(pos[id].x * pos[id].x + pos[id].y * pos[id].y);
+                if (dist > t)
+                {
+                    var scale = t / dist;
+                    pos[id] = (pos[id].x * scale, pos[id].y * scale);
+                }
+            }
+
+            // Center gravity on core
             var (cx, cy) = pos.GetValueOrDefault(coreId, (0.0, 0.0));
             foreach (var id in nodeIds)
             {
                 if (id == coreId) continue;
-                var gx = cx - pos[id].x;
-                var gy = cy - pos[id].y;
-                pos[id] = (pos[id].x + gx * 0.005, pos[id].y + gy * 0.005);
+                pos[id] = (pos[id].x + (cx - pos[id].x) * 0.01, pos[id].y + (cy - pos[id].y) * 0.01);
             }
 
-            temp *= cooling;
+            t *= cooling;
         }
 
         return pos;

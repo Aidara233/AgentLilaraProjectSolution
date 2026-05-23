@@ -145,21 +145,16 @@ function buildElements(nodes, edges) {
 function makeStyles(isMeta) {
     return [
         { selector: 'node', style: {
-            'background-color': '#90a4ae', 'border-width': 1.5, 'border-color': '#555',
-            'opacity': 0.95, 'label': 'data(label)', 'font-size': 13, 'color': '#e0e0e0',
-            'min-zoomed-font-size': 10,
-            'text-valign': 'bottom', 'text-halign': 'center', 'text-margin-y': 8,
-            'text-wrap': 'wrap', 'text-max-width': '100px',
-            'text-overflow-wrap': 'anywhere',
-            'transition-property': 'width, height, border-color, opacity',
-            'transition-duration': 300,
-            'width': 30, 'height': 30
+            'background-color': '#90a4ae', 'border-width': 1, 'border-color': '#555',
+            'opacity': 0.95, 'label': 'data(label)', 'font-size': 14, 'color': '#e0e0e0',
+            'text-valign': 'center', 'text-halign': 'center',
+            'text-wrap': 'wrap', 'text-max-width': '80px',
+            'text-overflow-wrap': 'anywhere'
         }},
         { selector: 'node[?isMeta]', style: {
-            'width': 52, 'height': 52, 'border-width': 3, 'font-size': 13,
-            'font-weight': 'bold',
-            'label': 'data(label)', 'text-wrap': 'wrap', 'text-max-width': '130px',
-            'text-margin-y': -28, 'color': '#ffd54f',
+            'border-width': 2, 'font-size': 14, 'font-weight': 'bold',
+            'label': 'data(label)', 'text-wrap': 'wrap', 'text-max-width': '120px',
+            'color': '#ffd54f', 'text-valign': 'center', 'text-halign': 'center',
             'shape': 'round-rectangle'
         }},
         { selector: 'node[?isCore]', style: { 'border-color': '#ffd54f', 'border-width': 3, 'font-weight': 'bold' }},
