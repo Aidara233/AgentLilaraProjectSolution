@@ -608,87 +608,112 @@ else
         Dictionary<int, MemoryEntry> memDict)
     {
         var pos = new Dictionary<int, (double x, double y)>();
-        var nodeSet = nodeIds.ToHashSet();
+        var rng = new Random(42);
+        const double minGap = 150;
+        const double neighborRadius = 250;
+        const int minNeighbors = 3;
+        const int maxAttempts = 3000;
+        double jitterRange = 50;
 
-        // Build adjacency from links
+        int n = nodeIds.Count;
+        bool isSmall = n < 4;
+
+        // Place core first at origin
+        pos[coreId] = (0, 0);
+        var placed = new List<int> { coreId };
+
+        // Prefer placing connected nodes near their already-placed neighbors
         var adj = new Dictionary<int, List<int>>();
         foreach (var id in nodeIds) adj[id] = new();
         foreach (var link in links)
         {
-            if (nodeSet.Contains(link.SourceId) && nodeSet.Contains(link.TargetId))
+            var ns = nodeIds.ToHashSet();
+            if (ns.Contains(link.SourceId) && ns.Contains(link.TargetId))
             {
                 adj[link.SourceId].Add(link.TargetId);
                 adj[link.TargetId].Add(link.SourceId);
             }
         }
 
-        // BFS layers from core
-        var layers = new List<List<int>>();
-        var visited = new HashSet<int>();
-        var queue = new Queue<int>();
-        queue.Enqueue(coreId);
-        visited.Add(coreId);
-        layers.Add(new List<int> { coreId });
+        var remaining = nodeIds.Where(id => id != coreId).ToList();
+        // Shuffle to avoid systematic bias
+        for (int i = remaining.Count - 1; i > 0; i--)
+        { var j = rng.Next(i + 1); var tmp = remaining[i]; remaining[i] = remaining[j]; remaining[j] = tmp; }
 
-        while (queue.Count > 0)
+        foreach (var id in remaining)
         {
-            var currentLayer = new List<int>();
-            int levelSize = queue.Count;
-            for (int i = 0; i < levelSize; i++)
+            (double x, double y) best = (0, 0);
+            bool found = false;
+
+            // Seed attempts from connected nodes' positions if any
+            var neighbors = adj.GetValueOrDefault(id);
+            var seeds = new List<(double x, double y)>();
+            if (neighbors != null)
             {
-                var node = queue.Dequeue();
-                if (!adj.TryGetValue(node, out var neighbors)) continue;
-                foreach (var neighbor in neighbors)
+                seeds.AddRange(neighbors.Where(p => pos.ContainsKey(p)).Select(p => pos[p]));
+            }
+            if (seeds.Count == 0)
+                seeds.Add((rng.NextDouble() * 400 - 200, rng.NextDouble() * 400 - 200));
+
+            for (int attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                // Pick a random seed and jitter
+                var seed = seeds[rng.Next(seeds.Count)];
+                double x = seed.x + (rng.NextDouble() - 0.5) * jitterRange * 2;
+                double y = seed.y + (rng.NextDouble() - 0.5) * jitterRange * 2;
+
+                // Every 100 failures, expand search area
+                if (attempt > 0 && attempt % 200 == 0)
+                    jitterRange += 30;
+
+                // Check constraints
+                bool tooClose = false;
+                int within250 = 0;
+                foreach (var pid in placed)
                 {
-                    if (visited.Add(neighbor))
+                    var (px, py) = pos[pid];
+                    double dx = x - px, dy = y - py;
+                    double d = Math.Sqrt(dx * dx + dy * dy);
+                    if (d < minGap) { tooClose = true; break; }
+                    if (d < neighborRadius) within250++;
+                }
+
+                if (tooClose) continue;
+                if (!isSmall && within250 < minNeighbors) continue;
+
+                best = (x, y);
+                found = true;
+                break;
+            }
+
+            // If can't satisfy constraints, relax: just enforce min gap
+            if (!found)
+            {
+                for (int attempt = 0; attempt < 1000; attempt++)
+                {
+                    var seed = seeds[rng.Next(seeds.Count)];
+                    double x = seed.x + (rng.NextDouble() - 0.5) * 400;
+                    double y = seed.y + (rng.NextDouble() - 0.5) * 400;
+                    bool ok = true;
+                    foreach (var pid in placed)
                     {
-                        currentLayer.Add(neighbor);
-                        queue.Enqueue(neighbor);
+                        var (px, py) = pos[pid];
+                        double d = Math.Sqrt((x - px) * (x - px) + (y - py) * (y - py));
+                        if (d < minGap * 0.7) { ok = false; break; }
                     }
+                    if (ok) { best = (x, y); found = true; break; }
                 }
             }
-            if (currentLayer.Count > 0)
-                layers.Add(currentLayer);
-        }
 
-        // Also include unvisited (unconnected) nodes in a final layer
-        var unvisited = nodeIds.Where(id => !visited.Contains(id)).ToList();
-        if (unvisited.Count > 0)
-        {
-            visited.UnionWith(unvisited);
-            layers.Add(unvisited);
-        }
+            // Last resort: place at random offset
+            if (!found)
+                best = (rng.NextDouble() * 800 - 400, rng.NextDouble() * 800 - 400);
 
-        // Place nodes on concentric circles
-        double baseRadius = 55;
-        for (int layerIdx = 0; layerIdx < layers.Count; layerIdx++)
-        {
-            var layer = layers[layerIdx];
-            double baseR = layerIdx == 0 ? 0 : layerIdx * baseRadius + 30;
-
-            // Sort by degree: high-degree nodes closer to core for better edge routing
-            var ordered = layer
-                .OrderByDescending(id => adj.GetValueOrDefault(id)?.Count ?? 0)
-                .ThenBy(id => memDict.GetValueOrDefault(id)?.Type ?? "")
-                .ToList();
-
-            // Divide layer into sub-rings (3-5 per layer) based on degree
-            int subRings = Math.Min(5, (ordered.Count + 14) / 15); // ~15 nodes per sub-ring
-            if (subRings < 1) subRings = 1;
-            int perSub = (ordered.Count + subRings - 1) / subRings;
-
-            int nodeCount = ordered.Count;
-            for (int i = 0; i < nodeCount; i++)
-            {
-                int subIdx = i / perSub;
-                // Radial offset: inner sub-rings for high-degree nodes
-                double r = baseR + subIdx * 22;
-                // Angle with sub-ring offset to break symmetry
-                double angle = (2 * Math.PI * (i % perSub)) / Math.Max(perSub, 1)
-                    + subIdx * 0.3; // slight twist per sub-ring
-                int id = ordered[i];
-                pos[id] = (Math.Cos(angle) * r, Math.Sin(angle) * r);
-            }
+            pos[id] = best;
+            placed.Add(id);
+            // Once we have 10+ nodes placed, we have enough seeds
+            if (seeds.Count == 0 && placed.Count > 10)
+                seeds.Add(best);
         }
 
         return pos;
