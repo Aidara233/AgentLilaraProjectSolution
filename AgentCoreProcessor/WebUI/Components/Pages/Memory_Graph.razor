@@ -521,7 +521,7 @@ else
 
             var coreMem = _memDict.GetValueOrDefault(localCore);
             var label = coreMem?.Content ?? $"#{localCore}";
-            if (label.Length > 15) label = label[..15] + "…";
+            if (label.Length > 25) label = label[..25] + "…";
 
             // Dominant type
             var types = new Dictionary<string, int>();
@@ -559,7 +559,7 @@ else
                     return (object)new
                     {
                         id = m.ToString(),
-                        label = mem?.Content != null ? (mem.Content.Length > 12 ? mem.Content[..12] + "…" : mem.Content) : $"#{m}",
+                        label = mem?.Content != null ? (mem.Content.Length > 20 ? mem.Content[..20] + "…" : mem.Content) : $"#{m}",
                         type = mem?.Type ?? "fact",
                         title = $"#{m} [{mem?.Type}] {mem?.Content}",
                         importance = mem?.Importance ?? 0.5,

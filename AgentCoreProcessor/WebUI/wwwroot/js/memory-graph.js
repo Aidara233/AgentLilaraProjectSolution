@@ -146,15 +146,17 @@ function makeStyles(isMeta) {
     return [
         { selector: 'node', style: {
             'background-color': '#90a4ae', 'border-width': 1.5, 'border-color': '#555',
-            'opacity': 0.9, 'label': 'data(label)', 'font-size': 10, 'color': '#e0e0e0',
-            'text-valign': 'bottom', 'text-halign': 'center', 'text-margin-y': 6,
-            'text-wrap': 'ellipsis', 'text-max-width': '120px',
+            'opacity': 0.9, 'label': 'data(label)', 'font-size': 11, 'color': '#e0e0e0',
+            'text-valign': 'bottom', 'text-halign': 'center', 'text-margin-y': 8,
+            'text-wrap': 'wrap', 'text-max-width': '140px',
             'transition-property': 'width, height, border-color, opacity',
-            'transition-duration': 300
+            'transition-duration': 300,
+            'width': 22, 'height': 22
         }},
         { selector: 'node[?isMeta]', style: {
-            'width': 24, 'height': 24, 'border-width': 2, 'font-size': 10,
-            'text-margin-y': -16, 'color': '#ffd54f',
+            'width': 36, 'height': 36, 'border-width': 2.5, 'font-size': 11,
+            'label': 'data(label)', 'text-wrap': 'wrap', 'text-max-width': '160px',
+            'text-margin-y': -22, 'color': '#ffd54f',
             'shape': 'round-rectangle'
         }},
         { selector: 'node[?isCore]', style: { 'border-color': '#ffd54f', 'border-width': 3, 'font-weight': 'bold' }},
