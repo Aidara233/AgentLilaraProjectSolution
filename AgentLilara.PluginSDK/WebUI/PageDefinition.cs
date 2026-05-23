@@ -8,7 +8,10 @@ public class PageDefinition
     public required PageMeta Meta { get; init; }
     public required IReadOnlyList<CardDefinition> Cards { get; init; }
     public required IReadOnlyList<DataSourceDefinition> DataSources { get; init; }
+    public PageLayoutType LayoutType { get; init; }
 }
+
+public enum PageLayoutType { Grid, Sidebar }
 
 public class PageMeta
 {

@@ -16,6 +16,36 @@
         <p>页面未找到: @Route</p>
     </div>
 }
+else if (page.LayoutType == PageLayoutType.Sidebar)
+{
+    var leftCards = page.Cards.Where(c => c.Layout.GridColumnStart == 1).OrderBy(c => c.Layout.Order);
+    var mainCards = page.Cards.Where(c => c.Layout.GridColumnStart != 1).OrderBy(c => c.Layout.Order);
+    <div class="p-3">
+        <h4 class="mb-3">@(page.Meta.Title)</h4>
+        <div style="display:flex; gap:1rem;">
+            <div style="flex: 0 0 25%; display:flex; flex-direction:column; gap:1rem; min-width:260px;">
+                @foreach (var card in leftCards)
+                {
+                    var state = dsManager.GetState(card.DataSourceId);
+                    <CardHost Title="@card.Title" Layout="@card.Layout" State="@state"
+                              OnRefresh="() => RefreshCard(card)">
+                        @RenderCard(card, state)
+                    </CardHost>
+                }
+            </div>
+            <div style="flex: 1; min-width:0; display:flex; flex-direction:column; gap:1rem;">
+                @foreach (var card in mainCards)
+                {
+                    var state = dsManager.GetState(card.DataSourceId);
+                    <CardHost Title="@card.Title" Layout="@card.Layout" State="@state"
+                              OnRefresh="() => RefreshCard(card)">
+                        @RenderCard(card, state)
+                    </CardHost>
+                }
+            </div>
+        </div>
+    </div>
+}
 else
 {
     <div class="p-3">

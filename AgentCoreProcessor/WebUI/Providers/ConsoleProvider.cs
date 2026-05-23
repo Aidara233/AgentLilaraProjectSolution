@@ -30,6 +30,7 @@ internal class ConsoleProvider : IWebUIProvider
     private PageDefinition BuildPage() => new()
     {
         Route = "channels/console",
+        LayoutType = PageLayoutType.Sidebar,
         Meta = new PageMeta
         {
             Title = "频道控制台",
@@ -112,7 +113,7 @@ internal class ConsoleProvider : IWebUIProvider
                 Id = "console-chat", Type = CardType.Chat, Title = "实时对话",
                 DataSourceId = "console-chat", ListenEvent = "console-channel-selected",
                 Schema = new ChatSchema { ShowSenderSwitch = false, ShowInput = true },
-                Layout = new CardLayout { PreferredCols = 9, MinWidth = "400px", Height = "calc(100vh - 160px)", GridColumnStart = 4, RowSpan = 2 },
+                Layout = new CardLayout { PreferredCols = 9, MinWidth = "400px", Height = "calc(100vh - 160px)", GridColumnStart = 4 },
             },
         },
         DataSources = new List<DataSourceDefinition>
