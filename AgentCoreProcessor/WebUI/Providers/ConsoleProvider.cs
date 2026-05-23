@@ -358,7 +358,7 @@ internal class ConsoleChatSource : IDataSource
         _lastMessageId = messages.FirstOrDefault()?.Id ?? 0;
 
         var arr = new JsonArray();
-        foreach (var m in Enumerable.Reverse(messages))
+        foreach (var m in messages)
         {
             var isBot = m.IsFromBot;
             arr.Add(new JsonObject
