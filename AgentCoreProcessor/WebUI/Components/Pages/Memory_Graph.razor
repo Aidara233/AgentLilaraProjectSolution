@@ -484,33 +484,80 @@ else
         // Compute positions server-side
         var positions = ComputeForceLayout(cluster.NodeIds, edgesList, cluster.CoreNodeId);
 
-        // Grid-based spatial sub-clustering
-        var cellSize = positions.Count > 300 ? 200.0 : (positions.Count > 100 ? 140.0 : 80.0);
-        var grid = new Dictionary<(int cx, int cy), List<int>>();
-        foreach (var (id, (x, y)) in positions)
+        // Radial clustering: inner ring = individuals, outer rings = collapsed meta-nodes
+        var (coreX, coreY) = positions.GetValueOrDefault(cluster.CoreNodeId, (0.0, 0.0));
+        var nodeDist = cluster.NodeIds.ToDictionary(id => id, id =>
         {
-            var key = ((int)(x / cellSize), (int)(y / cellSize));
-            if (!grid.ContainsKey(key)) grid[key] = new();
-            grid[key].Add(id);
-        }
+            var (x, y) = positions[id];
+            return Math.Sqrt((x - coreX) * (x - coreX) + (y - coreY) * (y - coreY));
+        });
 
-        // Build meta-nodes, sub-graph data, and member→meta mapping
+        var n = cluster.NodeIds.Count;
+        var innerRadius = n > 300 ? 100.0 : (n > 100 ? 130.0 : 9999.0);
+        var midCellSize = n > 300 ? 160.0 : 130.0;
+        var farCellSize = n > 300 ? 260.0 : 200.0;
+
+        var innerNodes = nodeDist.Where(kv => kv.Value < innerRadius).Select(kv => kv.Key).ToHashSet();
+        var outerNodes = cluster.NodeIds.Where(id => !innerNodes.Contains(id)).ToList();
+
         var metaNodes = new List<object>();
         var subDataMap = new Dictionary<string, object>();
         var memberToMeta = new Dictionary<int, string>();
+        var metaEdges = new List<object>();
         int scIdx = 0;
 
-        foreach (var (key, memberIds) in grid)
+        // Inner ring: individual nodes
+        foreach (var id in innerNodes)
         {
-            scIdx++;
-            var members = memberIds.ToList();
-            var metaId = $"sc-{scIdx}";
-            foreach (var m in members) memberToMeta[m] = metaId;
+            var mem = _memDict.GetValueOrDefault(id);
+            var (x, y) = positions[id];
+            memberToMeta[id] = id.ToString();
+            metaNodes.Add(new
+            {
+                id = id.ToString(),
+                label = mem?.Content != null ? (mem.Content.Length > 30 ? mem.Content[..30] + "…" : mem.Content) : $"#{id}",
+                type = mem?.Type ?? "fact", title = $"#{id} [{mem?.Type}] {mem?.Content}",
+                importance = mem?.Importance ?? 0.5,
+                isDerived = mem?.IsDerived ?? false,
+                isCore = id == cluster.CoreNodeId,
+                x = x, y = y
+            });
+        }
 
-            // Find local core node
-            int localCore = members.First();
-            double bestW = 0;
-            foreach (var m in members)
+        // Outer rings: group by spatial grid
+        if (outerNodes.Count > 0)
+        {
+            var midGrid = new Dictionary<(int, int), List<int>>();
+            var farGrid = new Dictionary<(int, int), List<int>>();
+            foreach (var id in outerNodes)
+            {
+                var (x, y) = positions[id];
+                if (nodeDist[id] < innerRadius * 2.5)
+                {
+                    var key = ((int)(x / midCellSize), (int)(y / midCellSize));
+                    if (!midGrid.ContainsKey(key)) midGrid[key] = new(); midGrid[key].Add(id);
+                }
+                else
+                {
+                    var key = ((int)(x / farCellSize), (int)(y / farCellSize));
+                    if (!farGrid.ContainsKey(key)) farGrid[key] = new(); farGrid[key].Add(id);
+                }
+            }
+
+            var allCells = midGrid.Select(kv => (nodes: kv.Value, isFar: false))
+                .Concat(farGrid.Select(kv => (nodes: kv.Value, isFar: true)));
+            foreach (var (cellNodes, isFar) in allCells)
+            {
+                var members = cellNodes.ToList();
+                if (members.Count == 0) continue;
+                scIdx++;
+                var metaId = $"sc-{scIdx}";
+                foreach (var m in members) memberToMeta[m] = metaId;
+
+                // Find local core
+                int localCore = members.First();
+                double bestW = 0;
+                foreach (var m in members)
             {
                 double w = 0;
                 if (_nodeLinks.TryGetValue(m, out var l))
@@ -535,72 +582,59 @@ else
             }
             var topType = types.OrderByDescending(kv => kv.Value).First().Key;
 
-            metaNodes.Add(new
-            {
-                id = metaId,
-                label = label,
-                type = topType,
-                importance = Math.Min(1.0, members.Count / 30.0),
-                isCore = members.Contains(cluster.CoreNodeId),
-                x = positions[localCore].x,
-                y = positions[localCore].y,
-                isMeta = true,
-                memberCount = members.Count
-            });
-
-            // Sub-graph: internal nodes + edges
-            var memberSet = members.ToHashSet();
-            subDataMap[metaId] = new
-            {
-                nodes = members.Select(m =>
+                metaNodes.Add(new
                 {
-                    var p = positions[m];
-                    var mem = _memDict.GetValueOrDefault(m);
-                    return (object)new
+                    id = metaId,
+                    label = isFar ? $"{members.Count}条远距" : $"{label} (+{members.Count - 1})",
+                    type = topType,
+                    importance = Math.Min(1.0, members.Count / 20.0),
+                    isCore = false,
+                    x = positions[localCore].x, y = positions[localCore].y,
+                    isMeta = true, memberCount = members.Count
+                });
+
+                var memberSet = members.ToHashSet();
+                subDataMap[metaId] = new
+                {
+                    nodes = members.Select(m =>
                     {
-                        id = m.ToString(),
-                        label = mem?.Content != null ? (mem.Content.Length > 30 ? mem.Content[..30] + "…" : mem.Content) : $"#{m}",
-                        type = mem?.Type ?? "fact",
-                        title = $"#{m} [{mem?.Type}] {mem?.Content}",
-                        importance = mem?.Importance ?? 0.5,
-                        isDerived = mem?.IsDerived ?? false,
-                        isCore = m == localCore,
-                        x = p.x,
-                        y = p.y
-                    };
-                }).ToList(),
-                edges = edgesList.Where(l => memberSet.Contains(l.SourceId) && memberSet.Contains(l.TargetId))
-                    .Select(l => (object)new
-                    {
-                        from = l.SourceId.ToString(),
-                        to = l.TargetId.ToString(),
-                        label = l.LinkType ?? "",
-                        width = l.Strength
+                        var p = positions[m]; var mem = _memDict.GetValueOrDefault(m);
+                        return (object)new
+                        {
+                            id = m.ToString(),
+                            label = mem?.Content != null ? (mem.Content.Length > 25 ? mem.Content[..25] + "…" : mem.Content) : $"#{m}",
+                            type = mem?.Type ?? "fact",
+                            title = $"#{m} [{mem?.Type}] {mem?.Content}",
+                            importance = mem?.Importance ?? 0.5,
+                            isDerived = mem?.IsDerived ?? false,
+                            isCore = m == localCore,
+                            x = p.x, y = p.y
+                        };
                     }).ToList(),
-                coreId = localCore.ToString()
-            };
+                    edges = edgesList.Where(l => memberSet.Contains(l.SourceId) && memberSet.Contains(l.TargetId))
+                        .Select(l => (object)new
+                        {
+                            from = l.SourceId.ToString(), to = l.TargetId.ToString(),
+                            label = l.LinkType ?? "", width = l.Strength
+                        }).ToList(),
+                    coreId = localCore.ToString()
+                };
+            }
         }
 
-        // Aggregate inter-sub-cluster edges
-        var interEdges = new Dictionary<(string, string), (int count, double sumStrength)>();
+        // Build edges between all meta elements
+        var edgeKeys = new HashSet<string>();
         foreach (var link in edgesList)
         {
             var sa = memberToMeta.GetValueOrDefault(link.SourceId);
             var sb = memberToMeta.GetValueOrDefault(link.TargetId);
             if (sa == null || sb == null || sa == sb) continue;
             if (sa.CompareTo(sb) > 0) { (sa, sb) = (sb, sa); }
-            var pair = (sa, sb);
-            if (!interEdges.ContainsKey(pair)) interEdges[pair] = (0, 0);
-            interEdges[pair] = (interEdges[pair].count + 1, interEdges[pair].sumStrength + link.Strength);
+            var ek = sa + "||" + sb;
+            if (edgeKeys.Contains(ek)) continue;
+            edgeKeys.Add(ek);
+            metaEdges.Add(new { from = sa, to = sb, label = link.LinkType ?? "", width = link.Strength });
         }
-
-        var metaEdges = interEdges.Select(kv => (object)new
-        {
-            from = kv.Key.Item1,
-            to = kv.Key.Item2,
-            label = kv.Value.count > 1 ? $"{kv.Value.count}条" : "",
-            width = Math.Min(1.0, kv.Value.sumStrength / kv.Value.count)
-        }).ToList();
 
         var coreMetaId = memberToMeta.GetValueOrDefault(cluster.CoreNodeId);
         if (coreMetaId == null && metaNodes.Count > 0)

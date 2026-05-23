@@ -146,18 +146,18 @@ function makeStyles(isMeta) {
     return [
         { selector: 'node', style: {
             'background-color': '#90a4ae', 'border-width': 1.5, 'border-color': '#555',
-            'opacity': 0.9, 'label': 'data(label)', 'font-size': 12, 'color': '#e0e0e0',
+            'opacity': 0.95, 'label': 'data(label)', 'font-size': 13, 'color': '#e0e0e0',
             'text-valign': 'bottom', 'text-halign': 'center', 'text-margin-y': 8,
             'text-wrap': 'wrap', 'text-max-width': '100px',
+            'text-overflow-wrap': 'anywhere',
             'transition-property': 'width, height, border-color, opacity',
             'transition-duration': 300,
-            'width': 30, 'height': 30,
-            'padding': 6
+            'width': 30, 'height': 30
         }},
         { selector: 'node[?isMeta]', style: {
-            'width': 52, 'height': 52, 'border-width': 3, 'font-size': 12,
+            'width': 52, 'height': 52, 'border-width': 3, 'font-size': 13,
             'font-weight': 'bold',
-            'label': 'data(label)', 'text-wrap': 'wrap', 'text-max-width': '120px',
+            'label': 'data(label)', 'text-wrap': 'wrap', 'text-max-width': '130px',
             'text-margin-y': -28, 'color': '#ffd54f',
             'shape': 'round-rectangle'
         }},
