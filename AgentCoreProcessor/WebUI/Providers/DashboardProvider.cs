@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Engine;
+using AgentCoreProcessor.Engine.Vision;
 using AgentLilara.PluginSDK;
 using AgentLilara.PluginSDK.WebUI;
 
@@ -34,7 +35,7 @@ internal class DashboardProvider : IWebUIProvider
                         Id = "sys-status",
                         Type = CardType.Status,
                         DataSourceId = "dashboard-status",
-                        Title = "系统状态",
+                        Title = "中控台",
                         Schema = new StatusSchema
                         {
                             Fields = new()
@@ -44,6 +45,13 @@ internal class DashboardProvider : IWebUIProvider
                                 new() { Field = "lastMessage", Label = "上次消息" },
                                 new() { Field = "muteMode", Label = "静音模式", Type = StatusFieldType.Badge },
                                 new() { Field = "sleepState", Label = "睡眠", Type = StatusFieldType.Badge }
+                            },
+                            Actions = new()
+                            {
+                                new() { Id = "mute", Label = "静音", Icon = "bi-volume-mute" },
+                                new() { Id = "unmute", Label = "取消静音", Icon = "bi-volume-up" },
+                                new() { Id = "trigger-vision", Label = "触发视觉", Icon = "bi-eye" },
+                                new() { Id = "trigger-dream", Label = "触发做梦", Icon = "bi-moon-stars" }
                             }
                         },
                         Layout = new CardLayout { PreferredCols = 6 }
@@ -115,19 +123,62 @@ internal class DashboardStatusSource : IDataSource
     {
         var sleepState = _engine.CurrentSleepState;
 
+        var disabled = new JsonArray();
+        if (_engine.MuteMode)
+            disabled.Add("mute");
+        else
+            disabled.Add("unmute");
+
         var data = new JsonObject
         {
             ["state"] = _engine.IsIdle ? "空闲" : "忙碌",
             ["idleDuration"] = FormatDuration(_engine.IdleDuration),
             ["lastMessage"] = _engine.LastMessageTime.ToString("HH:mm:ss"),
             ["muteMode"] = _engine.MuteMode ? "开启" : "关闭",
-            ["sleepState"] = sleepState != SleepState.None ? sleepState.ToString() : "清醒"
+            ["sleepState"] = sleepState != SleepState.None ? sleepState.ToString() : "清醒",
+            ["_disabled_actions"] = disabled
         };
         return Task.FromResult(new DataResult { Data = data });
     }
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-        => Task.FromResult(new ActionResult { Success = true });
+    {
+        var ok = true;
+        var msg = "";
+        switch (action)
+        {
+            case "mute":
+                _engine.MuteMode = true;
+                msg = "静音模式已开启";
+                break;
+            case "unmute":
+                _engine.MuteMode = false;
+                msg = "静音模式已关闭";
+                break;
+            case "trigger-vision":
+                var visionCheck = _engine.GetSpawnCheck<VisionEngineSpawnCheck>();
+                if (visionCheck?.ActiveInstance != null)
+                {
+                    visionCheck.ActiveInstance.SignalGate();
+                    msg = "已触发视觉引擎";
+                }
+                else
+                {
+                    ok = false;
+                    msg = "视觉引擎未运行";
+                }
+                break;
+            case "trigger-dream":
+                _engine.EventBus.PublishSignal("force-sleep", "daydream");
+                msg = "已发送做梦信号（走神）";
+                break;
+            default:
+                ok = false;
+                msg = $"未知操作: {action}";
+                break;
+        }
+        return Task.FromResult(new ActionResult { Success = ok, Message = msg });
+    }
 
     private static string FormatDuration(TimeSpan ts)
     {
