@@ -2,7 +2,7 @@
 @using System.Text.Json.Nodes
 
 <div class="chat-card d-flex flex-column h-100">
-    <div class="chat-messages flex-grow-1 overflow-auto p-2" style="min-height:200px; max-height:400px;">
+    <div class="chat-messages flex-grow-1 overflow-auto p-2" style="min-height:0;">
         @foreach (var msg in _messages)
         {
             var isBot = msg.IsBot;
@@ -40,7 +40,7 @@
                 <input class="form-control form-control-sm" placeholder="输入消息..."
                        @bind="_inputText" @bind:event="oninput"
                        @onkeyup="OnInputKeyUp" />
-                <button class="btn btn-sm btn-primary" @onclick="HandleSend">发送</button>
+                <button class="btn btn-sm btn-primary" style="min-width:56px; white-space:nowrap;" @onclick="HandleSend">发送</button>
             </div>
         </div>
     }
