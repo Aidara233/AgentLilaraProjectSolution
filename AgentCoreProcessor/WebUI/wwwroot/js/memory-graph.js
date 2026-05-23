@@ -21,9 +21,22 @@ window.initMemoryGraph = function (containerId, data, coreId, dotnet) {
             container: container,
             elements: els,
             style: makeStyles(data.isMeta),
-            layout: { name: 'preset', fit: true, padding: 60 },
-            wheelSensitivity: 0.3
+            layout: { name: 'preset', fit: false, padding: 0 },
+            wheelSensitivity: 0.3,
+            minZoom: 0.02,
+            maxZoom: 10
         });
+
+        // Start centered on core at readable zoom
+        setTimeout(function () {
+            var core = cy.getElementById(coreId.toString());
+            if (core.length) {
+                cy.center(core);
+                cy.zoom(0.5);
+            } else {
+                cy.fit(null, 80);
+            }
+        }, 50);
 
         // Click meta-node to drill in
         cy.on('tap', 'node[?isMeta]', function (evt) {
@@ -61,18 +74,6 @@ window.initMemoryGraph = function (containerId, data, coreId, dotnet) {
             resetHighlight();
             container.style.cursor = 'default';
         });
-
-        // Focus core after render
-        setTimeout(function () {
-            var core = cy.getElementById(coreId.toString());
-            if (core.length) {
-                cy.animate({
-                    fit: { eles: core.closedNeighborhood(), padding: 100 },
-                    center: { eles: core },
-                    duration: 400, easing: 'ease-in-out'
-                });
-            }
-        }, 200);
 
     } catch (err) {
         console.error('cytoscape init error:', err);
@@ -180,8 +181,18 @@ function loadSubGraph(subData) {
     cy.elements().remove();
     var els = buildElements(subData.nodes, subData.edges);
     cy.add(els);
-    cy.layout({ name: 'preset', fit: true, padding: 60 }).run();
+    cy.layout({ name: 'preset', fit: false, padding: 0 }).run();
     isMetaView = false;
+    // Center on sub-cluster core
+    setTimeout(function () {
+        var core = cy.getElementById(subData.coreId.toString());
+        if (core.length) {
+            cy.center(core);
+            cy.zoom(0.5);
+        } else {
+            cy.fit(null, 60);
+        }
+    }, 50);
 }
 
 function highlightAround(node) {

@@ -662,8 +662,8 @@ else
         var pos = new Dictionary<int, (double x, double y)>();
         var rng = new Random(42);
         int n = nodeIds.Count;
-        // Each node gets 50x50 space
-        var area = Math.Sqrt(n) * 50;
+        // Each node gets generous space
+        var area = Math.Sqrt(n) * 100;
 
         // Random initial positions
         foreach (var id in nodeIds)
