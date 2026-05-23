@@ -17,6 +17,7 @@ using AgentCoreProcessor.Engine.Modules;
 using AgentCoreProcessor.Tool;
 using AgentCoreProcessor.Tool.Core;
 using AgentLilara.PluginSDK;
+using AgentLilara.PluginSDK.Services;
 
 namespace AgentCoreProcessor.Engine
 {
@@ -97,6 +98,9 @@ namespace AgentCoreProcessor.Engine
 
         // 系统通知队列（系统循环注入，频道循环消费）
         private readonly ConcurrentQueue<string> systemNotifications = new();
+        // 跨循环请求队列（新委托系统）
+        private readonly ConcurrentQueue<CrossRequest> _pendingCrossRequests = new();
+        internal IAgentMessaging? _messaging;
 
 
         // 记忆提取计数（用于退出时判断是否需要收尾提取）
@@ -312,6 +316,22 @@ namespace AgentCoreProcessor.Engine
             return list;
         }
 
+        /// <summary>DelegationBus 回调：接收到定向委托或广播。</summary>
+        private void OnCrossRequestReceived(CrossRequest request)
+        {
+            _pendingCrossRequests.Enqueue(request);
+            gate.Signal();
+        }
+
+        /// <summary>Drain 跨循环请求队列。</summary>
+        internal List<CrossRequest> DrainCrossRequests()
+        {
+            var list = new List<CrossRequest>();
+            while (_pendingCrossRequests.TryDequeue(out var req))
+                list.Add(req);
+            return list;
+        }
+
 
         public async Task RunAsync()
         {
@@ -342,10 +362,16 @@ namespace AgentCoreProcessor.Engine
             }
 
             // 初始化 ComponentHost
+            var myLoopId = LoopId.ForChannel(channelId);
+            _messaging = new Component.AgentMessagingImpl(myLoopId, ctx.CrossRequests,
+                () => gate.Signal(), loopId => ctx.DelegationBus.IsLoopActive(loopId));
             componentHost = new ComponentHost(
-                channelId.ToString(), "channel", _moduleBus, ctx.ComponentServices,
+                myLoopId, "channel", _moduleBus, ctx.ComponentServices,
                 () => gate.Signal());
             await componentHost.InitAsync();
+
+            // 注册到委托总线
+            ctx.DelegationBus.RegisterLoop(myLoopId, OnCrossRequestReceived);
 
             SignalContext? sessionCtx = null;
 
@@ -486,6 +512,9 @@ namespace AgentCoreProcessor.Engine
                     }
                 }
             }
+
+            // 注销委托总线
+            ctx.DelegationBus.UnregisterLoop(LoopId.ForChannel(channelId));
 
             // 关闭 ComponentHost
             if (componentHost != null)
@@ -1066,6 +1095,7 @@ namespace AgentCoreProcessor.Engine
                 [typeof(EventBus)] = ctx.EventBus,
                 [typeof(ModuleBus)] = _moduleBus,
                 [typeof(Gate)] = gate!,
+                [typeof(IAgentMessaging)] = _messaging!,
             };
             return new SimpleServiceProviderImpl(services);
         }

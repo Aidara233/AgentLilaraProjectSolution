@@ -119,13 +119,19 @@ namespace AgentCoreProcessor.Engine
         /// <summary>MCP Server 管理器（可能为 null，如果 MCP 未初始化）。</summary>
         McpServerManager? McpManager { get; }
 
-        /// <summary>任务桥梁：频道循环 ↔ 系统循环异步通信。</summary>
+        /// <summary>任务桥梁：频道循环 ↔ 系统循环异步通信。// TODO: 废弃，由 CrossRequestRegistry + DelegationBus 替代</summary>
         TaskBridge TaskBridge { get; }
 
-        /// <summary>委托注册表：频道循环 ↔ 系统循环的委托生命周期管理。</summary>
+        /// <summary>委托注册表：频道循环 ↔ 系统循环的委托生命周期管理。// TODO: 废弃，由 CrossRequestRegistry 替代</summary>
         DelegationRegistry Delegations { get; }
 
-        /// <summary>向指定频道循环注入系统通知。频道循环醒来后自行决定如何回应。</summary>
+        /// <summary>跨循环请求注册表。统一管理请求的完整生命周期。</summary>
+        CrossRequestRegistry CrossRequests { get; }
+
+        /// <summary>委托路由总线。定向投递，非全局广播。</summary>
+        DelegationBus DelegationBus { get; }
+
+        /// <summary>向指定频道循环注入系统通知。频道循环醒来后自行决定如何回应。// TODO: 废弃，由 IAgentMessaging 替代</summary>
         void NotifyChannel(int channelId, string content);
 
         /// <summary>工具 Profile 管理器。</summary>

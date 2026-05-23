@@ -5,7 +5,9 @@ namespace AgentLilara.PluginSDK.Services
 {
     /// <summary>
     /// 委托系统访问接口（频道循环提交委托、系统循环评估委托）。
+    /// [已废弃] 由 IAgentMessaging + CrossRequestRegistry 替代。
     /// </summary>
+    [System.Obsolete("由 IAgentMessaging 替代")]
     public interface IDelegationAccess
     {
         /// <summary>提交委托并等待评估结果。</summary>

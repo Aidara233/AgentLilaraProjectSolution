@@ -14,6 +14,7 @@ using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Tool;
 using AgentLilara.PluginSDK;
+using AgentLilara.PluginSDK.Services;
 
 namespace AgentCoreProcessor.Engine
 {
@@ -97,6 +98,10 @@ namespace AgentCoreProcessor.Engine
         // 待处理的定时任务到期事件（由 OnEvent 写入，RunAsync 读取）
         private readonly List<ScheduledTaskFiredEvent> pendingScheduledEvents = new();
         private readonly object scheduledEventsLock = new();
+
+        // 跨循环请求队列（新委托系统）
+        private readonly ConcurrentQueue<CrossRequest> _pendingCrossRequests = new();
+        internal IAgentMessaging? _messaging;
 
         public SystemEngine(ISystemContext ctx)
         {
@@ -243,9 +248,14 @@ namespace AgentCoreProcessor.Engine
 
             // 初始化 ComponentHost
             componentHost = new ComponentHost(
-                "system", "system", _moduleBus, ctx.ComponentServices,
+                LoopId.System, "system", _moduleBus, ctx.ComponentServices,
                 () => gate.Signal());
             await componentHost.InitAsync();
+
+            // 注册到委托总线
+            _messaging = new Component.AgentMessagingImpl(LoopId.System, ctx.CrossRequests,
+                () => gate.Signal(), loopId => ctx.DelegationBus.IsLoopActive(loopId));
+            ctx.DelegationBus.RegisterLoop(LoopId.System, OnCrossRequestReceived);
 
             // 收集 IInjectProvider：内部模块 + 插件实例
             _injectProviders.Clear();
@@ -282,6 +292,9 @@ namespace AgentCoreProcessor.Engine
             }
             finally
             {
+                // 注销委托总线
+                ctx.DelegationBus.UnregisterLoop(LoopId.System);
+
                 // 关闭 ComponentHost
                 if (componentHost != null)
                     await componentHost.ShutdownAsync(ShutdownReason.Destroy);
@@ -311,6 +324,10 @@ namespace AgentCoreProcessor.Engine
             var scheduledEvents = DrainScheduledEvents();
             var pendingDelegations = ctx.Delegations.GetPendingForEvaluation();
             var retryDelegations = ctx.Delegations.GetRetryPending();
+
+            // 新委托系统：超时检查 + 收集跨循环请求
+            var crossRequests = DrainCrossRequests();
+            ctx.CrossRequests.EnforceTimeouts();
 
             // 从 Gate 触发事件继承因果链（Timer 心跳 / 任务提交等）
             var triggerSignalId = gate.LastTriggerSignalId;
@@ -447,6 +464,7 @@ namespace AgentCoreProcessor.Engine
                 [typeof(EventBus)] = ctx.EventBus,
                 [typeof(ModuleBus)] = _moduleBus,
                 [typeof(Gate)] = gate!,
+                [typeof(IAgentMessaging)] = _messaging!,
             };
             return new SimpleServiceProvider(services);
         }
@@ -778,6 +796,24 @@ namespace AgentCoreProcessor.Engine
         }
 
         // ---- WebUI 状态暴露 ----
+
+        // ═══════ 跨循环请求 ═══════
+
+        /// <summary>DelegationBus 回调：接收到定向委托或广播。</summary>
+        private void OnCrossRequestReceived(CrossRequest request)
+        {
+            _pendingCrossRequests.Enqueue(request);
+            gate.Signal();
+        }
+
+        /// <summary>Drain 跨循环请求队列。</summary>
+        internal List<CrossRequest> DrainCrossRequests()
+        {
+            var list = new List<CrossRequest>();
+            while (_pendingCrossRequests.TryDequeue(out var req))
+                list.Add(req);
+            return list;
+        }
 
         internal WebUI.Services.SystemEngineSnapshot GetSnapshot()
         {

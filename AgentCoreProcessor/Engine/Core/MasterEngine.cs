@@ -100,6 +100,8 @@ namespace AgentCoreProcessor.Engine
         public McpServerManager? McpManager => mcpManager;
         public TaskBridge TaskBridge { get; private set; } = null!;
         public DelegationRegistry Delegations { get; private set; } = null!;
+        public CrossRequestRegistry CrossRequests { get; private set; } = null!;
+        public DelegationBus DelegationBus { get; private set; } = null!;
 
         // ---- ISystemContext: 工具 Profile ----
         public Tool.Host.ToolProfileManager ToolProfiles { get; } = new();
@@ -407,6 +409,21 @@ namespace AgentCoreProcessor.Engine
                 NotifyChannel(channelId, "[系统] 委托任务已完成，请查看委托状态。");
             };
 
+            // 创建 DelegationBus + CrossRequestRegistry（新委托系统）
+            DelegationBus = new DelegationBus();
+            CrossRequests = new CrossRequestRegistry(systemLoopPath, DelegationBus);
+            CrossRequests.OnRequestSubmitted = initiatorId =>
+            {
+                if (initiatorId == LoopId.System && systemEngine != null)
+                    systemEngine.SignalGate();
+                else if (LoopId.IsChannel(initiatorId, out var chId))
+                    WakeLoop(initiatorId);
+            };
+            CrossRequests.OnRequestUpdated = loopId =>
+            {
+                WakeLoop(loopId);
+            };
+
             // 注册核心工具（不可卸载的循环控制工具）
             Tool.ToolRegistry.Register(new Tool.Core.ContinueLoopTool());
             Tool.ToolRegistry.Register(new Tool.Core.WaitTool());
@@ -697,17 +714,16 @@ namespace AgentCoreProcessor.Engine
             }
         }
 
-        /// <summary>唤醒指定 loopId 的循环（供 GlobalComponentHost 使用）。</summary>
+        /// <summary>唤醒指定 loopId 的循环（供 GlobalComponentHost / 委托系统使用）。</summary>
         private void WakeLoop(string loopId)
         {
-            if (loopId == "system")
+            if (LoopId.IsSystem(loopId))
             {
                 systemEngine?.SignalGate();
                 return;
             }
 
-            // 尝试解析为频道 ID
-            if (int.TryParse(loopId, out var channelId))
+            if (LoopId.IsChannel(loopId, out var channelId))
             {
                 var check = GetSpawnCheck<ChannelEngineSpawnCheck>();
                 if (check != null)
@@ -718,7 +734,10 @@ namespace AgentCoreProcessor.Engine
                         engine.InjectNotification("[component-wake]");
                     }
                 }
+                return;
             }
+
+            // task: / review: — 不直接唤醒，由各自的 Gate 管理
         }
 
         /// <summary>关闭 GlobalComponentHost（由外部调用或 Dispose 时）。</summary>
