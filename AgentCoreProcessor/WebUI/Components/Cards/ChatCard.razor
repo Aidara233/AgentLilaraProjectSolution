@@ -1,8 +1,11 @@
 @using AgentLilara.PluginSDK.WebUI
 @using System.Text.Json.Nodes
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 
 <div class="chat-card d-flex flex-column h-100">
-    <div class="chat-messages flex-grow-1 overflow-auto p-2" style="min-height:0;">
+    <div class="chat-messages flex-grow-1 overflow-auto p-2" style="min-height:0;" @ref="_msgContainer">
         @foreach (var msg in _messages)
         {
             var isBot = msg.IsBot;
@@ -36,11 +39,15 @@
                     </select>
                 </div>
             }
-            <div class="d-flex gap-2">
+            <div class="d-flex gap-2 align-items-center">
                 <input class="form-control form-control-sm" placeholder="输入消息..."
                        @bind="_inputText" @bind:event="oninput"
                        @onkeyup="OnInputKeyUp" />
                 <button class="btn btn-sm btn-primary" style="min-width:56px; white-space:nowrap;" @onclick="HandleSend">发送</button>
+                <button class="btn btn-sm btn-ghost" style="min-width:32px;" @onclick="ToggleAutoScroll"
+                        title="@(_autoScroll ? "自动滚动：开" : "自动滚动：关")">
+                    <i class="bi @(_autoScroll ? "bi-chevron-bar-down" : "bi-chevron-down")"></i>
+                </button>
             </div>
         </div>
     }
@@ -54,11 +61,15 @@
     private List<ChatMessage> _messages = new();
     private string _inputText = "";
     private string _selectedSender = "";
+    private bool _autoScroll = true;
+    private ElementReference _msgContainer;
+    private bool _needsScroll;
 
     private record ChatMessage(string Sender, string Text, bool IsBot);
 
     protected override void OnParametersSet()
     {
+        var prevCount = _messages.Count;
         _messages = new List<ChatMessage>();
         if (Data is JsonArray arr)
         {
@@ -76,6 +87,34 @@
 
         if (string.IsNullOrEmpty(_selectedSender) && Schema.Senders?.Count > 0)
             _selectedSender = Schema.Senders[0];
+
+        // Auto-scroll when new messages arrive
+        if (_autoScroll && _messages.Count > prevCount)
+            _needsScroll = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_autoScroll && _needsScroll)
+        {
+            _needsScroll = false;
+            await ScrollToBottom();
+        }
+    }
+
+    private async Task ScrollToBottom()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("eval", "arguments[0].scrollTop = arguments[0].scrollHeight", _msgContainer);
+        }
+        catch { }
+    }
+
+    private void ToggleAutoScroll()
+    {
+        _autoScroll = !_autoScroll;
+        if (_autoScroll) _needsScroll = true;
     }
 
     private async Task OnInputKeyUp(KeyboardEventArgs e)
@@ -94,5 +133,11 @@
         };
         _inputText = "";
         await OnSubmit.InvokeAsync(payload);
+        if (_autoScroll) _needsScroll = true;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await ScrollToBottom(); } catch { }
     }
 }

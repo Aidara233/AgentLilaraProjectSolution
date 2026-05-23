@@ -133,6 +133,7 @@ public class ChatSchema : CardSchema
 {
     public bool ShowSenderSwitch { get; init; } = true;
     public bool ShowInput { get; init; } = true;
+    public bool AutoScroll { get; init; } = true;
     public List<string>? Senders { get; init; }
 }
 
