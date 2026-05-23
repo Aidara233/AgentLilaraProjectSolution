@@ -37,7 +37,7 @@ internal class ReviewProvider : IWebUIProvider
     private PageDefinition BuildStatusPage() => new()
     {
         Route = "review",
-        Meta = new PageMeta { Title = "状态", Icon = "bi-journal-check", Group = "复盘", Order = 60 },
+        Meta = new PageMeta { Title = "状态", Icon = "bi-journal-check", Group = "复盘引擎", Order = 60 },
         Cards = new List<CardDefinition>
         {
             new()
@@ -89,7 +89,7 @@ internal class ReviewProvider : IWebUIProvider
     private PageDefinition BuildHistoryPage() => new()
     {
         Route = "review/history",
-        Meta = new PageMeta { Title = "历史", Icon = "bi-clock-history", Group = "复盘", Order = 61 },
+        Meta = new PageMeta { Title = "历史", Icon = "bi-clock-history", Group = "复盘引擎", Order = 61 },
         Cards = new List<CardDefinition>
         {
             new()
@@ -123,7 +123,7 @@ internal class ReviewProvider : IWebUIProvider
     private PageDefinition BuildSessionPage() => new()
     {
         Route = "review/session/{id}",
-        Meta = new PageMeta { Title = "会话概括", Icon = "bi-list-check", Group = "复盘", ShowInNav = false },
+        Meta = new PageMeta { Title = "会话概括", Icon = "bi-list-check", Group = "复盘引擎", ShowInNav = false },
         Cards = new List<CardDefinition>
         {
             new()
@@ -188,7 +188,7 @@ internal class ReviewProvider : IWebUIProvider
     private PageDefinition BuildContextPage() => new()
     {
         Route = "review/session/{id}/context",
-        Meta = new PageMeta { Title = "原始上下文", Icon = "bi-code-slash", Group = "复盘", ShowInNav = false },
+        Meta = new PageMeta { Title = "原始上下文", Icon = "bi-code-slash", Group = "复盘引擎", ShowInNav = false },
         Cards = new List<CardDefinition>
         {
             new()
@@ -208,7 +208,7 @@ internal class ReviewProvider : IWebUIProvider
     private PageDefinition BuildChangesPage() => new()
     {
         Route = "review/session/{id}/changes",
-        Meta = new PageMeta { Title = "改动记录", Icon = "bi-pencil-square", Group = "复盘", ShowInNav = false },
+        Meta = new PageMeta { Title = "改动记录", Icon = "bi-pencil-square", Group = "复盘引擎", ShowInNav = false },
         Cards = new List<CardDefinition>
         {
             new()

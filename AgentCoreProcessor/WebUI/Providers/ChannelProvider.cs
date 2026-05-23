@@ -51,7 +51,7 @@ internal class ChannelProvider : IWebUIProvider
     private PageDefinition BuildListPage() => new()
     {
         Route = "channels",
-        Meta = new PageMeta { Title = "频道列表", Icon = "bi-chat-dots", Group = "频道", Order = 40 },
+        Meta = new PageMeta { Title = "频道列表", Icon = "bi-chat-dots", Group = "频道引擎", Order = 40 },
         Cards = new List<CardDefinition>
         {
             new()
@@ -82,7 +82,7 @@ internal class ChannelProvider : IWebUIProvider
     private PageDefinition BuildDetailPage(int channelId, string channelName) => new()
     {
         Route = $"channels/{channelId}",
-        Meta = new PageMeta { Title = $"频道: {channelName}", Icon = "bi-chat-dots", Group = "频道", Order = 99, ShowInNav = false },
+        Meta = new PageMeta { Title = $"频道: {channelName}", Icon = "bi-chat-dots", Group = "频道引擎", Order = 99, ShowInNav = false },
         Cards = new List<CardDefinition>
         {
             new()
