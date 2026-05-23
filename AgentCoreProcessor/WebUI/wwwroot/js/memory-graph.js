@@ -146,17 +146,19 @@ function makeStyles(isMeta) {
     return [
         { selector: 'node', style: {
             'background-color': '#90a4ae', 'border-width': 1.5, 'border-color': '#555',
-            'opacity': 0.9, 'label': 'data(label)', 'font-size': 11, 'color': '#e0e0e0',
+            'opacity': 0.9, 'label': 'data(label)', 'font-size': 12, 'color': '#e0e0e0',
             'text-valign': 'bottom', 'text-halign': 'center', 'text-margin-y': 8,
-            'text-wrap': 'wrap', 'text-max-width': '140px',
+            'text-wrap': 'wrap', 'text-max-width': '100px',
             'transition-property': 'width, height, border-color, opacity',
             'transition-duration': 300,
-            'width': 22, 'height': 22
+            'width': 30, 'height': 30,
+            'padding': 6
         }},
         { selector: 'node[?isMeta]', style: {
-            'width': 36, 'height': 36, 'border-width': 2.5, 'font-size': 11,
-            'label': 'data(label)', 'text-wrap': 'wrap', 'text-max-width': '160px',
-            'text-margin-y': -22, 'color': '#ffd54f',
+            'width': 52, 'height': 52, 'border-width': 3, 'font-size': 12,
+            'font-weight': 'bold',
+            'label': 'data(label)', 'text-wrap': 'wrap', 'text-max-width': '120px',
+            'text-margin-y': -28, 'color': '#ffd54f',
             'shape': 'round-rectangle'
         }},
         { selector: 'node[?isCore]', style: { 'border-color': '#ffd54f', 'border-width': 3, 'font-weight': 'bold' }},

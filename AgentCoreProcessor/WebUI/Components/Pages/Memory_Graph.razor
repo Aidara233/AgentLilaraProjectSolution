@@ -521,7 +521,7 @@ else
 
             var coreMem = _memDict.GetValueOrDefault(localCore);
             var label = coreMem?.Content ?? $"#{localCore}";
-            if (label.Length > 25) label = label[..25] + "…";
+            if (label.Length > 35) label = label[..35] + "…";
 
             // Dominant type
             var types = new Dictionary<string, int>();
@@ -559,7 +559,7 @@ else
                     return (object)new
                     {
                         id = m.ToString(),
-                        label = mem?.Content != null ? (mem.Content.Length > 20 ? mem.Content[..20] + "…" : mem.Content) : $"#{m}",
+                        label = mem?.Content != null ? (mem.Content.Length > 30 ? mem.Content[..30] + "…" : mem.Content) : $"#{m}",
                         type = mem?.Type ?? "fact",
                         title = $"#{m} [{mem?.Type}] {mem?.Content}",
                         importance = mem?.Importance ?? 0.5,
@@ -627,9 +627,11 @@ else
     {
         var pos = new Dictionary<int, (double x, double y)>();
         var rng = new Random(42);
-        var area = nodeIds.Count > 100 ? 800.0 : 400.0;
+        int n = nodeIds.Count;
+        // Compact initial area, scales with sqrt(n) for natural density
+        var area = Math.Max(300, Math.Sqrt(n) * 40);
 
-        // Random initial positions around center
+        // Random initial positions, tighter spread
         foreach (var id in nodeIds)
             pos[id] = (rng.NextDouble() * area - area / 2, rng.NextDouble() * area - area / 2);
 
@@ -645,23 +647,24 @@ else
             }
         }
 
-        int iterations = nodeIds.Count > 200 ? 80 : 150;
-        double temp = area * 0.3;
-        double cooling = Math.Pow(0.01 / temp, 1.0 / iterations);
+        int iterations = n > 300 ? 120 : (n > 100 ? 150 : 200);
+        double temp = area * 0.2;
+        double cooling = Math.Pow(0.005 / temp, 1.0 / iterations);
 
         for (int iter = 0; iter < iterations; iter++)
         {
-            // Repulsive forces (O(n²), but runs server-side)
-            for (int i = 0; i < nodeIds.Count; i++)
+            // Repulsive forces between all node pairs
+            var repCoeff = temp * temp * 0.3;
+            for (int i = 0; i < n; i++)
             {
-                for (int j = i + 1; j < nodeIds.Count; j++)
+                for (int j = i + 1; j < n; j++)
                 {
                     var a = nodeIds[i]; var b = nodeIds[j];
                     var dx = pos[a].x - pos[b].x;
                     var dy = pos[a].y - pos[b].y;
                     var dist = Math.Sqrt(dx * dx + dy * dy);
                     if (dist < 1) dist = 1;
-                    var force = temp * temp / dist;
+                    var force = repCoeff / dist;
                     var fx = dx / dist * force;
                     var fy = dy / dist * force;
                     pos[a] = (pos[a].x + fx, pos[a].y + fy);
@@ -669,32 +672,35 @@ else
                 }
             }
 
-            // Attractive forces (spring along edges)
+            // Attractive forces (springs along edges)
             foreach (var id in nodeIds)
             {
+                var deg = adj[id].Count;
+                if (deg == 0) continue;
                 foreach (var (target, strength) in adj[id])
                 {
                     var dx = pos[target].x - pos[id].x;
                     var dy = pos[target].y - pos[id].y;
                     var dist = Math.Sqrt(dx * dx + dy * dy);
                     if (dist < 1) dist = 1;
-                    var idealLen = (1 - strength) * 200 + 30;
-                    var force = (dist - idealLen) * 0.01;
-                    var fx = dx / dist * force;
-                    var fy = dy / dist * force;
+                    // Tighter springs: ideal length based on strength, shorter for dense graphs
+                    var idealLen = (1 - strength) * 60 + 15;
+                    var attractForce = (dist - idealLen) * 0.03;
+                    var fx = dx / dist * attractForce;
+                    var fy = dy / dist * attractForce;
                     pos[id] = (pos[id].x + fx, pos[id].y + fy);
                     pos[target] = (pos[target].x - fx, pos[target].y - fy);
                 }
             }
 
-            // Gravity toward center for core
+            // Weak centering gravity
             var (cx, cy) = pos.GetValueOrDefault(coreId, (0.0, 0.0));
             foreach (var id in nodeIds)
             {
                 if (id == coreId) continue;
                 var gx = cx - pos[id].x;
                 var gy = cy - pos[id].y;
-                pos[id] = (pos[id].x + gx * 0.002, pos[id].y + gy * 0.002);
+                pos[id] = (pos[id].x + gx * 0.005, pos[id].y + gy * 0.005);
             }
 
             temp *= cooling;
