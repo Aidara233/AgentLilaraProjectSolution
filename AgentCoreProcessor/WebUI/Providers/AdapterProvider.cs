@@ -701,6 +701,7 @@ internal class ActionExecSource : IDataSource
     private readonly string _actionName;
     public bool SupportsPush => false;
     private string? _selectedId;
+    private JsonNode? _lastData;
 
     public ActionExecSource(AdapterManager adapters, string actionName)
     {
@@ -713,8 +714,9 @@ internal class ActionExecSource : IDataSource
     public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
         var id = query?.Extra?["id"]?.ToString() ?? _selectedId;
+        if (id != _selectedId) _lastData = null; // 切换实例清除旧结果
         _selectedId = id;
-        return Task.FromResult(new DataResult { Data = null });
+        return Task.FromResult(new DataResult { Data = _lastData });
     }
 
     public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
@@ -734,16 +736,25 @@ internal class ActionExecSource : IDataSource
                 parameters[kv.Key] = kv.Value?.ToString() ?? "";
         }
 
-        var execResult = await adapter.ExecuteActionAsync(_actionName, parameters);
-        if (!execResult.Success)
-            return new ActionResult { Success = false, Message = execResult.Error ?? "执行失败" };
-
-        return new ActionResult
+        AgentCoreProcessor.Adapter.ActionResult execResult;
+        try
         {
-            Success = true,
-            Message = "执行完成",
-            Data = new JsonObject { ["_result"] = execResult.Result ?? "OK" }
-        };
+            execResult = await adapter.ExecuteActionAsync(_actionName, parameters);
+        }
+        catch (Exception ex)
+        {
+            _lastData = new JsonObject { ["_error"] = ex.Message };
+            return new ActionResult { Success = false, Message = ex.Message };
+        }
+
+        if (!execResult.Success)
+        {
+            _lastData = new JsonObject { ["_error"] = execResult.Error ?? "执行失败" };
+            return new ActionResult { Success = false, Message = execResult.Error ?? "执行失败" };
+        }
+
+        _lastData = new JsonObject { ["_result"] = execResult.Result ?? "OK" };
+        return new ActionResult { Success = true, Message = "执行完成" };
     }
 }
 
