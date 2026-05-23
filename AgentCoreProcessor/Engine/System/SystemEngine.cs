@@ -764,6 +764,55 @@ namespace AgentCoreProcessor.Engine
         {
             var pool = ctx.ToolProfiles.GetActiveTools("sub-agent");
             var session = new TaskSession(ctx, delegationId, toolWhitelist: pool);
+
+            // 设置完成回调（迁移至新委托系统）
+            session.OnCompleted = s =>
+            {
+                var result = s.LastResult ?? "(无结果)";
+                var isFailed = result.StartsWith("异常终止") || result == "达到最大轮次限制"
+                    || result == "API 调用连续失败，子 agent 中止";
+
+                if (!string.IsNullOrEmpty(s.DelegationId))
+                {
+                    var crossReq = ctx.CrossRequests.Get(s.DelegationId!);
+                    if (crossReq != null)
+                    {
+                        // 新路径：通过 CrossRequestRegistry 完成
+                        if (isFailed)
+                        {
+                            var channelMsg = $"[系统] 委托「{crossReq.Title.Truncate(30)}」执行遇到问题: {result.Truncate(60)}。系统正在评估是否重试。";
+                            if (LoopId.IsChannel(crossReq.InitiatorId, out var chId))
+                                ctx.NotifyChannel(chId, channelMsg);
+                            ctx.TaskBridge.PostNotification(new Notification
+                            {
+                                Type = NotificationType.SubAgentFailed,
+                                SourceId = s.SessionId,
+                                DelegationId = s.DelegationId,
+                                Summary = $"子 agent 执行失败: {result.Truncate(100)}",
+                                Timestamp = DateTime.Now
+                            });
+                        }
+                        else
+                        {
+                            ctx.CrossRequests.Respond(s.DelegationId!, LoopId.System,
+                                CrossRequestResponseType.Complete, result);
+                        }
+                    }
+                    // else: 旧委托路径，由 TaskSession.DefaultNotifyCompletion 兜底
+                }
+                else
+                {
+                    // 无委托的子 agent，通过通知队列汇报
+                    ctx.TaskBridge.PostNotification(new Notification
+                    {
+                        Type = isFailed ? NotificationType.SubAgentFailed : NotificationType.ProgressUpdate,
+                        SourceId = s.SessionId,
+                        Summary = $"子 agent {(isFailed ? "失败" : "完成")}: {result.Truncate(100)}",
+                        Timestamp = DateTime.Now
+                    });
+                }
+            };
+
             lock (subAgentLock)
             {
                 subAgents[session.SessionId] = session;
