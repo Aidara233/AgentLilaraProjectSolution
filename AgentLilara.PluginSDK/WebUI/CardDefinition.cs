@@ -26,4 +26,6 @@ public class CardLayout
     public string? Height { get; init; }
     public int Order { get; init; }
     public int RowSpan { get; init; } = 1;
+    /// <summary>锁定起始列（1-based），同一列的卡片竖直堆叠，不自动漂移。</summary>
+    public int? GridColumnStart { get; init; }
 }

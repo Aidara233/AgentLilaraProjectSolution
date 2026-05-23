@@ -1,7 +1,7 @@
 @using AgentLilara.PluginSDK.WebUI
 @using AgentCoreProcessor.WebUI.Shell
 
-<div class="card card-grid-item" style="grid-column: span @Layout.PreferredCols; @RowSpanStyle @HeightStyle @MinWidthStyle @OverflowStyle @CardFlexStyle">
+<div class="card card-grid-item" style="@ColStyle @RowSpanStyle @HeightStyle @MinWidthStyle @OverflowStyle @CardFlexStyle">
     @if (!string.IsNullOrEmpty(Title))
     {
         <div class="card-header d-flex align-items-center">
@@ -41,6 +41,9 @@
     [Parameter] public RenderFragment? ChildContent { get; set; }
     [Parameter] public EventCallback OnRefresh { get; set; }
 
+    private string ColStyle => Layout.GridColumnStart != null
+        ? $"grid-column: {Layout.GridColumnStart} / span {Layout.PreferredCols};"
+        : $"grid-column: span {Layout.PreferredCols};";
     private string HeightStyle => Layout.Height != null ? $"height:{Layout.Height};" : "";
     private string MinWidthStyle => Layout.MinWidth != null ? $"min-width:{Layout.MinWidth};" : "";
     private string RowSpanStyle => Layout.RowSpan > 1 ? $"grid-row: span {Layout.RowSpan};" : "";
