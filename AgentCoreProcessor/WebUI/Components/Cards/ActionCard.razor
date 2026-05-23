@@ -52,12 +52,20 @@
 
     @if (_error != null)
     {
-        <div class="alert alert-danger mt-2 mb-0 py-1 px-2 small">@_error</div>
+        <div class="alert alert-danger mt-2 mb-0 py-1 px-2 small d-flex align-items-start">
+            <span class="flex-grow-1">@_error</span>
+            <button class="btn btn-sm btn-link text-muted ms-2 p-0" @onclick="ClearResult" title="清除">
+                <i class="bi bi-x"></i>
+            </button>
+        </div>
     }
     @if (_result != null)
     {
-        <div class="mt-2">
+        <div class="mt-2 position-relative">
             <pre class="action-result mb-0"><code>@_result</code></pre>
+            <button class="btn btn-sm action-clear-btn" @onclick="ClearResult" title="清除结果">
+                <i class="bi bi-x"></i>
+            </button>
         </div>
     }
 </div>
@@ -99,6 +107,12 @@
     private void OnParamChanged(string name, ChangeEventArgs e)
     {
         _values[name] = e.Value?.ToString() ?? "";
+    }
+
+    private void ClearResult()
+    {
+        _result = null;
+        _error = null;
     }
 
     private async Task HandleSubmit()
