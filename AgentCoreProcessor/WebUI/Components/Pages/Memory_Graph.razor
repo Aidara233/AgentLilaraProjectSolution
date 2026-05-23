@@ -543,7 +543,7 @@ else
             return (object)new
             {
                 id = m.Id.ToString(),
-                label = m.Content.Length > 30 ? m.Content[..30] + "…" : m.Content,
+                label = WrapLabel(m.Content),
                 type = m.Type ?? "fact",
                 title = $"#{m.Id} [{m.Type}] {m.Content}",
                 importance = m.Importance,
@@ -631,26 +631,33 @@ else
             layers.Add(unvisited);
         }
 
-        // Place nodes on concentric circles, grouped by type within each layer
-        double baseRadius = 90;
+        // Place nodes on concentric circles
+        double baseRadius = 55;
         for (int layerIdx = 0; layerIdx < layers.Count; layerIdx++)
         {
             var layer = layers[layerIdx];
-            double radius = layerIdx * baseRadius + 40;  // layer 0 (core) gets 40px offset
+            double baseR = layerIdx == 0 ? 0 : layerIdx * baseRadius + 30;
 
-            // Group by type within layer (same type adjacent = fewer crossing edges)
+            // Sort by degree: high-degree nodes closer to core for better edge routing
             var ordered = layer
-                .GroupBy(id => memDict.GetValueOrDefault(id)?.Type ?? "fact")
-                .OrderBy(g => g.Key)  // stable type order
-                .SelectMany(g => g)
+                .OrderByDescending(id => adj.GetValueOrDefault(id)?.Count ?? 0)
+                .ThenBy(id => memDict.GetValueOrDefault(id)?.Type ?? "")
                 .ToList();
+
+            // Divide layer into sub-rings (3-5 per layer) based on degree
+            int subRings = Math.Min(5, (ordered.Count + 14) / 15); // ~15 nodes per sub-ring
+            if (subRings < 1) subRings = 1;
+            int perSub = (ordered.Count + subRings - 1) / subRings;
 
             int nodeCount = ordered.Count;
             for (int i = 0; i < nodeCount; i++)
             {
-                double angle = (2 * Math.PI * i) / Math.Max(nodeCount, 1);
-                // Slight radius jitter per node to reduce edge crossings
-                double r = radius + (i % 3) * 8;
+                int subIdx = i / perSub;
+                // Radial offset: inner sub-rings for high-degree nodes
+                double r = baseR + subIdx * 22;
+                // Angle with sub-ring offset to break symmetry
+                double angle = (2 * Math.PI * (i % perSub)) / Math.Max(perSub, 1)
+                    + subIdx * 0.3; // slight twist per sub-ring
                 int id = ordered[i];
                 pos[id] = (Math.Cos(angle) * r, Math.Sin(angle) * r);
             }
@@ -661,6 +668,50 @@ else
 
     private static double ClampCoord(double v)
         => double.IsFinite(v) ? Math.Clamp(v, -50000, 50000) : 0;
+
+    /// <summary>Wrap text to 20 chars per line, max 3 lines.</summary>
+    private static string WrapLabel(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        const int charsPerLine = 20;
+        const int maxLines = 3;
+        var lines = new List<string>();
+        int pos = 0;
+
+        while (pos < text.Length && lines.Count < maxLines)
+        {
+            int remaining = Math.Min(charsPerLine, text.Length - pos);
+            if (pos + remaining >= text.Length)
+            {
+                lines.Add(text[pos..]);
+                break;
+            }
+            // Try to break at natural boundary (space/punctuation)
+            int end = pos + remaining;
+            int breakAt = -1;
+            for (int scan = Math.Min(end, text.Length - 1); scan > pos; scan--)
+            {
+                if (text[scan] == ' ' || text[scan] == '，' || text[scan] == '。'
+                    || text[scan] == '、' || text[scan] == '；' || text[scan] == '：')
+                {
+                    breakAt = scan;
+                    break;
+                }
+            }
+            if (breakAt > pos)
+                end = breakAt + 1;
+            else if (lines.Count == maxLines - 1)
+                end = Math.Min(pos + charsPerLine - 2, text.Length); // leave room for "…"
+
+            lines.Add(text[pos..Math.Min(end, text.Length)]);
+            pos = end;
+        }
+
+        var result = string.Join("\n", lines);
+        if (pos < text.Length)
+            result = result.TrimEnd() + "…";
+        return result;
+    }
 
     // ======== JS 回调 ========
 

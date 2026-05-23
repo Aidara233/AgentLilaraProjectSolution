@@ -162,7 +162,7 @@ function makeStyles() {
             'background-color': '#90a4ae', 'border-color': '#555',
             'opacity': 0.95, 'label': 'data(label)', 'color': '#e0e0e0',
             'text-valign': 'center', 'text-halign': 'center',
-            'text-wrap': 'wrap', 'text-max-width': '80px',
+            'text-wrap': 'wrap', 'text-max-width': '200px',
             'text-overflow-wrap': 'anywhere'
         }},
         { selector: 'node[?isCore]', style: { 'border-color': '#ffd54f', 'font-weight': 'bold' }},
