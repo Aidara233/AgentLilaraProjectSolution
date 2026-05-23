@@ -476,25 +476,34 @@ else
     private async Task RenderGraph(MemoryCluster cluster)
     {
         _clusterMemories = _allMemories.Where(m => cluster.NodeIds.Contains(m.Id)).ToList();
+        var nodeIdSet = cluster.NodeIds.ToHashSet();
+        var edgesList = _allLinks
+            .Where(l => nodeIdSet.Contains(l.SourceId) && nodeIdSet.Contains(l.TargetId))
+            .ToList();
 
-        var nodes = _clusterMemories.Select(m => new {
-            id = m.Id,
-            label = m.Content.Length > 12 ? m.Content[..12] + "…" : m.Content,
-            type = m.Type ?? "fact",
-            title = $"#{m.Id} [{m.Type}] {m.Content}",
-            importance = m.Importance,
-            isDerived = m.IsDerived
+        // Compute positions server-side (O(n²) in C#, much faster than JS)
+        var positions = ComputeForceLayout(cluster.NodeIds, edgesList, cluster.CoreNodeId);
+
+        var nodes = _clusterMemories.Select(m => {
+            var pos = positions.GetValueOrDefault(m.Id);
+            return new {
+                id = m.Id,
+                label = m.Content.Length > 12 ? m.Content[..12] + "…" : m.Content,
+                type = m.Type ?? "fact",
+                title = $"#{m.Id} [{m.Type}] {m.Content}",
+                importance = m.Importance,
+                isDerived = m.IsDerived,
+                x = pos.x,
+                y = pos.y
+            };
         }).ToArray();
 
-        var nodeIdSet = cluster.NodeIds.ToHashSet();
-        var edges = _allLinks
-            .Where(l => nodeIdSet.Contains(l.SourceId) && nodeIdSet.Contains(l.TargetId))
-            .Select(l => new {
-                from = l.SourceId,
-                to = l.TargetId,
-                label = l.LinkType ?? "",
-                width = l.Strength
-            }).ToArray();
+        var edges = edgesList.Select(l => new {
+            from = l.SourceId,
+            to = l.TargetId,
+            label = l.LinkType ?? "",
+            width = l.Strength
+        }).ToArray();
 
         var data = new { nodes, edges };
 
@@ -504,6 +513,87 @@ else
         await JS.InvokeVoidAsync("initMemoryGraph",
             "memory-graph-container", data, cluster.CoreNodeId, _dotNetRef);
         _graphRendered = true;
+    }
+
+    private static Dictionary<int, (double x, double y)> ComputeForceLayout(
+        List<int> nodeIds, List<MemoryLink> links, int coreId)
+    {
+        var pos = new Dictionary<int, (double x, double y)>();
+        var rng = new Random(42);
+        var area = nodeIds.Count > 100 ? 800.0 : 400.0;
+
+        // Random initial positions around center
+        foreach (var id in nodeIds)
+            pos[id] = (rng.NextDouble() * area - area / 2, rng.NextDouble() * area - area / 2);
+
+        var nodeSet = nodeIds.ToHashSet();
+        var adj = new Dictionary<int, List<(int target, double strength)>>();
+        foreach (var id in nodeIds) adj[id] = new();
+        foreach (var link in links)
+        {
+            if (nodeSet.Contains(link.SourceId) && nodeSet.Contains(link.TargetId))
+            {
+                adj[link.SourceId].Add((link.TargetId, link.Strength));
+                adj[link.TargetId].Add((link.SourceId, link.Strength));
+            }
+        }
+
+        int iterations = nodeIds.Count > 200 ? 80 : 150;
+        double temp = area * 0.3;
+        double cooling = Math.Pow(0.01 / temp, 1.0 / iterations);
+
+        for (int iter = 0; iter < iterations; iter++)
+        {
+            // Repulsive forces (O(n²), but runs server-side)
+            for (int i = 0; i < nodeIds.Count; i++)
+            {
+                for (int j = i + 1; j < nodeIds.Count; j++)
+                {
+                    var a = nodeIds[i]; var b = nodeIds[j];
+                    var dx = pos[a].x - pos[b].x;
+                    var dy = pos[a].y - pos[b].y;
+                    var dist = Math.Sqrt(dx * dx + dy * dy);
+                    if (dist < 1) dist = 1;
+                    var force = temp * temp / dist;
+                    var fx = dx / dist * force;
+                    var fy = dy / dist * force;
+                    pos[a] = (pos[a].x + fx, pos[a].y + fy);
+                    pos[b] = (pos[b].x - fx, pos[b].y - fy);
+                }
+            }
+
+            // Attractive forces (spring along edges)
+            foreach (var id in nodeIds)
+            {
+                foreach (var (target, strength) in adj[id])
+                {
+                    var dx = pos[target].x - pos[id].x;
+                    var dy = pos[target].y - pos[id].y;
+                    var dist = Math.Sqrt(dx * dx + dy * dy);
+                    if (dist < 1) dist = 1;
+                    var idealLen = (1 - strength) * 200 + 30;
+                    var force = (dist - idealLen) * 0.01;
+                    var fx = dx / dist * force;
+                    var fy = dy / dist * force;
+                    pos[id] = (pos[id].x + fx, pos[id].y + fy);
+                    pos[target] = (pos[target].x - fx, pos[target].y - fy);
+                }
+            }
+
+            // Gravity toward center for core
+            var (cx, cy) = pos.GetValueOrDefault(coreId, (0.0, 0.0));
+            foreach (var id in nodeIds)
+            {
+                if (id == coreId) continue;
+                var gx = cx - pos[id].x;
+                var gy = cy - pos[id].y;
+                pos[id] = (pos[id].x + gx * 0.002, pos[id].y + gy * 0.002);
+            }
+
+            temp *= cooling;
+        }
+
+        return pos;
     }
 
     // ======== JS 回调 ========

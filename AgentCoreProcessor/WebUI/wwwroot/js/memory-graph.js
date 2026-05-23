@@ -24,12 +24,12 @@ window.initMemoryGraph = function (containerId, data, coreId, dotnet) {
     var addedEdges = {};
     var nodeIndex = {};
 
-    // Nodes
+    // Nodes (with server-computed positions)
     for (var i = 0; i < data.nodes.length; i++) {
         var n = data.nodes[i];
         var id = n.id.toString();
         nodeIndex[id] = n;
-        els.push({
+        var el = {
             group: 'nodes',
             data: {
                 id: id,
@@ -40,7 +40,12 @@ window.initMemoryGraph = function (containerId, data, coreId, dotnet) {
                 isDerived: n.isDerived || false,
                 isCore: (id === coreId.toString())
             }
-        });
+        };
+        // Use server-computed positions
+        if (n.x !== undefined && n.y !== undefined) {
+            el.position = { x: n.x, y: n.y };
+        }
+        els.push(el);
     }
 
     // Edges (deduplicate by source-target pair)
@@ -203,31 +208,12 @@ window.initMemoryGraph = function (containerId, data, coreId, dotnet) {
                 }
             ],
             layout: {
-                name: 'cose',
-                animate: false,
-                nodeRepulsion: function (node) { return node.data('isCore') ? 20000 : 4000; },
-                gravity: 80,
-                numIter: Math.min(500, els.length * 2),
-                coolingFactor: 0.99,
+                name: 'preset',
                 fit: true,
                 padding: 60
             },
-            wheelSensitivity: 0.3,
-            // Performance: skip rendering during layout for large graphs
-            motionBlur: false,
-            pixelRatio: 1
+            wheelSensitivity: 0.3
         });
-
-        // Show progress for large graphs
-        if (els.length > 200) {
-            try {
-                var loading = document.getElementById('graph-loading');
-                if (loading) loading.style.display = 'block';
-                cy.one('layoutstop', function () {
-                    if (loading) loading.style.display = 'none';
-                });
-            } catch (_) {}
-        }
 
         // --- events ---
 
