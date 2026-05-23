@@ -12,16 +12,15 @@
 - 优雅退出：ApplicationStopping 钩子 → 停适配器 → 停引擎（signal gate + CTS）→ 等 30s → 强杀兜底 → close startupSignal
 - 引擎生命周期信号：每个引擎 RunAsync 用 Signal.Continue 创建 lifecycle span（scope=自己），退出时 Close 带 reason
 - 上下文持久化：SystemContext.json WAL 模式
-- 上下文压缩：超过 80k tokens 触发，保留最近 5 轮 + 摘要
+- 上下文压缩：CompressionTierModule 三层压缩（L1提示/L2提醒/L3硬保底），模型可调 compress 工具主动压缩
 - 关注列表：系统循环下发规则，频道循环语义匹配
 - 睡觉系统：SystemEngine 定期评估大睡需求（需管理员许可），DreamEngineSpawnCheck 自动处理小睡/走神
 - 睡眠打断分级：走神被@醒、小睡需@+关键词叫醒（仅@触发梦话）、大睡仅管理员/任务可唤醒
 - 睡眠期消息拦截：ChannelEngineSpawnCheck 按 CurrentSleepState 拦截，消息入库但不响应，醒来后自动补提取记忆
 - Prompt Caching：Claude 系 Core 启用 promptCaching，中转站已验证兼容
-- Token 统计：ModelCallLog 数据库表记录每次调用，WebUI /logs/tokens 按 Core/模型聚合 + 缓存命中率
-- 模型日志结构化：JSON 格式（含 usage + caller tag），WebUI /logs/model 展示 token 摘要 + 按来源筛选
-  - CallerTag 标识调用来源：Channel:{id} / System / SubAgent:{sessionId} / Review:{mode}
-- 工具禁用管理：ToolRegistry.DisableTool/EnableTool + ToolConfig.json 持久化 + ToolStatusModule 动态注入 + WebUI /config/tools
+- Token 统计：ModelCallLog 数据库表记录每次调用（含 usage + caller tag），LogsProvider WebUI 页面待开发
+  - CallerTag 标识调用来源：Channel:{id} / System / SubAgent:{sessionId} / Review:{mode} / Dream:{phase}
+- 工具管理：ToolRegistry 动态注册/卸载 + ToolProfileManager 链式继承 + WebUI /p/plugins 管理
 - Express 工具（fire-and-forget）：ToolMetaAttribute.ExpressAvailable=true 标记轻量工具，Express 模式下原生 tool_use，结果不回注不续轮。escalate 工具替代 [ESCALATE] 文本标记切换到 Working 模式。非 native 提供商保留文本 fallback。
 - 多模态图片处理：ContentPart 支持 text/image(path或base64)、ContextBuilder 图片感知（<img id="N"/>标记+直传/描述分流）、ViewImageTool Working专用、SkiaSharp 缩略图
 
@@ -38,9 +37,74 @@
 
 1. 读取 `docs/architecture-map.md` — 概要地图，一页纸恢复基本认知
 2. 需要某个模块的细节时再读 `docs/architecture.md` 的对应章节
-3. 检查 `~/.claude/projects/.../memory/project_progress.md` 了解当前工作进度
+3. 检查 memory 索引 `MEMORY.md` 了解记忆文件全景，读 `project_progress.md` 了解当前进度
+4. 需要了解特定设计决策时，按需读取对应的 memory 文件（见下方"记忆文件索引"）
 
 不要一次性读取所有源代码文件。按需读取，用到哪个读哪个。
+
+## 记忆文件索引
+
+Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，入口索引为 `MEMORY.md`。
+
+**项目设计：**
+- `project_overview.md` — 项目概览，快速入口指针
+- `project_progress.md` — 开发进度 + 待办（每轮必读）
+- `project_engine_unification.md` — 引擎循环统一设计（Gate+Agent+堆叠上下文）
+- `project_system_loop.md` — 系统循环纯调度者定位 + 子agent体系
+- `project_loop_redesign.md` — 闸门模型 + 模块分层（已实现）
+- `project_dream_design.md` — 做梦机制：片段类型、数据域、睡眠分级
+- `project_dream_talk.md` — 梦话生成 + 睡眠打断分级
+- `project_memory_system.md` — 多维标签存储 + 检索设计
+- `project_memory_redesign.md` — MemoryQueryCore + 双时间尺度提取
+- `project_tool_design.md` — 一切皆工具 + Agent 循环（已被插件化方案取代）
+- `project_tool_plugin_refactor.md` — Contract 接口 + PluginLoader + 插件化架构
+- `project_social_engagement.md` — 冲动值 + 提及检测 + 社交网关
+- `project_impulse_redesign.md` — 冲动值负反馈重设计
+- `project_user_system.md` — Person/User 双层模型 + 信任/权限分离
+- `project_webui.md` — WebUI 管理面板（卡片系统 Phase 1+2）
+- `project_webui_redesign.md` — 导航重排 + Shell/Provider 分层
+- `project_webui_context_viewer.md` — 频道详情上下文查看器（待开发）
+- `project_logging_redesign.md` — Signal 信号追踪模型 + 单表 events
+- `project_log_page_design.md` — 日志页 git-tree 风格 SVG 可视化
+- `project_signal_instrumentation.md` — Signal 埋点扩展模板
+- `project_expression_issues.md` — 模型编造经历问题 + Persona 约束
+- `project_qq_adapter.md` — OneBotAdapter QQ 平台接入
+- `project_channel_id_risk.md` — ChannelId 碰撞风险（暂缓）
+- `project_claude_proxy_issue.md` — 中转站兼容性问题
+- `project_future_plans.md` — 未来计划备忘
+- `project_worker_redesign.md` — WorkerEngine 设计（已被系统循环方案取代）
+
+**协作偏好：**
+- `feedback_collab.md` — 碰上问题先商量，不要过度拆分代码
+- `feedback_workflow.md` — 大型改动后主动 commit + 试运行
+- `feedback_webui_layout.md` — 复杂卡片用 flex Sidebar，避免 CSS Grid 行共享
+
+**参考信息：**
+- `reference_napcat.md` — NapCat QQ 协议端路径
+- `reference_webui_login.md` — WebUI 登录凭据
+- `reference_design_notes.md` — 用户设计灵感目录
+
+## 文档索引
+
+项目文档集中在 `docs/`，以下是完整索引：
+
+**架构：**
+- `docs/architecture-map.md` — **架构全景图**（引擎生态/消息流/做梦/记忆/工具/WebUI/日志），冷启动第一站
+- `docs/architecture.md` — 详细架构文档，按章节覆盖各子系统
+- `docs/review-engine-redesign.md` — ReviewEngine 自由探索模式重设计
+
+**Signal 日志系统：**
+- `docs/signal-logging-guide.md` — Signal API 快速参考（Begin/Continue/Open/Close/Event/Error）
+- `docs/signal-instrumentation-guide.md` — 埋点指南：在哪放日志、怎么放（给子 agent 用）
+- `docs/signal-channel-template.md` — 引擎循环埋点参考模板（已验证模式）
+- `docs/signal-guide-adapter.md` — AdapterManager 埋点现状 + 待补
+- `docs/signal-guide-channel-engine.md` — ChannelEngine 埋点现状 + 待补
+- `docs/signal-guide-system-engine.md` — SystemEngine 埋点现状 + 待补
+- `docs/signal-guide-master-engine.md` — MasterEngine 埋点现状 + 待补
+- `docs/signal-guide-memory.md` — Memory 服务埋点现状 + 待补
+- `docs/signal-guide-simple-engines.md` — Dream/Review/Vision/Timer 埋点现状 + 待补
+- `docs/signal-guide-tool-executor.md` — ToolExecutor 埋点现状 + 待补
+- `docs/signal-guide-webui.md` — WebUI 写操作埋点现状 + 待补
 
 ## 项目语言
 
@@ -90,51 +154,77 @@
 
 ## 关键路径
 
-- 入口：Program.cs（--file / --debug / 默认 Web 服务器）
-- 引擎内核：Engine/MasterEngine.cs
+- 入口：Program.cs（--file / --debug / --test / 默认 Web 服务器）
+- 数据库：Database/DbManager.cs（初始化 + 迁移）+ 13 张业务表 + logs.db
+- 会话管理：Engine/Core/SessionManager.cs（用户映射 + 频道映射 + 消息入库）
+- 引擎内核：Engine/MasterEngine.cs（SpawnCheck 注册表 + 活跃引擎表 + 全局组件宿主）
+- 引擎孵化：Engine/Core/ChannelEngineSpawnCheck.cs（频道引擎生命周期 + 睡眠拦截）
 - 频道循环：Engine/Worker/ChannelEngine.cs
 - 系统循环：Engine/System/SystemEngine.cs
-- 通信桥梁：Engine/Core/TaskBridge.cs
+- 通信桥梁：Engine/Core/TaskBridge.cs（任务队列 + 通知队列）
 - 委托注册：Engine/Core/DelegationRegistry.cs
 - 子agent会话：Engine/System/TaskSession.cs
+- 引擎会话接口：Engine/Core/IAgentSession.cs（ChannelSession/TaskSession 统一抽象）
 - 循环闸门：Engine/Core/Gate.cs（delegate 驱动，组合不继承）
 - Agent 循环：Engine/Core/Agent.cs（多轮推理，退避策略）
 - Agent 宿主接口：Engine/Core/IAgentHost.cs（BuildStartInjectAsync/BuildRoundInjectAsync）
 - Agent 配置：Engine/Core/AgentConfig.cs（轮次/退避/压缩阈值）
+- 组件系统：Engine/Core/ComponentHost.cs（实例管理 + ModuleBus 订阅 + 工具注册）
+- 组件注册：Engine/Core/ComponentRegistry.cs（类型注册，PluginLoader 扫描）
+- 全局组件：Engine/Core/IGlobalComponent.cs / ILoopComponent.cs
 - 三层压缩：Engine/Modules/CompressionTierModule.cs（L1提示/L2提醒/L3硬保底）
 - 压缩工具：Tool/Core/CompressTool.cs（模型可调用，所有模式可用）
-- 注入接口：Engine/Core/IInjectProvider.cs（IInjectProvider + InjectContext，替代 BuildPromptSection）
+- 注入接口：Engine/Core/IInjectProvider.cs（BuildStartInjectAsync/BuildRoundInjectAsync）
 - 生命周期：Engine/Core/IEngineLifecycle.cs（OnInitializeAsync/OnShutdownAsync）
 - 信号类型：Engine/Core/ChannelSignal.cs（NewMessageSignal/BusEventSignal/CompressionSignal/ModeSwitchSignal）
-- 模块总线：Engine/Core/ModuleBus.cs（每引擎独立 pub/sub，替代 ILoopBus + ComponentEventBus）
+- 模块总线：Engine/Core/ModuleBus.cs（每引擎独立 pub/sub）
 - 频道持久化：Engine/Worker/ChannelContextPersistence.cs（per-channel JSON 原子写入）
-- 统一模型调用：Core/AgentCore.cs（Express/Working 分流）
-- 记忆检索：Memory/MemoryService.cs
+- 系统持久化：Engine/System/ContextPersistence.cs（SystemContext.json WAL 模式）
+- 统一模型调用：Core/AgentCore.cs（Express/Working 分流 + 原生 tool_use）
+- 记忆检索：Memory/MemoryService.cs（RecallAsync：全量扫描 + 向量精排 + 关联扩展）
+- 记忆提取：Core/MemoryExtractionCore.cs（每3条触发，独立 Worker）
+- 记忆查询：Core/MemoryQueryCore.cs（轻量模型提取检索意图 + 关键词加分）
+- Embedding：Client/EmbeddingProvider.cs（bge-large-zh-v1.5，SiliconFlow）
 - 做梦调度：Engine/Dream/DreamEngineSpawnCheck.cs
 - 做梦执行：Engine/Dream/DreamEngine.cs
+- 梦话生成：Core/SleepTalkCore.cs（片段完成后概率触发）
 - 复盘引擎：Engine/Dream/ReviewEngine.cs（自由探索模式，游标浏览，评价缓冲）
 - 复盘配置：Engine/Dream/ReviewConfig.cs + Storage/Dream/ReviewConfig.json
 - 评价引擎：Engine/Dream/EvaluationEngine.cs（边界阻力公式，session取平均）
 - 复盘进度：Engine/Dream/ReviewProgress.cs + Storage/Dream/ReviewProgress.json
 - 复盘工具：Plugins/Plugin.ReviewTools/（15个工具，review-tools 组件）
-- 复盘SDK：AgentLilara.PluginSDK/Services/IReviewAccess.cs + IBeaconAccess.cs
+- 复盘SDK：AgentLilara.PluginSDK/Services/IReviewAccess.cs + IBeaconAccess.cs + IReviewControl.cs
 - 复盘宿主：Tool/Host/ReviewAccessImpl.cs + BeaconAccessImpl.cs + ReviewControlImpl.cs
 - 评价存储：Database/EvaluationScore.cs + EvaluationScoreRepository.cs
 - 复盘日志：Database/ReviewLog.cs + ReviewLogRepository.cs
 - 睡眠状态：Engine/Core/SleepState.cs
+- 冲动值决策：Engine/Core/ImpulseDecider.cs + Storage/Engine/ImpulseConfig.json
 - 视觉引擎：Engine/Vision/VisionEngine.cs（图片描述+OCR调度）
 - 视觉模型：Client/SiliconFlowVisionProvider.cs + Storage/Core/VisionProvider.json
 - OCR模型：Client/SiliconFlowOcrProvider.cs + Storage/Core/OcrProvider.json
 - 图片存储：Adapter/ImageStorage.cs
 - Token 统计：Database/ModelCallLog.cs + ModelCallLogRepository.cs
-- 工具管理：Tool/ToolRegistry.cs（禁用逻辑）+ Storage/ToolConfig.json
+- 信号系统：Logging/Signal.cs（静态门面）+ Logging/LogDatabase.cs（独立 SQLite）+ Logging/LogWriter.cs（批量写入）
+- 信号查询：Logging/LogQuery.cs + Tool/Host/LogAccessImpl.cs（ILogAccess 桥接）
+- 工具管理：Tool/ToolRegistry.cs（注册/卸载/禁用）+ Tool/Host/ToolProfileManager.cs（链式继承）
 - 核心工具：Tool/Core/CoreTools.cs（wait + continue_loop）+ Tool/Core/EscalateTool.cs + Tool/Core/ManageComponentsTool.cs
-- 插件 SDK：AgentLilara.PluginSDK/（共享契约，插件引用此项目）
-- 插件加载：Tool/Host/PluginLoader.cs（扫描 {BaseDirectory}/Plugins/）
+- 插件 SDK：AgentLilara.PluginSDK/（共享契约：ITool/IInjectProvider/服务接口/CardSchema）
+- 插件加载：Tool/Host/PluginLoader.cs（AssemblyLoadContext 隔离，多类型发现 + 构造注入）
 - 记忆桥接：Tool/Host/MemoryAccessImpl.cs（IMemoryAccess → Repository + Embedding）
+- 适配器接口：Adapter/IAdapter.cs + AdapterManager.cs + AdapterFactory.cs
+- OneBot 适配器：Adapter/OneBot/OneBotAdapter.cs（WS连接 + 消息映射 + QQ协议）
+- File 适配器：Adapter/File/FileAdapter.cs（文件轮询，测试用）
+- MCP 系统：MCP/McpServerManager.cs + McpBridgeTool.cs + McpConfig.cs
+- WebUI Shell：WebUI/ProviderRegistry.cs + DynamicPage.razor + CardGrid.razor + CardHost.razor
+- WebUI 数据层：WebUI/DataSourceManager.cs（Fetch重试 + Subscribe推送 + 路由参数注入）
+- WebUI 卡片类型：WebUI/Cards/（TableCard/StatusCard/FormCard/StreamCard/ChatCard/ActionCard/TreeCard）
+- WebUI Provider：WebUI/Providers/（Dashboard/Engines/EngineDetail/Channel/Dream/Review/Memory/Adapter/Plugins/Config/Console/Logs/Test）
 - 插件项目：Plugins/Plugin.BasicTools/（speak + send_media）
--           Plugins/Plugin.WorkingTools/（pinboard + thinking_notes + retain_list）
+-           Plugins/Plugin.WorkingTools/（pinboard + thinking_notes + retain_list + mark_for_review）
 -           Plugins/Plugin.MemoryTools/（memory，依赖 IMemoryAccess）
 -           Plugins/Plugin.FileTools/（read_text + write_text + list_dir + move/delete/copy）
-- 工具配置：Tool/Host/ToolProfileManager.cs + Storage/Engine/ToolProfiles.json
+-           Plugins/Plugin.DelegationTools/（delegate_task + cancel_delegation）
+-           Plugins/Plugin.SystemTools/（evaluate_delegation + complete_delegation + notify_channel + create/stop_sub_agent）
+-           Plugins/Plugin.ReviewTools/（review_* 15个复盘工具）
+- 工具配置：Storage/Engine/ToolProfiles.json + Storage/Engine/ComponentConfig.json
 - 配置文件：Storage/ 目录下
