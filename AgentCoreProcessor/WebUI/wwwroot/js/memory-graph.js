@@ -204,18 +204,30 @@ window.initMemoryGraph = function (containerId, data, coreId, dotnet) {
             ],
             layout: {
                 name: 'cose',
-                animate: true,
-                animationDuration: 800,
-                nodeRepulsion: 8000,
-                gravity: 20,
-                numIter: 2000,
-                initialTemp: 100,
-                coolingFactor: 0.95,
+                animate: false,
+                nodeRepulsion: function (node) { return node.data('isCore') ? 20000 : 4000; },
+                gravity: 80,
+                numIter: Math.min(500, els.length * 2),
+                coolingFactor: 0.99,
                 fit: true,
                 padding: 60
             },
-            wheelSensitivity: 0.3
+            wheelSensitivity: 0.3,
+            // Performance: skip rendering during layout for large graphs
+            motionBlur: false,
+            pixelRatio: 1
         });
+
+        // Show progress for large graphs
+        if (els.length > 200) {
+            try {
+                var loading = document.getElementById('graph-loading');
+                if (loading) loading.style.display = 'block';
+                cy.one('layoutstop', function () {
+                    if (loading) loading.style.display = 'none';
+                });
+            } catch (_) {}
+        }
 
         // --- events ---
 

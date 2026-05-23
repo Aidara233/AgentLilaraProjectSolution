@@ -96,8 +96,14 @@ else
 
     <div class="d-flex" style="height:calc(100vh - 200px);">
         @* 图区域 *@
-        <div id="memory-graph-container"
-             style="flex:1; min-width:0; border:1px solid var(--bg-elevated); border-radius:8px; background:var(--bg-primary);">
+        <div style="flex:1; min-width:0; position:relative;">
+            <div id="graph-loading" style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:10; text-align:center;">
+                <div class="spinner-border text-accent mb-2" role="status"></div>
+                <div class="text-muted-custom" style="font-size:0.8rem;">计算布局中...</div>
+            </div>
+            <div id="memory-graph-container"
+                 style="width:100%; height:100%; border:1px solid var(--bg-elevated); border-radius:8px; background:var(--bg-primary);">
+            </div>
         </div>
 
         @* 右侧详情面板 *@
