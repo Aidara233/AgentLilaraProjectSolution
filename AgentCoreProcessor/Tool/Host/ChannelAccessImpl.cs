@@ -15,11 +15,6 @@ namespace AgentCoreProcessor.Tool.Host
             _ctx = ctx;
         }
 
-        public void NotifyChannel(int channelId, string content)
-        {
-            _ctx.NotifyChannel(channelId, content);
-        }
-
         public async Task<List<ChannelSummary>> GetAllChannelsAsync()
         {
             var channels = await _ctx.Session.GetAllChannelsAsync();

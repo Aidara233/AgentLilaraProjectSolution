@@ -783,7 +783,8 @@ namespace AgentCoreProcessor.Engine
                         {
                             var channelMsg = $"[系统] 委托「{crossReq.Title.Truncate(30)}」执行遇到问题: {result.Truncate(60)}。系统正在评估是否重试。";
                             if (LoopId.IsChannel(crossReq.InitiatorId, out var chId))
-                                ctx.NotifyChannel(chId, channelMsg);
+                                _messaging?.SubmitFireAndForget(LoopId.ForChannel(chId),
+                                    "委托执行失败", channelMsg);
                             ctx.TaskBridge.PostNotification(new Notification
                             {
                                 Type = NotificationType.SubAgentFailed,
@@ -1037,7 +1038,8 @@ namespace AgentCoreProcessor.Engine
             // 通知所有管理员频道
             foreach (var channelId in adminChannels)
             {
-                ctx.NotifyChannel(channelId, message);
+                _messaging?.SubmitFireAndForget(LoopId.ForChannel(channelId),
+                    "系统通知", message);
             }
 
             // 记录请求状态

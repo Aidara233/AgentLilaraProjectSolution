@@ -8,9 +8,6 @@ namespace AgentLilara.PluginSDK.Services
     /// </summary>
     public interface IChannelAccess
     {
-        /// <summary>向频道循环注入通知。</summary>
-        void NotifyChannel(int channelId, string content);
-
         /// <summary>获取所有频道列表。</summary>
         Task<List<ChannelSummary>> GetAllChannelsAsync();
 

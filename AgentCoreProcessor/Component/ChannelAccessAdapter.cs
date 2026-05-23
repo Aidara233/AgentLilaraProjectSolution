@@ -11,11 +11,6 @@ internal class ChannelAccessAdapter : IChannelAccess
         _master = master;
     }
 
-    public void NotifyChannel(int channelId, string content)
-    {
-        _master.NotifyChannel(channelId, content);
-    }
-
     public Task<List<ChannelSummary>> GetAllChannelsAsync()
     {
         // TODO: implement when needed
