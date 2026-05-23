@@ -301,7 +301,7 @@ internal class AdapterProvider : IWebUIProvider
                     ListenEvent = "adapter-selected",
                     Layout = new() { Order = actionOrder++, PreferredCols = 4 }
                 });
-                dataSources.Add(new() { Id = dsId, Source = new ActionExecSource(Adapters, platform, name) });
+                dataSources.Add(new() { Id = dsId, Source = new ActionExecSource(Adapters, name) });
             }
         }
 
@@ -396,17 +396,19 @@ internal class AdapterListSource : IDataSource
 
     public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
+        var configs = _adapters.GetAllConfigs().ToDictionary(c => c.Id, c => c.Type);
         var arr = new JsonArray();
         foreach (var s in _adapters.GetAllStatuses())
         {
+            var type = configs.GetValueOrDefault(s.Id, s.Platform.ToLowerInvariant());
             arr.Add(new JsonObject
             {
                 ["id"] = s.Id,
-                ["platform"] = s.Platform,
+                ["platform"] = type,
                 ["state"] = s.State.ToString(),
                 ["rx"] = s.MessagesReceived,
                 ["tx"] = s.MessagesSent,
-                ["_link"] = $"/p/adapters/{s.Platform.ToLowerInvariant()}"
+                ["_link"] = $"/p/adapters/{type}"
             });
         }
         return Task.FromResult(new DataResult { Data = arr, TotalCount = arr.Count });
@@ -479,9 +481,12 @@ internal class PlatformPickerSource : IDataSource
 
     public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
+        // 按 config Type 过滤（不是 adapter Platform），Type=onebot 对应 Platform=qq
+        var ids = new HashSet<string>(_adapters.GetAllConfigs()
+            .Where(c => c.Type.Equals(_platform, StringComparison.OrdinalIgnoreCase))
+            .Select(c => c.Id));
         var arr = new JsonArray();
-        foreach (var s in _adapters.GetAllStatuses()
-            .Where(s => s.Platform.Equals(_platform, StringComparison.OrdinalIgnoreCase)))
+        foreach (var s in _adapters.GetAllStatuses().Where(s => ids.Contains(s.Id)))
         {
             arr.Add(new JsonObject
             {
@@ -663,20 +668,27 @@ internal class AdapterConfigSource : IDataSource
         if (cfg == null) return new ActionResult { Success = false, Message = "配置不存在" };
 
         var s = cfg.Settings;
-        s["WsUrl"] = data["ws_url"]?.ToString() ?? "";
-        s["Token"] = data["token"]?.ToString() ?? "";
-        s["FilterMode"] = data["filter_mode"]?.ToString() ?? "none";
-        s["BotNames"] = data["bot_names"]?.ToString() ?? "";
-
-        var filterListStr = data["filter_list"]?.ToString() ?? "";
-        var filterArr = new Newtonsoft.Json.Linq.JArray(
-            filterListStr.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                .Select(line => line.Trim())
-                .Where(line => !string.IsNullOrEmpty(line)));
-        if (data["filter_mode"]?.ToString() == "blacklist")
-            s["Blacklist"] = filterArr;
-        else
-            s["Whitelist"] = filterArr;
+        // OneBot 字段
+        s["WsUrl"] = data["ws_url"]?.ToString() ?? s["WsUrl"]?.ToString() ?? "";
+        s["Token"] = data["token"]?.ToString() ?? s["Token"]?.ToString() ?? "";
+        s["FilterMode"] = data["filter_mode"]?.ToString() ?? s["FilterMode"]?.ToString() ?? "none";
+        s["BotNames"] = data["bot_names"]?.ToString() ?? s["BotNames"]?.ToString() ?? "";
+        if (data["filter_mode"] != null || data["filter_list"] != null)
+        {
+            var filterListStr = data["filter_list"]?.ToString() ?? "";
+            var filterArr = new Newtonsoft.Json.Linq.JArray(
+                filterListStr.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(line => line.Trim())
+                    .Where(line => !string.IsNullOrEmpty(line)));
+            if (data["filter_mode"]?.ToString() == "blacklist")
+                s["Blacklist"] = filterArr;
+            else if (data["filter_mode"]?.ToString() == "whitelist")
+                s["Whitelist"] = filterArr;
+        }
+        // File 字段
+        if (data["input_dir"] != null) s["input_dir"] = data["input_dir"]!.ToString();
+        if (data["output_dir"] != null) s["output_dir"] = data["output_dir"]!.ToString();
+        if (data["poll_ms"] != null) s["poll_ms"] = data["poll_ms"]!.ToString();
 
         _adapters.UpdateConfig(cfg);
         return new ActionResult { Success = true, Message = "配置已保存" };
@@ -686,15 +698,13 @@ internal class AdapterConfigSource : IDataSource
 internal class ActionExecSource : IDataSource
 {
     private readonly AdapterManager _adapters;
-    private readonly string _platform;
     private readonly string _actionName;
     public bool SupportsPush => false;
     private string? _selectedId;
 
-    public ActionExecSource(AdapterManager adapters, string platform, string actionName)
+    public ActionExecSource(AdapterManager adapters, string actionName)
     {
         _adapters = adapters;
-        _platform = platform;
         _actionName = actionName;
     }
 
@@ -713,6 +723,9 @@ internal class ActionExecSource : IDataSource
         if (string.IsNullOrEmpty(id)) return new ActionResult { Success = false, Message = "未选择适配器实例" };
         if (data == null) return new ActionResult { Success = false, Message = "缺少请求数据" };
 
+        var adapter = _adapters.GetAdapterById(id);
+        if (adapter == null) return new ActionResult { Success = false, Message = "适配器实例不存在" };
+
         var paramObj = data["params"] as JsonObject;
         var parameters = new Dictionary<string, string>();
         if (paramObj != null)
@@ -721,7 +734,7 @@ internal class ActionExecSource : IDataSource
                 parameters[kv.Key] = kv.Value?.ToString() ?? "";
         }
 
-        var execResult = await _adapters.ExecuteActionAsync(_platform, "", _actionName, parameters);
+        var execResult = await adapter.ExecuteActionAsync(_actionName, parameters);
         if (!execResult.Success)
             return new ActionResult { Success = false, Message = execResult.Error ?? "执行失败" };
 
