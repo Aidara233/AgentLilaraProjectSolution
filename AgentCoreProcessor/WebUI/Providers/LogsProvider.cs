@@ -37,7 +37,7 @@ internal class LogsProvider : IWebUIProvider
     private PageDefinition BuildTokensPage() => new()
     {
         Route = "logs/tokens",
-        Meta = new PageMeta { Title = "Token 统计", Icon = "bi-bar-chart", Group = "日志", Order = 20 },
+        Meta = new PageMeta { Title = "Token 统计", Icon = "bi-bar-chart", Group = "调试", Order = 110 },
         Cards = new List<CardDefinition>
         {
             new()
@@ -104,7 +104,7 @@ internal class LogsProvider : IWebUIProvider
     private PageDefinition BuildModelPage() => new()
     {
         Route = "logs/model",
-        Meta = new PageMeta { Title = "模型调用日志", Icon = "bi-file-earmark-code", Group = "日志", Order = 30 },
+        Meta = new PageMeta { Title = "模型调用日志", Icon = "bi-file-earmark-code", Group = "调试", Order = 112 },
         Cards = new List<CardDefinition>
         {
             new()

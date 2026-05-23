@@ -40,7 +40,7 @@ internal class PluginsProvider : IWebUIProvider
     private PageDefinition BuildPluginListPage() => new()
     {
         Route = "plugins",
-        Meta = new PageMeta { Title = "插件清单", Icon = "bi-puzzle", Group = "插件", Order = 10 },
+        Meta = new PageMeta { Title = "插件清单", Icon = "bi-puzzle", Group = "插件", Order = 90 },
         Cards = new List<CardDefinition>
         {
             new()
@@ -162,7 +162,7 @@ internal class PluginsProvider : IWebUIProvider
     private PageDefinition BuildToolsPage() => new()
     {
         Route = "plugins/tools",
-        Meta = new PageMeta { Title = "工具列表", Icon = "bi-tools", Group = "插件", Order = 30 },
+        Meta = new PageMeta { Title = "工具列表", Icon = "bi-tools", Group = "插件", Order = 91 },
         Cards = new List<CardDefinition>
         {
             new()
@@ -208,7 +208,7 @@ internal class PluginsProvider : IWebUIProvider
     private PageDefinition BuildProfilesPage() => new()
     {
         Route = "plugins/profiles",
-        Meta = new PageMeta { Title = "引擎配置", Icon = "bi-sliders2", Group = "插件", Order = 40 },
+        Meta = new PageMeta { Title = "引擎配置", Icon = "bi-sliders2", Group = "插件", Order = 92 },
         LayoutType = PageLayoutType.Sidebar,
         Cards = new List<CardDefinition>
         {

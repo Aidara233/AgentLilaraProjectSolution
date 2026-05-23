@@ -36,7 +36,7 @@ internal class SystemProvider : IWebUIProvider
     private PageDefinition BuildOverviewPage() => new()
     {
         Route = "system",
-        Meta = new PageMeta { Title = "概览", Icon = "bi-gear", Group = "系统循环", Order = 20 },
+        Meta = new PageMeta { Title = "概览", Icon = "bi-gear", Group = "系统循环", Order = 30 },
         Cards = new List<CardDefinition>
         {
             new()
@@ -88,7 +88,7 @@ internal class SystemProvider : IWebUIProvider
     private PageDefinition BuildEventsPage() => new()
     {
         Route = "system/events",
-        Meta = new PageMeta { Title = "事件队列", Icon = "bi-inbox", Group = "系统循环", Order = 21 },
+        Meta = new PageMeta { Title = "事件队列", Icon = "bi-inbox", Group = "系统循环", Order = 31 },
         Cards = new List<CardDefinition>
         {
             new()
@@ -118,7 +118,7 @@ internal class SystemProvider : IWebUIProvider
     private PageDefinition BuildAgentsPage() => new()
     {
         Route = "system/agents",
-        Meta = new PageMeta { Title = "子agent", Icon = "bi-people", Group = "系统循环", Order = 22 },
+        Meta = new PageMeta { Title = "子agent", Icon = "bi-people", Group = "系统循环", Order = 32 },
         Cards = new List<CardDefinition>
         {
             new()

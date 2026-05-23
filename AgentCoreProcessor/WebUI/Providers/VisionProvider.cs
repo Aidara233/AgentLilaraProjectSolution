@@ -34,7 +34,7 @@ internal class VisionProvider : IWebUIProvider
     private PageDefinition BuildStatusPage() => new()
     {
         Route = "vision",
-        Meta = new PageMeta { Title = "引擎状态", Icon = "bi-eye", Group = "视觉", Order = 40 },
+        Meta = new PageMeta { Title = "引擎状态", Icon = "bi-eye", Group = "视觉", Order = 70 },
         Cards = new List<CardDefinition>
         {
             new()
@@ -105,7 +105,7 @@ internal class VisionProvider : IWebUIProvider
     private PageDefinition BuildGalleryPage() => new()
     {
         Route = "vision/gallery",
-        Meta = new PageMeta { Title = "图片库", Icon = "bi-images", Group = "视觉", Order = 41 },
+        Meta = new PageMeta { Title = "图片库", Icon = "bi-images", Group = "视觉", Order = 71 },
         Cards = new List<CardDefinition>
         {
             new()

@@ -13,7 +13,7 @@ internal class LogTraceProvider : IWebUIProvider
         new()
         {
             Route = "logs/trace",
-            Meta = new PageMeta { Title = "信号追踪", Icon = "bi-diagram-3", Group = "日志", Order = 10 },
+            Meta = new PageMeta { Title = "信号追踪", Icon = "bi-diagram-3", Group = "调试", Order = 111 },
             Cards = new List<CardDefinition>(),
             DataSources = new List<DataSourceDefinition>()
         }

@@ -44,7 +44,7 @@ internal class AdapterProvider : IWebUIProvider
         pages.Add(new()
         {
             Route = "adapters",
-            Meta = new PageMeta { Title = "适配器总览", Icon = "bi-plug", Group = "适配器", Order = 10 },
+            Meta = new PageMeta { Title = "适配器总览", Icon = "bi-plug", Group = "适配器", Order = 100 },
             Cards = new List<CardDefinition>
             {
                 new()
@@ -308,7 +308,7 @@ internal class AdapterProvider : IWebUIProvider
         return new()
         {
             Route = $"adapters/{platform}",
-            Meta = new PageMeta { Title = title, Icon = "bi-plug", Group = "适配器", Order = platform == "onebot" ? 11 : 12 },
+            Meta = new PageMeta { Title = title, Icon = "bi-plug", Group = "适配器", Order = platform == "onebot" ? 101 : 102 },
             Cards = cards.AsReadOnly(),
             DataSources = dataSources.AsReadOnly()
         };

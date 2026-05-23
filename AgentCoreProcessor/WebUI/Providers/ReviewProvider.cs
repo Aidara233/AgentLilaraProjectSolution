@@ -37,7 +37,7 @@ internal class ReviewProvider : IWebUIProvider
     private PageDefinition BuildStatusPage() => new()
     {
         Route = "review",
-        Meta = new PageMeta { Title = "状态", Icon = "bi-journal-check", Group = "复盘", Order = 35 },
+        Meta = new PageMeta { Title = "状态", Icon = "bi-journal-check", Group = "复盘", Order = 60 },
         Cards = new List<CardDefinition>
         {
             new()
@@ -89,7 +89,7 @@ internal class ReviewProvider : IWebUIProvider
     private PageDefinition BuildHistoryPage() => new()
     {
         Route = "review/history",
-        Meta = new PageMeta { Title = "历史", Icon = "bi-clock-history", Group = "复盘", Order = 36 },
+        Meta = new PageMeta { Title = "历史", Icon = "bi-clock-history", Group = "复盘", Order = 61 },
         Cards = new List<CardDefinition>
         {
             new()

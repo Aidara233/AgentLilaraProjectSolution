@@ -51,7 +51,7 @@ internal class ChannelProvider : IWebUIProvider
     private PageDefinition BuildListPage() => new()
     {
         Route = "channels",
-        Meta = new PageMeta { Title = "频道列表", Icon = "bi-chat-dots", Group = "频道", Order = 10 },
+        Meta = new PageMeta { Title = "频道列表", Icon = "bi-chat-dots", Group = "频道", Order = 40 },
         Cards = new List<CardDefinition>
         {
             new()

@@ -39,7 +39,7 @@ internal class MemoryProvider : IWebUIProvider
     private PageDefinition BuildMainPage() => new()
     {
         Route = "memory",
-        Meta = new PageMeta { Title = "主库浏览", Icon = "bi-database", Group = "记忆", Order = 60 },
+        Meta = new PageMeta { Title = "主库浏览", Icon = "bi-database", Group = "记忆", Order = 80 },
         Cards = new List<CardDefinition>
         {
             new()
@@ -202,7 +202,7 @@ internal class MemoryProvider : IWebUIProvider
     private PageDefinition BuildTempPage() => new()
     {
         Route = "memory/temp",
-        Meta = new PageMeta { Title = "临时库", Icon = "bi-clock-history", Group = "记忆", Order = 61 },
+        Meta = new PageMeta { Title = "临时库", Icon = "bi-clock-history", Group = "记忆", Order = 81 },
         Cards = new List<CardDefinition>
         {
             new()
@@ -276,7 +276,7 @@ internal class MemoryProvider : IWebUIProvider
     private PageDefinition BuildPersonaPage() => new()
     {
         Route = "memory/persona",
-        Meta = new PageMeta { Title = "人设记忆", Icon = "bi-person-badge", Group = "记忆", Order = 62 },
+        Meta = new PageMeta { Title = "人设记忆", Icon = "bi-person-badge", Group = "记忆", Order = 82 },
         Cards = new List<CardDefinition>
         {
             new()
@@ -342,7 +342,7 @@ internal class MemoryProvider : IWebUIProvider
     private PageDefinition BuildPeoplePage() => new()
     {
         Route = "memory/people",
-        Meta = new PageMeta { Title = "自然人管理", Icon = "bi-people", Group = "记忆", Order = 66 },
+        Meta = new PageMeta { Title = "自然人管理", Icon = "bi-people", Group = "记忆", Order = 83 },
         Cards = new List<CardDefinition>
         {
             new()
@@ -412,7 +412,7 @@ internal class MemoryProvider : IWebUIProvider
     private PageDefinition BuildGraphPage() => new()
     {
         Route = "memory/graph",
-        Meta = new PageMeta { Title = "关联图谱", Icon = "bi-diagram-3", Group = "记忆", Order = 70 },
+        Meta = new PageMeta { Title = "关联图谱", Icon = "bi-diagram-3", Group = "记忆", Order = 86 },
         Cards = new List<CardDefinition>(),
         DataSources = new List<DataSourceDefinition>
         {

@@ -20,7 +20,7 @@ internal class TestProvider : IWebUIProvider
         new()
         {
             Route = "test/status",
-            Meta = new PageMeta { Title = "测试页面", Icon = "bi-bug", Group = "测试", Order = 0 },
+            Meta = new PageMeta { Title = "测试页面", Icon = "bi-bug", Group = "测试", Order = 0, ShowInNav = false },
             Cards = new List<CardDefinition>
             {
                 new()
@@ -71,7 +71,7 @@ internal class TestProvider : IWebUIProvider
         new()
         {
             Route = "test/cards",
-            Meta = new PageMeta { Title = "卡片类型测试", Icon = "bi-grid", Group = "测试", Order = 1 },
+            Meta = new PageMeta { Title = "卡片类型测试", Icon = "bi-grid", Group = "测试", Order = 1, ShowInNav = false },
             Cards = new List<CardDefinition>
             {
                 new()

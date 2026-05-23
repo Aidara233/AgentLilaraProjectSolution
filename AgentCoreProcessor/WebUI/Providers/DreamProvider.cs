@@ -38,7 +38,7 @@ internal class DreamProvider : IWebUIProvider
     private PageDefinition BuildStatusPage() => new()
     {
         Route = "dream",
-        Meta = new PageMeta { Title = "状态", Icon = "bi-moon-stars", Group = "做梦", Order = 30 },
+        Meta = new PageMeta { Title = "状态", Icon = "bi-moon-stars", Group = "做梦", Order = 50 },
         Cards = new List<CardDefinition>
         {
             new()
@@ -113,7 +113,7 @@ internal class DreamProvider : IWebUIProvider
     private PageDefinition BuildHistoryPage() => new()
     {
         Route = "dream/history",
-        Meta = new PageMeta { Title = "历史", Icon = "bi-clock-history", Group = "做梦", Order = 31 },
+        Meta = new PageMeta { Title = "历史", Icon = "bi-clock-history", Group = "做梦", Order = 51 },
         Cards = new List<CardDefinition>
         {
             new()
@@ -246,7 +246,7 @@ internal class DreamProvider : IWebUIProvider
     private PageDefinition BuildSleepPage() => new()
     {
         Route = "dream/sleep",
-        Meta = new PageMeta { Title = "睡眠评估", Icon = "bi-activity", Group = "做梦", Order = 32 },
+        Meta = new PageMeta { Title = "睡眠评估", Icon = "bi-activity", Group = "做梦", Order = 52 },
         Cards = new List<CardDefinition>
         {
             new()

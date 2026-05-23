@@ -89,7 +89,8 @@ internal class ConfigProvider : IWebUIProvider
                 Title = "配置管理",
                 Icon = "bi-gear",
                 ShowInNav = true,
-                Group = "系统",
+                Group = "调试",
+                Order = 113,
             },
             Cards = new List<CardDefinition>
             {
