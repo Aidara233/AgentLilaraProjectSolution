@@ -24,7 +24,7 @@ window.initMemoryGraph = function (containerId, data, coreId, dotnet) {
             layout: { name: 'preset', fit: false, padding: 0 },
             wheelSensitivity: 0.3,
             minZoom: 0.02,
-            maxZoom: 10
+            maxZoom: 20
         });
 
         // Screen-absolute sizing via zoom compensation
@@ -40,7 +40,8 @@ window.initMemoryGraph = function (containerId, data, coreId, dotnet) {
             // Model size = screen pixels / zoom
             cy.style().selector('node').style({
                 'width': targetNodePx * 2 / z, 'height': targetNodePx * 2 / z,
-                'font-size': targetFontPx / z
+                'font-size': targetFontPx / z,
+                'shadow-blur': 6 / z, 'shadow-offset-x': 1 / z, 'shadow-offset-y': 1 / z
             }).selector('node[?isMeta]').style({
                 'width': targetMetaPx * 2 / z, 'height': targetMetaPx * 2 / z,
                 'font-size': (targetFontPx + 1) / z
