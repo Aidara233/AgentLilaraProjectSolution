@@ -327,6 +327,36 @@ namespace AgentCoreProcessor
             var app = builder.Build();
 
             app.UseStaticFiles();
+
+            // 图片文件服务端点
+            var imagesDir = System.IO.Path.Combine(PathConfig.StoragePath, "Images");
+            app.MapGet("/images/{*path}", async (string path, HttpContext http) =>
+            {
+                var fullPath = System.IO.Path.GetFullPath(System.IO.Path.Combine(imagesDir, path));
+                // 防止目录穿越
+                if (!fullPath.StartsWith(System.IO.Path.GetFullPath(imagesDir)))
+                {
+                    http.Response.StatusCode = 403;
+                    return;
+                }
+                if (!System.IO.File.Exists(fullPath))
+                {
+                    http.Response.StatusCode = 404;
+                    return;
+                }
+                var ext = System.IO.Path.GetExtension(fullPath).ToLowerInvariant();
+                var contentType = ext switch
+                {
+                    ".jpg" or ".jpeg" => "image/jpeg",
+                    ".png" => "image/png",
+                    ".gif" => "image/gif",
+                    ".webp" => "image/webp",
+                    _ => "application/octet-stream"
+                };
+                http.Response.ContentType = contentType;
+                await http.Response.SendFileAsync(fullPath);
+            });
+
             app.UseAuthentication();
             app.UseAuthorization();
             app.UseAntiforgery();

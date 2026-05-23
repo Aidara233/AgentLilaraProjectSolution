@@ -461,5 +461,30 @@ namespace AgentCoreProcessor.Adapter
             if (_repo == null) return;
             await _repo.ClearAllOcrAsync();
         }
+
+        /// <summary>重置单张图片的 OCR 状态，下次循环将重新处理。</summary>
+        public static async Task ResetOcrAsync(int id)
+        {
+            if (_repo == null) return;
+            var record = await _repo.GetByIdAsync(id);
+            if (record != null)
+            {
+                record.HasText = null;
+                record.OcrText = null;
+                await _repo.UpdateAsync(record);
+            }
+        }
+
+        /// <summary>重置单张图片的识图状态，下次循环将重新处理。</summary>
+        public static async Task ResetVisionAsync(int id)
+        {
+            if (_repo == null) return;
+            var record = await _repo.GetByIdAsync(id);
+            if (record != null)
+            {
+                record.Description = null;
+                await _repo.UpdateAsync(record);
+            }
+        }
     }
 }

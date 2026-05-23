@@ -115,14 +115,21 @@ internal class VisionProvider : IWebUIProvider
                 {
                     Columns = new()
                     {
-                        new() { Field = "time", Header = "时间", Width = "130px" },
-                        new() { Field = "category", Header = "分类", Width = "80px", Format = ColumnFormat.Badge },
+                        new() { Field = "thumbnail", Header = "预览", Width = "96px", Format = ColumnFormat.Image, Sortable = false },
+                        new() { Field = "time", Header = "时间", Width = "110px" },
+                        new() { Field = "category", Header = "分类", Width = "70px", Format = ColumnFormat.Badge },
                         new() { Field = "ocr", Header = "OCR文本" },
                         new() { Field = "description", Header = "描述" },
-                        new() { Field = "status", Header = "状态", Width = "80px", Format = ColumnFormat.Badge },
-                        new() { Field = "size", Header = "大小", Width = "80px" }
+                        new() { Field = "status", Header = "状态", Width = "70px", Format = ColumnFormat.Badge },
+                        new() { Field = "size", Header = "大小", Width = "70px" }
                     },
-                    DefaultPageSize = 30
+                    DefaultPageSize = 30,
+                    RowActions = new()
+                    {
+                        new() { Id = "retry-ocr", Label = "重OCR" },
+                        new() { Id = "retry-vision", Label = "重识图" },
+                        new() { Id = "delete", Label = "删除", Danger = true, Confirm = "确认删除此图片？" },
+                    }
                 },
                 Layout = new CardLayout { PreferredCols = 12 }
             }
@@ -288,8 +295,13 @@ internal class VisionGallerySource : IDataSource
                 : img.HasText != null ? "待识图"
                 : "待OCR";
 
+            var thumbUrl = $"/images/thumbs/{img.Hash}.jpg";
+
             arr.Add(new JsonObject
             {
+                ["id"] = img.Id,
+                ["thumbnail"] = thumbUrl,
+                ["_img_src"] = thumbUrl,
                 ["time"] = img.CreatedAt.ToString("MM-dd HH:mm"),
                 ["category"] = img.Category ?? "—",
                 ["ocr"] = Truncate(img.OcrText, 80),
@@ -311,6 +323,26 @@ internal class VisionGallerySource : IDataSource
         return $"{bytes / (1024 * 1024.0):F1}MB";
     }
 
-    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-        => Task.FromResult(new ActionResult { Success = true });
+    public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+    {
+        if (data?["id"]?.GetValue<int>() is not int id || id <= 0)
+            return new ActionResult { Success = false, Message = "无效的图片ID" };
+
+        switch (action)
+        {
+            case "delete":
+                var img = await ImageStorage.GetByIdAsync(id);
+                if (img == null) return new ActionResult { Success = false, Message = "图片不存在" };
+                await ImageStorage.DeleteAsync(img.Hash);
+                return new ActionResult { Success = true, Message = "已删除" };
+            case "retry-ocr":
+                await ImageStorage.ResetOcrAsync(id);
+                return new ActionResult { Success = true, Message = "已重置OCR状态，将重新处理" };
+            case "retry-vision":
+                await ImageStorage.ResetVisionAsync(id);
+                return new ActionResult { Success = true, Message = "已重置识图状态，将重新处理" };
+            default:
+                return new ActionResult { Success = false, Message = $"未知操作: {action}" };
+        }
+    }
 }

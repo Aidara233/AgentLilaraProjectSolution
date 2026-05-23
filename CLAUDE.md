@@ -25,6 +25,13 @@
 - Express 工具（fire-and-forget）：ToolMetaAttribute.ExpressAvailable=true 标记轻量工具，Express 模式下原生 tool_use，结果不回注不续轮。escalate 工具替代 [ESCALATE] 文本标记切换到 Working 模式。非 native 提供商保留文本 fallback。
 - 多模态图片处理：ContentPart 支持 text/image(path或base64)、ContextBuilder 图片感知（<img id="N"/>标记+直传/描述分流）、ViewImageTool Working专用、SkiaSharp 缩略图
 
+## 工作规范
+
+- 遇到 claude code 本身异常时，如果出错的是基础工具，立即向用户报告，不要头铁硬试
+- fetch 工具通常不可用，获取资料时可能只能通过 web search 的摘要拼凑信息。如果确实需要下载文件，可以要求用户协助
+- 如果项目不太顺利，可以停下来找用户协商解决方法，除非你觉得你的方法很合理，否则另辟蹊径之前必须获得用户支持
+
+
 ## 冷启动
 
 如果你刚进入对话或经历了上下文压缩，按以下顺序恢复上下文：

@@ -264,6 +264,11 @@ internal class DreamProvider : IWebUIProvider
                         new() { Field = "factor_time", Label = "距上次 (10)" },
                         new() { Field = "in_window", Label = "深睡窗口", Type = StatusFieldType.Badge },
                         new() { Field = "pending_request", Label = "待审批", Type = StatusFieldType.Badge }
+                    },
+                    Actions = new()
+                    {
+                        new() { Id = "approve", Label = "批准深睡", Icon = "bi-check-lg" },
+                        new() { Id = "deny", Label = "拒绝", Icon = "bi-x-lg", Danger = true },
                     }
                 },
                 Layout = new CardLayout { PreferredCols = 6 }
@@ -885,13 +890,39 @@ internal class SleepEvalSource : IDataSource
             ["factor_hints"] = $"{factorHints:F0} 分 ({unprocessedHints.Count}条)",
             ["factor_time"] = $"{factorTime:F0} 分",
             ["in_window"] = config.IsInDeepSleepWindow() ? "是" : "否",
-            ["pending_request"] = pendingStr
+            ["pending_request"] = pendingStr,
+            ["_disabled_actions"] = hasPending ? null : new JsonArray("approve", "deny")
         };
         return new DataResult { Data = data };
     }
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-        => Task.FromResult(new ActionResult { Success = true });
+    {
+        return action switch
+        {
+            "approve" => ApproveRequest(),
+            "deny" => DenyRequest(),
+            _ => Task.FromResult(new ActionResult { Success = true }),
+        };
+    }
+
+    private Task<ActionResult> ApproveRequest()
+    {
+        var snapshot = _engine.GetSystemEngine()?.GetSnapshot();
+        if (snapshot?.HasPendingSleepRequest != true)
+            return Task.FromResult(new ActionResult { Success = false, Message = "没有待审批的睡眠请求" });
+        _engine.EventBus.PublishSignal("sleep-approve", snapshot.SleepRequestId!);
+        return Task.FromResult(new ActionResult { Success = true, Message = "已批准深睡请求" });
+    }
+
+    private Task<ActionResult> DenyRequest()
+    {
+        var snapshot = _engine.GetSystemEngine()?.GetSnapshot();
+        if (snapshot?.HasPendingSleepRequest != true)
+            return Task.FromResult(new ActionResult { Success = false, Message = "没有待审批的睡眠请求" });
+        _engine.EventBus.PublishSignal("sleep-deny", snapshot.SleepRequestId!);
+        return Task.FromResult(new ActionResult { Success = true, Message = "已拒绝深睡请求" });
+    }
 }
 
 internal class SleepConfigSource : IDataSource

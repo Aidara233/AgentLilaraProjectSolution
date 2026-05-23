@@ -155,7 +155,12 @@
     private RenderFragment RenderCell(JsonNode row, ColumnDef col) => __builder =>
     {
         var val = row[col.Field]?.ToString() ?? "";
-        if (col.Format == ColumnFormat.Link)
+        if (col.Format == ColumnFormat.Image)
+        {
+            var src = row["_img_src"]?.ToString() ?? val;
+            <img src="@src" class="table-thumbnail" style="width:80px;height:60px;object-fit:cover;border-radius:4px;" loading="lazy" />
+        }
+        else if (col.Format == ColumnFormat.Link)
         {
             var href = row["_link"]?.ToString();
             if (href != null)
