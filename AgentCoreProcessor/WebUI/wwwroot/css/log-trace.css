@@ -108,6 +108,21 @@
     word-break: break-all;
 }
 
+.log-trace-detail .detail-value[onclick] {
+    cursor: pointer;
+    border-bottom: 1px dashed var(--vis-text-dim);
+}
+
+.log-trace-detail .detail-value[onclick]:hover {
+    color: var(--vis-info);
+    border-bottom-color: var(--vis-info);
+}
+
+.log-trace-detail .detail-value.copied {
+    color: var(--vis-ok);
+    border-bottom-color: var(--vis-ok);
+}
+
 .log-trace-detail .detail-json {
     background: rgba(0,0,0,0.2);
     border-radius: 4px;
@@ -249,6 +264,14 @@
     font-size: 11px;
     color: var(--vis-text-dim);
     margin-left: 0.5rem;
+}
+
+.trace-text-row .span-id {
+    font-size: 10px;
+    color: var(--vis-text-dim);
+    opacity: 0.5;
+    margin-left: 0.5rem;
+    font-family: var(--font-mono), monospace;
 }
 
 .trace-text-row .dur {

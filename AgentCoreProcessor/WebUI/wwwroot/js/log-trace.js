@@ -790,6 +790,15 @@ function renderTextRange(start, end) {
         nameSpan.textContent = prefix + (row.name || '');
         div.appendChild(nameSpan);
 
+        // Span ID for open/close rows
+        if ((row.type === 'open' || row.type === 'close') && row.spanId) {
+            const sidSpan = document.createElement('span');
+            sidSpan.className = 'span-id';
+            sidSpan.textContent = row.spanId.length > 8 ? row.spanId.substring(0, 8) : row.spanId;
+            sidSpan.title = row.spanId;
+            div.appendChild(sidSpan);
+        }
+
         // Detail tag
         if (row.detail) {
             const tagSpan = document.createElement('span');
@@ -1268,18 +1277,23 @@ function showDetail(rowId) {
         html += `<div class="detail-signal-badge" title="${escapeHtml(row.signalId)}">◉ 信号源 · ${escapeHtml(row.signalId)}</div>`;
     }
 
+    // Copy helper
+    const cp = (v) => `onclick="event.stopPropagation();navigator.clipboard.writeText('${escapeHtml(v ?? '')}');this.classList.add('copied');setTimeout(()=>this.classList.remove('copied'),800)"`;
+
     html += `<div class="detail-fields">`;
     const fields = [
         { label: '类型', value: row.type },
         { label: 'Group', value: row.groupName },
-        { label: 'Signal', value: row.signalId },
-        { label: 'Span', value: row.spanId || '-' },
+        { label: 'Signal', value: row.signalId, copyable: true },
+        { label: 'Span', value: row.spanId || '-', copyable: true },
         { label: 'Parent', value: row.parentId || '-' },
         { label: 'Cause', value: row.causeSpanId || '-' },
         { label: 'Level', value: ['Debug','Info','Warn','Error'][row.level] || row.level },
     ];
     for (const f of fields) {
-        html += `<div class="detail-field"><div class="detail-label">${f.label}</div><div class="detail-value">${escapeHtml(f.value ?? '')}</div></div>`;
+        const val = escapeHtml(f.value ?? '');
+        const click = f.copyable && f.value ? cp(f.value) : '';
+        html += `<div class="detail-field"><div class="detail-label">${f.label}</div><div class="detail-value" ${click} title="${f.copyable ? '点击复制' : ''}">${val}</div></div>`;
     }
     html += `</div>`;
 

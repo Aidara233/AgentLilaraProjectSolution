@@ -9,6 +9,9 @@ namespace AgentCoreProcessor.Engine
     /// </summary>
     internal class DreamConfig
     {
+        /// <summary>走神是否启用（默认关闭，功能定位待协商）</summary>
+        public bool DaydreamEnabled { get; set; } = false;
+
         /// <summary>走神冷却期（秒）</summary>
         public int DaydreamCooldown { get; set; } = 120;
 

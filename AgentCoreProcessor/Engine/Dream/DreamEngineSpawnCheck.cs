@@ -100,9 +100,9 @@ namespace AgentCoreProcessor.Engine
                 return Task.FromResult(true);
             }
 
-            // ③ 走神（冷却期已过）
-            if (lastDaydreamTime == null ||
-                (DateTime.Now - lastDaydreamTime.Value).TotalSeconds > cfg.DaydreamCooldown)
+            // ③ 走神（需启用 + 冷却期已过）
+            if (cfg.DaydreamEnabled && (lastDaydreamTime == null ||
+                (DateTime.Now - lastDaydreamTime.Value).TotalSeconds > cfg.DaydreamCooldown))
             {
                 pendingLevel = SleepLevel.Daydream;
                 pendingMaxFragments = 1;
