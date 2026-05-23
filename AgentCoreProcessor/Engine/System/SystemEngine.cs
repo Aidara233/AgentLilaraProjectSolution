@@ -370,6 +370,7 @@ namespace AgentCoreProcessor.Engine
             pendingEventsModule.SetPendingEvents(tasks, notifications, scheduledEvents, lastRoundNoAction);
             pendingEventsModule.SetPendingDelegations(pendingDelegations);
             pendingEventsModule.SetRetryPendingDelegations(retryDelegations);
+            pendingEventsModule.SetPendingCrossRequests(crossRequests);
 
             // Lazy register compress tool (agent guaranteed to exist here)
             if (agent != null && compressionTierModule != null)
