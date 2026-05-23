@@ -37,17 +37,23 @@ window.initMemoryGraph = function (containerId, data, coreId, dotnet) {
         function updateSizes() {
             var z = cy.zoom();
             if (z <= 0) return;
-            // Model size = screen pixels / zoom
+            var bw = 1.2 / z;
             cy.style().selector('node').style({
                 'width': targetNodePx * 2 / z, 'height': targetNodePx * 2 / z,
-                'font-size': targetFontPx / z,
-                'shadow-blur': 6 / z, 'shadow-offset-x': 1 / z, 'shadow-offset-y': 1 / z
+                'font-size': targetFontPx / z, 'border-width': bw
             }).selector('node[?isMeta]').style({
                 'width': targetMetaPx * 2 / z, 'height': targetMetaPx * 2 / z,
-                'font-size': (targetFontPx + 1) / z
+                'font-size': (targetFontPx + 1) / z, 'border-width': bw * 1.5
+            }).selector('node[?isCore]').style({
+                'border-width': bw * 2.5, 'border-color': '#ffd54f'
+            }).selector('node:selected').style({
+                'border-width': bw * 2.5, 'border-color': '#ffd54f'
+            }).selector('node.highlight').style({
+                'border-width': bw * 2, 'shadow-blur': 8 / z
             }).selector('edge').style({
-                'width': targetEdgeWidth / z,
-                'font-size': targetEdgeFont / z
+                'width': targetEdgeWidth / z, 'font-size': targetEdgeFont / z
+            }).selector('edge.highlight').style({
+                'width': targetEdgeWidth * 2 / z
             }).update();
         }
 
@@ -174,33 +180,35 @@ function buildElements(nodes, edges) {
 function makeStyles(isMeta) {
     return [
         { selector: 'node', style: {
-            'background-color': '#90a4ae', 'border-width': 1, 'border-color': '#555',
+            'background-color': '#90a4ae', 'border-color': '#555',
             'opacity': 0.95, 'label': 'data(label)', 'color': '#e0e0e0',
             'text-valign': 'center', 'text-halign': 'center',
             'text-wrap': 'wrap', 'text-max-width': '80px',
             'text-overflow-wrap': 'anywhere',
-            // width/height/font-size set dynamically by zoom handler
+            // width/height/font-size/border-width set dynamically by zoom handler
         }},
         { selector: 'node[?isMeta]', style: {
-            'border-width': 2, 'font-weight': 'bold',
+            'font-weight': 'bold',
             'label': 'data(label)', 'text-wrap': 'wrap', 'text-max-width': '120px',
             'color': '#ffd54f', 'text-valign': 'center', 'text-halign': 'center',
             'shape': 'round-rectangle'
         }},
-        { selector: 'node[?isCore]', style: { 'border-color': '#ffd54f', 'border-width': 3, 'font-weight': 'bold' }},
+        { selector: 'node[?isCore]', style: { 'border-color': '#ffd54f', 'font-weight': 'bold' }},
         { selector: 'node[?isDerived]', style: { 'border-style': 'dashed' }},
         { selector: 'node[type="knowledge"]', style: { 'background-color': '#4fc3f7' }},
         { selector: 'node[type="fact"]', style: { 'background-color': '#81c784' }},
         { selector: 'node[type="feedback"]', style: { 'background-color': '#ffb74d' }},
         { selector: 'node[type="inference"]', style: { 'background-color': '#ce93d8' }},
         { selector: 'node[type="event"]', style: { 'background-color': '#f06292' }},
-        { selector: 'node.highlight', style: { 'opacity': 1, 'shadow-color': '#2196f3', 'shadow-blur': 10, 'shadow-opacity': 0.5 }},
+        { selector: 'node:selected', style: { 'border-color': '#ffd54f' }},
+        { selector: 'node.highlight', style: { 'opacity': 1, 'shadow-color': '#2196f3', 'shadow-opacity': 0.5 }},
         { selector: 'node.dimmed', style: { 'opacity': 0.2 }},
         { selector: 'edge', style: {
-            'width': 1.5, 'line-color': '#556', 'opacity': 0.35, 'curve-style': 'bezier',
-            'label': 'data(label)', 'font-size': 9, 'color': '#666'
+            'line-color': '#556', 'opacity': 0.35, 'curve-style': 'bezier',
+            'label': 'data(label)', 'color': '#666'
+            // width/font-size set by zoom handler
         }},
-        { selector: 'edge.highlight', style: { 'opacity': 0.8, 'width': 3 }},
+        { selector: 'edge.highlight', style: { 'opacity': 0.8 }},
         { selector: 'edge.dimmed', style: { 'opacity': 0.05 }}
     ];
 }
