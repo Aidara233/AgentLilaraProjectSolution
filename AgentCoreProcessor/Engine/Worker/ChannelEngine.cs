@@ -1672,25 +1672,12 @@ namespace AgentCoreProcessor.Engine
 
                 if (!matched) continue;
 
-                // 通知系统循环（通过新委托系统 / 旧通知队列兼容）
+                // 通知系统循环
                 var watchSummary = $"规则「{rule.RuleId}」命中：{rule.Description}\n" +
                                    $"消息：{msg.Content.Substring(0, Math.Min(50, msg.Content.Length))}...";
-                if (_messaging != null)
-                {
-                    _messaging.SubmitFireAndForget(LoopId.System,
-                        $"WatchHit: {rule.RuleId}", watchSummary);
-                }
-                else
-                {
-                    ctx.TaskBridge.PostNotification(new Notification
-                    {
-                        Type = NotificationType.WatchHit,
-                        SourceId = $"channel_{channelId}",
-                        Summary = watchSummary
-                    });
-                }
+                _messaging!.SubmitFireAndForget(LoopId.System,
+                    $"WatchHit: {rule.RuleId}", watchSummary);
 
-                // 根据动作执行
                 switch (rule.Action)
                 {
                     case WatchAction.Notify:
@@ -1702,23 +1689,8 @@ namespace AgentCoreProcessor.Engine
                         break;
 
                     case WatchAction.Escalate:
-                        if (_messaging != null)
-                        {
-                            _messaging.SubmitFireAndForget(LoopId.System,
-                                $"规则「{rule.RuleId}」升级：{rule.Description}", msg.Content);
-                        }
-                        else
-                        {
-                            var task = new SystemTask
-                            {
-                                SourceChannelId = channelId,
-                                Description = $"关注规则「{rule.RuleId}」触发：{rule.Description}",
-                                ContextSummary = msg.Content,
-                                RequestingPersonId = sc.Person.Id,
-                                Priority = 5
-                            };
-                            _ = ctx.TaskBridge.SubmitTaskAsync(task, TimeSpan.FromMinutes(5));
-                        }
+                        _messaging.SubmitFireAndForget(LoopId.System,
+                            $"规则「{rule.RuleId}」升级：{rule.Description}", msg.Content);
                         break;
                 }
             }
