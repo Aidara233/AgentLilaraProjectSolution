@@ -12,7 +12,6 @@ namespace AgentCoreProcessor.Engine.Modules
     internal class ContextCompressionModule : EngineModule
     {
         public override string Name => "上下文压缩";
-        public override int PromptPriority => 100;
 
         private const int RecentRoundsToKeep = 10;
 
@@ -57,11 +56,6 @@ namespace AgentCoreProcessor.Engine.Modules
 
             currentSummary = await summarizationCore.SummarizeContextAsync(toCompress, currentSummary);
 
-        }
-
-        public override string? BuildPromptSection(EngineMode mode)
-        {
-            return null;
         }
     }
 

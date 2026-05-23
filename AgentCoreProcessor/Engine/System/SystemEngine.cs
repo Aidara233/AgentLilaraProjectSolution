@@ -458,42 +458,6 @@ namespace AgentCoreProcessor.Engine
             public object? GetService(Type serviceType) => _services.TryGetValue(serviceType, out var s) ? s : null;
         }
 
-        /// <summary>构建当前轮的 user 消息：仪表盘 + 模块注入 + 组件注入。</summary>
-        private Message BuildCurrentTurnMsg()
-        {
-            var sb = new StringBuilder();
-
-            // 模块注入（状态仪表盘、待处理事件等）
-            var sections = modules
-                .OrderBy(m => m.PromptPriority)
-                .Select(m => m.BuildPromptSection(EngineMode.Working))
-                .Where(s => !string.IsNullOrEmpty(s))
-                .ToList();
-
-            if (sections.Any())
-                sb.AppendLine(string.Join("\n\n", sections));
-
-            // Component 系统 prompt 注入
-            if (componentHost != null)
-            {
-                var groups = ToolListFormatter.CollectGroups(componentHost, ctx.GlobalComponentHost);
-                var toolOverview = ToolListFormatter.BuildToolOverviewSection(groups);
-                if (toolOverview != null)
-                    sb.AppendLine("\n" + toolOverview);
-
-                var componentSections = componentHost.BuildPromptSections();
-                foreach (var section in componentSections)
-                    sb.AppendLine("\n" + section);
-
-                var globalSections = ctx.GlobalComponentHost?.BuildPromptSections(
-                    new LoopInfo("system", "system")) ?? new();
-                foreach (var section in globalSections)
-                    sb.AppendLine("\n" + section);
-            }
-
-            return new Message { Role = "user", Content = sb.ToString() };
-        }
-
         private List<SystemTask> DrainTasks()
         {
             var tasks = new List<SystemTask>();

@@ -13,7 +13,6 @@ namespace AgentCoreProcessor.Engine
 
     /// <summary>
     /// 模块基类。实现 IInjectProvider + IEngineLifecycle。
-    /// BuildPromptSection / Attach / GetTools / Reset 标记 [Obsolete]，逐步移除。
     /// </summary>
     public abstract class EngineModule : IInjectProvider, IEngineLifecycle
     {
@@ -25,7 +24,7 @@ namespace AgentCoreProcessor.Engine
         // ── IInjectProvider ──
 
         public virtual Task<string?> BuildStartInjectAsync(InjectContext ctx)
-            => Task.FromResult(BuildPromptSection(MapMode(ctx.Mode)));
+            => Task.FromResult<string?>(null);
 
         public virtual Task<string?> BuildRoundInjectAsync(InjectContext ctx)
             => Task.FromResult<string?>(null);
@@ -41,29 +40,12 @@ namespace AgentCoreProcessor.Engine
             return Task.CompletedTask;
         }
 
-        // ── 废弃接口（保留编译兼容） ──
+        // ── 保留接口 ──
 
-        [Obsolete("Use InjectPriority instead")]
-        public virtual int PromptPriority => InjectPriority;
-
-        [Obsolete("Use IEngineLifecycle.OnInitializeAsync")]
         public virtual void Attach(ILoopBus bus) { }
 
-        [Obsolete("Override BuildStartInjectAsync instead")]
-        public virtual string? BuildPromptSection(EngineMode mode) => null;
-
-        [Obsolete("Use ITool directly")]
         public virtual IEnumerable<ITool> GetTools(EngineMode mode) => [];
 
-        [Obsolete("Use IEngineLifecycle.OnShutdownAsync")]
         public virtual void Reset() { }
-
-        // ── helpers ──
-
-        private static EngineMode MapMode(string mode) => mode switch
-        {
-            "express" => EngineMode.Express,
-            _ => EngineMode.Working
-        };
     }
 }

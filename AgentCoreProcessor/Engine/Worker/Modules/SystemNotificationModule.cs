@@ -11,7 +11,6 @@ namespace AgentCoreProcessor.Engine.Modules
     internal class SystemNotificationModule : EngineModule
     {
         public override string Name => "系统通知";
-        public override int PromptPriority => 41;
 
         private readonly Func<List<string>> drainNotifications;
 
@@ -21,19 +20,5 @@ namespace AgentCoreProcessor.Engine.Modules
         }
 
         public override void Attach(ILoopBus bus) { }
-
-        public override string? BuildPromptSection(EngineMode mode)
-        {
-            var notifications = drainNotifications();
-            if (notifications.Count == 0) return null;
-
-            var sb = new StringBuilder("[系统通知]\n");
-            sb.AppendLine("以下是系统循环发来的通知，请根据内容和上下文自行决定是否需要回应频道中的用户：");
-            foreach (var n in notifications)
-            {
-                sb.AppendLine($"- {n}");
-            }
-            return sb.ToString();
-        }
     }
 }
