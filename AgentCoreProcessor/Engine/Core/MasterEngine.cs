@@ -448,8 +448,6 @@ namespace AgentCoreProcessor.Engine
             ToolProfiles.Load();
 
             // Component 系统初始化（PluginLoader 已填充 ComponentRegistry）
-            componentServices.Register<AgentLilara.PluginSDK.Services.IDelegationAccess>(
-                new Component.DelegationAccessAdapter(Delegations));
             componentServices.Register<AgentLilara.PluginSDK.Services.ISubAgentAccess>(
                 new Component.SubAgentAccessAdapter(this));
             componentServices.Register<AgentLilara.PluginSDK.Services.IChannelAccess>(

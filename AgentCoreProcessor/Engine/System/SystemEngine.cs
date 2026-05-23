@@ -322,8 +322,6 @@ namespace AgentCoreProcessor.Engine
             var tasks = DrainTasks();
             var notifications = DrainNotifications();
             var scheduledEvents = DrainScheduledEvents();
-            var pendingDelegations = ctx.Delegations.GetPendingForEvaluation();
-            var retryDelegations = ctx.Delegations.GetRetryPending();
 
             // 新委托系统：超时检查 + 收集跨循环请求
             var crossRequests = DrainCrossRequests();
@@ -338,38 +336,26 @@ namespace AgentCoreProcessor.Engine
                     tasks = tasks.Count,
                     notifications = notifications.Count,
                     scheduled = scheduledEvents.Count,
-                    delegations = pendingDelegations.Count,
-                    retryDelegations = retryDelegations.Count
+                    crossRequests = crossRequests.Count
                 })
                 : Signal.Begin(LogGroup.Engine, "system:main", $"系统循环 #{_totalCycles}", new
                 {
                     tasks = tasks.Count,
                     notifications = notifications.Count,
                     scheduled = scheduledEvents.Count,
-                    delegations = pendingDelegations.Count,
-                    retryDelegations = retryDelegations.Count
+                    crossRequests = crossRequests.Count
                 });
 
             Signal.Event(LogGroup.Engine, "任务队列检查", new
             {
                 pending = tasks.Count,
                 notifications = notifications.Count,
-                scheduled = scheduledEvents.Count
+                scheduled = scheduledEvents.Count,
+                crossRequests = crossRequests.Count
             });
-
-            if (pendingDelegations.Count > 0 || retryDelegations.Count > 0)
-            {
-                Signal.Event(LogGroup.Engine, "委托待评估", new
-                {
-                    pending = pendingDelegations.Count,
-                    retry = retryDelegations.Count
-                });
-            }
 
             // 填充 PendingEventsModule
             pendingEventsModule.SetPendingEvents(tasks, notifications, scheduledEvents, lastRoundNoAction);
-            pendingEventsModule.SetPendingDelegations(pendingDelegations);
-            pendingEventsModule.SetRetryPendingDelegations(retryDelegations);
             pendingEventsModule.SetPendingCrossRequests(crossRequests);
 
             // Lazy register compress tool (agent guaranteed to exist here)
