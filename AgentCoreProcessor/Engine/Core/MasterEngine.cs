@@ -98,7 +98,6 @@ namespace AgentCoreProcessor.Engine
         public bool MuteMode { get; set; } = false;
         public SleepState CurrentSleepState { get; set; } = SleepState.None;
         public McpServerManager? McpManager => mcpManager;
-        public TaskBridge TaskBridge { get; private set; } = null!;
         public CrossRequestRegistry CrossRequests { get; private set; } = null!;
         public DelegationBus DelegationBus { get; private set; } = null!;
 
@@ -192,21 +191,6 @@ namespace AgentCoreProcessor.Engine
         }
 
         internal SystemEngine? GetSystemEngine() => systemEngine;
-
-        public void NotifyChannel(int channelId, string content)
-        {
-            var check = GetSpawnCheck<ChannelEngineSpawnCheck>();
-            if (check == null) return;
-            var channels = check.GetActiveChannels();
-            if (channels.TryGetValue(channelId, out var engine) && engine.IsAlive)
-            {
-                engine.InjectNotification(content);
-            }
-            else
-            {
-                check.StashNotification(channelId, content);
-            }
-        }
 
         public List<ISubEngine> GetActiveEnginesSnapshot()
         {
@@ -387,12 +371,9 @@ namespace AgentCoreProcessor.Engine
             // 人设记忆种子加载（表空时从文件导入）
             await LoadPersonaMemorySeedAsync();
 
-            // 创建 TaskBridge
+            // 创建 DelegationBus + CrossRequestRegistry（委托系统）
             var systemLoopPath = Path.Combine(PathConfig.StoragePath, "SystemLoop");
             Directory.CreateDirectory(systemLoopPath);
-            TaskBridge = new TaskBridge(systemLoopPath);
-
-            // 创建 DelegationBus + CrossRequestRegistry（委托系统）
             DelegationBus = new DelegationBus();
             CrossRequests = new CrossRequestRegistry(systemLoopPath, DelegationBus);
             CrossRequests.OnRequestSubmitted = initiatorId =>
@@ -576,20 +557,9 @@ namespace AgentCoreProcessor.Engine
 
                 if (task.OwnerType == "system")
                 {
-                    // 投递给 SystemEngine
                     systemEngine?.EnqueueScheduledEvent(evt);
                 }
-                else
-                {
-                    // 投递给频道循环（作为通知）
-                    TaskBridge.PostNotification(new Notification
-                    {
-                        Type = NotificationType.Notify,
-                        SourceId = $"scheduled-{task.Id}",
-                        Summary = $"[定时任务] {task.Description}" + (task.Payload != null ? $"\n{task.Payload}" : ""),
-                        Timestamp = DateTime.Now
-                    });
-                }
+                // channel 定向定时任务暂不支持（ScheduleParser 待重建）
 
                 // 计算下次触发
                 // TODO: Tool.ScheduleParser was deleted; need replacement for schedule computation
@@ -712,7 +682,7 @@ namespace AgentCoreProcessor.Engine
                     var channels = check.GetActiveChannels();
                     if (channels.TryGetValue(channelId, out var engine) && engine.IsAlive)
                     {
-                        engine.InjectNotification("[component-wake]");
+                        engine.SignalGate();
                     }
                 }
                 return;

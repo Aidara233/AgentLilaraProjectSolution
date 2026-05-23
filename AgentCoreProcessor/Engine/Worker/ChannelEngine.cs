@@ -96,9 +96,7 @@ namespace AgentCoreProcessor.Engine
         private readonly LinkedList<long> processedTicks = new();
         private const int MaxProcessedTicksWindow = 50;
 
-        // 系统通知队列（系统循环注入，频道循环消费）
-        private readonly ConcurrentQueue<string> systemNotifications = new();
-        // 跨循环请求队列（新委托系统）
+        // 跨循环请求队列
         private readonly ConcurrentQueue<CrossRequest> _pendingCrossRequests = new();
         internal IAgentMessaging? _messaging;
 
@@ -215,8 +213,7 @@ namespace AgentCoreProcessor.Engine
             modules = new List<EngineModule>
             {
                 loopControlModule,
-                new ToolStatusModule(),
-                new Modules.SystemNotificationModule(DrainSystemNotifications)
+                new ToolStatusModule()
             };
             foreach (var m in modules) m.Attach(bus);
 
@@ -300,21 +297,8 @@ namespace AgentCoreProcessor.Engine
             interceptors = list.OrderBy(i => i.Priority).ToList();
         }
 
-        /// <summary>系统循环注入通知到频道循环。唤醒闸门，下一轮 prompt 中展示。</summary>
-        public void InjectNotification(string content)
-        {
-            systemNotifications.Enqueue(content);
-            gate.Signal();
-        }
-
-        /// <summary>Drain 系统通知队列。</summary>
-        internal List<string> DrainSystemNotifications()
-        {
-            var list = new List<string>();
-            while (systemNotifications.TryDequeue(out var n))
-                list.Add(n);
-            return list;
-        }
+        /// <summary>唤醒闸门（供外部触发，如 ConsoleProvider 压缩信号）。</summary>
+        internal void SignalGate() => gate.Signal();
 
         /// <summary>DelegationBus 回调：接收到定向委托或广播。</summary>
         private void OnCrossRequestReceived(CrossRequest request)

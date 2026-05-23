@@ -296,7 +296,7 @@ internal class ConsoleEngineSource : IDataSource
         var active = check?.GetActiveChannels();
         if (active?.TryGetValue(_selectedChannelId, out var chEngine) == true && chEngine.IsAlive)
         {
-            chEngine.InjectNotification("[component-wake compress]");
+            chEngine.SignalGate();
             return Task.FromResult(new ActionResult { Success = true, Message = "压缩信号已发送" });
         }
         return Task.FromResult(Fail("引擎未运行"));

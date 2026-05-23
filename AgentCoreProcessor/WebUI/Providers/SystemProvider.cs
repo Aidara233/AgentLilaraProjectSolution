@@ -294,16 +294,16 @@ internal class SystemEventsSource : IDataSource
             });
         }
 
-        // 任务队列深度（无法逐条读取 Channel<T>，只显示计数）
-        var taskCount = _engine.TaskBridge.PendingTaskCount;
-        if (taskCount > 0)
+        // 跨循环请求计数
+        var crossCount = _engine.CrossRequests.GetVisible(LoopId.System).Count;
+        if (crossCount > 0)
         {
             arr.Add(new JsonObject
             {
                 ["time"] = DateTime.Now.ToString("MM-dd HH:mm:ss"),
-                ["type"] = "任务",
-                ["source"] = "TaskBridge",
-                ["description"] = $"{taskCount} 个任务等待系统循环处理",
+                ["type"] = "请求",
+                ["source"] = "CrossRequest",
+                ["description"] = $"{crossCount} 个请求等待处理",
                 ["status"] = "排队中"
             });
         }

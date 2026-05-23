@@ -21,8 +21,7 @@ namespace AgentCoreProcessor.Engine
         /// <summary>活跃频道引擎表（ChannelId → ChannelEngine）。</summary>
         private readonly Dictionary<int, ChannelEngine> activeChannels = new();
 
-        /// <summary>暂存通知（频道循环不活跃时暂存，下次创建时注入）。</summary>
-        private readonly Dictionary<int, List<string>> pendingNotifications = new();
+        // 频道循环不活跃时的跨循环请求暂存（待实现：DelegationBus 自动路由）
 
         public Task OnEventAsync(EngineEvent e, ISystemContext ctx)
         {
@@ -81,30 +80,10 @@ namespace AgentCoreProcessor.Engine
 
             var engine = new ChannelEngine(ctx, sc, msg);
             activeChannels[sc.Channel.Id] = engine;
-
-            // 注入暂存的系统通知
-            if (pendingNotifications.TryGetValue(sc.Channel.Id, out var notifications))
-            {
-                foreach (var n in notifications)
-                    engine.InjectNotification(n);
-                pendingNotifications.Remove(sc.Channel.Id);
-            }
-
             return engine;
         }
 
         internal IReadOnlyDictionary<int, ChannelEngine> GetActiveChannels() => activeChannels;
-
-        /// <summary>暂存通知（频道循环不活跃时调用）。</summary>
-        internal void StashNotification(int channelId, string content)
-        {
-            if (!pendingNotifications.TryGetValue(channelId, out var list))
-            {
-                list = new List<string>();
-                pendingNotifications[channelId] = list;
-            }
-            list.Add(content);
-        }
 
     }
 }

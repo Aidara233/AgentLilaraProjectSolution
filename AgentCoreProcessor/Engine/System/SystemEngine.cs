@@ -175,15 +175,6 @@ namespace AgentCoreProcessor.Engine
             gate.ExecuteAsync = ExecuteSystemCycleAsync;
             gate.EventFilter = e => e is TimerEvent or SignalEvent;
 
-            // 注册 TaskBridge 回调：任务提交时唤醒闸门 + 强制唤醒 DreamEngine
-            ctx.TaskBridge.OnTaskSubmitted = () =>
-            {
-                gate.Signal();
-                if (ctx.CurrentSleepState != SleepState.None)
-                {
-                    ctx.EventBus.PublishSignal("force-wake", "task-submitted");
-                }
-            };
         }
 
         private void RestoreContext()
@@ -318,12 +309,7 @@ namespace AgentCoreProcessor.Engine
                 lastSleepCheck = DateTime.Now;
             }
 
-            // ═══ 收集所有待处理事件 ═══
-            var tasks = DrainTasks();
-            var notifications = DrainNotifications();
-            var scheduledEvents = DrainScheduledEvents();
-
-            // 新委托系统：超时检查 + 收集跨循环请求
+            // ═══ 收集待处理事件 ═══
             var crossRequests = DrainCrossRequests();
             ctx.CrossRequests.EnforceTimeouts();
 
@@ -333,29 +319,14 @@ namespace AgentCoreProcessor.Engine
             using var iterSignal = triggerSignalId != null
                 ? Signal.Continue(triggerSignalId, triggerSpanId, "system:main", LogGroup.Engine, $"系统循环 #{_totalCycles}", new
                 {
-                    tasks = tasks.Count,
-                    notifications = notifications.Count,
-                    scheduled = scheduledEvents.Count,
                     crossRequests = crossRequests.Count
                 })
                 : Signal.Begin(LogGroup.Engine, "system:main", $"系统循环 #{_totalCycles}", new
                 {
-                    tasks = tasks.Count,
-                    notifications = notifications.Count,
-                    scheduled = scheduledEvents.Count,
                     crossRequests = crossRequests.Count
                 });
 
-            Signal.Event(LogGroup.Engine, "任务队列检查", new
-            {
-                pending = tasks.Count,
-                notifications = notifications.Count,
-                scheduled = scheduledEvents.Count,
-                crossRequests = crossRequests.Count
-            });
-
             // 填充 PendingEventsModule
-            pendingEventsModule.SetPendingEvents(tasks, notifications, scheduledEvents, lastRoundNoAction);
             pendingEventsModule.SetPendingCrossRequests(crossRequests);
 
             // Lazy register compress tool (agent guaranteed to exist here)
@@ -463,21 +434,6 @@ namespace AgentCoreProcessor.Engine
             public object? GetService(Type serviceType) => _services.TryGetValue(serviceType, out var s) ? s : null;
         }
 
-        private List<SystemTask> DrainTasks()
-        {
-            var tasks = new List<SystemTask>();
-            while (ctx.TaskBridge.TaskReader.TryRead(out var task))
-                tasks.Add(task);
-            return tasks;
-        }
-
-        private List<Notification> DrainNotifications()
-        {
-            var notifications = new List<Notification>();
-            while (ctx.TaskBridge.NotificationReader.TryRead(out var n))
-                notifications.Add(n);
-            return notifications;
-        }
 
         private List<ScheduledTaskFiredEvent> DrainScheduledEvents()
         {
@@ -742,13 +698,9 @@ namespace AgentCoreProcessor.Engine
                 var result = s.LastResult ?? "(无结果)";
                 var isFailed = result.StartsWith("异常终止") || result == "达到最大轮次限制"
                     || result == "API 调用连续失败，子 agent 中止";
-                ctx.TaskBridge.PostNotification(new Notification
-                {
-                    Type = isFailed ? NotificationType.SubAgentFailed : NotificationType.ProgressUpdate,
-                    SourceId = s.SessionId,
-                    Summary = $"子 agent {(isFailed ? "失败" : "完成")}: {result.Truncate(100)}",
-                    Timestamp = DateTime.Now
-                });
+                _messaging?.SubmitFireAndForget(LoopId.System,
+                    isFailed ? "SubAgentFailed" : "SubAgentComplete",
+                    $"子 agent {(isFailed ? "失败" : "完成")}: {result.Truncate(100)}");
             };
 
             lock (subAgentLock)
@@ -785,14 +737,9 @@ namespace AgentCoreProcessor.Engine
                             if (LoopId.IsChannel(crossReq.InitiatorId, out var chId))
                                 _messaging?.SubmitFireAndForget(LoopId.ForChannel(chId),
                                     "委托执行失败", channelMsg);
-                            ctx.TaskBridge.PostNotification(new Notification
-                            {
-                                Type = NotificationType.SubAgentFailed,
-                                SourceId = s.SessionId,
-                                DelegationId = s.DelegationId,
-                                Summary = $"子 agent 执行失败: {result.Truncate(100)}",
-                                Timestamp = DateTime.Now
-                            });
+                            _messaging?.SubmitFireAndForget(LoopId.System,
+                                "SubAgentFailed",
+                                $"子 agent 执行失败: {result.Truncate(100)}");
                         }
                         else
                         {
@@ -804,14 +751,9 @@ namespace AgentCoreProcessor.Engine
                 }
                 else
                 {
-                    // 无委托的子 agent，通过通知队列汇报
-                    ctx.TaskBridge.PostNotification(new Notification
-                    {
-                        Type = isFailed ? NotificationType.SubAgentFailed : NotificationType.ProgressUpdate,
-                        SourceId = s.SessionId,
-                        Summary = $"子 agent {(isFailed ? "失败" : "完成")}: {result.Truncate(100)}",
-                        Timestamp = DateTime.Now
-                    });
+                    _messaging?.SubmitFireAndForget(LoopId.System,
+                        isFailed ? "SubAgentFailed" : "SubAgentComplete",
+                        $"子 agent {(isFailed ? "失败" : "完成")}: {result.Truncate(100)}");
                 }
             };
 
@@ -892,7 +834,7 @@ namespace AgentCoreProcessor.Engine
             return new WebUI.Services.SystemEngineSnapshot
             {
                 IsAlive = IsAlive,
-                TaskQueueDepth = ctx.TaskBridge.PendingTaskCount,
+                TaskQueueDepth = 0,
                 ActiveSubAgentCount = agentInfos.Count(a => a.IsAlive),
                 HasPendingSleepRequest = pendingSleepRequest != null,
                 SleepRequestId = pendingSleepRequest?.RequestId,
