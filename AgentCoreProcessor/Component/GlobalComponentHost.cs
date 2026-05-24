@@ -1,6 +1,7 @@
 // AgentCoreProcessor/Component/GlobalComponentHost.cs
 using System.Reflection;
 using AgentCoreProcessor.Engine;
+using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Tool;
 using AgentLilara.PluginSDK;
 
@@ -44,8 +45,10 @@ internal class GlobalComponentHost
                 await instance.Component.OnInitAsync(instance.Context, InitReason.Fresh);
                 RegisterTools(instance);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Signal.Error(LogGroup.Engine, $"Global组件初始化失败: {reg.Type.Name}",
+                    new { type = reg.Type.FullName, error = ex.Message });
             }
         }
 

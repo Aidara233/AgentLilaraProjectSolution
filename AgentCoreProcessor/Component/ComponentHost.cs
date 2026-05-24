@@ -79,8 +79,10 @@ internal class ComponentHost
                 await instance.Component.OnInitAsync(instance.Context, InitReason.Fresh);
                 RegisterTools(instance);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Signal.Error(LogGroup.Engine, $"Loop组件初始化失败: {reg.Type.Name}",
+                    new { type = reg.Type.FullName, error = ex.Message });
             }
         }
     }
@@ -309,10 +311,14 @@ internal class ComponentStorage : IPluginStorage
     public ComponentStorage(string componentName, string loopId)
     {
         GlobalDirectory = Path.Combine(PathConfig.StoragePath, "PluginData", componentName);
-        InstanceDirectory = Path.Combine(PathConfig.StoragePath, "PluginData", componentName, loopId);
+        InstanceDirectory = Path.Combine(PathConfig.StoragePath, "PluginData", componentName,
+            SanitizeLoopId(loopId));
         Directory.CreateDirectory(GlobalDirectory);
         Directory.CreateDirectory(InstanceDirectory);
     }
+
+    private static string SanitizeLoopId(string loopId) =>
+        loopId.Replace(':', '_');
 
     public string GlobalDirectory { get; }
     public string InstanceDirectory { get; }
