@@ -957,16 +957,7 @@ namespace AgentCoreProcessor.Engine
                 }
             }
 
-            // Process text output
-            if (output.IsText && currentLastMsg != null && currentLastSc != null && currentParticipantSnapshot != null)
-            {
-                var text = output.Text!;
-                text = await ProcessPokeMarkers(text, currentLastMsg);
-                if (!string.IsNullOrEmpty(text))
-                    await SendSegmentsAsync(text, currentLastMsg, currentLastSc, currentParticipantSnapshot);
-            }
-
-            // Fire-and-forget tools
+            // Fire-and-forget tools (speak/send_media/escalate etc.)
             if (output.HasToolCalls && output.ToolCalls != null)
             {
                 Tool.Core.ManageComponentsTool.CurrentLoop.Value =
@@ -983,6 +974,15 @@ namespace AgentCoreProcessor.Engine
                     })
                 });
 
+                // 发布事件让订阅者处理 speak/send_media 等副作用
+                for (int i = 0; i < output.ToolCalls.Count; i++)
+                {
+                    var call = output.ToolCalls[i];
+                    var result = expressResults[i];
+                    var toolDef = ToolRegistry.Get(call.Tool);
+                    bus.Publish(new ToolExecutedEvent(call, result, toolDef));
+                }
+
                 // Check for escalate
                 foreach (var call in output.ToolCalls)
                 {
@@ -997,6 +997,14 @@ namespace AgentCoreProcessor.Engine
                         break;
                     }
                 }
+            }
+            else if (output.IsText && currentLastMsg != null && currentLastSc != null && currentParticipantSnapshot != null)
+            {
+                // 无工具调用时的文本回退（模型未使用 speak 工具直接输出文本）
+                var text = output.Text!;
+                text = await ProcessPokeMarkers(text, currentLastMsg);
+                if (!string.IsNullOrEmpty(text))
+                    await SendSegmentsAsync(text, currentLastMsg, currentLastSc, currentParticipantSnapshot);
             }
 
             // Post-processing

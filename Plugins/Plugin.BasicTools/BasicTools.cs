@@ -6,7 +6,7 @@ using AgentLilara.PluginSDK;
 
 namespace Plugin.BasicTools
 {
-    [ToolMeta(Group = null, ContinueLoop = false)]
+    [ToolMeta(Group = null, ContinueLoop = false, ExpressAvailable = true)]
     public class SpeakTool : ITool
     {
         public string Name => "speak";
@@ -24,7 +24,7 @@ namespace Plugin.BasicTools
         }
     }
 
-    [ToolMeta(Group = null, ContinueLoop = false)]
+    [ToolMeta(Group = null, ContinueLoop = false, ExpressAvailable = true)]
     public class SendMediaTool : ITool
     {
         public string Name => "send_media";
