@@ -14,5 +14,11 @@ namespace AgentCoreProcessor.Engine
 
         /// <summary>Agent 每轮调一次。轮次提示、压缩提醒、模式说明等持续内容。</summary>
         Task<List<Message>?> BuildRoundInjectAsync();
+
+        /// <summary>
+        /// BuildStartInjectAsync 返回的消息中，前 N 条为框架消息（不持久化）。
+        /// 之后的消息为对话内容（需持久化）。默认 0 表示全部为对话。
+        /// </summary>
+        int FrameworkMessageCount => 0;
     }
 }

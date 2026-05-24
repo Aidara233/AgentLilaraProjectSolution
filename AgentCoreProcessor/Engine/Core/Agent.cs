@@ -37,7 +37,7 @@ namespace AgentCoreProcessor.Engine
         public Func<ToolCall, ToolResult, ITool?, Task>? OnToolExecuted { get; set; }
 
         /// <summary>对话内容在 history 中的起始偏移（跳过框架注入部分）。</summary>
-        public int ConversationOffset { get; private set; }
+        public int ConversationOffset { get; set; }
 
         public Agent(IAgentHost host, AgentCore core, AgentConfig config, HashSet<string> authorizedTools)
         {
@@ -62,7 +62,8 @@ namespace AgentCoreProcessor.Engine
                 foreach (var m in startInject)
                     _history.Add(m);
             }
-            ConversationOffset = _history.Count;
+            // ConversationOffset 只跳过框架消息（prefix + summary），保留对话内容用于持久化
+            ConversationOffset = _host.FrameworkMessageCount;
 
             for (int round = 0; round < _config.MaxRounds && !ct.IsCancellationRequested; round++)
             {
@@ -243,9 +244,9 @@ namespace AgentCoreProcessor.Engine
                     {
                         if (c.ToolUseId != null)
                         {
-                            var json = c.Inputs.Count > 0
+                            var json = c.RawInputJson ?? (c.Inputs.Count > 0
                                 ? JsonConvert.SerializeObject(c.Inputs)
-                                : "{}";
+                                : "{}");
                             parts.Add(ContentPart.FromToolUse(c.ToolUseId, c.Tool, json));
                         }
                     }

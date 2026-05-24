@@ -71,6 +71,7 @@ namespace AgentCoreProcessor.Core
         {
             processor.Client.SetTools(toolDefs);
             var reasoningLog = new System.Text.StringBuilder();
+            var textLog = new System.Text.StringBuilder();
             var toolCallLog = new List<object>();
             Usage usage = new();
 
@@ -114,6 +115,8 @@ namespace AgentCoreProcessor.Core
 
                     if (evt.Type == Models.StreamEventType.Thinking && evt.Content != null)
                         reasoningLog.Append(evt.Content);
+                    if (evt.Type == Models.StreamEventType.Text && evt.Content != null)
+                        textLog.Append(evt.Content);
                     if (evt.Type == Models.StreamEventType.Usage && evt.Usage != null)
                         usage = evt.Usage;
                     if (evt.Type == Models.StreamEventType.ToolUseStart)
@@ -131,10 +134,15 @@ namespace AgentCoreProcessor.Core
                     onEvent(evt);
                 }, ct);
 
+                var outputContent = new System.Text.StringBuilder();
+                if (textLog.Length > 0) outputContent.Append(textLog);
+                if (toolCallLog.Count > 0)
+                {
+                    if (outputContent.Length > 0) outputContent.Append("\n\n");
+                    outputContent.Append(Newtonsoft.Json.JsonConvert.SerializeObject(toolCallLog, Newtonsoft.Json.Formatting.None));
+                }
                 LogOutput(
-                    toolCallLog.Count > 0
-                        ? Newtonsoft.Json.JsonConvert.SerializeObject(toolCallLog, Newtonsoft.Json.Formatting.None)
-                        : "[native tools: no calls]",
+                    outputContent.Length > 0 ? outputContent.ToString() : "[native tools: no output]",
                     reasoningLog.ToString(), usage);
             }
             catch (Exception ex)
@@ -377,10 +385,25 @@ namespace AgentCoreProcessor.Core
                     ? ComputeShortHash(string.Join("\n", systemMessages.Select(m => m.Content)))
                     : null;
 
-                // 动态消息：非 system 的全部记录，不截断
+                // 动态消息：非 system 的全部记录，包含 ContentParts
                 var dynamicMessages = history
                     .Where(m => m.Role != "system")
-                    .Select(m => new { role = m.Role, content = m.Content })
+                    .Select(m => m.ContentParts != null && m.ContentParts.Count > 0
+                        ? (object)new
+                        {
+                            role = m.Role,
+                            contentParts = m.ContentParts.Select(p => new
+                            {
+                                type = p.Type,
+                                text = p.Text,
+                                toolUseId = p.ToolUseId,
+                                toolName = p.ToolName,
+                                toolInput = p.ToolInput,
+                                isError = p.IsError,
+                                hasImage = !string.IsNullOrEmpty(p.ImagePath) || !string.IsNullOrEmpty(p.ImageBase64)
+                            })
+                        }
+                        : new { role = m.Role, content = m.Content })
                     .ToList();
 
                 // 工具列表

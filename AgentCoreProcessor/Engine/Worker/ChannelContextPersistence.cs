@@ -10,7 +10,7 @@ namespace AgentCoreProcessor.Engine
 {
     internal class ChannelContextPersistence
     {
-        private const int FormatVersion = 1;
+        private const int FormatVersion = 2;
         private readonly string _filePath;
 
         public ChannelContextPersistence(int channelId)
@@ -18,30 +18,6 @@ namespace AgentCoreProcessor.Engine
             var dir = Path.Combine(PathConfig.StoragePath, "ChannelContexts");
             Directory.CreateDirectory(dir);
             _filePath = Path.Combine(dir, $"channel_{channelId}.json");
-        }
-
-        /// <summary>
-        /// Append one round (user+assistant messages) to existing context file.
-        /// Loads current state, appends, atomically writes back.
-        /// </summary>
-        public void AppendRound(List<Message> userMsgs, List<Message> asstMsgs)
-        {
-            var (summary, mode, rounds) = LoadContext();
-            rounds.Add(userMsgs.Concat(asstMsgs).ToList());
-            SaveContext(summary, mode, rounds);
-        }
-
-        /// <summary>Save compression result: replace summary and rounds.</summary>
-        public void SaveCompressionResult(string summary, List<Message> retained, string mode)
-        {
-            var rounds = new List<List<Message>>();
-            for (int i = 0; i < retained.Count; i += 2)
-            {
-                var pair = new List<Message> { retained[i] };
-                if (i + 1 < retained.Count) pair.Add(retained[i + 1]);
-                rounds.Add(pair);
-            }
-            SaveContext(summary, mode, rounds);
         }
 
         /// <summary>Save full context state including all rounds.</summary>
@@ -55,11 +31,7 @@ namespace AgentCoreProcessor.Engine
                     UpdatedAt = DateTime.Now,
                     Summary = summary,
                     State = new { Mode = mode ?? "working" },
-                    Rounds = rounds.Select(r => new
-                    {
-                        User = r.Where(m => m.Role == "user").ToList(),
-                        Assistant = r.Where(m => m.Role == "assistant").ToList()
-                    }).ToList()
+                    Rounds = rounds.Select(r => r.ToList()).ToList()
                 };
                 var json = JsonConvert.SerializeObject(data, Formatting.Indented,
                     new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
@@ -70,7 +42,26 @@ namespace AgentCoreProcessor.Engine
             catch { /* best-effort persistence, don't crash on IO errors */ }
         }
 
-        /// <summary>Load context: (summary, mode, rounds). Each round is a flat list of messages.</summary>
+        /// <summary>Save compression result: replace summary and rounds.</summary>
+        public void SaveCompressionResult(string summary, List<Message> retained, string mode)
+        {
+            // 按 assistant 回复分割 rounds
+            var rounds = new List<List<Message>>();
+            var current = new List<Message>();
+            foreach (var m in retained)
+            {
+                current.Add(m);
+                if (m.Role == "assistant")
+                {
+                    rounds.Add(current);
+                    current = new List<Message>();
+                }
+            }
+            if (current.Count > 0) rounds.Add(current);
+            SaveContext(summary, mode, rounds);
+        }
+
+        /// <summary>Load context: (summary, mode, rounds). Each round is a flat list of messages in order.</summary>
         public (string? Summary, string? Mode, List<List<Message>> Rounds) LoadContext()
         {
             if (!File.Exists(_filePath))
@@ -84,7 +75,7 @@ namespace AgentCoreProcessor.Engine
                     return (null, "working", new List<List<Message>>());
 
                 int? version = wrapper.FormatVersion;
-                if (version == null || version < FormatVersion)
+                if (version == null || version < 1)
                 {
                     File.Delete(_filePath);
                     return (null, "working", new List<List<Message>>());
@@ -96,14 +87,33 @@ namespace AgentCoreProcessor.Engine
                 var rounds = new List<List<Message>>();
                 if (wrapper.Rounds != null)
                 {
-                    foreach (var round in wrapper.Rounds)
+                    if (version >= 2)
                     {
-                        var msgs = new List<Message>();
-                        if (round.User != null)
-                            msgs.AddRange(DeserializeMessages(round.User));
-                        if (round.Assistant != null)
-                            msgs.AddRange(DeserializeMessages(round.Assistant));
-                        if (msgs.Count > 0) rounds.Add(msgs);
+                        // V2: rounds 是 Message[] 的数组，保持原始顺序
+                        foreach (var round in wrapper.Rounds)
+                        {
+                            var msgs = DeserializeMessages(round);
+                            if (msgs != null && msgs.Count > 0) rounds.Add(msgs);
+                        }
+                    }
+                    else
+                    {
+                        // V1 兼容：rounds 是 { User: [], Assistant: [] } 格式
+                        foreach (var round in wrapper.Rounds)
+                        {
+                            var msgs = new List<Message>();
+                            if (round.User != null)
+                            {
+                                var userMsgs = DeserializeMessages(round.User);
+                                if (userMsgs != null) msgs.AddRange(userMsgs);
+                            }
+                            if (round.Assistant != null)
+                            {
+                                var asstMsgs = DeserializeMessages(round.Assistant);
+                                if (asstMsgs != null) msgs.AddRange(asstMsgs);
+                            }
+                            if (msgs.Count > 0) rounds.Add(msgs);
+                        }
                     }
                 }
                 return (summary, mode, rounds);

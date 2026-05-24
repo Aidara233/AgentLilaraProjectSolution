@@ -64,6 +64,7 @@ namespace AgentCoreProcessor.Core
 
             var call = new ToolCall { Tool = currentToolName, ToolUseId = currentToolUseId };
             var argsStr = currentArgsJson.ToString();
+            call.RawInputJson = string.IsNullOrWhiteSpace(argsStr) ? "{}" : argsStr;
 
             // 将命名的 JSON 参数映射到 positional inputs
             if (!string.IsNullOrWhiteSpace(argsStr))

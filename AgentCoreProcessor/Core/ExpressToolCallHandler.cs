@@ -64,6 +64,7 @@ namespace AgentCoreProcessor.Core
 
             var call = new ToolCall { Tool = currentToolName, ToolUseId = currentToolUseId };
             var argsStr = currentArgsJson.ToString();
+            call.RawInputJson = string.IsNullOrWhiteSpace(argsStr) ? "{}" : argsStr;
 
             if (!string.IsNullOrWhiteSpace(argsStr))
             {

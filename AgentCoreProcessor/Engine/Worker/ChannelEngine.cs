@@ -82,6 +82,8 @@ namespace AgentCoreProcessor.Engine
         // ── 堆叠式上下文 ──
         private string? fixedPrefix;
         private string? contextSummary;
+        private List<Message>? _loadedConversation;
+        private int _frameworkMessageCount;
 
         // 事件总线 + 内务模块
         private readonly LoopBus bus = new();
@@ -770,6 +772,9 @@ namespace AgentCoreProcessor.Engine
                                 agent?.AddToHistory(new Message { Role = "user", Content = fixedPrefix! });
                                 if (!string.IsNullOrEmpty(summary))
                                     agent?.AddToHistory(new Message { Role = "user", Content = $"[上下文摘要]\n{summary}" });
+                                // framework = prefix + summary
+                                if (agent != null)
+                                    agent.ConversationOffset = agent.History.Count;
                                 foreach (var m in retained) agent?.AddToHistory(m);
                                 PersistCurrentContext();
                             }).GetAwaiter().GetResult();
@@ -784,6 +789,8 @@ namespace AgentCoreProcessor.Engine
                         agent.AddToHistory(new Message { Role = "user", Content = fixedPrefix! });
                         if (!string.IsNullOrEmpty(summary))
                             agent.AddToHistory(new Message { Role = "user", Content = $"[上下文摘要]\n{summary}" });
+                        // framework = prefix + summary
+                        agent.ConversationOffset = agent.History.Count;
                         foreach (var m in retained) agent.AddToHistory(m);
                         PersistCurrentContext();
                         gate.Signal();
@@ -993,17 +1000,18 @@ namespace AgentCoreProcessor.Engine
                 return Task.CompletedTask;
             };
 
-            // Restore persisted history (only conversation rounds, no framework injections)
-            if (persistence != null)
+            // Restore persisted context (loaded into _loadedConversation for BuildStartInjectAsync)
+            if (persistence != null && _loadedConversation == null)
             {
                 var (summary, mode, rounds) = persistence.LoadContext();
                 if (!string.IsNullOrEmpty(summary) && string.IsNullOrEmpty(contextSummary))
                     contextSummary = summary;
                 if (rounds.Count > 0)
                 {
+                    _loadedConversation = new List<Message>();
                     foreach (var round in rounds)
                         foreach (var msg in round)
-                            agent.AddToHistory(msg);
+                            _loadedConversation.Add(msg);
                 }
             }
         }
@@ -1020,6 +1028,8 @@ namespace AgentCoreProcessor.Engine
             return new Component.SimpleServiceProvider(services);
         }
 
+        public int FrameworkMessageCount => _frameworkMessageCount;
+
         public async Task<List<Message>?> BuildStartInjectAsync()
         {
             var msgs = new List<Message>();
@@ -1032,13 +1042,23 @@ namespace AgentCoreProcessor.Engine
             if (!string.IsNullOrEmpty(contextSummary))
                 msgs.Add(new Message { Role = "user", Content = $"[上下文摘要]\n{contextSummary}" });
 
-            // 近期对话历史（Express 模式用；Working 模式由 Agent history 提供）
+            // 近期对话历史（Express 模式用；Working 模式由持久化 rounds 提供）
             if (!isWorkingMode && expressHistory.Count > 0)
             {
                 var histSb = new StringBuilder("[对话历史]\n");
                 foreach (var line in expressHistory)
                     histSb.AppendLine(line);
                 msgs.Add(new Message { Role = "user", Content = histSb.ToString() });
+            }
+
+            // Working 模式：framework 到此为止，后面是对话内容
+            _frameworkMessageCount = msgs.Count;
+
+            // Working 模式：插入持久化的旧对话 rounds
+            if (isWorkingMode && _loadedConversation != null && _loadedConversation.Count > 0)
+            {
+                msgs.AddRange(_loadedConversation);
+                _loadedConversation = null; // 只注入一次
             }
 
             // Format new messages from buffer (interceptor flow)
@@ -1135,6 +1155,7 @@ namespace AgentCoreProcessor.Engine
                         if (fixedPrefix == null) fixedPrefix = BuildFixedPrefix();
                         agent.AddToHistory(new Message { Role = "user", Content = fixedPrefix });
                         agent.AddToHistory(new Message { Role = "user", Content = $"[上下文摘要]\n{cs.Summary}" });
+                        agent.ConversationOffset = agent.History.Count;
                         foreach (var msg in cs.RetainedHistory)
                             agent.AddToHistory(msg);
                         break;
@@ -1207,23 +1228,24 @@ namespace AgentCoreProcessor.Engine
             var startIdx = agent.ConversationOffset;
             if (startIdx >= agent.History.Count) return;
 
-            var rounds = new List<List<Message>>();
             var conversation = agent.History.Skip(startIdx).ToList();
-            for (int i = 0; i < conversation.Count; i += 2)
+
+            // 按 assistant 回复分割 rounds：每个 round = 前面的 user 消息 + assistant 回复
+            var rounds = new List<List<Message>>();
+            var currentRound = new List<Message>();
+            foreach (var msg in conversation)
             {
-                var msg = conversation[i];
-                // Skip empty messages
-                if (string.IsNullOrEmpty(msg.Content)) continue;
-                var pair = new List<Message> { msg };
-                if (i + 1 < conversation.Count)
+                currentRound.Add(msg);
+                if (msg.Role == "assistant")
                 {
-                    var asst = conversation[i + 1];
-                    if (!string.IsNullOrEmpty(asst.Content))
-                        pair.Add(asst);
+                    rounds.Add(currentRound);
+                    currentRound = new List<Message>();
                 }
-                if (pair.Count > 0)
-                    rounds.Add(pair);
             }
+            // 尾部未闭合的 user 消息也保留
+            if (currentRound.Count > 0)
+                rounds.Add(currentRound);
+
             persistence.SaveContext(contextSummary, isWorkingMode ? "working" : "express", rounds);
         }
 

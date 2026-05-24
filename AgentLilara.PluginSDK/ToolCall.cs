@@ -21,6 +21,10 @@ namespace AgentLilara.PluginSDK
         [JsonIgnore]
         public string? ToolUseId { get; set; }
 
+        /// <summary>原生工具调用的原始 input JSON（对象格式），用于回传 API 历史。</summary>
+        [JsonIgnore]
+        public string? RawInputJson { get; set; }
+
         public static ToolCall FromJson(string json)
         {
             if (string.IsNullOrWhiteSpace(json))
