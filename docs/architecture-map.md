@@ -408,7 +408,7 @@ AgentLilara.PluginSDK (共享契约，独立类库):
   Plugin.MemoryTools     — memory（记忆读写，依赖 IMemoryAccess 服务）[GlobalComponent: memory-tools]
   Plugin.FileTools       — read_text + write_text + list_dir + move/delete/copy（文件系统）[GlobalComponent: file-tools]
   Plugin.CrossLoopTools -- send_request + evaluate_request + complete_request + send_notify + report_progress + list_loops 等（跨循环委托与通信）[LoopComponent: cross-loop]
-  Plugin.SystemTools     — evaluate_delegation + complete_delegation + notify_channel + create/stop_sub_agent（系统循环调度）[LoopComponent: system-ops]
+  Plugin.SystemTools     — create_sub_agent + stop_sub_agent + send_instruction + list_sub_agents（子agent管理）[LoopComponent: system-ops]
 
 ToolCall: 原生 tool_use (Claude API) 为主路径
   NativeToolCallHandler: 按 properties 顺序映射命名参数到位置输入

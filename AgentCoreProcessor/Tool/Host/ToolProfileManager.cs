@@ -401,7 +401,7 @@ namespace AgentCoreProcessor.Tool.Host
                             ["memory-tools"] = "enabled",
                             ["file-tools"] = "disabled",
                             ["working-tools"] = "enabled",
-                            ["delegation"] = "unavailable",
+                            ["cross-loop"] = "unavailable",
                             ["system-ops"] = "unavailable"
                         }
                     },
@@ -411,7 +411,7 @@ namespace AgentCoreProcessor.Tool.Host
                         Description = "频道循环默认",
                         Components = new Dictionary<string, string>
                         {
-                            ["delegation"] = "enabled"
+                            ["cross-loop"] = "enabled"
                         }
                     },
                     ["system"] = new ToolProfile
@@ -422,7 +422,7 @@ namespace AgentCoreProcessor.Tool.Host
                         {
                             ["working-tools"] = "unavailable",
                             ["basic-tools"] = "unavailable",
-                            ["delegation"] = "unavailable",
+                            ["cross-loop"] = "unavailable",
                             ["system-ops"] = "enabled"
                         }
                     },
