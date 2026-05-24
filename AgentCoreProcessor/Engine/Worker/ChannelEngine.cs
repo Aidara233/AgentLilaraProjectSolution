@@ -406,6 +406,7 @@ namespace AgentCoreProcessor.Engine
                     await componentHost.OnPauseAsync();
                     continue;
                 }
+                _extraCycleRequested = false;
 
                 // ③ 循环会话开始（有消息或 Working 会话持续中）
                 if (sessionCtx == null)
@@ -503,7 +504,6 @@ namespace AgentCoreProcessor.Engine
                     }
                     if (!isInWorkingSession)
                     {
-                        _extraCycleRequested = false;
                         Interlocked.Exchange(ref _busyFlag, 0);
                         Interlocked.Exchange(ref _completionTicks, DateTime.Now.Ticks);
                         await componentHost.OnPauseAsync();
