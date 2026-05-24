@@ -811,7 +811,7 @@ namespace AgentCoreProcessor.Engine
                     }));
             }
 
-            agentCore.AdditionalTools = componentHost.GetVisibleTools().ToList();
+            agentCore.AdditionalTools = componentHost!.GetVisibleTools().ToList();
             agentCore.GlobalComponentTools = ctx.GlobalComponentHost?.GetAllTools().ToList();
             await agent!.RunAsync(CancellationToken.None);
 
@@ -889,7 +889,7 @@ namespace AgentCoreProcessor.Engine
             if (roundInject != null) messages.AddRange(roundInject);
 
             // Call model (with retry)
-            agentCore.AdditionalTools = componentHost.GetVisibleTools().ToList();
+            agentCore.AdditionalTools = componentHost!.GetVisibleTools().ToList();
             agentCore.GlobalComponentTools = ctx.GlobalComponentHost?.GetAllTools().ToList();
             ModelOutput output;
             using (var modelSpan = Signal.Open(LogGroup.Model, $"Express模型调用 ch:{channelId}",
@@ -1031,7 +1031,7 @@ namespace AgentCoreProcessor.Engine
             {
                 var workingTools = new HashSet<string>(WorkingAuthorizedTools.Split(','));
                 sb.AppendLine(ToolRegistry.GenerateDescriptions(authorizedTools: workingTools,
-                    additionalTools: componentHost.GetAllVisibleTools().ToList()));
+                    additionalTools: componentHost!.GetAllVisibleTools().ToList()));
                 var botId = ctx.Adapters.GetBotPlatformId("qq");
                 if (!string.IsNullOrEmpty(botId))
                     sb.AppendLine($"\n身份信息：你的QQ号是 {botId}。");
@@ -1048,7 +1048,7 @@ namespace AgentCoreProcessor.Engine
             fixedPrefix = BuildFixedPrefix();
 
             var authorized = new HashSet<string>(WorkingAuthorizedTools.Split(','));
-            agent = new Agent(this, agentCore, agentConfig, authorized, componentHost.TryGetTool);
+            agent = new Agent(this, agentCore, agentConfig, authorized, componentHost!.TryGetTool);
             agent.OnToolExecuted = (call, result, toolDef) =>
             {
                 bus.Publish(new ToolExecutedEvent(call, result, toolDef));

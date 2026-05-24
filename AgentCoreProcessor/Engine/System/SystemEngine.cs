@@ -448,7 +448,7 @@ namespace AgentCoreProcessor.Engine
             if (!useNativeTools)
             {
                 var allowed = GetAuthorizedTools();
-                var toolDescriptions = ToolRegistry.GenerateDescriptions(filter: t => allowed.Contains(t.Name), additionalTools: componentHost.GetAllVisibleTools().ToList());
+                var toolDescriptions = ToolRegistry.GenerateDescriptions(filter: t => allowed.Contains(t.Name), additionalTools: componentHost!.GetAllVisibleTools().ToList());
                 if (!string.IsNullOrEmpty(toolDescriptions))
                     msgs.Add(new Message { Role = "user", Content = toolDescriptions });
             }
