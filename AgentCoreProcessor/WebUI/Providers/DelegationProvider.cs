@@ -450,7 +450,7 @@ internal class DelegationDetailSource : IDataSource
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
     {
-        var requestId = data?["requestId"]?.ToString();
+        var requestId = data?["request_id"]?.ToString();
         if (string.IsNullOrWhiteSpace(requestId))
             return Task.FromResult(new ActionResult { Success = false, Message = "缺少 requestId" });
 

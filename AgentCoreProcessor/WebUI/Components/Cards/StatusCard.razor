@@ -39,12 +39,27 @@
             }
         </div>
     }
+
+    @if (confirmAction != null)
+    {
+        <div class="confirm-overlay" @onclick="() => confirmAction = null">
+            <div class="confirm-dialog" @onclick:stopPropagation="true">
+                <div class="confirm-body">@confirmAction.Confirm</div>
+                <div class="confirm-footer">
+                    <button class="btn btn-sm btn-ghost" @onclick="() => confirmAction = null">取消</button>
+                    <button class="btn btn-sm btn-primary" @onclick="() => ExecuteConfirmed()">确认</button>
+                </div>
+            </div>
+        </div>
+    }
 </div>
 
 @code {
     [Parameter, EditorRequired] public StatusSchema Schema { get; set; } = null!;
     [Parameter] public JsonNode? Data { get; set; }
     [Parameter] public EventCallback<string> OnAction { get; set; }
+
+    private ActionButton? confirmAction;
 
     private string GetFieldValue(StatusField field)
     {
@@ -74,7 +89,20 @@
 
     private async Task HandleAction(ActionButton action)
     {
+        if (!string.IsNullOrEmpty(action.Confirm))
+        {
+            confirmAction = action;
+            return;
+        }
         await OnAction.InvokeAsync(action.Id);
+    }
+
+    private async Task ExecuteConfirmed()
+    {
+        var action = confirmAction;
+        confirmAction = null;
+        if (action != null)
+            await OnAction.InvokeAsync(action.Id);
     }
 
     private bool IsActionDisabled(string actionId)
