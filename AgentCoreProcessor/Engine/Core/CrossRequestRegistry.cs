@@ -200,6 +200,9 @@ internal class CrossRequestRegistry
     public CrossRequest? Get(string requestId) =>
         _requests.TryGetValue(requestId, out var r) ? r : null;
 
+    /// <summary>返回所有请求（供 WebUI 监视用，绕过可见性过滤）。</summary>
+    public List<CrossRequest> GetAll() => _requests.Values.ToList();
+
     // ═══════ 内部 ═══════
 
     private static bool IsVisibleTo(CrossRequest r, string loopId)
