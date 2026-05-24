@@ -73,17 +73,21 @@ namespace AgentCoreProcessor.Core
                 {
                     foreach (var t in GlobalComponentTools)
                     {
-                        var meta = ToolRegistry.GetMeta(t.Name)
-                            ?? Attribute.GetCustomAttribute(t.GetType(), typeof(ToolMetaAttribute)) as ToolMetaAttribute;
-                        if (meta?.ExpressAvailable != true) continue;
                         if (ToolRegistry.IsDisabled(t.Name)) continue;
+                        if (!IsExpressAvailable(t)) continue;
                         if (expressDefs.Any(d => d.Name == t.Name)) continue;
-                        expressDefs.Add(new ToolDefinition
-                        {
-                            Name = t.Name,
-                            Description = t.Description,
-                            Parameters = t.GetInputSchema()
-                        });
+                        expressDefs.Add(ToDefinition(t));
+                    }
+                }
+                // 合并 loop 组件中 ExpressAvailable 的工具
+                if (AdditionalTools != null)
+                {
+                    foreach (var t in AdditionalTools)
+                    {
+                        if (ToolRegistry.IsDisabled(t.Name)) continue;
+                        if (!IsExpressAvailable(t)) continue;
+                        if (expressDefs.Any(d => d.Name == t.Name)) continue;
+                        expressDefs.Add(ToDefinition(t));
                     }
                 }
                 if (expressDefs.Count > 0 && UseNativeTools)
@@ -171,48 +175,18 @@ namespace AgentCoreProcessor.Core
             }
             else
             {
-                // fallback：使用全部已注册工具
+                // fallback：使用全部已注册工具（Core + MCP，不含组件工具）
                 toolDefs = ToolRegistry.All.Values
                     .Where(t => !ToolRegistry.IsDisabled(t.Name))
-                    .Select(t => new ToolDefinition
-                    {
-                        Name = t.Name,
-                        Description = t.Description,
-                        Parameters = t.GetInputSchema()
-                    }).ToList();
+                    .Select(ToDefinition)
+                    .ToList();
             }
 
             // 合并全局组件工具
-            if (GlobalComponentTools != null)
-            {
-                foreach (var t in GlobalComponentTools)
-                {
-                    if (ToolRegistry.IsDisabled(t.Name)) continue;
-                    if (toolDefs.Any(d => d.Name == t.Name)) continue;
-                    toolDefs.Add(new ToolDefinition
-                    {
-                        Name = t.Name,
-                        Description = t.Description,
-                        Parameters = t.GetInputSchema()
-                    });
-                }
-            }
+            MergeTools(toolDefs, GlobalComponentTools);
 
             // 合并 loop 组件工具
-            if (AdditionalTools != null)
-            {
-                foreach (var t in AdditionalTools)
-                {
-                    if (ToolRegistry.IsDisabled(t.Name)) continue;
-                    if (toolDefs.Any(d => d.Name == t.Name)) continue;
-                    toolDefs.Add(new ToolDefinition
-                    {
-                        Name = t.Name,
-                        Description = t.Description,
-                        Parameters = t.GetInputSchema()
-                    });
-                }
-            }
+            MergeTools(toolDefs, AdditionalTools);
 
             NativeToolCallHandler handler = new(toolDefs);
             await GenerateWithToolsAsync(toolDefs, handler.OnEvent,
@@ -258,5 +232,30 @@ namespace AgentCoreProcessor.Core
             processor.Client.ClearConversationHistory();
             processor.Client.SetConversationHistory(messages);
         }
+
+        private static void MergeTools(List<ToolDefinition> defs, List<ITool>? tools)
+        {
+            if (tools == null) return;
+            foreach (var t in tools)
+            {
+                if (ToolRegistry.IsDisabled(t.Name)) continue;
+                if (defs.Any(d => d.Name == t.Name)) continue;
+                defs.Add(ToDefinition(t));
+            }
+        }
+
+        private static bool IsExpressAvailable(ITool t)
+        {
+            var meta = ToolRegistry.GetMeta(t.Name)
+                ?? Attribute.GetCustomAttribute(t.GetType(), typeof(ToolMetaAttribute)) as ToolMetaAttribute;
+            return meta?.ExpressAvailable == true;
+        }
+
+        private static ToolDefinition ToDefinition(ITool t) => new()
+        {
+            Name = t.Name,
+            Description = t.Description,
+            Parameters = t.GetInputSchema()
+        };
     }
 }
