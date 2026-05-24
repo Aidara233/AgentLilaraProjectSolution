@@ -160,18 +160,19 @@ else
                 break;
             case CardType.Status:
                 <StatusCard Schema="@((StatusSchema)card.Schema)" Data="@data"
-                            OnAction="@(id => OnSubmitAction(dsId, id, null))" />
+                            OnAction="@(id => OnSubmitAction(dsId, id, data))" />
                 break;
             case CardType.Form:
                 <FormCard Schema="@((FormSchema)card.Schema)" Data="@data"
-                          OnSubmit='@(d => OnSubmitAction(dsId, "save", d))' />
+                          OnSubmit='@(d => OnSubmitAction(dsId, "save", d))'
+                          OnValuesChanged="@(card.LinkEvent != null ? EventCallback.Factory.Create<JsonNode>(this, d => OnFormValuesChanged(pc, card.LinkEvent, d)) : default)" />
                 break;
             case CardType.Stream:
                 <StreamCard Schema="@((StreamSchema)card.Schema)" Data="@data" />
                 break;
             case CardType.Chat:
                 <ChatCard Schema="@((ChatSchema)card.Schema)" Data="@data"
-                          OnSubmit='@(d => OnSubmitAction(dsId, "send", d))' />
+                          OnSubmit='@(d => OnSubmitAction(dsId, "send", d, card.InjectEvent))' />
                 break;
             case CardType.Tree:
                 <TreeCard Schema="@((TreeSchema)card.Schema)" Data="@data"
@@ -198,21 +199,38 @@ else
     private static void EmitLinkEvent(PageContext? pc, string eventName, JsonNode row)
         => pc?.Emit(eventName, row);
 
-    private async Task OnQuery(string dsId, DataQuery query)
+    private static void OnFormValuesChanged(PageContext? pc, string eventName, JsonNode data)
+        => pc?.SetState(eventName, data);
+
+    private async Task OnQuery(string? dsId, DataQuery query)
     {
         await dsManager.FetchAsync(dsId, query);
         StateHasChanged();
     }
 
-    private async Task OnRowAction(string dsId, (string ActionId, JsonNode Row) e)
+    private async Task OnRowAction(string? dsId, (string ActionId, JsonNode Row) e)
     {
         await dsManager.SubmitAsync(dsId, e.ActionId, e.Row);
         await dsManager.FetchAsync(dsId);
         StateHasChanged();
     }
 
-    private async Task OnSubmitAction(string dsId, string action, JsonNode? data)
+    private async Task OnSubmitAction(string? dsId, string action, JsonNode? data, string? injectEvent = null)
     {
+        if (injectEvent != null && pageContext != null)
+        {
+            var injected = pageContext.GetState(injectEvent);
+            if (injected is JsonObject injObj && data is JsonObject dataObj)
+            {
+                foreach (var prop in injObj)
+                    dataObj[prop.Key] = prop.Value?.DeepClone();
+            }
+            else if (injected != null && data == null)
+            {
+                data = injected.DeepClone();
+            }
+        }
+
         var result = await dsManager.SubmitAsync(dsId, action, data);
         if (result.Success && result.Message is string msg && msg.StartsWith("/"))
         {
