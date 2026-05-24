@@ -817,6 +817,15 @@ namespace AgentCoreProcessor.Engine
             {
                 EndWorkingSession();
             }
+            else if (agent.StopReason == AgentStopReason.Deescalated)
+            {
+                var reason = agent.LastRoundCalls?
+                    .FirstOrDefault(c => c.Tool == "deescalate")?.Inputs.FirstOrDefault();
+                Signal.Event(LogGroup.Engine, "模式切换",
+                    new { channelId, from = "Working", to = "Express", reason = reason ?? "工具调用" });
+                isWorkingMode = false;
+                EndWorkingSession();
+            }
             else if (agent.StopReason == AgentStopReason.MaxRounds)
             {
                 loopControlModule.AdvanceRound(hadSpeakThisRound);
@@ -1200,6 +1209,12 @@ namespace AgentCoreProcessor.Engine
                     if (compressionTierModule.CurrentTier == CompressionTier.L1)
                         compressionTierModule.MarkL1Injected();
                 }
+            }
+
+            // Working 模式提示：如果工作已完成，使用 deescalate 切换回 Express
+            if (isWorkingMode)
+            {
+                msgs.Add(new Message { Role = "user", Content = "如果不需要继续工作（任务已完成或无需更多操作），请使用 deescalate 工具切换回轻量模式。" });
             }
 
             return msgs.Count > 0 ? msgs : null;

@@ -395,6 +395,7 @@ namespace AgentCoreProcessor.Engine
             Tool.ToolRegistry.Register(new Tool.Core.WaitTool());
             Tool.ToolRegistry.Register(new Tool.Core.ManageComponentsTool(ToolProfiles));
             Tool.ToolRegistry.Register(new Tool.Core.EscalateTool());
+            Tool.ToolRegistry.Register(new Tool.Core.DeescalateTool());
 
             // 插件加载
             _toolContext = new Tool.Host.ToolContextImpl(new Tool.Host.PluginStorageImpl("_system"));
