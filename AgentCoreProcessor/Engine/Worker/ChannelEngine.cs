@@ -137,12 +137,9 @@ namespace AgentCoreProcessor.Engine
         private bool hadSpeakThisRound;
 
         // 错误追踪
-        private int consecutiveFailures = 0;
         private DateTime? lastErrorTime = null;
         private string? lastErrorMessage = null;
         private int totalErrorCount = 0;
-        private const int ChannelMaxConsecutiveBeforeBackoff = 3;
-        private const int ChannelBackoffSeconds = 30;
 
         // 缓冲定时器
         private CancellationTokenSource? _bufferTimerCts;
@@ -192,7 +189,6 @@ namespace AgentCoreProcessor.Engine
             // ── Gate ──
             gate = new Gate(ctx.EventBus);
             gate.ShouldActivate = CheckShouldActivateAsync;
-            gate.ExecuteAsync = ExecuteChannelCycleAsync;
 
             extractionWorker = new ChannelExtractionWorker(
                 ctx, channelId, channelConfig, recentParticipants,
@@ -445,19 +441,17 @@ namespace AgentCoreProcessor.Engine
                         isInWorkingSession,
                         hadSpeak = hadSpeakThisRound
                     });
-                    consecutiveFailures = 0;
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
                 {
-                    consecutiveFailures++;
                     totalErrorCount++;
                     lastErrorTime = DateTime.Now;
                     lastErrorMessage = $"{ex.GetType().Name}: {ex.Message}";
-                    Signal.Error(LogGroup.Engine, "处理异常",
-                        new { error = ex.GetType().Name, message = ex.Message, consecutiveFailures });
+                    Signal.Error(LogGroup.Engine, "模型调用失败，引擎终止",
+                        new { error = ex.GetType().Name, message = ex.Message, channelId });
 
-                    if (currentLastMsg != null && consecutiveFailures <= 1)
+                    if (currentLastMsg != null)
                     {
                         try
                         {
@@ -470,13 +464,7 @@ namespace AgentCoreProcessor.Engine
                         catch (Exception notifyEx) { Signal.Warn(LogGroup.Adapter, "错误通知发送失败", new { channelId, error = notifyEx.Message }); }
                     }
 
-                    if (consecutiveFailures >= ChannelMaxConsecutiveBeforeBackoff)
-                    {
-                        Signal.Warn(LogGroup.Engine, "连续失败退避",
-                            new { channelId, consecutiveFailures, backoffSeconds = ChannelBackoffSeconds });
-                        await Task.Delay(TimeSpan.FromSeconds(ChannelBackoffSeconds));
-                    }
-
+                    IsAlive = false;
                     isInWorkingSession = false;
                 }
                 finally
@@ -755,71 +743,6 @@ namespace AgentCoreProcessor.Engine
             return await EvaluateGateAsync(batch);
         }
 
-        // ═══════════════════════════════════════════════════════════
-        // 统一循环执行（Working → Agent / Express → 直接 Core）
-        // ═══════════════════════════════════════════════════════════
-
-        /// <summary>Gate.ExecuteAsync 委托。统一循环入口，按模式分发。</summary>
-        private async Task ExecuteChannelCycleAsync(CancellationToken ct)
-        {
-            Interlocked.Exchange(ref _busyFlag, 1);
-            try
-            {
-                await componentHost!.OnBeforeInvokeAsync();
-
-                if (isWorkingMode)
-                {
-                    await ExecuteWorkingCycleAsync();
-                }
-                else
-                {
-                    await ExecuteExpressCycleAsync();
-                }
-
-                consecutiveFailures = 0;
-            }
-            catch (OperationCanceledException) { throw; }
-            catch (Exception ex)
-            {
-                consecutiveFailures++;
-                totalErrorCount++;
-                lastErrorTime = DateTime.Now;
-                lastErrorMessage = $"{ex.GetType().Name}: {ex.Message}";
-                Signal.Error(LogGroup.Engine, "处理异常",
-                    new { error = ex.GetType().Name, message = ex.Message, consecutiveFailures });
-
-                if (currentLastMsg != null && consecutiveFailures <= 1)
-                {
-                    try
-                    {
-                        await ctx.Adapters.SendMessageAsync(currentLastMsg.Platform, new OutgoingMessage
-                        {
-                            ChannelId = currentLastMsg.ChannelId,
-                            Content = $"[错误] 处理消息时发生异常：{ex.Message}"
-                        });
-                    }
-                    catch (Exception notifyEx) { Signal.Warn(LogGroup.Adapter, "错误通知发送失败", new { channelId, error = notifyEx.Message }); }
-                }
-
-                if (consecutiveFailures >= ChannelMaxConsecutiveBeforeBackoff)
-                {
-                    Signal.Warn(LogGroup.Engine, "连续失败退避",
-                        new { channelId, consecutiveFailures, backoffSeconds = ChannelBackoffSeconds });
-                    await Task.Delay(TimeSpan.FromSeconds(ChannelBackoffSeconds), ct);
-                }
-
-                isInWorkingSession = false;
-            }
-            finally
-            {
-                if (!isInWorkingSession)
-                {
-                    Interlocked.Exchange(ref _busyFlag, 0);
-                    Interlocked.Exchange(ref _completionTicks, DateTime.Now.Ticks);
-                    await componentHost!.OnPauseAsync();
-                }
-            }
-        }
 
         /// <summary>Working 模式：Agent 多轮循环。</summary>
         private async Task ExecuteWorkingCycleAsync()
@@ -1341,7 +1264,6 @@ namespace AgentCoreProcessor.Engine
             AuthorizedToolCount = authorizedTools.Count,
             ParticipantCount = recentParticipants.Count,
             ProcessedMessageCount = processedMessageCount,
-            ConsecutiveFailures = consecutiveFailures,
             TotalErrorCount = totalErrorCount,
             LastErrorTime = lastErrorTime,
             LastErrorMessage = lastErrorMessage

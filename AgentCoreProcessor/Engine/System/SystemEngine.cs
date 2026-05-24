@@ -355,20 +355,14 @@ namespace AgentCoreProcessor.Engine
 
                 if (agent.StopReason == AgentStopReason.Error)
                 {
-                    consecutiveFailures++;
                     totalErrorCount++;
                     lastErrorTime = DateTime.Now;
                     lastErrorMessage = "Agent 连续模型调用失败";
-                    var backoff = agentConfig.BackoffSeconds[
-                        Math.Min(consecutiveFailures - 1, agentConfig.BackoffSeconds.Length - 1)];
-                    Signal.Warn(LogGroup.Engine, "系统循环退避（Agent Error）",
-                        new { consecutiveFailures, backoffSeconds = backoff });
-                    await Task.Delay(TimeSpan.FromSeconds(backoff), ct);
+                    Signal.Error(LogGroup.Engine, "系统循环Agent失败，引擎终止", new { });
+                    throw new InvalidOperationException("Agent 连续模型调用失败");
                 }
-                else
-                {
-                    consecutiveFailures = 0;
-                }
+
+                consecutiveFailures = 0;
                 lastRoundNoAction = agent.StopReason == AgentStopReason.Completed;
 
                 Signal.Event(LogGroup.Engine, "Agent轮次完成", new
@@ -386,21 +380,12 @@ namespace AgentCoreProcessor.Engine
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
-                consecutiveFailures++;
                 totalErrorCount++;
                 lastErrorTime = DateTime.Now;
                 lastErrorMessage = $"{ex.GetType().Name}: {ex.Message}";
-                Signal.Error(LogGroup.Engine, "系统循环处理异常",
-                    new { error = ex.GetType().Name, message = ex.Message, consecutiveFailures });
-
-                if (consecutiveFailures >= agentConfig.MaxRounds)
-                {
-                    var backoff = agentConfig.BackoffSeconds[
-                        Math.Min(consecutiveFailures - 1, agentConfig.BackoffSeconds.Length - 1)];
-                    Signal.Warn(LogGroup.Engine, "系统循环退避",
-                        new { consecutiveFailures, backoffSeconds = backoff });
-                    await Task.Delay(TimeSpan.FromSeconds(backoff), ct);
-                }
+                Signal.Error(LogGroup.Engine, "系统循环处理异常，引擎终止",
+                    new { error = ex.GetType().Name, message = ex.Message });
+                throw;
             }
             finally
             {
