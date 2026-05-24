@@ -19,6 +19,7 @@ internal class ComponentHost
     private readonly ModuleBus _moduleBus;
     private readonly IServiceProvider _services;
     private readonly Action _wakeLoop;
+    private readonly IServiceProvider _effectiveServices;
 
     private readonly List<LoopComponentInstance> _loopComponents = new();
     private readonly ComponentConfig _config;
@@ -28,7 +29,8 @@ internal class ComponentHost
         string loopType,
         ModuleBus moduleBus,
         IServiceProvider services,
-        Action wakeLoop)
+        Action wakeLoop,
+        Dictionary<Type, object>? perLoopServices = null)
     {
         _loopId = loopId;
         _loopType = loopType;
@@ -36,6 +38,27 @@ internal class ComponentHost
         _services = services;
         _wakeLoop = wakeLoop;
         _config = ComponentConfig.Load();
+
+        if (perLoopServices != null && perLoopServices.Count > 0)
+        {
+            var merged = new Dictionary<Type, object>();
+            foreach (var kv in perLoopServices)
+                merged[kv.Key] = kv.Value;
+            // per-loop services win over global
+            if (services is SimpleServiceProvider ssp)
+            {
+                foreach (var kv in ssp.GetAllServices())
+                {
+                    if (!merged.ContainsKey(kv.Key))
+                        merged[kv.Key] = kv.Value;
+                }
+            }
+            _effectiveServices = new SimpleServiceProvider(merged);
+        }
+        else
+        {
+            _effectiveServices = services;
+        }
     }
 
     public async Task InitAsync()
@@ -186,8 +209,8 @@ internal class ComponentHost
     private LoopComponentInstance? CreateInstance(ComponentRegistration reg)
     {
         // Try constructor injection via PluginLoader if available, fall back to Activator
-        var pluginLoader = _services.GetService(typeof(Tool.Host.PluginLoader)) as Tool.Host.PluginLoader;
-        var instance = pluginLoader?.InstantiateWithInjection(reg.Type, _services)
+        var pluginLoader = _effectiveServices.GetService(typeof(Tool.Host.PluginLoader)) as Tool.Host.PluginLoader;
+        var instance = pluginLoader?.InstantiateWithInjection(reg.Type, _effectiveServices)
                        ?? Activator.CreateInstance(reg.Type);
 
         if (instance is not ILoopComponent component) return null;
@@ -196,7 +219,7 @@ internal class ComponentHost
         var storage = new ComponentStorage(component.Meta.Name, _loopId);
 
         var context = new LoopComponentContext(
-            _loopId, _loopType, _moduleBus, _services, storage,
+            _loopId, _loopType, _moduleBus, _effectiveServices, storage,
             _wakeLoop,
             (loopId, enabled) =>
             {

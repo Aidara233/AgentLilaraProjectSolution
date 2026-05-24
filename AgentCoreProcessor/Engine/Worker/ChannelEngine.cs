@@ -351,7 +351,8 @@ namespace AgentCoreProcessor.Engine
                 () => gate.Signal(), loopId => ctx.DelegationBus.IsLoopActive(loopId));
             componentHost = new ComponentHost(
                 myLoopId, "channel", _moduleBus, ctx.ComponentServices,
-                () => gate.Signal());
+                () => gate.Signal(),
+                new Dictionary<Type, object> { [typeof(IAgentMessaging)] = _messaging });
             await componentHost.InitAsync();
 
             // 注册到委托总线
@@ -956,7 +957,7 @@ namespace AgentCoreProcessor.Engine
 
         private const string WorkingAuthorizedTools =
             "speak,send_media,thinking_notes,memory,pinboard,retain_list,task_management," +
-            "mark_review_hint,alert,wait,read_file,write_file,delegate_task,adapter_action," +
+            "mark_review_hint,alert,wait,read_file,write_file,send_request,adapter_action," +
             "view_image,get_image_text,compress";
 
         private string BuildFixedPrefix()

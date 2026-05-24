@@ -232,14 +232,15 @@ namespace AgentCoreProcessor.Engine
                 new { engineType = EngineType });
 
             // 初始化 ComponentHost
+            _messaging = new Component.AgentMessagingImpl(LoopId.System, ctx.CrossRequests,
+                () => gate.Signal(), loopId => ctx.DelegationBus.IsLoopActive(loopId));
             componentHost = new ComponentHost(
                 LoopId.System, "system", _moduleBus, ctx.ComponentServices,
-                () => gate.Signal());
+                () => gate.Signal(),
+                new Dictionary<Type, object> { [typeof(IAgentMessaging)] = _messaging });
             await componentHost.InitAsync();
 
             // 注册到委托总线
-            _messaging = new Component.AgentMessagingImpl(LoopId.System, ctx.CrossRequests,
-                () => gate.Signal(), loopId => ctx.DelegationBus.IsLoopActive(loopId));
             ctx.DelegationBus.RegisterLoop(LoopId.System, OnCrossRequestReceived);
 
             // 收集 IInjectProvider：内部模块 + 插件实例

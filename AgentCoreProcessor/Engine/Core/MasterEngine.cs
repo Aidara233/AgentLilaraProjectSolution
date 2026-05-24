@@ -398,8 +398,8 @@ namespace AgentCoreProcessor.Engine
 
             // 插件加载
             _toolContext = new Tool.Host.ToolContextImpl(new Tool.Host.PluginStorageImpl("_system"));
-            _toolContext.Register<AgentLilara.PluginSDK.Services.IMemoryAccess>(
-                new Tool.Host.MemoryAccessImpl(Memories, TempMemories, MemoryLinks, Embedding));
+            var memoryAccess = new Tool.Host.MemoryAccessImpl(Memories, TempMemories, MemoryLinks, Embedding);
+            _toolContext.Register<AgentLilara.PluginSDK.Services.IMemoryAccess>(memoryAccess);
             _toolContext.Register<AgentLilara.PluginSDK.Services.IPersonAccess>(
                 new Tool.Host.PersonAccessImpl(this));
             _toolContext.Register<AgentLilara.PluginSDK.Services.IChannelAccess>(
@@ -417,6 +417,7 @@ namespace AgentCoreProcessor.Engine
             componentServices.Register<AgentLilara.PluginSDK.Services.ISubAgentAccess>(
                 new Component.SubAgentAccessAdapter(this));
             componentServices.Register<AgentLilara.PluginSDK.IToolContext>(_toolContext);
+            componentServices.Register<AgentLilara.PluginSDK.Services.IMemoryAccess>(memoryAccess);
             componentServices.Register<AgentLilara.PluginSDK.Services.IBeaconAccess>(
                 new Tool.Host.BeaconAccessImpl(ReviewHints));
 

@@ -32,4 +32,6 @@ internal class SimpleServiceProvider : IServiceProvider
     {
         return _services.TryGetValue(serviceType, out var svc) ? svc : null;
     }
+
+    internal IReadOnlyDictionary<Type, object> GetAllServices() => _services;
 }
