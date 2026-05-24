@@ -2,7 +2,7 @@
 
 ## 已清理（2026-05-24）
 
-六轮共清理 ~1200 行死代码 + 修复 4 处空体 bug + 修复 4 处设计缺陷。
+七轮共清理 ~1200 行死代码 + 修复 4 处空体 bug + 修复 4 处设计缺陷 + 修复 12 处日志/报错路径。
 
 ### 第一轮: Core / Engine / Adapter / SDK（`5b48b65`）
 
@@ -116,8 +116,14 @@
 
 ## 待处理
 
-### 日志/报错
-- [ ] `OneBotAdapter.HandleEvent` async void — 异常会崩溃进程
-- [ ] `OneBotActions.SendFileAsync` fire-and-forget — 错误静默吞没
-- [ ] `OneBotActions.SendMessageAsync` 空错误分支 — retcode != 0 无日志
-- [ ] 25+ 空 catch 块 — `ToolRegistry`/`ToolProfileManager`/`LogWriter`/`DreamEngine`/`MemoryProvider` 等多处无声吞异常
+（无 — 全部清理完毕）
+
+---
+
+## 第七轮: 日志/报错路径修复（`ddf320a`）
+
+- `OneBotAdapter.HandleEvent` — `async void` → `async Task`，加 `Signal.Begin` per-message 上下文 + try-catch + Signal.Error
+- `OneBotActions.SendFileAsync` — `_ = SendFileAsync()` → `await` + try-catch + Signal.Warn
+- `OneBotActions.SendMessageAsync` — 空 `retcode != 0` 分支加 Signal.Warn
+- 8 个空 catch 块加 Signal.Warn：PluginLoader / ToolRegistry(2) / ToolProfileManager / AdapterManager / TokenAggregator / MemoryProvider / ModelLogService(2)
+- 保留不动的空 catch：文件删除清理(5) / WebSocket关闭 / LogWriter内部(3) / UI互操作(4) / JSON解析fallback / PageContext事件分发 / 图片处理fallback — 均为 best-effort 清理或基础设施内部操作
