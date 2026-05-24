@@ -108,9 +108,8 @@ namespace AgentCoreProcessor.Engine
         private int unrespondedMessageCount = 0;
         private SessionContext? lastContext;
 
-        // Express 对话历史缓冲（最近 N 条交互，供 Express 模式注入上下文）
-        private const int ExpressHistoryMaxLines = 20;
-        private readonly List<string> expressHistory = new();
+        // Express 对话历史：从数据库拉取最近 N 条消息
+        private const int ExpressHistoryMaxMessages = 20;
 
         // 记忆提取 Worker（独立信号 + 独立文件）
         private ChannelExtractionWorker extractionWorker = null!;
@@ -522,7 +521,6 @@ namespace AgentCoreProcessor.Engine
             });
             speakSpan.SetCloseDetail(new { messageId = sentId });
             await ctx.Session.SaveBotMessageAsync(currentLastSc.Channel.Id, content, sentId);
-            AppendExpressHistory($"你: {content}");
         }
 
         private async Task HandleSendMediaToolAsync(string jsonData)
@@ -1042,13 +1040,20 @@ namespace AgentCoreProcessor.Engine
             if (!string.IsNullOrEmpty(contextSummary))
                 msgs.Add(new Message { Role = "user", Content = $"[上下文摘要]\n{contextSummary}" });
 
-            // 近期对话历史（Express 模式用；Working 模式由持久化 rounds 提供）
-            if (!isWorkingMode && expressHistory.Count > 0)
+            // 近期对话历史（Express 模式从数据库拉取；Working 模式由持久化 rounds 提供）
+            if (!isWorkingMode)
             {
-                var histSb = new StringBuilder("[对话历史]\n");
-                foreach (var line in expressHistory)
-                    histSb.AppendLine(line);
-                msgs.Add(new Message { Role = "user", Content = histSb.ToString() });
+                var recentMsgs = await ctx.Session.GetContextByChannelAsync(channelId, ExpressHistoryMaxMessages);
+                if (recentMsgs.Count > 0)
+                {
+                    var histSb = new StringBuilder("[对话历史]\n");
+                    foreach (var m in recentMsgs)
+                    {
+                        var name = m.IsFromBot ? "你" : m.SenderName;
+                        histSb.AppendLine($"{name}: {m.Content}");
+                    }
+                    msgs.Add(new Message { Role = "user", Content = histSb.ToString() });
+                }
             }
 
             // Working 模式：framework 到此为止，后面是对话内容
@@ -1069,7 +1074,6 @@ namespace AgentCoreProcessor.Engine
                 {
                     var name = sc.Person.Name ?? sc.User.PlatformId;
                     sb.AppendLine($"{name}: {msg.Content}");
-                    AppendExpressHistory($"{name}: {msg.Content}");
                 }
                 sb.Append("</新消息>");
 
@@ -1139,8 +1143,9 @@ namespace AgentCoreProcessor.Engine
                 switch (signal)
                 {
                     case NewMessageSignal nms:
+                        var nmsName = nms.Session.Person.Name ?? nms.Session.User.PlatformId;
                         var sb2 = new StringBuilder("<新消息>\n");
-                        sb2.AppendLine($"{nms.Session.Person.Name ?? nms.Session.User.PlatformId}: {nms.Message.Content}");
+                        sb2.AppendLine($"{nmsName}: {nms.Message.Content}");
                         sb2.Append("</新消息>");
                         msgs.Add(new Message { Role = "user", Content = sb2.ToString() });
                         break;
@@ -1444,13 +1449,6 @@ namespace AgentCoreProcessor.Engine
             extractionWorker.Trigger(sc, _sessionRootSpanId);
         }
 
-        private void AppendExpressHistory(string line)
-        {
-            expressHistory.Add(line);
-            while (expressHistory.Count > ExpressHistoryMaxLines)
-                expressHistory.RemoveAt(0);
-        }
-
         public void TriggerLurkingExtraction()
         {
             if (lastContext == null) return;
@@ -1523,7 +1521,6 @@ namespace AgentCoreProcessor.Engine
                 });
                 segSpan.SetCloseDetail(new { messageId = sentId });
                 await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, content, sentId);
-                AppendExpressHistory($"你: {content}");
             }
         }
 
