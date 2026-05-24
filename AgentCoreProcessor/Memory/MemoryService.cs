@@ -217,59 +217,6 @@ namespace AgentCoreProcessor.Memory
             return result;
         }
 
-        /// <summary>
-        /// 增强检索：使用 MemoryQueryIntent 提供的关键词和主题做额外加分。
-        /// </summary>
-        public async Task<List<ScoredMemory>> RecallAsync(
-            int personId, int channelId,
-            string query, MemoryQueryIntent intent,
-            int topK = 10, bool includeLinks = true, bool includePersona = false)
-        {
-            var results = await RecallAsync(personId, channelId, query, topK * 2, includeLinks, includePersona);
-
-            // 对结果做关键词/主题加分后重排
-            foreach (var item in results)
-            {
-                float bonus = ComputeIntentBonus(item, intent);
-                item.Score += bonus;
-            }
-
-            return results
-                .Where(s => s.Score >= (s.IsPersona ? PersonaMinScore : MinRecallScore))
-                .OrderByDescending(s => s.Score)
-                .Take(topK)
-                .ToList();
-        }
-
-        private float ComputeIntentBonus(ScoredMemory item, MemoryQueryIntent intent)
-        {
-            float bonus = 0f;
-            var contentLower = item.Content.ToLowerInvariant();
-
-            foreach (var kw in intent.Keywords)
-            {
-                if (contentLower.Contains(kw.ToLowerInvariant()))
-                    bonus += KeywordBoost;
-            }
-
-            if (!string.IsNullOrEmpty(item.Subject))
-            {
-                var subjectLower = item.Subject.ToLowerInvariant();
-                foreach (var s in intent.Subjects)
-                {
-                    if (subjectLower.Contains(s.ToLowerInvariant()) || s.ToLowerInvariant().Contains(subjectLower))
-                        bonus += SubjectBoost;
-                }
-                foreach (var kw in intent.Keywords)
-                {
-                    if (subjectLower.Contains(kw.ToLowerInvariant()))
-                        bonus += SubjectBoost;
-                }
-            }
-
-            return bonus;
-        }
-
         /// <summary>删除指定记忆。</summary>
         public async Task ForgetAsync(int memoryId)
         {

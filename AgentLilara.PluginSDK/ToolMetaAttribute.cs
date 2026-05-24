@@ -13,17 +13,6 @@ namespace AgentLilara.PluginSDK
     }
 
     /// <summary>
-    /// 插件作用域。
-    /// </summary>
-    public enum PluginScope
-    {
-        /// <summary>全局单例，MasterEngine 管理。</summary>
-        Singleton,
-        /// <summary>每引擎会话一份，各引擎自己管理。</summary>
-        PerSession
-    }
-
-    /// <summary>
     /// 工具元数据声明。标注在工具类上，由插件宿主读取。
     /// </summary>
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
@@ -31,9 +20,6 @@ namespace AgentLilara.PluginSDK
     {
         /// <summary>工具组名。null = 默认组（始终可见）。</summary>
         public string? Group { get; set; }
-
-        /// <summary>同组内是否默认展开。</summary>
-        public bool DefaultExpanded { get; set; } = true;
 
         /// <summary>执行后触发下一轮循环。</summary>
         public bool ContinueLoop { get; set; }
@@ -46,9 +32,6 @@ namespace AgentLilara.PluginSDK
 
         /// <summary>使用此工具所需的最低权限。</summary>
         public ToolPermission Permission { get; set; } = ToolPermission.Default;
-
-        /// <summary>插件作用域。</summary>
-        public PluginScope Scope { get; set; } = PluginScope.Singleton;
 
         /// <summary>是否在 Express 模式下可用（fire-and-forget，结果不回注）。</summary>
         public bool ExpressAvailable { get; set; }

@@ -26,7 +26,6 @@ internal class ConfigProvider : IWebUIProvider
         ["ConsolidationFinalCore"] = "Core/ConsolidationFinalCore.json",
         ["DedupCore"] = "Core/DedupCore.json",
         ["MemoryExtractionCore"] = "Core/MemoryExtractionCore.json",
-        ["MemoryQueryCore"] = "Core/MemoryQueryCore.json",
         ["ReviewCore"] = "Core/ReviewCore.json",
         ["SleepTalkCore"] = "Core/SleepTalkCore.json",
         ["SummarizationCore"] = "Core/SummarizationCore.json",

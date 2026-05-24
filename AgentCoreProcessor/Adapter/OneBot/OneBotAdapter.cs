@@ -64,15 +64,6 @@ namespace AgentCoreProcessor.Adapter
             actions = new OneBotActions(this);
         }
 
-        public OneBotAdapter(string configPath)
-        {
-            Id = "qq-legacy";
-            this.configPath = configPath;
-            this.config = new OneBotConfig();
-            parser = new OneBotMessageParser(this);
-            actions = new OneBotActions(this);
-        }
-
         private Task? receiveTask;
 
         public async Task StartAsync(CancellationToken ct = default)
@@ -304,7 +295,6 @@ namespace AgentCoreProcessor.Adapter
             var postType = data["post_type"]?.ToString();
             if (postType != null && postType != "meta_event")
             {
-                var raw = data.ToString(Formatting.None);
             }
 
             var msg = await parser.HandleEventAsync(data);

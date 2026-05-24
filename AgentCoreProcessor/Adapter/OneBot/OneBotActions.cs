@@ -201,24 +201,10 @@ namespace AgentCoreProcessor.Adapter
 
         // ── 第三批 API：状态设置 ──
 
-        public async Task<bool> SetOnlineStatusAsync(int status)
-        {
-            var resp = await adapter.CallApiAsync("set_online_status",
-                new JObject { ["status"] = status });
-            return resp?["retcode"]?.Value<int>() == 0;
-        }
-
         public async Task<bool> SetGroupCardAsync(long groupId, long userId, string card)
         {
             var resp = await adapter.CallApiAsync("set_group_card",
                 new JObject { ["group_id"] = groupId, ["user_id"] = userId, ["card"] = card });
-            return resp?["retcode"]?.Value<int>() == 0;
-        }
-
-        public async Task<bool> SendForwardMsgAsync(long groupId, JArray messages)
-        {
-            var resp = await adapter.CallApiAsync("send_group_forward_msg",
-                new JObject { ["group_id"] = groupId, ["messages"] = messages });
             return resp?["retcode"]?.Value<int>() == 0;
         }
 

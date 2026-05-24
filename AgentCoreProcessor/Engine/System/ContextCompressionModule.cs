@@ -39,31 +39,5 @@ namespace AgentCoreProcessor.Engine.Modules
 
         public List<Message> GetKeptMessages() => keptMessages;
 
-        /// <summary>
-        /// 执行压缩：保留最近 N 条消息，其余压缩为摘要。
-        /// </summary>
-        public async Task CompressAsync(List<Message> fullHistory)
-        {
-            if (fullHistory.Count <= RecentRoundsToKeep)
-            {
-                keptMessages = new List<Message>(fullHistory);
-                return;
-            }
-
-            var toCompress = fullHistory.Take(fullHistory.Count - RecentRoundsToKeep).ToList();
-            keptMessages = fullHistory.TakeLast(RecentRoundsToKeep).ToList();
-
-
-            currentSummary = await summarizationCore.SummarizeContextAsync(toCompress, currentSummary);
-
-        }
-    }
-
-    /// <summary>
-    /// 一轮完成事件（供其他模块订阅）。
-    /// </summary>
-    internal class RoundCompletedEvent
-    {
-        public List<Message> Messages { get; set; } = new();
     }
 }

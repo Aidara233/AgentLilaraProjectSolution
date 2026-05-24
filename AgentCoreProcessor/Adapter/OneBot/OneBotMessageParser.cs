@@ -22,34 +22,6 @@ namespace AgentCoreProcessor.Adapter
             this.adapter = adapter;
         }
 
-        public IncomingMessage? HandleEvent(JObject data)
-        {
-            var postType = data["post_type"]?.ToString();
-            if (postType == "message")
-            {
-                var messageId = data["message_id"]?.Value<long>() ?? 0;
-                if (messageId != 0)
-                {
-                    lock (recentMessageIds)
-                    {
-                        if ((DateTime.Now - lastMessageIdCleanup).TotalSeconds > 60)
-                        {
-                            recentMessageIds.Clear();
-                            lastMessageIdCleanup = DateTime.Now;
-                        }
-                        if (!recentMessageIds.Add(messageId))
-                            return null;
-                    }
-                }
-                return ParseMessageEventAsync(data).GetAwaiter().GetResult();
-            }
-            if (postType == "notice")
-            {
-                return ParseNoticeEvent(data);
-            }
-            return null;
-        }
-
         public async Task<IncomingMessage?> HandleEventAsync(JObject data)
         {
             var postType = data["post_type"]?.ToString();

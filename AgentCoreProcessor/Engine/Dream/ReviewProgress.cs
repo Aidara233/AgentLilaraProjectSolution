@@ -5,11 +5,6 @@ using Newtonsoft.Json;
 
 namespace AgentCoreProcessor.Engine
 {
-    internal class ReviewProgressEntry
-    {
-        public string Rating { get; set; } = "";
-    }
-
     /// <summary>
     /// ReviewEngine 会话状态。save_progress 时序列化，下次启动时恢复。
     /// </summary>

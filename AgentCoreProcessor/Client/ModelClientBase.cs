@@ -11,7 +11,6 @@ namespace AgentCoreProcessor.Client
 {
     public abstract class ModelClientBase : IModelClient
     {
-        protected readonly HttpClient httpClient;
         protected ApiClientCfg apiClientCfg;
         protected List<ToolDefinition>? tools;
 
@@ -23,13 +22,11 @@ namespace AgentCoreProcessor.Client
 
         protected ModelClientBase()
         {
-            httpClient = new HttpClient();
             apiClientCfg = new ApiClientCfg();
         }
 
         protected ModelClientBase(ApiClientCfg cfg)
         {
-            httpClient = new HttpClient();
             apiClientCfg = cfg ?? new ApiClientCfg();
         }
 
@@ -122,9 +119,6 @@ namespace AgentCoreProcessor.Client
 
         public virtual void AddToolResult(string toolUseId, string result, bool isError = false) { }
 
-        public virtual void Dispose()
-        {
-            httpClient?.Dispose();
-        }
+        public virtual void Dispose() { }
     }
 }

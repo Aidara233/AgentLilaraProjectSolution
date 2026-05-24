@@ -701,7 +701,7 @@ namespace AgentCoreProcessor.Engine
                     pendingImageInfos.Clear();
                 }
                 if (pendingCopy.Count > 0)
-                    await ResolveImagePresentationAsync(pendingCopy);
+                    ResolveImagePresentation(pendingCopy);
 
                 // 标记已处理
                 foreach (var (msg, _) in batch)
@@ -1603,7 +1603,7 @@ namespace AgentCoreProcessor.Engine
             }
         }
 
-        private Task<List<ImageEmbed>?> ResolveImagePresentationAsync(
+        private void ResolveImagePresentation(
             List<(string Path, string? Hash, string? Category)> images)
         {
             foreach (var (path, hash, category) in images)
@@ -1611,7 +1611,6 @@ namespace AgentCoreProcessor.Engine
                 if (!string.IsNullOrEmpty(hash))
                     _ = ImageStorage.IncrementSeenCountAsync(hash);
             }
-            return Task.FromResult<List<ImageEmbed>?>(null);
         }
 
         // ---- Phase 6: 关注规则管理 ----
