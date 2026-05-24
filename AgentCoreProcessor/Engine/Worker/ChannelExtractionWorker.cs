@@ -61,6 +61,17 @@ namespace AgentCoreProcessor.Engine
         public void Trigger(SessionContext context, string? causeSpanId)
         {
             if (!channelConfig.AutoExtractionEnabled || running) return;
+            StartRun(context, causeSpanId, force: false);
+        }
+
+        public void ForceTrigger(SessionContext context, string? causeSpanId)
+        {
+            if (running) return;
+            StartRun(context, causeSpanId, force: true);
+        }
+
+        private void StartRun(SessionContext context, string? causeSpanId, bool force)
+        {
             running = true;
 
             _ = Task.Run(async () =>
@@ -69,11 +80,11 @@ namespace AgentCoreProcessor.Engine
                 using var extCtx = Signal.Continue(
                     SignalContext.NewSignalId(), causeSpanId,
                     $"extraction:channel:{channelId}", LogGroup.Memory,
-                    "记忆提取", new { channelId });
+                    force ? "强制记忆提取" : "记忆提取", new { channelId, force });
 
                 try
                 {
-                    await RunAsync(context);
+                    await RunAsync(context, force);
                 }
                 catch (Exception ex)
                 {
@@ -88,7 +99,7 @@ namespace AgentCoreProcessor.Engine
             });
         }
 
-        private async Task RunAsync(SessionContext context)
+        private async Task RunAsync(SessionContext context, bool force = false)
         {
             cts = new CancellationTokenSource();
             var ct = cts.Token;
@@ -126,7 +137,7 @@ namespace AgentCoreProcessor.Engine
                     ? channelConfig.ActiveExtractionThreshold
                     : channelConfig.LurkingExtractionThreshold;
 
-                if (newMessages.Count < threshold) break;
+                if (!force && newMessages.Count < threshold) break;
 
                 var contextMessages = lastExtractedMessageId > 0
                     ? await ctx.Session.GetMessagesBeforeIdAsync(channelId, lastExtractedMessageId, limit: 20)

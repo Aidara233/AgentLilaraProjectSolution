@@ -1455,6 +1455,12 @@ namespace AgentCoreProcessor.Engine
             extractionWorker.Trigger(lastContext, null);
         }
 
+        public void ForceExtraction()
+        {
+            if (lastContext == null) return;
+            extractionWorker.ForceTrigger(lastContext, null);
+        }
+
         public void SetAutoExtraction(bool enabled)
         {
             extractionWorker.SetAutoExtraction(enabled);

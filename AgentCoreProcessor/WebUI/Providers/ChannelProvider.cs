@@ -102,7 +102,8 @@ internal class ChannelProvider : IWebUIProvider
                     },
                     Actions = new()
                     {
-                        new() { Id = "view-engine", Label = "查看引擎状态", Confirm = "" }
+                        new() { Id = "view-engine", Label = "查看引擎状态", Confirm = "" },
+                        new() { Id = "force-extraction", Label = "强制提取记忆", Confirm = "确定要强制触发记忆提取吗？" }
                     }
                 },
                 Layout = new CardLayout { PreferredCols = 12 }
@@ -213,15 +214,21 @@ internal class ChannelInfoSource : IDataSource
         var hasEngine = channelCheck?.GetActiveChannels().TryGetValue(_channelId, out eng) == true && eng!.IsAlive;
 
         string engineStatus;
+        bool extractionRunning = false;
         if (hasEngine)
         {
             var snap = eng!.GetSnapshot();
             engineStatus = snap.IsBusy ? "运行" : "待机";
+            extractionRunning = snap.ExtractionRunning;
         }
         else
         {
             engineStatus = "未启动";
         }
+
+        var disabledActions = new JsonArray();
+        if (!hasEngine) disabledActions.Add("view-engine");
+        if (!hasEngine || extractionRunning) disabledActions.Add("force-extraction");
 
         var data = new JsonObject
         {
@@ -230,24 +237,36 @@ internal class ChannelInfoSource : IDataSource
             ["affinity"] = channel.Affinity.ToString("F1"),
             ["importance"] = config.Importance,
             ["messages"] = msgCount.ToString(),
-            ["extraction"] = $"{channel.LastExtractedMessageId} / {msgCount}",
+            ["extraction"] = extractionRunning
+                ? $"提取中... ({channel.LastExtractedMessageId} / {msgCount})"
+                : $"{channel.LastExtractedMessageId} / {msgCount}",
             ["config"] = $"活跃 {config.ActiveExtractionThreshold} | 潜水 {config.LurkingExtractionThreshold}"
         };
-        if (!hasEngine)
-            data["_disabled_actions"] = new JsonArray("view-engine");
+        if (disabledActions.Count > 0)
+            data["_disabled_actions"] = disabledActions;
         return new DataResult { Data = data };
     }
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
     {
+        var channelCheck = _engine.GetSpawnCheck<ChannelEngineSpawnCheck>();
+        ChannelEngine? eng = null;
+        var hasEngine = channelCheck?.GetActiveChannels().TryGetValue(_channelId, out eng) == true && eng!.IsAlive;
+
         if (action == "view-engine")
         {
-            var channelCheck = _engine.GetSpawnCheck<ChannelEngineSpawnCheck>();
-            ChannelEngine? eng = null;
-            var hasEngine = channelCheck?.GetActiveChannels().TryGetValue(_channelId, out eng) == true && eng!.IsAlive;
             if (hasEngine)
                 return Task.FromResult(new ActionResult { Success = true, Message = $"/p/engines/channel_{_channelId}" });
             return Task.FromResult(new ActionResult { Success = false, Message = "引擎未启动" });
+        }
+        if (action == "force-extraction")
+        {
+            if (!hasEngine)
+                return Task.FromResult(new ActionResult { Success = false, Message = "引擎未启动" });
+            if (eng!.GetSnapshot().ExtractionRunning)
+                return Task.FromResult(new ActionResult { Success = false, Message = "提取正在进行中" });
+            eng.ForceExtraction();
+            return Task.FromResult(new ActionResult { Success = true, Message = "已触发强制提取" });
         }
         return Task.FromResult(new ActionResult { Success = true });
     }
