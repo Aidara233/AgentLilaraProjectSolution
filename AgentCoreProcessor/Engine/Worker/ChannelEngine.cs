@@ -406,7 +406,6 @@ namespace AgentCoreProcessor.Engine
                     await componentHost.OnPauseAsync();
                     continue;
                 }
-                _extraCycleRequested = false;
 
                 // ③ 循环会话开始（有消息或 Working 会话持续中）
                 if (sessionCtx == null)
@@ -431,6 +430,7 @@ namespace AgentCoreProcessor.Engine
                     prepareResult = await EvaluateGateAsync(batch);
                     gateSpan.SetCloseDetail(new { passed = prepareResult });
                 }
+                _extraCycleRequested = false;
 
                 if (!prepareResult)
                 {
@@ -741,7 +741,7 @@ namespace AgentCoreProcessor.Engine
                 authorizedTools.Clear();
                 foreach (var t in profileTools) authorizedTools.Add(t);
             }
-            else if (!isInWorkingSession)
+            else if (!isInWorkingSession && !_extraCycleRequested)
             {
                 activeBatch = null;
                 return false;
