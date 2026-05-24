@@ -39,9 +39,6 @@ namespace AgentCoreProcessor.MCP
         public TimeSpan Timeout => TimeSpan.FromSeconds(_serverEntry.Timeout);
         public bool ContinueLoop => _override?.ContinueLoop ?? true;
         public bool RetainResult => _override?.RetainResult ?? true;
-        public string? ToolGroup => _serverEntry.ToolGroup;
-        public bool DefaultExpanded => _serverEntry.DefaultExpanded;
-
         public PermissionLevel RequiredPermission
         {
             get

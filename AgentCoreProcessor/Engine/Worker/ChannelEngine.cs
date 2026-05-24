@@ -212,8 +212,7 @@ namespace AgentCoreProcessor.Engine
             loopControlModule.ChannelId = channelId.ToString();
             modules = new List<EngineModule>
             {
-                loopControlModule,
-                new ToolStatusModule()
+                loopControlModule
             };
             foreach (var m in modules) m.Attach(bus);
 

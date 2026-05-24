@@ -48,7 +48,6 @@ namespace AgentCoreProcessor.Engine
         // 模块
         private readonly LoopControlModule loopControlModule = new();
         private readonly PendingEventsModule pendingEventsModule = new();
-        private readonly SystemStatusModule systemStatusModule;
         private readonly ContextPersistence persistence;
         private readonly ContextCompressionModule compressionModule;
         private List<EngineModule> modules = null!;
@@ -110,17 +109,12 @@ namespace AgentCoreProcessor.Engine
             agentCore.CallerTag = "System";
             useNativeTools = agentCore.UseNativeTools;
 
-            // 初始化模块
-            systemStatusModule = new SystemStatusModule(ctx, () => GetActiveSubAgents(), () => GetContextUsage());
-
             var systemLoopPath = Path.Combine(PathConfig.StoragePath, "SystemLoop");
             persistence = new ContextPersistence(systemLoopPath);
             compressionModule = new ContextCompressionModule(persistence);
 
             modules = new List<EngineModule>
             {
-                new ToolStatusModule(),      // 优先级 30
-                systemStatusModule,          // 优先级 35
                 pendingEventsModule,         // 优先级 38
                 loopControlModule,           // 优先级 60
                 compressionModule            // 优先级 100（不注入 prompt）

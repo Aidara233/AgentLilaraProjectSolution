@@ -258,7 +258,7 @@ SystemEngine (系统循环，单例，纯调度者):
   
   
   模块/组件体系:
-    LoopControlModule / PendingEventsModule / SystemStatusModule
+    LoopControlModule / PendingEventsModule
     ContextPersistence / ContextCompressionModule
     ComponentHost + ModuleBus: 组件实例管理
     IInjectProvider 插件: Plugin.WorkingTools（pinboard/thinking_notes/retain_list/task_management）

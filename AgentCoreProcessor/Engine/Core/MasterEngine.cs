@@ -450,9 +450,6 @@ namespace AgentCoreProcessor.Engine
                 }
             }
 
-            // TODO: Phase 3 实现子 agent 管理插件后移除
-            // 子 agent 工具将作为插件加载
-
             // MCP Server 初始化
             try
             {
