@@ -10,7 +10,7 @@ namespace AgentCoreProcessor.Engine
 {
     internal class ChannelContextPersistence
     {
-        private const int FormatVersion = 2;
+        private const int FormatVersion = 3;
         private readonly string _filePath;
 
         public ChannelContextPersistence(int channelId)
@@ -21,7 +21,8 @@ namespace AgentCoreProcessor.Engine
         }
 
         /// <summary>Save full context state including all rounds.</summary>
-        public void SaveContext(string? summary, string? mode, List<List<Message>> rounds)
+        public void SaveContext(string? summary, string? mode, List<List<Message>> rounds,
+            int lastConsumedMessageId, string? escalateReason)
         {
             try
             {
@@ -30,7 +31,12 @@ namespace AgentCoreProcessor.Engine
                     FormatVersion,
                     UpdatedAt = DateTime.Now,
                     Summary = summary,
-                    State = new { Mode = mode ?? "working" },
+                    State = new
+                    {
+                        Mode = mode ?? "working",
+                        LastConsumedMessageId = lastConsumedMessageId,
+                        EscalateReason = escalateReason
+                    },
                     Rounds = rounds.Select(r => r.ToList()).ToList()
                 };
                 var json = JsonConvert.SerializeObject(data, Formatting.Indented,
@@ -43,7 +49,8 @@ namespace AgentCoreProcessor.Engine
         }
 
         /// <summary>Save compression result: replace summary and rounds.</summary>
-        public void SaveCompressionResult(string summary, List<Message> retained, string mode)
+        public void SaveCompressionResult(string summary, List<Message> retained, string mode,
+            int lastConsumedMessageId)
         {
             // 按 assistant 回复分割 rounds
             var rounds = new List<List<Message>>();
@@ -58,42 +65,44 @@ namespace AgentCoreProcessor.Engine
                 }
             }
             if (current.Count > 0) rounds.Add(current);
-            SaveContext(summary, mode, rounds);
+            SaveContext(summary, mode, rounds, lastConsumedMessageId, null);
         }
 
-        /// <summary>Load context: (summary, mode, rounds). Each round is a flat list of messages in order.</summary>
-        public (string? Summary, string? Mode, List<List<Message>> Rounds) LoadContext()
+        /// <summary>Load context: (summary, mode, rounds, lastConsumedMessageId, escalateReason).</summary>
+        public (string? Summary, string? Mode, List<List<Message>> Rounds,
+            int LastConsumedMessageId, string? EscalateReason) LoadContext()
         {
             if (!File.Exists(_filePath))
-                return (null, "working", new List<List<Message>>());
+                return (null, "working", new List<List<Message>>(), 0, null);
 
             try
             {
                 var json = File.ReadAllText(_filePath);
                 dynamic? wrapper = JsonConvert.DeserializeObject(json);
                 if (wrapper == null)
-                    return (null, "working", new List<List<Message>>());
+                    return (null, "working", new List<List<Message>>(), 0, null);
 
                 int? version = wrapper.FormatVersion;
                 if (version == null || version < 1)
                 {
                     File.Delete(_filePath);
-                    return (null, "working", new List<List<Message>>());
+                    return (null, "working", new List<List<Message>>(), 0, null);
                 }
 
                 string? summary = wrapper.Summary;
                 string? mode = wrapper.State?.Mode ?? "working";
+                int cursor = (int?)(wrapper.State?.LastConsumedMessageId) ?? 0;
+                string? reason = wrapper.State?.EscalateReason;
 
                 var rounds = new List<List<Message>>();
                 if (wrapper.Rounds != null)
                 {
                     if (version >= 2)
                     {
-                        // V2: rounds 是 Message[] 的数组，保持原始顺序
                         foreach (var round in wrapper.Rounds)
                         {
-                            var msgs = DeserializeMessages(round);
-                            if (msgs != null && msgs.Count > 0) rounds.Add(msgs);
+                            List<Message>? msgs = DeserializeMessages(round);
+                            if (msgs is { Count: > 0 }) rounds.Add(msgs);
                         }
                     }
                     else
@@ -116,9 +125,9 @@ namespace AgentCoreProcessor.Engine
                         }
                     }
                 }
-                return (summary, mode, rounds);
+                return (summary, mode, rounds, cursor, reason);
             }
-            catch { return (null, "working", new List<List<Message>>()); }
+            catch { return (null, "working", new List<List<Message>>(), 0, null); }
         }
 
         private List<Message>? DeserializeMessages(dynamic obj)

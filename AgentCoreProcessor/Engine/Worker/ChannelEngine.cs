@@ -70,7 +70,6 @@ namespace AgentCoreProcessor.Engine
 
         // Core 实例
         private readonly AgentCore agentCore = new();
-        private readonly PreprocessingCore preprocessingCore;
 
         // ── 统一循环（Phase 1）──
         private Gate gate = null!;
@@ -127,7 +126,12 @@ namespace AgentCoreProcessor.Engine
 
         // Express/Working 自适应切换
         private bool isWorkingMode = false;
-        private int consecutiveExternalTriggers = 0;
+
+        // 统一游标：两种模式共用的最后消费消息 DB Id
+        private int _lastConsumedMessageId;
+        private int _pendingCursor;
+        // escalate 理由暂存（Express→Working 时注入一次）
+        private string? _escalateReason;
 
         // ── 统一循环 Phase 2：信号缓冲 + 双源注入 ──
         private readonly ConcurrentQueue<ChannelSignal> _signalBuffer = new();
@@ -172,13 +176,21 @@ namespace AgentCoreProcessor.Engine
             this.impulseTracker = new ImpulseTracker(ctx.ImpulseConfig, channelConfig.Affinity, channelId);
             var now = DateTime.Now;
             this.lastBufferTime = now;
-            this.preprocessingCore = new PreprocessingCore(ctx.Embedding);
             agentCore.CallerTag = $"Channel:{channelId}";
 
             _traceParentSpanId = Logging.SignalContext.Current?.CurrentSpanId;
 
-            // ── 持久化 ──
+            // ── 持久化 + 状态恢复 ──
             persistence = new ChannelContextPersistence(channelId);
+            {
+                var (savedSummary, savedMode, _, savedCursor, savedReason) = persistence.LoadContext();
+                _lastConsumedMessageId = savedCursor;
+                _escalateReason = savedReason;
+                if (savedMode == "working")
+                    isWorkingMode = true;
+                if (!string.IsNullOrEmpty(savedSummary) && string.IsNullOrEmpty(contextSummary))
+                    contextSummary = savedSummary;
+            }
 
             // ── Agent 配置 ──
             agentConfig = new AgentConfig
@@ -624,6 +636,7 @@ namespace AgentCoreProcessor.Engine
                 currentLastMsg = batch![^1].Message;
                 currentLastSc = batch[^1].Context;
                 currentParticipantSnapshot = new Dictionary<int, ParticipantInfo>(recentParticipants);
+                _pendingCursor = _lastConsumedMessageId; // 本轮起始游标，成功后由 BuildStartInjectAsync 更新
 
                 if (ctx.MuteMode)
                 {
@@ -710,19 +723,7 @@ namespace AgentCoreProcessor.Engine
                         processedTicks.RemoveFirst();
                 }
 
-                // 分类（仅 Express 模式下判断是否升级）
-                if (!isWorkingMode)
-                {
-                    var lastContent = batch.Select(b => b.Message.Content).LastOrDefault() ?? "";
-                    var isTask = await preprocessingCore.IsTaskAsync(lastContent);
-                    Signal.Event(LogGroup.Engine, "消息分类", new
-                    {
-                        channelId,
-                        result = isTask ? "task" : "chat",
-                        content_preview = lastContent.Length > 200 ? lastContent[..200] : lastContent
-                    });
-                    if (isTask) { isWorkingMode = true; consecutiveExternalTriggers = 0; }
-                }
+                // Express/Working 模式切换交由模型通过 escalate/deescalate 工具自行判断
 
                 // 重置 Working 轮次状态
                 loopControlModule.OnNewMessage();
@@ -814,6 +815,10 @@ namespace AgentCoreProcessor.Engine
             else
                 loopControlModule.ConsecutiveOutputOnly++;
 
+            // 推进游标（从 BuildStartInjectAsync 的 DB 查询）
+            if (_pendingCursor > _lastConsumedMessageId)
+                _lastConsumedMessageId = _pendingCursor;
+
             // Persist after agent finishes
             PersistCurrentContext();
 
@@ -837,7 +842,15 @@ namespace AgentCoreProcessor.Engine
                 Signal.Event(LogGroup.Engine, "模式切换",
                     new { channelId, from = "Working", to = "Express", reason = reason ?? "工具调用" });
                 isWorkingMode = false;
+
+                // 清空 Working 上下文但保留游标
+                persistence?.SaveContext(null, "express", new List<List<Message>>(),
+                    _lastConsumedMessageId, null);
+
                 EndWorkingSession();
+
+                // 额外一轮 Express 循环
+                gate.Signal();
             }
             else if (agent.StopReason == AgentStopReason.MaxRounds)
             {
@@ -949,6 +962,11 @@ namespace AgentCoreProcessor.Engine
                         _signalBuffer.Enqueue(new ModeSwitchSignal("working", reason));
                         isWorkingMode = true;
                         isInWorkingSession = true;
+                        // 直接暂存 reason（BuildStartInjectAsync 在信号清空前就运行）
+                        _escalateReason = reason;
+                        // 持久化新模式状态（游标保留，后续 Working 从此开始堆叠）
+                        persistence?.SaveContext(null, "working", new List<List<Message>>(),
+                            _lastConsumedMessageId, reason);
                         Signal.Event(LogGroup.Engine, "模式切换",
                             new { channelId, from = "Express", to = "Working", reason = reason ?? "工具调用" });
                         gate.Signal();
@@ -971,6 +989,10 @@ namespace AgentCoreProcessor.Engine
                 TrackMemoryExtraction(activeBatch, currentLastSc);
                 await IncrementDailyProgressAsync(currentLastSc.Person);
             }
+
+            // 推进游标
+            if (_pendingCursor > _lastConsumedMessageId)
+                _lastConsumedMessageId = _pendingCursor;
         }
 
         // ═══════════════════════════════════════════════════════════
@@ -1024,9 +1046,13 @@ namespace AgentCoreProcessor.Engine
             // Restore persisted context (loaded into _loadedConversation for BuildStartInjectAsync)
             if (persistence != null && _loadedConversation == null)
             {
-                var (summary, mode, rounds) = persistence.LoadContext();
+                var (summary, mode, rounds, cursor, reason) = persistence.LoadContext();
                 if (!string.IsNullOrEmpty(summary) && string.IsNullOrEmpty(contextSummary))
                     contextSummary = summary;
+                if (cursor > _lastConsumedMessageId)
+                    _lastConsumedMessageId = cursor;
+                if (!string.IsNullOrEmpty(reason) && string.IsNullOrEmpty(_escalateReason))
+                    _escalateReason = reason;
                 if (rounds.Count > 0)
                 {
                     _loadedConversation = new List<Message>();
@@ -1063,24 +1089,42 @@ namespace AgentCoreProcessor.Engine
             if (!string.IsNullOrEmpty(contextSummary))
                 msgs.Add(new Message { Role = "user", Content = $"[上下文摘要]\n{contextSummary}" });
 
-            // 近期对话历史（Express 模式从数据库拉取；Working 模式由持久化 rounds 提供）
-            if (!isWorkingMode)
+            // 统一从 DB 拉取最近 N 条消息（两种模式共用，X 条为历史+新消息总和）
+            // Express：新消息多时自动挤掉旧历史（总量封顶 X）
+            // Working：此处拉初始上下文；后续轮次由 BuildRoundInjectAsync 强制拉全量
             {
                 var recentMsgs = await ctx.Session.GetContextByChannelAsync(channelId, ExpressHistoryMaxMessages);
                 if (recentMsgs.Count > 0)
                 {
-                    var histSb = new StringBuilder("[对话历史]\n");
-                    foreach (var m in recentMsgs)
+                    // 按游标分离：已消费的为历史
+                    var historyMsgs = recentMsgs.Where(m => m.Id <= _lastConsumedMessageId).ToList();
+                    if (historyMsgs.Count > 0)
                     {
-                        var name = m.IsFromBot ? "你" : m.SenderName;
-                        histSb.AppendLine($"{name}: {m.Content}");
+                        var histSb = new StringBuilder("[对话历史]\n");
+                        foreach (var m in historyMsgs)
+                        {
+                            var name = m.IsFromBot ? "你" : m.SenderName;
+                            histSb.AppendLine($"{name}: {m.Content}");
+                        }
+                        msgs.Add(new Message { Role = "user", Content = histSb.ToString() });
                     }
-                    msgs.Add(new Message { Role = "user", Content = histSb.ToString() });
+
+                    // 记录待推进游标（本批次最大消息 Id）
+                    var maxId = recentMsgs.Max(m => m.Id);
+                    if (maxId > _lastConsumedMessageId)
+                        _pendingCursor = maxId;
                 }
             }
 
             // Working 模式：framework 到此为止，后面是对话内容
             _frameworkMessageCount = msgs.Count;
+
+            // Working 模式：escalate 理由注入（仅一次）
+            if (isWorkingMode && !string.IsNullOrEmpty(_escalateReason))
+            {
+                msgs.Add(new Message { Role = "user", Content = $"[模式切换] 已从 Express 切换至 Working 模式。切换原因：{_escalateReason}" });
+                _escalateReason = null;
+            }
 
             // Working 模式：插入持久化的旧对话 rounds
             if (isWorkingMode && _loadedConversation != null && _loadedConversation.Count > 0)
@@ -1189,7 +1233,42 @@ namespace AgentCoreProcessor.Engine
                         break;
                     case ModeSwitchSignal mss:
                         isWorkingMode = mss.NewMode == "working";
+                        if (!string.IsNullOrEmpty(mss.Reason))
+                        {
+                            if (mss.NewMode == "working")
+                            {
+                                // Express→Working：暂存理由供 BuildStartInjectAsync 注入
+                                if (string.IsNullOrEmpty(_escalateReason))
+                                    _escalateReason = mss.Reason;
+                                msgs.Add(new Message { Role = "user", Content = $"[系统] 切换到 Working 模式：{mss.Reason}" });
+                            }
+                            else
+                            {
+                                msgs.Add(new Message { Role = "user", Content = $"[系统] 切换到 Express 模式：{mss.Reason}" });
+                            }
+                        }
                         break;
+                }
+            }
+
+            // Working 模式：强制从 DB 拉取游标之后的全量新消息（不丢消息）
+            if (isWorkingMode && _lastConsumedMessageId > 0)
+            {
+                var newMsgs = await ctx.Session.GetMessagesAfterIdAsync(channelId, _lastConsumedMessageId);
+                if (newMsgs.Count > 0)
+                {
+                    var sb = new StringBuilder("<新消息（自上次处理后）>\n");
+                    foreach (var m in newMsgs)
+                    {
+                        var name = m.IsFromBot ? "你" : m.SenderName;
+                        sb.AppendLine($"{name}: {m.Content}");
+                    }
+                    sb.Append("</新消息>");
+                    msgs.Add(new Message { Role = "user", Content = sb.ToString() });
+
+                    var maxNewId = newMsgs.Max(m => m.Id);
+                    if (maxNewId > _lastConsumedMessageId)
+                        _lastConsumedMessageId = maxNewId;
                 }
             }
 
@@ -1280,7 +1359,8 @@ namespace AgentCoreProcessor.Engine
             if (currentRound.Count > 0)
                 rounds.Add(currentRound);
 
-            persistence.SaveContext(contextSummary, isWorkingMode ? "working" : "express", rounds);
+            persistence.SaveContext(contextSummary, isWorkingMode ? "working" : "express", rounds,
+                _lastConsumedMessageId, _escalateReason);
         }
 
         private void EndWorkingSession()
@@ -1355,7 +1435,6 @@ namespace AgentCoreProcessor.Engine
             ExtractionRunning = extractionWorker.IsRunning,
             AutoExtractionEnabled = channelConfig.AutoExtractionEnabled,
             UnrespondedMessageCount = unrespondedMessageCount,
-            ConsecutiveExternalTriggers = consecutiveExternalTriggers,
             LastCompletionTime = LastCompletionTime,
             TotalRounds = loopControlModule.TotalRounds,
             SilentRounds = loopControlModule.SilentRounds,
