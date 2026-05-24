@@ -32,14 +32,14 @@ namespace Plugin.WorkingTools
 
         public RetainListTool(IToolContext ctx)
         {
-            _baseDir = Path.Combine(ctx.Storage.GlobalDirectory, "retain");
+            _baseDir = Path.Combine(ctx.Storage.InstanceDirectory, "retain");
             Directory.CreateDirectory(_baseDir);
         }
 
         /// <summary>Component 模式构造函数</summary>
         public RetainListTool(IPluginStorage storage)
         {
-            _baseDir = Path.Combine(storage.GlobalDirectory, "retain");
+            _baseDir = Path.Combine(storage.InstanceDirectory, "retain");
             Directory.CreateDirectory(_baseDir);
         }
 

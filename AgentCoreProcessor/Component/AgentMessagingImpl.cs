@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Engine;
+using AgentCoreProcessor.Logging;
 using AgentLilara.PluginSDK.Services;
 using CrossReqType = AgentLilara.PluginSDK.Services.CrossRequestResponseType;
 using EngineCrossReqType = AgentCoreProcessor.Engine.CrossRequestResponseType;
@@ -19,14 +20,16 @@ internal class AgentMessagingImpl : IAgentMessaging
     private readonly CrossRequestRegistry _registry;
     private readonly Action _wakeMe;
     private readonly Func<string, bool> _isTargetAlive;
+    private readonly Func<List<string>> _getActiveLoopIds;
 
     public AgentMessagingImpl(string myLoopId, CrossRequestRegistry registry,
-        Action wakeMe, Func<string, bool> isTargetAlive)
+        Action wakeMe, Func<string, bool> isTargetAlive, Func<List<string>>? getActiveLoopIds = null)
     {
         _myLoopId = myLoopId;
         _registry = registry;
         _wakeMe = wakeMe;
         _isTargetAlive = isTargetAlive;
+        _getActiveLoopIds = getActiveLoopIds ?? (() => new List<string> { myLoopId });
     }
 
     public async Task<CrossRequestResult> SubmitAndWaitAsync(
@@ -35,6 +38,9 @@ internal class AgentMessagingImpl : IAgentMessaging
         TimeSpan? timeout = null)
     {
         var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(45);
+
+        // 诊断日志：追踪发起者身份
+        Signal.Event(LogGroup.Engine, "SubmitAndWaitAsync", new { initiatorId = _myLoopId, targetId, title });
 
         // 检查目标是否存活（对于非广播的特定目标）
         if (targetId != null && !_isTargetAlive(targetId))
@@ -167,6 +173,8 @@ internal class AgentMessagingImpl : IAgentMessaging
         return r != null ? ToInfo(r) : null;
     }
 
+    public List<string> GetActiveLoopIds() => _getActiveLoopIds();
+
     // ═══════ 映射 ═══════
 
     private static EngineCrossReqType MapType(CrossReqType t) => t switch
@@ -175,6 +183,7 @@ internal class AgentMessagingImpl : IAgentMessaging
         CrossReqType.Reject => EngineCrossReqType.Reject,
         CrossReqType.Progress => EngineCrossReqType.Progress,
         CrossReqType.Complete => EngineCrossReqType.Complete,
+        CrossReqType.Failed => EngineCrossReqType.Failed,
         CrossReqType.Ignore => EngineCrossReqType.Ignore,
         _ => EngineCrossReqType.Complete
     };

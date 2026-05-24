@@ -30,13 +30,13 @@ namespace Plugin.WorkingTools
 
         public TaskListTool(IToolContext ctx)
         {
-            _filePath = Path.Combine(ctx.Storage.GlobalDirectory, "task_list.json");
+            _filePath = Path.Combine(ctx.Storage.InstanceDirectory, "task_list.json");
         }
 
         /// <summary>Component 模式构造函数</summary>
         public TaskListTool(IPluginStorage storage)
         {
-            _filePath = Path.Combine(storage.GlobalDirectory, "task_list.json");
+            _filePath = Path.Combine(storage.InstanceDirectory, "task_list.json");
         }
 
         public string? BuildSection()

@@ -234,7 +234,8 @@ namespace AgentCoreProcessor.Engine
 
             // 初始化 ComponentHost
             _messaging = new Component.AgentMessagingImpl(LoopId.System, ctx.CrossRequests,
-                () => gate.Signal(), loopId => ctx.DelegationBus.IsLoopActive(loopId));
+                () => gate.Signal(), loopId => ctx.DelegationBus.IsLoopActive(loopId),
+                () => ctx.DelegationBus.GetActiveLoopIds().ToList());
             componentHost = new ComponentHost(
                 LoopId.System, "system", _moduleBus, ctx.ComponentServices,
                 () => gate.Signal(),

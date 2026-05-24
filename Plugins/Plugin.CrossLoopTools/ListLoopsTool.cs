@@ -20,26 +20,7 @@ public class ListLoopsTool : ITool
 
     public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
     {
-        // 通过 IAgentMessaging 获取所有活跃请求的发起者和目标来推断活跃循环
-        // 实际的活跃循环列表由 DelegationBus.GetActiveLoopIds() 提供
-        var active = _messaging.GetActiveRequests();
-        var completed = _messaging.GetCompletedRequests();
-
-        var loopIds = new HashSet<string>();
-        foreach (var r in active)
-        {
-            loopIds.Add(r.InitiatorId);
-            if (r.TargetId != null) loopIds.Add(r.TargetId);
-            foreach (var resp in r.Responses)
-                loopIds.Add(resp.ResponderId);
-        }
-        foreach (var r in completed)
-        {
-            loopIds.Add(r.InitiatorId);
-            if (r.TargetId != null) loopIds.Add(r.TargetId);
-            foreach (var resp in r.Responses)
-                loopIds.Add(resp.ResponderId);
-        }
+        var loopIds = _messaging.GetActiveLoopIds();
 
         if (loopIds.Count == 0)
             return Task.FromResult(new ToolResult { Status = "success", Data = "没有已知的活跃循环。" });
@@ -53,7 +34,7 @@ public class ListLoopsTool : ITool
         return Task.FromResult(new ToolResult
         {
             Status = "success",
-            Data = "已知循环 ID:\n" + string.Join("\n", lines)
+            Data = $"活跃循环（共 {loopIds.Count} 个）:\n" + string.Join("\n", lines)
         });
     }
 

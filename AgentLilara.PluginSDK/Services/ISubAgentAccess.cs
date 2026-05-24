@@ -21,6 +21,9 @@ namespace AgentLilara.PluginSDK.Services
 
         /// <summary>请求停止子 agent。</summary>
         void RequestStop(string sessionId);
+
+        /// <summary>列出所有活跃的子 agent。</summary>
+        List<SubAgentInfo> List();
     }
 
     public class SubAgentInfo

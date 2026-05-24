@@ -35,7 +35,7 @@ public class CompleteRequestTool : ITool
             return Task.FromResult(new ToolResult { Status = "failed", Error = "result 不能为空" });
 
         _messaging.Respond(requestId,
-            failed ? CrossRequestResponseType.Complete : CrossRequestResponseType.Complete,
+            failed ? CrossRequestResponseType.Failed : CrossRequestResponseType.Complete,
             result);
 
         return Task.FromResult(new ToolResult

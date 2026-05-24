@@ -20,6 +20,8 @@ public class CrossLoopComponent : LoopComponentBase
     private RespondToRequestTool? _respondToRequest;
     private ListRequestsTool? _listRequests;
     private ListLoopsTool? _listLoops;
+    private GetRequestTool? _getRequest;
+    private ListArchivedRequestsTool? _listArchived;
 
     public override ComponentMeta Meta => new()
     {
@@ -43,6 +45,8 @@ public class CrossLoopComponent : LoopComponentBase
             if (_respondToRequest != null) yield return _respondToRequest;
             if (_listRequests != null) yield return _listRequests;
             if (_listLoops != null) yield return _listLoops;
+            if (_getRequest != null) yield return _getRequest;
+            if (_listArchived != null) yield return _listArchived;
         }
     }
 
@@ -62,6 +66,8 @@ public class CrossLoopComponent : LoopComponentBase
             _checkMessages = new CheckMessagesTool(_messaging);
             _respondToRequest = new RespondToRequestTool(_messaging);
             _listRequests = new ListRequestsTool(_messaging);
+            _getRequest = new GetRequestTool(_messaging);
+            _listArchived = new ListArchivedRequestsTool(_messaging);
         }
 
         // list_loops 仅系统循环可用

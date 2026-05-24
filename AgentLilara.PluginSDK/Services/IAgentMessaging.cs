@@ -41,6 +41,9 @@ namespace AgentLilara.PluginSDK.Services
 
         /// <summary>获取单个请求详情。</summary>
         CrossRequestInfo? Get(string requestId);
+
+        /// <summary>获取所有活跃循环的 ID 列表。</summary>
+        List<string> GetActiveLoopIds();
     }
 
     // ═══════ DTO ═══════
@@ -51,6 +54,7 @@ namespace AgentLilara.PluginSDK.Services
         Reject,
         Progress,
         Complete,
+        Failed,
         Ignore
     }
 

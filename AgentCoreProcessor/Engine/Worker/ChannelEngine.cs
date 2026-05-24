@@ -367,7 +367,8 @@ namespace AgentCoreProcessor.Engine
             // 初始化 ComponentHost
             var myLoopId = LoopId.ForChannel(channelId);
             _messaging = new Component.AgentMessagingImpl(myLoopId, ctx.CrossRequests,
-                () => gate.Signal(), loopId => ctx.DelegationBus.IsLoopActive(loopId));
+                () => gate.Signal(), loopId => ctx.DelegationBus.IsLoopActive(loopId),
+                () => ctx.DelegationBus.GetActiveLoopIds().ToList());
             componentHost = new ComponentHost(
                 myLoopId, "channel", _moduleBus, ctx.ComponentServices,
                 () => gate.Signal(),

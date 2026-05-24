@@ -12,16 +12,26 @@ public class RespondToRequestTool : ITool
     public RespondToRequestTool(IAgentMessaging messaging) => _messaging = messaging;
 
     public string Name => "respond_to_request";
-    public string Description => "对收到的跨循环请求做出回应。accept=接受委托；reject=拒绝（附理由）；progress=汇报进度（不改变状态）；complete=标记完成（附结果）；ignore=仅广播可用，忽略后从视野消失。";
+    public string Description => "对收到的跨循环请求做出回应。accept=接受委托；reject=拒绝；progress=汇报进度；complete=标记成功；failed=标记失败；ignore=忽略后从视野消失。";
 
     public IReadOnlyList<ToolParameter> Parameters =>
     [
         new("request_id", "请求ID", 0),
-        new("type", "回应类型: accept / reject / progress / complete / ignore", 1),
+        new("type", "回应类型: accept / reject / progress / complete / failed / ignore", 1),
         new("content", "回应内容", 2)
     ];
 
     public TimeSpan Timeout => TimeSpan.FromSeconds(10);
+
+    private static readonly Dictionary<string, CrossRequestResponseType> s_typeMap = new()
+    {
+        ["accept"] = CrossRequestResponseType.Accept,
+        ["reject"] = CrossRequestResponseType.Reject,
+        ["progress"] = CrossRequestResponseType.Progress,
+        ["complete"] = CrossRequestResponseType.Complete,
+        ["failed"] = CrossRequestResponseType.Failed,
+        ["ignore"] = CrossRequestResponseType.Ignore,
+    };
 
     public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
     {
@@ -32,19 +42,9 @@ public class RespondToRequestTool : ITool
         if (string.IsNullOrWhiteSpace(requestId))
             return Task.FromResult(new ToolResult { Status = "failed", Error = "request_id 不能为空" });
 
-        var type = typeStr?.ToLower() switch
-        {
-            "accept" => CrossRequestResponseType.Accept,
-            "reject" => CrossRequestResponseType.Reject,
-            "progress" => CrossRequestResponseType.Progress,
-            "complete" => CrossRequestResponseType.Complete,
-            "ignore" => CrossRequestResponseType.Ignore,
-            _ => CrossRequestResponseType.Complete
-        };
-
-        if (typeStr == null || type == CrossRequestResponseType.Complete && typeStr?.ToLower() != "complete")
+        if (string.IsNullOrWhiteSpace(typeStr) || !s_typeMap.TryGetValue(typeStr.ToLower(), out var type))
             return Task.FromResult(new ToolResult { Status = "failed",
-                Error = "type 必须是 accept/reject/progress/complete/ignore" });
+                Error = "type 必须是 accept/reject/progress/complete/failed/ignore" });
 
         _messaging.Respond(requestId, type, content ?? "");
         return Task.FromResult(new ToolResult
@@ -59,7 +59,7 @@ public class RespondToRequestTool : ITool
         "type": "object",
         "properties": {
             "request_id": { "type": "string", "description": "请求ID" },
-            "type": { "type": "string", "enum": ["accept", "reject", "progress", "complete", "ignore"], "description": "回应类型" },
+            "type": { "type": "string", "enum": ["accept", "reject", "progress", "complete", "failed", "ignore"], "description": "回应类型" },
             "content": { "type": "string", "description": "回应内容" }
         },
         "required": ["request_id", "type", "content"]

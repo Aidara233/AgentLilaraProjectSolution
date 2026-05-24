@@ -54,4 +54,13 @@ internal class SubAgentAccessAdapter : ISubAgentAccess
         var session = systemEngine?.GetSubAgent(sessionId);
         session?.RequestStop();
     }
+
+    public List<SubAgentInfo> List()
+    {
+        var systemEngine = _master.GetSystemEngine();
+        if (systemEngine == null) return new List<SubAgentInfo>();
+        return systemEngine.GetActiveSubAgents()
+            .Select(s => new SubAgentInfo { SessionId = s.SessionId, IsAlive = s.IsAlive })
+            .ToList();
+    }
 }

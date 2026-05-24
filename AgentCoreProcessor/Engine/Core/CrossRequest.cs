@@ -22,6 +22,7 @@ public enum CrossRequestResponseType
     Reject,
     Progress,
     Complete,
+    Failed,
     Ignore
 }
 

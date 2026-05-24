@@ -103,6 +103,10 @@ internal class CrossRequestRegistry
                 request.State = CrossRequestState.Completed;
                 request.CompletedAt = DateTime.UtcNow;
                 break;
+            case CrossRequestResponseType.Failed:
+                request.State = CrossRequestState.Failed;
+                request.CompletedAt = DateTime.UtcNow;
+                break;
             case CrossRequestResponseType.Ignore:
                 break;
         }
@@ -112,7 +116,7 @@ internal class CrossRequestRegistry
         if (type == CrossRequestResponseType.Accept && responderId != request.InitiatorId)
             OnRequestUpdated?.Invoke(responderId);
 
-        if (type is CrossRequestResponseType.Complete or CrossRequestResponseType.Reject)
+        if (type is CrossRequestResponseType.Complete or CrossRequestResponseType.Failed or CrossRequestResponseType.Reject)
             OnRequestCompleted?.Invoke(request);
 
         return true;
