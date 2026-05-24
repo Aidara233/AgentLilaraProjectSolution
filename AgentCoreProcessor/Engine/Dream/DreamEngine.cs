@@ -51,6 +51,34 @@ namespace AgentCoreProcessor.Engine
         internal FragmentRecord? LastCompletedRecord { get; private set; }
         internal IReadOnlyList<FragmentRecord> CompletedFragments => fragmentRecords;
 
+        // 资源与预算（供 WebUI 读取）
+        internal int AvailableResources => _scheduler?.AvailableResources ?? 0;
+        internal int TotalResources => spawnCheck.GetConfig().TotalResources;
+        internal int TokensUsed => _scheduler?.TokensUsed ?? 0;
+        internal int MainBudget => spawnCheck.GetConfig().MainTokenBudget;
+        internal int ReserveBudget => spawnCheck.GetConfig().ReserveTokenBudget;
+        internal int TodoCount => _scheduler?.TodoCount ?? 0;
+        internal int RunningCount => _scheduler?.RunningCount ?? 0;
+        internal bool BudgetExhausted => _scheduler != null && !_scheduler.CanFill;
+
+        internal List<RunningFragmentInfo> GetRunningFragments()
+        {
+            if (_scheduler == null) return new();
+            var now = DateTime.Now;
+            // 注意：单个 CurrentFragmentStartTime 已不够用，改用 Running 列表中的记录时间
+            return _scheduler.Running.Select(d => new RunningFragmentInfo
+            {
+                Type = d.Type.ToString(),
+                ResourceCost = d.ResourceCost,
+            }).ToList();
+        }
+
+        internal class RunningFragmentInfo
+        {
+            public string Type { get; init; } = "";
+            public int ResourceCost { get; init; }
+        }
+
         private readonly List<FragmentRecord> fragmentRecords = new();
         private List<FragmentDetailRecord> currentDetails = new();
         private string? currentInputIds;

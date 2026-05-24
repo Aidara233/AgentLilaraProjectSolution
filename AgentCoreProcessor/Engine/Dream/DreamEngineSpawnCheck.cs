@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Logging;
+using AgentCoreProcessor.WebUI.Services;
 using Newtonsoft.Json;
 
 namespace AgentCoreProcessor.Engine
@@ -131,13 +133,14 @@ namespace AgentCoreProcessor.Engine
         {
             var active = hasActiveDream ? activeDreamEngine : null;
             var lastRec = active?.LastCompletedRecord;
+            var running = active?.GetRunningFragments() ?? new List<DreamEngine.RunningFragmentInfo>();
             return new()
             {
                 ForceFlag = forceFlag,
                 LastDaydreamTime = lastDaydreamTime,
                 PendingLevel = pendingLevel,
                 HasActiveDream = hasActiveDream,
-                CurrentFragment = active?.CurrentFragment,
+                CurrentFragment = running.FirstOrDefault()?.Type ?? active?.CurrentFragment,
                 FragmentsCompleted = active?.FragmentsCompleted ?? 0,
                 FragmentsTotal = active?.FragmentsTotal ?? 0,
                 CurrentFragmentStartTime = active?.CurrentFragmentStartTime,
@@ -152,7 +155,21 @@ namespace AgentCoreProcessor.Engine
                     NewValue = d.NewValue,
                     Note = d.Note
                 }).ToList(),
-                CompletedFragments = active?.CompletedFragments.ToList()
+                CompletedFragments = active?.CompletedFragments.ToList(),
+                // 资源与预算
+                AvailableResources = active?.AvailableResources ?? 0,
+                TotalResources = active?.TotalResources ?? cfg.TotalResources,
+                TokensUsed = active?.TokensUsed ?? 0,
+                MainBudget = cfg.MainTokenBudget,
+                ReserveBudget = cfg.ReserveTokenBudget,
+                TodoCount = active?.TodoCount ?? 0,
+                RunningCount = active?.RunningCount ?? 0,
+                BudgetExhausted = active?.BudgetExhausted ?? false,
+                RunningFragments = running.Select(r => new RunningFragmentSnapshot
+                {
+                    Type = r.Type,
+                    ResourceCost = r.ResourceCost
+                }).ToList(),
             };
         }
 

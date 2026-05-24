@@ -43,7 +43,7 @@ internal class DreamProvider : IWebUIProvider
         {
             new()
             {
-                Id = "dream-status", Type = CardType.Status, DataSourceId = "dream-status", Title = "做梦引擎",
+                Id = "dream-status", Type = CardType.Status, DataSourceId = "dream-status", Title = "运行状态",
                 Schema = new StatusSchema
                 {
                     Fields = new()
@@ -51,8 +51,8 @@ internal class DreamProvider : IWebUIProvider
                         new() { Field = "state", Label = "状态", Type = StatusFieldType.Indicator },
                         new() { Field = "level", Label = "睡眠等级", Type = StatusFieldType.Badge },
                         new() { Field = "progress", Label = "进度", Type = StatusFieldType.Progress },
-                        new() { Field = "current_fragment", Label = "当前片段" },
-                        new() { Field = "fragment_elapsed", Label = "片段耗时" },
+                        new() { Field = "running", Label = "运行中片段" },
+                        new() { Field = "todo", Label = "排队中" },
                         new() { Field = "input_desc", Label = "输入描述" },
                         new() { Field = "force_flag", Label = "强制触发", Type = StatusFieldType.Badge }
                     },
@@ -61,6 +61,22 @@ internal class DreamProvider : IWebUIProvider
                         new() { Id = "force-deep", Label = "强制大睡", Icon = "bi-moon" },
                         new() { Id = "force-nap", Label = "强制小睡", Icon = "bi-cloud" },
                         new() { Id = "force-daydream", Label = "强制走神", Icon = "bi-cloud-haze" }
+                    }
+                },
+                Layout = new CardLayout { PreferredCols = 6 }
+            },
+            new()
+            {
+                Id = "dream-resources", Type = CardType.Status, DataSourceId = "dream-resources", Title = "资源与预算",
+                Schema = new StatusSchema
+                {
+                    Fields = new()
+                    {
+                        new() { Field = "resources", Label = "资源池", Type = StatusFieldType.Progress },
+                        new() { Field = "tokens_used", Label = "主预算消耗", Type = StatusFieldType.Progress },
+                        new() { Field = "budget_status", Label = "预算状态", Type = StatusFieldType.Badge },
+                        new() { Field = "tokens_detail", Label = "Token 详情" },
+                        new() { Field = "reserve", Label = "增援预算" }
                     }
                 },
                 Layout = new CardLayout { PreferredCols = 6 }
@@ -103,6 +119,7 @@ internal class DreamProvider : IWebUIProvider
         DataSources = new List<DataSourceDefinition>
         {
             new() { Id = "dream-status", Source = new DreamStatusSource(_engine) },
+            new() { Id = "dream-resources", Source = new DreamResourcesSource(_engine) },
             new() { Id = "dream-stats", Source = new DreamStatsSource(_engine) },
             new() { Id = "dream-fragments", Source = new DreamActiveFragmentsSource(_engine) }
         }
@@ -286,16 +303,38 @@ internal class DreamProvider : IWebUIProvider
                         new() { Field = "deep_idle", Label = "大睡空闲阈值" },
                         new() { Field = "deep_window", Label = "大睡窗口" },
                         new() { Field = "deep_budget", Label = "大睡Token预算" },
-                        new() { Field = "deep_max_minutes", Label = "大睡时间上限" }
+                        new() { Field = "deep_max_minutes", Label = "大睡时间上限" },
+                        new() { Field = "total_resources", Label = "资源池总量" },
+                        new() { Field = "resource_costs", Label = "片段资源占用" }
                     }
                 },
                 Layout = new CardLayout { PreferredCols = 6 }
+            },
+            new()
+            {
+                Id = "sleep-budget", Type = CardType.Status, DataSourceId = "sleep-budget", Title = "预算与资源",
+                Schema = new StatusSchema
+                {
+                    Fields = new()
+                    {
+                        new() { Field = "main_budget", Label = "主预算" },
+                        new() { Field = "reserve_budget", Label = "增援预算" },
+                        new() { Field = "total_budget", Label = "总预算" },
+                        new() { Field = "consolidation_cost", Label = "Consolidation (资源/Token)" },
+                        new() { Field = "weight_cost", Label = "Weight (资源/Token)" },
+                        new() { Field = "link_cost", Label = "Link (资源/Token)" },
+                        new() { Field = "combine_cost", Label = "Combine (资源/Token)" },
+                        new() { Field = "dedup_cost", Label = "Dedup (资源/Token)" }
+                    }
+                },
+                Layout = new CardLayout { PreferredCols = 12 }
             }
         },
         DataSources = new List<DataSourceDefinition>
         {
             new() { Id = "sleep-eval", Source = new SleepEvalSource(_engine) },
-            new() { Id = "sleep-config", Source = new SleepConfigSource(_engine) }
+            new() { Id = "sleep-config", Source = new SleepConfigSource(_engine) },
+            new() { Id = "sleep-budget", Source = new SleepBudgetSource(_engine) }
         }
     };
 }
@@ -327,34 +366,44 @@ internal class DreamStatusSource : IDataSource
                 ["state"] = "空闲",
                 ["level"] = "—",
                 ["progress"] = "0",
-                ["current_fragment"] = "—",
-                ["fragment_elapsed"] = "—",
+                ["running"] = "—",
+                ["todo"] = "—",
                 ["input_desc"] = "—",
                 ["force_flag"] = "否"
             };
             return Task.FromResult(new DataResult { Data = idle });
         }
 
-        var elapsed = snap.CurrentFragmentStartTime.HasValue
-            ? $"{(DateTime.Now - snap.CurrentFragmentStartTime.Value).TotalSeconds:F0}s"
-            : "—";
-
         var progressPct = snap.FragmentsTotal > 0
             ? (int)(snap.FragmentsCompleted * 100.0 / snap.FragmentsTotal)
             : 0;
+
+        var runningList = snap.RunningFragments != null && snap.RunningFragments.Count > 0
+            ? string.Join(", ", snap.RunningFragments.Select(r => $"{SimplifyType(r.Type)}({r.ResourceCost})"))
+            : (snap.CurrentFragment ?? "准备中");
 
         var data = new JsonObject
         {
             ["state"] = "做梦中",
             ["level"] = snap.PendingLevel.ToString(),
             ["progress"] = $"{progressPct}|{snap.FragmentsCompleted}/{snap.FragmentsTotal}",
-            ["current_fragment"] = snap.CurrentFragment ?? "准备中",
-            ["fragment_elapsed"] = elapsed,
+            ["running"] = $"{snap.RunningCount} 并行: {runningList}",
+            ["todo"] = snap.TodoCount > 0 ? $"{snap.TodoCount} 个排队中" : "—",
             ["input_desc"] = snap.CurrentInputDescription ?? "—",
             ["force_flag"] = snap.ForceFlag ? "是" : "否"
         };
         return Task.FromResult(new DataResult { Data = data });
     }
+
+    private static string SimplifyType(string type) => type switch
+    {
+        "Consolidation" => "整合",
+        "Weight" => "权重",
+        "Link" => "关联",
+        "Combine" => "组合",
+        "Dedup" => "去重",
+        _ => type
+    };
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
     {
@@ -378,6 +427,66 @@ internal class DreamStatusSource : IDataSource
         }
         return Task.FromResult(new ActionResult { Success = true });
     }
+}
+
+internal class DreamResourcesSource : IDataSource
+{
+    private readonly MasterEngine _engine;
+    public DreamResourcesSource(MasterEngine engine) => _engine = engine;
+    public bool SupportsPush => true;
+
+    public IDisposable? Subscribe(Action<JsonNode?> callback)
+    {
+        var timer = new System.Threading.Timer(_ => callback(null), null, 3000, 3000);
+        return new TimerDisposable(timer);
+    }
+
+    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        var check = _engine.GetSpawnCheck<DreamEngineSpawnCheck>();
+        var hasActive = _engine.HasActiveEngine("Dream");
+        var snap = check?.GetDreamSnapshot(hasActive);
+
+        if (snap == null || !snap.HasActiveDream)
+        {
+            var idle = new JsonObject
+            {
+                ["resources"] = "0",
+                ["tokens_used"] = "0",
+                ["budget_status"] = "空闲",
+                ["tokens_detail"] = "—",
+                ["reserve"] = "—"
+            };
+            return Task.FromResult(new DataResult { Data = idle });
+        }
+
+        var totalRes = snap.TotalResources;
+        var avail = snap.AvailableResources;
+        var usedRes = totalRes - avail;
+        var resPct = totalRes > 0 ? (int)(avail * 100.0 / totalRes) : 0;
+
+        var mainBudget = snap.MainBudget;
+        var reserveBudget = snap.ReserveBudget;
+        var tokensUsed = snap.TokensUsed;
+        var budgetPct = mainBudget > 0 ? (int)(tokensUsed * 100.0 / mainBudget) : 0;
+
+        var budgetLabel = snap.BudgetExhausted
+            ? (snap.MainBudget <= 0 && snap.ReserveBudget <= 0 ? "已全部耗尽" : "主预算耗尽")
+            : "正常";
+
+        var data = new JsonObject
+        {
+            ["resources"] = $"{resPct}|{avail}/{totalRes} (已用{usedRes})",
+            ["tokens_used"] = $"{budgetPct}|{tokensUsed:#,0}/{mainBudget:#,0}",
+            ["budget_status"] = budgetLabel,
+            ["tokens_detail"] = $"已花 {tokensUsed:#,0} / 主预算 {mainBudget:#,0}",
+            ["reserve"] = $"增援 {reserveBudget:#,0}"
+        };
+        return Task.FromResult(new DataResult { Data = data });
+    }
+
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+        => Task.FromResult(new ActionResult { Success = true });
 }
 
 internal class DreamStatsSource : IDataSource
@@ -438,24 +547,75 @@ internal class DreamActiveFragmentsSource : IDataSource
 
         var arr = new JsonArray();
 
-        if (hasActive && snap?.CompletedFragments != null)
+        if (hasActive)
         {
-            // 活跃做梦时用引擎内存中的片段（未入库）
             int seq = 1;
-            foreach (var rec in snap.CompletedFragments)
+
+            // 1. 运行中片段（排最前）
+            if (snap?.RunningFragments != null)
             {
+                foreach (var rf in snap.RunningFragments)
+                {
+                    arr.Add(new JsonObject
+                    {
+                        ["seq"] = "▶",
+                        ["type"] = rf.Type,
+                        ["status"] = "执行中",
+                        ["duration"] = $"资源{rf.ResourceCost}",
+                        ["summary"] = ""
+                    });
+                }
+            }
+            else if (snap?.CurrentFragment != null)
+            {
+                // 兜底: 兼容旧的单片段模式
+                var elapsed = snap.CurrentFragmentStartTime.HasValue
+                    ? $"{(DateTime.Now - snap.CurrentFragmentStartTime.Value).TotalSeconds:F0}s"
+                    : "—";
                 arr.Add(new JsonObject
                 {
-                    ["seq"] = seq.ToString(),
-                    ["type"] = rec.Type,
-                    ["status"] = rec.Success ? "完成" : "失败",
-                    ["duration"] = $"{rec.DurationSeconds:F1}s",
-                    ["summary"] = (rec.Summary?.Length > 120 ? rec.Summary[..120] + "…" : rec.Summary) ?? ""
+                    ["seq"] = "▶",
+                    ["type"] = snap.CurrentFragment,
+                    ["status"] = "执行中",
+                    ["duration"] = elapsed,
+                    ["summary"] = snap.CurrentInputDescription ?? "处理中…"
                 });
-                seq++;
+            }
+
+            // 2. 已完成的片段
+            if (snap?.CompletedFragments != null)
+            {
+                foreach (var rec in snap.CompletedFragments)
+                {
+                    arr.Add(new JsonObject
+                    {
+                        ["seq"] = seq.ToString(),
+                        ["type"] = rec.Type,
+                        ["status"] = rec.Success ? "完成" : "失败",
+                        ["duration"] = $"{rec.DurationSeconds:F1}s",
+                        ["summary"] = (rec.Summary?.Length > 120 ? rec.Summary[..120] + "…" : rec.Summary) ?? ""
+                    });
+                    seq++;
+                }
+            }
+
+            // 3. 排队中的片段（todo）
+            if (snap != null && snap.TodoCount > 0)
+            {
+                for (int i = 0; i < snap.TodoCount; i++)
+                {
+                    arr.Add(new JsonObject
+                    {
+                        ["seq"] = "⏳",
+                        ["type"] = "—",
+                        ["status"] = "排队中",
+                        ["duration"] = "—",
+                        ["summary"] = "等待资源释放"
+                    });
+                }
             }
         }
-        else if (!hasActive)
+        else
         {
             // 无活跃做梦时显示最近一次 session 的已入库片段
             var sessions = await _engine.DreamLogs.GetRecentSessionsAsync(1);
@@ -478,22 +638,6 @@ internal class DreamActiveFragmentsSource : IDataSource
                     seq++;
                 }
             }
-        }
-
-        // 追加当前正在执行的片段
-        if (hasActive && snap?.CurrentFragment != null)
-        {
-            var elapsed = snap.CurrentFragmentStartTime.HasValue
-                ? $"{(DateTime.Now - snap.CurrentFragmentStartTime.Value).TotalSeconds:F0}s"
-                : "—";
-            arr.Add(new JsonObject
-            {
-                ["seq"] = (snap.FragmentsCompleted + 1).ToString(),
-                ["type"] = snap.CurrentFragment,
-                ["status"] = "执行中",
-                ["duration"] = elapsed,
-                ["summary"] = snap.CurrentInputDescription ?? "处理中…"
-            });
         }
 
         return new DataResult { Data = arr, TotalCount = arr.Count };
@@ -940,7 +1084,40 @@ internal class SleepConfigSource : IDataSource
             ["deep_idle"] = $"{config.DeepSleepIdleThreshold}s ({config.DeepSleepIdleThreshold / 60}分钟)",
             ["deep_window"] = $"{config.DeepSleepTimeStart} ~ {config.DeepSleepTimeEnd}",
             ["deep_budget"] = $"{config.MainTokenBudget:#,0} tokens (主) + {config.ReserveTokenBudget:#,0} tokens (增援)",
-            ["deep_max_minutes"] = $"{config.DeepSleepMaxMinutes} 分钟"
+            ["deep_max_minutes"] = $"{config.DeepSleepMaxMinutes} 分钟",
+            ["total_resources"] = $"{config.TotalResources}",
+            ["resource_costs"] = $"C={config.ConsolidationResourceCost} W={config.WeightResourceCost} L={config.LinkResourceCost} B={config.CombineResourceCost} D={config.DedupResourceCost}"
+        };
+        return Task.FromResult(new DataResult { Data = data });
+    }
+
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+        => Task.FromResult(new ActionResult { Success = true });
+}
+
+internal class SleepBudgetSource : IDataSource
+{
+    private readonly MasterEngine _engine;
+    public SleepBudgetSource(MasterEngine engine) => _engine = engine;
+    public bool SupportsPush => false;
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        var check = _engine.GetSpawnCheck<DreamEngineSpawnCheck>();
+        var config = check?.GetConfig() ?? DreamConfig.Load(
+            Path.Combine(PathConfig.StoragePath, "Dream", "DreamConfig.json"));
+
+        var data = new JsonObject
+        {
+            ["main_budget"] = $"{config.MainTokenBudget:#,0}",
+            ["reserve_budget"] = $"{config.ReserveTokenBudget:#,0}",
+            ["total_budget"] = $"{(config.MainTokenBudget + config.ReserveTokenBudget):#,0}",
+            ["consolidation_cost"] = $"资源 {config.ConsolidationResourceCost} / Token ~{config.ConsolidationTokenEstimate}",
+            ["weight_cost"] = $"资源 {config.WeightResourceCost} / Token ~{config.WeightTokenEstimate}",
+            ["link_cost"] = $"资源 {config.LinkResourceCost} / Token ~{config.LinkTokenEstimate}",
+            ["combine_cost"] = $"资源 {config.CombineResourceCost} / Token ~{config.CombineTokenEstimate}",
+            ["dedup_cost"] = $"资源 {config.DedupResourceCost} / Token ~{config.DedupTokenEstimate}"
         };
         return Task.FromResult(new DataResult { Data = data });
     }
