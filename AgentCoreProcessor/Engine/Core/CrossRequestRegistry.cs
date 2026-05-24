@@ -30,6 +30,9 @@ internal class CrossRequestRegistry
     /// <summary>请求提交（需要路由）时触发。参数：发起者 loopId。</summary>
     public Action<string>? OnRequestSubmitted;
 
+    /// <summary>请求完成/拒绝时触发。参数：完整请求对象。</summary>
+    public Action<CrossRequest>? OnRequestCompleted;
+
     public CrossRequestRegistry(string storagePath, DelegationBus bus)
     {
         _journalPath = Path.Combine(storagePath, "cross_requests.jsonl");
@@ -108,6 +111,9 @@ internal class CrossRequestRegistry
         OnRequestUpdated?.Invoke(request.InitiatorId);
         if (type == CrossRequestResponseType.Accept && responderId != request.InitiatorId)
             OnRequestUpdated?.Invoke(responderId);
+
+        if (type is CrossRequestResponseType.Complete or CrossRequestResponseType.Reject)
+            OnRequestCompleted?.Invoke(request);
 
         return true;
     }

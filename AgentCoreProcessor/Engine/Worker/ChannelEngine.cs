@@ -1295,8 +1295,34 @@ namespace AgentCoreProcessor.Engine
         }
         public void OnEvent(EngineEvent e)
         {
-            if (e is SignalEvent sig && sig.SignalName == "delegation-completed"
-                && sig.Payload?.ToString() == channelId.ToString())
+            if (e is SignalEvent sig && sig.SignalName == "delegation-result")
+            {
+                try
+                {
+                    var json = Newtonsoft.Json.Linq.JObject.Parse(sig.Payload?.ToString() ?? "{}");
+                    var chId = (int?)json["channelId"];
+                    var message = (string?)json["message"];
+                    if (chId == channelId && !string.IsNullOrEmpty(message) && lastContext != null)
+                    {
+                        var sysMsg = new IncomingMessage
+                        {
+                            Platform = "System",
+                            PlatformUserId = "system",
+                            ChannelId = channelId.ToString(),
+                            Content = message,
+                            IsSystemEvent = true,
+                            Time = DateTime.Now
+                        };
+                        EnqueueMessage(sysMsg, lastContext);
+                    }
+                }
+                catch { }
+                gate.Signal();
+                return;
+            }
+
+            if (e is SignalEvent sig2 && sig2.SignalName == "delegation-completed"
+                && sig2.Payload?.ToString() == channelId.ToString())
             {
                 gate.Signal();
             }

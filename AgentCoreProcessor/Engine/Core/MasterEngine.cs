@@ -389,6 +389,19 @@ namespace AgentCoreProcessor.Engine
             {
                 WakeLoop(loopId);
             };
+            CrossRequests.OnRequestCompleted = request =>
+            {
+                if (LoopId.IsChannel(request.InitiatorId, out var chId))
+                {
+                    var lastResp = request.Responses.LastOrDefault();
+                    var status = request.State == CrossRequestState.Completed ? "完成" : "拒绝";
+                    var msg = $"[委托结果]「{request.Title}」已{status}";
+                    if (lastResp != null && !string.IsNullOrEmpty(lastResp.Content))
+                        msg += $"：{lastResp.Content.Truncate(300)}";
+                    var payload = JsonConvert.SerializeObject(new { channelId = chId, message = msg });
+                    eventBus.PublishSignal("delegation-result", payload);
+                }
+            };
 
             // 注册核心工具（不可卸载的循环控制工具）
             Tool.ToolRegistry.Register(new Tool.Core.ContinueLoopTool());
