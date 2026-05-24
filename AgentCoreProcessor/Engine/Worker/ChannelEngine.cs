@@ -132,6 +132,8 @@ namespace AgentCoreProcessor.Engine
         private int _pendingCursor;
         // escalate 理由暂存（Express→Working 时注入一次）
         private string? _escalateReason;
+        // 模式切换后额外一轮循环（绕过空批检查）
+        private bool _extraCycleRequested;
 
         // ── 统一循环 Phase 2：信号缓冲 + 双源注入 ──
         private readonly ConcurrentQueue<ChannelSignal> _signalBuffer = new();
@@ -398,7 +400,8 @@ namespace AgentCoreProcessor.Engine
                 var batch = CollectBuffer();
 
                 // 没新消息且不在 Working 会话中 → 空唤醒（Timer 心跳等），直接跳过
-                if (batch == null && !isInWorkingSession)
+                // 例外：模式切换后的额外一轮循环
+                if (batch == null && !isInWorkingSession && !_extraCycleRequested)
                 {
                     await componentHost.OnPauseAsync();
                     continue;
@@ -500,6 +503,7 @@ namespace AgentCoreProcessor.Engine
                     }
                     if (!isInWorkingSession)
                     {
+                        _extraCycleRequested = false;
                         Interlocked.Exchange(ref _busyFlag, 0);
                         Interlocked.Exchange(ref _completionTicks, DateTime.Now.Ticks);
                         await componentHost.OnPauseAsync();
@@ -849,7 +853,8 @@ namespace AgentCoreProcessor.Engine
 
                 EndWorkingSession();
 
-                // 额外一轮 Express 循环
+                // 额外一轮 Express 循环（绕过空批检查）
+                _extraCycleRequested = true;
                 gate.Signal();
             }
             else if (agent.StopReason == AgentStopReason.MaxRounds)
