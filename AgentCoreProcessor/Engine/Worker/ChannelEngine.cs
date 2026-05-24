@@ -35,6 +35,7 @@ namespace AgentCoreProcessor.Engine
 
         /// <summary>是否正在处理消息。</summary>
         public bool IsBusy => Interlocked.Read(ref _busyFlag) == 1;
+        public Component.ComponentHost? ComponentHost => componentHost;
 
         /// <summary>上次处理完成的时间。用于冷却期计算。</summary>
         public DateTime? LastCompletionTime
@@ -371,6 +372,7 @@ namespace AgentCoreProcessor.Engine
                 myLoopId, "channel", _moduleBus, ctx.ComponentServices,
                 () => gate.Signal(),
                 new Dictionary<Type, object> { [typeof(IAgentMessaging)] = _messaging });
+            componentHost.GlobalHost = ctx.GlobalComponentHost;
             await componentHost.InitAsync();
 
             // 注册到委托总线
@@ -737,7 +739,8 @@ namespace AgentCoreProcessor.Engine
 
                 // 同步频道工具 profile
                 currentProfileName = ctx.ToolProfiles.GetProfileForChannel(currentLastMsg.ChannelId);
-                var profileTools = ctx.ToolProfiles.GetActiveTools(currentProfileName);
+                var profileTools = ctx.ToolProfiles.GetActiveTools(currentProfileName,
+                    globalHost: ctx.GlobalComponentHost);
                 authorizedTools.Clear();
                 foreach (var t in profileTools) authorizedTools.Add(t);
             }
@@ -808,6 +811,7 @@ namespace AgentCoreProcessor.Engine
             }
 
             agentCore.AdditionalTools = componentHost.GetVisibleTools().ToList();
+            agentCore.GlobalComponentTools = ctx.GlobalComponentHost?.GetAllTools().ToList();
             await agent!.RunAsync(CancellationToken.None);
 
             if (agent.StopReason == AgentStopReason.Error)
@@ -885,6 +889,7 @@ namespace AgentCoreProcessor.Engine
 
             // Call model (with retry)
             agentCore.AdditionalTools = componentHost.GetVisibleTools().ToList();
+            agentCore.GlobalComponentTools = ctx.GlobalComponentHost?.GetAllTools().ToList();
             ModelOutput output;
             using (var modelSpan = Signal.Open(LogGroup.Model, $"Express模型调用 ch:{channelId}",
                 new
@@ -954,7 +959,7 @@ namespace AgentCoreProcessor.Engine
                 {
                     var call = output.ToolCalls[i];
                     var result = expressResults[i];
-                    var toolDef = ToolRegistry.Get(call.Tool);
+                    var toolDef = componentHost.TryGetTool(call.Tool);
                     bus.Publish(new ToolExecutedEvent(call, result, toolDef));
                 }
 
@@ -1024,7 +1029,8 @@ namespace AgentCoreProcessor.Engine
             else
             {
                 var workingTools = new HashSet<string>(WorkingAuthorizedTools.Split(','));
-                sb.AppendLine(ToolRegistry.GenerateDescriptions(authorizedTools: workingTools));
+                sb.AppendLine(ToolRegistry.GenerateDescriptions(authorizedTools: workingTools,
+                    additionalTools: componentHost.GetAllVisibleTools().ToList()));
                 var botId = ctx.Adapters.GetBotPlatformId("qq");
                 if (!string.IsNullOrEmpty(botId))
                     sb.AppendLine($"\n身份信息：你的QQ号是 {botId}。");

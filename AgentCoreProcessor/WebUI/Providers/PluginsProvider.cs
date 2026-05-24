@@ -375,6 +375,14 @@ internal class PluginsProvider : IWebUIProvider
             if (!string.IsNullOrEmpty(group))
                 groups.Add(group);
         }
+        // 组件工具也检查 metadata
+        foreach (var tool in _engine.GetAllComponentTools())
+        {
+            var meta = ToolRegistry.GetMeta(tool.Name)
+                ?? Attribute.GetCustomAttribute(tool.GetType(), typeof(ToolMetaAttribute)) as ToolMetaAttribute;
+            if (!string.IsNullOrEmpty(meta?.Group))
+                groups.Add(meta.Group);
+        }
         return groups.OrderBy(g => g).Select(g => new SelectOption { Value = g, Label = g }).ToList();
     }
 }
@@ -498,19 +506,40 @@ internal class PluginToolsSource : IDataSource
         if (plugin == null)
             return Task.FromResult(new DataResult { Data = new JsonArray() });
 
-        // 获取该插件的所有工具（通过组件注册的 + 直接注册的）
+        // 获取该插件的所有工具（直接注册的 + 通过组件注册的）
         var toolNames = new HashSet<string>(plugin.ToolNames);
+        var toolMap = new Dictionary<string, ITool>();
 
-        // 也查找通过组件注册的工具（同 assembly）
-        foreach (var reg in ComponentRegistry.GetAll())
+        // 从 ToolRegistry 获取直接注册的工具
+        foreach (var tn in plugin.ToolNames)
         {
-            var compAttr = ComponentAttribute.GetFrom(reg.Type);
-            if (compAttr != null && plugin.ComponentNames.Contains(compAttr.Name))
+            var t = ToolRegistry.Get(tn);
+            if (t != null) toolMap[tn] = t;
+        }
+
+        // 从组件实例获取组件工具
+        foreach (var cn in plugin.ComponentNames)
+        {
+            foreach (var inst in _engine.GlobalComponentHost?.Instances ?? Enumerable.Empty<GlobalComponentInstance>())
             {
-                foreach (var tool in ToolRegistry.All.Values)
+                if (inst.Component.Meta.Name != cn) continue;
+                foreach (var tool in inst.Component.Tools)
                 {
-                    if (tool.GetType().Assembly == reg.SourceAssembly)
+                    toolNames.Add(tool.Name);
+                    toolMap[tool.Name] = tool;
+                }
+            }
+            foreach (var inst in _engine.GetActiveEnginesSnapshot()
+                .Select(e => e.ComponentHost).Where(h => h != null))
+            {
+                foreach (var loopInst in inst!.Instances)
+                {
+                    if (loopInst.Component.Meta.Name != cn) continue;
+                    foreach (var tool in loopInst.Component.Tools)
+                    {
                         toolNames.Add(tool.Name);
+                        toolMap[tool.Name] = tool;
+                    }
                 }
             }
         }
@@ -518,10 +547,14 @@ internal class PluginToolsSource : IDataSource
         var arr = new JsonArray();
         foreach (var toolName in toolNames.OrderBy(n => n))
         {
-            var tool = ToolRegistry.Get(toolName);
-            if (tool == null) continue;
+            if (!toolMap.TryGetValue(toolName, out var tool))
+            {
+                tool = ToolRegistry.Get(toolName);
+                if (tool == null) continue;
+            }
 
-            var meta = ToolRegistry.GetMeta(toolName);
+            var meta = ToolRegistry.GetMeta(toolName)
+                ?? Attribute.GetCustomAttribute(tool.GetType(), typeof(ToolMetaAttribute)) as ToolMetaAttribute;
             var isDisabled = ToolRegistry.IsDisabled(toolName);
             var reason = ToolRegistry.GetDisableReason(toolName);
 
@@ -617,7 +650,12 @@ internal class AllToolsSource : IDataSource
 
     public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
-        var allTools = ToolRegistry.All.Values.ToList();
+        // Core/MCP 工具 + 组件工具
+        var allTools = ToolRegistry.All.Values
+            .Concat(_engine.GetAllComponentTools())
+            .GroupBy(t => t.Name)
+            .Select(g => g.First())
+            .ToList();
 
         // 建立工具名→来源插件的映射
         var sourceMap = BuildSourceMap();
@@ -667,7 +705,8 @@ internal class AllToolsSource : IDataSource
         var arr = new JsonArray();
         foreach (var tool in paged)
         {
-            var meta = ToolRegistry.GetMeta(tool.Name);
+            var meta = ToolRegistry.GetMeta(tool.Name)
+                ?? Attribute.GetCustomAttribute(tool.GetType(), typeof(ToolMetaAttribute)) as ToolMetaAttribute;
             var isDisabled = ToolRegistry.IsDisabled(tool.Name);
             var reason = ToolRegistry.GetDisableReason(tool.Name);
 
@@ -716,17 +755,28 @@ internal class AllToolsSource : IDataSource
             foreach (var tn in plugin.ToolNames)
                 map[tn] = pluginName;
 
-            // 通过组件注册的工具（同 assembly）
+            // 通过组件注册的工具（直接从组件实例获取）
             foreach (var cn in plugin.ComponentNames)
             {
                 var reg = ComponentRegistry.Get(cn);
                 if (reg == null) continue;
-                var compAttr = ComponentAttribute.GetFrom(reg.Type);
-                if (compAttr == null) continue;
-                foreach (var tool in ToolRegistry.All.Values)
+                // Global 组件
+                foreach (var inst in _engine.GlobalComponentHost?.Instances ?? Enumerable.Empty<GlobalComponentInstance>())
                 {
-                    if (tool.GetType().Assembly == reg.SourceAssembly)
+                    if (inst.Component.Meta.Name != cn) continue;
+                    foreach (var tool in inst.Component.Tools)
                         map[tool.Name] = pluginName;
+                }
+                // Loop 组件（遍历活跃引擎）
+                foreach (var inst in _engine.GetActiveEnginesSnapshot()
+                    .Select(e => e.ComponentHost).Where(h => h != null))
+                {
+                    foreach (var loopInst in inst!.Instances)
+                    {
+                        if (loopInst.Component.Meta.Name != cn) continue;
+                        foreach (var tool in loopInst.Component.Tools)
+                            map[tool.Name] = pluginName;
+                    }
                 }
             }
         }

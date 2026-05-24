@@ -33,6 +33,9 @@ namespace AgentCoreProcessor.Engine
         /// 常驻引擎应覆盖此属性，仅在实际工作时返回 true。
         /// </summary>
         bool IsBusy => IsAlive;
+
+        /// <summary>组件宿主（仅 ChannelEngine/SystemEngine 实现）。供 WebUI 查询组件工具。</summary>
+        Component.ComponentHost? ComponentHost => null;
     }
 
     /// <summary>

@@ -128,7 +128,8 @@ namespace AgentCoreProcessor.Tool.Host
         }
 
         /// <summary>获取指定 profile 的完整可用工具名集合（活跃组件的工具 - 屏蔽列表）。</summary>
-        public HashSet<string> GetActiveTools(string profileName, string? sessionId = null)
+        public HashSet<string> GetActiveTools(string profileName, string? sessionId = null,
+            Component.GlobalComponentHost? globalHost = null)
         {
             var resolved = Resolve(profileName);
             var activeComponents = sessionId != null
@@ -137,21 +138,17 @@ namespace AgentCoreProcessor.Tool.Host
                     .Where(kv => kv.Value == ComponentState.Enabled).Select(kv => kv.Key));
 
             var result = new HashSet<string>();
-            var allTools = ToolRegistry.All;
 
-            foreach (var reg in Component.ComponentRegistry.GetAll())
+            // Global 组件工具：直接从 GlobalComponentHost 实例获取
+            if (globalHost != null)
             {
-                var attr = AgentLilara.PluginSDK.ComponentAttribute.GetFrom(reg.Type);
-                if (attr == null) continue;
-                if (!activeComponents.Contains(attr.Name)) continue;
-
-                // 获取该组件的工具（同 assembly 的工具属于该组件）
-                foreach (var tool in allTools.Values)
+                foreach (var inst in globalHost.Instances)
                 {
-                    if (tool.GetType().Assembly == reg.SourceAssembly
-                        && !resolved.BlockedTools.Contains(tool.Name))
+                    if (!activeComponents.Contains(inst.Component.Meta.Name)) continue;
+                    foreach (var tool in inst.Component.Tools)
                     {
-                        result.Add(tool.Name);
+                        if (!resolved.BlockedTools.Contains(tool.Name))
+                            result.Add(tool.Name);
                     }
                 }
             }
@@ -255,19 +252,44 @@ namespace AgentCoreProcessor.Tool.Host
             sessionActivations.Clear();
         }
 
-        /// <summary>生成原生工具定义列表（用于 API tool_use）。</summary>
-        public List<AgentLilara.PluginSDK.ToolDefinition> GetToolDefinitions(string profileName, string? sessionId = null)
+        /// <summary>生成原生工具定义列表（用于 API tool_use）。从 ToolRegistry（Core/MCP）+ GlobalComponentHost 汇编。</summary>
+        public List<AgentLilara.PluginSDK.ToolDefinition> GetToolDefinitions(string profileName, string? sessionId = null,
+            Component.GlobalComponentHost? globalHost = null)
         {
-            var activeTools = GetActiveTools(profileName, sessionId);
-            return ToolRegistry.All.Values
-                .Where(t => activeTools.Contains(t.Name) && !ToolRegistry.IsDisabled(t.Name))
-                .Select(t => new AgentLilara.PluginSDK.ToolDefinition
+            var activeTools = GetActiveTools(profileName, sessionId, globalHost);
+            var defs = new List<AgentLilara.PluginSDK.ToolDefinition>();
+
+            // Core/MCP 工具（来自 ToolRegistry）
+            foreach (var tool in ToolRegistry.All.Values)
+            {
+                if (!activeTools.Contains(tool.Name)) continue;
+                if (ToolRegistry.IsDisabled(tool.Name)) continue;
+                defs.Add(new AgentLilara.PluginSDK.ToolDefinition
                 {
-                    Name = t.Name,
-                    Description = t.Description,
-                    Parameters = t.GetInputSchema()
-                })
-                .ToList();
+                    Name = tool.Name,
+                    Description = tool.Description,
+                    Parameters = tool.GetInputSchema()
+                });
+            }
+
+            // Global 组件工具（来自 GlobalComponentHost）
+            if (globalHost != null)
+            {
+                foreach (var tool in globalHost.GetAllTools())
+                {
+                    if (!activeTools.Contains(tool.Name)) continue;
+                    if (ToolRegistry.IsDisabled(tool.Name)) continue;
+                    if (defs.Any(d => d.Name == tool.Name)) continue;
+                    defs.Add(new AgentLilara.PluginSDK.ToolDefinition
+                    {
+                        Name = tool.Name,
+                        Description = tool.Description,
+                        Parameters = tool.GetInputSchema()
+                    });
+                }
+            }
+
+            return defs;
         }
 
         // ---- 继承解析 ----

@@ -25,6 +25,9 @@ internal class ComponentHost
     private readonly Dictionary<string, ITool> _localTools = new();
     private readonly ComponentConfig _config;
 
+    /// <summary>由引擎注入，用于工具解析时回退到全局组件。</summary>
+    public GlobalComponentHost? GlobalHost { get; set; }
+
     public ComponentHost(
         string loopId,
         string loopType,
@@ -90,6 +93,18 @@ internal class ComponentHost
             foreach (var tool in inst.Component.Tools)
                 yield return tool;
         }
+    }
+
+    /// <summary>获取全局组件工具 + 本循环 Loop 组件工具。</summary>
+    public IEnumerable<ITool> GetAllVisibleTools()
+    {
+        if (GlobalHost != null)
+        {
+            foreach (var tool in GlobalHost.GetAllTools())
+                yield return tool;
+        }
+        foreach (var tool in GetVisibleTools())
+            yield return tool;
     }
 
     public List<string> BuildPromptSections()
@@ -195,13 +210,15 @@ internal class ComponentHost
     public IReadOnlyList<LoopComponentInstance> Instances => _loopComponents;
 
     /// <summary>
-    /// 解析工具：优先查本地 loop 工具，找不到再查全局 ToolRegistry。
+    /// 解析工具：本地 Loop 工具 → 全局组件工具 → ToolRegistry。
     /// 供 ToolExecutor 用作自定义 resolver。
     /// </summary>
     public ITool? TryGetTool(string name)
     {
         if (_localTools.TryGetValue(name, out var localTool))
             return localTool;
+        var globalTool = GlobalHost?.TryGetTool(name);
+        if (globalTool != null) return globalTool;
         return ToolRegistry.Get(name);
     }
 
@@ -226,20 +243,13 @@ internal class ComponentHost
     {
         if (!ShouldShowTools(inst)) return;
         foreach (var tool in inst.Component.Tools)
-        {
             _localTools[tool.Name] = tool;
-            // 也注册到全局 ToolRegistry 作为 fallback（供 TaskSession 等不走 ComponentHost 的路径使用）
-            ToolRegistry.Register(tool);
-        }
     }
 
     private void UnregisterTools(LoopComponentInstance inst)
     {
         foreach (var tool in inst.Component.Tools)
-        {
             _localTools.Remove(tool.Name);
-            ToolRegistry.Unregister(tool.Name);
-        }
     }
 
     private LoopComponentInstance? CreateInstance(ComponentRegistration reg)

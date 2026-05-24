@@ -29,6 +29,7 @@ namespace AgentCoreProcessor.Engine
         public bool IsAlive { get; private set; } = true;
         public bool IsInfrastructure => false;
         public bool IsBusy => Interlocked.Read(ref _busyFlag) == 1;
+        public Component.ComponentHost? ComponentHost => componentHost;
         private long _busyFlag = 0;
 
         // ChannelSignal buffer + IInjectProvider collection (Task 9)
@@ -239,6 +240,7 @@ namespace AgentCoreProcessor.Engine
                 () => gate.Signal(),
                 new Dictionary<Type, object> { [typeof(IAgentMessaging)] = _messaging });
             await componentHost.InitAsync();
+            componentHost.GlobalHost = ctx.GlobalComponentHost;
             agent!.ToolResolver = componentHost.TryGetTool;
 
             // 注册到委托总线
@@ -353,6 +355,7 @@ namespace AgentCoreProcessor.Engine
                 await componentHost!.OnActivatedAsync();
                 await componentHost.OnBeforeInvokeAsync();
                 agentCore.AdditionalTools = componentHost.GetVisibleTools().ToList();
+                agentCore.GlobalComponentTools = ctx.GlobalComponentHost?.GetAllTools().ToList();
                 await agent!.RunAsync(ct);
                 await componentHost.OnAfterInvokeAsync();
 
@@ -431,7 +434,7 @@ namespace AgentCoreProcessor.Engine
 
         private HashSet<string> GetAuthorizedTools()
         {
-            return ctx.ToolProfiles.GetActiveTools("system");
+            return ctx.ToolProfiles.GetActiveTools("system", globalHost: ctx.GlobalComponentHost);
         }
 
         // ---- IAgentHost 实现 ----
@@ -444,7 +447,7 @@ namespace AgentCoreProcessor.Engine
             if (!useNativeTools)
             {
                 var allowed = GetAuthorizedTools();
-                var toolDescriptions = ToolRegistry.GenerateDescriptions(filter: t => allowed.Contains(t.Name));
+                var toolDescriptions = ToolRegistry.GenerateDescriptions(filter: t => allowed.Contains(t.Name), additionalTools: componentHost.GetAllVisibleTools().ToList());
                 if (!string.IsNullOrEmpty(toolDescriptions))
                     msgs.Add(new Message { Role = "user", Content = toolDescriptions });
             }
@@ -687,7 +690,7 @@ namespace AgentCoreProcessor.Engine
         /// <summary>创建并启动子 agent。</summary>
         public IAgentSession CreateSubAgent(string instruction)
         {
-            var pool = ctx.ToolProfiles.GetActiveTools("sub-agent");
+            var pool = ctx.ToolProfiles.GetActiveTools("sub-agent", globalHost: ctx.GlobalComponentHost);
             var session = new TaskSession(ctx, toolWhitelist: pool);
 
             session.OnCompleted = s =>
@@ -712,7 +715,7 @@ namespace AgentCoreProcessor.Engine
         /// <summary>创建并启动子 agent（关联委托）。完成后自动更新委托状态。</summary>
         public IAgentSession CreateSubAgentForDelegation(string instruction, string? delegationId)
         {
-            var pool = ctx.ToolProfiles.GetActiveTools("sub-agent");
+            var pool = ctx.ToolProfiles.GetActiveTools("sub-agent", globalHost: ctx.GlobalComponentHost);
             var session = new TaskSession(ctx, delegationId, toolWhitelist: pool);
 
             // 设置完成回调（迁移至新委托系统）

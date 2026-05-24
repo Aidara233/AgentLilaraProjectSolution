@@ -197,6 +197,20 @@ namespace AgentCoreProcessor.Engine
             lock (engineLock) { return activeEngines.Where(e => e.IsAlive).ToList(); }
         }
 
+        /// <summary>收集所有组件工具（Global + 所有活跃 Loop），供 WebUI 查询。</summary>
+        public List<ITool> GetAllComponentTools()
+        {
+            var tools = new List<ITool>();
+            if (GlobalComponentHost != null)
+                tools.AddRange(GlobalComponentHost.GetAllTools());
+            foreach (var engine in GetActiveEnginesSnapshot())
+            {
+                if (engine.ComponentHost != null)
+                    tools.AddRange(engine.ComponentHost.GetVisibleTools());
+            }
+            return tools;
+        }
+
         // ---- 初始化 ----
 
         public async Task InitAsync()

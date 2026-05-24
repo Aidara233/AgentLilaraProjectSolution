@@ -17,6 +17,7 @@ internal class GlobalComponentHost
     private readonly ComponentConfig _config;
 
     private readonly List<GlobalComponentInstance> _components = new();
+    private readonly Dictionary<string, ITool> _tools = new();
 
     public GlobalComponentHost(
         ModuleBus moduleBus,
@@ -131,17 +132,47 @@ internal class GlobalComponentHost
 
     public IReadOnlyList<GlobalComponentInstance> Instances => _components;
 
+    public IEnumerable<ITool> GetAllTools() => _tools.Values;
+
     private void RegisterTools(GlobalComponentInstance inst)
     {
         if (!ShouldShowTools(inst)) return;
         foreach (var tool in inst.Component.Tools)
+        {
+            _tools[tool.Name] = tool;
             ToolRegistry.Register(tool);
+        }
     }
 
     private void UnregisterTools(GlobalComponentInstance inst)
     {
         foreach (var tool in inst.Component.Tools)
+        {
+            _tools.Remove(tool.Name);
             ToolRegistry.Unregister(tool.Name);
+        }
+    }
+
+    public ITool? TryGetTool(string name)
+    {
+        _tools.TryGetValue(name, out var tool);
+        return tool;
+    }
+
+    public List<ToolDefinition> GetToolDefinitions()
+    {
+        var defs = new List<ToolDefinition>();
+        foreach (var tool in _tools.Values)
+        {
+            if (ToolRegistry.IsDisabled(tool.Name)) continue;
+            defs.Add(new ToolDefinition
+            {
+                Name = tool.Name,
+                Description = tool.Description,
+                Parameters = tool.GetInputSchema()
+            });
+        }
+        return defs;
     }
 
     private GlobalComponentInstance? CreateInstance(ComponentRegistration reg)

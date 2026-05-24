@@ -27,6 +27,9 @@ namespace AgentCoreProcessor.Core
         /// <summary>额外的工具列表（loop 组件工具），合并到每次 API 请求的 tool_use 定义中。</summary>
         public List<ITool>? AdditionalTools { get; set; }
 
+        /// <summary>全局组件工具列表，对所有循环可见。</summary>
+        public List<ITool>? GlobalComponentTools { get; set; }
+
         protected override bool UsePersona => !noPersona;
 
         public AgentCore() : base("WorkingCore")
@@ -65,6 +68,24 @@ namespace AgentCoreProcessor.Core
             if (mode == Engine.EngineMode.Express)
             {
                 var expressDefs = ToolRegistry.GetExpressToolDefinitions();
+                // 合并全局组件中 ExpressAvailable 的工具
+                if (GlobalComponentTools != null)
+                {
+                    foreach (var t in GlobalComponentTools)
+                    {
+                        var meta = ToolRegistry.GetMeta(t.Name)
+                            ?? Attribute.GetCustomAttribute(t.GetType(), typeof(ToolMetaAttribute)) as ToolMetaAttribute;
+                        if (meta?.ExpressAvailable != true) continue;
+                        if (ToolRegistry.IsDisabled(t.Name)) continue;
+                        if (expressDefs.Any(d => d.Name == t.Name)) continue;
+                        expressDefs.Add(new ToolDefinition
+                        {
+                            Name = t.Name,
+                            Description = t.Description,
+                            Parameters = t.GetInputSchema()
+                        });
+                    }
+                }
                 if (expressDefs.Count > 0 && UseNativeTools)
                 {
                     var (text, calls, thinking) = await GenerateExpressWithToolsAsync(expressDefs);
@@ -161,6 +182,22 @@ namespace AgentCoreProcessor.Core
                     }).ToList();
             }
 
+            // 合并全局组件工具
+            if (GlobalComponentTools != null)
+            {
+                foreach (var t in GlobalComponentTools)
+                {
+                    if (ToolRegistry.IsDisabled(t.Name)) continue;
+                    if (toolDefs.Any(d => d.Name == t.Name)) continue;
+                    toolDefs.Add(new ToolDefinition
+                    {
+                        Name = t.Name,
+                        Description = t.Description,
+                        Parameters = t.GetInputSchema()
+                    });
+                }
+            }
+
             // 合并 loop 组件工具
             if (AdditionalTools != null)
             {
@@ -177,16 +214,18 @@ namespace AgentCoreProcessor.Core
                 }
             }
 
-            var handler = new NativeToolCallHandler(toolDefs);
-            await GenerateWithToolsAsync(toolDefs, handler.OnEvent);
+            NativeToolCallHandler handler = new(toolDefs);
+            await GenerateWithToolsAsync(toolDefs, handler.OnEvent,
+                onRetryReset: () => handler = new(toolDefs));
             return handler.GetResult();
         }
 
         private async Task<(string Text, List<ToolCall> Calls, string? Thinking)> GenerateExpressWithToolsAsync(
             List<ToolDefinition> expressDefs)
         {
-            var handler = new ExpressToolCallHandler(expressDefs);
-            await GenerateWithToolsAsync(expressDefs, handler.OnEvent);
+            ExpressToolCallHandler handler = new(expressDefs);
+            await GenerateWithToolsAsync(expressDefs, handler.OnEvent,
+                onRetryReset: () => handler = new(expressDefs));
             return handler.GetResult();
         }
 

@@ -67,16 +67,20 @@ namespace AgentCoreProcessor.Tool
 
         public static string GenerateDescriptions(
             Func<ITool, bool>? filter = null,
-            HashSet<string>? authorizedTools = null)
+            HashSet<string>? authorizedTools = null,
+            IEnumerable<ITool>? additionalTools = null)
         {
             var source = filter != null ? _tools.Values.Where(filter).ToList() : _tools.Values.ToList();
+            if (additionalTools != null)
+                source.AddRange(additionalTools);
             var sb = new StringBuilder();
             int i = 1;
 
             foreach (var tool in source)
             {
                 if (IsDisabled(tool.Name)) continue;
-                var meta = GetMeta(tool.Name);
+                var meta = GetMeta(tool.Name)
+                    ?? Attribute.GetCustomAttribute(tool.GetType(), typeof(ToolMetaAttribute)) as ToolMetaAttribute;
                 var permission = meta?.Permission ?? AgentLilara.PluginSDK.ToolPermission.Default;
                 bool isRestricted = permission > AgentLilara.PluginSDK.ToolPermission.Default;
                 bool isAuthorized = authorizedTools != null && authorizedTools.Contains(tool.Name);
