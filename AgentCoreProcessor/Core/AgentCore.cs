@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Tool;
 using AgentCoreProcessor.Tool.Host;
+using AgentLilara.PluginSDK;
 
 namespace AgentCoreProcessor.Core
 {
@@ -22,6 +23,9 @@ namespace AgentCoreProcessor.Core
 
         /// <summary>工具 Profile 管理器（由引擎注入）。</summary>
         public ToolProfileManager? ProfileManager { get; set; }
+
+        /// <summary>额外的工具列表（loop 组件工具），合并到每次 API 请求的 tool_use 定义中。</summary>
+        public List<ITool>? AdditionalTools { get; set; }
 
         protected override bool UsePersona => !noPersona;
 
@@ -155,6 +159,22 @@ namespace AgentCoreProcessor.Core
                         Description = t.Description,
                         Parameters = t.GetInputSchema()
                     }).ToList();
+            }
+
+            // 合并 loop 组件工具
+            if (AdditionalTools != null)
+            {
+                foreach (var t in AdditionalTools)
+                {
+                    if (ToolRegistry.IsDisabled(t.Name)) continue;
+                    if (toolDefs.Any(d => d.Name == t.Name)) continue;
+                    toolDefs.Add(new ToolDefinition
+                    {
+                        Name = t.Name,
+                        Description = t.Description,
+                        Parameters = t.GetInputSchema()
+                    });
+                }
             }
 
             var handler = new NativeToolCallHandler(toolDefs);

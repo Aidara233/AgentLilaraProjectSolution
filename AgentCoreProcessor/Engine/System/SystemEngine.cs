@@ -239,6 +239,7 @@ namespace AgentCoreProcessor.Engine
                 () => gate.Signal(),
                 new Dictionary<Type, object> { [typeof(IAgentMessaging)] = _messaging });
             await componentHost.InitAsync();
+            agent!.ToolResolver = componentHost.TryGetTool;
 
             // 注册到委托总线
             ctx.DelegationBus.RegisterLoop(LoopId.System, OnCrossRequestReceived);
@@ -351,6 +352,7 @@ namespace AgentCoreProcessor.Engine
             {
                 await componentHost!.OnActivatedAsync();
                 await componentHost.OnBeforeInvokeAsync();
+                agentCore.AdditionalTools = componentHost.GetVisibleTools().ToList();
                 await agent!.RunAsync(ct);
                 await componentHost.OnAfterInvokeAsync();
 

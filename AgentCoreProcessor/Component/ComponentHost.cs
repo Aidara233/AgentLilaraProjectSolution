@@ -22,6 +22,7 @@ internal class ComponentHost
     private readonly IServiceProvider _effectiveServices;
 
     private readonly List<LoopComponentInstance> _loopComponents = new();
+    private readonly Dictionary<string, ITool> _localTools = new();
     private readonly ComponentConfig _config;
 
     public ComponentHost(
@@ -193,17 +194,52 @@ internal class ComponentHost
 
     public IReadOnlyList<LoopComponentInstance> Instances => _loopComponents;
 
+    /// <summary>
+    /// 解析工具：优先查本地 loop 工具，找不到再查全局 ToolRegistry。
+    /// 供 ToolExecutor 用作自定义 resolver。
+    /// </summary>
+    public ITool? TryGetTool(string name)
+    {
+        if (_localTools.TryGetValue(name, out var localTool))
+            return localTool;
+        return ToolRegistry.Get(name);
+    }
+
+    /// <summary>获取当前循环的工具定义列表（用于 API tool_use）。</summary>
+    public List<ToolDefinition> GetToolDefinitions()
+    {
+        var defs = new List<ToolDefinition>();
+        foreach (var tool in _localTools.Values)
+        {
+            if (ToolRegistry.IsDisabled(tool.Name)) continue;
+            defs.Add(new ToolDefinition
+            {
+                Name = tool.Name,
+                Description = tool.Description,
+                Parameters = tool.GetInputSchema()
+            });
+        }
+        return defs;
+    }
+
     private void RegisterTools(LoopComponentInstance inst)
     {
         if (!ShouldShowTools(inst)) return;
         foreach (var tool in inst.Component.Tools)
+        {
+            _localTools[tool.Name] = tool;
+            // 也注册到全局 ToolRegistry 作为 fallback（供 TaskSession 等不走 ComponentHost 的路径使用）
             ToolRegistry.Register(tool);
+        }
     }
 
     private void UnregisterTools(LoopComponentInstance inst)
     {
         foreach (var tool in inst.Component.Tools)
+        {
+            _localTools.Remove(tool.Name);
             ToolRegistry.Unregister(tool.Name);
+        }
     }
 
     private LoopComponentInstance? CreateInstance(ComponentRegistration reg)

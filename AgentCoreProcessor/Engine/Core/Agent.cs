@@ -22,6 +22,7 @@ namespace AgentCoreProcessor.Engine
         private readonly AgentCore _core;
         private readonly AgentConfig _config;
         private readonly HashSet<string> _authorizedTools;
+        private Func<string, ITool?> _toolResolver;
         private readonly List<Message> _history = new();
         private int _consecutiveFailures;
         private DateTime? _backoffUntil;
@@ -33,18 +34,27 @@ namespace AgentCoreProcessor.Engine
         public List<ToolCall>? LastRoundCalls { get; private set; }
         public List<ToolResult>? LastRoundResults { get; private set; }
 
+        /// <summary>工具解析器，可在 InitAsync 之后更新为 loop 感知的版本。</summary>
+        public Func<string, ITool?> ToolResolver
+        {
+            get => _toolResolver;
+            set => _toolResolver = value ?? ToolRegistry.Get;
+        }
+
         /// <summary>工具执行完毕后的回调。Host 用此发布事件到总线。</summary>
         public Func<ToolCall, ToolResult, ITool?, Task>? OnToolExecuted { get; set; }
 
         /// <summary>对话内容在 history 中的起始偏移（跳过框架注入部分）。</summary>
         public int ConversationOffset { get; set; }
 
-        public Agent(IAgentHost host, AgentCore core, AgentConfig config, HashSet<string> authorizedTools)
+        public Agent(IAgentHost host, AgentCore core, AgentConfig config, HashSet<string> authorizedTools,
+            Func<string, ITool?>? toolResolver = null)
         {
             _host = host;
             _core = core;
             _config = config;
             _authorizedTools = authorizedTools ?? new HashSet<string>();
+            _toolResolver = toolResolver ?? ToolRegistry.Get;
         }
 
         public async Task RunAsync(CancellationToken ct)
@@ -179,12 +189,12 @@ namespace AgentCoreProcessor.Engine
                         calls = output.ToolCalls.Select(c => new { c.Tool, c.Inputs, c.ToolUseId })
                     }))
                 {
-                    var executor = new ToolExecutor(null, _authorizedTools);
+                    var executor = new ToolExecutor(_toolResolver, _authorizedTools);
                     if (OnToolExecuted != null)
                     {
                         executor.OnToolExecuted = async (call, result) =>
                         {
-                            var toolDef = ToolRegistry.Get(call.Tool);
+                            var toolDef = _toolResolver(call.Tool);
                             await OnToolExecuted(call, result, toolDef);
                         };
                     }

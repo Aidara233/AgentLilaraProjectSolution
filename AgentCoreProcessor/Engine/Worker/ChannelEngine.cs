@@ -802,6 +802,7 @@ namespace AgentCoreProcessor.Engine
                     }));
             }
 
+            agentCore.AdditionalTools = componentHost.GetVisibleTools().ToList();
             await agent!.RunAsync(CancellationToken.None);
 
             if (agent.StopReason == AgentStopReason.Error)
@@ -865,6 +866,7 @@ namespace AgentCoreProcessor.Engine
             if (roundInject != null) messages.AddRange(roundInject);
 
             // Call model (with retry)
+            agentCore.AdditionalTools = componentHost.GetVisibleTools().ToList();
             ModelOutput output;
             using (var modelSpan = Signal.Open(LogGroup.Model, $"Express模型调用 ch:{channelId}",
                 new
@@ -919,7 +921,7 @@ namespace AgentCoreProcessor.Engine
                     new Tool.Core.ManageComponentsTool.LoopContext(currentProfileName, $"channel-{channelId}");
                 using var expressToolSpan = Signal.Open(LogGroup.Tool, $"Express工具: {string.Join(", ", output.ToolCalls.Select(c => c.Tool))}",
                     new { calls = output.ToolCalls.Select(c => new { c.Tool, c.Inputs }) });
-                var executor = new ToolExecutor(null, null);
+                var executor = new ToolExecutor(componentHost.TryGetTool, null);
                 var expressResults = await executor.ExecuteAsync(output.ToolCalls);
                 expressToolSpan.SetCloseDetail(new
                 {
@@ -1012,7 +1014,7 @@ namespace AgentCoreProcessor.Engine
             fixedPrefix = BuildFixedPrefix();
 
             var authorized = new HashSet<string>(WorkingAuthorizedTools.Split(','));
-            agent = new Agent(this, agentCore, agentConfig, authorized);
+            agent = new Agent(this, agentCore, agentConfig, authorized, componentHost.TryGetTool);
             agent.OnToolExecuted = (call, result, toolDef) =>
             {
                 bus.Publish(new ToolExecutedEvent(call, result, toolDef));
