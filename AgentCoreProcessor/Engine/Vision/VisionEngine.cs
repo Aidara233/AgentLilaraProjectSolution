@@ -67,10 +67,11 @@ namespace AgentCoreProcessor.Engine.Vision
 
             _visionAvailable = ctx.Vision != null;
             if (!_visionAvailable && config.VisionEnabled)
+                Signal.Warn(LogGroup.Engine, "Vision已启用但提供者未配置，视觉处理将不可用");
 
             _ocrAvailable = ctx.Ocr != null;
             if (!_ocrAvailable && config.OcrEnabled)
-
+                Signal.Warn(LogGroup.Engine, "OCR已启用但提供者未配置，OCR处理将不可用");
 
             while (IsAlive)
             {
@@ -107,8 +108,6 @@ namespace AgentCoreProcessor.Engine.Vision
 
             lifeCtx.Close(new { engineType = EngineType, reason = "shutdown" });
         }
-
-        // PLACEHOLDER_PROCESS_METHODS
 
         private async Task ProcessPendingImagesAsync()
         {

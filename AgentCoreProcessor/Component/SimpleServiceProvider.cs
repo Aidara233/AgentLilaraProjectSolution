@@ -9,7 +9,14 @@ namespace AgentCoreProcessor.Component;
 /// </summary>
 internal class SimpleServiceProvider : IServiceProvider
 {
-    private readonly ConcurrentDictionary<Type, object> _services = new();
+    private readonly ConcurrentDictionary<Type, object> _services;
+
+    public SimpleServiceProvider() => _services = new();
+
+    public SimpleServiceProvider(Dictionary<Type, object> services)
+    {
+        _services = new ConcurrentDictionary<Type, object>(services);
+    }
 
     public void Register<T>(T service) where T : class
     {

@@ -139,8 +139,6 @@ namespace AgentCoreProcessor.Engine
             return false;
         }
 
-        // PLACEHOLDER_METHODS
-
         private async Task HandleSessionInput(ISystemContext ctx, IncomingMessage msg,
             CommandSession session, string input)
         {

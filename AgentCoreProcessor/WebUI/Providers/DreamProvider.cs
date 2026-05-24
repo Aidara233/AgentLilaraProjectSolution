@@ -418,8 +418,6 @@ internal class DreamStatsSource : IDataSource
         => Task.FromResult(new ActionResult { Success = true });
 }
 
-// PLACEHOLDER_FRAGMENTS_SOURCE
-
 internal class DreamActiveFragmentsSource : IDataSource
 {
     private readonly MasterEngine _engine;
@@ -543,8 +541,6 @@ internal class DreamSessionsSource : IDataSource
         => Task.FromResult(new ActionResult { Success = true });
 }
 
-// PLACEHOLDER_SESSION_DETAIL
-
 internal class DreamSessionInfoSource : IDataSource
 {
     private readonly MasterEngine _engine;
@@ -641,8 +637,6 @@ internal class DreamSessionFragmentsSource : IDataSource
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
         => Task.FromResult(new ActionResult { Success = true });
 }
-
-// PLACEHOLDER_SLEEP_SOURCES
 
 internal class FragmentDetailSource : IDataSource
 {

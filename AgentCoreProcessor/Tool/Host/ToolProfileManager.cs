@@ -59,8 +59,6 @@ namespace AgentCoreProcessor.Tool.Host
             }
         }
 
-// PLACEHOLDER_METHODS
-
         // ---- 查询接口 ----
 
         /// <summary>根据 channelId 获取对应的 profile 名。</summary>

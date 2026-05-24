@@ -2,7 +2,7 @@
 
 ## 已清理（2026-05-24）
 
-三轮共清理 ~1060 行死代码。
+四轮共清理 ~1120 行死代码 + 修复 4 处空体 bug。
 
 ### 第一轮: Core / Engine / Adapter / SDK（`5b48b65`）
 
@@ -47,7 +47,7 @@
 - `ReviewHint.TopicId`
 - `UserMessage.TopicId`
 
-### 第三轮: 死模块 + 过剩属性 + 过期注释
+### 第三轮: 死模块 + 过剩属性 + 过期注释（`dff81d0`）
 
 **整文件删除（2 个）：**
 - `Engine/System/SystemStatusModule.cs` — Attach 只设 engineStartTime，从未读取
@@ -56,8 +56,26 @@
 **片段删除（4 处）：**
 - `Engine/System/SystemEngine.cs` — 移除 SystemStatusModule + ToolStatusModule 注册
 - `Engine/Worker/ChannelEngine.cs` — 移除 ToolStatusModule 注册
-- `Engine/Core/MasterEngine.cs` — 移除 Phase 3 过期 TODO（子 agent 插件已完成）
-- `MCP/McPbridgeTool.cs` — 移除 ToolGroup / DefaultExpanded 属性（无人读取）
+- `Engine/Core/MasterEngine.cs` — 移除 Phase 3 过期 TODO
+- `MCP/McPbridgeTool.cs` — 移除 ToolGroup / DefaultExpanded 属性
+
+### 第四轮: 代码去重 + PLACEHOLDER 清理 + 空体修复
+
+**代码去重：**
+- `Component/SimpleServiceProvider.cs` — 加字典构造器，统一三处实现
+- `Engine/System/SystemEngine.cs` — 删除嵌套 SimpleServiceProvider，改用 Component 版
+- `Engine/Worker/ChannelEngine.cs` — 删除嵌套 SimpleServiceProviderImpl，改用 Component 版
+
+**PLACEHOLDER 标记删除（8 处，全部是过期分区注释）：**
+- `Command/ConfigCommand.cs` — PLACEHOLDER_REST
+- `Engine/Vision/VisionEngine.cs` — PLACEHOLDER_PROCESS_METHODS
+- `Engine/Command/CommandSpawnCheck.cs` — PLACEHOLDER_METHODS
+- `Tool/Host/ToolProfileManager.cs` — PLACEHOLDER_METHODS
+- `WebUI/Providers/DreamProvider.cs` — PLACEHOLDER_FRAGMENTS_SOURCE / PLACEHOLDER_SESSION_DETAIL / PLACEHOLDER_SLEEP_SOURCES
+
+**空体 bug 修复（C# 语法陷阱 — 无体 if 会吞下一条语句）：**
+- `Engine/Vision/VisionEngine.cs:69-72` — 加 Signal.Warn，修复 if 意外控制下行赋值和主循环
+- `Engine/Core/MasterEngine.cs:324,353` — 加 Signal.Warn，修复空 else 体
 
 ---
 
@@ -74,21 +92,20 @@
 
 ---
 
-## 待处理（NOTEWORTHY / 风险项）
+## 待处理
 
-### 代码重复
-- [ ] `SimpleServiceProvider` — 三处实现已分化（Component 版 ConcurrentDictionary+Register，Engine 版只读 Dictionary），不直接等价，合并需重构
-
-### 空壳/未完成
-- [ ] `VisionEngine.cs:69-72` 空 if body — vision/OCR 不可用时静默吞掉配置错误
-- [ ] 多处 PLACEHOLDER 标记 — CommandSpawnCheck / ConfigCommand / DreamProvider (x3) / VisionEngine / ToolProfileManager
-
-### 风险设计（暂缓，涉及报错/日志路径）
+### 日志/报错
 - [ ] `OneBotAdapter.HandleEvent` async void — 异常会崩溃进程
 - [ ] `OneBotActions.SendFileAsync` fire-and-forget — 错误静默吞没
 - [ ] `OneBotActions.SendMessageAsync` 空错误分支 — retcode != 0 无日志
+- [ ] 25+ 空 catch 块 — `ToolRegistry`/`ToolProfileManager`/`LogWriter`/`DreamEngine`/`MemoryProvider` 等多处无声吞异常
+
+### 设计缺陷
 - [ ] `OneBotAdapter.ReloadConfigAsync` — 连接变更后不重启 WS
 - [ ] `ApiClientCfg.ConversationHistory` — 运行时状态混在配置对象中
+- [ ] `Component/ChannelAccessAdapter.cs` — 4 个接口方法全是 TODO stub，已注册但无实际功能
+- [ ] `ChannelEngine.cs:645` — `ToolContext = null!` null-forgiving 赋值，访问即 NRE
 
 ### 待确认
-- [ ] `ClaudeModelClient` ServerTools.WebSearchVersionLegacy — 常量来自外部 SDK，需检查包版本确认是否可删
+- [ ] `ClaudeModelClient` ServerTools.WebSearchVersionLegacy — 常量来自外部 SDK，需检查包版本
+- [ ] `MasterEngine.cs:564` — ScheduleParser 已删除，死注释残留

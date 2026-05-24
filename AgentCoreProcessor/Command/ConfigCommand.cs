@@ -48,8 +48,6 @@ namespace AgentCoreProcessor.Command
                      Validate = null }
         };
 
-// PLACEHOLDER_REST
-
         /// <summary>有参数时一次性执行: /config group [key value]</summary>
         public Task<CommandResult> ExecuteAsync(string args, CommandContext context)
         {

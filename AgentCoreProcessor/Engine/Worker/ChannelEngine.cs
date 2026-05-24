@@ -1080,14 +1080,7 @@ namespace AgentCoreProcessor.Engine
                 [typeof(Gate)] = gate!,
                 [typeof(IAgentMessaging)] = _messaging!,
             };
-            return new SimpleServiceProviderImpl(services);
-        }
-
-        private class SimpleServiceProviderImpl : IServiceProvider
-        {
-            private readonly Dictionary<Type, object> _services;
-            public SimpleServiceProviderImpl(Dictionary<Type, object> services) => _services = services;
-            public object? GetService(Type serviceType) => _services.TryGetValue(serviceType, out var s) ? s : null;
+            return new Component.SimpleServiceProvider(services);
         }
 
         public async Task<List<Message>?> BuildStartInjectAsync()

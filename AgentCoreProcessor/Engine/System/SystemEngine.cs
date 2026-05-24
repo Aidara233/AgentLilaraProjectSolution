@@ -418,16 +418,8 @@ namespace AgentCoreProcessor.Engine
                 [typeof(Gate)] = gate!,
                 [typeof(IAgentMessaging)] = _messaging!,
             };
-            return new SimpleServiceProvider(services);
+            return new Component.SimpleServiceProvider(services);
         }
-
-        private class SimpleServiceProvider : IServiceProvider
-        {
-            private readonly Dictionary<Type, object> _services;
-            public SimpleServiceProvider(Dictionary<Type, object> services) => _services = services;
-            public object? GetService(Type serviceType) => _services.TryGetValue(serviceType, out var s) ? s : null;
-        }
-
 
         private List<ScheduledTaskFiredEvent> DrainScheduledEvents()
         {

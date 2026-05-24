@@ -322,6 +322,7 @@ namespace AgentCoreProcessor.Engine
                 }
                 else
                 {
+                    Signal.Warn(LogGroup.Engine, "Vision提供者未配置apiKey，视觉处理不可用");
                 }
             }
             catch (Exception ex)
@@ -351,6 +352,7 @@ namespace AgentCoreProcessor.Engine
                 }
                 else
                 {
+                    Signal.Warn(LogGroup.Engine, "OCR提供者未配置apiKey，OCR处理不可用");
                 }
             }
             catch (Exception ex)
