@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Microsoft.Data.Sqlite;
 using SQLite;
 
 namespace AgentCoreProcessor.Database
@@ -13,19 +14,23 @@ namespace AgentCoreProcessor.Database
     {
         private readonly SQLiteAsyncConnection db;
 
-        /// <summary>
-        /// 创建数据库管理器。
-        /// </summary>
-        /// <param name="dbPath">数据库文件的完整路径</param>
         public DbManager(string dbPath)
         {
+            // 用 Microsoft.Data.Sqlite 设置 WAL 模式（sqlite-net-pcl 的 Execute 对 PRAGMA 会误抛异常）
+            Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
+            using (var setupConn = new SqliteConnection($"Data Source={dbPath}"))
+            {
+                setupConn.Open();
+                using var cmd = setupConn.CreateCommand();
+                cmd.CommandText = "PRAGMA journal_mode=WAL;";
+                cmd.ExecuteNonQuery();
+                cmd.CommandText = "PRAGMA synchronous=NORMAL;";
+                cmd.ExecuteNonQuery();
+            }
+
             db = new SQLiteAsyncConnection(dbPath);
         }
 
-        /// <summary>
-        /// 初始化数据库，自动创建所有实体对应的表（已存在则跳过）。
-        /// 应在应用启动时调用一次。
-        /// </summary>
         public async Task InitAsync()
         {
             await db.CreateTableAsync<Person>();
