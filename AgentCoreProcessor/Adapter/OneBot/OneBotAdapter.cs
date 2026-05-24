@@ -292,9 +292,6 @@ namespace AgentCoreProcessor.Adapter
 
         private async Task HandleEvent(JObject data)
         {
-            using var ctx = Signal.Begin(LogGroup.Adapter, $"adapter:onebot:{Id}", "消息接收",
-                new { post_type = data["post_type"]?.ToString() });
-
             try
             {
                 var msg = await parser.HandleEventAsync(data);
