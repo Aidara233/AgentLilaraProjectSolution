@@ -9,6 +9,7 @@ using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Tool;
 using AgentCoreProcessor.Engine.Modules;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace AgentCoreProcessor.Engine
 {
@@ -261,9 +262,7 @@ namespace AgentCoreProcessor.Engine
                     {
                         if (c.ToolUseId != null)
                         {
-                            var json = c.RawInputJson ?? (c.Inputs.Count > 0
-                                ? JsonConvert.SerializeObject(c.Inputs)
-                                : "{}");
+                            var json = BuildToolInputJson(c);
                             parts.Add(ContentPart.FromToolUse(c.ToolUseId, c.Tool, json));
                         }
                     }
@@ -316,6 +315,55 @@ namespace AgentCoreProcessor.Engine
                 }
                 return new Message { Role = "user", Content = sb.ToString() };
             }
+        }
+
+        /// <summary>
+        /// 确保 tool_use 的 input 始终是 JSON 对象（非数组）。
+        /// Anthropic API 要求 tool_use.input 必须是 JSON object，数组格式会导致 400。
+        /// </summary>
+        private string BuildToolInputJson(ToolCall call)
+        {
+            // 优先用 RawInputJson，但验证它是对象
+            if (!string.IsNullOrEmpty(call.RawInputJson))
+            {
+                try
+                {
+                    var node = Newtonsoft.Json.Linq.JToken.Parse(call.RawInputJson);
+                    if (node is Newtonsoft.Json.Linq.JObject)
+                        return call.RawInputJson;
+                }
+                catch { }
+            }
+
+            // 从工具 schema 重建具名 JSON 对象
+            var tool = _toolResolver(call.Tool);
+            if (tool != null)
+            {
+                try
+                {
+                    var schemaNode = tool.GetInputSchema();
+                    var schemaStr = schemaNode?.ToJsonString();
+                    if (!string.IsNullOrEmpty(schemaStr))
+                    {
+                        var schema = Newtonsoft.Json.Linq.JObject.Parse(schemaStr);
+                        if (schema["properties"] is Newtonsoft.Json.Linq.JObject props)
+                        {
+                            var obj = new Newtonsoft.Json.Linq.JObject();
+                            int i = 0;
+                            foreach (var prop in props.Properties())
+                            {
+                                obj[prop.Name] = i < call.Inputs.Count ? call.Inputs[i] : "";
+                                i++;
+                            }
+                            return obj.ToString(Newtonsoft.Json.Formatting.None);
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            // 最后兜底：空对象
+            return "{}";
         }
     }
 

@@ -606,7 +606,7 @@ namespace AgentCoreProcessor.Engine
         /// <summary>强制触发上下文压缩。</summary>
         public void ForceCompress()
         {
-            if (agent == null || compressionTierModule == null || compressionTierModule.IsCompressing) return;
+            if (agent == null || compressionTierModule == null || compressionTierModule.IsCompressing || IsBusy) return;
             _ = compressionTierModule.CompressAsync(agent.History, (summary, retained) =>
             {
                 agent.History.Clear();

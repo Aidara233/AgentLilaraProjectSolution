@@ -128,7 +128,11 @@ namespace AgentCoreProcessor.Client
             ArgumentNullException.ThrowIfNull(onDelta);
 
             var client = GetOrCreateClient();
-            var (messages, fullContent) = await StreamInternalAsync(client, null, ct, (resp, _) =>
+            // Anthropic 流式拆在两个事件：message_start(StreamStartMessage.Usage) 含 input+cache，
+            // message_delta(resp.Usage) 只含 output。累积合并，只覆盖非零字段。
+            var mergedUsage = new Models.Usage();
+
+            (List<SdkMessage> messages, string fullContent) = await StreamInternalAsync(client, null, ct, (resp, _) =>
             {
                 if (resp.Delta?.Text != null)
                     onDelta(BuildSyntheticResponse(resp.Delta.Text, null));
@@ -137,18 +141,27 @@ namespace AgentCoreProcessor.Client
                     if (resp.Delta?.Text != null)
                         onDelta(BuildSyntheticResponse(null, resp.Delta.Text));
                 }
+
+                // message_start: StreamStartMessage.Usage 含 input_tokens + cache_*
+                if (resp.StreamStartMessage?.Usage != null)
+                {
+                    var su = resp.StreamStartMessage.Usage;
+                    if (su.InputTokens > 0) mergedUsage.PromptTokens = su.InputTokens;
+                    if (su.CacheCreationInputTokens > 0) mergedUsage.CacheCreationInputTokens = su.CacheCreationInputTokens;
+                    if (su.CacheReadInputTokens > 0) mergedUsage.CacheReadInputTokens = su.CacheReadInputTokens;
+                }
+                // message_delta: resp.Usage 含 output_tokens
                 if (resp.Usage != null)
                 {
                     var u = resp.Usage;
+                    if (u.OutputTokens > 0) mergedUsage.CompletionTokens = u.OutputTokens;
+                    mergedUsage.TotalTokens = mergedUsage.PromptTokens + mergedUsage.CompletionTokens;
+                }
+
+                if (resp.Usage != null || resp.StreamStartMessage?.Usage != null)
+                {
                     var usageResp = BuildSyntheticResponse(null, null);
-                    usageResp.Usage = new Models.Usage
-                    {
-                        PromptTokens = u.InputTokens > 0 ? u.InputTokens : 0,
-                        CompletionTokens = u.OutputTokens > 0 ? u.OutputTokens : 0,
-                        TotalTokens = (u.InputTokens > 0 ? u.InputTokens : 0) + (u.OutputTokens > 0 ? u.OutputTokens : 0),
-                        CacheCreationInputTokens = u.CacheCreationInputTokens > 0 ? u.CacheCreationInputTokens : 0,
-                        CacheReadInputTokens = u.CacheReadInputTokens > 0 ? u.CacheReadInputTokens : 0
-                    };
+                    usageResp.Usage = mergedUsage;
                     onDelta(usageResp);
                 }
             });
@@ -166,9 +179,10 @@ namespace AgentCoreProcessor.Client
             string? currentToolName = null;
             var toolInputJson = new System.Text.StringBuilder();
             var thinkingText = new System.Text.StringBuilder();
-            var finalUsage = (Models.Usage?)null;
+            // 累积 usage：message_start.message.usage 含 input+cache，message_delta.usage 只含 output
+            var mergedUsage = new Models.Usage();
 
-            var (messages, fullContent) = await StreamInternalAsync(client, onEvent, ct, (resp, onEvt) =>
+            (List<SdkMessage> messages, string fullContent) = await StreamInternalAsync(client, onEvent, ct, (resp, onEvt) =>
             {
                 // content_block_start: tool_use
                 if (resp.ContentBlock?.Type == "tool_use")
@@ -254,26 +268,25 @@ namespace AgentCoreProcessor.Client
                     return;
                 }
 
-                // usage
+                // message_start: StreamStartMessage.Usage 含 input_tokens + cache_*
+                if (resp.StreamStartMessage?.Usage != null)
+                {
+                    var su = resp.StreamStartMessage.Usage;
+                    if (su.InputTokens > 0) mergedUsage.PromptTokens = su.InputTokens;
+                    if (su.CacheCreationInputTokens > 0) mergedUsage.CacheCreationInputTokens = su.CacheCreationInputTokens;
+                    if (su.CacheReadInputTokens > 0) mergedUsage.CacheReadInputTokens = su.CacheReadInputTokens;
+                }
+                // message_delta: resp.Usage 含 output_tokens
                 if (resp.Usage != null)
                 {
                     var u = resp.Usage;
-                    finalUsage = new Models.Usage
-                    {
-                        PromptTokens = u.InputTokens > 0 ? u.InputTokens : 0,
-                        CompletionTokens = u.OutputTokens > 0 ? u.OutputTokens : 0,
-                        TotalTokens = (u.InputTokens > 0 ? u.InputTokens : 0) + (u.OutputTokens > 0 ? u.OutputTokens : 0),
-                        CacheCreationInputTokens = u.CacheCreationInputTokens > 0 ? u.CacheCreationInputTokens : 0,
-                        CacheReadInputTokens = u.CacheReadInputTokens > 0 ? u.CacheReadInputTokens : 0
-                    };
+                    if (u.OutputTokens > 0) mergedUsage.CompletionTokens = u.OutputTokens;
+                    mergedUsage.TotalTokens = mergedUsage.PromptTokens + mergedUsage.CompletionTokens;
                 }
             });
 
             // 最终 usage 事件
-            if (finalUsage != null)
-            {
-                onEvent(new StreamEvent { Type = StreamEventType.Usage, Usage = finalUsage });
-            }
+            onEvent(new StreamEvent { Type = StreamEventType.Usage, Usage = mergedUsage });
         }
 
         /// <summary>
@@ -287,14 +300,24 @@ namespace AgentCoreProcessor.Client
         {
             var history = GetConversationHistory();
 
-            // 构造 SDK 消息列表
+            // 构造 SDK 消息列表，合并连续同角色消息（Anthropic API 要求交替）
             var messages = new List<SdkMessage>();
             foreach (var msg in history.Where(m => m.Role != "system"))
             {
                 var role = msg.Role == "assistant" ? RoleType.Assistant : RoleType.User;
-                var sdkMsg = new SdkMessage(role, "placeholder");
-                sdkMsg.Content = BuildContentBlocks(msg);
-                messages.Add(sdkMsg);
+                var content = BuildContentBlocks(msg);
+
+                if (messages.Count > 0 && messages[^1].Role == role)
+                {
+                    messages[^1].Content ??= new List<ContentBase>();
+                    messages[^1].Content.AddRange(content);
+                }
+                else
+                {
+                    var sdkMsg = new SdkMessage(role, "placeholder");
+                    sdkMsg.Content = content;
+                    messages.Add(sdkMsg);
+                }
             }
 
             // 追加 pending tool results 到一条 user 消息的末尾
@@ -326,7 +349,6 @@ namespace AgentCoreProcessor.Client
 
             // 流式处理
             var fullContent = new System.Text.StringBuilder();
-            bool lastUsageSent = false;
 
             await foreach (var resp in client.Messages.StreamClaudeMessageAsync(parameters, ct))
             {
@@ -336,16 +358,7 @@ namespace AgentCoreProcessor.Client
                 onStreamItem(resp, evt =>
                 {
                     if (onToolEvent != null) onToolEvent(evt);
-                    if (evt.Type == StreamEventType.Usage) lastUsageSent = true;
                 });
-
-                // web search 活动日志
-            }
-
-            // 兜底 usage（如果流没有发）
-            if (!lastUsageSent && onToolEvent != null)
-            {
-                onToolEvent(new StreamEvent { Type = StreamEventType.Usage, Usage = new Models.Usage() });
             }
 
             return (messages, fullContent.ToString());
