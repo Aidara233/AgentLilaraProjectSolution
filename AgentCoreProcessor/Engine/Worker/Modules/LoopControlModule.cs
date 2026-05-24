@@ -13,6 +13,9 @@ namespace AgentCoreProcessor.Engine.Modules
         public int TotalRounds { get; private set; }
         public int SilentRounds { get; private set; }
 
+        /// <summary>连续输出轮次（仅 speak/send_media/wait/deescalate，无实际工作）。</summary>
+        public int ConsecutiveOutputOnly { get; set; }
+
         /// <summary>频道标识，注入 prompt 供模型使用（如 thinking_notes 的 notebook 参数）。</summary>
         public string? ChannelId { get; set; }
 
@@ -36,6 +39,7 @@ namespace AgentCoreProcessor.Engine.Modules
         {
             TotalRounds = 0;
             SilentRounds = 0;
+            ConsecutiveOutputOnly = 0;
         }
 
         public bool IsMaxSilentReached => SilentRounds >= MaxSilentRounds;
@@ -45,6 +49,7 @@ namespace AgentCoreProcessor.Engine.Modules
         {
             TotalRounds = 0;
             SilentRounds = 0;
+            ConsecutiveOutputOnly = 0;
         }
     }
 }

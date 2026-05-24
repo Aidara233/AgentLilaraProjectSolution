@@ -140,6 +140,7 @@ namespace AgentCoreProcessor.Engine
         private SessionContext? currentLastSc;
         private bool isInWorkingSession = false;
         private bool hadSpeakThisRound;
+        private bool hadWorkThisRound; // 本轮是否执行了非输出工具（speak/send_media/wait/deescalate 以外）
 
         // 错误追踪
         private DateTime? lastErrorTime = null;
@@ -257,6 +258,9 @@ namespace AgentCoreProcessor.Engine
                         HandleAlertToolAsync(data).GetAwaiter().GetResult();
                         break;
                 }
+                // 非输出工具（speak/send_media/wait/deescalate 以外）→ 标记有实际工作
+                if (e.Call.Tool is not "speak" and not "send_media" and not "wait" and not "deescalate")
+                    hadWorkThisRound = true;
             });
         }
 
@@ -422,6 +426,7 @@ namespace AgentCoreProcessor.Engine
                 }
 
                 // ⑤ 执行本轮（统一循环：Working→Agent，Express→直接Core调用）
+                hadWorkThisRound = false;
                 Interlocked.Exchange(ref _busyFlag, 1);
                 try
                 {
@@ -500,6 +505,7 @@ namespace AgentCoreProcessor.Engine
             // 清理模块状态
             foreach (var m in modules) m.Reset();
             hadSpeakThisRound = false;
+            hadWorkThisRound = false;
 
             lifeCtx.Close(new { engineType = EngineType, channelId, reason = "cold_timeout" });
         }
@@ -800,6 +806,12 @@ namespace AgentCoreProcessor.Engine
 
             if (agent.StopReason == AgentStopReason.Error)
                 throw new InvalidOperationException("Agent 连续模型调用失败");
+
+            // 追踪连续输出轮次：无实际工作则累加，有工作则清零
+            if (hadWorkThisRound)
+                loopControlModule.ConsecutiveOutputOnly = 0;
+            else
+                loopControlModule.ConsecutiveOutputOnly++;
 
             // Persist after agent finishes
             PersistCurrentContext();
@@ -1211,10 +1223,10 @@ namespace AgentCoreProcessor.Engine
                 }
             }
 
-            // Working 模式提示：如果工作已完成，使用 deescalate 切换回 Express
-            if (isWorkingMode)
+            // 连续多轮无实际工作时，提醒可切换回 Express（Working 模型更强，深思也可能是合理的）
+            if (isWorkingMode && loopControlModule.ConsecutiveOutputOnly >= 2)
             {
-                msgs.Add(new Message { Role = "user", Content = "如果不需要继续工作（任务已完成或无需更多操作），请使用 deescalate 工具切换回轻量模式。" });
+                msgs.Add(new Message { Role = "user", Content = "你已连续多轮没有执行实际工作（仅发言/等待）。如果工作已完成，可用 deescalate 切换回轻量模式；如果需要继续深思或等待结果则不必。" });
             }
 
             return msgs.Count > 0 ? msgs : null;
