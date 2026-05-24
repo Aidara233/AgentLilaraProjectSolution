@@ -21,7 +21,7 @@
 - Token 统计：ModelCallLog 数据库表记录每次调用（含 usage + caller tag），LogsProvider WebUI 页面待开发
   - CallerTag 标识调用来源：Channel:{id} / System / SubAgent:{sessionId} / Review:{mode} / Dream:{phase}
 - 工具管理：ToolRegistry 动态注册/卸载 + ToolProfileManager 链式继承 + WebUI /p/plugins 管理
-- Express 工具（fire-and-forget）：ToolMetaAttribute.ExpressAvailable=true 标记轻量工具，Express 模式下原生 tool_use，结果不回注不续轮。escalate 工具替代 [ESCALATE] 文本标记切换到 Working 模式。非 native 提供商保留文本 fallback。
+- Express 工具（fire-and-forget）：Express/Working 统一使用原生 tool_use（useNativeTools=true）。Express 唯一区别是不续轮（工具结果不回注、不触发下一轮）。ToolMetaAttribute.ExpressAvailable=true 标记 Express 可用工具（speak, send_media, escalate, manage_components）。
 - 多模态图片处理：ContentPart 支持 text/image(path或base64)、图片感知（img 标记+直传/描述分流）、ViewImageTool Working专用、SkiaSharp 缩略图
 
 ## 工作规范
