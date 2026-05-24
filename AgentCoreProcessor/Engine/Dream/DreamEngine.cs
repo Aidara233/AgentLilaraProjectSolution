@@ -345,8 +345,7 @@ namespace AgentCoreProcessor.Engine
         private async Task<FragmentDescriptor?> PrepareFragmentAsync(FragmentType type)
         {
             var cfg = spawnCheck.GetConfig();
-
-            return type switch
+            FragmentDescriptor? desc = type switch
             {
                 FragmentType.Consolidation => await PrepareConsolidationAsync(cfg),
                 FragmentType.Weight => await PrepareWeightAsync(cfg),
@@ -355,12 +354,15 @@ namespace AgentCoreProcessor.Engine
                 FragmentType.Dedup => await PrepareDedupAsync(cfg),
                 _ => null
             };
+            Signal.Event(LogGroup.Engine, desc != null ? "片段准备成功" : "片段准备跳过",
+                new { type = type.ToString(), success = desc != null });
+            return desc;
         }
 
         private async Task<FragmentDescriptor?> PrepareConsolidationAsync(DreamConfig cfg)
         {
             var temps = await ctx.TempMemories.GetAllAsync();
-            if (temps.Count == 0) return null;
+            if (temps.Count == 0) { Signal.Event(LogGroup.Engine, "Prepare失败:Consolidation", new { reason = "无临时记忆" }); return null; }
 
             var batches = BuildBatches(temps, cfg.ConsolidationBatchSize, cfg.ConsolidationSmallGroupThreshold);
             var payload = new ConsolidationPayload { Batches = batches, AllTemps = temps };
@@ -381,8 +383,9 @@ namespace AgentCoreProcessor.Engine
             var batch = await ctx.Memories.GetUndreamedAsync(batchSize);
             if (batch.Count < batchSize / 2)
                 batch.AddRange(await ctx.Memories.GetOldestDreamedAsync(batchSize - batch.Count));
-            if (batch.Count == 0) return null;
+            if (batch.Count == 0) { Signal.Event(LogGroup.Engine, "Prepare失败:Weight", new { reason = "无undreamed或oldest-dreamed记忆" }); return null; }
 
+            Signal.Event(LogGroup.Engine, "Prepare成功:Weight", new { batchSize = batch.Count, memoryIds = batch.Select(m => m.Id).ToList() });
             return new FragmentDescriptor
             {
                 Type = FragmentType.Weight,
@@ -397,7 +400,7 @@ namespace AgentCoreProcessor.Engine
         {
             var targets = await ctx.Memories.GetUndreamedAsync(1);
             if (targets.Count == 0) targets = await ctx.Memories.GetOldestDreamedAsync(1);
-            if (targets.Count == 0) return null;
+            if (targets.Count == 0) { Signal.Event(LogGroup.Engine, "Prepare失败:Link", new { reason = "无undreamed或oldest-dreamed目标" }); return null; }
 
             var target = targets[0];
             List<MemoryEntry> filtered;
@@ -414,6 +417,7 @@ namespace AgentCoreProcessor.Engine
                 // 无候选但仍有意义标记为 dreamed
                 target.LastDreamTime = DateTime.Now;
                 await ctx.Memories.UpdateAsync(target);
+                Signal.Event(LogGroup.Engine, "Prepare跳过:Link", new { reason = "无相似候选", targetId = target.Id });
                 return null;
             }
 
@@ -433,10 +437,10 @@ namespace AgentCoreProcessor.Engine
         private async Task<FragmentDescriptor?> PrepareCombineAsync(DreamConfig cfg)
         {
             var recent = await ctx.Memories.GetRecentAsync(cfg.CombineRecentPoolSize);
-            if (recent.Count < 2) return null;
+            if (recent.Count < 2) { Signal.Event(LogGroup.Engine, "Prepare失败:Combine", new { reason = "近期记忆不足", recentCount = recent.Count }); return null; }
             var ids = recent.Select(m => m.Id).ToList();
             var links = await ctx.MemoryLinks.GetLinksForAsync(ids, cfg.CombineStrengthThreshold);
-            if (links.Count == 0) return null;
+            if (links.Count == 0) { Signal.Event(LogGroup.Engine, "Prepare失败:Combine", new { reason = "无强关联", recentCount = recent.Count }); return null; }
 
             MemoryEntry? src = null, tgt = null;
             string? hash = null;
@@ -450,7 +454,7 @@ namespace AgentCoreProcessor.Engine
                 if (await ctx.Memories.GetBySourceHashAsync(hash) != null) { src = null; tgt = null; continue; }
                 break;
             }
-            if (src == null || tgt == null) return null;
+            if (src == null || tgt == null) { Signal.Event(LogGroup.Engine, "Prepare失败:Combine", new { reason = "所有强关联对已合并或无可用对", checkedPairs = links.Count }); return null; }
 
             return new FragmentDescriptor
             {
@@ -469,7 +473,7 @@ namespace AgentCoreProcessor.Engine
 
             var seeds = await ctx.Memories.GetUndreamedAsync(3);
             if (seeds.Count == 0) seeds = await ctx.Memories.GetOldestDreamedAsync(3);
-            if (seeds.Count == 0) return null;
+            if (seeds.Count == 0) { Signal.Event(LogGroup.Engine, "Prepare失败:Dedup", new { reason = "无undreamed或oldest-dreamed种子" }); return null; }
 
             // 遍历种子找第一个有效集群
             var processed = new HashSet<int>();
@@ -501,6 +505,7 @@ namespace AgentCoreProcessor.Engine
                 };
             }
 
+            Signal.Event(LogGroup.Engine, "Prepare失败:Dedup", new { reason = "无满足最小集群条件的种子", seedsChecked = seeds.Count, minCluster });
             return null;
         }
 
@@ -513,6 +518,9 @@ namespace AgentCoreProcessor.Engine
             currentDetails = new();
             currentInputIds = null;
             currentOutputRaw = null;
+
+            Signal.Event(LogGroup.Engine, "片段开始执行",
+                new { type = desc.Type.ToString(), resourceCost = desc.ResourceCost, estTokens = desc.EstimatedTokens, claimedMemIds = desc.ClaimedMemoryIds.Count });
 
             try
             {

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Logging;
 
 namespace AgentCoreProcessor.Engine
 {
@@ -169,6 +170,8 @@ namespace AgentCoreProcessor.Engine
         public async Task<int> FillTodo(int maxCount)
         {
             int added = 0;
+            int attempted = 0;
+            int skippedConflict = 0;
             for (int i = 0; i < maxCount; i++)
             {
                 if (!_budget.CanFill) break;
@@ -176,16 +179,26 @@ namespace AgentCoreProcessor.Engine
                 var type = PickRandomType();
                 if (type == null) break;
 
+                attempted++;
                 var desc = await _prepareFragment(type.Value);
-                if (desc == null) continue; // prepare 失败（无可处理的记忆等）
+                if (desc == null) continue;
 
-                // 检查记忆冲突
                 if (_memoryTracker.HasConflict(desc.ClaimedMemoryIds))
+                {
+                    skippedConflict++;
+                    Signal.Event(LogGroup.Engine, "FillTodo:记忆冲突跳过",
+                        new { type = desc.Type.ToString(), claimedIds = desc.ClaimedMemoryIds.Count });
                     continue;
+                }
 
                 _todo.Add(desc);
                 added++;
+                Signal.Event(LogGroup.Engine, "FillTodo:入队",
+                    new { type = desc.Type.ToString(), resourceCost = desc.ResourceCost, estTokens = desc.EstimatedTokens, todoCount = _todo.Count });
             }
+            if (attempted > 0 && added == 0)
+                Signal.Event(LogGroup.Engine, "FillTodo:全部跳过",
+                    new { attempted, skippedConflict, budgetRemaining = _budget.MainBudget });
             return added;
         }
 
