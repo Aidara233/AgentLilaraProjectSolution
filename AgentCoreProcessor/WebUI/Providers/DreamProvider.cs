@@ -939,7 +939,7 @@ internal class SleepConfigSource : IDataSource
             ["nap_cooldown"] = $"{config.NapCooldown}s ({config.NapCooldown / 60}分钟)",
             ["deep_idle"] = $"{config.DeepSleepIdleThreshold}s ({config.DeepSleepIdleThreshold / 60}分钟)",
             ["deep_window"] = $"{config.DeepSleepTimeStart} ~ {config.DeepSleepTimeEnd}",
-            ["deep_budget"] = $"{config.DeepSleepTokenBudget:#,0} tokens",
+            ["deep_budget"] = $"{config.MainTokenBudget:#,0} tokens (主) + {config.ReserveTokenBudget:#,0} tokens (增援)",
             ["deep_max_minutes"] = $"{config.DeepSleepMaxMinutes} 分钟"
         };
         return Task.FromResult(new DataResult { Data = data });

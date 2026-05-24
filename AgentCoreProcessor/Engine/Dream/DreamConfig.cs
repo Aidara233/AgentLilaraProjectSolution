@@ -61,11 +61,71 @@ namespace AgentCoreProcessor.Engine
 
         // ---- 预算配置 ----
 
-        /// <summary>大睡 DreamEngine 片段调用的 token 预算</summary>
-        public int DeepSleepTokenBudget { get; set; } = 100000;
+        /// <summary>主 token 预算，耗尽后停止向 todo 添加新片段</summary>
+        public int MainTokenBudget { get; set; } = 100000;
+
+        /// <summary>增援 token 预算，主预算+增援都耗尽后清空 todo</summary>
+        public int ReserveTokenBudget { get; set; } = 30000;
 
         /// <summary>大睡硬性时间上限（分钟）</summary>
         public int DeepSleepMaxMinutes { get; set; } = 120;
+
+        // ---- 资源与并行配置 ----
+
+        /// <summary>资源池总量</summary>
+        public int TotalResources { get; set; } = 80;
+
+        /// <summary>Consolidation 片段资源占用</summary>
+        public int ConsolidationResourceCost { get; set; } = 30;
+
+        /// <summary>Weight 片段资源占用</summary>
+        public int WeightResourceCost { get; set; } = 10;
+
+        /// <summary>Link 片段资源占用</summary>
+        public int LinkResourceCost { get; set; } = 20;
+
+        /// <summary>Combine 片段资源占用</summary>
+        public int CombineResourceCost { get; set; } = 20;
+
+        /// <summary>Dedup 片段资源占用</summary>
+        public int DedupResourceCost { get; set; } = 20;
+
+        /// <summary>Consolidation 预估 token 消耗</summary>
+        public int ConsolidationTokenEstimate { get; set; } = 3000;
+
+        /// <summary>Weight 预估 token 消耗</summary>
+        public int WeightTokenEstimate { get; set; } = 1500;
+
+        /// <summary>Link 预估 token 消耗</summary>
+        public int LinkTokenEstimate { get; set; } = 2000;
+
+        /// <summary>Combine 预估 token 消耗</summary>
+        public int CombineTokenEstimate { get; set; } = 2500;
+
+        /// <summary>Dedup 预估 token 消耗</summary>
+        public int DedupTokenEstimate { get; set; } = 2000;
+
+        /// <summary>按片段类型获取资源占用</summary>
+        public int GetResourceCost(FragmentType type) => type switch
+        {
+            FragmentType.Consolidation => ConsolidationResourceCost,
+            FragmentType.Weight => WeightResourceCost,
+            FragmentType.Link => LinkResourceCost,
+            FragmentType.Combine => CombineResourceCost,
+            FragmentType.Dedup => DedupResourceCost,
+            _ => 10
+        };
+
+        /// <summary>按片段类型获取预估 token 消耗</summary>
+        public int GetTokenEstimate(FragmentType type) => type switch
+        {
+            FragmentType.Consolidation => ConsolidationTokenEstimate,
+            FragmentType.Weight => WeightTokenEstimate,
+            FragmentType.Link => LinkTokenEstimate,
+            FragmentType.Combine => CombineTokenEstimate,
+            FragmentType.Dedup => DedupTokenEstimate,
+            _ => 2000
+        };
 
         // ---- 整合配置 ----
 
