@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine;
+using AgentCoreProcessor.Logging;
 using AgentLilara.PluginSDK;
 using AgentLilara.PluginSDK.WebUI;
 
@@ -882,7 +883,7 @@ internal class PersonaFormSource : IDataSource
                 var vec = await _engine.Embedding.GetEmbeddingAsync(content);
                 emb = Client.SiliconFlowEmbeddingProvider.FloatsToBytes(vec);
             }
-            catch { }
+            catch { Signal.Warn(LogGroup.Memory, "人设记忆embedding失败", new { content_length = content.Length }); }
 
             await _engine.PersonaMemories.CreateAsync(content, emb, category);
             return new ActionResult { Success = true, Message = "人设记忆已添加" };

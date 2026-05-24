@@ -323,7 +323,7 @@ namespace AgentCoreProcessor.Adapter
                 config.Enabled = enabled;
                 File.WriteAllText(path, JsonConvert.SerializeObject(config, Formatting.Indented));
             }
-            catch { }
+            catch { Signal.Warn(LogGroup.Adapter, "适配器配置保存失败"); }
         }
     }
 }

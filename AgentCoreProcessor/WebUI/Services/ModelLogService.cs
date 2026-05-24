@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using AgentCoreProcessor.Config;
+using AgentCoreProcessor.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -209,7 +210,7 @@ namespace AgentCoreProcessor.WebUI.Services
                     if (!string.IsNullOrEmpty(caller))
                         callers.Add(caller);
                 }
-                catch { }
+                catch { Signal.Warn(LogGroup.Engine, "模型日志解析失败", new { file = Path.GetFileName(f) }); }
             }
 
             return callers.OrderBy(c => c).ToList();
@@ -270,7 +271,7 @@ namespace AgentCoreProcessor.WebUI.Services
                         };
                     }
                 }
-                catch { }
+                catch { Signal.Warn(LogGroup.Engine, "模型日志解析失败", new { file = Path.GetFileName(fullPath) }); }
             }
 
             return entry;

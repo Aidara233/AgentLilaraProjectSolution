@@ -285,24 +285,29 @@ namespace AgentCoreProcessor.Adapter
                 }
                 else
                 {
-                    HandleEvent(data);
+                    _ = HandleEvent(data);
                 }
             }
         }
 
-        private async void HandleEvent(JObject data)
+        private async Task HandleEvent(JObject data)
         {
-            var postType = data["post_type"]?.ToString();
-            if (postType != null && postType != "meta_event")
-            {
-            }
+            using var ctx = Signal.Begin(LogGroup.Adapter, $"adapter:onebot:{Id}", "消息接收",
+                new { post_type = data["post_type"]?.ToString() });
 
-            var msg = await parser.HandleEventAsync(data);
-            if (msg != null)
+            try
             {
-                Interlocked.Increment(ref messagesReceived);
-                lastMessageReceivedAt = DateTime.Now;
-                OnMessageReceived?.Invoke(msg);
+                var msg = await parser.HandleEventAsync(data);
+                if (msg != null)
+                {
+                    Interlocked.Increment(ref messagesReceived);
+                    lastMessageReceivedAt = DateTime.Now;
+                    OnMessageReceived?.Invoke(msg);
+                }
+            }
+            catch (Exception ex)
+            {
+                Signal.Error(LogGroup.Adapter, "消息处理异常", new { error = ex.Message });
             }
         }
 

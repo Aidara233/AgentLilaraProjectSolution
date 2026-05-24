@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using AgentCoreProcessor.Config;
+using AgentCoreProcessor.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 
@@ -360,7 +361,7 @@ namespace AgentCoreProcessor.Tool.Host
                 var json = JsonConvert.SerializeObject(config, Formatting.Indented);
                 File.WriteAllText(ConfigPath, json);
             }
-            catch { }
+            catch { Signal.Warn(LogGroup.Plugin, "工具配置保存失败"); }
         }
 
         private static ToolProfileConfig GetDefaultConfig()

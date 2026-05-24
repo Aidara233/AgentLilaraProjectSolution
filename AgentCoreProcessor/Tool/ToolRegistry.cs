@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using AgentCoreProcessor.Config;
+using AgentCoreProcessor.Logging;
 using AgentLilara.PluginSDK;
 using Newtonsoft.Json;
 
@@ -173,7 +174,7 @@ namespace AgentCoreProcessor.Tool
                         _disabledTools[name] = info;
                 }
             }
-            catch { }
+            catch { Signal.Warn(LogGroup.Plugin, "工具配置加载失败"); }
         }
 
         private static void SaveConfig()
@@ -185,7 +186,7 @@ namespace AgentCoreProcessor.Tool
                 Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath)!);
                 File.WriteAllText(ConfigPath, json);
             }
-            catch { }
+            catch { Signal.Warn(LogGroup.Plugin, "工具配置保存失败"); }
         }
 
         private class ToolConfigFile

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Engine;
+using AgentCoreProcessor.Logging;
 using Newtonsoft.Json.Linq;
 
 namespace AgentCoreProcessor.Adapter
@@ -129,7 +130,8 @@ namespace AgentCoreProcessor.Adapter
                             break;
                         case AttachmentType.File:
                             // 文件上传走单独 API，不走 message segment
-                            _ = SendFileAsync(message.ChannelId, att);
+                            try { await SendFileAsync(message.ChannelId, att); }
+                            catch (Exception ex) { Signal.Warn(LogGroup.Adapter, "文件上传失败", new { error = ex.Message }); }
                             break;
                     }
                 }
@@ -140,6 +142,7 @@ namespace AgentCoreProcessor.Adapter
             {
                 if (resp["retcode"]?.Value<int>() != 0)
                 {
+                    Signal.Warn(LogGroup.Adapter, "OneBot API返回错误", new { retcode = resp["retcode"]?.Value<int>(), action });
                 }
                 else
                 {

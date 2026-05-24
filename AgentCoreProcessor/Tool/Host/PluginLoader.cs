@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Runtime.Loader;
 using System.Threading;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Component;
 using AgentCoreProcessor.Engine;
 using AgentLilara.PluginSDK;
@@ -288,7 +289,7 @@ namespace AgentCoreProcessor.Tool.Host
                 if (!ok) continue;
 
                 try { return Activator.CreateInstance(type, args); }
-                catch { continue; }
+                catch { Signal.Warn(LogGroup.Plugin, "插件类型构造失败", new { type = type.FullName }); continue; }
             }
             return null;
         }

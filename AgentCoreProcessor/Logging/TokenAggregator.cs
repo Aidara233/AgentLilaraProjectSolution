@@ -37,7 +37,7 @@ public class TokenAggregator
                 cmd.Parameters.AddWithValue("@success", root.TryGetProperty("error", out var err) && err.ValueKind != JsonValueKind.Null ? 0 : 1);
                 cmd.ExecuteNonQuery();
             }
-            catch { }
+            catch { Signal.Warn(LogGroup.Engine, "Token聚合写入失败"); }
         }
     }
 }
