@@ -919,6 +919,7 @@ namespace AgentCoreProcessor.Engine
                         var reason = call.Inputs.Count > 0 ? call.Inputs[0] : null;
                         _signalBuffer.Enqueue(new ModeSwitchSignal("working", reason));
                         isWorkingMode = true;
+                        isInWorkingSession = true;
                         Signal.Event(LogGroup.Engine, "模式切换",
                             new { channelId, from = "Express", to = "Working", reason = reason ?? "工具调用" });
                         gate.Signal();
