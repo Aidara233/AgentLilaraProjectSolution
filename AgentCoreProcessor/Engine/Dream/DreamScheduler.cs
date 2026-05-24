@@ -200,7 +200,7 @@ namespace AgentCoreProcessor.Engine
             // 按资源占用降序排列（大块优先）
             _todo.Sort((a, b) => b.ResourceCost.CompareTo(a.ResourceCost));
 
-            for (int i = _todo.Count - 1; i >= 0; i--)
+            for (int i = 0; i < _todo.Count; )
             {
                 if (_pool.Available <= 0) break;
 
@@ -210,9 +210,13 @@ namespace AgentCoreProcessor.Engine
                     _memoryTracker.Claim(desc.ClaimedMemoryIds);
                     _todo.RemoveAt(i);
                     _running.Add(desc);
-                    // 启动执行（fire-and-forget 到 running 列表）
                     desc.RunningTask = Task.Run(() => executeFragment(desc));
                     dispatched.Add(desc);
+                    // 不递增 i：RemoveAt 使后续元素前移，当前位置已是下一个
+                }
+                else
+                {
+                    i++; // 塞不下则跳过，尝试更小的
                 }
             }
 
@@ -244,8 +248,7 @@ namespace AgentCoreProcessor.Engine
             // Nap/DeepSleep Phase1: Consolidation dominant, Weight + Link normal
             // DeepSleep Phase2: no Consolidation, all others active
             // For simplicity, always include all types with weights
-            if (_config.ConsolidationResourceCost <= _pool.Available)
-                weights[FragmentType.Consolidation] = 20.0f; // high weight when temp memories likely exist
+            weights[FragmentType.Consolidation] = 20.0f; // high weight when temp memories likely exist
             weights[FragmentType.Weight] = 1.0f;
             weights[FragmentType.Link] = 3.0f;
             weights[FragmentType.Combine] = 0.5f;

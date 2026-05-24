@@ -140,7 +140,15 @@ namespace AgentCoreProcessor.Engine
                 SleepLevel.DeepSleep => cfg.MaxFragmentsPerDeepSleep,
                 _ => 1
             };
-            await _scheduler.FillTodo(initialFill);
+            int initialAdded = await _scheduler.FillTodo(initialFill);
+            Signal.Event(LogGroup.Engine, "初始填充完成",
+                new { added = initialAdded, targetCount = initialFill, todoCount = _scheduler.TodoCount });
+
+            if (!_scheduler.HasWork)
+            {
+                Signal.Event(LogGroup.Engine, "无待处理记忆，做梦结束（无可用的片段）",
+                    new { level = level.ToString() });
+            }
 
             int executed = 0;
             bool trustEvalDone = false;
@@ -149,21 +157,39 @@ namespace AgentCoreProcessor.Engine
             // 主调度循环
             while (_scheduler.HasWork)
             {
-                if (shouldWake) break;
+                if (shouldWake) { Signal.Event(LogGroup.Engine, "做梦被唤醒", new { executed }); break; }
                 if (level == SleepLevel.DeepSleep && ElapsedMinutes(startTime) > cfg.DeepSleepMaxMinutes)
+                {
+                    Signal.Event(LogGroup.Engine, "大睡超时", new { elapsedMinutes = ElapsedMinutes(startTime), maxMinutes = cfg.DeepSleepMaxMinutes, executed });
                     break;
+                }
 
                 // 派发：从 todo 取最大能塞进资源池的片段
-                _scheduler.TryDispatch(desc => ExecuteFragmentAsync(desc));
+                var dispatched = _scheduler.TryDispatch(desc => ExecuteFragmentAsync(desc));
+                if (dispatched.Count > 0)
+                    Signal.Event(LogGroup.Engine, "派发片段",
+                        new { count = dispatched.Count, types = dispatched.Select(d => d.Type.ToString()).ToList(), runningCount = _scheduler.RunningCount, availableRes = _scheduler.AvailableResources });
 
                 if (_scheduler.RunningCount == 0)
                 {
                     if (!_scheduler.CanFill)
+                    {
+                        Signal.Event(LogGroup.Engine, "预算耗尽，停止调度", new { tokensUsed = _scheduler.TokensUsed, executed });
                         break;
-                    await _scheduler.FillTodo(1);
+                    }
+                    int refilled = await _scheduler.FillTodo(1);
                     if (_scheduler.RunningCount == 0 && _scheduler.TodoCount == 0)
+                    {
+                        Signal.Event(LogGroup.Engine, "无可处理的记忆，做梦结束", new { executed });
                         break;
-                    continue;
+                    }
+                    if (refilled > 0 && _scheduler.TodoCount > 0)
+                    {
+                        // 重新派发刚填充的片段
+                        dispatched = _scheduler.TryDispatch(desc => ExecuteFragmentAsync(desc));
+                    }
+                    if (_scheduler.RunningCount == 0)
+                        continue; // 填充了但派发失败（资源不足等），等下一轮
                 }
 
                 // 等待任意一个片段完成
