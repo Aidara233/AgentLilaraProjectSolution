@@ -561,8 +561,7 @@ namespace AgentCoreProcessor.Engine
                 // channel 定向定时任务暂不支持（ScheduleParser 待重建）
 
                 // 计算下次触发
-                // TODO: Tool.ScheduleParser was deleted; need replacement for schedule computation
-                // var nextFire = Tool.ScheduleParser.ComputeNextFire(task);
+                // TODO: ScheduleParser was deleted; need replacement for schedule computation
                 DateTime? nextFire = null; // placeholder until schedule parser is reimplemented
                 await ScheduledTasks.MarkFiredAsync(task.Id, nextFire);
             }

@@ -92,15 +92,6 @@ namespace AgentCoreProcessor.Client
                 }
             }
 
-            // Web Search（Claude server tool）
-            if (apiClientCfg.WebSearch && apiClientCfg.Provider is "claude" or "anthropic")
-            {
-                var webSearchFunc = new Function("web_search", ServerTools.WebSearchVersionLegacy, new Dictionary<string, object>());
-                var webSearchTool = new Anthropic.SDK.Common.Tool(webSearchFunc);
-                parameters.Tools ??= new List<Anthropic.SDK.Common.Tool>();
-                parameters.Tools.Add(webSearchTool);
-            }
-
             // 原生工具定义
             if (apiClientCfg.UseNativeTools && tools != null && tools.Count > 0)
             {

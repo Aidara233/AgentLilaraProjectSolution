@@ -59,7 +59,7 @@
 - `Engine/Core/MasterEngine.cs` — 移除 Phase 3 过期 TODO
 - `MCP/McPbridgeTool.cs` — 移除 ToolGroup / DefaultExpanded 属性
 
-### 第四轮: 代码去重 + PLACEHOLDER 清理 + 空体修复
+### 第四轮: 代码去重 + PLACEHOLDER 清理 + 空体修复 + WebSearch 移除
 
 **代码去重：**
 - `Component/SimpleServiceProvider.cs` — 加字典构造器，统一三处实现
@@ -76,6 +76,11 @@
 **空体 bug 修复（C# 语法陷阱 — 无体 if 会吞下一条语句）：**
 - `Engine/Vision/VisionEngine.cs:69-72` — 加 Signal.Warn，修复 if 意外控制下行赋值和主循环
 - `Engine/Core/MasterEngine.cs:324,353` — 加 Signal.Warn，修复空 else 体
+
+**死代码移除：**
+- `Client/ClaudeModelClient.cs` — 移除 Web Search server tool 注入（已确认不可用）
+- `Client/ApiClientCfg.cs` — 移除 `WebSearch` 配置属性
+- `Engine/Core/MasterEngine.cs:564` — 移除 ScheduleParser 死注释
 
 ---
 
@@ -105,7 +110,3 @@
 - [ ] `ApiClientCfg.ConversationHistory` — 运行时状态混在配置对象中
 - [ ] `Component/ChannelAccessAdapter.cs` — 4 个接口方法全是 TODO stub，已注册但无实际功能
 - [ ] `ChannelEngine.cs:645` — `ToolContext = null!` null-forgiving 赋值，访问即 NRE
-
-### 待确认
-- [ ] `ClaudeModelClient` ServerTools.WebSearchVersionLegacy — 常量来自外部 SDK，需检查包版本
-- [ ] `MasterEngine.cs:564` — ScheduleParser 已删除，死注释残留

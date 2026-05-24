@@ -61,10 +61,6 @@ namespace AgentCoreProcessor.Client
         [JsonProperty("anthropicVersion")]
         public string? AnthropicVersion { get; set; } = null;
 
-        // Claude 专用：启用原生 Web Search（server tool）
-        [JsonProperty("webSearch")]
-        public bool WebSearch { get; set; } = false;
-
         // Claude 专用：启用 prompt caching（在 system 和前缀消息上设置 cache_control）
         [JsonProperty("promptCaching")]
         public bool PromptCaching { get; set; } = false;
