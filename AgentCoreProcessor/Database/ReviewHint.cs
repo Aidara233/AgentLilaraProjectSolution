@@ -20,7 +20,6 @@ namespace AgentCoreProcessor.Database
 
         public int? PersonId { get; set; }
         public int? ChannelId { get; set; }
-        public int? TopicId { get; set; }
 
         /// <summary>model = 工作端标记, framework = 自动生成</summary>
         public string Source { get; set; } = "model";

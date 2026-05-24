@@ -10,7 +10,6 @@ namespace AgentCoreProcessor.Database
         public int Id { get; set; }// 消息ID，唯一标识一条消息
         public int UserId { get; set; }// 用户ID，唯一标识一个用户
         public int ChannelId { get; set; }// 频道ID，标识消息所属的频道
-        public int TopicId { get; set; }// 话题ID，标识消息所属的话题
         public string Content { get; set; } = "";// 消息内容
         /// <summary>发言人显示名（冗余存储，避免查询时 join）。Bot 消息为 "Lilara"。</summary>
         public string SenderName { get; set; } = "";

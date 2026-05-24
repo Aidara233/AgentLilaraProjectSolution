@@ -60,15 +60,6 @@ namespace AgentCoreProcessor.Database
                 .ToListAsync();
         }
 
-        /// <summary>将账号关联到指定 Person。</summary>
-        public async Task LinkToPersonAsync(int userId, int personId)
-        {
-            var user = await GetByIdAsync(userId);
-            if (user == null) return;
-            user.PersonId = personId;
-            await db.UpdateAsync(user);
-        }
-
         public Task<User?> GetByIdAsync(int id) => db.GetByIdAsync<User>(id);
 
         public Task<int> UpdateAsync(User user) => db.UpdateAsync(user);

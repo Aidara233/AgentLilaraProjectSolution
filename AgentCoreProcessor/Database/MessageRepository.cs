@@ -20,14 +20,6 @@ namespace AgentCoreProcessor.Database
             return message;
         }
 
-        /// <summary>获取指定频道的所有消息，按时间升序。</summary>
-        public Task<List<UserMessage>> GetByChannelAsync(int channelId)
-        {
-            return db.QueryAsync<UserMessage>(
-                "SELECT * FROM UserMessages WHERE ChannelId = ? ORDER BY Time ASC",
-                channelId);
-        }
-
         /// <summary>获取指定频道的最近 N 条消息（按频道级上下文）。</summary>
         public Task<List<UserMessage>> GetRecentByChannelAsync(int channelId, int limit)
         {
@@ -35,8 +27,6 @@ namespace AgentCoreProcessor.Database
                 "SELECT * FROM UserMessages WHERE ChannelId = ? ORDER BY Time DESC LIMIT ?",
                 channelId, limit);
         }
-
-        public Task<UserMessage?> GetByIdAsync(int id) => db.GetByIdAsync<UserMessage>(id);
 
         /// <summary>按平台消息ID查找（用于引用消息上下文）。</summary>
         public async Task<UserMessage?> GetByPlatformMessageIdAsync(int channelId, string platformMessageId)

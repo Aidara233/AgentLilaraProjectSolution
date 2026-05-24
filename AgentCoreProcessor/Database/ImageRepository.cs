@@ -23,17 +23,6 @@ namespace AgentCoreProcessor.Database
             return results.Count > 0 ? results[0] : null;
         }
 
-        public async Task<List<ImageRecord>> GetByHashesAsync(IEnumerable<string> hashes)
-        {
-            var result = new List<ImageRecord>();
-            foreach (var hash in hashes)
-            {
-                var record = await GetByHashAsync(hash);
-                if (record != null) result.Add(record);
-            }
-            return result;
-        }
-
         public async Task<ImageRecord> SaveAsync(ImageRecord record)
         {
             await db.InsertAsync(record);
@@ -96,12 +85,6 @@ namespace AgentCoreProcessor.Database
         }
 
         public Task DeleteAsync(ImageRecord record) => db.DeleteAsync(record);
-
-        public async Task<int> GetTotalCountAsync()
-        {
-            var results = await db.QueryAsync<ImageRecord>("SELECT COUNT(*) as Id FROM ImageRecords");
-            return results.Count > 0 ? results[0].Id : 0;
-        }
 
         public async Task<List<ImageRecord>> GetPagedAsync(int offset, int limit,
             string? statusFilter = null, string? categoryFilter = null, string? keyword = null)

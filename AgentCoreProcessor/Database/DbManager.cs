@@ -49,23 +49,6 @@ namespace AgentCoreProcessor.Database
         }
 
         /// <summary>
-        /// 补加旧表缺失的列（ALTER TABLE ADD COLUMN）。SQLite 不支持 IF NOT EXISTS，重复列会抛错并忽略。
-        /// </summary>
-        public async Task MigrateMissingColumnsAsync()
-        {
-            // DreamFragments: InputMemoryIds + OutputRaw（2026-05-22 新增）
-            var migrations = new[]
-            {
-                "ALTER TABLE DreamFragments ADD COLUMN InputMemoryIds TEXT",
-                "ALTER TABLE DreamFragments ADD COLUMN OutputRaw TEXT",
-            };
-            foreach (var sql in migrations)
-            {
-                try { await db.ExecuteAsync(sql); } catch { /* 列已存在则忽略 */ }
-            }
-        }
-
-        /// <summary>
         /// 重建记忆相关表（DROP + CREATE）。用于结构变更后清除不兼容数据。
         /// </summary>
         public async Task RebuildMemoryTablesAsync()
