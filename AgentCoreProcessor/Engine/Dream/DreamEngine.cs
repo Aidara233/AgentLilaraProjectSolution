@@ -144,6 +144,28 @@ namespace AgentCoreProcessor.Engine
             Signal.Event(LogGroup.Engine, "初始填充完成",
                 new { added = initialAdded, targetCount = initialFill, todoCount = _scheduler.TodoCount });
 
+            // 检查临时记忆，空则排除 Consolidation（避免无效准备）
+            var initialTemps = await ctx.TempMemories.GetAllAsync();
+            if (initialTemps.Count == 0)
+            {
+                _scheduler.ExcludeType(FragmentType.Consolidation);
+                Signal.Event(LogGroup.Engine, "无临时记忆，排除Consolidation");
+            }
+
+            // DB 状态快照（诊断用）
+            var allMemories = await ctx.Memories.GetRecentAsync(1000);
+            var undreamed = allMemories.Where(m => m.LastDreamTime == null).ToList();
+            var totalMemoryCount = allMemories.Count;
+            Signal.Event(LogGroup.Engine, "做梦DB状态",
+                new
+                {
+                    tempCount = initialTemps.Count,
+                    totalMemories = totalMemoryCount,
+                    undreamedCount = undreamed.Count,
+                    dreamedCount = totalMemoryCount - undreamed.Count,
+                    oldestDreamed = allMemories.Where(m => m.LastDreamTime != null).OrderBy(m => m.LastDreamTime).Take(1).Select(m => m.LastDreamTime?.ToString("O")).FirstOrDefault() ?? "无"
+                });
+
             if (!_scheduler.HasWork)
             {
                 Signal.Event(LogGroup.Engine, "无待处理记忆，做梦结束（无可用的片段）",
@@ -228,6 +250,8 @@ namespace AgentCoreProcessor.Engine
                     var tempCount = (await ctx.TempMemories.GetAllAsync()).Count;
                     if (tempCount == 0)
                     {
+                        _scheduler.ExcludeType(FragmentType.Consolidation);
+                        Signal.Event(LogGroup.Engine, "临时记忆清空，排除Consolidation，进入Phase2");
                         trustEvalDone = true;
                         await ExecuteTrustEvaluationAsync();
                         if (!reviewStarted)

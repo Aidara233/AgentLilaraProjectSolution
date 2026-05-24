@@ -140,6 +140,10 @@ namespace AgentCoreProcessor.Engine
         private readonly Random _rng = new();
         private readonly List<FragmentDescriptor> _todo = new();
         private readonly List<FragmentDescriptor> _running = new();
+        private readonly HashSet<FragmentType> _excludedTypes = new();
+
+        /// <summary>排除某类片段，不会再被 PickRandomType 选中。Consolidation 空 temp 后调用。</summary>
+        public void ExcludeType(FragmentType type) => _excludedTypes.Add(type);
 
         /// <summary>准备片段的回调，由 DreamEngine 提供具体 DB 逻辑。</summary>
         private readonly Func<FragmentType, Task<FragmentDescriptor?>> _prepareFragment;
@@ -257,15 +261,16 @@ namespace AgentCoreProcessor.Engine
         {
             var weights = new Dictionary<FragmentType, float>();
 
-            // Daydream: only Weight + Link
-            // Nap/DeepSleep Phase1: Consolidation dominant, Weight + Link normal
-            // DeepSleep Phase2: no Consolidation, all others active
-            // For simplicity, always include all types with weights
-            weights[FragmentType.Consolidation] = 20.0f; // high weight when temp memories likely exist
-            weights[FragmentType.Weight] = 1.0f;
-            weights[FragmentType.Link] = 3.0f;
-            weights[FragmentType.Combine] = 0.5f;
-            weights[FragmentType.Dedup] = 3.0f;
+            if (!_excludedTypes.Contains(FragmentType.Consolidation))
+                weights[FragmentType.Consolidation] = 20.0f;
+            if (!_excludedTypes.Contains(FragmentType.Weight))
+                weights[FragmentType.Weight] = 1.0f;
+            if (!_excludedTypes.Contains(FragmentType.Link))
+                weights[FragmentType.Link] = 3.0f;
+            if (!_excludedTypes.Contains(FragmentType.Combine))
+                weights[FragmentType.Combine] = 0.5f;
+            if (!_excludedTypes.Contains(FragmentType.Dedup))
+                weights[FragmentType.Dedup] = 3.0f;
 
             if (weights.Count == 0) return null;
 
