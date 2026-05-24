@@ -73,10 +73,6 @@ namespace AgentCoreProcessor.Client
         [JsonProperty("conversationHistory")]
         public List<Message> PresetMessages { get; set; } = new List<Message>();
 
-        // 运行时对话历史（不序列化，由 ModelClientBase 管理）
-        [JsonIgnore]
-        public List<Message> ConversationHistory { get; set; } = new List<Message>();
-
         // 无参构造函数（用于手动创建或序列化库）
         public ApiClientCfg() { }
 

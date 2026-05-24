@@ -642,7 +642,7 @@ namespace AgentCoreProcessor.Engine
                         ChannelId = channelId,
                         IsPrivate = currentLastMsg.IsPrivate,
                         HasMention = batch.Any(b => b.Message.IsMentioned),
-                        ToolContext = null!, // TODO: 接入 ToolContextImpl
+                        ToolContext = ctx.ToolContext,
                         Messages = batch.Select(b => new AgentLilara.PluginSDK.MessageInfo
                         {
                             Content = b.Message.Content,

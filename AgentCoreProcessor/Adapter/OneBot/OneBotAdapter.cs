@@ -137,10 +137,10 @@ namespace AgentCoreProcessor.Adapter
             connectionState = AdapterConnectionState.Stopped;
         }
 
-        public Task ReloadConfigAsync()
+        public Task<bool> ReloadConfigAsync()
         {
             if (configPath == null || !File.Exists(configPath))
-                return Task.CompletedTask;
+                return Task.FromResult(false);
 
             var json = File.ReadAllText(configPath);
             var newConfig = JsonConvert.DeserializeObject<OneBotConfig>(json) ?? new OneBotConfig();
@@ -148,7 +148,7 @@ namespace AgentCoreProcessor.Adapter
             bool connectionChanged = newConfig.WsUrl != config.WsUrl || newConfig.Token != config.Token;
             config = newConfig;
 
-            return Task.CompletedTask;
+            return Task.FromResult(connectionChanged);
         }
 
         public AdapterStatus GetStatus() => new()

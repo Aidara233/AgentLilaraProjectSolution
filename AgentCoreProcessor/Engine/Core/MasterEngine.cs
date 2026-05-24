@@ -416,8 +416,6 @@ namespace AgentCoreProcessor.Engine
             // Component 系统初始化（PluginLoader 已填充 ComponentRegistry）
             componentServices.Register<AgentLilara.PluginSDK.Services.ISubAgentAccess>(
                 new Component.SubAgentAccessAdapter(this));
-            componentServices.Register<AgentLilara.PluginSDK.Services.IChannelAccess>(
-                new Component.ChannelAccessAdapter(this));
             componentServices.Register<AgentLilara.PluginSDK.IToolContext>(_toolContext);
             componentServices.Register<AgentLilara.PluginSDK.Services.IBeaconAccess>(
                 new Tool.Host.BeaconAccessImpl(ReviewHints));

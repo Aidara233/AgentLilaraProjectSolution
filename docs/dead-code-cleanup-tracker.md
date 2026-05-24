@@ -82,6 +82,23 @@
 - `Client/ApiClientCfg.cs` — 移除 `WebSearch` 配置属性
 - `Engine/Core/MasterEngine.cs:564` — 移除 ScheduleParser 死注释
 
+### 第五轮: 设计缺陷修复
+
+**ReloadConfigAsync 返回值修复：**
+- `Adapter/OneBot/OneBotAdapter.cs` — `ReloadConfigAsync` 返回 `Task<bool>`（connectionChanged）
+- `Adapter/IAdapter.cs` — 接口默认实现改为 `Task<bool>`
+- `Adapter/AdapterManager.cs` — 传播 connectionChanged 返回值
+
+**ConversationHistory 迁移：**
+- `Client/ModelClientBase.cs` — 新增 `_conversationHistory` 字段，替代 `apiClientCfg.ConversationHistory`
+- `Client/ApiClientCfg.cs` — 移除 `ConversationHistory` 属性（运行时状态不再污染配置对象）
+
+**死适配器删除：**
+- `Component/ChannelAccessAdapter.cs` — 整文件删除（4 个 TODO stub，无调用方）
+
+**ToolContext null! 修复：**
+- `Engine/Worker/ChannelEngine.cs:645` — `ToolContext = null!` → `ToolContext = ctx.ToolContext`
+
 ---
 
 ## 保留/预留
@@ -104,9 +121,3 @@
 - [ ] `OneBotActions.SendFileAsync` fire-and-forget — 错误静默吞没
 - [ ] `OneBotActions.SendMessageAsync` 空错误分支 — retcode != 0 无日志
 - [ ] 25+ 空 catch 块 — `ToolRegistry`/`ToolProfileManager`/`LogWriter`/`DreamEngine`/`MemoryProvider` 等多处无声吞异常
-
-### 设计缺陷
-- [ ] `OneBotAdapter.ReloadConfigAsync` — 连接变更后不重启 WS
-- [ ] `ApiClientCfg.ConversationHistory` — 运行时状态混在配置对象中
-- [ ] `Component/ChannelAccessAdapter.cs` — 4 个接口方法全是 TODO stub，已注册但无实际功能
-- [ ] `ChannelEngine.cs:645` — `ToolContext = null!` null-forgiving 赋值，访问即 NRE

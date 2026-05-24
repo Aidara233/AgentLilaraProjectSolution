@@ -13,6 +13,7 @@ namespace AgentCoreProcessor.Client
     {
         protected ApiClientCfg apiClientCfg;
         protected List<ToolDefinition>? tools;
+        private readonly List<Message> _conversationHistory = new();
 
         public ApiClientCfg Config
         {
@@ -34,7 +35,7 @@ namespace AgentCoreProcessor.Client
 
         public IModelClient AddMessage(string role, string content, string? name = null)
         {
-            apiClientCfg.ConversationHistory.Add(new Message
+            _conversationHistory.Add(new Message
             {
                 Role = role,
                 Content = content,
@@ -60,7 +61,7 @@ namespace AgentCoreProcessor.Client
             foreach (var path in imagePaths.Where(p => !string.IsNullOrEmpty(p)))
                 parts.Add(ContentPart.FromImagePath(path));
 
-            apiClientCfg.ConversationHistory.Add(new Message
+            _conversationHistory.Add(new Message
             {
                 Role = role,
                 Content = text ?? "",
@@ -71,34 +72,34 @@ namespace AgentCoreProcessor.Client
 
         public IModelClient ClearConversationHistory()
         {
-            apiClientCfg.ConversationHistory.Clear();
+            _conversationHistory.Clear();
             return this;
         }
 
         public List<Message> GetConversationHistory()
         {
-            var merged = new List<Message>(apiClientCfg.PresetMessages.Count + apiClientCfg.ConversationHistory.Count);
+            var merged = new List<Message>(apiClientCfg.PresetMessages.Count + _conversationHistory.Count);
             merged.AddRange(apiClientCfg.PresetMessages);
-            merged.AddRange(apiClientCfg.ConversationHistory);
+            merged.AddRange(_conversationHistory);
             return merged;
         }
 
         public IModelClient SetConversationHistory(List<Message> history)
         {
-            apiClientCfg.ConversationHistory.Clear();
-            apiClientCfg.ConversationHistory.AddRange(history);
+            _conversationHistory.Clear();
+            _conversationHistory.AddRange(history);
             return this;
         }
 
         public IModelClient RemoveLastMessage()
         {
-            if (apiClientCfg.ConversationHistory.Count > 0)
-                apiClientCfg.ConversationHistory.RemoveAt(apiClientCfg.ConversationHistory.Count - 1);
+            if (_conversationHistory.Count > 0)
+                _conversationHistory.RemoveAt(_conversationHistory.Count - 1);
             return this;
         }
 
         public int GetHistoryCount()
-            => apiClientCfg.PresetMessages.Count + apiClientCfg.ConversationHistory.Count;
+            => apiClientCfg.PresetMessages.Count + _conversationHistory.Count;
 
         // ── 子类实现 ──
 

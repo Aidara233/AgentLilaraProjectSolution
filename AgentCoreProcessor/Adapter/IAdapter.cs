@@ -14,7 +14,7 @@ namespace AgentCoreProcessor.Adapter
         Task<string?> SendMessageAsync(OutgoingMessage message);
         Task StartAsync(CancellationToken ct = default);
         Task StopAsync();
-        Task ReloadConfigAsync() => Task.CompletedTask;
+        Task<bool> ReloadConfigAsync() => Task.FromResult(false);
         AdapterStatus GetStatus();
         Task<ActionResult> ExecuteActionAsync(string action, Dictionary<string, string> parameters) =>
             Task.FromResult(new ActionResult { Success = false, Error = "Not supported" });

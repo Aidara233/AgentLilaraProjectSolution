@@ -283,8 +283,7 @@ namespace AgentCoreProcessor.Adapter
             var adapter = adapters.GetValueOrDefault(idOrPlatform)
                 ?? GetAdapter(idOrPlatform);
             if (adapter == null) return false;
-            await adapter.ReloadConfigAsync();
-            return true;
+            return await adapter.ReloadConfigAsync();
         }
 
         // ── 高层语法糖 ──
