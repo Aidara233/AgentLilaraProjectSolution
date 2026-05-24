@@ -81,12 +81,10 @@ namespace AgentCoreProcessor.Engine
                 // 本轮注入
                 var roundInject = await _host.BuildRoundInjectAsync();
 
-                // 拼装消息：历史 + 本轮注入 + 上轮工具结果
+                // 拼装消息：历史 + 本轮注入
                 var messages = new List<Message>(_history);
                 if (roundInject != null)
                     messages.AddRange(roundInject);
-                if (LastRoundResults != null && LastRoundCalls != null && LastRoundResults.Count > 0)
-                    messages.Add(FormatToolResults(LastRoundCalls, LastRoundResults));
 
                 // 调模型（内层重试：同样 messages 最多尝试 MaxAttempts 次）
                 ModelOutput output;
@@ -204,6 +202,9 @@ namespace AgentCoreProcessor.Engine
 
                 LastRoundCalls = output.ToolCalls;
                 LastRoundResults = results;
+
+                // 工具结果加入历史（Claude API 要求 tool_use 后必须跟 tool_result）
+                _history.Add(FormatToolResults(output.ToolCalls, results));
 
                 // wait 工具 → 停止
                 if (output.ToolCalls.Any(c => c.Tool == "wait"))
