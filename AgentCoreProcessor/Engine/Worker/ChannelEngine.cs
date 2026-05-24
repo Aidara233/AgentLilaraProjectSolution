@@ -933,13 +933,12 @@ namespace AgentCoreProcessor.Engine
                     }
                 }
             }
-            else if (output.IsText && currentLastMsg != null && currentLastSc != null && currentParticipantSnapshot != null)
+            else if (output.IsText)
             {
-                // 无工具调用时的文本回退（模型未使用 speak 工具直接输出文本）
-                var text = output.Text!;
-                text = await ProcessPokeMarkers(text, currentLastMsg);
-                if (!string.IsNullOrEmpty(text))
-                    await SendSegmentsAsync(text, currentLastMsg, currentLastSc, currentParticipantSnapshot);
+                // Express 模式只能通过工具调用发言（speak/send_media 等），
+                // 模型直接输出的文本被丢弃，防止绕过工具系统
+                Signal.Event(LogGroup.Engine, "Express文本已丢弃",
+                    new { channelId, text = output.Text, reason = "模型未使用工具调用直接输出文本" });
             }
 
             // Post-processing
