@@ -472,6 +472,9 @@ namespace AgentCoreProcessor.Engine
                 catch (Exception ex) { Signal.Warn(LogGroup.Engine, $"InjectProvider.Start失败: {p.GetType().Name}", new { provider = p.GetType().Name, error = ex.Message }); }
             }
 
+            // Component prompt sections
+            BuildComponentInjections(msgs);
+
             if (msgs.Count > 0)
             {
                 Signal.Event(LogGroup.Engine, "上下文组装完成", new
@@ -484,6 +487,26 @@ namespace AgentCoreProcessor.Engine
             }
 
             return msgs.Count > 0 ? msgs : null;
+        }
+
+        private void BuildComponentInjections(List<Message> msgs)
+        {
+            if (componentHost != null)
+            {
+                var groups = ToolListFormatter.CollectGroups(componentHost, ctx.GlobalComponentHost);
+                var overview = ToolListFormatter.BuildToolOverviewSection(groups);
+                if (overview != null)
+                    msgs.Add(new Message { Role = "user", Content = overview });
+
+                var sections = componentHost.BuildPromptSections();
+                foreach (var s in sections)
+                    msgs.Add(new Message { Role = "user", Content = s });
+
+                var globalSections = ctx.GlobalComponentHost?.BuildPromptSections(
+                    new LoopInfo(LoopId.System, "system")) ?? new();
+                foreach (var s in globalSections)
+                    msgs.Add(new Message { Role = "user", Content = s });
+            }
         }
 
         async Task<List<Message>?> IAgentHost.BuildRoundInjectAsync()

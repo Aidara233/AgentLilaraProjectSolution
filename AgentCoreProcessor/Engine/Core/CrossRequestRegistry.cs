@@ -58,6 +58,7 @@ internal class CrossRequestRegistry
 
         AppendToJournal(request);
         OnRequestSubmitted?.Invoke(initiatorId);
+        _bus.Deliver(request);
 
         return request;
     }
