@@ -215,11 +215,13 @@ internal class ChannelInfoSource : IDataSource
 
         string engineStatus;
         bool extractionRunning = false;
+        int extractedCount = 0;
         if (hasEngine)
         {
             var snap = eng!.GetSnapshot();
             engineStatus = snap.IsBusy ? "运行" : "待机";
             extractionRunning = snap.ExtractionRunning;
+            extractedCount = snap.ExtractedMessageCount;
         }
         else
         {
@@ -238,8 +240,8 @@ internal class ChannelInfoSource : IDataSource
             ["importance"] = config.Importance,
             ["messages"] = msgCount.ToString(),
             ["extraction"] = extractionRunning
-                ? $"提取中... ({channel.LastExtractedMessageId} / {msgCount})"
-                : $"{channel.LastExtractedMessageId} / {msgCount}",
+                ? $"提取中... ({extractedCount} / {msgCount})"
+                : $"{extractedCount} / {msgCount}",
             ["config"] = $"活跃 {config.ActiveExtractionThreshold} | 潜水 {config.LurkingExtractionThreshold}"
         };
         if (disabledActions.Count > 0)
