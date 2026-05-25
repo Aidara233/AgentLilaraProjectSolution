@@ -1157,8 +1157,11 @@ namespace AgentCoreProcessor.Engine
                 var recentMsgs = await ctx.Session.GetContextByChannelAsync(channelId, ExpressHistoryMaxMessages);
                 if (recentMsgs.Count > 0)
                 {
-                    // 按游标分离：已消费的为历史
-                    var historyMsgs = recentMsgs.Where(m => m.Id <= _lastConsumedMessageId).ToList();
+                    // Express：按游标分离，已消费的为历史
+                    // Working：全量注入初始上下文，不切割（BuildRoundInjectAsync 内容不持久化到 _history）
+                    var historyMsgs = isWorkingMode
+                        ? recentMsgs.ToList()
+                        : recentMsgs.Where(m => m.Id <= _lastConsumedMessageId).ToList();
                     if (historyMsgs.Count > 0)
                     {
                         var histSb = new StringBuilder("[对话历史]\n");
