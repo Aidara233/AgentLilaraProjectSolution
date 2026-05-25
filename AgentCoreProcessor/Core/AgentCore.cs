@@ -189,8 +189,7 @@ namespace AgentCoreProcessor.Core
             MergeTools(toolDefs, AdditionalTools);
 
             NativeToolCallHandler handler = new(toolDefs);
-            await GenerateWithToolsAsync(toolDefs, handler.OnEvent,
-                onRetryReset: () => handler = new(toolDefs));
+            await GenerateWithToolsAsync(toolDefs, handler.OnEvent);
             return handler.GetResult();
         }
 
@@ -198,8 +197,7 @@ namespace AgentCoreProcessor.Core
             List<ToolDefinition> expressDefs)
         {
             ExpressToolCallHandler handler = new(expressDefs);
-            await GenerateWithToolsAsync(expressDefs, handler.OnEvent,
-                onRetryReset: () => handler = new(expressDefs));
+            await GenerateWithToolsAsync(expressDefs, handler.OnEvent);
             return handler.GetResult();
         }
 

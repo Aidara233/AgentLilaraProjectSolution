@@ -1,4 +1,4 @@
-using AgentCoreProcessor.Config;
+﻿using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Engine.Modules;
@@ -67,8 +67,7 @@ namespace AgentCoreProcessor.Core
         protected async Task<Usage> GenerateWithToolsAsync(
             List<ToolDefinition> toolDefs,
             Action<Models.StreamEvent> onEvent,
-            CancellationToken ct = default,
-            Action? onRetryReset = null)
+            CancellationToken ct = default)
         {
             processor.Client.SetTools(toolDefs);
             var reasoningLog = new System.Text.StringBuilder();
@@ -100,8 +99,7 @@ namespace AgentCoreProcessor.Core
                 caller = CallerTag
             });
 
-            // 提取事件处理器为 local function，首次和重试共用同一逻辑
-            Action<Models.StreamEvent> MakeHandler(bool isRetry) => evt =>
+            Action<Models.StreamEvent> OnStreamEvent = evt =>
             {
                 if (!firstTokenLogged && (
                     evt.Type == Models.StreamEventType.Text ||
@@ -109,7 +107,7 @@ namespace AgentCoreProcessor.Core
                     evt.Type == Models.StreamEventType.ToolUseStart))
                 {
                     firstTokenLogged = true;
-                    Signal.Debug(LogGroup.Model, isRetry ? "首token到达(重试)" : "首token到达",
+                    Signal.Debug(LogGroup.Model, "首token到达",
                         new { elapsed_ms = sw.ElapsedMilliseconds });
                 }
 
@@ -134,42 +132,15 @@ namespace AgentCoreProcessor.Core
                 onEvent(evt);
             };
 
-            Exception? callError = null;
             try
             {
-                await processor.Client.StreamChatWithToolsAsync(MakeHandler(false), ct);
+                await processor.Client.StreamChatWithToolsAsync(OnStreamEvent, ct);
                 LogOutput(BuildOutputContent(textLog, toolCallLog), reasoningLog.ToString(), usage);
             }
-            catch (Exception ex)
+            catch// (Exception ex)
             {
-                callError = ex;
-                // 失败也写半截文件日志，但不记 token 到数据库
                 LogOutput(BuildOutputContent(textLog, toolCallLog), reasoningLog.ToString(), usage, isError: true);
-
-                cfg = processor.Client.Config;
-                Signal.Error(LogGroup.Model, "模型调用失败，准备重试",
-                    new { error = ex.Message, elapsed_ms = sw.ElapsedMilliseconds });
-
-                // 重试一次：清空所有半截数据，通知调用方重建处理器
-                reasoningLog.Clear();
-                textLog.Clear();
-                toolCallLog.Clear();
-                currentToolName = null;
-                currentInputJson.Clear();
-                usage = new();
-                firstTokenLogged = false;
-                callError = null;
-                onRetryReset?.Invoke();
-                try
-                {
-                    await processor.Client.StreamChatWithToolsAsync(MakeHandler(true), ct);
-                    LogOutput(BuildOutputContent(textLog, toolCallLog), reasoningLog.ToString(), usage);
-                }
-                catch (Exception retryEx)
-                {
-                    callError = retryEx;
-                    LogOutput(BuildOutputContent(textLog, toolCallLog), reasoningLog.ToString(), usage, isError: true);
-                }
+                throw;
             }
 
             span.SetCloseDetail(new
@@ -180,12 +151,8 @@ namespace AgentCoreProcessor.Core
                 tokens_in = usage.PromptTokens,
                 tokens_out = usage.CompletionTokens,
                 cached_tokens = usage.PromptCacheHitTokens ?? usage.CacheReadInputTokens,
-                tool_calls = toolCallLog.Count,
-                error = callError?.Message
+                tool_calls = toolCallLog.Count
             });
-
-            if (callError != null)
-                throw callError;
 
             return usage;
         }
