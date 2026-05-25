@@ -509,17 +509,19 @@ namespace AgentCoreProcessor.Engine
             {
                 var groups = ToolListFormatter.CollectGroups(componentHost, ctx.GlobalComponentHost);
                 var overview = ToolListFormatter.BuildToolOverviewSection(groups);
-                if (overview != null)
+                if (!string.IsNullOrEmpty(overview))
                     msgs.Add(new Message { Role = "user", Content = overview });
 
                 var sections = componentHost.BuildPromptSections();
                 foreach (var s in sections)
-                    msgs.Add(new Message { Role = "user", Content = s });
+                    if (!string.IsNullOrEmpty(s))
+                        msgs.Add(new Message { Role = "user", Content = s });
 
                 var globalSections = ctx.GlobalComponentHost?.BuildPromptSections(
                     new LoopInfo(LoopId.System, "system")) ?? new();
                 foreach (var s in globalSections)
-                    msgs.Add(new Message { Role = "user", Content = s });
+                    if (!string.IsNullOrEmpty(s))
+                        msgs.Add(new Message { Role = "user", Content = s });
             }
         }
 

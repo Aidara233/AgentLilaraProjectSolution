@@ -269,7 +269,7 @@ namespace AgentCoreProcessor.Engine
                     return new Message
                     {
                         Role = "assistant",
-                        Content = output.Thinking ?? "[tool calls]",
+                        Content = !string.IsNullOrEmpty(output.Thinking) ? output.Thinking : "[tool calls]",
                         ContentParts = parts
                     };
                 }

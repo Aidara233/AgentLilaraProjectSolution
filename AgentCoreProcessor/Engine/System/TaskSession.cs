@@ -127,7 +127,9 @@ namespace AgentCoreProcessor.Engine
 
                     if (output.IsText || output.ToolCalls == null || output.ToolCalls.Count == 0)
                     {
-                        LastResult = output.Thinking ?? output.Text ?? "(完成，无输出)";
+                        LastResult = !string.IsNullOrEmpty(output.Thinking) ? output.Thinking
+                            : !string.IsNullOrEmpty(output.Text) ? output.Text
+                            : "(完成，无输出)";
                         conversationHistory.Add(new Message { Role = "assistant", Content = LastResult });
                         return;
                     }

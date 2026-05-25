@@ -1118,7 +1118,8 @@ namespace AgentCoreProcessor.Engine
                     _loadedConversation = new List<Message>();
                     foreach (var round in rounds)
                         foreach (var msg in round)
-                            _loadedConversation.Add(msg);
+                            if (!IsEmptyMessage(msg))
+                                _loadedConversation.Add(msg);
                 }
             }
         }
@@ -1365,17 +1366,19 @@ namespace AgentCoreProcessor.Engine
             {
                 var groups = ToolListFormatter.CollectGroups(componentHost, ctx.GlobalComponentHost);
                 var overview = ToolListFormatter.BuildToolOverviewSection(groups);
-                if (overview != null)
+                if (!string.IsNullOrEmpty(overview))
                     msgs.Add(new Message { Role = "user", Content = overview });
 
                 var sections = componentHost.BuildPromptSections();
                 foreach (var s in sections)
-                    msgs.Add(new Message { Role = "user", Content = s });
+                    if (!string.IsNullOrEmpty(s))
+                        msgs.Add(new Message { Role = "user", Content = s });
 
                 var globalSections = ctx.GlobalComponentHost?.BuildPromptSections(
                     new LoopInfo(channelId.ToString(), "channel")) ?? new();
                 foreach (var s in globalSections)
-                    msgs.Add(new Message { Role = "user", Content = s });
+                    if (!string.IsNullOrEmpty(s))
+                        msgs.Add(new Message { Role = "user", Content = s });
             }
         }
 
@@ -1394,6 +1397,7 @@ namespace AgentCoreProcessor.Engine
             var currentRound = new List<Message>();
             foreach (var msg in conversation)
             {
+                if (IsEmptyMessage(msg)) continue;
                 currentRound.Add(msg);
                 if (msg.Role == "assistant")
                 {
@@ -1408,6 +1412,9 @@ namespace AgentCoreProcessor.Engine
             persistence.SaveContext(contextSummary, isWorkingMode ? "working" : "express", rounds,
                 _lastConsumedMessageId, _escalateReason);
         }
+
+        private static bool IsEmptyMessage(Message m)
+            => string.IsNullOrEmpty(m.Content) && (m.ContentParts == null || m.ContentParts.Count == 0);
 
         private void EndWorkingSession()
         {
