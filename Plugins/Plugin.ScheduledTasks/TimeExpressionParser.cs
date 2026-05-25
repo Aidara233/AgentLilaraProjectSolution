@@ -90,7 +90,7 @@ internal static class TimeExpressionParser
             _ => now
         };
 
-        return ParseResult.Ok(next, false);
+        return ParseResult.Ok(Normalize(next), false);
     }
 
     private static ParseResult ParseAbsolute(string expression, DateTime now)
@@ -157,7 +157,7 @@ internal static class TimeExpressionParser
             // All fields concrete: one-shot
             try
             {
-                var dt = new DateTime(year!.Value, month!.Value, day!.Value, hour, minute, second);
+                var dt = Normalize(new DateTime(year!.Value, month!.Value, day!.Value, hour, minute, second));
                 return ParseResult.Ok(dt, false);
             }
             catch (ArgumentOutOfRangeException)
@@ -218,22 +218,22 @@ internal static class TimeExpressionParser
         return null;
     }
 
+    private static DateTime Normalize(DateTime dt)
+        => DateTime.SpecifyKind(dt, DateTimeKind.Local);
+
     private static DateTime? BuildCandidate(ParsedExpression expr, DateTime cursor)
     {
-        // Build a candidate from the expression, using cursor to fill wildcards
         int y = expr.Year ?? cursor.Year;
         int m = expr.Month ?? cursor.Month;
         int d = expr.Day ?? cursor.Day;
 
-        // Validate day exists in this month (e.g. Feb 29 only in leap years)
         var daysInMonth = DateTime.DaysInMonth(y, m);
         if (d > daysInMonth)
             return null;
 
         try
         {
-            var dt = new DateTime(y, m, d, expr.Hour, expr.Minute, expr.Second);
-            return dt;
+            return Normalize(new DateTime(y, m, d, expr.Hour, expr.Minute, expr.Second));
         }
         catch (ArgumentOutOfRangeException)
         {
@@ -243,28 +243,31 @@ internal static class TimeExpressionParser
 
     private static DateTime AdvanceCursor(ParsedExpression expr, DateTime cursor)
     {
-        // Determine which field to advance based on which wildcards exist
         if (expr.DayOfWeek != null)
-        {
-            // Weekly: advance to next day
             return cursor.Date.AddDays(1);
-        }
+
         if (expr.Day == null)
-        {
-            // Daily (with or without month/year): advance by one day
             return cursor.Date.AddDays(1);
-        }
+
         if (expr.Month == null)
         {
-            // Monthly: advance by one month
-            return cursor.Date.AddMonths(1);
+            // Monthly: advance to the specified day in the next month
+            var nextMonth = cursor.AddMonths(1);
+            return new DateTime(nextMonth.Year, nextMonth.Month, 1);
         }
+
         if (expr.Year == null)
         {
-            // Yearly: advance by one year
-            return cursor.Date.AddYears(1);
+            // Yearly: advance to the specified month+day in the next year
+            var targetMonth = expr.Month!.Value;
+            var targetDay = expr.Day!.Value;
+            // Jump to target month in the next year
+            var nextYear = cursor.Year + 1;
+            var maxDay = DateTime.DaysInMonth(nextYear, targetMonth);
+            var day = Math.Min(targetDay, maxDay);
+            return new DateTime(nextYear, targetMonth, day);
         }
-        // All fields concrete (non-recurring): won't be called normally
+
         return cursor.Date.AddDays(1);
     }
 

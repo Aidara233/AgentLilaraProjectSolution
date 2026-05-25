@@ -43,12 +43,28 @@ public class ScheduledTaskStore
             if (!File.Exists(_filePath))
                 return new List<ScheduledTaskEntry>();
             var json = File.ReadAllText(_filePath);
-            return JsonSerializer.Deserialize<List<ScheduledTaskEntry>>(json)
-                   ?? new List<ScheduledTaskEntry>();
+            var tasks = JsonSerializer.Deserialize<List<ScheduledTaskEntry>>(json)
+                       ?? new List<ScheduledTaskEntry>();
+            NormalizeDateTimes(tasks);
+            return tasks;
         }
         catch
         {
             return new List<ScheduledTaskEntry>();
+        }
+    }
+
+    private static DateTime Normalize(DateTime dt) => DateTime.SpecifyKind(dt, DateTimeKind.Local);
+
+    private static void NormalizeDateTimes(List<ScheduledTaskEntry> tasks)
+    {
+        foreach (var t in tasks)
+        {
+            if (t.NextFireTime.HasValue)
+                t.NextFireTime = DateTime.SpecifyKind(t.NextFireTime.Value, DateTimeKind.Local);
+            if (t.LastFiredAt.HasValue)
+                t.LastFiredAt = DateTime.SpecifyKind(t.LastFiredAt.Value, DateTimeKind.Local);
+            t.CreatedAt = DateTime.SpecifyKind(t.CreatedAt, DateTimeKind.Local);
         }
     }
 
@@ -71,8 +87,8 @@ public class ScheduledTaskStore
                 Id = Guid.NewGuid().ToString(),
                 Description = description,
                 Expression = expression,
-                CreatedAt = DateTime.Now,
-                NextFireTime = nextFire,
+                CreatedAt = Normalize(DateTime.Now),
+                NextFireTime = nextFire.HasValue ? Normalize(nextFire.Value) : null,
                 IsRecurring = isRecurring,
                 Enabled = true
             };
