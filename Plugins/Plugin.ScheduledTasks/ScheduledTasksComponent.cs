@@ -47,15 +47,19 @@ public class ScheduledTasksComponent : LoopComponentBase
         _cancelTool = new CancelTaskTool(_store);
         _listTool = new ListTasksTool(_store);
 
+        // Start background timer immediately — OnEnabledAsync is NOT called
+        // automatically during init (ComponentHost only calls OnInitAsync)
+        StartTimer();
+
         // Cold-start recovery: fire tasks that became due while inactive
-        if (reason == InitReason.Fresh || reason == InitReason.Reload)
-            RecoverOverdueTasks();
+        RecoverOverdueTasks();
 
         return Task.CompletedTask;
     }
 
     public override Task OnEnabledAsync()
     {
+        // Called when component transitions disabled→enabled (e.g. context.Enable())
         StartTimer();
         RecoverOverdueTasks();
         return Task.CompletedTask;
@@ -73,6 +77,13 @@ public class ScheduledTasksComponent : LoopComponentBase
         _timerCts?.Dispose();
         _timerCts = null;
         return Task.CompletedTask;
+    }
+
+    public override Task OnBeforeInvokeAsync()
+    {
+        // Belt-and-suspenders: check due tasks before every AI round,
+        // in case the background timer died or the channel was just activated
+        return CheckDueTasks();
     }
 
     public override string? BuildPromptSection()
