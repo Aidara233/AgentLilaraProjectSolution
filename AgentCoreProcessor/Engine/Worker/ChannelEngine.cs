@@ -1254,6 +1254,9 @@ namespace AgentCoreProcessor.Engine
         {
             var msgs = new List<Message>();
 
+            // 每轮注入当前时间
+            msgs.Add(new Message { Role = "user", Content = $"[系统] 当前时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss dddd} UTC+8 (Asia/Shanghai)" });
+
             // Drain signal buffer — format each signal type
             while (_signalBuffer.TryDequeue(out var signal))
             {

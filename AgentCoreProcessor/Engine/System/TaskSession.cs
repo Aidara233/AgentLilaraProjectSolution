@@ -229,7 +229,7 @@ namespace AgentCoreProcessor.Engine
         {
             var sb = new StringBuilder("[子 agent 状态]\n");
             sb.AppendLine($"会话 ID: {SessionId}");
-            sb.AppendLine($"当前时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"当前时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss dddd} UTC+8 (Asia/Shanghai)");
             sb.AppendLine($"系统空闲: {(ctx.IsIdle ? "是" : "否")}");
             sb.AppendLine("提示: 完成任务后直接输出结果文本（不调用工具），循环会自动结束。");
             return sb.ToString();

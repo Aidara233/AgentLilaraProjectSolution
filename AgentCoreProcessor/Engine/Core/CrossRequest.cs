@@ -34,7 +34,7 @@ public class CrossRequest
     public string Title { get; set; } = "";
     public string Content { get; set; } = "";
     public CrossRequestState State { get; set; } = CrossRequestState.Submitted;
-    public DateTime SubmittedAt { get; set; } = DateTime.UtcNow;
+    public DateTime SubmittedAt { get; set; } = DateTime.Now;
     public DateTime ExpiresAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public List<CrossRequestResponse> Responses { get; set; } = new();
@@ -48,7 +48,7 @@ public class CrossRequestResponse
     public string ResponderId { get; set; } = "";
     public CrossRequestResponseType Type { get; set; }
     public string Content { get; set; } = "";
-    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+    public DateTime Timestamp { get; set; } = DateTime.Now;
 }
 
 public class DelegationNotification
@@ -59,5 +59,5 @@ public class DelegationNotification
     public CrossRequestResponseType ResponseType { get; set; }
     public string? ResponderId { get; set; }
     public string? Content { get; set; }
-    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+    public DateTime Timestamp { get; set; } = DateTime.Now;
 }

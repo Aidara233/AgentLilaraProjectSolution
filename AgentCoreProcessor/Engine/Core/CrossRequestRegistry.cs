@@ -102,7 +102,7 @@ internal class CrossRequestRegistry
             TargetId = targetId,
             Title = title,
             Content = content,
-            ExpiresAt = DateTime.UtcNow + timeout,
+            ExpiresAt = DateTime.Now + timeout,
             TraceSignalId = SignalContext.Current?.SignalId,
             TraceParentSpanId = SignalContext.Current?.CurrentSpanId
         };
@@ -159,18 +159,18 @@ internal class CrossRequestRegistry
                 break;
             case CrossRequestResponseType.Reject:
                 request.State = CrossRequestState.Rejected;
-                request.CompletedAt = DateTime.UtcNow;
+                request.CompletedAt = DateTime.Now;
                 break;
             case CrossRequestResponseType.Progress:
                 request.State = CrossRequestState.InProgress;
                 break;
             case CrossRequestResponseType.Complete:
                 request.State = CrossRequestState.Completed;
-                request.CompletedAt = DateTime.UtcNow;
+                request.CompletedAt = DateTime.Now;
                 break;
             case CrossRequestResponseType.Failed:
                 request.State = CrossRequestState.Failed;
-                request.CompletedAt = DateTime.UtcNow;
+                request.CompletedAt = DateTime.Now;
                 break;
             case CrossRequestResponseType.Ignore:
                 break;
@@ -205,7 +205,7 @@ internal class CrossRequestRegistry
         if (r.State is CrossRequestState.Archived) return;
 
         r.State = CrossRequestState.Archived;
-        r.CompletedAt ??= DateTime.UtcNow;
+        r.CompletedAt ??= DateTime.Now;
         AppendToJournal(r);
 
         // 通知所有接受者委托已被归档
@@ -227,7 +227,7 @@ internal class CrossRequestRegistry
 
     public void EnforceTimeouts()
     {
-        var now = DateTime.UtcNow;
+        var now = DateTime.Now;
         foreach (var (_, request) in _requests)
         {
             if (request.ExpiresAt <= now
@@ -377,7 +377,7 @@ internal class CrossRequestRegistry
 
     public void Cleanup(TimeSpan maxAge)
     {
-        var cutoff = DateTime.UtcNow - maxAge;
+        var cutoff = DateTime.Now - maxAge;
         var toRemove = _requests.Values
             .Where(r => r.State is CrossRequestState.Archived or CrossRequestState.Timeout
                         && r.CompletedAt < cutoff)
