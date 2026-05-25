@@ -9,20 +9,23 @@ namespace AgentLilara.PluginSDK.Services
     /// </summary>
     public interface IAgentMessaging
     {
-        /// <summary>提交请求并等待首个回应（评估/超时）。</summary>
+        /// <summary>提交请求并等待首个回应（评估/超时）。保留用于特殊场景。</summary>
         Task<CrossRequestResult> SubmitAndWaitAsync(
             string? targetId, string title, string content,
             Dictionary<string, string>? metadata = null,
             TimeSpan? timeout = null);
 
-        /// <summary>Fire-and-forget 通知。</summary>
+        /// <summary>Fire-and-forget 提交请求。状态变更通过通知队列送达。</summary>
         string SubmitFireAndForget(string? targetId, string title, string content);
 
         /// <summary>读取当前循环的待处理请求。</summary>
         List<CrossRequestInfo> Receive(int maxCount = 10);
 
-        /// <summary>当前循环回应某请求。</summary>
-        void Respond(string requestId, CrossRequestResponseType type, string content);
+        /// <summary>当前循环回应某请求。返回是否成功。</summary>
+        bool Respond(string requestId, CrossRequestResponseType type, string content);
+
+        /// <summary>排出待通知的委托状态变更（由 inject 模块消费）。</summary>
+        List<DelegationNotificationInfo> DrainNotifications();
 
         /// <summary>查询活跃请求。</summary>
         List<CrossRequestInfo> GetActiveRequests();
@@ -87,6 +90,17 @@ namespace AgentLilara.PluginSDK.Services
         public string ResponderId { get; set; } = "";
         public string Type { get; set; } = "";
         public string Content { get; set; } = "";
+        public DateTime Timestamp { get; set; }
+    }
+
+    public class DelegationNotificationInfo
+    {
+        public string RequestId { get; set; } = "";
+        public string Title { get; set; } = "";
+        public string NewState { get; set; } = "";
+        public string ResponseType { get; set; } = "";
+        public string? ResponderId { get; set; }
+        public string? Content { get; set; }
         public DateTime Timestamp { get; set; }
     }
 

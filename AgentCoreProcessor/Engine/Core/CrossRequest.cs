@@ -50,3 +50,14 @@ public class CrossRequestResponse
     public string Content { get; set; } = "";
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
 }
+
+public class DelegationNotification
+{
+    public string RequestId { get; set; } = "";
+    public string Title { get; set; } = "";
+    public CrossRequestState NewState { get; set; }
+    public CrossRequestResponseType ResponseType { get; set; }
+    public string? ResponderId { get; set; }
+    public string? Content { get; set; }
+    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+}

@@ -20,6 +20,9 @@ namespace AgentCoreProcessor.WebUI.Services
         public int InputTokens { get; init; }
         public int OutputTokens { get; init; }
         public int CacheReadTokens { get; init; }
+        public int CacheHitTokens { get; init; }
+        public int CacheCreationTokens { get; init; }
+        public bool IsError { get; init; }
         public bool IsJson { get; init; }
     }
 
@@ -30,7 +33,9 @@ namespace AgentCoreProcessor.WebUI.Services
         public string? Provider { get; init; }
         public string? Timestamp { get; init; }
         public string? Caller { get; init; }
+        public string? SystemPrompt { get; init; }
         public string? SystemPromptHash { get; init; }
+        public bool IsError { get; init; }
         public List<string>? Tools { get; init; }
         public List<ModelLogMessage> Messages { get; init; } = new();
         public string? Output { get; init; }
@@ -42,6 +47,20 @@ namespace AgentCoreProcessor.WebUI.Services
     {
         public string Role { get; init; } = "";
         public string Content { get; init; } = "";
+        public List<ModelLogContentPart>? ContentParts { get; init; }
+    }
+
+    internal class ModelLogContentPart
+    {
+        public string Type { get; init; } = "";
+        public string? Text { get; init; }
+        public string? ToolUseId { get; init; }
+        public string? ToolName { get; init; }
+        public string? ToolInput { get; init; }
+        public bool IsError { get; init; }
+        public string? ImageMediaType { get; init; }
+        public string? ImagePath { get; init; }
+        public int? ImageBase64Length { get; init; }
     }
 
     internal class ModelLogUsage
@@ -52,6 +71,7 @@ namespace AgentCoreProcessor.WebUI.Services
         public int CacheCreationTokens { get; init; }
         public int CacheReadTokens { get; init; }
         public int CacheHitTokens { get; init; }
+        public int CacheMissTokens { get; init; }
     }
 
     internal class ModelLogService
@@ -111,10 +131,34 @@ namespace AgentCoreProcessor.WebUI.Services
                 {
                     foreach (var item in msgArr)
                     {
+                        // 解析 contentParts（含 image 详情）
+                        List<ModelLogContentPart>? parts = null;
+                        if (item["contentParts"] is JArray partsArr)
+                        {
+                            parts = new List<ModelLogContentPart>();
+                            foreach (var p in partsArr)
+                            {
+                                var img = p["image"];
+                                parts.Add(new ModelLogContentPart
+                                {
+                                    Type = p["type"]?.ToString() ?? "",
+                                    Text = p["text"]?.ToString(),
+                                    ToolUseId = p["toolUseId"]?.ToString(),
+                                    ToolName = p["toolName"]?.ToString(),
+                                    ToolInput = p["toolInput"]?.ToString(),
+                                    IsError = p["isError"]?.Value<bool>() ?? false,
+                                    ImageMediaType = img?["mediaType"]?.ToString(),
+                                    ImagePath = img?["path"]?.ToString(),
+                                    ImageBase64Length = img?["base64Length"]?.Value<int>()
+                                });
+                            }
+                        }
+
                         messages.Add(new ModelLogMessage
                         {
                             Role = item["role"]?.ToString() ?? "",
-                            Content = item["content"]?.ToString() ?? ""
+                            Content = item["content"]?.ToString() ?? "",
+                            ContentParts = parts
                         });
                     }
                 }
@@ -151,7 +195,8 @@ namespace AgentCoreProcessor.WebUI.Services
                         TotalTokens = u["totalTokens"]?.Value<int>() ?? 0,
                         CacheCreationTokens = u["cacheCreationTokens"]?.Value<int>() ?? 0,
                         CacheReadTokens = u["cacheReadTokens"]?.Value<int>() ?? 0,
-                        CacheHitTokens = u["cacheHitTokens"]?.Value<int>() ?? 0
+                        CacheHitTokens = u["cacheHitTokens"]?.Value<int>() ?? 0,
+                        CacheMissTokens = u["cacheMissTokens"]?.Value<int>() ?? 0
                     };
                 }
 
@@ -162,7 +207,9 @@ namespace AgentCoreProcessor.WebUI.Services
                     Provider = obj["provider"]?.ToString(),
                     Timestamp = obj["timestamp"]?.ToString(),
                     Caller = obj["caller"]?.ToString(),
+                    SystemPrompt = obj["systemPrompt"]?.ToString(),
                     SystemPromptHash = obj["systemPromptHash"]?.ToString(),
+                    IsError = obj["error"]?.Value<bool>() ?? false,
                     Tools = tools,
                     Messages = messages,
                     Output = obj["output"]?.ToString(),
@@ -233,14 +280,10 @@ namespace AgentCoreProcessor.WebUI.Services
             {
                 try
                 {
-                    using var reader = new StreamReader(fullPath);
-                    var firstChars = new char[4096];
-                    var read = reader.Read(firstChars, 0, firstChars.Length);
-                    var partial = new string(firstChars, 0, read);
-
                     var obj = JObject.Parse(File.ReadAllText(fullPath));
                     var caller = obj["caller"]?.ToString();
                     var usage = obj["usage"];
+                    var isError = obj["error"]?.Value<bool>() ?? name.Contains("_ERROR", StringComparison.OrdinalIgnoreCase);
                     if (usage != null)
                     {
                         return new ModelLogEntry
@@ -251,10 +294,13 @@ namespace AgentCoreProcessor.WebUI.Services
                             Caller = caller,
                             FileSize = entry.FileSize,
                             IsJson = true,
+                            IsError = isError,
                             Model = obj["model"]?.ToString(),
                             InputTokens = usage["inputTokens"]?.Value<int>() ?? 0,
                             OutputTokens = usage["outputTokens"]?.Value<int>() ?? 0,
-                            CacheReadTokens = usage["cacheReadTokens"]?.Value<int>() ?? 0
+                            CacheReadTokens = usage["cacheReadTokens"]?.Value<int>() ?? 0,
+                            CacheHitTokens = usage["cacheHitTokens"]?.Value<int>() ?? 0,
+                            CacheCreationTokens = usage["cacheCreationTokens"]?.Value<int>() ?? 0
                         };
                     }
                     else
@@ -267,6 +313,7 @@ namespace AgentCoreProcessor.WebUI.Services
                             Caller = caller,
                             FileSize = entry.FileSize,
                             IsJson = true,
+                            IsError = isError,
                             Model = obj["model"]?.ToString()
                         };
                     }

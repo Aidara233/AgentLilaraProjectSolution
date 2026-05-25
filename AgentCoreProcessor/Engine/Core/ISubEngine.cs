@@ -145,5 +145,8 @@ namespace AgentCoreProcessor.Engine
 
         /// <summary>插件工具上下文（服务容器）。引擎可动态注册/注销服务。</summary>
         Tool.Host.ToolContextImpl ToolContext { get; }
+
+        /// <summary>信号过滤器管理器。控制各引擎类型的唤醒/可见性过滤。</summary>
+        SignalFilterManager SignalFilters { get; }
     }
 }

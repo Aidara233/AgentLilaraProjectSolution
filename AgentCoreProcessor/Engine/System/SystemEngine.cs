@@ -49,6 +49,7 @@ namespace AgentCoreProcessor.Engine
         // 模块
         private readonly LoopControlModule loopControlModule = new();
         private readonly PendingEventsModule pendingEventsModule = new();
+        private readonly DelegationNotificationModule delegationNotificationModule = new();
         private readonly ContextPersistence persistence;
         private readonly ContextCompressionModule compressionModule;
         private List<EngineModule> modules = null!;
@@ -117,6 +118,7 @@ namespace AgentCoreProcessor.Engine
             modules = new List<EngineModule>
             {
                 pendingEventsModule,         // 优先级 38
+                delegationNotificationModule, // 优先级 39
                 loopControlModule,           // 优先级 60
                 compressionModule            // 优先级 100（不注入 prompt）
             };
@@ -178,12 +180,13 @@ namespace AgentCoreProcessor.Engine
             compressionModule.SetSummary(summary);
             compressionTierModule?.SetSummary(summary);
 
-            // Load persisted rounds into Agent
+            // Load persisted rounds into Agent (skip empty messages)
             if (agent != null && rounds.Count > 0)
             {
                 foreach (var round in rounds)
                     foreach (var msg in round)
-                        agent.AddToHistory(msg);
+                        if (!IsEmptyMessage(msg))
+                            agent.AddToHistory(msg);
             }
         }
 
@@ -195,7 +198,8 @@ namespace AgentCoreProcessor.Engine
             {
                 var lastUser = history[history.Count - 2];
                 var lastAsst = history[history.Count - 1];
-                if (lastUser.Role == "user" && lastAsst.Role == "assistant")
+                if (lastUser.Role == "user" && lastAsst.Role == "assistant"
+                    && !IsEmptyMessage(lastUser) && !IsEmptyMessage(lastAsst))
                 {
                     persistence.AppendRound(
                         new List<Message> { lastUser },
@@ -203,6 +207,9 @@ namespace AgentCoreProcessor.Engine
                 }
             }
         }
+
+        private static bool IsEmptyMessage(Message m)
+            => string.IsNullOrEmpty(m.Content) && (m.ContentParts == null || m.ContentParts.Count == 0);
 
         private (int tokens, int percent) GetContextUsage()
         {
@@ -236,6 +243,8 @@ namespace AgentCoreProcessor.Engine
             _messaging = new Component.AgentMessagingImpl(LoopId.System, ctx.CrossRequests,
                 () => gate.Signal(), loopId => ctx.DelegationBus.IsLoopActive(loopId),
                 () => ctx.DelegationBus.GetActiveLoopIds().ToList());
+            delegationNotificationModule.SetMessaging(_messaging);
+            delegationNotificationModule.SetFilterConfig(ctx.SignalFilters.GetConfig("system"));
             componentHost = new ComponentHost(
                 LoopId.System, "system", _moduleBus, ctx.ComponentServices,
                 () => gate.Signal(),
@@ -284,6 +293,7 @@ namespace AgentCoreProcessor.Engine
             {
                 // 注销委托总线
                 ctx.DelegationBus.UnregisterLoop(LoopId.System);
+                (_messaging as Component.AgentMessagingImpl)?.Detach();
 
                 // 关闭 ComponentHost
                 if (componentHost != null)
@@ -731,16 +741,10 @@ namespace AgentCoreProcessor.Engine
                     var crossReq = ctx.CrossRequests.Get(s.DelegationId!);
                     if (crossReq != null)
                     {
-                        // 新路径：通过 CrossRequestRegistry 完成
                         if (isFailed)
                         {
-                            var channelMsg = $"[系统] 委托「{crossReq.Title.Truncate(30)}」执行遇到问题: {result.Truncate(60)}。系统正在评估是否重试。";
-                            if (LoopId.IsChannel(crossReq.InitiatorId, out var chId))
-                                _messaging?.SubmitFireAndForget(LoopId.ForChannel(chId),
-                                    "委托执行失败", channelMsg);
-                            _messaging?.SubmitFireAndForget(LoopId.System,
-                                "SubAgentFailed",
-                                $"子 agent 执行失败: {result.Truncate(100)}");
+                            ctx.CrossRequests.Respond(s.DelegationId!, LoopId.System,
+                                CrossRequestResponseType.Failed, result);
                         }
                         else
                         {
@@ -748,7 +752,6 @@ namespace AgentCoreProcessor.Engine
                                 CrossRequestResponseType.Complete, result);
                         }
                     }
-                    // else: 旧委托路径，由 TaskSession.DefaultNotifyCompletion 兜底
                 }
                 else
                 {

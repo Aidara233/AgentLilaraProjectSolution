@@ -32,7 +32,13 @@ public class ReportProgressTool : ITool
         if (string.IsNullOrWhiteSpace(progress))
             return Task.FromResult(new ToolResult { Status = "failed", Error = "progress 不能为空" });
 
-        _messaging.Respond(requestId, CrossRequestResponseType.Progress, progress);
+        var ok = _messaging.Respond(requestId, CrossRequestResponseType.Progress, progress);
+        if (!ok)
+            return Task.FromResult(new ToolResult
+            {
+                Status = "failed",
+                Error = $"请求 {requestId} 不存在或状态不可操作"
+            });
 
         return Task.FromResult(new ToolResult
         {

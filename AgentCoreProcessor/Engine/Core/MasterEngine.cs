@@ -113,6 +113,9 @@ namespace AgentCoreProcessor.Engine
         public Tool.Host.PluginLoader PluginLoader => _pluginLoader;
         public Tool.Host.ToolContextImpl ToolContext => _toolContext;
 
+        // ---- ISystemContext: 信号过滤器 ----
+        public SignalFilterManager SignalFilters { get; private set; } = null!;
+
         // ---- 引擎注册表 ----
         private readonly List<IEngineSpawnCheck> spawnChecks = new();
         private readonly List<ISubEngine> activeEngines = new();
@@ -384,6 +387,10 @@ namespace AgentCoreProcessor.Engine
             TrustConfig = TrustProgressionConfig.Load(
                 Path.Combine(PathConfig.StoragePath, "Engine", "TrustProgressionConfig.json"));
 
+            // 信号过滤器配置
+            SignalFilters = new SignalFilterManager(
+                Path.Combine(PathConfig.StoragePath, "Engine", "SignalFilter.json"));
+
             // 人设记忆种子加载（表空时从文件导入）
             await LoadPersonaMemorySeedAsync();
 
@@ -392,18 +399,18 @@ namespace AgentCoreProcessor.Engine
             Directory.CreateDirectory(systemLoopPath);
             DelegationBus = new DelegationBus();
             CrossRequests = new CrossRequestRegistry(systemLoopPath, DelegationBus);
-            CrossRequests.OnRequestSubmitted = initiatorId =>
+            CrossRequests.OnRequestSubmitted += initiatorId =>
             {
                 if (initiatorId == LoopId.System && systemEngine != null)
                     systemEngine.SignalGate();
                 else if (LoopId.IsChannel(initiatorId, out var chId))
                     WakeLoop(initiatorId);
             };
-            CrossRequests.OnRequestUpdated = loopId =>
+            CrossRequests.OnRequestUpdated += loopId =>
             {
                 WakeLoop(loopId);
             };
-            CrossRequests.OnRequestCompleted = request =>
+            CrossRequests.OnRequestCompleted += request =>
             {
                 if (LoopId.IsChannel(request.InitiatorId, out var chId))
                 {

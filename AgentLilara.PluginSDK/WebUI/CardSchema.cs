@@ -87,6 +87,7 @@ public class FormSchema : CardSchema
 {
     public required List<FormField> Fields { get; init; }
     public List<FormGroup>? Groups { get; init; }
+    public bool ShowSubmit { get; init; } = true;
     public bool ShowReset { get; init; } = true;
 }
 
@@ -97,6 +98,7 @@ public class FormField
     public FormFieldType Type { get; init; } = FormFieldType.Text;
     public string? Placeholder { get; init; }
     public string? Description { get; init; }
+    public string? DefaultValue { get; init; }
     public bool Required { get; init; }
     public List<SelectOption>? Options { get; init; }
     public string? Group { get; init; }

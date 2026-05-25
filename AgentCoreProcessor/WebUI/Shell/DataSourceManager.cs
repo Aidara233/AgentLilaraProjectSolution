@@ -27,9 +27,9 @@ internal class DataSourceManager : IDisposable
         }
     }
 
-    public async Task<DataResult?> FetchAsync(string dataSourceId, DataQuery? query = null, CancellationToken ct = default)
+    public async Task<DataResult?> FetchAsync(string? dataSourceId, DataQuery? query = null, CancellationToken ct = default)
     {
-        if (!_sources.TryGetValue(dataSourceId, out var source))
+        if (dataSourceId == null || !_sources.TryGetValue(dataSourceId, out var source))
             return null;
 
         if (!_states.TryGetValue(dataSourceId, out var state))
@@ -77,9 +77,9 @@ internal class DataSourceManager : IDisposable
         return null;
     }
 
-    public async Task<ActionResult> SubmitAsync(string dataSourceId, string action, JsonNode? data = null, CancellationToken ct = default)
+    public async Task<ActionResult> SubmitAsync(string? dataSourceId, string action, JsonNode? data = null, CancellationToken ct = default)
     {
-        if (!_sources.TryGetValue(dataSourceId, out var source))
+        if (dataSourceId == null || !_sources.TryGetValue(dataSourceId, out var source))
             return new ActionResult { Success = false, Message = "数据源不存在" };
 
         try
@@ -104,8 +104,8 @@ internal class DataSourceManager : IDisposable
         }
     }
 
-    public DataSourceState? GetState(string dataSourceId)
-        => _states.TryGetValue(dataSourceId, out var s) ? s : null;
+    public DataSourceState? GetState(string? dataSourceId)
+        => dataSourceId != null && _states.TryGetValue(dataSourceId, out var s) ? s : null;
 
     public void Dispose()
     {

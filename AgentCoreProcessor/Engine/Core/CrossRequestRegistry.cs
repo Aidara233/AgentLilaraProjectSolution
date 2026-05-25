@@ -24,14 +24,65 @@ internal class CrossRequestRegistry
     private readonly object _persistLock = new();
     private readonly DelegationBus _bus;
 
+    private readonly object _eventLock = new();
+    private event Action<string>? _onRequestUpdated;
+    private event Action<string>? _onRequestSubmitted;
+    private event Action<CrossRequest>? _onRequestCompleted;
+
     /// <summary>请求状态变更时触发。参数：受影响的 loopId。</summary>
-    public Action<string>? OnRequestUpdated;
+    public event Action<string> OnRequestUpdated
+    {
+        add { lock (_eventLock) _onRequestUpdated += value; }
+        remove { lock (_eventLock) _onRequestUpdated -= value; }
+    }
 
     /// <summary>请求提交（需要路由）时触发。参数：发起者 loopId。</summary>
-    public Action<string>? OnRequestSubmitted;
+    public event Action<string> OnRequestSubmitted
+    {
+        add { lock (_eventLock) _onRequestSubmitted += value; }
+        remove { lock (_eventLock) _onRequestSubmitted -= value; }
+    }
 
     /// <summary>请求完成/拒绝时触发。参数：完整请求对象。</summary>
-    public Action<CrossRequest>? OnRequestCompleted;
+    public event Action<CrossRequest> OnRequestCompleted
+    {
+        add { lock (_eventLock) _onRequestCompleted += value; }
+        remove { lock (_eventLock) _onRequestCompleted -= value; }
+    }
+
+    private void FireRequestUpdated(string loopId)
+    {
+        Action<string>? handler;
+        lock (_eventLock) { handler = _onRequestUpdated; }
+        try { handler?.Invoke(loopId); }
+        catch (Exception ex)
+        {
+            Signal.Warn(LogGroup.Engine, "OnRequestUpdated handler异常", new { loopId, error = ex.Message });
+        }
+    }
+
+    private void FireRequestSubmitted(string loopId)
+    {
+        Action<string>? handler;
+        lock (_eventLock) { handler = _onRequestSubmitted; }
+        try { handler?.Invoke(loopId); }
+        catch (Exception ex)
+        {
+            Signal.Warn(LogGroup.Engine, "OnRequestSubmitted handler异常", new { loopId, error = ex.Message });
+        }
+    }
+
+    private void FireRequestCompleted(CrossRequest request)
+    {
+        Action<CrossRequest>? handler;
+        lock (_eventLock) { handler = _onRequestCompleted; }
+        try { handler?.Invoke(request); }
+        catch (Exception ex)
+        {
+            Signal.Warn(LogGroup.Engine, "OnRequestCompleted handler异常",
+                new { requestId = request.RequestId, error = ex.Message });
+        }
+    }
 
     public CrossRequestRegistry(string storagePath, DelegationBus bus)
     {
@@ -59,8 +110,11 @@ internal class CrossRequestRegistry
         _requests[request.RequestId] = request;
         _responses[request.RequestId] = new ConcurrentDictionary<string, CrossRequestResponse>();
 
+        Signal.Event(LogGroup.Engine, "委托提交",
+            new { requestId = request.RequestId[..8], initiatorId, targetId, title });
+
         AppendToJournal(request);
-        OnRequestSubmitted?.Invoke(initiatorId);
+        FireRequestSubmitted(initiatorId);
         _bus.Deliver(request);
 
         return request;
@@ -72,9 +126,20 @@ internal class CrossRequestRegistry
         CrossRequestResponseType type, string content)
     {
         if (!_requests.TryGetValue(requestId, out var request))
+        {
+            Signal.Warn(LogGroup.Engine, "委托Respond失败:请求不存在", new { requestId, responderId, type });
             return false;
+        }
         if (request.State is CrossRequestState.Archived or CrossRequestState.Timeout)
+        {
+            Signal.Warn(LogGroup.Engine, "委托Respond失败:状态不可操作",
+                new { requestId, responderId, type, state = request.State.ToString() });
             return false;
+        }
+
+        Signal.Event(LogGroup.Engine, "委托状态变更",
+            new { requestId = requestId[..8], responderId, type = type.ToString(),
+                  title = request.Title, prevState = request.State.ToString() });
 
         var response = new CrossRequestResponse
         {
@@ -112,12 +177,12 @@ internal class CrossRequestRegistry
         }
 
         AppendToJournal(request);
-        OnRequestUpdated?.Invoke(request.InitiatorId);
+        FireRequestUpdated(request.InitiatorId);
         if (type == CrossRequestResponseType.Accept && responderId != request.InitiatorId)
-            OnRequestUpdated?.Invoke(responderId);
+            FireRequestUpdated(responderId);
 
         if (type is CrossRequestResponseType.Complete or CrossRequestResponseType.Failed or CrossRequestResponseType.Reject)
-            OnRequestCompleted?.Invoke(request);
+            FireRequestCompleted(request);
 
         return true;
     }
@@ -153,9 +218,9 @@ internal class CrossRequestRegistry
         foreach (var responderId in acceptedResponders)
         {
             if (responderId != r.InitiatorId)
-                OnRequestUpdated?.Invoke(responderId);
+                FireRequestUpdated(responderId);
         }
-        OnRequestUpdated?.Invoke(r.InitiatorId);
+        FireRequestUpdated(r.InitiatorId);
     }
 
     // ═══════ 超时检查 ═══════
@@ -166,12 +231,14 @@ internal class CrossRequestRegistry
         foreach (var (_, request) in _requests)
         {
             if (request.ExpiresAt <= now
-                && request.State == CrossRequestState.Submitted)
+                && (request.State is CrossRequestState.Submitted
+                    or CrossRequestState.Accepted
+                    or CrossRequestState.InProgress))
             {
                 request.State = CrossRequestState.Timeout;
                 request.CompletedAt = now;
                 AppendToJournal(request);
-                OnRequestUpdated?.Invoke(request.InitiatorId);
+                FireRequestUpdated(request.InitiatorId);
             }
         }
     }
@@ -181,10 +248,10 @@ internal class CrossRequestRegistry
     public List<CrossRequest> GetVisible(string loopId)
     {
         return _requests.Values.Where(r =>
-            r.State is CrossRequestState.Submitted
+            (r.State is CrossRequestState.Submitted
                 or CrossRequestState.Accepted
                 or CrossRequestState.InProgress
-                or CrossRequestState.Rejected
+                or CrossRequestState.Rejected)
             && IsVisibleTo(r, loopId)
             && !HasBeenIgnored(r.RequestId, loopId)
         ).ToList();
@@ -285,7 +352,8 @@ internal class CrossRequestRegistry
                         req.State = CrossRequestState.Timeout;
                         req.CompletedAt = req.ExpiresAt;
                     }
-                    if (req.State == CrossRequestState.InProgress)
+                    if (req.State == CrossRequestState.InProgress
+                        || req.State == CrossRequestState.Accepted)
                         req.State = CrossRequestState.Submitted;
 
                     latest[req.RequestId] = req;

@@ -4,11 +4,14 @@ using OpenAI;
 using OpenAI.Chat;
 using System;
 using System.ClientModel;
+using System.ClientModel.Primitives;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -20,6 +23,7 @@ namespace AgentCoreProcessor.Client
     public class OpenAIModelClient : ModelClientBase
     {
         private ChatClient? _chatClient;
+        private CacheCaptureHandler? _cacheHandler;
         private readonly List<ChatMessage> _pendingToolMessages = new();
 
         public OpenAIModelClient() : base() { }
@@ -29,8 +33,15 @@ namespace AgentCoreProcessor.Client
         {
             if (_chatClient != null) return _chatClient;
 
+            _cacheHandler = new CacheCaptureHandler();
+            var httpClient = new HttpClient(_cacheHandler);
+            httpClient.Timeout = TimeSpan.FromMinutes(10);
+
             var credential = new ApiKeyCredential(apiClientCfg.ApiKey);
-            var options = new OpenAIClientOptions();
+            var options = new OpenAIClientOptions
+            {
+                Transport = new HttpClientPipelineTransport(httpClient)
+            };
 
             // 自定义端点（SiliconFlow 等）
             if (!string.IsNullOrEmpty(apiClientCfg.ApiEndpoint))
@@ -67,6 +78,7 @@ namespace AgentCoreProcessor.Client
             var options = BuildChatOptions();
 
             var fullContent = new StringBuilder();
+            Models.Usage? lastUsage = null;
 
             AsyncCollectionResult<StreamingChatCompletionUpdate> stream =
                 chatClient.CompleteChatStreamingAsync(messages, options, ct);
@@ -89,17 +101,21 @@ namespace AgentCoreProcessor.Client
                 // usage（仅最后一个 update 有）
                 if (update.Usage != null)
                 {
-                    var usageResp = BuildSyntheticResponse(null, null);
-                    usageResp.Usage = new Models.Usage
+                    lastUsage = new Models.Usage
                     {
                         PromptTokens = update.Usage.InputTokenCount,
                         CompletionTokens = update.Usage.OutputTokenCount,
                         TotalTokens = update.Usage.TotalTokenCount,
                         PromptCacheHitTokens = update.Usage.InputTokenDetails?.CachedTokenCount ?? 0
                     };
+                    var usageResp = BuildSyntheticResponse(null, null);
+                    usageResp.Usage = lastUsage;
                     onDelta(usageResp);
                 }
             }
+
+            // 从原始 SSE 补充 DeepSeek prompt_cache_hit_tokens（SDK 不解析此字段）
+            SupplementCacheTokens(lastUsage);
 
             return fullContent.ToString();
         }
@@ -128,6 +144,7 @@ namespace AgentCoreProcessor.Client
             // 跟踪进行中的 tool call
             var activeToolCalls = new Dictionary<int, (string Id, string Name, StringBuilder Args)>();
             var thinkingText = new StringBuilder();
+            Models.Usage? lastUsage = null;
 
             AsyncCollectionResult<StreamingChatCompletionUpdate> stream =
                 chatClient.CompleteChatStreamingAsync(messages, options, ct);
@@ -196,19 +213,23 @@ namespace AgentCoreProcessor.Client
                 // usage
                 if (update.Usage != null)
                 {
+                    lastUsage = new Models.Usage
+                    {
+                        PromptTokens = update.Usage.InputTokenCount,
+                        CompletionTokens = update.Usage.OutputTokenCount,
+                        TotalTokens = update.Usage.TotalTokenCount,
+                        PromptCacheHitTokens = update.Usage.InputTokenDetails?.CachedTokenCount ?? 0
+                    };
                     onEvent(new StreamEvent
                     {
                         Type = StreamEventType.Usage,
-                        Usage = new Models.Usage
-                        {
-                            PromptTokens = update.Usage.InputTokenCount,
-                            CompletionTokens = update.Usage.OutputTokenCount,
-                            TotalTokens = update.Usage.TotalTokenCount,
-                            PromptCacheHitTokens = update.Usage.InputTokenDetails?.CachedTokenCount ?? 0
-                        }
+                        Usage = lastUsage
                     });
                 }
             }
+
+            // 从原始 SSE 补充 DeepSeek prompt_cache_hit_tokens（SDK 不解析此字段）
+            SupplementCacheTokens(lastUsage);
         }
 
         private List<ChatMessage> BuildChatMessages(List<Message> history)
@@ -353,7 +374,148 @@ namespace AgentCoreProcessor.Client
         public override void Dispose()
         {
             // ChatClient 不实现 IDisposable，无需额外清理
+            _cacheHandler?.Dispose();
+            _cacheHandler = null;
+            _chatClient = null;
             base.Dispose();
+        }
+
+        /// <summary>
+        /// 从原始 SSE 响应中提取 DeepSeek prompt_cache_hit/miss_tokens 补充到 Usage。
+        /// OpenAI SDK 不解析这些 DeepSeek 特有字段。
+        /// </summary>
+        private void SupplementCacheTokens(Models.Usage? usage)
+        {
+            if (usage == null) return;
+            var tee = CacheCaptureHandler.CurrentTee.Value;
+            if (tee?.Captured == null || tee.Captured.Length == 0) return;
+
+            try
+            {
+                var text = Encoding.UTF8.GetString(tee.Captured);
+                var (hitTokens, missTokens) = ParseCacheTokensFromSse(text);
+                if (hitTokens > 0) usage.PromptCacheHitTokens = hitTokens;
+                if (missTokens > 0) usage.PromptCacheMissTokens = missTokens;
+            }
+            catch { }
+            finally
+            {
+                CacheCaptureHandler.CurrentTee.Value = null;
+            }
+        }
+
+        /// <summary>从原始 SSE 文本中提取 prompt_cache_hit/miss_tokens，取最后一个匹配。</summary>
+        private static (int hitTokens, int missTokens) ParseCacheTokensFromSse(string rawSse)
+        {
+            int hitTokens = 0, missTokens = 0;
+            try
+            {
+                var hitMatches = Regex.Matches(rawSse, @"prompt_cache_hit_tokens["":\s]+(\d+)");
+                if (hitMatches.Count > 0)
+                    _ = int.TryParse(hitMatches[^1].Groups[1].Value, out hitTokens);
+
+                var missMatches = Regex.Matches(rawSse, @"prompt_cache_miss_tokens["":\s]+(\d+)");
+                if (missMatches.Count > 0)
+                    _ = int.TryParse(missMatches[^1].Groups[1].Value, out missTokens);
+            }
+            catch { }
+            return (hitTokens, missTokens);
+        }
+
+        /// <summary>
+        /// 将读取的字节同时写入 MemoryStream，用于捕获原始 SSE 响应。
+        /// </summary>
+        private class TeeStream : Stream
+        {
+            private readonly Stream _inner;
+            private readonly MemoryStream _captured = new();
+            private bool _disposed;
+
+            public byte[] Captured => _captured.ToArray();
+
+            public TeeStream(Stream inner) => _inner = inner;
+
+            public override bool CanRead => _inner.CanRead;
+            public override bool CanSeek => false;
+            public override bool CanWrite => false;
+            public override long Length => _inner.Length;
+            public override long Position
+            {
+                get => _inner.Position;
+                set => throw new NotSupportedException();
+            }
+
+            public override int Read(byte[] buffer, int offset, int count)
+            {
+                int bytes = _inner.Read(buffer, offset, count);
+                if (bytes > 0) _captured.Write(buffer, offset, bytes);
+                return bytes;
+            }
+
+            public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken ct)
+            {
+                int bytes = await _inner.ReadAsync(buffer, offset, count, ct).ConfigureAwait(false);
+                if (bytes > 0) await _captured.WriteAsync(buffer, offset, bytes, ct).ConfigureAwait(false);
+                return bytes;
+            }
+
+            public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
+            {
+                int bytes = await _inner.ReadAsync(buffer, ct).ConfigureAwait(false);
+                if (bytes > 0) _captured.Write(buffer.Span[..bytes]);
+                return bytes;
+            }
+
+            public override void Flush() => _inner.Flush();
+            public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+            public override void SetLength(long value) => throw new NotSupportedException();
+            public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+            protected override void Dispose(bool disposing)
+            {
+                if (!_disposed && disposing)
+                {
+                    _inner.Dispose();
+                    _captured.Dispose();
+                    _disposed = true;
+                }
+                base.Dispose(disposing);
+            }
+        }
+
+        /// <summary>
+        /// 将 HTTP 响应流包装为 TeeStream，以便捕获原始 SSE 数据。
+        /// 使用 AsyncLocal 确保线程安全。
+        /// </summary>
+        private class CacheCaptureHandler : HttpClientHandler
+        {
+            internal static readonly AsyncLocal<TeeStream?> CurrentTee = new();
+
+            protected override async Task<HttpResponseMessage> SendAsync(
+                HttpRequestMessage request, CancellationToken cancellationToken)
+            {
+                var response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+                if (response.Content != null)
+                {
+                    var originalStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                    var tee = new TeeStream(originalStream);
+                    CurrentTee.Value = tee;
+
+                    var newContent = new StreamContent(tee);
+                    if (response.Content.Headers.ContentType != null)
+                        newContent.Headers.ContentType = response.Content.Headers.ContentType;
+                    foreach (var (key, values) in response.Content.Headers)
+                    {
+                        if (key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        newContent.Headers.TryAddWithoutValidation(key, values);
+                    }
+                    response.Content = newContent;
+                }
+
+                return response;
+            }
         }
     }
 }

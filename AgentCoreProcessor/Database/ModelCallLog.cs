@@ -26,6 +26,9 @@ namespace AgentCoreProcessor.Database
         /// <summary>DeepSeek 自动缓存命中</summary>
         public int CacheHitTokens { get; set; }
 
+        /// <summary>调用是否失败（token 数据可能不完整）</summary>
+        public bool IsError { get; set; }
+
         public string? LogFileName { get; set; }
     }
 }

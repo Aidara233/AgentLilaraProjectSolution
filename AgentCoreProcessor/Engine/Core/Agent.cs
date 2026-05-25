@@ -283,7 +283,10 @@ namespace AgentCoreProcessor.Engine
                     return new Message { Role = "assistant", Content = sb.ToString() };
                 }
             }
-            return new Message { Role = "assistant", Content = output.Text ?? output.Thinking ?? "" };
+            var content = output.Text ?? output.Thinking;
+            if (string.IsNullOrEmpty(content))
+                content = "[无输出]";
+            return new Message { Role = "assistant", Content = content };
         }
 
         private Message FormatToolResults(List<ToolCall> calls, List<ToolResult> results)

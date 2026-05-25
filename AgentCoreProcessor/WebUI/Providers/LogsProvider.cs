@@ -115,11 +115,12 @@ internal class LogsProvider : IWebUIProvider
                 {
                     Columns = new()
                     {
-                        new() { Field = "time", Header = "时间", Width = "130px" },
+                        new() { Field = "time", Header = "时间", Width = "140px" },
                         new() { Field = "coreName", Header = "Core", Width = "80px" },
                         new() { Field = "model", Header = "模型", Width = "120px" },
                         new() { Field = "tokens", Header = "Token", Width = "100px" },
                         new() { Field = "cache", Header = "缓存", Width = "80px" },
+                        new() { Field = "status", Header = "状态", Width = "60px" },
                     },
                     Searchable = true, Paginated = true, DefaultPageSize = 30
                 },
@@ -137,6 +138,8 @@ internal class LogsProvider : IWebUIProvider
                         new() { Field = "modelInfo", Label = "模型/提供商" },
                         new() { Field = "usage", Label = "Token 用量" },
                         new() { Field = "tools", Label = "工具列表", IsMultiline = true },
+                        new() { Field = "systemPrompt", Label = "系统提示词", IsMultiline = true },
+                        new() { Field = "messages", Label = "消息历史", IsMultiline = true },
                         new() { Field = "thinking", Label = "思考过程", IsMultiline = true },
                         new() { Field = "output", Label = "输出", IsMultiline = true },
                     }
@@ -163,7 +166,7 @@ internal class TokenCacheSource : IDataSource
 
     public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
-        var logs = await _engine.ModelCallLogs.GetRecentAsync(2000);
+        var logs = await _engine.ModelCallLogs.GetRecentAsync(2000, includeErrors: false);
         long totalInput = 0, totalCacheRead = 0, totalCacheCreation = 0, totalCacheHit = 0;
         foreach (var log in logs)
         {
@@ -295,9 +298,9 @@ internal class ModelListSource : IDataSource
         var arr = new JsonArray();
         foreach (var log in paged)
         {
-            var tokens = $"{Fmt(log.InputTokens)}→{Fmt(log.OutputTokens)}";
-            var cache = log.CacheReadTokens + log.CacheHitTokens;
-            var cacheStr = cache > 0 ? Fmt(cache) : "—";
+            var tokens = log.IsError ? "—" : $"{Fmt(log.InputTokens)}→{Fmt(log.OutputTokens)}";
+            var cache = log.CacheReadTokens + log.CacheHitTokens + log.CacheCreationTokens;
+            var cacheStr = log.IsError ? "—" : (cache > 0 ? Fmt(cache) : "—");
 
             arr.Add(new JsonObject
             {
@@ -308,6 +311,7 @@ internal class ModelListSource : IDataSource
                 ["provider"] = log.Provider ?? "—",
                 ["tokens"] = tokens,
                 ["cache"] = cacheStr,
+                ["status"] = log.IsError ? "❌ 失败" : "✓",
                 ["logFileName"] = log.LogFileName ?? "",
             });
         }
@@ -357,29 +361,106 @@ internal class ModelDetailSource : IDataSource
             var caller = root["caller"]?.ToString() ?? "—";
             var model = root["model"]?.ToString() ?? "—";
             var provider = root["provider"]?.ToString() ?? "—";
-            var usage = root["usage"];
-            var usageStr = usage != null
-                ? $"{usage["inputTokens"]} in / {usage["outputTokens"]} out" +
-                  (usage["cacheReadTokens"]?.Value<long>() > 0 || usage["cacheHitTokens"]?.Value<long>() > 0
-                      ? $" (cache read:{usage["cacheReadTokens"]}+hit:{usage["cacheHitTokens"]})" : "")
-                : "—";
+            var isError = root["error"]?.Value<bool>() ?? false;
 
+            // Token 用量（含 cache miss）
+            var usage = root["usage"];
+            var usageStr = "—";
+            if (usage != null)
+            {
+                var parts = new List<string> { $"{usage["inputTokens"]} in / {usage["outputTokens"]} out" };
+                var cacheParts = new List<string>();
+                if (usage["cacheReadTokens"]?.Value<long>() > 0)
+                    cacheParts.Add($"read:{usage["cacheReadTokens"]}");
+                if (usage["cacheCreationTokens"]?.Value<long>() > 0)
+                    cacheParts.Add($"create:{usage["cacheCreationTokens"]}");
+                if (usage["cacheHitTokens"]?.Value<long>() > 0)
+                    cacheParts.Add($"hit:{usage["cacheHitTokens"]}");
+                if (usage["cacheMissTokens"]?.Value<long>() > 0)
+                    cacheParts.Add($"miss:{usage["cacheMissTokens"]}");
+                if (cacheParts.Count > 0)
+                    parts.Add($"cache({string.Join(" ", cacheParts)})");
+                usageStr = string.Join(" ", parts);
+            }
+
+            // 工具列表
             var toolsArr = root["tools"] as JArray;
             var toolsStr = toolsArr != null && toolsArr.Count > 0
                 ? string.Join(", ", toolsArr.Select(t => t.ToString()))
                 : "—";
 
+            // 系统提示词（取前 2000 字符概要）
+            var systemPrompt = root["systemPrompt"]?.ToString();
+            var systemPromptDisplay = systemPrompt != null
+                ? (systemPrompt.Length > 2000 ? systemPrompt[..2000] + "\n\n[... 截断，完整内容见原始文件]" : systemPrompt)
+                : (root["systemPromptHash"]?.ToString() is string hash ? $"[hash: {hash}]" : "—");
+
+            // 消息摘要（含 contentParts）
+            var messagesDisplay = "—";
+            if (root["messages"] is JArray msgArr && msgArr.Count > 0)
+            {
+                var msgLines = new List<string>();
+                foreach (var m in msgArr)
+                {
+                    var role = m["role"]?.ToString() ?? "?";
+                    if (m["contentParts"] is JArray parts && parts.Count > 0)
+                    {
+                        var partDescs = new List<string>();
+                        foreach (var p in parts)
+                        {
+                            var type = p["type"]?.ToString() ?? "?";
+                            switch (type)
+                            {
+                                case "text" when p["text"]?.ToString() is string t:
+                                    partDescs.Add(t.Length > 200 ? t[..200] + "..." : t);
+                                    break;
+                                case "image" when p["image"] != null:
+                                    var img = p["image"];
+                                    var detail = img?["path"]?.ToString()
+                                        ?? (img?["base64Length"] != null ? $"base64({img["base64Length"]}B)" : "—");
+                                    partDescs.Add($"[图片: {detail}]");
+                                    break;
+                                case "tool_use":
+                                    partDescs.Add($"[工具调用: {p["toolName"]}]");
+                                    break;
+                                case "tool_result":
+                                    partDescs.Add(p["isError"]?.Value<bool>() == true
+                                        ? "[工具结果: 错误]"
+                                        : "[工具结果]");
+                                    break;
+                                default:
+                                    partDescs.Add($"[{type}]");
+                                    break;
+                            }
+                        }
+                        msgLines.Add($"[{role}] {string.Join(" | ", partDescs)}");
+                    }
+                    else
+                    {
+                        var content = m["content"]?.ToString() ?? "";
+                        msgLines.Add($"[{role}] {(content.Length > 300 ? content[..300] + "..." : content)}");
+                    }
+                }
+                messagesDisplay = string.Join("\n", msgLines);
+            }
+
             var thinking = root["thinking"]?.ToString();
             var output = root["output"]?.ToString();
+
+            var modelInfo = isError
+                ? $"⚠️ {model} / {provider} (调用失败)"
+                : $"{model} / {provider}";
 
             return Task.FromResult(new DataResult
             {
                 Data = new JsonObject
                 {
                     ["caller"] = caller,
-                    ["modelInfo"] = $"{model} / {provider}",
+                    ["modelInfo"] = modelInfo,
                     ["usage"] = usageStr,
                     ["tools"] = toolsStr,
+                    ["systemPrompt"] = systemPromptDisplay,
+                    ["messages"] = messagesDisplay,
                     ["thinking"] = thinking ?? "—",
                     ["output"] = output ?? "—",
                 }

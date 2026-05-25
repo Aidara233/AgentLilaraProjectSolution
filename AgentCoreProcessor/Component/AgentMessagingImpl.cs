@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -22,6 +23,12 @@ internal class AgentMessagingImpl : IAgentMessaging
     private readonly Func<string, bool> _isTargetAlive;
     private readonly Func<List<string>> _getActiveLoopIds;
 
+    private readonly ConcurrentQueue<DelegationNotification> _notifications = new();
+    private readonly ConcurrentDictionary<string, int> _lastNotifiedSeq = new();
+
+    /// <summary>是否有待处理的委托通知。</summary>
+    public bool HasPendingNotifications => !_notifications.IsEmpty;
+
     public AgentMessagingImpl(string myLoopId, CrossRequestRegistry registry,
         Action wakeMe, Func<string, bool> isTargetAlive, Func<List<string>>? getActiveLoopIds = null)
     {
@@ -30,7 +37,69 @@ internal class AgentMessagingImpl : IAgentMessaging
         _wakeMe = wakeMe;
         _isTargetAlive = isTargetAlive;
         _getActiveLoopIds = getActiveLoopIds ?? (() => new List<string> { myLoopId });
+
+        _registry.OnRequestUpdated += OnRegistryUpdated;
     }
+
+    /// <summary>取消订阅，引擎关闭时调用。</summary>
+    public void Detach()
+    {
+        _registry.OnRequestUpdated -= OnRegistryUpdated;
+    }
+
+    private void OnRegistryUpdated(string loopId)
+    {
+        if (loopId != _myLoopId) return;
+
+        try
+        {
+            var myRequests = _registry.GetAll()
+                .Where(r => r.InitiatorId == _myLoopId && r.Responses.Count > 0)
+                .ToList();
+
+            var enqueued = false;
+            foreach (var req in myRequests)
+            {
+                if (req.State == CrossRequestState.Idle) continue;
+
+                var lastKnownSeq = _lastNotifiedSeq.GetValueOrDefault(req.RequestId, -1);
+
+                foreach (var resp in req.Responses.ToList())
+                {
+                    if (resp.SequenceNumber <= lastKnownSeq) continue;
+                    if (resp.Type == EngineCrossReqType.Ignore) continue;
+                    if (resp.ResponderId == _myLoopId) continue;
+
+                    _notifications.Enqueue(new DelegationNotification
+                    {
+                        RequestId = req.RequestId,
+                        Title = req.Title,
+                        NewState = req.State,
+                        ResponseType = resp.Type,
+                        ResponderId = resp.ResponderId,
+                        Content = resp.Content,
+                        Timestamp = resp.Timestamp
+                    });
+                    enqueued = true;
+                    _lastNotifiedSeq[req.RequestId] = resp.SequenceNumber;
+                }
+            }
+
+            if (enqueued)
+            {
+                Signal.Event(LogGroup.Engine, "委托通知入队",
+                    new { loopId = _myLoopId, count = _notifications.Count });
+                _wakeMe();
+            }
+        }
+        catch (Exception ex)
+        {
+            Signal.Error(LogGroup.Engine, "委托通知处理异常",
+                new { loopId = _myLoopId, error = ex.Message });
+        }
+    }
+
+    // ═══════ 提交 ═══════
 
     public async Task<CrossRequestResult> SubmitAndWaitAsync(
         string? targetId, string title, string content,
@@ -39,10 +108,8 @@ internal class AgentMessagingImpl : IAgentMessaging
     {
         var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(45);
 
-        // 诊断日志：追踪发起者身份
         Signal.Event(LogGroup.Engine, "SubmitAndWaitAsync", new { initiatorId = _myLoopId, targetId, title });
 
-        // 检查目标是否存活（对于非广播的特定目标）
         if (targetId != null && !_isTargetAlive(targetId))
         {
             return new CrossRequestResult
@@ -59,13 +126,12 @@ internal class AgentMessagingImpl : IAgentMessaging
         var tcs = new TaskCompletionSource<CrossRequestResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var cts = new CancellationTokenSource(effectiveTimeout);
 
-        var sentinel = new object();
         var completed = false;
 
-        Action<string> onUpdated = null!;
-        onUpdated = loopId =>
+        void onUpdated(string lid)
         {
             if (completed) return;
+            if (lid != _myLoopId) return;
             var req = _registry.Get(request.RequestId);
             if (req == null) return;
 
@@ -102,11 +168,9 @@ internal class AgentMessagingImpl : IAgentMessaging
                 completed = true;
                 tcs.TrySetResult(result);
             }
-        };
+        }
 
         _registry.OnRequestUpdated += onUpdated;
-
-        // 初始检查（以防在注册回调前已经完成）
         onUpdated(_myLoopId);
 
         try
@@ -115,7 +179,6 @@ internal class AgentMessagingImpl : IAgentMessaging
             if (completedTask == tcs.Task)
                 return await tcs.Task;
 
-            // 超时：将请求设为 Idle
             _registry.Idle(request.RequestId);
             return new CrossRequestResult
             {
@@ -138,6 +201,8 @@ internal class AgentMessagingImpl : IAgentMessaging
         return request.RequestId;
     }
 
+    // ═══════ 接收/回应 ═══════
+
     public List<CrossRequestInfo> Receive(int maxCount = 10)
     {
         return _registry.GetVisible(_myLoopId)
@@ -146,10 +211,33 @@ internal class AgentMessagingImpl : IAgentMessaging
             .ToList();
     }
 
-    public void Respond(string requestId, CrossReqType type, string content)
+    public bool Respond(string requestId, CrossReqType type, string content)
     {
-        _registry.Respond(requestId, _myLoopId, MapType(type), content);
+        return _registry.Respond(requestId, _myLoopId, MapType(type), content);
     }
+
+    // ═══════ 通知队列 ═══════
+
+    public List<DelegationNotificationInfo> DrainNotifications()
+    {
+        var list = new List<DelegationNotificationInfo>();
+        while (_notifications.TryDequeue(out var n))
+        {
+            list.Add(new DelegationNotificationInfo
+            {
+                RequestId = n.RequestId,
+                Title = n.Title,
+                NewState = n.NewState.ToString(),
+                ResponseType = n.ResponseType.ToString(),
+                ResponderId = n.ResponderId,
+                Content = n.Content,
+                Timestamp = n.Timestamp
+            });
+        }
+        return list;
+    }
+
+    // ═══════ 查询 ═══════
 
     public List<CrossRequestInfo> GetActiveRequests()
         => _registry.GetVisible(_myLoopId).Select(ToInfo).ToList();

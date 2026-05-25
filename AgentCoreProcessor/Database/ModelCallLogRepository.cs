@@ -15,9 +15,12 @@ namespace AgentCoreProcessor.Database
 
         public Task<int> InsertAsync(ModelCallLog entry) => db.InsertAsync(entry);
 
-        public Task<List<ModelCallLog>> GetRecentAsync(int count = 50)
-            => db.QueryAsync<ModelCallLog>(
-                "SELECT * FROM ModelCallLogs ORDER BY Timestamp DESC LIMIT ?", count);
+        public Task<List<ModelCallLog>> GetRecentAsync(int count = 50, bool includeErrors = true)
+            => includeErrors
+                ? db.QueryAsync<ModelCallLog>(
+                    "SELECT * FROM ModelCallLogs ORDER BY Timestamp DESC LIMIT ?", count)
+                : db.QueryAsync<ModelCallLog>(
+                    "SELECT * FROM ModelCallLogs WHERE IsError = 0 ORDER BY Timestamp DESC LIMIT ?", count);
 
         public Task<List<ModelCallLog>> GetSinceAsync(DateTime since)
             => db.QueryAsync<ModelCallLog>(
@@ -26,8 +29,8 @@ namespace AgentCoreProcessor.Database
         public Task<List<CoreTokenSummary>> GetByCoreAsync(DateTime? since = null)
         {
             var sql = since.HasValue
-                ? "SELECT CoreName, COUNT(*) as CallCount, SUM(InputTokens) as TotalInput, SUM(OutputTokens) as TotalOutput, SUM(CacheReadTokens) as TotalCacheRead, SUM(CacheCreationTokens) as TotalCacheCreation, SUM(CacheHitTokens) as TotalCacheHit FROM ModelCallLogs WHERE Timestamp >= ? GROUP BY CoreName ORDER BY TotalInput DESC"
-                : "SELECT CoreName, COUNT(*) as CallCount, SUM(InputTokens) as TotalInput, SUM(OutputTokens) as TotalOutput, SUM(CacheReadTokens) as TotalCacheRead, SUM(CacheCreationTokens) as TotalCacheCreation, SUM(CacheHitTokens) as TotalCacheHit FROM ModelCallLogs GROUP BY CoreName ORDER BY TotalInput DESC";
+                ? "SELECT CoreName, COUNT(*) as CallCount, SUM(InputTokens) as TotalInput, SUM(OutputTokens) as TotalOutput, SUM(CacheReadTokens) as TotalCacheRead, SUM(CacheCreationTokens) as TotalCacheCreation, SUM(CacheHitTokens) as TotalCacheHit FROM ModelCallLogs WHERE IsError = 0 AND Timestamp >= ? GROUP BY CoreName ORDER BY TotalInput DESC"
+                : "SELECT CoreName, COUNT(*) as CallCount, SUM(InputTokens) as TotalInput, SUM(OutputTokens) as TotalOutput, SUM(CacheReadTokens) as TotalCacheRead, SUM(CacheCreationTokens) as TotalCacheCreation, SUM(CacheHitTokens) as TotalCacheHit FROM ModelCallLogs WHERE IsError = 0 GROUP BY CoreName ORDER BY TotalInput DESC";
             return since.HasValue
                 ? db.QueryAsync<CoreTokenSummary>(sql, since.Value)
                 : db.QueryAsync<CoreTokenSummary>(sql);
@@ -36,8 +39,8 @@ namespace AgentCoreProcessor.Database
         public Task<List<ModelTokenSummary>> GetByModelAsync(DateTime? since = null)
         {
             var sql = since.HasValue
-                ? "SELECT Model, Provider, COUNT(*) as CallCount, SUM(InputTokens) as TotalInput, SUM(OutputTokens) as TotalOutput, SUM(CacheReadTokens) as TotalCacheRead, SUM(CacheCreationTokens) as TotalCacheCreation, SUM(CacheHitTokens) as TotalCacheHit FROM ModelCallLogs WHERE Timestamp >= ? GROUP BY Model, Provider ORDER BY TotalInput DESC"
-                : "SELECT Model, Provider, COUNT(*) as CallCount, SUM(InputTokens) as TotalInput, SUM(OutputTokens) as TotalOutput, SUM(CacheReadTokens) as TotalCacheRead, SUM(CacheCreationTokens) as TotalCacheCreation, SUM(CacheHitTokens) as TotalCacheHit FROM ModelCallLogs GROUP BY Model, Provider ORDER BY TotalInput DESC";
+                ? "SELECT Model, Provider, COUNT(*) as CallCount, SUM(InputTokens) as TotalInput, SUM(OutputTokens) as TotalOutput, SUM(CacheReadTokens) as TotalCacheRead, SUM(CacheCreationTokens) as TotalCacheCreation, SUM(CacheHitTokens) as TotalCacheHit FROM ModelCallLogs WHERE IsError = 0 AND Timestamp >= ? GROUP BY Model, Provider ORDER BY TotalInput DESC"
+                : "SELECT Model, Provider, COUNT(*) as CallCount, SUM(InputTokens) as TotalInput, SUM(OutputTokens) as TotalOutput, SUM(CacheReadTokens) as TotalCacheRead, SUM(CacheCreationTokens) as TotalCacheCreation, SUM(CacheHitTokens) as TotalCacheHit FROM ModelCallLogs WHERE IsError = 0 GROUP BY Model, Provider ORDER BY TotalInput DESC";
             return since.HasValue
                 ? db.QueryAsync<ModelTokenSummary>(sql, since.Value)
                 : db.QueryAsync<ModelTokenSummary>(sql);

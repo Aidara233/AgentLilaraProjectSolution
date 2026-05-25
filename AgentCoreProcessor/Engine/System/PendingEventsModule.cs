@@ -1,7 +1,9 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Engine;
+using AgentCoreProcessor.Logging;
 
 namespace AgentCoreProcessor.Engine.Modules
 {
@@ -18,6 +20,9 @@ namespace AgentCoreProcessor.Engine.Modules
         {
             pendingCrossRequests.Clear();
             pendingCrossRequests.AddRange(requests);
+            if (requests.Count > 0)
+                Signal.Event(LogGroup.Engine, "系统循环收到委托",
+                    new { count = requests.Count, titles = string.Join(", ", requests.Select(r => r.Title)) });
         }
 
         public override void Attach(ILoopBus bus) { }
@@ -32,7 +37,7 @@ namespace AgentCoreProcessor.Engine.Modules
             foreach (var r in pendingCrossRequests)
             {
                 var targetStr = r.TargetId ?? "广播";
-                sb.AppendLine($"- 请求#{r.RequestId[..8]}: {r.Title}");
+                sb.AppendLine($"- 请求 request_id={r.RequestId}: {r.Title}");
                 sb.AppendLine($"  发起者: {r.InitiatorId} | 目标: {targetStr} | 超时: {r.ExpiresAt:HH:mm:ss}");
                 sb.AppendLine($"  内容: {r.Content.Truncate(200)}");
                 if (r.Responses.Count > 0)

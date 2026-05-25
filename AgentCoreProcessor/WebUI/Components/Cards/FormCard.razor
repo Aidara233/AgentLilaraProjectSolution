@@ -40,38 +40,60 @@
         }
     }
 
-    <div class="form-card-actions mt-3 d-flex gap-2">
-        <button class="btn btn-sm btn-primary" @onclick="HandleSubmit">保存</button>
-        @if (Schema.ShowReset)
-        {
-            <button class="btn btn-sm btn-outline-secondary" @onclick="HandleReset">重置</button>
-        }
-    </div>
+    @if (Schema.ShowSubmit || Schema.ShowReset)
+    {
+        <div class="form-card-actions mt-3 d-flex gap-2">
+            @if (Schema.ShowSubmit)
+            {
+                <button class="btn btn-sm btn-primary" @onclick="HandleSubmit">保存</button>
+            }
+            @if (Schema.ShowReset)
+            {
+                <button class="btn btn-sm btn-outline-secondary" @onclick="HandleReset">重置</button>
+            }
+        </div>
+    }
 </div>
 
 @code {
     [Parameter, EditorRequired] public FormSchema Schema { get; set; } = null!;
     [Parameter] public JsonNode? Data { get; set; }
     [Parameter] public EventCallback<JsonNode> OnSubmit { get; set; }
+    [Parameter] public EventCallback<JsonNode> OnValuesChanged { get; set; }
 
     private Dictionary<string, string> _values = new();
     private HashSet<string> _collapsedGroups = new();
+    private bool _initialized;
 
     protected override void OnParametersSet()
     {
-        _values = new Dictionary<string, string>();
-        if (Data is JsonObject obj)
+        // 纯本地模式：Data 为 null 时只初始化一次，之后不再重置
+        if (Data == null)
         {
-            foreach (var field in Schema.Fields)
+            if (!_initialized)
             {
-                var val = obj[field.Field];
-                _values[field.Field] = val?.ToString() ?? "";
+                _values = new Dictionary<string, string>();
+                foreach (var field in Schema.Fields)
+                    _values[field.Field] = field.DefaultValue ?? "";
+                _initialized = true;
             }
         }
         else
         {
-            foreach (var field in Schema.Fields)
-                _values[field.Field] = "";
+            _values = new Dictionary<string, string>();
+            if (Data is JsonObject obj)
+            {
+                foreach (var field in Schema.Fields)
+                {
+                    var val = obj[field.Field];
+                    _values[field.Field] = val?.ToString() ?? "";
+                }
+            }
+            else
+            {
+                foreach (var field in Schema.Fields)
+                    _values[field.Field] = "";
+            }
         }
 
         if (Schema.Groups != null)
@@ -102,7 +124,7 @@
                 __builder.AddAttribute(10, "class", "form-check-input");
                 __builder.AddAttribute(11, "checked", _values.TryGetValue(field.Field, out var tv) && tv == "true");
                 __builder.AddAttribute(12, "onchange", Microsoft.AspNetCore.Components.EventCallback.Factory.Create<Microsoft.AspNetCore.Components.ChangeEventArgs>(
-                    this, e => _values[field.Field] = e.Value?.ToString() == "True" ? "true" : "false"));
+                    this, async e => await SetValue(field.Field, e.Value?.ToString() == "True" ? "true" : "false")));
                 __builder.CloseElement();
                 __builder.CloseElement();
                 break;
@@ -112,7 +134,7 @@
                 __builder.AddAttribute(7, "class", "form-select form-select-sm");
                 __builder.AddAttribute(8, "value", _values.TryGetValue(field.Field, out var sv) ? sv : "");
                 __builder.AddAttribute(9, "onchange", Microsoft.AspNetCore.Components.EventCallback.Factory.Create<Microsoft.AspNetCore.Components.ChangeEventArgs>(
-                    this, e => _values[field.Field] = e.Value?.ToString() ?? ""));
+                    this, async e => await SetValue(field.Field, e.Value?.ToString() ?? "")));
                 if (field.Options != null)
                 {
                     foreach (var opt in field.Options)
@@ -134,7 +156,7 @@
                 __builder.AddAttribute(9, "placeholder", field.Placeholder ?? "");
                 __builder.AddAttribute(10, "value", _values.TryGetValue(field.Field, out var tav) ? tav : "");
                 __builder.AddAttribute(11, "oninput", Microsoft.AspNetCore.Components.EventCallback.Factory.Create<Microsoft.AspNetCore.Components.ChangeEventArgs>(
-                    this, e => _values[field.Field] = e.Value?.ToString() ?? ""));
+                    this, async e => await SetValue(field.Field, e.Value?.ToString() ?? "")));
                 __builder.CloseElement();
                 break;
 
@@ -145,7 +167,7 @@
                 __builder.AddAttribute(9, "placeholder", field.Placeholder ?? "");
                 __builder.AddAttribute(10, "value", _values.TryGetValue(field.Field, out var iv) ? iv : "");
                 __builder.AddAttribute(11, "oninput", Microsoft.AspNetCore.Components.EventCallback.Factory.Create<Microsoft.AspNetCore.Components.ChangeEventArgs>(
-                    this, e => _values[field.Field] = e.Value?.ToString() ?? ""));
+                    this, async e => await SetValue(field.Field, e.Value?.ToString() ?? "")));
                 __builder.CloseElement();
                 break;
         }
@@ -161,6 +183,24 @@
         __builder.CloseElement();
     };
 
+    private async Task SetValue(string field, string value)
+    {
+        _values[field] = value;
+        if (OnValuesChanged.HasDelegate)
+        {
+            var obj = BuildPayload();
+            await OnValuesChanged.InvokeAsync(obj);
+        }
+    }
+
+    private JsonObject BuildPayload()
+    {
+        var obj = new JsonObject();
+        foreach (var kv in _values)
+            obj[kv.Key] = JsonValue.Create(kv.Value);
+        return obj;
+    }
+
     private void ToggleGroup(string name)
     {
         if (_collapsedGroups.Contains(name)) _collapsedGroups.Remove(name);
@@ -169,14 +209,12 @@
 
     private async Task HandleSubmit()
     {
-        var obj = new JsonObject();
-        foreach (var kv in _values)
-            obj[kv.Key] = JsonValue.Create(kv.Value);
-        await OnSubmit.InvokeAsync(obj);
+        await OnSubmit.InvokeAsync(BuildPayload());
     }
 
     private void HandleReset()
     {
+        _initialized = false;
         OnParametersSet();
     }
 }

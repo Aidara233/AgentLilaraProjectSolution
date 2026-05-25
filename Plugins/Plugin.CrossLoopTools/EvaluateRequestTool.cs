@@ -42,7 +42,14 @@ public class EvaluateRequestTool : ITool
             _ => CrossRequestResponseType.Reject
         };
 
-        _messaging.Respond(requestId, type, reason ?? "");
+        var ok = _messaging.Respond(requestId, type, reason ?? "");
+        if (!ok)
+            return Task.FromResult(new ToolResult
+            {
+                Status = "failed",
+                Error = $"请求 {requestId} 不存在或状态不可操作（可能已超时/归档）"
+            });
+
         return Task.FromResult(new ToolResult
         {
             Status = "success",

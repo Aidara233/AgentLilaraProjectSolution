@@ -34,9 +34,16 @@ public class CompleteRequestTool : ITool
         if (string.IsNullOrWhiteSpace(result))
             return Task.FromResult(new ToolResult { Status = "failed", Error = "result 不能为空" });
 
-        _messaging.Respond(requestId,
+        var ok = _messaging.Respond(requestId,
             failed ? CrossRequestResponseType.Failed : CrossRequestResponseType.Complete,
             result);
+
+        if (!ok)
+            return Task.FromResult(new ToolResult
+            {
+                Status = "failed",
+                Error = $"请求 {requestId} 不存在或状态不可操作（可能已超时/归档）"
+            });
 
         return Task.FromResult(new ToolResult
         {

@@ -88,6 +88,7 @@ namespace AgentCoreProcessor.Engine
         // 事件总线 + 内务模块
         private readonly LoopBus bus = new();
         private readonly LoopControlModule loopControlModule = new();
+        private readonly DelegationNotificationModule delegationNotificationModule = new();
         private List<EngineModule> modules = null!;
 
         // Component 系统
@@ -101,6 +102,7 @@ namespace AgentCoreProcessor.Engine
         // 跨循环请求队列
         private readonly ConcurrentQueue<CrossRequest> _pendingCrossRequests = new();
         internal IAgentMessaging? _messaging;
+        private SignalFilterConfig _signalFilter = new();
 
 
         // 记忆提取计数（用于退出时判断是否需要收尾提取）
@@ -229,7 +231,8 @@ namespace AgentCoreProcessor.Engine
             loopControlModule.ChannelId = channelId.ToString();
             modules = new List<EngineModule>
             {
-                loopControlModule
+                loopControlModule,
+                delegationNotificationModule
             };
             foreach (var m in modules) m.Attach(bus);
 
@@ -369,6 +372,9 @@ namespace AgentCoreProcessor.Engine
             _messaging = new Component.AgentMessagingImpl(myLoopId, ctx.CrossRequests,
                 () => gate.Signal(), loopId => ctx.DelegationBus.IsLoopActive(loopId),
                 () => ctx.DelegationBus.GetActiveLoopIds().ToList());
+            delegationNotificationModule.SetMessaging(_messaging);
+            _signalFilter = ctx.SignalFilters.GetConfig("channel");
+            delegationNotificationModule.SetFilterConfig(_signalFilter);
             componentHost = new ComponentHost(
                 myLoopId, "channel", _moduleBus, ctx.ComponentServices,
                 () => gate.Signal(),
@@ -402,9 +408,8 @@ namespace AgentCoreProcessor.Engine
                 // ② CollectBuffer（在创建 session 之前 — 避免 Timer tick 等空唤醒创建无用 session）
                 var batch = CollectBuffer();
 
-                // 没新消息且不在 Working 会话中 → 空唤醒（Timer 心跳等），直接跳过
-                // 例外：模式切换后的额外一轮循环
-                if (batch == null && !isInWorkingSession && !_extraCycleRequested)
+                // 空唤醒跳过：无可唤醒信号且不在 Working 会话中
+                if (!isInWorkingSession && !_extraCycleRequested && !HasWakeableSignals(batch))
                 {
                     await componentHost.OnPauseAsync();
                     continue;
@@ -516,6 +521,7 @@ namespace AgentCoreProcessor.Engine
 
             // 注销委托总线
             ctx.DelegationBus.UnregisterLoop(LoopId.ForChannel(channelId));
+            (_messaging as Component.AgentMessagingImpl)?.Detach();
 
             // 关闭 ComponentHost
             if (componentHost != null)
@@ -629,6 +635,16 @@ namespace AgentCoreProcessor.Engine
                 buffer.Clear();
                 return batch;
             }
+        }
+
+        private bool HasWakeableSignals(List<(IncomingMessage Message, SessionContext Context)>? batch)
+        {
+            if (batch != null && _signalFilter.CanWake(SignalCategory.ChannelMessage)) return true;
+            if (_signalFilter.CanWake(SignalCategory.Delegation)
+                && (_messaging as Component.AgentMessagingImpl)?.HasPendingNotifications == true) return true;
+            if (_signalFilter.CanWake(SignalCategory.SystemEvent)
+                && !_pendingCrossRequests.IsEmpty) return true;
+            return false;
         }
 
         /// <summary>闸门评估。复用原 PrepareContextAsync 逻辑，返回是否开闸。</summary>

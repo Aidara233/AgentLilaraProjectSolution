@@ -67,7 +67,8 @@ namespace AgentCoreProcessor.Core
         protected async Task<Usage> GenerateWithToolsAsync(
             List<ToolDefinition> toolDefs,
             Action<Models.StreamEvent> onEvent,
-            CancellationToken ct = default)
+            CancellationToken ct = default,
+            Action? onRetryReset = null)
         {
             processor.Client.SetTools(toolDefs);
             var reasoningLog = new System.Text.StringBuilder();
@@ -99,87 +100,75 @@ namespace AgentCoreProcessor.Core
                 caller = CallerTag
             });
 
+            // 提取事件处理器为 local function，首次和重试共用同一逻辑
+            Action<Models.StreamEvent> MakeHandler(bool isRetry) => evt =>
+            {
+                if (!firstTokenLogged && (
+                    evt.Type == Models.StreamEventType.Text ||
+                    evt.Type == Models.StreamEventType.Thinking ||
+                    evt.Type == Models.StreamEventType.ToolUseStart))
+                {
+                    firstTokenLogged = true;
+                    Signal.Debug(LogGroup.Model, isRetry ? "首token到达(重试)" : "首token到达",
+                        new { elapsed_ms = sw.ElapsedMilliseconds });
+                }
+
+                if (evt.Type == Models.StreamEventType.Thinking && evt.Content != null)
+                    reasoningLog.Append(evt.Content);
+                if (evt.Type == Models.StreamEventType.Text && evt.Content != null)
+                    textLog.Append(evt.Content);
+                if (evt.Type == Models.StreamEventType.Usage && evt.Usage != null)
+                    usage = evt.Usage;
+                if (evt.Type == Models.StreamEventType.ToolUseStart)
+                {
+                    currentToolName = evt.ToolName;
+                    currentInputJson.Clear();
+                }
+                if (evt.Type == Models.StreamEventType.ToolUseDelta && evt.Content != null)
+                    currentInputJson.Append(evt.Content);
+                if (evt.Type == Models.StreamEventType.ToolUseEnd && currentToolName != null)
+                {
+                    toolCallLog.Add(new { tool = currentToolName, input = currentInputJson.ToString() });
+                    currentToolName = null;
+                }
+                onEvent(evt);
+            };
+
             Exception? callError = null;
             try
             {
-                await processor.Client.StreamChatWithToolsAsync(evt =>
-                {
-                    if (!firstTokenLogged && (
-                        evt.Type == Models.StreamEventType.Text ||
-                        evt.Type == Models.StreamEventType.Thinking ||
-                        evt.Type == Models.StreamEventType.ToolUseStart))
-                    {
-                        firstTokenLogged = true;
-                        Signal.Debug(LogGroup.Model, "首token到达", new { elapsed_ms = sw.ElapsedMilliseconds });
-                    }
-
-                    if (evt.Type == Models.StreamEventType.Thinking && evt.Content != null)
-                        reasoningLog.Append(evt.Content);
-                    if (evt.Type == Models.StreamEventType.Text && evt.Content != null)
-                        textLog.Append(evt.Content);
-                    if (evt.Type == Models.StreamEventType.Usage && evt.Usage != null)
-                        usage = evt.Usage;
-                    if (evt.Type == Models.StreamEventType.ToolUseStart)
-                    {
-                        currentToolName = evt.ToolName;
-                        currentInputJson.Clear();
-                    }
-                    if (evt.Type == Models.StreamEventType.ToolUseDelta && evt.Content != null)
-                        currentInputJson.Append(evt.Content);
-                    if (evt.Type == Models.StreamEventType.ToolUseEnd && currentToolName != null)
-                    {
-                        toolCallLog.Add(new { tool = currentToolName, input = currentInputJson.ToString().Truncate(500) });
-                        currentToolName = null;
-                    }
-                    onEvent(evt);
-                }, ct);
-
-                var outputContent = new System.Text.StringBuilder();
-                if (textLog.Length > 0) outputContent.Append(textLog);
-                if (toolCallLog.Count > 0)
-                {
-                    if (outputContent.Length > 0) outputContent.Append("\n\n");
-                    outputContent.Append(Newtonsoft.Json.JsonConvert.SerializeObject(toolCallLog, Newtonsoft.Json.Formatting.None));
-                }
-                LogOutput(
-                    outputContent.Length > 0 ? outputContent.ToString() : "[native tools: no output]",
-                    reasoningLog.ToString(), usage);
+                await processor.Client.StreamChatWithToolsAsync(MakeHandler(false), ct);
+                LogOutput(BuildOutputContent(textLog, toolCallLog), reasoningLog.ToString(), usage);
             }
             catch (Exception ex)
             {
                 callError = ex;
+                // 失败也写半截文件日志，但不记 token 到数据库
+                LogOutput(BuildOutputContent(textLog, toolCallLog), reasoningLog.ToString(), usage, isError: true);
+
                 cfg = processor.Client.Config;
-                var context = $"core={processor.CfgName} provider={cfg.Provider} model={cfg.Model} endpoint={cfg.ApiEndpoint}";
+                Signal.Error(LogGroup.Model, "模型调用失败，准备重试",
+                    new { error = ex.Message, elapsed_ms = sw.ElapsedMilliseconds });
 
-                Signal.Error(LogGroup.Model, "模型调用失败，准备重试", new { error = ex.Message, elapsed_ms = sw.ElapsedMilliseconds });
-
-                // 重试一次
+                // 重试一次：清空所有半截数据，通知调用方重建处理器
                 reasoningLog.Clear();
+                textLog.Clear();
+                toolCallLog.Clear();
+                currentToolName = null;
+                currentInputJson.Clear();
+                usage = new();
                 firstTokenLogged = false;
                 callError = null;
+                onRetryReset?.Invoke();
                 try
                 {
-                    await processor.Client.StreamChatWithToolsAsync(evt =>
-                    {
-                        if (!firstTokenLogged && (
-                            evt.Type == Models.StreamEventType.Text ||
-                            evt.Type == Models.StreamEventType.Thinking ||
-                            evt.Type == Models.StreamEventType.ToolUseStart))
-                        {
-                            firstTokenLogged = true;
-                            Signal.Debug(LogGroup.Model, "首token到达(重试)", new { elapsed_ms = sw.ElapsedMilliseconds });
-                        }
-
-                        if (evt.Type == Models.StreamEventType.Thinking && evt.Content != null)
-                            reasoningLog.Append(evt.Content);
-                        if (evt.Type == Models.StreamEventType.Usage && evt.Usage != null)
-                            usage = evt.Usage;
-                        onEvent(evt);
-                    }, ct);
+                    await processor.Client.StreamChatWithToolsAsync(MakeHandler(true), ct);
+                    LogOutput(BuildOutputContent(textLog, toolCallLog), reasoningLog.ToString(), usage);
                 }
                 catch (Exception retryEx)
                 {
                     callError = retryEx;
+                    LogOutput(BuildOutputContent(textLog, toolCallLog), reasoningLog.ToString(), usage, isError: true);
                 }
             }
 
@@ -199,6 +188,18 @@ namespace AgentCoreProcessor.Core
                 throw callError;
 
             return usage;
+        }
+
+        private static string BuildOutputContent(StringBuilder textLog, List<object> toolCallLog)
+        {
+            var sb = new System.Text.StringBuilder();
+            if (textLog.Length > 0) sb.Append(textLog);
+            if (toolCallLog.Count > 0)
+            {
+                if (sb.Length > 0) sb.Append("\n\n");
+                sb.Append(Newtonsoft.Json.JsonConvert.SerializeObject(toolCallLog, Newtonsoft.Json.Formatting.None));
+            }
+            return sb.Length > 0 ? sb.ToString() : "[native tools: no output]";
         }
 
         public async Task<Usage> GenerateAsync(Action<ApiResponse>? onDelta = null, Action<ResponseBlock>? onBreak = null)
@@ -229,90 +230,109 @@ namespace AgentCoreProcessor.Core
                 caller = CallerTag
             });
 
-            await processor.ProcessAsync((response) =>
+            try
             {
-                var delta = response.Choices is { Count: > 0 } ? response.Choices[0].Delta : null;
-                if (delta == null) return;
-
-                bool hasContent = delta.ReasoningContent != null || delta.Content != null;
-                if (!hasContent) return;
-
-                if (!firstTokenLogged)
+                await processor.ProcessAsync((response) =>
                 {
-                    firstTokenLogged = true;
-                    Signal.Debug(LogGroup.Model, "首token到达", new { elapsed_ms = sw.ElapsedMilliseconds });
-                }
+                    var delta = response.Choices is { Count: > 0 } ? response.Choices[0].Delta : null;
+                    if (delta == null) return;
 
-                if (delta.ReasoningContent != null)
-                    reasoningLog.Append(delta.ReasoningContent);
+                    bool hasContent = delta.ReasoningContent != null || delta.Content != null;
+                    if (!hasContent) return;
 
-                onDelta?.Invoke(response);
-                OnDelta(response);
-
-                if (response.Usage != null)
-                    usage = response.Usage;
-
-                // break 检测：仅在有 content 且注册了 onBreak 时执行
-                if (delta.Content != null)
-                {
-                    fullContent.Append(delta.Content);
-
-                    if (onBreak != null)
+                    if (!firstTokenLogged)
                     {
-                        buffer.Append(delta.Content);
+                        firstTokenLogged = true;
+                        Signal.Debug(LogGroup.Model, "首token到达", new { elapsed_ms = sw.ElapsedMilliseconds });
+                    }
 
-                        while (true)
+                    if (delta.ReasoningContent != null)
+                        reasoningLog.Append(delta.ReasoningContent);
+
+                    onDelta?.Invoke(response);
+                    OnDelta(response);
+
+                    if (response.Usage != null)
+                        usage = response.Usage;
+
+                    // break 检测：仅在有 content 且注册了 onBreak 时执行
+                    if (delta.Content != null)
+                    {
+                        fullContent.Append(delta.Content);
+
+                        if (onBreak != null)
                         {
-                            var text = buffer.ToString();
-                            string? matchedBreak = null;
-                            int breakIdx = -1;
+                            buffer.Append(delta.Content);
 
-                            foreach (var breakStr in breakString)
+                            while (true)
                             {
-                                var idx = text.IndexOf(breakStr);
-                                if (idx >= 0 && (breakIdx < 0 || idx < breakIdx))
+                                var text = buffer.ToString();
+                                string? matchedBreak = null;
+                                int breakIdx = -1;
+
+                                foreach (var breakStr in breakString)
                                 {
-                                    breakIdx = idx;
-                                    matchedBreak = breakStr;
+                                    var idx = text.IndexOf(breakStr);
+                                    if (idx >= 0 && (breakIdx < 0 || idx < breakIdx))
+                                    {
+                                        breakIdx = idx;
+                                        matchedBreak = breakStr;
+                                    }
                                 }
+
+                                if (matchedBreak == null) break;
+
+                                var blockContent = text[..breakIdx];
+                                var remainder = text[(breakIdx + matchedBreak.Length)..];
+
+                                var block = new ResponseBlock(matchedBreak, blockContent);
+                                onBreak.Invoke(block);
+                                OnBreak(block);
+
+                                buffer.Clear();
+                                buffer.Append(remainder);
                             }
-
-                            if (matchedBreak == null) break;
-
-                            var blockContent = text[..breakIdx];
-                            var remainder = text[(breakIdx + matchedBreak.Length)..];
-
-                            var block = new ResponseBlock(matchedBreak, blockContent);
-                            onBreak.Invoke(block);
-                            OnBreak(block);
-
-                            buffer.Clear();
-                            buffer.Append(remainder);
                         }
                     }
-                }
-            },
-            default,
-            onRetryReset: () =>
-            {
-                buffer.Clear();
-                fullContent.Clear();
-                reasoningLog.Clear();
-                firstTokenLogged = false;
-            });
+                },
+                default,
+                onRetryReset: () =>
+                {
+                    buffer.Clear();
+                    fullContent.Clear();
+                    reasoningLog.Clear();
+                    firstTokenLogged = false;
+                });
 
-            span.SetCloseDetail(new
-            {
-                elapsed_ms = sw.ElapsedMilliseconds,
-                model = cfg.Model,
-                caller = CallerTag,
-                tokens_in = usage.PromptTokens,
-                tokens_out = usage.CompletionTokens,
-                cached_tokens = usage.PromptCacheHitTokens ?? usage.CacheReadInputTokens
-            });
+                span.SetCloseDetail(new
+                {
+                    elapsed_ms = sw.ElapsedMilliseconds,
+                    model = cfg.Model,
+                    caller = CallerTag,
+                    tokens_in = usage.PromptTokens,
+                    tokens_out = usage.CompletionTokens,
+                    cached_tokens = usage.PromptCacheHitTokens ?? usage.CacheReadInputTokens
+                });
 
-            LogOutput(fullContent.ToString(), reasoningLog.ToString(), usage);
-            return usage;
+                LogOutput(fullContent.ToString(), reasoningLog.ToString(), usage);
+                return usage;
+            }
+            catch (Exception ex)
+            {
+                span.SetCloseDetail(new
+                {
+                    elapsed_ms = sw.ElapsedMilliseconds,
+                    model = cfg.Model,
+                    caller = CallerTag,
+                    tokens_in = usage.PromptTokens,
+                    tokens_out = usage.CompletionTokens,
+                    cached_tokens = usage.PromptCacheHitTokens ?? usage.CacheReadInputTokens,
+                    error = ex.Message
+                });
+
+                LogOutput(fullContent.ToString(), reasoningLog.ToString(), usage, isError: true);
+                throw;
+            }
         }
 
         public async Task<string> GenerateOnceAsync()
@@ -321,28 +341,36 @@ namespace AgentCoreProcessor.Core
             var reasoningLog = new StringBuilder();
             Usage? usage = null;
 
-            await processor.ProcessAsync((response) =>
+            try
             {
-                var delta = response.Choices is { Count: > 0 } ? response.Choices[0].Delta : null;
-                if (delta == null) return;
+                await processor.ProcessAsync((response) =>
+                {
+                    var delta = response.Choices is { Count: > 0 } ? response.Choices[0].Delta : null;
+                    if (delta == null) return;
 
-                if (delta.Content != null)
-                    result.Append(delta.Content);
-                if (delta.ReasoningContent != null)
-                    reasoningLog.Append(delta.ReasoningContent);
-                if (response.Usage != null)
-                    usage = response.Usage;
-            },
-            default,
-            onRetryReset: () =>
+                    if (delta.Content != null)
+                        result.Append(delta.Content);
+                    if (delta.ReasoningContent != null)
+                        reasoningLog.Append(delta.ReasoningContent);
+                    if (response.Usage != null)
+                        usage = response.Usage;
+                },
+                default,
+                onRetryReset: () =>
+                {
+                    result.Clear();
+                    reasoningLog.Clear();
+                });
+
+                var output = result.ToString();
+                LogOutput(output, reasoningLog.ToString(), usage);
+                return output;
+            }
+            catch (Exception)
             {
-                result.Clear();
-                reasoningLog.Clear();
-            });
-
-            var output = result.ToString();
-            LogOutput(output, reasoningLog.ToString(), usage);
-            return output;
+                LogOutput(result.ToString(), reasoningLog.ToString(), usage, isError: true);
+                throw;
+            }
         }
 
         public async Task<string> GenerateOnceAsync(string userMessage)
@@ -363,44 +391,59 @@ namespace AgentCoreProcessor.Core
         public virtual void OnBreak(ResponseBlock block) { }
 
         /// <summary>
-        /// 将模型输入和输出写入独立日志文件 Storage/Logs/Model/{timestamp}_{CoreName}.log。
-        /// 返回日志文件名，供框架日志引用。
+        /// 将模型输入和输出写入独立日志文件 Storage/Logs/Model/{timestamp}_{CoreName}.json。
+        /// isError 时只写文件日志，不记录 token 到数据库。
         /// </summary>
-        protected string LogOutput(string content, string reasoning = "", Usage? usage = null)
+        protected string LogOutput(string content, string reasoning = "", Usage? usage = null, bool isError = false)
         {
             string fileName = "";
             try
             {
                 var logDir = Path.Combine(PathConfig.LogPath, "Model");
                 Directory.CreateDirectory(logDir);
-                fileName = $"{DateTime.Now:yyyyMMdd_HHmmss_fff}_{CoreName}.json";
+                var suffix = isError ? "_ERROR" : "";
+                fileName = $"{DateTime.Now:yyyyMMdd_HHmmss_fff}_{CoreName}{suffix}.json";
                 var logPath = Path.Combine(logDir, fileName);
 
                 var history = processor.Client.GetConversationHistory();
                 var cfg = processor.Client.Config;
 
-                // 系统提示词只记 hash
+                // 完整记录系统提示词
                 var systemMessages = history.Where(m => m.Role == "system").ToList();
-                var systemHash = systemMessages.Count > 0
-                    ? ComputeShortHash(string.Join("\n", systemMessages.Select(m => m.Content)))
+                var systemPrompt = systemMessages.Count > 0
+                    ? string.Join("\n\n---\n\n", systemMessages.Select(m => m.Content))
                     : null;
+                var systemHash = systemPrompt != null ? ComputeShortHash(systemPrompt) : null;
 
-                // 动态消息：非 system 的全部记录，包含 ContentParts
+                // 动态消息：非 system 的全部记录，包含 ContentParts 详情
                 var dynamicMessages = history
                     .Where(m => m.Role != "system")
                     .Select(m => m.ContentParts != null && m.ContentParts.Count > 0
                         ? (object)new
                         {
                             role = m.Role,
-                            contentParts = m.ContentParts.Select(p => new
+                            contentParts = m.ContentParts.Select(p =>
                             {
-                                type = p.Type,
-                                text = p.Text,
-                                toolUseId = p.ToolUseId,
-                                toolName = p.ToolName,
-                                toolInput = p.ToolInput,
-                                isError = p.IsError,
-                                hasImage = !string.IsNullOrEmpty(p.ImagePath) || !string.IsNullOrEmpty(p.ImageBase64)
+                                object? imageInfo = null;
+                                if (!string.IsNullOrEmpty(p.ImagePath) || !string.IsNullOrEmpty(p.ImageBase64))
+                                {
+                                    imageInfo = new
+                                    {
+                                        mediaType = p.MediaType ?? "image/png",
+                                        path = string.IsNullOrEmpty(p.ImagePath) ? null : p.ImagePath,
+                                        base64Length = string.IsNullOrEmpty(p.ImageBase64) ? null : (int?)p.ImageBase64.Length
+                                    };
+                                }
+                                return (object)new
+                                {
+                                    type = p.Type,
+                                    text = p.Text,
+                                    toolUseId = p.ToolUseId,
+                                    toolName = p.ToolName,
+                                    toolInput = p.ToolInput,
+                                    isError = p.IsError,
+                                    image = imageInfo
+                                };
                             })
                         }
                         : new { role = m.Role, content = m.Content })
@@ -417,11 +460,13 @@ namespace AgentCoreProcessor.Core
                     caller = CallerTag,
                     model = cfg.Model,
                     provider = cfg.Provider,
+                    systemPrompt,
                     systemPromptHash = systemHash,
                     tools = toolNames,
                     messages = dynamicMessages,
                     output = content,
                     thinking = string.IsNullOrEmpty(reasoning) ? null : reasoning,
+                    error = isError ? true : (bool?)null,
                     usage = usage == null ? null : new
                     {
                         inputTokens = usage.PromptTokens,
@@ -438,8 +483,7 @@ namespace AgentCoreProcessor.Core
                     new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
                 File.WriteAllText(logPath, json);
 
-
-                if (CallLogRepo != null && usage != null)
+                if (CallLogRepo != null)
                 {
                     _ = CallLogRepo.InsertAsync(new ModelCallLog
                     {
@@ -447,11 +491,12 @@ namespace AgentCoreProcessor.Core
                         CoreName = CoreName,
                         Model = cfg.Model,
                         Provider = cfg.Provider,
-                        InputTokens = usage.PromptTokens,
-                        OutputTokens = usage.CompletionTokens,
-                        CacheCreationTokens = usage.CacheCreationInputTokens,
-                        CacheReadTokens = usage.CacheReadInputTokens,
-                        CacheHitTokens = usage.PromptCacheHitTokens ?? 0,
+                        InputTokens = usage?.PromptTokens ?? 0,
+                        OutputTokens = usage?.CompletionTokens ?? 0,
+                        CacheCreationTokens = usage?.CacheCreationInputTokens ?? 0,
+                        CacheReadTokens = usage?.CacheReadInputTokens ?? 0,
+                        CacheHitTokens = usage?.PromptCacheHitTokens ?? 0,
+                        IsError = isError,
                         LogFileName = fileName
                     });
                 }

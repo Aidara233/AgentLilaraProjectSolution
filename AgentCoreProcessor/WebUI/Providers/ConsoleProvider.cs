@@ -58,12 +58,13 @@ internal class ConsoleProvider : IWebUIProvider
             new()
             {
                 Id = "console-send-mode", Type = CardType.Form, Title = "发送模式",
-                DataSourceId = "console-send-config",
+                LinkEvent = "send-config",
                 Schema = new FormSchema
                 {
                     Fields = new()
                     {
                         new() { Field = "mode", Label = "模式", Type = FormFieldType.Select, Required = true,
+                            DefaultValue = "user",
                             Options = new()
                             {
                                 new() { Value = "user", Label = "模拟用户" },
@@ -72,6 +73,7 @@ internal class ConsoleProvider : IWebUIProvider
                             }
                         },
                         new() { Field = "botSaveMode", Label = "入库策略", Type = FormFieldType.Select,
+                            DefaultValue = "both",
                             Options = new()
                             {
                                 new() { Value = "both", Label = "发送并入库" },
@@ -79,11 +81,11 @@ internal class ConsoleProvider : IWebUIProvider
                                 new() { Value = "db_only", Label = "仅入库（不发适配器）" },
                             }
                         },
-                        new() { Field = "simulateMention", Label = "模拟 @提及", Type = FormFieldType.Toggle },
-                        new() { Field = "simulatePrivate", Label = "模拟私聊", Type = FormFieldType.Toggle },
-                        new() { Field = "customName", Label = "自定义名称", Placeholder = "发送者显示名称" },
+                        new() { Field = "simulateMention", Label = "模拟 @提及", Type = FormFieldType.Toggle, DefaultValue = "false" },
+                        new() { Field = "simulatePrivate", Label = "模拟私聊", Type = FormFieldType.Toggle, DefaultValue = "false" },
+                        new() { Field = "customName", Label = "自定义名称", Placeholder = "发送者显示名称", DefaultValue = "TestUser" },
                     },
-                    ShowReset = false,
+                    ShowReset = false, ShowSubmit = false,
                 },
                 Layout = new CardLayout { PreferredCols = 3, MinWidth = "240px", GridColumnStart = 1 },
             },
@@ -112,6 +114,7 @@ internal class ConsoleProvider : IWebUIProvider
             {
                 Id = "console-chat", Type = CardType.Chat, Title = "实时对话",
                 DataSourceId = "console-chat", ListenEvent = "console-channel-selected",
+                InjectEvent = "send-config",
                 Schema = new ChatSchema { ShowSenderSwitch = false, ShowInput = true },
                 Layout = new CardLayout { PreferredCols = 9, MinWidth = "400px", Height = "calc(100vh - 160px)", GridColumnStart = 4 },
             },
@@ -119,7 +122,6 @@ internal class ConsoleProvider : IWebUIProvider
         DataSources = new List<DataSourceDefinition>
         {
             new() { Id = "console-channels", Source = new ConsoleChannelSource(_engine) },
-            new() { Id = "console-send-config", Source = new SendConfigSource() },
             new() { Id = "console-engine-ctl", Source = new ConsoleEngineSource(_engine) },
             new() { Id = "console-chat", Source = new ConsoleChatSource(_engine) },
         },
@@ -166,34 +168,6 @@ internal class ConsoleChannelSource : IDataSource
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
         => Task.FromResult(new ActionResult { Success = false, Message = "不支持" });
-}
-
-internal class SendConfigSource : IDataSource
-{
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
-
-    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-    {
-        return Task.FromResult(new DataResult
-        {
-            Data = new JsonObject
-            {
-                ["mode"] = "user", ["botSaveMode"] = "both",
-                ["simulateMention"] = false, ["simulatePrivate"] = false,
-                ["customName"] = "TestUser",
-            }
-        });
-    }
-
-    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-    {
-        if (data is JsonObject obj) _lastConfig = obj;
-        return Task.FromResult(new ActionResult { Success = true, Message = "已更新" });
-    }
-
-    private static JsonObject? _lastConfig;
-    public static JsonObject? LastConfig => _lastConfig;
 }
 
 internal class ConsoleEngineSource : IDataSource
@@ -384,12 +358,11 @@ internal class ConsoleChatSource : IDataSource
         if (string.IsNullOrWhiteSpace(text))
             return new ActionResult { Success = false, Message = "消息为空" };
 
-        var config = SendConfigSource.LastConfig;
-        var mode = config?["mode"]?.ToString() ?? "user";
-        var botSaveMode = config?["botSaveMode"]?.ToString() ?? "both";
-        var simulateMention = config?["simulateMention"]?.GetValue<bool>() ?? false;
-        var simulatePrivate = config?["simulatePrivate"]?.GetValue<bool>() ?? false;
-        var customName = config?["customName"]?.ToString() ?? "TestUser";
+        var mode = payload["mode"]?.ToString() ?? "user";
+        var botSaveMode = payload["botSaveMode"]?.ToString() ?? "both";
+        var simulateMention = payload["simulateMention"]?.ToString() == "true";
+        var simulatePrivate = payload["simulatePrivate"]?.ToString() == "true";
+        var customName = payload["customName"]?.ToString() ?? "TestUser";
 
         // 确保频道名称已缓存
         if (string.IsNullOrEmpty(_channelName))

@@ -46,7 +46,14 @@ public class RespondToRequestTool : ITool
             return Task.FromResult(new ToolResult { Status = "failed",
                 Error = "type 必须是 accept/reject/progress/complete/failed/ignore" });
 
-        _messaging.Respond(requestId, type, content ?? "");
+        var ok = _messaging.Respond(requestId, type, content ?? "");
+        if (!ok)
+            return Task.FromResult(new ToolResult
+            {
+                Status = "failed",
+                Error = $"请求 {requestId} 不存在或状态不可操作"
+            });
+
         return Task.FromResult(new ToolResult
         {
             Status = "success",
