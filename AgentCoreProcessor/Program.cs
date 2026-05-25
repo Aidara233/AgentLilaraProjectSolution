@@ -70,7 +70,7 @@ namespace AgentCoreProcessor
             }
 
             // 主引擎
-            var engine = new MasterEngine(adapterManager, eventBus);
+            var engine = new MasterEngine(adapterManager, eventBus, signalLogger: logAccess);
             if (muteMode)
                 engine.MuteMode = true;
 

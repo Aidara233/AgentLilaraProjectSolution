@@ -15,6 +15,7 @@ using AgentCoreProcessor.Memory;
 using AgentCoreProcessor.Engine.Modules;
 using AgentCoreProcessor.Logging;
 using AgentLilara.PluginSDK;
+using AgentLilara.PluginSDK.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -48,6 +49,7 @@ namespace AgentCoreProcessor.Engine
         private string databaseDirectory;
         private readonly AdapterManager adapterManager;
         private readonly EventBus eventBus;
+        private readonly ISignalLogger? _signalLogger;
         private DbManager? db;
         private IEmbeddingProvider? embeddingProvider;
         private IVisionProvider? visionProvider;
@@ -140,11 +142,12 @@ namespace AgentCoreProcessor.Engine
         ];
 
 
-        public MasterEngine(AdapterManager adapterManager, EventBus eventBus, string? databaseDirectory = null)
+        public MasterEngine(AdapterManager adapterManager, EventBus eventBus, ISignalLogger? signalLogger = null, string? databaseDirectory = null)
         {
             this.adapterManager = adapterManager;
             this.eventBus = eventBus;
             this.databaseDirectory = databaseDirectory ?? DefaultDatabasePath;
+            _signalLogger = signalLogger;
         }
 
         // ---- 引擎状态查询 ----
@@ -465,6 +468,8 @@ namespace AgentCoreProcessor.Engine
             componentServices.Register<AgentLilara.PluginSDK.Services.IMemoryAccess>(memoryAccess);
             componentServices.Register<AgentLilara.PluginSDK.Services.IBeaconAccess>(
                 new Tool.Host.BeaconAccessImpl(ReviewHints));
+            if (_signalLogger != null)
+                componentServices.Register<ISignalLogger>(_signalLogger);
 
             globalComponentHost = new GlobalComponentHost(
                 _moduleBus, componentServices,

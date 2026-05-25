@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentLilara.PluginSDK;
+using AgentLilara.PluginSDK.Logging;
 
 namespace Plugin.ScheduledTasks;
 
@@ -14,14 +15,15 @@ public class ScheduledTasksComponent : LoopComponentBase
     private ScheduledTaskStore? _store;
     private CancellationTokenSource? _timerCts;
     private Task? _timerTask;
+    private ISignalLogger? _log;
 
-    // Simple pending notification — no queue/lock complexity.
-    // Set by CheckDueTasks, consumed by BuildPromptSection.
     private string? _pendingNotification;
 
     private ScheduleTaskTool? _scheduleTool;
     private CancelTaskTool? _cancelTool;
     private ListTasksTool? _listTool;
+
+    private const string LogGroup = "scheduled-tasks";
 
     public override ComponentMeta Meta => new()
     {
@@ -44,7 +46,10 @@ public class ScheduledTasksComponent : LoopComponentBase
     public override Task OnInitAsync(ILoopComponentContext context, InitReason reason)
     {
         _ctx = context;
+        _log = context.GetService<ISignalLogger>();
         _store = new ScheduledTaskStore(context.Storage.InstanceDirectory);
+
+        _log?.Event(LogGroup, "init-begin", new { reason = reason.ToString(), loopId = context.LoopId });
 
         _scheduleTool = new ScheduleTaskTool(_store);
         _cancelTool = new CancelTaskTool(_store);
@@ -53,11 +58,13 @@ public class ScheduledTasksComponent : LoopComponentBase
         StartTimer();
         RecoverOverdueTasks();
 
+        _log?.Event(LogGroup, "init-done", new { storePath = context.Storage.InstanceDirectory });
         return Task.CompletedTask;
     }
 
     public override Task OnEnabledAsync()
     {
+        _log?.Event(LogGroup, "enabled");
         StartTimer();
         RecoverOverdueTasks();
         return Task.CompletedTask;
@@ -65,12 +72,14 @@ public class ScheduledTasksComponent : LoopComponentBase
 
     public override Task OnDisabledAsync()
     {
+        _log?.Event(LogGroup, "disabled");
         StopTimer();
         return Task.CompletedTask;
     }
 
     public override Task OnShutdownAsync(ShutdownReason reason)
     {
+        _log?.Event(LogGroup, "shutdown", new { reason = reason.ToString() });
         StopTimer();
         _timerCts?.Dispose();
         _timerCts = null;
@@ -86,10 +95,12 @@ public class ScheduledTasksComponent : LoopComponentBase
     {
         if (_store == null) return null;
 
-        // Check due tasks synchronously in case OnBeforeInvokeAsync missed them
         CheckDueTasksSync();
 
         var text = Interlocked.Exchange(ref _pendingNotification, null);
+        if (text != null)
+            _log?.Event(LogGroup, "notification-injected", new { length = text.Length });
+
         return text;
     }
 
@@ -98,12 +109,14 @@ public class ScheduledTasksComponent : LoopComponentBase
     private void StartTimer()
     {
         if (_timerCts != null) return;
+        _log?.Event(LogGroup, "timer-start");
         _timerCts = new CancellationTokenSource();
         _timerTask = Task.Run(() => PollLoop(_timerCts.Token));
     }
 
     private void StopTimer()
     {
+        _log?.Event(LogGroup, "timer-stop");
         _timerCts?.Cancel();
         _timerCts = null;
         _timerTask = null;
@@ -111,6 +124,7 @@ public class ScheduledTasksComponent : LoopComponentBase
 
     private async Task PollLoop(CancellationToken ct)
     {
+        _log?.Event(LogGroup, "poll-loop-started");
         while (!ct.IsCancellationRequested)
         {
             try
@@ -122,11 +136,12 @@ public class ScheduledTasksComponent : LoopComponentBase
             {
                 break;
             }
-            catch
+            catch (Exception ex)
             {
-                // Swallow transient errors
+                _log?.Error(LogGroup, "poll-loop-error", new { error = ex.Message });
             }
         }
+        _log?.Event(LogGroup, "poll-loop-stopped");
     }
 
     // ── Due task checking ──
@@ -145,11 +160,27 @@ public class ScheduledTasksComponent : LoopComponentBase
         var (tasks, dueTasks) = _store.LoadAndFindDue(now);
         if (dueTasks.Count == 0) return;
 
+        _log?.Event(LogGroup, "due-tasks-found", new
+        {
+            count = dueTasks.Count,
+            totalTasks = tasks.Count,
+            now = now.ToString("HH:mm:ss")
+        });
+
         var notifications = new List<string>();
         var fired = false;
 
         foreach (var task in dueTasks)
         {
+            _log?.Event(LogGroup, "task-firing", new
+            {
+                id = task.Id[..8],
+                description = task.Description,
+                expression = task.Expression,
+                isRecurring = task.IsRecurring,
+                nextFireTime = task.NextFireTime?.ToString("yyyy-MM-dd HH:mm:ss")
+            });
+
             notifications.Add(task.Description);
 
             if (task.IsRecurring)
@@ -159,12 +190,18 @@ public class ScheduledTasksComponent : LoopComponentBase
                 {
                     task.NextFireTime = nextFire;
                     task.LastFiredAt = now;
+                    _log?.Event(LogGroup, "task-rescheduled", new
+                    {
+                        id = task.Id[..8],
+                        nextFire = nextFire.Value.ToString("yyyy-MM-dd HH:mm:ss")
+                    });
                 }
                 else
                 {
                     task.Enabled = false;
                     task.NextFireTime = null;
                     task.LastFiredAt = now;
+                    _log?.Event(LogGroup, "task-expired", new { id = task.Id[..8] });
                 }
             }
             else
@@ -189,7 +226,10 @@ public class ScheduledTasksComponent : LoopComponentBase
         }
 
         if (fired)
+        {
+            _log?.Event(LogGroup, "waking-loop");
             _ctx.WakeLoop();
+        }
     }
 
     private void RecoverOverdueTasks()
@@ -200,11 +240,24 @@ public class ScheduledTasksComponent : LoopComponentBase
         var (tasks, overdue) = _store.LoadAndFindDue(now);
         if (overdue.Count == 0) return;
 
+        _log?.Event(LogGroup, "recovery-due-tasks", new
+        {
+            count = overdue.Count,
+            now = now.ToString("HH:mm:ss")
+        });
+
         var notifications = new List<string>();
         var fired = false;
 
         foreach (var task in overdue)
         {
+            _log?.Event(LogGroup, "recovery-firing", new
+            {
+                id = task.Id[..8],
+                description = task.Description,
+                scheduledFor = task.NextFireTime?.ToString("yyyy-MM-dd HH:mm:ss")
+            });
+
             notifications.Add(task.Description);
 
             if (task.IsRecurring)
@@ -244,6 +297,9 @@ public class ScheduledTasksComponent : LoopComponentBase
         }
 
         if (fired)
+        {
+            _log?.Event(LogGroup, "recovery-waking-loop");
             _ctx.WakeLoop();
+        }
     }
 }
