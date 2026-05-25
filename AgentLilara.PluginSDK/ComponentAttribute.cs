@@ -16,10 +16,6 @@ public class LoopApplicabilityAttribute : Attribute
 {
     public Applicability Channel { get; set; } = Applicability.Enabled;
     public Applicability System { get; set; } = Applicability.Enabled;
-}
-
-[AttributeUsage(AttributeTargets.Class)]
-public class ToolVisibilityAttribute : Attribute
-{
-    public Visibility Default { get; set; } = Visibility.FollowState;
+    public Applicability Review { get; set; } = Applicability.Enabled;
+    public Applicability SubAgent { get; set; } = Applicability.Enabled;
 }

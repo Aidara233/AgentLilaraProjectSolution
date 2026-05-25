@@ -5,7 +5,6 @@ namespace Plugin.CrossLoopTools;
 
 [Component(Name = "cross-loop", Scope = ComponentScope.Loop)]
 [LoopApplicability(Channel = Applicability.Enabled, System = Applicability.Enabled)]
-[ToolVisibility(Default = Visibility.AlwaysVisible)]
 public class CrossLoopComponent : LoopComponentBase
 {
     private ILoopComponentContext _ctx = null!;

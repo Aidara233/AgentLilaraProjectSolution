@@ -46,12 +46,12 @@ internal class ConfigProvider : IWebUIProvider
         ["VisionEngine"] = "Engine/VisionEngineConfig.json",
         ["SignalFilter"] = "Engine/SignalFilter.json",
         ["DreamConfig"] = "Dream/DreamConfig.json",
+        ["ComponentConfig"] = "Engine/ComponentConfig.json",
     };
 
     private readonly Dictionary<string, string> _otherFiles = new()
     {
         ["CommandConfig"] = "Command/CommandConfig.json",
-        ["ToolProfiles"] = "Engine/ToolProfiles.json",
         ["Adapter_qq-main"] = "Adapter/qq-main.json",
     };
 

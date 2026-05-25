@@ -3,16 +3,6 @@ using System;
 namespace AgentLilara.PluginSDK
 {
     /// <summary>
-    /// 工具权限级别。
-    /// </summary>
-    public enum ToolPermission
-    {
-        Default = 0,
-        Elevated = 1,
-        Admin = 2
-    }
-
-    /// <summary>
     /// 工具元数据声明。标注在工具类上，由插件宿主读取。
     /// </summary>
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
@@ -29,9 +19,6 @@ namespace AgentLilara.PluginSDK
 
         /// <summary>能力摘要（一句话），注入 Express prompt。null 表示不暴露。</summary>
         public string? CapabilitySummary { get; set; }
-
-        /// <summary>使用此工具所需的最低权限。</summary>
-        public ToolPermission Permission { get; set; } = ToolPermission.Default;
 
         /// <summary>是否在 Express 模式下可用（fire-and-forget，结果不回注）。</summary>
         public bool ExpressAvailable { get; set; }

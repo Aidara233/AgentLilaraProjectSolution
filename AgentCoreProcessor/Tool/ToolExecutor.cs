@@ -54,20 +54,6 @@ namespace AgentCoreProcessor.Tool
                 return new ToolResult { Status = "failed", Error = $"工具已禁用: {reason}" };
             }
 
-            // 权限检查
-            var meta = ToolRegistry.GetMeta(call.Tool);
-            var permission = meta?.Permission ?? AgentLilara.PluginSDK.ToolPermission.Default;
-            if (permission > AgentLilara.PluginSDK.ToolPermission.Default
-                && authorizedTools != null
-                && !authorizedTools.Contains(tool.Name))
-            {
-                return new ToolResult
-                {
-                    Status = "failed",
-                    Error = $"未授权使用「{tool.Name}」，管理员可用 /auth grant {tool.Name} 授权"
-                };
-            }
-
             using var cts = new CancellationTokenSource(tool.Timeout);
             try
             {

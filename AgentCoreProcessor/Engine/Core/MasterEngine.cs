@@ -101,9 +101,6 @@ namespace AgentCoreProcessor.Engine
         public CrossRequestRegistry CrossRequests { get; private set; } = null!;
         public DelegationBus DelegationBus { get; private set; } = null!;
 
-        // ---- ISystemContext: 工具 Profile ----
-        public Tool.Host.ToolProfileManager ToolProfiles { get; } = new();
-
         // ---- ISystemContext: Component 系统 ----
         public ModuleBus ModuleBus => _moduleBus;
         public GlobalComponentHost? GlobalComponentHost => globalComponentHost;
@@ -443,7 +440,7 @@ namespace AgentCoreProcessor.Engine
             // 注册核心工具（不可卸载的循环控制工具）
             Tool.ToolRegistry.Register(new Tool.Core.ContinueLoopTool());
             Tool.ToolRegistry.Register(new Tool.Core.WaitTool());
-            Tool.ToolRegistry.Register(new Tool.Core.ManageComponentsTool(ToolProfiles));
+            Tool.ToolRegistry.Register(new Tool.Core.ManageComponentsTool());
             Tool.ToolRegistry.Register(new Tool.Core.EscalateTool());
             Tool.ToolRegistry.Register(new Tool.Core.DeescalateTool());
 
@@ -460,9 +457,6 @@ namespace AgentCoreProcessor.Engine
             _pluginLoader = new Tool.Host.PluginLoader(_toolContext, ProviderRegistry);
             _pluginLoader.LoadAll();
             Signal.Event(LogGroup.Plugin, "插件加载完成", new { count = Tool.ToolRegistry.All.Count });
-
-            // 工具 Profile 加载（在插件加载后，引擎启动前）
-            ToolProfiles.Load();
 
             // Component 系统初始化（PluginLoader 已填充 ComponentRegistry）
             componentServices.Register<AgentLilara.PluginSDK.Services.ISubAgentAccess>(

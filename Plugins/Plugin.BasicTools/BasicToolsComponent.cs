@@ -4,7 +4,6 @@ using AgentLilara.PluginSDK;
 namespace Plugin.BasicTools;
 
 [Component(Name = "basic-tools", Scope = ComponentScope.Global)]
-[ToolVisibility(Default = Visibility.AlwaysVisible)]
 public class BasicToolsComponent : GlobalComponentBase
 {
     private SpeakTool? _speak;

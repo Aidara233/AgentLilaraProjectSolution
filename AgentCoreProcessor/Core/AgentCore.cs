@@ -21,9 +21,6 @@ namespace AgentCoreProcessor.Core
         /// <summary>当前是否使用原生工具调用。</summary>
         internal bool UseNativeTools => processor?.Client?.Config?.UseNativeTools == true;
 
-        /// <summary>工具 Profile 管理器（由引擎注入）。</summary>
-        public ToolProfileManager? ProfileManager { get; set; }
-
         /// <summary>额外的工具列表（loop 组件工具），合并到每次 API 请求的 tool_use 定义中。</summary>
         public List<ITool>? AdditionalTools { get; set; }
 
@@ -58,7 +55,7 @@ namespace AgentCoreProcessor.Core
         /// <summary>
         /// 统一入口。根据模式和 profile 调用模型，返回文本或工具调用。
         /// </summary>
-        public async Task<ModelOutput> InvokeAsync(List<Message> messages, Engine.EngineMode mode, string? profileName = null)
+        public async Task<ModelOutput> InvokeAsync(List<Message> messages, Engine.EngineMode mode)
         {
             SwitchMode(mode);
             processor = new Processor(currentMode, usePersona: UsePersona);
@@ -103,7 +100,7 @@ namespace AgentCoreProcessor.Core
             }
             else
             {
-                var (calls, thinking) = await GenerateToolCallsWithThinkingAsync(profileName);
+                var (calls, thinking) = await GenerateToolCallsWithThinkingAsync();
                 return ModelOutput.FromTools(calls, thinking);
             }
         }
@@ -121,10 +118,10 @@ namespace AgentCoreProcessor.Core
         /// <summary>
         /// 工具调用解析（Working 模式）。UseNativeTools 时使用原生 tool_use，否则解析文本 JSON。
         /// </summary>
-        public async Task<(List<ToolCall> Calls, string? Thinking)> GenerateToolCallsWithThinkingAsync(string? profileName = null)
+        public async Task<(List<ToolCall> Calls, string? Thinking)> GenerateToolCallsWithThinkingAsync()
         {
             if (UseNativeTools)
-                return await GenerateWithNativeToolsAsync(profileName);
+                return await GenerateWithNativeToolsAsync();
 
             // 旧路径：文本 JSON 解析
             var calls = new List<ToolCall>();
@@ -165,22 +162,13 @@ namespace AgentCoreProcessor.Core
             return (calls, thinking);
         }
 
-        private async Task<(List<ToolCall> Calls, string? Thinking)> GenerateWithNativeToolsAsync(string? profileName)
+        private async Task<(List<ToolCall> Calls, string? Thinking)> GenerateWithNativeToolsAsync()
         {
-            // 从 ToolProfileManager 获取工具定义，不再依赖 ToolFilter
-            List<ToolDefinition> toolDefs;
-            if (ProfileManager != null && profileName != null)
-            {
-                toolDefs = ProfileManager.GetToolDefinitions(profileName);
-            }
-            else
-            {
-                // fallback：使用全部已注册工具（Core + MCP，不含组件工具）
-                toolDefs = ToolRegistry.All.Values
-                    .Where(t => !ToolRegistry.IsDisabled(t.Name))
-                    .Select(ToDefinition)
-                    .ToList();
-            }
+            // 使用全部已注册工具（过滤在 ComponentHost 层完成）
+            var toolDefs = ToolRegistry.All.Values
+                .Where(t => !ToolRegistry.IsDisabled(t.Name))
+                .Select(ToDefinition)
+                .ToList();
 
             // 合并全局组件工具
             MergeTools(toolDefs, GlobalComponentTools);
@@ -213,12 +201,12 @@ namespace AgentCoreProcessor.Core
         /// <summary>
         /// 系统循环专用：复用 Processor 实例，直接设置历史并调用。
         /// </summary>
-        public async Task<ModelOutput> InvokeWithHistoryAsync(List<Message> messages, string? profileName = null)
+        public async Task<ModelOutput> InvokeWithHistoryAsync(List<Message> messages)
         {
             processor ??= new Processor(currentMode, usePersona: UsePersona);
             processor.Client.ClearConversationHistory();
             processor.Client.SetConversationHistory(messages);
-            var (calls, thinking) = await GenerateToolCallsWithThinkingAsync(profileName);
+            var (calls, thinking) = await GenerateToolCallsWithThinkingAsync();
             return ModelOutput.FromTools(calls, thinking);
         }
 

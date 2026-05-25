@@ -58,7 +58,7 @@ internal class GlobalComponentHost
     {
         foreach (var inst in _components)
         {
-            if (!ShouldShowTools(inst)) continue;
+            if (!inst.Context.IsEnabled) continue;
             foreach (var tool in inst.Component.Tools)
                 yield return tool;
         }
@@ -137,9 +137,25 @@ internal class GlobalComponentHost
 
     public IEnumerable<ITool> GetAllTools() => _tools.Values;
 
+    /// <summary>获取指定引擎类型下所有可见工具的名称白名单（供子agent等场景使用）。</summary>
+    public HashSet<string> GetToolWhitelist(string engineType)
+    {
+        var names = new HashSet<string>();
+        foreach (var inst in _components)
+        {
+            if (!_config.IsEnabled(inst.Component.Meta.Name, engineType, inst.Component.Meta.DefaultEnabled))
+                continue;
+            foreach (var tool in inst.Component.Tools)
+            {
+                if (!ToolRegistry.IsDisabled(tool.Name))
+                    names.Add(tool.Name);
+            }
+        }
+        return names;
+    }
+
     private void RegisterTools(GlobalComponentInstance inst)
     {
-        if (!ShouldShowTools(inst)) return;
         foreach (var tool in inst.Component.Tools)
         {
             _tools[tool.Name] = tool;
@@ -187,7 +203,8 @@ internal class GlobalComponentHost
 
         if (instance is not IGlobalComponent component) return null;
 
-        var defaultEnabled = _config.IsEnabled(component.Meta.Name, component.Meta.DefaultEnabled);
+        // Global组件默认全部启用（具体引擎类型的过滤在 ComponentHost 中处理）
+        var defaultEnabled = component.Meta.DefaultEnabled;
         var storage = new ComponentStorage(component.Meta.Name, "_global");
 
         var context = new GlobalComponentContext(
@@ -200,21 +217,6 @@ internal class GlobalComponentHost
             defaultEnabled);
 
         return new GlobalComponentInstance(component, context, reg);
-    }
-
-    private bool ShouldShowTools(GlobalComponentInstance inst)
-    {
-        var visibility = _config.GetVisibility(
-            inst.Component.Meta.Name,
-            inst.Registration.Type.GetCustomAttribute<ToolVisibilityAttribute>()?.Default ?? Visibility.FollowState);
-
-        return visibility switch
-        {
-            Visibility.AlwaysVisible => true,
-            Visibility.AlwaysHidden => false,
-            Visibility.FollowState => inst.Context.IsEnabled,
-            _ => inst.Context.IsEnabled
-        };
     }
 }
 

@@ -10,6 +10,8 @@ internal record ComponentRegistration(
     ComponentScope Scope,
     Applicability ChannelApplicability,
     Applicability SystemApplicability,
+    Applicability ReviewApplicability,
+    Applicability SubAgentApplicability,
     Assembly SourceAssembly);
 
 internal static class ComponentRegistry
@@ -28,6 +30,8 @@ internal static class ComponentRegistry
             Scope: attr.Scope,
             ChannelApplicability: loopAttr?.Channel ?? Applicability.Enabled,
             SystemApplicability: loopAttr?.System ?? Applicability.Enabled,
+            ReviewApplicability: loopAttr?.Review ?? Applicability.Enabled,
+            SubAgentApplicability: loopAttr?.SubAgent ?? Applicability.Enabled,
             SourceAssembly: type.Assembly);
 
         return _registrations.TryAdd(attr.Name, reg);
@@ -55,6 +59,8 @@ internal static class ComponentRegistry
             {
                 "channel" => r.ChannelApplicability,
                 "system" => r.SystemApplicability,
+                "review" => r.ReviewApplicability,
+                "sub-agent" => r.SubAgentApplicability,
                 _ => Applicability.Enabled
             };
             return applicability != Applicability.NotApplicable;

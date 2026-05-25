@@ -8,7 +8,6 @@ namespace Plugin.ScheduledTasks;
 
 [Component(Name = "scheduled-tasks", Scope = ComponentScope.Loop)]
 [LoopApplicability(Channel = Applicability.Enabled, System = Applicability.Disabled)]
-[ToolVisibility(Default = Visibility.AlwaysVisible)]
 public class ScheduledTasksComponent : LoopComponentBase
 {
     private ILoopComponentContext _ctx = null!;

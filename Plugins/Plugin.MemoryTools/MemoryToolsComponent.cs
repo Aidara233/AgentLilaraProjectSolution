@@ -5,7 +5,6 @@ using AgentLilara.PluginSDK.Services;
 namespace Plugin.MemoryTools;
 
 [Component(Name = "memory-tools", Scope = ComponentScope.Global)]
-[ToolVisibility(Default = Visibility.AlwaysVisible)]
 public class MemoryToolsComponent : GlobalComponentBase
 {
     private IGlobalComponentContext _ctx = null!;

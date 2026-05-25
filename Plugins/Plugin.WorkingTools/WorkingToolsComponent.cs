@@ -6,7 +6,6 @@ namespace Plugin.WorkingTools;
 
 [Component(Name = "working-tools", Scope = ComponentScope.Loop)]
 [LoopApplicability(Channel = Applicability.Enabled, System = Applicability.Disabled)]
-[ToolVisibility(Default = Visibility.AlwaysVisible)]
 public class WorkingToolsComponent : LoopComponentBase
 {
     private ILoopComponentContext _ctx = null!;

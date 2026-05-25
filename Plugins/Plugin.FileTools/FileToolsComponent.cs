@@ -4,7 +4,6 @@ using AgentLilara.PluginSDK;
 namespace Plugin.FileTools;
 
 [Component(Name = "file-tools", Scope = ComponentScope.Global)]
-[ToolVisibility(Default = Visibility.FollowState)]
 public class FileToolsComponent : GlobalComponentBase
 {
     private readonly List<ITool> _tools = new();

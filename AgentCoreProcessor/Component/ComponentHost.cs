@@ -73,6 +73,9 @@ internal class ComponentHost
         {
             try
             {
+                var compName = ComponentAttribute.GetFrom(reg.Type)?.Name ?? reg.Type.Name;
+                if (!_config.IsEnabled(compName, _loopType, true))
+                    continue;
                 var instance = CreateInstance(reg);
                 if (instance == null) continue;
                 _loopComponents.Add(instance);
@@ -91,22 +94,39 @@ internal class ComponentHost
     {
         foreach (var inst in _loopComponents)
         {
-            if (!ShouldShowTools(inst)) continue;
+            if (!inst.Context.IsEnabled) continue;
             foreach (var tool in inst.Component.Tools)
                 yield return tool;
         }
     }
 
-    /// <summary>获取全局组件工具 + 本循环 Loop 组件工具。</summary>
+    /// <summary>获取全局组件工具（按引擎类型过滤） + 本循环 Loop 组件工具。</summary>
     public IEnumerable<ITool> GetAllVisibleTools()
     {
         if (GlobalHost != null)
         {
-            foreach (var tool in GlobalHost.GetAllTools())
-                yield return tool;
+            foreach (var inst in GlobalHost.Instances)
+            {
+                if (!_config.IsEnabled(inst.Component.Meta.Name, _loopType, inst.Component.Meta.DefaultEnabled))
+                    continue;
+                foreach (var tool in inst.Component.Tools)
+                    yield return tool;
+            }
         }
         foreach (var tool in GetVisibleTools())
             yield return tool;
+    }
+
+    /// <summary>获取当前引擎类型下所有可见工具的名称集合（供 ToolExecutor 白名单）。</summary>
+    public HashSet<string> GetAllVisibleToolNames()
+    {
+        var names = new HashSet<string>();
+        foreach (var tool in GetAllVisibleTools())
+        {
+            if (!ToolRegistry.IsDisabled(tool.Name))
+                names.Add(tool.Name);
+        }
+        return names;
     }
 
     public List<string> BuildPromptSections()
@@ -241,13 +261,6 @@ internal class ComponentHost
         return defs;
     }
 
-    private void RegisterTools(LoopComponentInstance inst)
-    {
-        if (!ShouldShowTools(inst)) return;
-        foreach (var tool in inst.Component.Tools)
-            _localTools[tool.Name] = tool;
-    }
-
     private void UnregisterTools(LoopComponentInstance inst)
     {
         foreach (var tool in inst.Component.Tools)
@@ -263,7 +276,7 @@ internal class ComponentHost
 
         if (instance is not ILoopComponent component) return null;
 
-        var defaultEnabled = _config.IsEnabled(component.Meta.Name, component.Meta.DefaultEnabled);
+        var defaultEnabled = _config.IsEnabled(component.Meta.Name, _loopType, component.Meta.DefaultEnabled);
         var storage = new ComponentStorage(component.Meta.Name, _loopId);
 
         var context = new LoopComponentContext(
@@ -279,19 +292,11 @@ internal class ComponentHost
         return new LoopComponentInstance(component, context, reg);
     }
 
-    private bool ShouldShowTools(LoopComponentInstance inst)
+    private void RegisterTools(LoopComponentInstance inst)
     {
-        var visibility = _config.GetVisibility(
-            inst.Component.Meta.Name,
-            inst.Registration.Type.GetCustomAttribute<ToolVisibilityAttribute>()?.Default ?? Visibility.FollowState);
-
-        return visibility switch
-        {
-            Visibility.AlwaysVisible => true,
-            Visibility.AlwaysHidden => false,
-            Visibility.FollowState => inst.Context.IsEnabled,
-            _ => inst.Context.IsEnabled
-        };
+        if (!inst.Context.IsEnabled) return;
+        foreach (var tool in inst.Component.Tools)
+            _localTools[tool.Name] = tool;
     }
 
     private static void LogError(LoopComponentInstance inst, string hook, Exception ex)

@@ -5,7 +5,6 @@ namespace Plugin.ReviewTools;
 
 [Component(Name = "review-tools", Scope = ComponentScope.Global)]
 [LoopApplicability(Channel = Applicability.NotApplicable, System = Applicability.NotApplicable)]
-[ToolVisibility(Default = Visibility.AlwaysVisible)]
 public class ReviewToolsComponent : GlobalComponentBase
 {
     private readonly List<ITool> _tools = new();

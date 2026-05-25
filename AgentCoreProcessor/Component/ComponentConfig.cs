@@ -1,15 +1,8 @@
 // AgentCoreProcessor/Component/ComponentConfig.cs
 using System.Text.Json;
 using AgentCoreProcessor.Config;
-using AgentLilara.PluginSDK;
 
 namespace AgentCoreProcessor.Component;
-
-internal class ComponentConfigEntry
-{
-    public bool? Enabled { get; set; }
-    public Visibility? ToolVisibility { get; set; }
-}
 
 internal class ComponentConfig
 {
@@ -17,7 +10,7 @@ internal class ComponentConfig
         Path.Combine(PathConfig.StoragePath, "Engine", "ComponentConfig.json");
 
     public int ShutdownTimeoutMs { get; set; } = 30000;
-    public Dictionary<string, ComponentConfigEntry> Components { get; set; } = new();
+    public Dictionary<string, ComponentPermEntry> Components { get; set; } = new();
 
     private static ComponentConfig? _cached;
 
@@ -45,17 +38,68 @@ internal class ComponentConfig
 
     public static void Invalidate() => _cached = null;
 
-    public bool IsEnabled(string componentName, bool defaultEnabled)
+    /// <summary>检查组件是否对指定引擎类型启用。</summary>
+    public bool IsEnabled(string componentName, string engineType, bool defaultEnabled = true)
     {
-        if (Components.TryGetValue(componentName, out var entry) && entry.Enabled.HasValue)
-            return entry.Enabled.Value;
+        if (Components.TryGetValue(componentName, out var entry))
+            return entry.IsEnabled(engineType);
         return defaultEnabled;
     }
 
-    public Visibility GetVisibility(string componentName, Visibility defaultVisibility)
+    /// <summary>修改组件在指定引擎类型下的启用状态并持久化。</summary>
+    public void SetEnabled(string componentName, string engineType, bool enabled)
     {
-        if (Components.TryGetValue(componentName, out var entry) && entry.ToolVisibility.HasValue)
-            return entry.ToolVisibility.Value;
-        return defaultVisibility;
+        if (!Components.TryGetValue(componentName, out var entry))
+        {
+            entry = new ComponentPermEntry();
+            Components[componentName] = entry;
+        }
+        entry.SetEnabled(engineType, enabled);
+        Save();
+    }
+
+    /// <summary>获取所有已知引擎类型。</summary>
+    public static readonly string[] EngineTypes = ["channel", "system", "subAgent", "review"];
+
+    private void Save()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath)!);
+            var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(ConfigPath, json);
+            _cached = this;
+        }
+        catch
+        {
+        }
+    }
+}
+
+internal class ComponentPermEntry
+{
+    public bool Channel { get; set; } = true;
+    public bool System { get; set; } = true;
+    public bool SubAgent { get; set; } = true;
+    public bool Review { get; set; } = true;
+
+    public bool IsEnabled(string engineType) => engineType switch
+    {
+        "channel" => Channel,
+        "system" => System,
+        "sub-agent" => SubAgent,
+        "review" => Review,
+        _ => true
+    };
+
+    public void SetEnabled(string engineType, bool enabled)
+    {
+        switch (engineType)
+        {
+            case "channel": Channel = enabled; break;
+            case "system": System = enabled; break;
+            case "sub-agent": SubAgent = enabled; break;
+            case "review": Review = enabled; break;
+        }
     }
 }

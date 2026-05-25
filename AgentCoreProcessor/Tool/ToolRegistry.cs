@@ -79,14 +79,8 @@ namespace AgentCoreProcessor.Tool
             foreach (var tool in source)
             {
                 if (IsDisabled(tool.Name)) continue;
-                var meta = GetMeta(tool.Name)
-                    ?? Attribute.GetCustomAttribute(tool.GetType(), typeof(ToolMetaAttribute)) as ToolMetaAttribute;
-                var permission = meta?.Permission ?? AgentLilara.PluginSDK.ToolPermission.Default;
-                bool isRestricted = permission > AgentLilara.PluginSDK.ToolPermission.Default;
-                bool isAuthorized = authorizedTools != null && authorizedTools.Contains(tool.Name);
-                var suffix = isRestricted && !isAuthorized ? "（需要管理员授权）" : "";
 
-                sb.AppendLine($"工具{i}：{tool.Name}{suffix}");
+                sb.AppendLine($"工具{i}：{tool.Name}");
                 sb.AppendLine($"描述：{tool.Description}");
                 if (tool.Parameters.Count > 0)
                 {

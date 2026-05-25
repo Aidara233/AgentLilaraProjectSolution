@@ -59,16 +59,6 @@ namespace AgentCoreProcessor.Engine
         internal HashSet<int> ChannelsVisited { get; } = new();
         internal HashSet<int> PersonsEncountered { get; } = new();
 
-        private static readonly HashSet<string> AuthorizedTools = new()
-        {
-            "review_focus", "review_browse", "review_search_messages",
-            "review_search_memory", "review_get_person", "review_list_beacons",
-            "review_write_memory", "review_update_person", "review_evaluate",
-            "review_link_memory", "review_get_links",
-            "review_thinking_notes", "review_save_progress",
-            "review_request_reinforcement", "review_complete"
-        };
-
         private static readonly HashSet<string> ActionTools = new()
         {
             "review_thinking_notes", "review_write_memory", "review_update_person",
@@ -118,8 +108,6 @@ namespace AgentCoreProcessor.Engine
 
             try
             {
-                _core.ProfileManager = _ctx.ToolProfiles;
-
                 // 创建 ReviewSession 记录
                 var session = await _ctx.ReviewLogs.CreateSessionAsync(new ReviewSession
                 {
@@ -134,10 +122,11 @@ namespace AgentCoreProcessor.Engine
                     BackoffSeconds = new[] { 10, 30 },
                     ModelCallMaxAttempts = 3,
                     ModelCallRetryDelaySeconds = new[] { 5, 15 },
-                    ProfileName = "review"
                 };
 
-                _agent = new Agent(this, _core, agentConfig, AuthorizedTools);
+                var authorized = _ctx.GlobalComponentHost?.GetToolWhitelist("review")
+                    ?? new HashSet<string>();
+                _agent = new Agent(this, _core, agentConfig, authorized);
                 await _agent.RunAsync(_cts.Token);
 
                 // 应用评价缓冲

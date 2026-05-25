@@ -119,10 +119,6 @@ namespace AgentCoreProcessor.Engine
         // TrustProgress 每日自动增长跟踪
         private readonly Dictionary<int, (DateTime Date, float Accumulated)> dailyProgressTracker = new();
 
-        // 授权工具集（会话级）
-        private readonly HashSet<string> authorizedTools = new();
-        private string currentProfileName = "channel";
-
         // 消息拦截器（由 MasterEngine 注入）
         private List<AgentLilara.PluginSDK.IMessageInterceptor> interceptors = new();
         private readonly List<string> interceptorInjections = new();
@@ -754,12 +750,6 @@ namespace AgentCoreProcessor.Engine
                 agent = null;     // 新消息到达时重置 Agent（确保重新生成 fixedPrefix）
                 fixedPrefix = null;
 
-                // 同步频道工具 profile
-                currentProfileName = ctx.ToolProfiles.GetProfileForChannel(currentLastMsg.ChannelId);
-                var profileTools = ctx.ToolProfiles.GetActiveTools(currentProfileName,
-                    globalHost: ctx.GlobalComponentHost);
-                authorizedTools.Clear();
-                foreach (var t in profileTools) authorizedTools.Add(t);
             }
             else if (!isInWorkingSession && !_extraCycleRequested && !HasWakeableSignals(null))
             {
@@ -990,7 +980,7 @@ namespace AgentCoreProcessor.Engine
             if (output.HasToolCalls && output.ToolCalls != null)
             {
                 Tool.Core.ManageComponentsTool.CurrentLoop.Value =
-                    new Tool.Core.ManageComponentsTool.LoopContext(currentProfileName, $"channel-{channelId}");
+                    new Tool.Core.ManageComponentsTool.LoopContext("channel");
                 using var expressToolSpan = Signal.Open(LogGroup.Tool, $"Express工具: {string.Join(", ", output.ToolCalls.Select(c => c.Tool))}",
                     new { calls = output.ToolCalls.Select(c => new { c.Tool, c.Inputs }) });
                 var executor = new ToolExecutor(componentHost.TryGetTool, null);
@@ -1058,11 +1048,6 @@ namespace AgentCoreProcessor.Engine
         // Agent 相关（堆叠式上下文 + 持久化）
         // ═══════════════════════════════════════════════════════════
 
-        private const string WorkingAuthorizedTools =
-            "speak,send_media,thinking_notes,memory,pinboard,retain_list,task_management," +
-            "mark_review_hint,alert,wait,read_file,write_file,send_request,adapter_action," +
-            "view_image,get_image_text,compress";
-
         private string BuildFixedPrefix()
         {
             var sb = new StringBuilder();
@@ -1077,7 +1062,7 @@ namespace AgentCoreProcessor.Engine
             }
             else
             {
-                var workingTools = new HashSet<string>(WorkingAuthorizedTools.Split(','));
+                var workingTools = componentHost!.GetAllVisibleToolNames();
                 sb.AppendLine(ToolRegistry.GenerateDescriptions(authorizedTools: workingTools,
                     additionalTools: componentHost!.GetAllVisibleTools().ToList()));
                 var botId = ctx.Adapters.GetBotPlatformId("qq");
@@ -1095,7 +1080,7 @@ namespace AgentCoreProcessor.Engine
 
             fixedPrefix = BuildFixedPrefix();
 
-            var authorized = new HashSet<string>(WorkingAuthorizedTools.Split(','));
+            var authorized = componentHost!.GetAllVisibleToolNames();
             agent = new Agent(this, agentCore, agentConfig, authorized, componentHost!.TryGetTool);
             agent.OnToolExecuted = (call, result, toolDef) =>
             {
@@ -1497,7 +1482,7 @@ namespace AgentCoreProcessor.Engine
             LastCompletionTime = LastCompletionTime,
             TotalRounds = loopControlModule.TotalRounds,
             SilentRounds = loopControlModule.SilentRounds,
-            AuthorizedToolCount = authorizedTools.Count,
+            AuthorizedToolCount = componentHost?.GetAllVisibleToolNames().Count ?? 0,
             ParticipantCount = recentParticipants.Count,
             ProcessedMessageCount = processedMessageCount,
             TotalErrorCount = totalErrorCount,

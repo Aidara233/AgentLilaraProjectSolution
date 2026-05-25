@@ -128,9 +128,6 @@ namespace AgentCoreProcessor.Engine
         /// <summary>委托路由总线。定向投递，非全局广播。</summary>
         DelegationBus DelegationBus { get; }
 
-        /// <summary>工具 Profile 管理器。</summary>
-        Tool.Host.ToolProfileManager ToolProfiles { get; }
-
         /// <summary>模块间通信总线（全局单例）。替代 ComponentEventBus。</summary>
         ModuleBus ModuleBus { get; }
 

@@ -6,7 +6,6 @@ namespace Plugin.SystemTools;
 
 [Component(Name = "system-ops", Scope = ComponentScope.Loop)]
 [LoopApplicability(Channel = Applicability.NotApplicable, System = Applicability.Enabled)]
-[ToolVisibility(Default = Visibility.AlwaysVisible)]
 public class SystemOpsComponent : LoopComponentBase
 {
     private ISubAgentAccess? _subAgents;

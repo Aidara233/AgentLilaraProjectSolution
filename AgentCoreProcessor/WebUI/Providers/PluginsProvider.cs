@@ -32,7 +32,7 @@ internal class PluginsProvider : IWebUIProvider
         BuildPluginListPage(),
         BuildPluginDetailPage(),
         BuildToolsPage(),
-        BuildProfilesPage(),
+        BuildComponentPermsPage(),
     };
 
     // ================ 1. 插件清单 ================
@@ -120,7 +120,6 @@ internal class PluginsProvider : IWebUIProvider
                         new() { Field = "name", Header = "工具名" },
                         new() { Field = "description", Header = "描述" },
                         new() { Field = "group", Header = "分组", Width = "100px" },
-                        new() { Field = "permission", Header = "权限", Width = "80px" },
                         new() { Field = "disabled", Header = "状态", Width = "80px" },
                     },
                     RowActions = new()
@@ -176,7 +175,6 @@ internal class PluginsProvider : IWebUIProvider
                         new() { Field = "description", Header = "描述" },
                         new() { Field = "source", Header = "来源", Width = "120px" },
                         new() { Field = "group", Header = "分组", Width = "100px" },
-                        new() { Field = "permission", Header = "权限", Width = "70px" },
                         new() { Field = "express", Header = "Express", Width = "70px" },
                         new() { Field = "disabled", Header = "状态", Width = "80px" },
                     },
@@ -203,153 +201,61 @@ internal class PluginsProvider : IWebUIProvider
         }
     };
 
-    // ================ 4. Profile 配置 ================
+    // ================ 4. 组件权限 ================
 
-    private PageDefinition BuildProfilesPage() => new()
+    private PageDefinition BuildComponentPermsPage() => new()
     {
-        Route = "plugins/profiles",
-        Meta = new PageMeta { Title = "引擎配置", Icon = "bi-sliders2", Group = "插件", Order = 92 },
+        Route = "plugins/permissions",
+        Meta = new PageMeta { Title = "组件权限", Icon = "bi-sliders2", Group = "插件", Order = 92 },
         LayoutType = PageLayoutType.Sidebar,
         Cards = new List<CardDefinition>
         {
-            // 左侧：Profile 列表
+            // 左侧：组件列表
             new()
             {
-                Id = "profile-list", Type = CardType.Table, DataSourceId = "profile-list", Title = "Profile",
-                LinkEvent = "profile-selected",
+                Id = "perm-list", Type = CardType.Table, DataSourceId = "perm-list", Title = "组件",
+                LinkEvent = "perm-selected",
                 Schema = new TableSchema
                 {
                     Columns = new()
                     {
-                        new() { Field = "name", Header = "名称" },
-                        new() { Field = "inherits", Header = "继承自", Width = "80px" },
-                        new() { Field = "isDefault", Header = "默认", Width = "60px", Sortable = false },
+                        new() { Field = "componentName", Header = "组件名" },
+                        new() { Field = "scope", Header = "作用域", Width = "70px", Format = ColumnFormat.Badge },
                     },
                     Searchable = false, Paginated = false
                 },
                 Layout = new CardLayout { PreferredCols = 3, GridColumnStart = 1 }
             },
-            // 左侧：操作
+            // 右侧：引擎类型开关
             new()
             {
-                Id = "profile-actions", Type = CardType.Action, DataSourceId = "profile-actions", Title = "操作",
-                Schema = new ActionCardSchema
-                {
-                    ActionId = "profile-op",
-                    ActionLabel = "执行操作",
-                    SubmitLabel = "执行",
-                    Params = new()
-                    {
-                        new() { Name = "action", Label = "操作", Type = "select", Required = true,
-                            Options = new()
-                            {
-                                new() { Value = "create", Label = "新建 Profile" },
-                                new() { Value = "set-default", Label = "设为默认" },
-                                new() { Value = "delete", Label = "删除 Profile" },
-                                new() { Value = "reset", Label = "重置为默认" },
-                            } },
-                        new() { Name = "name", Label = "Profile 名称", Required = false },
-                        new() { Name = "parent", Label = "继承自", Required = false },
-                        new() { Name = "description", Label = "描述", Required = false },
-                    },
-                    Description = "新建/删除/重置 Profile。新建需填名称和继承父级。"
-                },
-                Layout = new CardLayout { PreferredCols = 3, GridColumnStart = 1, Order = 1 }
-            },
-            // 右侧：详情
-            new()
-            {
-                Id = "profile-info", Type = CardType.Status, DataSourceId = "profile-info", Title = "Profile 详情",
-                ListenEvent = "profile-selected",
+                Id = "perm-toggles", Type = CardType.Status, DataSourceId = "perm-toggles",
+                Title = "引擎类型权限", ListenEvent = "perm-selected",
                 Schema = new StatusSchema
                 {
                     Fields = new()
                     {
-                        new() { Field = "name", Label = "名称" },
-                        new() { Field = "inherits", Label = "继承自" },
-                        new() { Field = "description", Label = "描述" },
-                        new() { Field = "channelCount", Label = "使用频道数" },
-                        new() { Field = "blockedCount", Label = "屏蔽工具数" },
+                        new() { Field = "componentName", Label = "组件" },
+                        new() { Field = "channel", Label = "Channel", Type = StatusFieldType.Badge },
+                        new() { Field = "system", Label = "System", Type = StatusFieldType.Badge },
+                        new() { Field = "subAgent", Label = "Sub-Agent", Type = StatusFieldType.Badge },
+                        new() { Field = "review", Label = "Review", Type = StatusFieldType.Badge },
+                    },
+                    Actions = new()
+                    {
+                        new() { Id = "toggle-channel", Label = "切换 Channel" },
+                        new() { Id = "toggle-system", Label = "切换 System" },
+                        new() { Id = "toggle-subAgent", Label = "切换 Sub-Agent" },
+                        new() { Id = "toggle-review", Label = "切换 Review" },
                     }
                 },
                 Layout = new CardLayout { PreferredCols = 9, GridColumnStart = 4 }
-            },
-            // 右侧：组件状态
-            new()
-            {
-                Id = "profile-components", Type = CardType.Table, DataSourceId = "profile-components",
-                Title = "组件状态", ListenEvent = "profile-selected",
-                Schema = new TableSchema
-                {
-                    Columns = new()
-                    {
-                        new() { Field = "componentName", Header = "组件" },
-                        new() { Field = "state", Header = "状态", Width = "100px" },
-                        new() { Field = "source", Header = "来源", Width = "80px", Sortable = false },
-                    },
-                    RowActions = new()
-                    {
-                        new() { Id = "set-enabled", Label = "启用" },
-                        new() { Id = "set-disabled", Label = "可激活" },
-                        new() { Id = "set-unavailable", Label = "不可用" },
-                        new() { Id = "inherit", Label = "恢复继承" },
-                    },
-                    Searchable = false, Paginated = false
-                },
-                Layout = new CardLayout { PreferredCols = 9, GridColumnStart = 4 }
-            },
-            // 右侧：工具屏蔽
-            new()
-            {
-                Id = "profile-blocked", Type = CardType.Table, DataSourceId = "profile-blocked",
-                Title = "工具屏蔽", ListenEvent = "profile-selected",
-                Schema = new TableSchema
-                {
-                    Columns = new()
-                    {
-                        new() { Field = "toolName", Header = "工具名" },
-                        new() { Field = "type", Header = "类型", Width = "80px", Sortable = false },
-                    },
-                    RowActions = new()
-                    {
-                        new() { Id = "remove-block", Label = "移除", Danger = true },
-                    },
-                    Searchable = false, Paginated = false
-                },
-                Layout = new CardLayout { PreferredCols = 5, GridColumnStart = 4 }
-            },
-            // 右侧：添加工具屏蔽
-            new()
-            {
-                Id = "profile-add-block", Type = CardType.Action, DataSourceId = "profile-add-block",
-                Title = "添加工具屏蔽", ListenEvent = "profile-selected",
-                Schema = new ActionCardSchema
-                {
-                    ActionId = "add-block",
-                    ActionLabel = "添加屏蔽/解除",
-                    SubmitLabel = "添加",
-                    Params = new()
-                    {
-                        new() { Name = "toolName", Label = "工具名", Required = true },
-                        new() { Name = "mode", Label = "模式", Type = "select", Required = true,
-                            Options = new()
-                            {
-                                new() { Value = "block", Label = "屏蔽" },
-                                new() { Value = "unblock", Label = "解除屏蔽" },
-                            } }
-                    }
-                },
-                Layout = new CardLayout { PreferredCols = 4, GridColumnStart = 4 }
             },
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "profile-list", Source = new ProfileListSource(_engine) },
-            new() { Id = "profile-actions", Source = new ProfileActionsSource(_engine) },
-            new() { Id = "profile-info", Source = new ProfileInfoSource(_engine) },
-            new() { Id = "profile-components", Source = new ProfileComponentsSource(_engine) },
-            new() { Id = "profile-blocked", Source = new ProfileBlockedSource(_engine) },
-            new() { Id = "profile-add-block", Source = new ProfileAddBlockSource(_engine) },
+            new() { Id = "perm-list", Source = new ComponentPermListSource(_engine) },
+            new() { Id = "perm-toggles", Source = new ComponentPermTogglesSource() },
         }
     };
 
@@ -563,7 +469,6 @@ internal class PluginToolsSource : IDataSource
                 ["name"] = toolName,
                 ["description"] = tool.Description.Length > 60 ? tool.Description[..60] + "..." : tool.Description,
                 ["group"] = meta?.Group ?? "—",
-                ["permission"] = meta?.Permission.ToString() ?? "Default",
                 ["disabled"] = isDisabled ? $"已禁用: {reason}" : "启用",
             });
         }
@@ -717,7 +622,6 @@ internal class AllToolsSource : IDataSource
                 ["description"] = tool.Description.Length > 80 ? tool.Description[..80] + "..." : tool.Description,
                 ["source"] = sourceMap.TryGetValue(tool.Name, out var s) ? s : "核心",
                 ["group"] = meta?.Group ?? "—",
-                ["permission"] = meta?.Permission.ToString() ?? "Default",
                 ["express"] = meta?.ExpressAvailable == true ? "是" : "—",
                 ["disabled"] = isDisabled ? $"已禁用: {reason}" : "启用",
             });
@@ -784,31 +688,30 @@ internal class AllToolsSource : IDataSource
     }
 }
 
-// ================ Profile 数据源 ================
+// ================ 组件权限数据源 ================
 
-internal class ProfileListSource : IDataSource
+internal class ComponentPermListSource : IDataSource
 {
     private readonly MasterEngine _engine;
-    public ProfileListSource(MasterEngine engine) => _engine = engine;
+    public ComponentPermListSource(MasterEngine engine) => _engine = engine;
     public bool SupportsPush => false;
     public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
 
     public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
-        var profiles = _engine.ToolProfiles;
-        var defaultProfile = profiles.GetDefaultProfile();
-        var names = profiles.GetProfileNames();
+        var config = ComponentConfig.Load();
+        var registrations = ComponentRegistry.GetAll();
 
         var arr = new JsonArray();
-        foreach (var name in names)
+        foreach (var reg in registrations)
         {
-            var p = profiles.GetProfile(name);
+            var attr = ComponentAttribute.GetFrom(reg.Type);
+            var name = attr?.Name ?? reg.Type.Name;
             arr.Add(new JsonObject
             {
                 ["id"] = name,
-                ["name"] = name,
-                ["inherits"] = p?.Inherits ?? "—",
-                ["isDefault"] = name == defaultProfile ? "★" : "",
+                ["componentName"] = name,
+                ["scope"] = reg.Scope == ComponentScope.Global ? "Global" : "Loop",
             });
         }
         return Task.FromResult(new DataResult { Data = arr, TotalCount = arr.Count });
@@ -818,302 +721,66 @@ internal class ProfileListSource : IDataSource
         => Task.FromResult(new ActionResult { Success = false });
 }
 
-internal class ProfileActionsSource : IDataSource
+internal class ComponentPermTogglesSource : IDataSource
 {
-    private readonly MasterEngine _engine;
-    public ProfileActionsSource(MasterEngine engine) => _engine = engine;
+    private string _selectedComponent = "";
     public bool SupportsPush => false;
     public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
 
     public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-        => Task.FromResult(new DataResult { Data = new JsonObject() });
-
-    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
     {
-        var profiles = _engine.ToolProfiles;
-        var names = profiles.GetProfileNames();
-        var op = data?["action"]?.ToString() ?? "";
-
-        switch (op)
+        if (query?.Extra is JsonObject extra)
         {
-            case "create":
-                var newName = data?["name"]?.ToString()?.Trim();
-                if (string.IsNullOrWhiteSpace(newName))
-                    return Task.FromResult(new ActionResult { Success = false, Message = "名称不能为空" });
-                if (names.Contains(newName))
-                    return Task.FromResult(new ActionResult { Success = false, Message = $"Profile '{newName}' 已存在" });
-                var parent = data?["parent"]?.ToString() ?? "_root";
-                if (string.IsNullOrWhiteSpace(parent)) parent = "_root";
-                var desc = data?["description"]?.ToString() ?? "";
-                profiles.AddProfile(newName, new ToolProfile
+            var id = extra["id"]?.ToString();
+            if (!string.IsNullOrEmpty(id))
+                _selectedComponent = id;
+        }
+
+        if (string.IsNullOrEmpty(_selectedComponent))
+            return Task.FromResult(new DataResult
+            {
+                Data = new JsonObject
                 {
-                    Inherits = parent,
-                    Description = string.IsNullOrWhiteSpace(desc) ? null : desc
-                });
-                return Task.FromResult(new ActionResult { Success = true, Message = $"已创建 Profile '{newName}'" });
-
-            case "delete":
-                var delName = data?["name"]?.ToString();
-                if (string.IsNullOrEmpty(delName) || delName == "_root")
-                    return Task.FromResult(new ActionResult { Success = false, Message = "不能删除 _root" });
-                profiles.RemoveProfile(delName);
-                return Task.FromResult(new ActionResult { Success = true, Message = $"已删除 Profile '{delName}'" });
-
-            case "set-default":
-                var defName = data?["name"]?.ToString();
-                if (string.IsNullOrEmpty(defName))
-                    return Task.FromResult(new ActionResult { Success = false });
-                profiles.SetDefaultProfile(defName);
-                return Task.FromResult(new ActionResult { Success = true, Message = $"已将 '{defName}' 设为默认" });
-
-            case "reset":
-                profiles.ResetToDefault();
-                return Task.FromResult(new ActionResult { Success = true, Message = "已重置为默认配置" });
-
-            default:
-                return Task.FromResult(new ActionResult { Success = false, Message = "未知操作" });
-        }
-    }
-}
-
-internal class ProfileInfoSource : IDataSource
-{
-    private readonly MasterEngine _engine;
-    private string _selectedProfile = "_root";
-    public ProfileInfoSource(MasterEngine engine) => _engine = engine;
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
-
-    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-    {
-        // 从 LinkEvent 获取选中的 profile
-        if (query?.Extra is JsonObject extra)
-        {
-            var id = extra["id"]?.ToString();
-            if (!string.IsNullOrEmpty(id))
-                _selectedProfile = id;
-        }
-
-        var profile = _engine.ToolProfiles.GetProfile(_selectedProfile);
-        var channels = _engine.ToolProfiles.GetChannelMapping()
-            .Where(kv => kv.Value == _selectedProfile).ToList();
-
-        return Task.FromResult(new DataResult
-        {
-            Data = new JsonObject
-            {
-                ["name"] = _selectedProfile,
-                ["inherits"] = profile?.Inherits ?? "—",
-                ["description"] = profile?.Description ?? "",
-                ["channelCount"] = channels.Count.ToString(),
-                ["blockedCount"] = (profile?.BlockedTools.Count ?? 0) + (profile?.UnblockedTools.Count ?? 0).ToString(),
-            }
-        });
-    }
-
-    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-        => Task.FromResult(new ActionResult { Success = false });
-}
-
-internal class ProfileComponentsSource : IDataSource
-{
-    private readonly MasterEngine _engine;
-    private string _selectedProfile = "_root";
-    public ProfileComponentsSource(MasterEngine engine) => _engine = engine;
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
-
-    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-    {
-        if (query?.Extra is JsonObject extra)
-        {
-            var id = extra["id"]?.ToString();
-            if (!string.IsNullOrEmpty(id))
-                _selectedProfile = id;
-        }
-
-        var profile = _engine.ToolProfiles.GetProfile(_selectedProfile);
-        if (profile == null)
-            return Task.FromResult(new DataResult { Data = new JsonArray() });
-
-        // 收集所有已知组件
-        var allComponents = new HashSet<string>();
-        foreach (var name in _engine.ToolProfiles.GetProfileNames())
-        {
-            var p = _engine.ToolProfiles.GetProfile(name);
-            if (p != null)
-                foreach (var k in p.Components.Keys) allComponents.Add(k);
-        }
-        foreach (var reg in ComponentRegistry.GetAll())
-        {
-            var attr = AgentLilara.PluginSDK.ComponentAttribute.GetFrom(reg.Type);
-            if (attr != null) allComponents.Add(attr.Name);
-        }
-
-        var arr = new JsonArray();
-        foreach (var compName in allComponents.OrderBy(n => n))
-        {
-            var state = _engine.ToolProfiles.GetComponentState(_selectedProfile, compName);
-            var isOwn = profile.Components.ContainsKey(compName);
-            arr.Add(new JsonObject
-            {
-                ["id"] = compName,
-                ["componentName"] = compName,
-                ["state"] = state switch
-                {
-                    ComponentState.Enabled => "启用",
-                    ComponentState.Disabled => "可激活",
-                    _ => "不可用"
-                },
-                ["source"] = isOwn ? "本节点" : "继承",
+                    ["componentName"] = "选择左侧组件",
+                    ["channel"] = "—", ["system"] = "—",
+                    ["subAgent"] = "—", ["review"] = "—",
+                }
             });
-        }
-        return Task.FromResult(new DataResult { Data = arr, TotalCount = arr.Count });
+
+        var config = ComponentConfig.Load();
+        var data = new JsonObject
+        {
+            ["componentName"] = _selectedComponent,
+            ["channel"] = config.IsEnabled(_selectedComponent, "channel") ? "启用" : "禁用",
+            ["system"] = config.IsEnabled(_selectedComponent, "system") ? "启用" : "禁用",
+            ["subAgent"] = config.IsEnabled(_selectedComponent, "sub-agent") ? "启用" : "禁用",
+            ["review"] = config.IsEnabled(_selectedComponent, "review") ? "启用" : "禁用",
+        };
+        return Task.FromResult(new DataResult { Data = data });
     }
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
     {
-        var compName = data?["_row_id"]?.ToString() ?? "";
-        if (string.IsNullOrEmpty(compName) || _selectedProfile == null)
-            return Task.FromResult(new ActionResult { Success = false, Message = "未指定组件" });
+        if (string.IsNullOrEmpty(_selectedComponent))
+            return Task.FromResult(new ActionResult { Success = false, Message = "未选择组件" });
 
-        var profile = _engine.ToolProfiles.GetProfile(_selectedProfile);
-        if (profile == null)
-            return Task.FromResult(new ActionResult { Success = false });
-
-        switch (action)
+        var engineType = action switch
         {
-            case "set-enabled":
-                profile.Components[compName] = "enabled";
-                break;
-            case "set-disabled":
-                profile.Components[compName] = "disabled";
-                break;
-            case "set-unavailable":
-                profile.Components[compName] = "unavailable";
-                break;
-            case "inherit":
-                profile.Components.Remove(compName);
-                break;
-            default:
-                return Task.FromResult(new ActionResult { Success = false, Message = "未知操作" });
-        }
+            "toggle-channel" => "channel",
+            "toggle-system" => "system",
+            "toggle-subAgent" => "sub-agent",
+            "toggle-review" => "review",
+            _ => null
+        };
 
-        _engine.ToolProfiles.Save();
-        return Task.FromResult(new ActionResult { Success = true, Message = $"组件 '{compName}' 状态已更新" });
-    }
-}
+        if (engineType == null)
+            return Task.FromResult(new ActionResult { Success = false, Message = $"未知操作: {action}" });
 
-internal class ProfileBlockedSource : IDataSource
-{
-    private readonly MasterEngine _engine;
-    private string _selectedProfile = "_root";
-    public ProfileBlockedSource(MasterEngine engine) => _engine = engine;
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+        var config = ComponentConfig.Load();
+        var current = config.IsEnabled(_selectedComponent, engineType);
+        config.SetEnabled(_selectedComponent, engineType, !current);
 
-    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-    {
-        if (query?.Extra is JsonObject extra)
-        {
-            var id = extra["id"]?.ToString();
-            if (!string.IsNullOrEmpty(id))
-                _selectedProfile = id;
-        }
-
-        var profile = _engine.ToolProfiles.GetProfile(_selectedProfile);
-        if (profile == null)
-            return Task.FromResult(new DataResult { Data = new JsonArray() });
-
-        var arr = new JsonArray();
-        foreach (var t in profile.BlockedTools)
-        {
-            arr.Add(new JsonObject
-            {
-                ["id"] = t,
-                ["toolName"] = t,
-                ["type"] = "屏蔽",
-            });
-        }
-        foreach (var t in profile.UnblockedTools)
-        {
-            arr.Add(new JsonObject
-            {
-                ["id"] = t,
-                ["toolName"] = t,
-                ["type"] = "解除屏蔽",
-            });
-        }
-        return Task.FromResult(new DataResult { Data = arr, TotalCount = arr.Count });
-    }
-
-    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-    {
-        var toolName = data?["_row_id"]?.ToString() ?? "";
-        if (string.IsNullOrEmpty(toolName))
-            return Task.FromResult(new ActionResult { Success = false });
-
-        var profile = _engine.ToolProfiles.GetProfile(_selectedProfile);
-        if (profile == null)
-            return Task.FromResult(new ActionResult { Success = false });
-
-        if (action == "remove-block")
-        {
-            profile.BlockedTools.Remove(toolName);
-            profile.UnblockedTools.Remove(toolName);
-            _engine.ToolProfiles.Save();
-            return Task.FromResult(new ActionResult { Success = true, Message = $"已移除 '{toolName}'" });
-        }
-
-        return Task.FromResult(new ActionResult { Success = false, Message = "未知操作" });
-    }
-}
-
-internal class ProfileAddBlockSource : IDataSource
-{
-    private readonly MasterEngine _engine;
-    private string _selectedProfile = "_root";
-    public ProfileAddBlockSource(MasterEngine engine) => _engine = engine;
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
-
-    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-    {
-        if (query?.Extra is JsonObject extra)
-        {
-            var id = extra["id"]?.ToString();
-            if (!string.IsNullOrEmpty(id))
-                _selectedProfile = id;
-        }
-        return Task.FromResult(new DataResult { Data = new JsonObject() });
-    }
-
-    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-    {
-        if (action != "add-block")
-            return Task.FromResult(new ActionResult { Success = false });
-
-        var toolName = data?["toolName"]?.ToString()?.Trim();
-        if (string.IsNullOrEmpty(toolName))
-            return Task.FromResult(new ActionResult { Success = false, Message = "工具名不能为空" });
-
-        var mode = data?["mode"]?.ToString() ?? "block";
-        var profile = _engine.ToolProfiles.GetProfile(_selectedProfile);
-        if (profile == null)
-            return Task.FromResult(new ActionResult { Success = false });
-
-        if (mode == "unblock")
-        {
-            profile.UnblockedTools.Add(toolName);
-            profile.BlockedTools.Remove(toolName);
-        }
-        else
-        {
-            profile.BlockedTools.Add(toolName);
-            profile.UnblockedTools.Remove(toolName);
-        }
-
-        _engine.ToolProfiles.Save();
-        return Task.FromResult(new ActionResult { Success = true, Message = $"已添加: {toolName} ({mode})" });
+        var label = !current ? "启用" : "禁用";
+        return Task.FromResult(new ActionResult { Success = true, Message = $"{_selectedComponent} × {engineType} → {label}" });
     }
 }

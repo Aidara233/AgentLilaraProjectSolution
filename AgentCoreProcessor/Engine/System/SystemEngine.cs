@@ -161,7 +161,8 @@ namespace AgentCoreProcessor.Engine
             compressionTierModule.SetSummary(compressionModule.GetSummary());
 
             // ── Agent ──
-            agent = new Agent(this, agentCore, agentConfig, GetAuthorizedTools());
+            var authorized = ctx.GlobalComponentHost?.GetToolWhitelist("system") ?? new HashSet<string>();
+            agent = new Agent(this, agentCore, agentConfig, authorized);
 
             // ── 恢复持久化上下文 ──
             RestoreContext();
@@ -443,11 +444,6 @@ namespace AgentCoreProcessor.Engine
             gate.Signal();
         }
 
-        private HashSet<string> GetAuthorizedTools()
-        {
-            return ctx.ToolProfiles.GetActiveTools("system", globalHost: ctx.GlobalComponentHost);
-        }
-
         // ---- IAgentHost 实现 ----
 
         async Task<List<Message>?> IAgentHost.BuildStartInjectAsync()
@@ -457,7 +453,7 @@ namespace AgentCoreProcessor.Engine
             // 工具描述（engine-level，不是 IInjectProvider）
             if (!useNativeTools)
             {
-                var allowed = GetAuthorizedTools();
+                var allowed = componentHost!.GetAllVisibleToolNames();
                 var toolDescriptions = ToolRegistry.GenerateDescriptions(filter: t => allowed.Contains(t.Name), additionalTools: componentHost!.GetAllVisibleTools().ToList());
                 if (!string.IsNullOrEmpty(toolDescriptions))
                     msgs.Add(new Message { Role = "user", Content = toolDescriptions });
@@ -706,7 +702,7 @@ namespace AgentCoreProcessor.Engine
         /// <summary>创建并启动子 agent。</summary>
         public IAgentSession CreateSubAgent(string instruction)
         {
-            var pool = ctx.ToolProfiles.GetActiveTools("sub-agent", globalHost: ctx.GlobalComponentHost);
+            var pool = ctx.GlobalComponentHost?.GetToolWhitelist("sub-agent") ?? new HashSet<string>();
             var session = new TaskSession(ctx, toolWhitelist: pool);
 
             session.OnCompleted = s =>
@@ -731,7 +727,7 @@ namespace AgentCoreProcessor.Engine
         /// <summary>创建并启动子 agent（关联委托）。完成后自动更新委托状态。</summary>
         public IAgentSession CreateSubAgentForDelegation(string instruction, string? delegationId)
         {
-            var pool = ctx.ToolProfiles.GetActiveTools("sub-agent", globalHost: ctx.GlobalComponentHost);
+            var pool = ctx.GlobalComponentHost?.GetToolWhitelist("sub-agent") ?? new HashSet<string>();
             var session = new TaskSession(ctx, delegationId, toolWhitelist: pool);
 
             // 设置完成回调（迁移至新委托系统）
