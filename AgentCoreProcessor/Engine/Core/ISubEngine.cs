@@ -90,9 +90,6 @@ namespace AgentCoreProcessor.Engine
         // 评价分数
         EvaluationScoreRepository EvaluationScores { get; }
 
-        // 定时任务
-        ScheduledTaskRepository ScheduledTasks { get; }
-
         // 配置
         ImpulseConfig ImpulseConfig { get; }
         TrustProgressionConfig TrustConfig { get; }

@@ -350,9 +350,9 @@ List<CrossRequestInfo> GetActiveRequests();
 
 事件总线，用于组件间解耦通信。
 
-### IEngineAccess / ILoopControl / ISleepAccess / ISchedulingAccess
+### IEngineAccess / ILoopControl / ISleepAccess
 
-引擎管理、循环模式控制、睡眠状态、定时任务等系统服务。
+引擎管理、循环模式控制、睡眠状态等系统服务。
 
 ### IToolHistoryAccess / ILogAccess
 

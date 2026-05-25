@@ -46,7 +46,6 @@ namespace AgentCoreProcessor.Database
             await db.CreateTableAsync<DreamSession>();
             await db.CreateTableAsync<DreamFragment>();
             await db.CreateTableAsync<DreamFragmentDetail>();
-            await db.CreateTableAsync<ScheduledTask>();
             await db.CreateTableAsync<ModelCallLog>();
             // migration: 2026-05-24 添加 IsError 列
             try { await db.ExecuteAsync("ALTER TABLE ModelCallLogs ADD COLUMN IsError INTEGER NOT NULL DEFAULT 0"); }

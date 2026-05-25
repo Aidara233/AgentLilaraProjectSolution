@@ -125,7 +125,7 @@ Adapter → EventBus(MessageEvent) → ChannelEngineSpawnCheck
   ① SessionManager.OnMessageAsync (用户映射 + 频道映射 + 消息入库)
   ② 权限检查 (Blocked/Restricted 拦截)
   ③ 按 ChannelId 路由: 有活跃 ChannelEngine → EnqueueMessage / 无 → 创建新 ChannelEngine
-  （睡眠行为由 ChannelEngine 内部通过 IMessageInterceptor 插件处理，SpawnCheck 不拦截）
+  （睡眠行为由 ChannelEngineSpawnCheck 按 SleepState 拦截处理）
 
 ChannelEngine (频道循环，常驻，一个活跃频道一个):
   实现 ISubEngine + IAgentHost
@@ -381,13 +381,12 @@ AgentLilara.PluginSDK (共享契约，独立类库):
   IToolContext: GetService<T>() / Storage
   IPluginStorage: GlobalDirectory / InstanceDirectory
   IPromptContributor: SectionKey / Priority / BuildSection()
-  IMessageInterceptor: Priority / OnBeforeProcessAsync()
   ToolMetaAttribute: Group / ContinueLoop / AllowSubAgent / CapabilitySummary / Permission / Scope / ExpressAvailable
   ToolParameter: Name / Description / Index / IsRequired（控制 JSON Schema required 数组）
   EngineMode: Express / Working（SDK 枚举，供 ILoopControl 使用）
   Services/: IMemoryAccess（完整数据访问：语义搜索/向量操作/批量读取/临时库/关联图）
              IAgentMessaging / IChannelAccess / ISubAgentAccess
-             IChannelAccess / IAdapterAccess / ISchedulingAccess / IEngineAccess
+             IChannelAccess / IAdapterAccess / IEngineAccess
              ISleepAccess / IEventBusAccess / IToolHistoryAccess / ILoopControl
              IReviewAccess（游标/浏览/评价/笔记/进度）/ IReviewControl（预算/完成）
              IBeaconAccess（信标创建）/ IPersonAccess（人物查询/更新）
@@ -420,10 +419,6 @@ ToolCall: 原生 tool_use (Claude API) 为主路径
     安全上限: MaxRounds=30(用户消息重置) / MaxSilentRounds=5(speak重置)
   系统循环: 处理完检查队列，有事继续，无事休眠
     事件驱动唤醒: TaskBridge/委托提交/定时器
-
-消息拦截器 (IMessageInterceptor):
-  插件可在引擎处理消息前介入（如睡眠行为、维护模式）
-  按 Priority 升序执行，首个 Skip/Handled 短路后续
 
 插件加载:
   目录: {程序目录}/Plugins/（跟程序走，不跟 Storage 走）

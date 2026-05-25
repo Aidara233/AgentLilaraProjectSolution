@@ -52,11 +52,4 @@ namespace AgentCoreProcessor.Engine.Modules
         }
     }
 
-    /// <summary>定时任务到期事件（由 MasterEngine 投递）。</summary>
-    internal class ScheduledTaskFiredEvent
-    {
-        public int TaskId { get; set; }
-        public string Description { get; set; } = "";
-        public string? Payload { get; set; }
-    }
 }

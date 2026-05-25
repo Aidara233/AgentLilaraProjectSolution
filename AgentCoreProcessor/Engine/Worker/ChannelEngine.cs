@@ -119,10 +119,6 @@ namespace AgentCoreProcessor.Engine
         // TrustProgress 每日自动增长跟踪
         private readonly Dictionary<int, (DateTime Date, float Accumulated)> dailyProgressTracker = new();
 
-        // 消息拦截器（由 MasterEngine 注入）
-        private List<AgentLilara.PluginSDK.IMessageInterceptor> interceptors = new();
-        private readonly List<string> interceptorInjections = new();
-
         // Express/Working 自适应切换
         private bool isWorkingMode = false;
 
@@ -131,10 +127,6 @@ namespace AgentCoreProcessor.Engine
         private int _pendingCursor;
         // escalate 理由暂存（Express→Working 时注入一次）
         private string? _escalateReason;
-        // 模式切换后额外一轮循环（绕过空批检查）
-        private bool _extraCycleRequested;
-        // 组件主动唤醒（绕过空批检查，由 WakeLoop 设置）
-        private volatile bool _componentWakeRequested;
 
         // ── 统一循环 Phase 2：信号缓冲 + 双源注入 ──
         private readonly ConcurrentQueue<ChannelSignal> _signalBuffer = new();
@@ -209,7 +201,7 @@ namespace AgentCoreProcessor.Engine
 
             // ── Gate ──
             gate = new Gate(ctx.EventBus);
-            gate.ShouldActivate = CheckShouldActivateAsync;
+            gate.EventFilter = _ => false;
 
             extractionWorker = new ChannelExtractionWorker(
                 ctx, channelId, channelConfig, recentParticipants,
@@ -301,24 +293,53 @@ namespace AgentCoreProcessor.Engine
             CheckWatchRulesAsync(msg, sc);
         }
 
-        /// <summary>缓冲窗口到期后 Signal 闸门。每次新消息重置定时器。</summary>
+        /// <summary>缓冲窗口到期后执行冲动值检测，通过则 Signal 闸门。</summary>
         private void ScheduleBufferSignal()
         {
             _bufferTimerCts?.Cancel();
             _bufferTimerCts = new CancellationTokenSource();
             var cts = _bufferTimerCts;
             _ = Task.Delay(TimeSpan.FromSeconds(ctx.ImpulseConfig.BufferWindowSeconds), cts.Token)
-                .ContinueWith(_ => gate.Signal(), TaskContinuationOptions.NotOnCanceled);
+                .ContinueWith(_ => FlushBuffer(), TaskContinuationOptions.NotOnCanceled);
         }
 
-        /// <summary>注入消息拦截器列表（由 MasterEngine 在创建引擎后调用）。</summary>
-        internal void SetInterceptors(List<AgentLilara.PluginSDK.IMessageInterceptor> list)
+        /// <summary>缓冲到期：群聊走冲动值检测，私聊直接放行。</summary>
+        private void FlushBuffer()
         {
-            interceptors = list.OrderBy(i => i.Priority).ToList();
+            List<(IncomingMessage Message, SessionContext Context)>? batch;
+            lock (bufferLock)
+            {
+                if (buffer.Count == 0) return;
+                batch = new List<(IncomingMessage, SessionContext)>(buffer);
+            }
+
+            var lastMsg = batch[^1].Message;
+            if (!lastMsg.IsPrivate)
+            {
+                var shouldRespond = impulseTracker.ShouldRespond(batch, LastCompletionTime);
+                Signal.Event(LogGroup.Engine, "冲动值决策", new
+                {
+                    channelId,
+                    decision = shouldRespond ? "respond" : "skip",
+                    impulse = impulseTracker.Impulse,
+                    threshold = ctx.ImpulseConfig.Threshold,
+                    messageCount = batch.Count,
+                    hasMention = batch.Any(b => b.Message.IsMentioned),
+                    idleSeconds = (int)(DateTime.Now - (LastCompletionTime ?? DateTime.Now)).TotalSeconds
+                });
+                if (!shouldRespond)
+                {
+                    TrackMemoryExtraction(batch, batch[^1].Context);
+                    lock (bufferLock) { buffer.Clear(); }
+                    return;
+                }
+            }
+
+            gate.Signal();
         }
 
         /// <summary>唤醒闸门（供外部触发，如 ConsoleProvider 压缩信号）。</summary>
-        internal void SignalGate() => gate.ForceWake();
+        internal void SignalGate() => gate.Signal();
 
         /// <summary>DelegationBus 回调：接收到定向委托或广播。</summary>
         private void OnCrossRequestReceived(CrossRequest request)
@@ -375,7 +396,7 @@ namespace AgentCoreProcessor.Engine
             delegationNotificationModule.SetFilterConfig(_signalFilter);
             componentHost = new ComponentHost(
                 myLoopId, "channel", _moduleBus, ctx.ComponentServices,
-                () => { _componentWakeRequested = true; gate.ForceWake(); },
+                () => gate.Signal(),
                 new Dictionary<Type, object> { [typeof(IAgentMessaging)] = _messaging });
             componentHost.GlobalHost = ctx.GlobalComponentHost;
             await componentHost.InitAsync();
@@ -387,7 +408,7 @@ namespace AgentCoreProcessor.Engine
 
             while (IsAlive)
             {
-                // ① WaitGate（保留冷超时机制）
+                // ① 等待闸门（信号到达即放行，冲动值已在 FlushBuffer 侧完成）
                 var triggered = await gate.WaitForTriggerAsync(
                     TimeSpan.FromSeconds(ctx.ImpulseConfig.ColdTimeoutSeconds));
 
@@ -399,22 +420,48 @@ namespace AgentCoreProcessor.Engine
                     break;
                 }
 
-                // 循环唤醒：通知组件
                 _totalGateCycles++;
                 await componentHost.OnActivatedAsync();
 
-                // ② CollectBuffer（在创建 session 之前 — 避免 Timer tick 等空唤醒创建无用 session）
+                // ② 状态准备
                 var batch = CollectBuffer();
+                bool hasNewMessages = batch != null && batch.Count > 0;
 
-                // 空唤醒跳过：无可唤醒信号且不在 Working 会话中（组件主动唤醒除外）
-                if (!isInWorkingSession && !_extraCycleRequested && !_componentWakeRequested && !HasWakeableSignals(batch))
+                if (hasNewMessages)
                 {
-                    await componentHost.OnPauseAsync();
-                    continue;
-                }
-                _componentWakeRequested = false;
+                    activeBatch = batch;
+                    currentLastMsg = batch![^1].Message;
+                    currentLastSc = batch[^1].Context;
+                    currentParticipantSnapshot = new Dictionary<int, ParticipantInfo>(recentParticipants);
+                    _pendingCursor = _lastConsumedMessageId;
 
-                // ③ 循环会话开始（有消息或 Working 会话持续中）
+                    // 消费 pending 图片
+                    List<(string Path, string? Hash, string? Category)> pendingCopy;
+                    lock (bufferLock)
+                    {
+                        pendingCopy = pendingImageInfos.Count > 0
+                            ? new List<(string, string?, string?)>(pendingImageInfos) : new();
+                        pendingImageInfos.Clear();
+                    }
+                    if (pendingCopy.Count > 0)
+                        ResolveImagePresentation(pendingCopy);
+
+                    // 标记已处理
+                    foreach (var (msg, _) in batch)
+                    {
+                        processedTicks.AddLast(msg.Time.Ticks);
+                        while (processedTicks.Count > MaxProcessedTicksWindow)
+                            processedTicks.RemoveFirst();
+                    }
+
+                    // 重置 Working 轮次状态
+                    loopControlModule.OnNewMessage();
+                    isInWorkingSession = false;
+                    agent = null;
+                    fixedPrefix = null;
+                }
+
+                // ③ 循环会话
                 if (sessionCtx == null)
                 {
                     string? parentSpan;
@@ -429,26 +476,7 @@ namespace AgentCoreProcessor.Engine
                     _sessionRootSpanId = sessionCtx?.CurrentSpanId;
                 }
 
-                // ④ Gate evaluation（会话内部：决定是否开闸）
-                bool prepareResult;
-                using (var gateSpan = Signal.Open(LogGroup.Engine, $"闸门评估 #{_totalGateCycles} ({batch?.Count ?? 0}条消息)",
-                    new { hasMessages = batch?.Count ?? 0, isWorkingMode }))
-                {
-                    prepareResult = await EvaluateGateAsync(batch);
-                    gateSpan.SetCloseDetail(new { passed = prepareResult });
-                }
-                _extraCycleRequested = false;
-
-                if (!prepareResult)
-                {
-                    sessionCtx?.Close(new { reason = "循环挂起" });
-                    sessionCtx = null;
-                    SignalContext.Restore(lifeCtx);
-                    await componentHost.OnPauseAsync();
-                    continue;
-                }
-
-                // ⑤ 执行本轮（统一循环：Working→Agent，Express→直接Core调用）
+                // ④ 执行
                 hadWorkThisRound = false;
                 Interlocked.Exchange(ref _busyFlag, 1);
                 try
@@ -636,143 +664,6 @@ namespace AgentCoreProcessor.Engine
             }
         }
 
-        private bool HasWakeableSignals(List<(IncomingMessage Message, SessionContext Context)>? batch)
-        {
-            if (batch != null && _signalFilter.CanWake(SignalCategory.ChannelMessage)) return true;
-            if (_signalFilter.CanWake(SignalCategory.Delegation)
-                && (_messaging as Component.AgentMessagingImpl)?.HasPendingNotifications == true) return true;
-            if (_signalFilter.CanWake(SignalCategory.SystemEvent)
-                && !_pendingCrossRequests.IsEmpty) return true;
-            return false;
-        }
-
-        /// <summary>闸门评估。复用原 PrepareContextAsync 逻辑，返回是否开闸。</summary>
-        private async Task<bool> EvaluateGateAsync(
-            List<(IncomingMessage Message, SessionContext Context)>? batch)
-        {
-            bool hasNewMessages = batch != null && batch.Count > 0;
-
-            if (hasNewMessages)
-            {
-                activeBatch = batch;
-                currentLastMsg = batch![^1].Message;
-                currentLastSc = batch[^1].Context;
-                currentParticipantSnapshot = new Dictionary<int, ParticipantInfo>(recentParticipants);
-                _pendingCursor = _lastConsumedMessageId; // 本轮起始游标，成功后由 BuildStartInjectAsync 更新
-
-                if (ctx.MuteMode)
-                {
-                    Signal.Event(LogGroup.Engine, "静音跳过", new { channelId, messageCount = batch.Count });
-                    TrackMemoryExtraction(batch, currentLastSc);
-                    return false;
-                }
-
-                // 拦截器链：插件可在此介入（如睡眠行为、维护模式等）
-                interceptorInjections.Clear();
-                if (interceptors.Count > 0)
-                {
-                    var interceptCtx = new AgentLilara.PluginSDK.MessageInterceptContext
-                    {
-                        SleepState = (AgentLilara.PluginSDK.SleepState)(int)ctx.CurrentSleepState,
-                        ChannelId = channelId,
-                        IsPrivate = currentLastMsg.IsPrivate,
-                        HasMention = batch.Any(b => b.Message.IsMentioned),
-                        ToolContext = ctx.ToolContext,
-                        Messages = batch.Select(b => new AgentLilara.PluginSDK.MessageInfo
-                        {
-                            Content = b.Message.Content,
-                            SenderName = b.Context.Person.Name ?? b.Context.User.PlatformId,
-                            PersonId = b.Context.Person.Id,
-                            IsMentioned = b.Message.IsMentioned,
-                            IsPrivate = b.Message.IsPrivate,
-                            PermissionLevel = (int)b.Context.User.PermissionLevel
-                        }).ToList()
-                    };
-
-                    foreach (var interceptor in interceptors)
-                    {
-                        var result = await interceptor.OnBeforeProcessAsync(interceptCtx);
-                        if (result.Action == AgentLilara.PluginSDK.InterceptAction.Skip)
-                        {
-                            Signal.Event(LogGroup.Engine, "拦截器跳过", new { channelId, interceptor = interceptor.GetType().Name });
-                            TrackMemoryExtraction(batch, currentLastSc);
-                            return false;
-                        }
-                        if (result.Action == AgentLilara.PluginSDK.InterceptAction.Handled)
-                        {
-                            Signal.Event(LogGroup.Engine, "拦截器处理", new { channelId, interceptor = interceptor.GetType().Name });
-                            TrackMemoryExtraction(batch, currentLastSc);
-                            return false;
-                        }
-                        if (result.PromptInjection != null)
-                            interceptorInjections.Add(result.PromptInjection);
-                    }
-                }
-
-                var shouldRespond = impulseTracker.ShouldRespond(batch, LastCompletionTime);
-                Signal.Event(LogGroup.Engine, "冲动值决策", new
-                {
-                    channelId,
-                    decision = shouldRespond ? "respond" : "skip",
-                    impulse = impulseTracker.Impulse,
-                    threshold = ctx.ImpulseConfig.Threshold,
-                    messageCount = batch.Count,
-                    hasMention = batch.Any(b => b.Message.IsMentioned),
-                    idleSeconds = (int)(DateTime.Now - (LastCompletionTime ?? DateTime.Now)).TotalSeconds
-                });
-                if (!shouldRespond)
-                {
-                    TrackMemoryExtraction(batch, currentLastSc);
-                    return false;
-                }
-
-                // 消费 pending 图片
-                List<(string Path, string? Hash, string? Category)> pendingCopy;
-                lock (bufferLock)
-                {
-                    pendingCopy = pendingImageInfos.Count > 0
-                        ? new List<(string, string?, string?)>(pendingImageInfos) : new();
-                    pendingImageInfos.Clear();
-                }
-                if (pendingCopy.Count > 0)
-                    ResolveImagePresentation(pendingCopy);
-
-                // 标记已处理
-                foreach (var (msg, _) in batch)
-                {
-                    processedTicks.AddLast(msg.Time.Ticks);
-                    while (processedTicks.Count > MaxProcessedTicksWindow)
-                        processedTicks.RemoveFirst();
-                }
-
-                // Express/Working 模式切换交由模型通过 escalate/deescalate 工具自行判断
-
-                // 重置 Working 轮次状态
-                loopControlModule.OnNewMessage();
-                isInWorkingSession = false;
-                agent = null;     // 新消息到达时重置 Agent（确保重新生成 fixedPrefix）
-                fixedPrefix = null;
-
-            }
-            else if (!isInWorkingSession && !_extraCycleRequested && !_componentWakeRequested && !HasWakeableSignals(null))
-            {
-                activeBatch = null;
-                return false;
-            }
-            // else: in working session, no new messages → continue processing
-
-            return true;
-        }
-
-        /// <summary>Gate.ShouldActivate 委托。供 Gate 框架调用。</summary>
-        private async Task<bool> CheckShouldActivateAsync()
-        {
-            if (isInWorkingSession) return true;
-            var batch = CollectBuffer();
-            if ((batch == null || batch.Count == 0) && !HasWakeableSignals(null))
-                return false;
-            return await EvaluateGateAsync(batch);
-        }
 
 
         /// <summary>Working 模式：Agent 多轮循环。</summary>
@@ -837,7 +728,6 @@ namespace AgentCoreProcessor.Engine
                     persistence?.SaveContext(null, "express", new List<List<Message>>(),
                         _lastConsumedMessageId, null);
                     EndWorkingSession();
-                    _extraCycleRequested = true;
                     gate.Signal();
                     return;
                 }
@@ -888,8 +778,6 @@ namespace AgentCoreProcessor.Engine
 
                 EndWorkingSession();
 
-                // 额外一轮 Express 循环（绕过空批检查）
-                _extraCycleRequested = true;
                 gate.Signal();
             }
             else if (agent.StopReason == AgentStopReason.MaxRounds)
@@ -1183,15 +1071,6 @@ namespace AgentCoreProcessor.Engine
             {
                 msgs.AddRange(_loadedConversation);
                 _loadedConversation = null; // 只注入一次
-            }
-
-            // Interceptor injections（独立于 activeBatch，模式切换时也可能有注入）
-            if (interceptorInjections.Count > 0)
-            {
-                var sb = new StringBuilder("[系统提示]\n");
-                foreach (var inj in interceptorInjections)
-                    sb.AppendLine(inj);
-                msgs.Add(new Message { Role = "user", Content = sb.ToString() });
             }
 
             // 记忆检索注入
@@ -1494,7 +1373,7 @@ namespace AgentCoreProcessor.Engine
         };
 
         /// <summary>强制唤醒（跳过 ShouldActivate）。</summary>
-        public void ForceWake() => gate.ForceWake();
+        public void ForceWake() => gate.Signal();
 
         /// <summary>强制触发上下文压缩。</summary>
         public void ForceCompress()

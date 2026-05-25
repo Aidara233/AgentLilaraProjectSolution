@@ -65,7 +65,6 @@ namespace AgentCoreProcessor.Engine
         public DreamLogRepository DreamLogs { get; private set; } = null!;
         public ReviewLogRepository ReviewLogs { get; private set; } = null!;
         public EvaluationScoreRepository EvaluationScores { get; private set; } = null!;
-        public ScheduledTaskRepository ScheduledTasks { get; private set; } = null!;
         public ModelCallLogRepository ModelCallLogs { get; private set; } = null!;
         public MemoryService MemorySvc { get; private set; } = null!;
         public SessionManager Session { get; private set; } = null!;
@@ -294,7 +293,6 @@ namespace AgentCoreProcessor.Engine
             DreamLogs = new DreamLogRepository(db);
             ReviewLogs = new ReviewLogRepository(db);
             EvaluationScores = new EvaluationScoreRepository(db);
-            ScheduledTasks = new ScheduledTaskRepository(db);
             var images = new ImageRepository(db);
             ImageStorage.Init(images, eventBus);
             ModelCallLogs = new ModelCallLogRepository(db);
@@ -538,10 +536,6 @@ namespace AgentCoreProcessor.Engine
             if (e is MessageEvent msgEvent)
                 lastMessageTime = msgEvent.Time;
 
-            // ①b 定时任务检查（每次 tick 时）
-            if (e is TimerEvent timerEvt && timerEvt.TimerName == "tick")
-                await CheckScheduledTasksAsync();
-
             // ② SpawnCheck：OnEvent + ShouldSpawn
             // 复制列表避免遍历时修改
             var checks = spawnChecks.ToList();
@@ -580,40 +574,6 @@ namespace AgentCoreProcessor.Engine
 
             // ④ 清理已死亡的实例
             lock (engineLock) { activeEngines.RemoveAll(e => !e.IsAlive); }
-        }
-
-        /// <summary>检查到期的定时任务并投递给对应 owner。</summary>
-        private async Task CheckScheduledTasksAsync()
-        {
-            if (ScheduledTasks == null) return;
-
-            List<Database.ScheduledTask> dueTasks;
-            try
-            {
-                dueTasks = await ScheduledTasks.GetDueTasksAsync(DateTime.Now);
-            }
-            catch { return; }
-
-            foreach (var task in dueTasks)
-            {
-                var evt = new Modules.ScheduledTaskFiredEvent
-                {
-                    TaskId = task.Id,
-                    Description = task.Description,
-                    Payload = task.Payload
-                };
-
-                if (task.OwnerType == "system")
-                {
-                    systemEngine?.EnqueueScheduledEvent(evt);
-                }
-                // channel 定向定时任务暂不支持（ScheduleParser 待重建）
-
-                // 计算下次触发
-                // TODO: ScheduleParser was deleted; need replacement for schedule computation
-                DateTime? nextFire = null; // placeholder until schedule parser is reimplemented
-                await ScheduledTasks.MarkFiredAsync(task.Id, nextFire);
-            }
         }
 
         // ---- 引擎管理 ----

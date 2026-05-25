@@ -96,10 +96,6 @@ namespace AgentCoreProcessor.Engine
         private SleepRequest? pendingSleepRequest = null;
         private DateTime lastSleepCheck = DateTime.MinValue;
 
-        // 待处理的定时任务到期事件（由 OnEvent 写入，RunAsync 读取）
-        private readonly List<ScheduledTaskFiredEvent> pendingScheduledEvents = new();
-        private readonly object scheduledEventsLock = new();
-
         // 跨循环请求队列（新委托系统）
         private readonly ConcurrentQueue<CrossRequest> _pendingCrossRequests = new();
         internal IAgentMessaging? _messaging;
@@ -424,25 +420,6 @@ namespace AgentCoreProcessor.Engine
             return new Component.SimpleServiceProvider(services);
         }
 
-        private List<ScheduledTaskFiredEvent> DrainScheduledEvents()
-        {
-            lock (scheduledEventsLock)
-            {
-                var copy = new List<ScheduledTaskFiredEvent>(pendingScheduledEvents);
-                pendingScheduledEvents.Clear();
-                return copy;
-            }
-        }
-
-        /// <summary>外部投递定时任务到期事件。</summary>
-        internal void EnqueueScheduledEvent(ScheduledTaskFiredEvent evt)
-        {
-            lock (scheduledEventsLock)
-            {
-                pendingScheduledEvents.Add(evt);
-            }
-            gate.Signal();
-        }
 
         // ---- IAgentHost 实现 ----
 
