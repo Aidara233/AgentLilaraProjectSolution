@@ -26,8 +26,11 @@ namespace AgentCoreProcessor.Adapter
         private static FileAdapter CreateFile(AdapterInstanceConfig config)
         {
             var baseDir = config.Settings["baseDir"]?.ToString()
+                ?? config.Settings["input_dir"]?.ToString()
                 ?? Path.Combine(PathConfig.StoragePath, "FileAdapter");
-            var pollMs = config.Settings["pollIntervalMs"]?.Value<int>() ?? 2000;
+            var pollMs = config.Settings["pollIntervalMs"]?.Value<int>()
+                ?? config.Settings["poll_ms"]?.Value<int>()
+                ?? 2000;
             return new FileAdapter(config.Id, baseDir, pollMs);
         }
     }

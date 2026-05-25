@@ -634,27 +634,46 @@ internal class AdapterConfigSource : IDataSource
         {
             Data = new JsonObject
             {
-                ["ws_url"] = s["WsUrl"]?.ToString() ?? s["ws_url"]?.ToString() ?? "",
-                ["token"] = s["Token"]?.ToString() ?? s["token"]?.ToString() ?? "",
-                ["filter_mode"] = s["FilterMode"]?.ToString() ?? s["filter_mode"]?.ToString() ?? "none",
-                ["bot_names"] = s["BotNames"]?.ToString() ?? s["bot_names"]?.ToString() ?? "",
+                ["ws_url"] = s["wsUrl"]?.ToString() ?? s["WsUrl"]?.ToString() ?? s["ws_url"]?.ToString() ?? "",
+                ["token"] = s["token"]?.ToString() ?? s["Token"]?.ToString() ?? "",
+                ["filter_mode"] = s["filterMode"]?.ToString() ?? s["FilterMode"]?.ToString() ?? s["filter_mode"]?.ToString() ?? "none",
+                ["bot_names"] = FormatBotNames(s),
                 ["filter_list"] = FormatFilterList(s),
-                ["input_dir"] = s["input_dir"]?.ToString() ?? "",
-                ["output_dir"] = s["output_dir"]?.ToString() ?? "",
-                ["poll_ms"] = s["poll_ms"]?.ToString() ?? s["PollIntervalMs"]?.ToString() ?? "2000"
+                // File 适配器：优先读新 key（camelCase），回退旧 key
+                ["input_dir"] = s["baseDir"]?.ToString() ?? s["input_dir"]?.ToString() ?? "",
+                ["output_dir"] = s["outputDir"]?.ToString() ?? s["output_dir"]?.ToString() ?? "",
+                ["poll_ms"] = s["pollIntervalMs"]?.ToString() ?? s["poll_ms"]?.ToString() ?? s["PollIntervalMs"]?.ToString() ?? "2000"
             }
         });
     }
 
+    private static string FormatBotNames(Newtonsoft.Json.Linq.JObject s)
+    {
+        var val = s["botNames"] ?? s["BotNames"] ?? s["bot_names"];
+        if (val is Newtonsoft.Json.Linq.JArray arr)
+            return string.Join(", ", arr.Select(x => x.ToString()));
+        return val?.ToString() ?? "";
+    }
+
     private static string FormatFilterList(Newtonsoft.Json.Linq.JObject s)
     {
-        var wl = s["Whitelist"] ?? s["whitelist"];
-        var bl = s["Blacklist"] ?? s["blacklist"];
-        var target = s["FilterMode"]?.ToString() == "blacklist" ? bl : wl;
+        var wl = s["whitelist"] ?? s["Whitelist"];
+        var bl = s["blacklist"] ?? s["Blacklist"];
+        var filterMode = s["filterMode"]?.ToString() ?? s["FilterMode"]?.ToString() ?? "";
+        var target = filterMode == "blacklist" ? bl : wl;
         if (target is Newtonsoft.Json.Linq.JArray arr)
             return string.Join("\n", arr.Select(x => x.ToString()));
-        if (target is Newtonsoft.Json.Linq.JArray arr2)
-            return string.Join("\n", arr2.Select(x => x.ToString()));
+        return "";
+    }
+
+    /// <summary>从 Settings 中按优先级取旧值（保留已有配置值）</summary>
+    private static string PickOld(Newtonsoft.Json.Linq.JObject s, params string[] keys)
+    {
+        foreach (var k in keys)
+        {
+            var v = s[k]?.ToString();
+            if (!string.IsNullOrEmpty(v)) return v;
+        }
         return "";
     }
 
@@ -668,11 +687,14 @@ internal class AdapterConfigSource : IDataSource
         if (cfg == null) return Task.FromResult(new ActionResult { Success = false, Message = "配置不存在" });
 
         var s = cfg.Settings;
-        // OneBot 字段
-        s["WsUrl"] = data["ws_url"]?.ToString() ?? s["WsUrl"]?.ToString() ?? "";
-        s["Token"] = data["token"]?.ToString() ?? s["Token"]?.ToString() ?? "";
-        s["FilterMode"] = data["filter_mode"]?.ToString() ?? s["FilterMode"]?.ToString() ?? "none";
-        s["BotNames"] = data["bot_names"]?.ToString() ?? s["BotNames"]?.ToString() ?? "";
+        // OneBot 字段（统一 camelCase，清理旧 PascalCase/snake_case 键）
+        s["wsUrl"] = data["ws_url"]?.ToString() ?? PickOld(s, "wsUrl", "WsUrl", "ws_url");
+        s["token"] = data["token"]?.ToString() ?? PickOld(s, "token", "Token");
+        s["filterMode"] = data["filter_mode"]?.ToString() ?? PickOld(s, "filterMode", "FilterMode", "filter_mode");
+        var botNamesStr = data["bot_names"]?.ToString() ?? "";
+        s["botNames"] = new Newtonsoft.Json.Linq.JArray(
+            botNamesStr.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        s.Remove("BotNames"); s.Remove("bot_names");
         if (data["filter_mode"] != null || data["filter_list"] != null)
         {
             var filterListStr = data["filter_list"]?.ToString() ?? "";
@@ -681,14 +703,23 @@ internal class AdapterConfigSource : IDataSource
                     .Select(line => line.Trim())
                     .Where(line => !string.IsNullOrEmpty(line)));
             if (data["filter_mode"]?.ToString() == "blacklist")
-                s["Blacklist"] = filterArr;
+            {
+                s["blacklist"] = filterArr;
+                s.Remove("Blacklist");
+            }
             else if (data["filter_mode"]?.ToString() == "whitelist")
-                s["Whitelist"] = filterArr;
+            {
+                s["whitelist"] = filterArr;
+                s.Remove("Whitelist");
+            }
         }
-        // File 字段
-        if (data["input_dir"] != null) s["input_dir"] = data["input_dir"]!.ToString();
-        if (data["output_dir"] != null) s["output_dir"] = data["output_dir"]!.ToString();
-        if (data["poll_ms"] != null) s["poll_ms"] = data["poll_ms"]!.ToString();
+        s.Remove("WsUrl"); s.Remove("ws_url");
+        s.Remove("Token");
+        s.Remove("FilterMode"); s.Remove("filter_mode");
+        // File 字段（对齐 AdapterFactory：baseDir / pollIntervalMs）
+        if (data["input_dir"] != null) { s["baseDir"] = data["input_dir"]!.ToString(); s.Remove("input_dir"); }
+        if (data["output_dir"] != null) { s["outputDir"] = data["output_dir"]!.ToString(); s.Remove("output_dir"); }
+        if (data["poll_ms"] != null) { s["pollIntervalMs"] = data["poll_ms"]!.ToString(); s.Remove("poll_ms"); s.Remove("PollIntervalMs"); }
 
         _adapters.UpdateConfig(cfg);
         return Task.FromResult(new ActionResult { Success = true, Message = "配置已保存" });
