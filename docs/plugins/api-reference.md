@@ -409,8 +409,10 @@ public interface IPromptContributor
 启动 / 热重载
   │
   ├─ 组件实例化（PluginLoader 发现 + 构造函数注入）
-  ├─ OnInitAsync(context, InitReason)
-  └─ OnEnabledAsync()
+  └─ OnInitAsync(context, InitReason)   ← 在此启动后台任务、初始化状态
+       │
+       │  ⚠ OnEnabledAsync() 在此处不会被自动调用！
+       │  仅在组件通过 context.Enable() 从禁用→启用时触发。
        │
        ▼
   ┌── AI 循环 ──────────────────┐
@@ -427,6 +429,9 @@ public interface IPromptContributor
   OnDisabledAsync()
   OnShutdownRequestedAsync(reason) → ShutdownResponse
   OnShutdownAsync(reason)
+```
+
+> **重要**：`OnEnabledAsync()` 在组件首次初始化时**不会被调用**。`ComponentHost.InitAsync()` 只调 `OnInitAsync()` 然后直接注册工具。如果需要在组件启用时执行初始化逻辑（如启动定时器），请放在 `OnInitAsync()` 中。`OnEnabledAsync()` 保留用于组件从禁用状态恢复的场景。
 ```
 
 **注意**：`OnShutdownRequestedAsync` 可以返回 `new ShutdownResponse { CanShutdown = false, Reason = "..." }` 来拒绝关闭（宿主有 30s 超时保护）。
