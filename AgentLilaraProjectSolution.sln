@@ -23,6 +23,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Plugin.ReviewTools", "Plugi
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Plugin.CrossLoopTools", "Plugins\Plugin.CrossLoopTools\Plugin.CrossLoopTools.csproj", "{DF7D458C-DCF3-4A27-8EE4-A7DDA3594B83}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Plugin.ScheduledTasks", "Plugins\Plugin.ScheduledTasks\Plugin.ScheduledTasks.csproj", "{F1869ECD-E617-49B8-B48C-8F2290836CAF}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -141,6 +143,18 @@ Global
 		{DF7D458C-DCF3-4A27-8EE4-A7DDA3594B83}.Release|x64.Build.0 = Release|Any CPU
 		{DF7D458C-DCF3-4A27-8EE4-A7DDA3594B83}.Release|x86.ActiveCfg = Release|Any CPU
 		{DF7D458C-DCF3-4A27-8EE4-A7DDA3594B83}.Release|x86.Build.0 = Release|Any CPU
+		{F1869ECD-E617-49B8-B48C-8F2290836CAF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F1869ECD-E617-49B8-B48C-8F2290836CAF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F1869ECD-E617-49B8-B48C-8F2290836CAF}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{F1869ECD-E617-49B8-B48C-8F2290836CAF}.Debug|x64.Build.0 = Debug|Any CPU
+		{F1869ECD-E617-49B8-B48C-8F2290836CAF}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{F1869ECD-E617-49B8-B48C-8F2290836CAF}.Debug|x86.Build.0 = Debug|Any CPU
+		{F1869ECD-E617-49B8-B48C-8F2290836CAF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F1869ECD-E617-49B8-B48C-8F2290836CAF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F1869ECD-E617-49B8-B48C-8F2290836CAF}.Release|x64.ActiveCfg = Release|Any CPU
+		{F1869ECD-E617-49B8-B48C-8F2290836CAF}.Release|x64.Build.0 = Release|Any CPU
+		{F1869ECD-E617-49B8-B48C-8F2290836CAF}.Release|x86.ActiveCfg = Release|Any CPU
+		{F1869ECD-E617-49B8-B48C-8F2290836CAF}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -153,6 +167,7 @@ Global
 		{225CAE47-5F39-4103-8233-C5E54C9ACD1F} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
 		{3EDEE486-96C7-43F7-90CF-BFE3570016A1} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
 		{DF7D458C-DCF3-4A27-8EE4-A7DDA3594B83} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
+		{F1869ECD-E617-49B8-B48C-8F2290836CAF} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {8CEA9C9A-F71A-47CA-9F61-06EB3E4ED44F}
