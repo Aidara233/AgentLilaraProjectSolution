@@ -16,6 +16,10 @@ public class ScheduledTasksComponent : LoopComponentBase
     private CancellationTokenSource? _timerCts;
     private Task? _timerTask;
 
+    // Simple pending notification — no queue/lock complexity.
+    // Set by CheckDueTasks, consumed by BuildPromptSection.
+    private string? _pendingNotification;
+
     private ScheduleTaskTool? _scheduleTool;
     private CancelTaskTool? _cancelTool;
     private ListTasksTool? _listTool;
@@ -47,11 +51,7 @@ public class ScheduledTasksComponent : LoopComponentBase
         _cancelTool = new CancelTaskTool(_store);
         _listTool = new ListTasksTool(_store);
 
-        // Start background timer immediately — OnEnabledAsync is NOT called
-        // automatically during init (ComponentHost only calls OnInitAsync)
         StartTimer();
-
-        // Cold-start recovery: fire tasks that became due while inactive
         RecoverOverdueTasks();
 
         return Task.CompletedTask;
@@ -59,7 +59,6 @@ public class ScheduledTasksComponent : LoopComponentBase
 
     public override Task OnEnabledAsync()
     {
-        // Called when component transitions disabled→enabled (e.g. context.Enable())
         StartTimer();
         RecoverOverdueTasks();
         return Task.CompletedTask;
@@ -81,8 +80,6 @@ public class ScheduledTasksComponent : LoopComponentBase
 
     public override Task OnBeforeInvokeAsync()
     {
-        // Belt-and-suspenders: check due tasks before every AI round,
-        // in case the background timer died or the channel was just activated
         return CheckDueTasks();
     }
 
@@ -90,22 +87,18 @@ public class ScheduledTasksComponent : LoopComponentBase
     {
         if (_store == null) return null;
 
-        var notifications = _store.DrainNotifications();
-        if (notifications.Count == 0) return null;
+        // Check due tasks synchronously in case OnBeforeInvokeAsync missed them
+        CheckDueTasksSync();
 
-        var lines = new List<string> { "[定时任务通知]" };
-        foreach (var n in notifications)
-            lines.Add($"- {n.Description}（已触发）");
-        lines.Add("请处理以上定时任务。");
-
-        return string.Join("\n", lines);
+        var text = Interlocked.Exchange(ref _pendingNotification, null);
+        return text;
     }
 
-    // ── Background Timer ──
+    // ── Timer ──
 
     private void StartTimer()
     {
-        if (_timerCts != null) return; // already running
+        if (_timerCts != null) return;
         _timerCts = new CancellationTokenSource();
         _timerTask = Task.Run(() => PollLoop(_timerCts.Token));
     }
@@ -132,26 +125,33 @@ public class ScheduledTasksComponent : LoopComponentBase
             }
             catch
             {
-                // Swallow - don't crash the polling loop on transient errors
+                // Swallow transient errors
             }
         }
     }
 
-    // ── Task Checking ──
+    // ── Due task checking ──
 
     private Task CheckDueTasks()
     {
-        if (_store == null) return Task.CompletedTask;
+        CheckDueTasksSync();
+        return Task.CompletedTask;
+    }
 
-        var (tasks, dueTasks) = _store.LoadAndFindDue(DateTime.Now);
-        if (dueTasks.Count == 0) return Task.CompletedTask;
+    private void CheckDueTasksSync()
+    {
+        if (_store == null) return;
 
         var now = DateTime.Now;
+        var (tasks, dueTasks) = _store.LoadAndFindDue(now);
+        if (dueTasks.Count == 0) return;
+
+        var notifications = new List<string>();
         var fired = false;
 
         foreach (var task in dueTasks)
         {
-            _store.EnqueueNotification(task.Id, task.Description);
+            notifications.Add(task.Description);
 
             if (task.IsRecurring)
             {
@@ -163,7 +163,6 @@ public class ScheduledTasksComponent : LoopComponentBase
                 }
                 else
                 {
-                    // Can't compute next recurrence - disable
                     task.Enabled = false;
                     task.NextFireTime = null;
                     task.LastFiredAt = now;
@@ -180,30 +179,37 @@ public class ScheduledTasksComponent : LoopComponentBase
             fired = true;
         }
 
+        if (notifications.Count > 0)
+        {
+            var lines = new List<string> { "[定时任务通知]" };
+            foreach (var desc in notifications)
+                lines.Add($"- {desc}（已触发）");
+            lines.Add("请处理以上定时任务。");
+
+            _pendingNotification = string.Join("\n", lines);
+        }
+
         if (fired)
             _ctx.WakeLoop();
-
-        return Task.CompletedTask;
     }
 
     private void RecoverOverdueTasks()
     {
         if (_store == null) return;
 
-        var (tasks, overdue) = _store.LoadAndFindDue(DateTime.Now);
+        var now = DateTime.Now;
+        var (tasks, overdue) = _store.LoadAndFindDue(now);
         if (overdue.Count == 0) return;
 
-        var now = DateTime.Now;
+        var notifications = new List<string>();
         var fired = false;
 
         foreach (var task in overdue)
         {
-            _store.EnqueueNotification(task.Id, task.Description);
+            notifications.Add(task.Description);
 
             if (task.IsRecurring)
             {
-                // For recurring tasks, compute next fire from NOW (not the missed time),
-                // to avoid a cascade of missed fires
                 var nextFire = TimeExpressionParser.GetNextRecurrence(task.Expression, now.AddMinutes(-1));
                 if (nextFire != null)
                 {
@@ -226,6 +232,16 @@ public class ScheduledTasksComponent : LoopComponentBase
 
             _store.UpdateTask(task);
             fired = true;
+        }
+
+        if (notifications.Count > 0)
+        {
+            var lines = new List<string> { "[定时任务通知]" };
+            foreach (var desc in notifications)
+                lines.Add($"- {desc}（已触发）");
+            lines.Add("请处理以上定时任务。");
+
+            _pendingNotification = string.Join("\n", lines);
         }
 
         if (fired)
