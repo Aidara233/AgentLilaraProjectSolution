@@ -1,0 +1,10 @@
+{
+  "visionConcurrency": 10,
+  "ocrConcurrency": 4,
+  "visionRetryCount": 2,
+  "visionRetryDelayMs": 3000,
+  "batchSize": 50,
+  "ocrEnabled": false,
+  "visionEnabled": false,
+  "ocrRichTextThreshold": 80
+}

@@ -305,10 +305,18 @@ namespace AgentCoreProcessor.Engine
             if (File.Exists(embConfigPath))
             {
                 var embJson = JObject.Parse(File.ReadAllText(embConfigPath));
-                var embKey = embJson["apiKey"]?.ToString() ?? "";
-                var embEndpoint = embJson["endpoint"]?.ToString() ?? "https://api.siliconflow.cn/v1/embeddings";
-                var embModel = embJson["model"]?.ToString() ?? "BAAI/bge-large-zh-v1.5";
-                embeddingProvider = new SiliconFlowEmbeddingProvider(apiKey: embKey, endpoint: embEndpoint, model: embModel);
+                var embEnabled = embJson["enabled"]?.Value<bool>() ?? true;
+                if (embEnabled)
+                {
+                    var embKey = embJson["apiKey"]?.ToString() ?? "";
+                    var embEndpoint = embJson["endpoint"]?.ToString() ?? "https://api.siliconflow.cn/v1/embeddings";
+                    var embModel = embJson["model"]?.ToString() ?? "BAAI/bge-large-zh-v1.5";
+                    embeddingProvider = new SiliconFlowEmbeddingProvider(apiKey: embKey, endpoint: embEndpoint, model: embModel);
+                }
+                else
+                {
+                    Signal.Event(LogGroup.Engine, "Embedding提供者已禁用");
+                }
             }
             else
             {
@@ -320,26 +328,30 @@ namespace AgentCoreProcessor.Engine
             // Vision（从 VisionProvider.json 读取，不依赖 Base.json）
             try
             {
-                var vApiKey = "";
-                var vEndpoint = "https://api.siliconflow.cn/v1/chat/completions";
-                var vModel = "Qwen/Qwen2.5-VL-72B-Instruct";
-
                 var visionConfigPath = Path.Combine(PathConfig.CoreConfigPath, "VisionProvider.json");
                 if (File.Exists(visionConfigPath))
                 {
                     var vjson = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(visionConfigPath));
-                    vApiKey = vjson["apiKey"]?.ToString() ?? vApiKey;
-                    vEndpoint = vjson["endpoint"]?.ToString() ?? vEndpoint;
-                    vModel = vjson["model"]?.ToString() ?? vModel;
-                }
+                    var vEnabled = vjson["enabled"]?.Value<bool>() ?? true;
+                    if (vEnabled)
+                    {
+                        var vApiKey = vjson["apiKey"]?.ToString() ?? "";
+                        var vEndpoint = vjson["endpoint"]?.ToString() ?? "https://api.siliconflow.cn/v1/chat/completions";
+                        var vModel = vjson["model"]?.ToString() ?? "Qwen/Qwen2.5-VL-72B-Instruct";
 
-                if (!string.IsNullOrEmpty(vApiKey))
-                {
-                    visionProvider = new SiliconFlowVisionProvider(vApiKey, vEndpoint, vModel);
-                }
-                else
-                {
-                    Signal.Warn(LogGroup.Engine, "Vision提供者未配置apiKey，视觉处理不可用");
+                        if (!string.IsNullOrEmpty(vApiKey))
+                        {
+                            visionProvider = new SiliconFlowVisionProvider(vApiKey, vEndpoint, vModel);
+                        }
+                        else
+                        {
+                            Signal.Warn(LogGroup.Engine, "Vision提供者未配置apiKey，视觉处理不可用");
+                        }
+                    }
+                    else
+                    {
+                        Signal.Event(LogGroup.Engine, "Vision提供者已禁用");
+                    }
                 }
             }
             catch (Exception ex)
@@ -350,26 +362,30 @@ namespace AgentCoreProcessor.Engine
             // OCR（从 OcrProvider.json 读取，不依赖 Base.json）
             try
             {
-                var ocrApiKey = "";
-                var ocrEndpoint = "https://api.siliconflow.cn/v1/chat/completions";
-                var ocrModel = "deepseek-ai/DeepSeek-OCR";
-
                 var ocrConfigPath = Path.Combine(PathConfig.CoreConfigPath, "OcrProvider.json");
                 if (File.Exists(ocrConfigPath))
                 {
                     var ojson = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(ocrConfigPath));
-                    ocrApiKey = ojson["apiKey"]?.ToString() ?? ocrApiKey;
-                    ocrEndpoint = ojson["endpoint"]?.ToString() ?? ocrEndpoint;
-                    ocrModel = ojson["model"]?.ToString() ?? ocrModel;
-                }
+                    var ocrEnabled = ojson["enabled"]?.Value<bool>() ?? true;
+                    if (ocrEnabled)
+                    {
+                        var ocrApiKey = ojson["apiKey"]?.ToString() ?? "";
+                        var ocrEndpoint = ojson["endpoint"]?.ToString() ?? "https://api.siliconflow.cn/v1/chat/completions";
+                        var ocrModel = ojson["model"]?.ToString() ?? "deepseek-ai/DeepSeek-OCR";
 
-                if (!string.IsNullOrEmpty(ocrApiKey))
-                {
-                    ocrProvider = new SiliconFlowOcrProvider(ocrApiKey, ocrEndpoint, ocrModel);
-                }
-                else
-                {
-                    Signal.Warn(LogGroup.Engine, "OCR提供者未配置apiKey，OCR处理不可用");
+                        if (!string.IsNullOrEmpty(ocrApiKey))
+                        {
+                            ocrProvider = new SiliconFlowOcrProvider(ocrApiKey, ocrEndpoint, ocrModel);
+                        }
+                        else
+                        {
+                            Signal.Warn(LogGroup.Engine, "OCR提供者未配置apiKey，OCR处理不可用");
+                        }
+                    }
+                    else
+                    {
+                        Signal.Event(LogGroup.Engine, "OCR提供者已禁用");
+                    }
                 }
             }
             catch (Exception ex)
@@ -378,7 +394,7 @@ namespace AgentCoreProcessor.Engine
             }
 
             // 服务
-            MemorySvc = new MemoryService(Memories, TempMemories, MemoryLinks, embeddingProvider, PersonaMemories);
+            MemorySvc = new MemoryService(Memories, TempMemories, MemoryLinks, embeddingProvider!, PersonaMemories);
             Session = new SessionManager(users, persons, channels, messages);
 
             // 冲动值配置

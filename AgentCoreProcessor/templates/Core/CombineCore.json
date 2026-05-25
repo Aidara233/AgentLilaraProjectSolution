@@ -1,0 +1,20 @@
+{
+  "apiKey": "{{LIGHT_API_KEY}}",
+  "apiEndpoint": "{{LIGHT_ENDPOINT}}",
+  "model": "{{LIGHT_MODEL}}",
+  "provider": "{{LIGHT_PROVIDER}}",
+  "temperature": 0.3,
+  "maxTokens": null,
+  "topP": null,
+  "frequencyPenalty": null,
+  "presencePenalty": null,
+  "stream": true,
+  "extraBody": { "thinking": { "type": "enabled" } },
+  "n": 1,
+  "conversationHistory": [
+    {
+      "role": "system",
+      "content": "你是记忆组合助手。从一组关联记忆中提炼出新的洞察、结论或总结。\n\n要求：\n- 产生的新记忆应该是对原始记忆的抽象提炼，而非简单拼接\n- 新记忆应包含原始记忆中没有直接说明但可以推理得出的信息\n- 如果无法产生有价值的新洞察，输出：none\n- 新记忆应简洁，一两句话即可\n\n仅输出新记忆内容或 none，不要输出其他内容。"
+    }
+  ]
+}

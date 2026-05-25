@@ -1,0 +1,14 @@
+{
+  "understandingMemoryCount": 5,
+  "familiarityDays": 7,
+  "familiarityInteractionCount": 20,
+  "progressForWary": -15.0,
+  "progressForHostile": -30.0,
+  "dailyInteractionIncrement": 0.05,
+  "dailyInteractionCap": 0.1,
+  "dreamEvaluationCap": 0.3,
+  "alertCooldownLevel1": 1,
+  "alertCooldownLevel2": 3,
+  "alertCooldownLevel3": 7,
+  "alertCooldownLevel4": 14
+}

@@ -1,0 +1,14 @@
+{
+  "apiKey": "{{LIGHT_API_KEY}}",
+  "apiEndpoint": "{{LIGHT_ENDPOINT}}",
+  "model": "{{LIGHT_MODEL}}",
+  "provider": "{{LIGHT_PROVIDER}}",
+  "temperature": 0.5,
+  "maxTokens": null,
+  "topP": null,
+  "frequencyPenalty": null,
+  "presencePenalty": null,
+  "stream": true,
+  "n": 1,
+  "conversationHistory": []
+}

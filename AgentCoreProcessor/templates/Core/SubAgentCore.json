@@ -1,0 +1,14 @@
+{
+  "apiKey": "{{GENERAL_API_KEY}}",
+  "apiEndpoint": "{{GENERAL_ENDPOINT}}",
+  "model": "{{GENERAL_MODEL}}",
+  "provider": "{{GENERAL_PROVIDER}}",
+  "temperature": 0.5,
+  "stream": true,
+  "conversationHistory": [
+    {
+      "role": "system",
+      "content": "你是一个任务执行者。你会收到一个具体任务和一组可用工具。专注完成任务，完成后用「完成」工具汇报结果。不要闲聊，不要解释过程，直接干活。"
+    }
+  ]
+}

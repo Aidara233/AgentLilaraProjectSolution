@@ -1,0 +1,6 @@
+{
+  "enabled": {{OCR_ENABLED}},
+  "apiKey": "{{OCR_API_KEY}}",
+  "endpoint": "{{OCR_ENDPOINT}}",
+  "model": "{{OCR_MODEL}}"
+}

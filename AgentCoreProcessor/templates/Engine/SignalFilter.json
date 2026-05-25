@@ -1,0 +1,10 @@
+{
+  "channel": {
+    "wake": ["ChannelMessage", "Delegation", "SystemEvent", "WatchSignal"],
+    "visibility": ["ChannelMessage", "Delegation", "SystemEvent", "WatchSignal"]
+  },
+  "system": {
+    "wake": ["Delegation", "SystemEvent"],
+    "visibility": ["Delegation", "SystemEvent", "WatchSignal"]
+  }
+}

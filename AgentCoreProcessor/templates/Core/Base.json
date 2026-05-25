@@ -1,0 +1,20 @@
+{
+  "apiKey": "{{LIGHT_API_KEY}}",
+  "apiEndpoint": "{{LIGHT_ENDPOINT}}",
+  "model": "{{LIGHT_MODEL}}",
+  "provider": "{{LIGHT_PROVIDER}}",
+  "temperature": 0.7,
+  "maxTokens": null,
+  "topP": null,
+  "frequencyPenalty": null,
+  "presencePenalty": null,
+  "stream": true,
+  "extraBody": null,
+  "n": 1,
+  "conversationHistory": [
+    {
+      "role": "system",
+      "content": "如果你看到了这段文本，说明出现了意外错误，这不应该发生。请提醒用户代码出现了问题，并且需要检查控制台日志以获取更多信息。请不要尝试继续处理用户的输入，因为这可能会导致更多的错误。请确保在输出这段文本后，不要再输出任何其他内容，以免混淆用户。"
+    }
+  ]
+}

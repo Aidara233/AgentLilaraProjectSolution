@@ -16,7 +16,10 @@ namespace AgentCoreProcessor.Config
             var configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "paths.json");
 
             if (!File.Exists(configPath))
-                throw new FileNotFoundException($"路径配置文件不存在：{configPath}");
+            {
+                SetupWizard.Run();
+                // SetupWizard writes paths.json, now load it
+            }
 
             var json = JObject.Parse(File.ReadAllText(configPath));
             StoragePath = json["storagePath"]?.ToString()

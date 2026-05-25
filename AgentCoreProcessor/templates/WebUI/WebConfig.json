@@ -1,0 +1,9 @@
+{
+  "Port": 5000,
+  "Admins": [
+    {
+      "Username": "admin",
+      "PasswordHash": "44c8d2ef54640aae8ddff4de08df0e4131f9c3faab8b7a02b1e10ec86aef61f3"
+    }
+  ]
+}

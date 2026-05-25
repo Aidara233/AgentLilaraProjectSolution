@@ -1,0 +1,6 @@
+{
+  "enabled": {{EMBEDDING_ENABLED}},
+  "apiKey": "{{EMBEDDING_API_KEY}}",
+  "endpoint": "{{EMBEDDING_ENDPOINT}}",
+  "model": "{{EMBEDDING_MODEL}}"
+}

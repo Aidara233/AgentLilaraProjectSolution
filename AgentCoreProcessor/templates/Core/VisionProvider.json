@@ -1,0 +1,6 @@
+{
+  "enabled": {{VISION_ENABLED}},
+  "apiKey": "{{VISION_API_KEY}}",
+  "endpoint": "{{VISION_ENDPOINT}}",
+  "model": "{{VISION_MODEL}}"
+}

@@ -1,0 +1,14 @@
+{
+  "baseScore": 10.0,
+  "affinityBonusMax": 5.0,
+  "mentionBonus": 30.0,
+  "participantDiscount2": 2.0,
+  "participantDiscount3": 4.0,
+  "participantDiscount4Plus": 6.0,
+  "decayHalfLifeSeconds": 100.0,
+  "threshold": 100.0,
+  "postResponseCap": 20.0,
+  "postResponseCooldownSeconds": 3.0,
+  "bufferWindowSeconds": 2.5,
+  "coldTimeoutSeconds": 600.0
+}
