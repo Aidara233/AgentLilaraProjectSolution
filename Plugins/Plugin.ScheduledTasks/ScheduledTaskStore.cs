@@ -30,6 +30,8 @@ public class ScheduledTaskStore
     private readonly List<PendingNotification> _pendingNotifications = new();
     private readonly object _lock = new();
 
+    public Action? OnTasksChanged { get; set; }
+
     public ScheduledTaskStore(string directory)
     {
         Directory.CreateDirectory(directory);
@@ -94,6 +96,7 @@ public class ScheduledTaskStore
             };
             tasks.Add(entry);
             SaveTasks(tasks);
+            OnTasksChanged?.Invoke();
             return entry;
         }
     }
@@ -108,6 +111,7 @@ public class ScheduledTaskStore
             {
                 tasks.Remove(exact);
                 SaveTasks(tasks);
+                OnTasksChanged?.Invoke();
                 return true;
             }
             var matches = tasks.Where(t => t.Id.StartsWith(taskId)).ToList();
@@ -115,6 +119,7 @@ public class ScheduledTaskStore
             {
                 tasks.Remove(matches[0]);
                 SaveTasks(tasks);
+                OnTasksChanged?.Invoke();
                 return true;
             }
             return false;
@@ -126,6 +131,19 @@ public class ScheduledTaskStore
         lock (_lock)
         {
             return LoadTasks().Where(t => t.Enabled).ToList();
+        }
+    }
+
+    public DateTime? GetNextFireTime()
+    {
+        lock (_lock)
+        {
+            return LoadTasks()
+                .Where(t => t.Enabled && t.NextFireTime.HasValue)
+                .Select(t => t.NextFireTime!.Value)
+                .OrderBy(t => t)
+                .Cast<DateTime?>()
+                .FirstOrDefault();
         }
     }
 

@@ -13,8 +13,6 @@ public class ScheduledTasksComponent : LoopComponentBase
 {
     private ILoopComponentContext _ctx = null!;
     private ScheduledTaskStore? _store;
-    private CancellationTokenSource? _timerCts;
-    private Task? _timerTask;
     private ISignalLogger? _log;
 
     private string? _pendingNotification;
@@ -55,6 +53,8 @@ public class ScheduledTasksComponent : LoopComponentBase
         _cancelTool = new CancelTaskTool(_store);
         _listTool = new ListTasksTool(_store);
 
+        _store.OnTasksChanged = Reschedule;
+
         StartTimer();
         RecoverOverdueTasks();
 
@@ -81,14 +81,15 @@ public class ScheduledTasksComponent : LoopComponentBase
     {
         _log?.Event(LogGroup, "shutdown", new { reason = reason.ToString() });
         StopTimer();
-        _timerCts?.Dispose();
-        _timerCts = null;
+        _shutdownCts?.Dispose();
+        _shutdownCts = null;
         return Task.CompletedTask;
     }
 
     public override Task OnBeforeInvokeAsync()
     {
-        return CheckDueTasks();
+        CheckDueTasksSync();
+        return Task.CompletedTask;
     }
 
     public override string? BuildPromptSection()
@@ -104,53 +105,96 @@ public class ScheduledTasksComponent : LoopComponentBase
         return text;
     }
 
-    // ── Timer ──
+    // ── Async Timer ──
+
+    private CancellationTokenSource? _shutdownCts;
+    private CancellationTokenSource? _delayCts;
+    private Task? _timerTask;
 
     private void StartTimer()
     {
-        if (_timerCts != null) return;
+        if (_shutdownCts != null) return;
         _log?.Event(LogGroup, "timer-start");
-        _timerCts = new CancellationTokenSource();
-        _timerTask = Task.Run(() => PollLoop(_timerCts.Token));
+        _shutdownCts = new CancellationTokenSource();
+        _timerTask = Task.Run(() => TimerLoop(_shutdownCts.Token));
     }
 
     private void StopTimer()
     {
         _log?.Event(LogGroup, "timer-stop");
-        _timerCts?.Cancel();
-        _timerCts = null;
+        _shutdownCts?.Cancel();
+        _delayCts?.Cancel();
+        _shutdownCts = null;
+        _delayCts = null;
         _timerTask = null;
     }
 
-    private async Task PollLoop(CancellationToken ct)
+    private void Reschedule()
     {
-        _log?.Event(LogGroup, "poll-loop-started");
-        while (!ct.IsCancellationRequested)
+        // Cancel current delay so the loop recalculates immediately
+        _delayCts?.Cancel();
+    }
+
+    private async Task TimerLoop(CancellationToken shutdownCt)
+    {
+        _log?.Event(LogGroup, "timer-loop-started");
+        while (!shutdownCt.IsCancellationRequested)
         {
             try
             {
-                await Task.Delay(TimeSpan.FromSeconds(30), ct);
-                await CheckDueTasks();
-            }
-            catch (OperationCanceledException)
-            {
-                break;
+                var nextFire = _store?.GetNextFireTime();
+                if (nextFire == null)
+                {
+                    // No pending tasks — wait until signaled by Reschedule()
+                    _log?.Debug(LogGroup, "timer-idle", new { reason = "no-tasks" });
+                    using var idleCts = CancellationTokenSource.CreateLinkedTokenSource(shutdownCt);
+                    _delayCts = idleCts;
+                    try { await Task.Delay(Timeout.InfiniteTimeSpan, idleCts.Token); }
+                    catch (OperationCanceledException) when (!shutdownCt.IsCancellationRequested) { }
+                    finally { _delayCts = null; }
+                    continue;
+                }
+
+                var delay = nextFire.Value - DateTime.Now;
+                if (delay <= TimeSpan.Zero)
+                {
+                    // Already due — fire immediately
+                    CheckDueTasksSync();
+                    continue;
+                }
+
+                _log?.Debug(LogGroup, "timer-waiting", new
+                {
+                    nextFire = nextFire.Value.ToString("HH:mm:ss"),
+                    delaySeconds = (int)delay.TotalSeconds
+                });
+
+                using var delayCts = CancellationTokenSource.CreateLinkedTokenSource(shutdownCt);
+                _delayCts = delayCts;
+                try
+                {
+                    await Task.Delay(delay, delayCts.Token);
+                    // Delay completed — task is due
+                    CheckDueTasksSync();
+                }
+                catch (OperationCanceledException) when (!shutdownCt.IsCancellationRequested)
+                {
+                    // Rescheduled — loop back and recalculate
+                    _log?.Debug(LogGroup, "timer-rescheduled");
+                }
+                finally { _delayCts = null; }
             }
             catch (Exception ex)
             {
-                _log?.Error(LogGroup, "poll-loop-error", new { error = ex.Message });
+                _log?.Error(LogGroup, "timer-loop-error", new { error = ex.Message });
+                // Brief pause to avoid tight error loop
+                try { await Task.Delay(5000, shutdownCt); } catch { break; }
             }
         }
-        _log?.Event(LogGroup, "poll-loop-stopped");
+        _log?.Event(LogGroup, "timer-loop-stopped");
     }
 
     // ── Due task checking ──
-
-    private Task CheckDueTasks()
-    {
-        CheckDueTasksSync();
-        return Task.CompletedTask;
-    }
 
     private void CheckDueTasksSync()
     {
