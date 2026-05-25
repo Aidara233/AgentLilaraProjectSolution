@@ -137,8 +137,6 @@ namespace AgentCoreProcessor.Engine
         private string? _escalateReason;
         // 模式切换后额外一轮循环（绕过空批检查）
         private bool _extraCycleRequested;
-        // Working 模式下消息积压过多时自动回退 Express
-        private bool _autoDeescalate;
 
         // ── 统一循环 Phase 2：信号缓冲 + 双源注入 ──
         private readonly ConcurrentQueue<ChannelSignal> _signalBuffer = new();
@@ -832,6 +830,26 @@ namespace AgentCoreProcessor.Engine
 
             agentCore.AdditionalTools = componentHost!.GetVisibleTools().ToList();
             agentCore.GlobalComponentTools = ctx.GlobalComponentHost?.GetAllTools().ToList();
+
+            // Working 积压检查：游标后有大量未消费消息时，不进 Agent，直接回退 Express
+            if (_lastConsumedMessageId > 0)
+            {
+                var checkMsgs = await ctx.Session.GetMessagesAfterIdAsync(channelId, _lastConsumedMessageId, 31);
+                if (checkMsgs.Count > 30)
+                {
+                    _lastConsumedMessageId = checkMsgs.Max(m => m.Id);
+                    Signal.Event(LogGroup.Engine, "自动回退",
+                        new { channelId, from = "Working", to = "Express", pendingCount = checkMsgs.Count });
+                    isWorkingMode = false;
+                    persistence?.SaveContext(null, "express", new List<List<Message>>(),
+                        _lastConsumedMessageId, null);
+                    EndWorkingSession();
+                    _extraCycleRequested = true;
+                    gate.Signal();
+                    return;
+                }
+            }
+
             await agent!.RunAsync(CancellationToken.None);
 
             if (agent.StopReason == AgentStopReason.Error)
@@ -863,15 +881,13 @@ namespace AgentCoreProcessor.Engine
             {
                 EndWorkingSession();
             }
-            else if (agent.StopReason == AgentStopReason.Deescalated || _autoDeescalate)
+            else if (agent.StopReason == AgentStopReason.Deescalated)
             {
-                var reason = _autoDeescalate
-                    ? "消息积压过多(>30条)，自动回退"
-                    : agent.LastRoundCalls?.FirstOrDefault(c => c.Tool == "deescalate")?.Inputs.FirstOrDefault();
+                var reason = agent.LastRoundCalls?
+                    .FirstOrDefault(c => c.Tool == "deescalate")?.Inputs.FirstOrDefault();
                 Signal.Event(LogGroup.Engine, "模式切换",
                     new { channelId, from = "Working", to = "Express", reason = reason ?? "工具调用" });
                 isWorkingMode = false;
-                _autoDeescalate = false;
 
                 // 清空 Working 上下文但保留游标
                 persistence?.SaveContext(null, "express", new List<List<Message>>(),
@@ -1299,10 +1315,6 @@ namespace AgentCoreProcessor.Engine
                     var maxNewId = newMsgs.Max(m => m.Id);
                     if (maxNewId > _lastConsumedMessageId)
                         _lastConsumedMessageId = maxNewId;
-
-                    // Working 模式：新消息积压过多（>30条）→ 标记自动回退 Express
-                    if (isWorkingMode && newMsgs.Count > 30)
-                        _autoDeescalate = true;
                 }
             }
 
