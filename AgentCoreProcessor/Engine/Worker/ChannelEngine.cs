@@ -761,7 +761,7 @@ namespace AgentCoreProcessor.Engine
                 authorizedTools.Clear();
                 foreach (var t in profileTools) authorizedTools.Add(t);
             }
-            else if (!isInWorkingSession && !_extraCycleRequested)
+            else if (!isInWorkingSession && !_extraCycleRequested && !HasWakeableSignals(null))
             {
                 activeBatch = null;
                 return false;
@@ -776,7 +776,8 @@ namespace AgentCoreProcessor.Engine
         {
             if (isInWorkingSession) return true;
             var batch = CollectBuffer();
-            if (batch == null || batch.Count == 0) return false;
+            if ((batch == null || batch.Count == 0) && !HasWakeableSignals(null))
+                return false;
             return await EvaluateGateAsync(batch);
         }
 
