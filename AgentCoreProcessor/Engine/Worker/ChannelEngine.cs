@@ -316,7 +316,7 @@ namespace AgentCoreProcessor.Engine
         }
 
         /// <summary>唤醒闸门（供外部触发，如 ConsoleProvider 压缩信号）。</summary>
-        internal void SignalGate() => gate.Signal();
+        internal void SignalGate() => gate.ForceWake();
 
         /// <summary>DelegationBus 回调：接收到定向委托或广播。</summary>
         private void OnCrossRequestReceived(CrossRequest request)
@@ -373,7 +373,7 @@ namespace AgentCoreProcessor.Engine
             delegationNotificationModule.SetFilterConfig(_signalFilter);
             componentHost = new ComponentHost(
                 myLoopId, "channel", _moduleBus, ctx.ComponentServices,
-                () => gate.Signal(),
+                () => gate.ForceWake(),
                 new Dictionary<Type, object> { [typeof(IAgentMessaging)] = _messaging });
             componentHost.GlobalHost = ctx.GlobalComponentHost;
             await componentHost.InitAsync();

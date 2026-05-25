@@ -248,7 +248,7 @@ namespace AgentCoreProcessor.Engine
             delegationNotificationModule.SetFilterConfig(ctx.SignalFilters.GetConfig("system"));
             componentHost = new ComponentHost(
                 LoopId.System, "system", _moduleBus, ctx.ComponentServices,
-                () => gate.Signal(),
+                () => gate.ForceWake(),
                 new Dictionary<Type, object> { [typeof(IAgentMessaging)] = _messaging });
             await componentHost.InitAsync();
             componentHost.GlobalHost = ctx.GlobalComponentHost;
@@ -636,7 +636,7 @@ namespace AgentCoreProcessor.Engine
         }
 
         /// <summary>外部唤醒闸门（委托提交时调用）。</summary>
-        public void SignalGate() => gate.Signal();
+        public void SignalGate() => gate.ForceWake();
 
         /// <summary>强制唤醒（跳过 ShouldActivate）。</summary>
         public void ForceWake() => gate.ForceWake();
