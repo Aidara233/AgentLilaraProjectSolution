@@ -137,6 +137,8 @@ namespace AgentCoreProcessor.Engine
         private string? _escalateReason;
         // 模式切换后额外一轮循环（绕过空批检查）
         private bool _extraCycleRequested;
+        // Working 模式下消息积压过多时自动回退 Express
+        private bool _autoDeescalate;
 
         // ── 统一循环 Phase 2：信号缓冲 + 双源注入 ──
         private readonly ConcurrentQueue<ChannelSignal> _signalBuffer = new();
@@ -861,13 +863,15 @@ namespace AgentCoreProcessor.Engine
             {
                 EndWorkingSession();
             }
-            else if (agent.StopReason == AgentStopReason.Deescalated)
+            else if (agent.StopReason == AgentStopReason.Deescalated || _autoDeescalate)
             {
-                var reason = agent.LastRoundCalls?
-                    .FirstOrDefault(c => c.Tool == "deescalate")?.Inputs.FirstOrDefault();
+                var reason = _autoDeescalate
+                    ? "消息积压过多(>30条)，自动回退"
+                    : agent.LastRoundCalls?.FirstOrDefault(c => c.Tool == "deescalate")?.Inputs.FirstOrDefault();
                 Signal.Event(LogGroup.Engine, "模式切换",
                     new { channelId, from = "Working", to = "Express", reason = reason ?? "工具调用" });
                 isWorkingMode = false;
+                _autoDeescalate = false;
 
                 // 清空 Working 上下文但保留游标
                 persistence?.SaveContext(null, "express", new List<List<Message>>(),
@@ -904,6 +908,17 @@ namespace AgentCoreProcessor.Engine
 
             var roundInject = await ((IAgentHost)this).BuildRoundInjectAsync();
             if (roundInject != null) messages.AddRange(roundInject);
+
+            // Express 总量封顶：新旧消息总共 ExpressHistoryMaxMessages 条，优先保留新消息
+            if (messages.Count > ExpressHistoryMaxMessages)
+            {
+                var excess = messages.Count - ExpressHistoryMaxMessages;
+                // 从框架消息之后开始裁剪（保留框架 + 最新消息）
+                var maxRemovable = messages.Count - _frameworkMessageCount;
+                if (excess > maxRemovable) excess = maxRemovable;
+                if (excess > 0)
+                    messages.RemoveRange(_frameworkMessageCount, excess);
+            }
 
             // Call model (with retry)
             agentCore.AdditionalTools = componentHost!.GetVisibleTools().ToList();
@@ -1162,26 +1177,12 @@ namespace AgentCoreProcessor.Engine
                 _loadedConversation = null; // 只注入一次
             }
 
-            // Format new messages from buffer (interceptor flow)
-            if (currentLastMsg != null && activeBatch != null && activeBatch.Count > 0)
+            // Interceptor injections（独立于 activeBatch，模式切换时也可能有注入）
+            if (interceptorInjections.Count > 0)
             {
-                var sb = new StringBuilder("<新消息>\n");
-                foreach (var (msg, sc) in activeBatch)
-                {
-                    var name = sc.Person.Name ?? sc.User.PlatformId;
-                    sb.AppendLine($"{name}: {msg.Content}");
-                }
-                sb.Append("</新消息>");
-
-                // Interceptor injections
-                if (interceptorInjections.Count > 0)
-                {
-                    sb.AppendLine();
-                    sb.AppendLine("[系统提示]");
-                    foreach (var inj in interceptorInjections)
-                        sb.AppendLine(inj);
-                }
-
+                var sb = new StringBuilder("[系统提示]\n");
+                foreach (var inj in interceptorInjections)
+                    sb.AppendLine(inj);
                 msgs.Add(new Message { Role = "user", Content = sb.ToString() });
             }
 
@@ -1280,8 +1281,8 @@ namespace AgentCoreProcessor.Engine
                 }
             }
 
-            // Working 模式：强制从 DB 拉取游标之后的全量新消息（不丢消息）
-            if (isWorkingMode && _lastConsumedMessageId > 0)
+            // 统一新消息追赶：从 DB 拉取游标之后的全量消息（所有模式生效）
+            if (_lastConsumedMessageId > 0)
             {
                 var newMsgs = await ctx.Session.GetMessagesAfterIdAsync(channelId, _lastConsumedMessageId);
                 if (newMsgs.Count > 0)
@@ -1298,6 +1299,10 @@ namespace AgentCoreProcessor.Engine
                     var maxNewId = newMsgs.Max(m => m.Id);
                     if (maxNewId > _lastConsumedMessageId)
                         _lastConsumedMessageId = maxNewId;
+
+                    // Working 模式：新消息积压过多（>30条）→ 标记自动回退 Express
+                    if (isWorkingMode && newMsgs.Count > 30)
+                        _autoDeescalate = true;
                 }
             }
 
