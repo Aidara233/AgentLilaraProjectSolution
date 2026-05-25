@@ -133,6 +133,8 @@ namespace AgentCoreProcessor.Engine
         private string? _escalateReason;
         // 模式切换后额外一轮循环（绕过空批检查）
         private bool _extraCycleRequested;
+        // 组件主动唤醒（绕过空批检查，由 WakeLoop 设置）
+        private volatile bool _componentWakeRequested;
 
         // ── 统一循环 Phase 2：信号缓冲 + 双源注入 ──
         private readonly ConcurrentQueue<ChannelSignal> _signalBuffer = new();
@@ -373,7 +375,7 @@ namespace AgentCoreProcessor.Engine
             delegationNotificationModule.SetFilterConfig(_signalFilter);
             componentHost = new ComponentHost(
                 myLoopId, "channel", _moduleBus, ctx.ComponentServices,
-                () => gate.ForceWake(),
+                () => { _componentWakeRequested = true; gate.ForceWake(); },
                 new Dictionary<Type, object> { [typeof(IAgentMessaging)] = _messaging });
             componentHost.GlobalHost = ctx.GlobalComponentHost;
             await componentHost.InitAsync();
@@ -404,12 +406,13 @@ namespace AgentCoreProcessor.Engine
                 // ② CollectBuffer（在创建 session 之前 — 避免 Timer tick 等空唤醒创建无用 session）
                 var batch = CollectBuffer();
 
-                // 空唤醒跳过：无可唤醒信号且不在 Working 会话中
-                if (!isInWorkingSession && !_extraCycleRequested && !HasWakeableSignals(batch))
+                // 空唤醒跳过：无可唤醒信号且不在 Working 会话中（组件主动唤醒除外）
+                if (!isInWorkingSession && !_extraCycleRequested && !_componentWakeRequested && !HasWakeableSignals(batch))
                 {
                     await componentHost.OnPauseAsync();
                     continue;
                 }
+                _componentWakeRequested = false;
 
                 // ③ 循环会话开始（有消息或 Working 会话持续中）
                 if (sessionCtx == null)
@@ -751,7 +754,7 @@ namespace AgentCoreProcessor.Engine
                 fixedPrefix = null;
 
             }
-            else if (!isInWorkingSession && !_extraCycleRequested && !HasWakeableSignals(null))
+            else if (!isInWorkingSession && !_extraCycleRequested && !_componentWakeRequested && !HasWakeableSignals(null))
             {
                 activeBatch = null;
                 return false;
