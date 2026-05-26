@@ -36,6 +36,11 @@ namespace AgentCoreProcessor.Engine
                 nameToQq.TryAdd(info.DisplayName, info.PlatformId);
                 if (!string.IsNullOrEmpty(info.Nickname))
                     nameToQq.TryAdd(info.Nickname, info.PlatformId);
+                if (!string.IsNullOrEmpty(info.Aliases))
+                {
+                    foreach (var alias in info.Aliases.Split(',', System.StringSplitOptions.RemoveEmptyEntries | System.StringSplitOptions.TrimEntries))
+                        nameToQq.TryAdd(alias, info.PlatformId);
+                }
             }
 
             raw = AtTagRegex.Replace(raw, match =>

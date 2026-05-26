@@ -13,6 +13,7 @@ namespace AgentCoreProcessor.Engine
         public required string Nickname { get; init; }
         public required string PlatformId { get; init; }
         public required string Memo { get; init; }
+        public required string Aliases { get; init; }
         public TrustLevel TrustLevel { get; init; } = TrustLevel.Unknown;
         public PermissionLevel PermissionLevel { get; init; } = PermissionLevel.Default;
 
@@ -29,6 +30,7 @@ namespace AgentCoreProcessor.Engine
                 Nickname = msg.Nickname ?? "",
                 PlatformId = msg.PlatformUserId,
                 Memo = person.FastMemory ?? "",
+                Aliases = person.Aliases ?? "",
                 TrustLevel = person.TrustLevel,
                 PermissionLevel = user.PermissionLevel
             };

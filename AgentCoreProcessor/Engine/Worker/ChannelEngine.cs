@@ -754,6 +754,12 @@ namespace AgentCoreProcessor.Engine
             return path.Length > 1 && (path[1] == ':' || path.StartsWith('/') || path.StartsWith("\\\\"));
         }
 
+        private static string EscapeXml(string? text)
+        {
+            if (string.IsNullOrEmpty(text)) return "";
+            return text.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&quot;");
+        }
+
 
 
         private List<(IncomingMessage Message, SessionContext Context)>? CollectBuffer()
@@ -1143,19 +1149,70 @@ namespace AgentCoreProcessor.Engine
                         : recentMsgs.Where(m => m.Id <= _lastConsumedMessageId).ToList();
                     if (historyMsgs.Count > 0)
                     {
-                        var histSb = new StringBuilder("[对话历史]\n");
-                        foreach (var m in historyMsgs)
+                        if (isWorkingMode)
                         {
-                            var name = m.IsFromBot ? "你" : m.SenderName;
-                            histSb.AppendLine($"{name}: {m.Content}");
+                            var histSb = new StringBuilder("<conversation_history>\n");
+                            foreach (var m in historyMsgs)
+                            {
+                                var name = m.IsFromBot ? "assistant" : EscapeXml(m.SenderName);
+                                var msgId = !string.IsNullOrEmpty(m.PlatformMessageId) ? $" id=\"{EscapeXml(m.PlatformMessageId)}\"" : "";
+                                histSb.AppendLine($"<message role=\"{(m.IsFromBot ? "assistant" : "user")}\" sender=\"{name}\"{msgId}>");
+                                histSb.AppendLine(EscapeXml(m.Content));
+                                histSb.AppendLine("</message>");
+                            }
+                            histSb.Append("</conversation_history>");
+                            msgs.Add(new Message { Role = "user", Content = histSb.ToString() });
                         }
-                        msgs.Add(new Message { Role = "user", Content = histSb.ToString() });
+                        else
+                        {
+                            var histSb = new StringBuilder("[对话历史]\n");
+                            foreach (var m in historyMsgs)
+                            {
+                                var name = m.IsFromBot ? "你" : m.SenderName;
+                                var msgId = !string.IsNullOrEmpty(m.PlatformMessageId) ? $"[#{m.PlatformMessageId}] " : "";
+                                histSb.AppendLine($"{msgId}{name}: {m.Content}");
+                            }
+                            msgs.Add(new Message { Role = "user", Content = histSb.ToString() });
+                        }
                     }
 
                     // 记录待推进游标（本批次最大消息 Id）
                     var maxId = recentMsgs.Max(m => m.Id);
                     if (maxId > _lastConsumedMessageId)
                         _pendingCursor = maxId;
+                }
+            }
+
+            // 参与者列表注入（名字、平台ID、内部ID、信任等级、权限、快速记忆）
+            if (currentParticipantSnapshot != null && currentParticipantSnapshot.Count > 0)
+            {
+                if (isWorkingMode)
+                {
+                    var partSb = new StringBuilder("<participants>\n");
+                    foreach (var (_, p) in currentParticipantSnapshot)
+                    {
+                        var memo = !string.IsNullOrEmpty(p.Memo) ? $" memo=\"{EscapeXml(p.Memo)}\"" : "";
+                        var nick = !string.IsNullOrEmpty(p.Nickname) && p.Nickname != p.DisplayName ? $" nickname=\"{EscapeXml(p.Nickname)}\"" : "";
+                        var aliases = !string.IsNullOrEmpty(p.Aliases) ? $" aliases=\"{EscapeXml(p.Aliases)}\"" : "";
+                        partSb.AppendLine($"<user name=\"{EscapeXml(p.DisplayName)}\"{nick}{aliases} platform_id=\"{EscapeXml(p.PlatformId)}\" person_id=\"{p.PersonId}\" trust=\"{p.TrustLevel}\" permission=\"{p.PermissionLevel}\"{memo} />");
+                    }
+                    partSb.Append("</participants>");
+                    msgs.Add(new Message { Role = "user", Content = partSb.ToString() });
+                }
+                else
+                {
+                    var partSb = new StringBuilder("[当前参与者]\n");
+                    foreach (var (_, p) in currentParticipantSnapshot)
+                    {
+                        partSb.Append($"- {p.DisplayName}");
+                        if (!string.IsNullOrEmpty(p.Aliases))
+                            partSb.Append($" (别称:{p.Aliases})");
+                        partSb.Append($" [platform_id:{p.PlatformId}, person_id:{p.PersonId}, trust:{p.TrustLevel}]");
+                        if (!string.IsNullOrEmpty(p.Memo))
+                            partSb.Append($" — {p.Memo}");
+                        partSb.AppendLine();
+                    }
+                    msgs.Add(new Message { Role = "user", Content = partSb.ToString() });
                 }
             }
 
@@ -1234,10 +1291,9 @@ namespace AgentCoreProcessor.Engine
                 {
                     case NewMessageSignal nms:
                         var nmsName = nms.Session.Person.Name ?? nms.Session.User.PlatformId;
-                        var sb2 = new StringBuilder("<新消息>\n");
-                        sb2.AppendLine($"{nmsName}: {nms.Message.Content}");
-                        sb2.Append("</新消息>");
-                        msgs.Add(new Message { Role = "user", Content = sb2.ToString() });
+                        var nmsMsgId = !string.IsNullOrEmpty(nms.Message.PlatformMessageId) ? $" id=\"{EscapeXml(nms.Message.PlatformMessageId)}\"" : "";
+                        msgs.Add(new Message { Role = "user", Content =
+                            $"<new_messages>\n<message role=\"user\" sender=\"{EscapeXml(nmsName)}\"{nmsMsgId}>\n{EscapeXml(nms.Message.Content)}\n</message>\n</new_messages>" });
                         break;
                     case BusEventSignal bes:
                         msgs.Add(new Message { Role = "user", Content = $"[系统事件] {bes.Event.GetType().Name}" });
@@ -1280,14 +1336,32 @@ namespace AgentCoreProcessor.Engine
                 var newMsgs = await ctx.Session.GetMessagesAfterIdAsync(channelId, _lastConsumedMessageId);
                 if (newMsgs.Count > 0)
                 {
-                    var sb = new StringBuilder("<新消息（自上次处理后）>\n");
-                    foreach (var m in newMsgs)
+                    if (isWorkingMode)
                     {
-                        var name = m.IsFromBot ? "你" : m.SenderName;
-                        sb.AppendLine($"{name}: {m.Content}");
+                        var sb = new StringBuilder("<new_messages>\n");
+                        foreach (var m in newMsgs)
+                        {
+                            var name = m.IsFromBot ? "assistant" : EscapeXml(m.SenderName);
+                            var msgId = !string.IsNullOrEmpty(m.PlatformMessageId) ? $" id=\"{EscapeXml(m.PlatformMessageId)}\"" : "";
+                            sb.AppendLine($"<message role=\"{(m.IsFromBot ? "assistant" : "user")}\" sender=\"{name}\"{msgId}>");
+                            sb.AppendLine(EscapeXml(m.Content));
+                            sb.AppendLine("</message>");
+                        }
+                        sb.Append("</new_messages>");
+                        msgs.Add(new Message { Role = "user", Content = sb.ToString() });
                     }
-                    sb.Append("</新消息>");
-                    msgs.Add(new Message { Role = "user", Content = sb.ToString() });
+                    else
+                    {
+                        var sb = new StringBuilder("<新消息（自上次处理后）>\n");
+                        foreach (var m in newMsgs)
+                        {
+                            var name = m.IsFromBot ? "你" : m.SenderName;
+                            var msgId = !string.IsNullOrEmpty(m.PlatformMessageId) ? $"[#{m.PlatformMessageId}] " : "";
+                            sb.AppendLine($"{msgId}{name}: {m.Content}");
+                        }
+                        sb.Append("</新消息>");
+                        msgs.Add(new Message { Role = "user", Content = sb.ToString() });
+                    }
 
                     var maxNewId = newMsgs.Max(m => m.Id);
                     if (maxNewId > _lastConsumedMessageId)
