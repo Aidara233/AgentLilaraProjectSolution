@@ -1080,6 +1080,116 @@ namespace AgentCoreProcessor.Engine
 
         public int FrameworkMessageCount => _frameworkMessageCount;
 
+        // ═══════════════════════════════════════════════════════════
+        // 消息格式化辅助（reply / mention / quoted-context）
+        // ═══════════════════════════════════════════════════════════
+
+        private string? _botPlatformId;
+
+        private string? GetBotPlatformId()
+        {
+            if (_botPlatformId == null)
+                _botPlatformId = ctx.Adapters.GetBotPlatformId("qq");
+            return _botPlatformId;
+        }
+
+        /// <summary>检查 DB 消息中 bot 是否被 @提及。</summary>
+        private bool IsBotMentionedInMessage(UserMessage m)
+        {
+            if (string.IsNullOrEmpty(m.MentionedPlatformIds)) return false;
+            var botId = GetBotPlatformId();
+            if (string.IsNullOrEmpty(botId)) return false;
+            return m.MentionedPlatformIds.Split(',').Any(id => id == botId);
+        }
+
+        /// <summary>为 Working XML <message> 构建额外属性（id / reply / mentioned / mentioned_users）。</summary>
+        private string FormatMessageAttrs(UserMessage m)
+        {
+            var parts = new List<string>();
+            if (!string.IsNullOrEmpty(m.PlatformMessageId))
+                parts.Add($"id=\"{EscapeXml(m.PlatformMessageId)}\"");
+            if (!string.IsNullOrEmpty(m.ReplyToPlatformMessageId))
+                parts.Add($"reply=\"{EscapeXml(m.ReplyToPlatformMessageId)}\"");
+            if (IsBotMentionedInMessage(m))
+                parts.Add("mentioned=\"true\"");
+            if (!string.IsNullOrEmpty(m.MentionedPlatformIds))
+                parts.Add($"mentioned_users=\"{EscapeXml(m.MentionedPlatformIds)}\"");
+            return parts.Count > 0 ? " " + string.Join(" ", parts) : "";
+        }
+
+        /// <summary>为一组消息批次构建缺失引用的 <quoted-context> 块（递归展开）。</summary>
+        private async Task<string?> BuildQuotedContextForBatchAsync(
+            List<UserMessage> batch, int channelId, int maxDepth, bool includeSurrounding)
+        {
+            var visibleIds = new HashSet<string>();
+            foreach (var m in batch)
+                if (!string.IsNullOrEmpty(m.PlatformMessageId))
+                    visibleIds.Add(m.PlatformMessageId);
+
+            var included = new HashSet<string>(visibleIds);
+            var sb = new StringBuilder();
+
+            foreach (var m in batch)
+            {
+                if (!string.IsNullOrEmpty(m.ReplyToPlatformMessageId)
+                    && !included.Contains(m.ReplyToPlatformMessageId))
+                {
+                    await AppendQuotedContextRecursiveAsync(sb, m.ReplyToPlatformMessageId,
+                        channelId, maxDepth, included, includeSurrounding);
+                }
+            }
+
+            return sb.Length > 0 ? sb.ToString() : null;
+        }
+
+        /// <summary>递归构建单条 quoted-context（含引用链展开）。</summary>
+        private async Task AppendQuotedContextRecursiveAsync(
+            StringBuilder sb, string targetId, int channelId,
+            int remainingDepth, HashSet<string> included, bool includeSurrounding)
+        {
+            if (remainingDepth <= 0 || string.IsNullOrEmpty(targetId) || included.Contains(targetId))
+                return;
+
+            included.Add(targetId);
+
+            var target = await ctx.Session.GetByPlatformMessageIdAsync(channelId, targetId);
+            if (target == null) return;
+
+            sb.AppendLine("<quoted-context>");
+
+            if (includeSurrounding)
+            {
+                var surrounding = await ctx.Session.GetContextAroundAsync(target.Id, channelId, 3);
+                foreach (var m in surrounding)
+                {
+                    var name = m.IsFromBot ? "Lilara" : EscapeXml(m.SenderName);
+                    var replyAttr = !string.IsNullOrEmpty(m.ReplyToPlatformMessageId)
+                        ? $" reply=\"{EscapeXml(m.ReplyToPlatformMessageId)}\"" : "";
+                    var quotedAttr = m.PlatformMessageId == targetId ? " quoted=\"true\"" : "";
+                    var idAttr = !string.IsNullOrEmpty(m.PlatformMessageId)
+                        ? $" id=\"{EscapeXml(m.PlatformMessageId)}\"" : "";
+                    sb.AppendLine($"<msg{idAttr} user=\"{name}\"{quotedAttr}{replyAttr}>");
+                    sb.AppendLine(EscapeXml(m.Content));
+                    sb.AppendLine("</msg>");
+                }
+            }
+            else
+            {
+                var name = target.IsFromBot ? "Lilara" : EscapeXml(target.SenderName);
+                var replyAttr = !string.IsNullOrEmpty(target.ReplyToPlatformMessageId)
+                    ? $" reply=\"{EscapeXml(target.ReplyToPlatformMessageId)}\"" : "";
+                sb.AppendLine($"<msg id=\"{EscapeXml(targetId)}\" user=\"{name}\" quoted=\"true\"{replyAttr}>");
+                sb.AppendLine(EscapeXml(target.Content));
+                sb.AppendLine("</msg>");
+            }
+
+            sb.AppendLine("</quoted-context>");
+
+            if (!string.IsNullOrEmpty(target.ReplyToPlatformMessageId))
+                await AppendQuotedContextRecursiveAsync(sb, target.ReplyToPlatformMessageId,
+                    channelId, remainingDepth - 1, included, includeSurrounding);
+        }
+
         public async Task<List<Message>?> BuildStartInjectAsync()
         {
             var msgs = new List<Message>();
@@ -1112,24 +1222,36 @@ namespace AgentCoreProcessor.Engine
                             foreach (var m in historyMsgs)
                             {
                                 var name = m.IsFromBot ? "assistant" : EscapeXml(m.SenderName);
-                                var msgId = !string.IsNullOrEmpty(m.PlatformMessageId) ? $" id=\"{EscapeXml(m.PlatformMessageId)}\"" : "";
-                                histSb.AppendLine($"<message role=\"{(m.IsFromBot ? "assistant" : "user")}\" sender=\"{name}\"{msgId}>");
+                                var attrs = FormatMessageAttrs(m);
+                                histSb.AppendLine($"<message role=\"{(m.IsFromBot ? "assistant" : "user")}\" sender=\"{name}\"{attrs}>");
                                 histSb.AppendLine(EscapeXml(m.Content));
                                 histSb.AppendLine("</message>");
                             }
                             histSb.Append("</conversation_history>");
                             msgs.Add(new Message { Role = "user", Content = histSb.ToString() });
+
+                            // 初始历史引用缺省补块（递归 1 层）
+                            var histQc = await BuildQuotedContextForBatchAsync(historyMsgs, channelId, maxDepth: 1, includeSurrounding: false);
+                            if (!string.IsNullOrEmpty(histQc))
+                                msgs.Add(new Message { Role = "user", Content = histQc });
                         }
                         else
                         {
                             var histSb = new StringBuilder("[对话历史]\n");
                             foreach (var m in historyMsgs)
                             {
+                                var mentionPrefix = IsBotMentionedInMessage(m) ? "[@你] " : "";
                                 var name = m.IsFromBot ? "你" : m.SenderName;
-                                var msgId = !string.IsNullOrEmpty(m.PlatformMessageId) ? $"[#{m.PlatformMessageId}] " : "";
-                                histSb.AppendLine($"{msgId}{name}: {m.Content}");
+                                var msgId = !string.IsNullOrEmpty(m.PlatformMessageId) ? $"[#{m.PlatformMessageId}]" : "";
+                                var replyNote = !string.IsNullOrEmpty(m.ReplyToPlatformMessageId) ? $" (回复 #{m.ReplyToPlatformMessageId})" : "";
+                                histSb.AppendLine($"{mentionPrefix}{msgId}{name}: {m.Content}{replyNote}");
                             }
                             msgs.Add(new Message { Role = "user", Content = histSb.ToString() });
+
+                            // 历史引用缺省补块（递归 1 层，带 ±3 上下文）
+                            var histQc = await BuildQuotedContextForBatchAsync(historyMsgs, channelId, maxDepth: 1, includeSurrounding: true);
+                            if (!string.IsNullOrEmpty(histQc))
+                                msgs.Add(new Message { Role = "user", Content = histQc });
                         }
                     }
 
@@ -1254,11 +1376,37 @@ namespace AgentCoreProcessor.Engine
                 switch (signal)
                 {
                     case NewMessageSignal nms:
+                    {
                         var nmsName = nms.Session.Person.Name ?? nms.Session.User.PlatformId;
-                        var nmsMsgId = !string.IsNullOrEmpty(nms.Message.PlatformMessageId) ? $" id=\"{EscapeXml(nms.Message.PlatformMessageId)}\"" : "";
+                        var nmsAttrs = new List<string>();
+                        if (!string.IsNullOrEmpty(nms.Message.PlatformMessageId))
+                            nmsAttrs.Add($"id=\"{EscapeXml(nms.Message.PlatformMessageId)}\"");
+                        if (!string.IsNullOrEmpty(nms.Message.ReplyTo))
+                            nmsAttrs.Add($"reply=\"{EscapeXml(nms.Message.ReplyTo)}\"");
+                        if (nms.Message.IsMentioned)
+                            nmsAttrs.Add("mentioned=\"true\"");
+                        if (nms.Message.MentionedPlatformIds is { Count: > 0 })
+                            nmsAttrs.Add($"mentioned_users=\"{EscapeXml(string.Join(",", nms.Message.MentionedPlatformIds))}\"");
+                        var nmsAttrStr = nmsAttrs.Count > 0 ? " " + string.Join(" ", nmsAttrs) : "";
                         msgs.Add(new Message { Role = "user", Content =
-                            $"<new_messages>\n<message role=\"user\" sender=\"{EscapeXml(nmsName)}\"{nmsMsgId}>\n{EscapeXml(nms.Message.Content)}\n</message>\n</new_messages>" });
+                            $"<new_messages>\n<message role=\"user\" sender=\"{EscapeXml(nmsName)}\"{nmsAttrStr}>\n{EscapeXml(nms.Message.Content)}\n</message>\n</new_messages>" });
+
+                        // 新消息引用缺省补块（递归 2 层）
+                        if (!string.IsNullOrEmpty(nms.Message.ReplyTo))
+                        {
+                            var target = await ctx.Session.GetByPlatformMessageIdAsync(channelId, nms.Message.ReplyTo);
+                            if (target == null)
+                            {
+                                var qcSb = new StringBuilder();
+                                var included = new HashSet<string>();
+                                await AppendQuotedContextRecursiveAsync(qcSb, nms.Message.ReplyTo,
+                                    channelId, remainingDepth: 2, included, includeSurrounding: false);
+                                if (qcSb.Length > 0)
+                                    msgs.Add(new Message { Role = "user", Content = qcSb.ToString() });
+                            }
+                        }
                         break;
+                    }
                     case BusEventSignal bes:
                         msgs.Add(new Message { Role = "user", Content = $"[系统事件] {bes.Event.GetType().Name}" });
                         break;
@@ -1313,25 +1461,37 @@ namespace AgentCoreProcessor.Engine
                         foreach (var m in newMsgs)
                         {
                             var name = m.IsFromBot ? "assistant" : EscapeXml(m.SenderName);
-                            var msgId = !string.IsNullOrEmpty(m.PlatformMessageId) ? $" id=\"{EscapeXml(m.PlatformMessageId)}\"" : "";
-                            sb.AppendLine($"<message role=\"{(m.IsFromBot ? "assistant" : "user")}\" sender=\"{name}\"{msgId}>");
+                            var attrs = FormatMessageAttrs(m);
+                            sb.AppendLine($"<message role=\"{(m.IsFromBot ? "assistant" : "user")}\" sender=\"{name}\"{attrs}>");
                             sb.AppendLine(EscapeXml(m.Content));
                             sb.AppendLine("</message>");
                         }
                         sb.Append("</new_messages>");
                         msgs.Add(new Message { Role = "user", Content = sb.ToString() });
+
+                        // 新消息引用缺省补块（递归 2 层）
+                        var roundQc = await BuildQuotedContextForBatchAsync(newMsgs, channelId, maxDepth: 2, includeSurrounding: false);
+                        if (!string.IsNullOrEmpty(roundQc))
+                            msgs.Add(new Message { Role = "user", Content = roundQc });
                     }
                     else
                     {
                         var sb = new StringBuilder("<新消息（自上次处理后）>\n");
                         foreach (var m in newMsgs)
                         {
+                            var mentionPrefix = IsBotMentionedInMessage(m) ? "[@你] " : "";
                             var name = m.IsFromBot ? "你" : m.SenderName;
-                            var msgId = !string.IsNullOrEmpty(m.PlatformMessageId) ? $"[#{m.PlatformMessageId}] " : "";
-                            sb.AppendLine($"{msgId}{name}: {m.Content}");
+                            var msgId = !string.IsNullOrEmpty(m.PlatformMessageId) ? $"[#{m.PlatformMessageId}]" : "";
+                            var replyNote = !string.IsNullOrEmpty(m.ReplyToPlatformMessageId) ? $" (回复 #{m.ReplyToPlatformMessageId})" : "";
+                            sb.AppendLine($"{mentionPrefix}{msgId}{name}: {m.Content}{replyNote}");
                         }
                         sb.Append("</新消息>");
                         msgs.Add(new Message { Role = "user", Content = sb.ToString() });
+
+                        // 新消息引用缺省补块（递归 2 层，带 ±3 上下文）
+                        var roundQc = await BuildQuotedContextForBatchAsync(newMsgs, channelId, maxDepth: 2, includeSurrounding: true);
+                        if (!string.IsNullOrEmpty(roundQc))
+                            msgs.Add(new Message { Role = "user", Content = roundQc });
                     }
 
                     // 游标推进到所有新消息（包括被裁剪的）

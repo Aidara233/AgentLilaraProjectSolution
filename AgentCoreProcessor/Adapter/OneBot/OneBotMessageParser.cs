@@ -226,13 +226,13 @@ namespace AgentCoreProcessor.Adapter
                         if (!string.IsNullOrEmpty(rawMsg))
                             quotedContent = rawMsg.Length > 200 ? rawMsg[..200] + "..." : rawMsg;
 
-                        var sender = msgData?["sender"];
-                        if (sender != null)
+                        var quotedSender = msgData?["sender"];
+                        if (quotedSender != null)
                         {
-                            quotedSenderPlatformId = sender["user_id"]?.ToString();
-                            var card = sender["card"]?.ToString();
-                            var nick = sender["nickname"]?.ToString();
-                            quotedSenderName = !string.IsNullOrWhiteSpace(card) ? card : nick;
+                            quotedSenderPlatformId = quotedSender["user_id"]?.ToString();
+                            var quotedCard = quotedSender["card"]?.ToString();
+                            var quotedNick = quotedSender["nickname"]?.ToString();
+                            quotedSenderName = !string.IsNullOrWhiteSpace(quotedCard) ? quotedCard : quotedNick;
                         }
                     }
                 }
