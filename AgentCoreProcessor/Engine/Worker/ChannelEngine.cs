@@ -148,6 +148,8 @@ namespace AgentCoreProcessor.Engine
 
         // 缓冲定时器
         private CancellationTokenSource? _bufferTimerCts;
+        private DateTime? _bufferFirstMessageTime;
+        private bool _bufferTriggered;
 
         // 信号追踪：最近入队消息携带的上游信号
         private string? _traceParentSpanId;
@@ -330,54 +332,74 @@ namespace AgentCoreProcessor.Engine
                 ParticipantInfo.From(sc.User, sc.Person, msg),
                 (_, _) => ParticipantInfo.From(sc.User, sc.Person, msg));
             impulseTracker.Accumulate(msg, recentParticipants.Count, msg.IsSystemEvent);
-            ScheduleBufferSignal();
+
+            // 已触发过 → 只续期计时器
+            if (_bufferTriggered)
+            {
+                ScheduleBufferSignal();
+            }
+            else
+            {
+                // 前置滤波：检查是否该响应
+                List<(IncomingMessage Message, SessionContext Context)> snapshot;
+                lock (bufferLock) { snapshot = new List<(IncomingMessage, SessionContext)>(buffer); }
+
+                var shouldRespond = impulseTracker.ShouldRespond(snapshot, LastCompletionTime);
+                if (shouldRespond)
+                {
+                    _bufferTriggered = true;
+                    Signal.Event(LogGroup.Engine, "冲动值决策", new
+                    {
+                        channelId,
+                        decision = "respond",
+                        impulse = impulseTracker.Impulse,
+                        threshold = ctx.ImpulseConfig.Threshold,
+                        messageCount = snapshot.Count,
+                        hasMention = snapshot.Any(b => b.Message.IsMentioned),
+                        idleSeconds = (int)(DateTime.Now - (LastCompletionTime ?? DateTime.Now)).TotalSeconds
+                    });
+                    ScheduleBufferSignal();
+                }
+                else
+                {
+                    // 未触发时防止 buffer 无限增长
+                    lock (bufferLock)
+                    {
+                        if (buffer.Count > 50)
+                        {
+                            TrackMemoryExtraction(buffer.GetRange(0, buffer.Count - 20), buffer[^1].Context);
+                            buffer.RemoveRange(0, buffer.Count - 20);
+                        }
+                    }
+                }
+            }
 
             // Phase 6: 检查关注规则
             CheckWatchRulesAsync(msg, sc);
         }
 
-        /// <summary>缓冲窗口到期后执行冲动值检测，通过则 Signal 闸门。</summary>
+        /// <summary>启动/续期缓冲计时器（3s 滑动窗口，10s 上限）。</summary>
         private void ScheduleBufferSignal()
         {
             _bufferTimerCts?.Cancel();
             _bufferTimerCts = new CancellationTokenSource();
             var cts = _bufferTimerCts;
-            _ = Task.Delay(TimeSpan.FromSeconds(ctx.ImpulseConfig.BufferWindowSeconds), cts.Token)
+
+            _bufferFirstMessageTime ??= DateTime.Now;
+
+            var elapsed = (DateTime.Now - _bufferFirstMessageTime.Value).TotalSeconds;
+            var remaining = ctx.ImpulseConfig.BufferMaxDelaySeconds - elapsed;
+            var delay = Math.Min(ctx.ImpulseConfig.BufferWindowSeconds, Math.Max(remaining, 0.1));
+
+            _ = Task.Delay(TimeSpan.FromSeconds(delay), cts.Token)
                 .ContinueWith(_ => FlushBuffer(), TaskContinuationOptions.NotOnCanceled);
         }
 
-        /// <summary>缓冲到期：群聊走冲动值检测，私聊直接放行。</summary>
+        /// <summary>缓冲到期：直接开闸（冲动值已在触发时通过）。</summary>
         private void FlushBuffer()
         {
-            List<(IncomingMessage Message, SessionContext Context)>? batch;
-            lock (bufferLock)
-            {
-                if (buffer.Count == 0) return;
-                batch = new List<(IncomingMessage, SessionContext)>(buffer);
-            }
-
-            var lastMsg = batch[^1].Message;
-            if (!lastMsg.IsPrivate)
-            {
-                var shouldRespond = impulseTracker.ShouldRespond(batch, LastCompletionTime);
-                Signal.Event(LogGroup.Engine, "冲动值决策", new
-                {
-                    channelId,
-                    decision = shouldRespond ? "respond" : "skip",
-                    impulse = impulseTracker.Impulse,
-                    threshold = ctx.ImpulseConfig.Threshold,
-                    messageCount = batch.Count,
-                    hasMention = batch.Any(b => b.Message.IsMentioned),
-                    idleSeconds = (int)(DateTime.Now - (LastCompletionTime ?? DateTime.Now)).TotalSeconds
-                });
-                if (!shouldRespond)
-                {
-                    TrackMemoryExtraction(batch, batch[^1].Context);
-                    lock (bufferLock) { buffer.Clear(); }
-                    return;
-                }
-            }
-
+            _bufferFirstMessageTime = null;
+            _bufferTriggered = false;
             gate.Signal();
         }
 

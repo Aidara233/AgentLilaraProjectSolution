@@ -24,7 +24,8 @@ namespace AgentCoreProcessor.Engine
         public float PostResponseCooldownSeconds { get; set; } = 3f;
 
         // --- 闸门 ---
-        public float BufferWindowSeconds { get; set; } = 2.5f;
+        public float BufferWindowSeconds { get; set; } = 3f;
+        public float BufferMaxDelaySeconds { get; set; } = 10f;
         public float ColdTimeoutSeconds { get; set; } = 600f;
 
         public float GetParticipantDiscount(int participantCount) => participantCount switch
