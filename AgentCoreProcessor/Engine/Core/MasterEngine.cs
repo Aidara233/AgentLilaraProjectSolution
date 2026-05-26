@@ -691,11 +691,41 @@ namespace AgentCoreProcessor.Engine
                     {
                         engine.SignalGate();
                     }
+                    else
+                    {
+                        _ = ColdStartChannelAsync(channelId, check);
+                    }
                 }
                 return;
             }
 
             // task: / review: — 不直接唤醒，由各自的 Gate 管理
+        }
+
+        private async Task ColdStartChannelAsync(int channelId, ChannelEngineSpawnCheck check)
+        {
+            try
+            {
+                var channel = await Session.GetChannelByIdAsync(channelId);
+                if (channel == null)
+                {
+                    Signal.Warn(LogGroup.Engine, "冷启动失败：频道不存在", new { channelId });
+                    return;
+                }
+
+                var engine = check.TryColdStart(channel, this);
+                if (engine == null) return;
+
+                StartEngine(engine);
+                Signal.Event(LogGroup.Engine, "频道引擎冷启动", new { channelId, channelName = channel.Name });
+
+                await Task.Delay(200);
+                engine.SignalGate();
+            }
+            catch (Exception ex)
+            {
+                Signal.Error(LogGroup.Engine, "冷启动异常", new { channelId, error = ex.Message });
+            }
         }
 
         /// <summary>关闭 GlobalComponentHost（由外部调用或 Dispose 时）。</summary>

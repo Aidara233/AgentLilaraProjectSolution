@@ -234,20 +234,14 @@ internal class ConsoleEngineSource : IDataSource
         if (active?.ContainsKey(_selectedChannelId) == true)
             return new ActionResult { Success = true, Message = "引擎已在运行" };
 
-        var channels = await _engine.Session.GetAllChannelsAsync();
-        var ch = channels.FirstOrDefault(c => c.Id == _selectedChannelId);
+        var ch = await _engine.Session.GetChannelByIdAsync(_selectedChannelId);
         if (ch == null) return Fail($"频道 #{_selectedChannelId} 不存在");
-        var channelName = ch.Name;
 
-        var msg = new IncomingMessage
-        {
-            Platform = "WebConsole", PlatformUserId = "web-admin",
-            ChannelId = channelName, Content = "(控制台手动启动)",
-            DisplayName = "WebAdmin", Time = DateTime.Now,
-        };
-        await Task.Run(() => _engine.EventBus.PublishMessage(msg));
-        await Task.Delay(500);
-        return new ActionResult { Success = true, Message = "引擎启动信号已发送" };
+        var engine = check!.TryColdStart(ch, _engine);
+        if (engine == null) return new ActionResult { Success = true, Message = "引擎已在运行" };
+
+        _engine.StartEngine(engine);
+        return new ActionResult { Success = true, Message = "引擎已冷启动" };
     }
 
     private Task<ActionResult> ForceStop()

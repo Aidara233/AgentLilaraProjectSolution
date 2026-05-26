@@ -216,6 +216,49 @@ namespace AgentCoreProcessor.Engine
 
         }
 
+        /// <summary>冷启动：无初始消息，仅恢复频道上下文。供组件唤醒等场景使用。</summary>
+        internal ChannelEngine(ISystemContext ctx, Database.Channel channel)
+        {
+            this.ctx = ctx;
+            this.channelId = channel.Id;
+            this.channelName = channel.Name;
+            this.channelConfig = ChannelStateManager.LoadConfig(channelId, channel.Affinity);
+            this.impulseTracker = new ImpulseTracker(ctx.ImpulseConfig, channelConfig.Affinity, channelId);
+            this.lastBufferTime = DateTime.Now;
+            agentCore.CallerTag = $"Channel:{channelId}";
+
+            persistence = new ChannelContextPersistence(channelId);
+            {
+                var (savedSummary, savedMode, _, savedCursor, savedReason) = persistence.LoadContext();
+                _lastConsumedMessageId = savedCursor;
+                _escalateReason = savedReason;
+                if (savedMode == "working")
+                    isWorkingMode = true;
+                if (!string.IsNullOrEmpty(savedSummary) && string.IsNullOrEmpty(contextSummary))
+                    contextSummary = savedSummary;
+            }
+
+            agentConfig = new AgentConfig
+            {
+                MaxRounds = 20,
+                CompressL1Tokens = 30000,
+                CompressL2Tokens = 50000,
+                CompressL3Tokens = 70000,
+                CompressMinTokens = 5000,
+                CompressRetainedMessageCount = 6,
+                CompressRetainedMaxTokens = 2000
+            };
+
+            gate = new Gate(ctx.EventBus);
+            gate.EventFilter = _ => false;
+
+            extractionWorker = new ChannelExtractionWorker(
+                ctx, channelId, channelConfig, recentParticipants,
+                () => LastCompletionTime);
+
+            InitModules();
+        }
+
         private void InitModules()
         {
             loopControlModule.ChannelId = channelId.ToString();
@@ -566,24 +609,84 @@ namespace AgentCoreProcessor.Engine
 
         private async Task HandleSpeakToolAsync(string rawText)
         {
-            if (currentLastMsg == null || currentLastSc == null || currentParticipantSnapshot == null) return;
+            if (currentLastMsg == null)
+            {
+                // 冷启动 fallback：用 channelName 推断适配器
+                var adapter = ctx.Adapters.ResolveByChannelId(channelName);
+                if (adapter == null) return;
+                var (content, _, _) = ParseBotOutput(rawText, currentParticipantSnapshot ?? new());
+                using var speakSpan = Signal.Open(LogGroup.Adapter, "发送消息(冷启动)",
+                    new { channelId, platform = adapter.Platform, content });
+                var sentId = await adapter.SendMessageAsync(new OutgoingMessage
+                {
+                    ChannelId = channelName,
+                    Content = content
+                });
+                speakSpan.SetCloseDetail(new { messageId = sentId });
+                await ctx.Session.SaveBotMessageAsync(channelId, content, sentId);
+                return;
+            }
+            if (currentLastSc == null || currentParticipantSnapshot == null) return;
             unrespondedMessageCount = 0;
-            var (content, replyTo, mentions) = ParseBotOutput(rawText, currentParticipantSnapshot);
-            using var speakSpan = Signal.Open(LogGroup.Adapter, "发送消息",
-                new { channelId, platform = currentLastMsg.Platform, content, replyTo, mentions });
-            var sentId = await ctx.Adapters.SendMessageAsync(currentLastMsg.Platform, new OutgoingMessage
+            var (content2, replyTo, mentions) = ParseBotOutput(rawText, currentParticipantSnapshot);
+            using var speakSpan2 = Signal.Open(LogGroup.Adapter, "发送消息",
+                new { channelId, platform = currentLastMsg.Platform, content = content2, replyTo, mentions });
+            var sentId2 = await ctx.Adapters.SendMessageAsync(currentLastMsg.Platform, new OutgoingMessage
             {
                 ChannelId = currentLastMsg.ChannelId,
-                Content = content,
+                Content = content2,
                 ReplyTo = replyTo,
                 Mentions = mentions
             });
-            speakSpan.SetCloseDetail(new { messageId = sentId });
-            await ctx.Session.SaveBotMessageAsync(currentLastSc.Channel.Id, content, sentId);
+            speakSpan2.SetCloseDetail(new { messageId = sentId2 });
+            await ctx.Session.SaveBotMessageAsync(currentLastSc.Channel.Id, content2, sentId2);
         }
 
         private async Task HandleSendMediaToolAsync(string jsonData)
         {
+            if (currentLastMsg == null && currentLastSc == null)
+            {
+                // 冷启动 fallback
+                var adapter = ctx.Adapters.ResolveByChannelId(channelName);
+                if (adapter == null) return;
+                try
+                {
+                    var json = Newtonsoft.Json.Linq.JObject.Parse(jsonData);
+                    var type = json["type"]?.ToString() ?? "";
+                    var path = json["path"]?.ToString() ?? "";
+                    var text = json["text"]?.ToString();
+                    var attachmentType = type switch
+                    {
+                        "image" or "sticker" => AttachmentType.Image,
+                        "voice" => AttachmentType.Audio,
+                        "file" => AttachmentType.File,
+                        _ => AttachmentType.Image
+                    };
+                    var attachments = new List<MessageAttachment>
+                    {
+                        new()
+                        {
+                            Type = attachmentType,
+                            LocalPath = IsLocalPath(path) ? path : null,
+                            SourceUrl = IsLocalPath(path) ? null : path,
+                            Category = type == "sticker" ? "sticker" : null
+                        }
+                    };
+                    using var mediaSpan = Signal.Open(LogGroup.Adapter, "发送媒体(冷启动)",
+                        new { channelId, platform = adapter.Platform, type, text });
+                    var sentId = await adapter.SendMessageAsync(new OutgoingMessage
+                    {
+                        ChannelId = channelName,
+                        Content = text ?? "",
+                        Attachments = attachments
+                    });
+                    mediaSpan.SetCloseDetail(new { messageId = sentId });
+                    var desc = $"[发送{type}]" + (string.IsNullOrEmpty(text) ? "" : $" {text}");
+                    await ctx.Session.SaveBotMessageAsync(channelId, desc, sentId);
+                }
+                catch (Exception ex) { Signal.Error(LogGroup.Adapter, "发送媒体失败(冷启动)", new { channelId, error = ex.GetType().Name, message = ex.Message }); }
+                return;
+            }
             if (currentLastMsg == null || currentLastSc == null) return;
             unrespondedMessageCount = 0;
             try

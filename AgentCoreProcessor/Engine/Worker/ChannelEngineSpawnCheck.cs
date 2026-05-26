@@ -85,5 +85,16 @@ namespace AgentCoreProcessor.Engine
 
         internal IReadOnlyDictionary<int, ChannelEngine> GetActiveChannels() => activeChannels;
 
+        /// <summary>冷启动频道引擎（无消息触发）。返回 null 表示引擎已活跃。</summary>
+        internal ChannelEngine? TryColdStart(Database.Channel channel, ISystemContext ctx)
+        {
+            if (activeChannels.TryGetValue(channel.Id, out var existing) && existing.IsAlive)
+                return null;
+
+            var engine = new ChannelEngine(ctx, channel);
+            activeChannels[channel.Id] = engine;
+            return engine;
+        }
+
     }
 }

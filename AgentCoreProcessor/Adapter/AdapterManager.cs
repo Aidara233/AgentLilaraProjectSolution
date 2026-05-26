@@ -248,6 +248,21 @@ namespace AgentCoreProcessor.Adapter
 
         // ── 查询 ──
 
+        /// <summary>按频道标识推断适配器（无需平台信息）。</summary>
+        public IAdapter? ResolveByChannelId(string channelId)
+        {
+            var enabled = adapters.Values
+                .Where(a => enabledMap.GetValueOrDefault(a.Id, true))
+                .ToList();
+            if (enabled.Count == 0) return null;
+            if (enabled.Count == 1) return enabled[0];
+            foreach (var a in enabled)
+            {
+                if (CanHandleChannel(a, channelId)) return a;
+            }
+            return enabled[0];
+        }
+
         public IAdapter? GetAdapter(string platform)
         {
             return adapters.Values.FirstOrDefault(a =>
