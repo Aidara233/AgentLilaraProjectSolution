@@ -466,6 +466,8 @@ namespace AgentCoreProcessor.Engine
             componentServices.Register<AgentLilara.PluginSDK.Services.IMemoryAccess>(memoryAccess);
             componentServices.Register<AgentLilara.PluginSDK.Services.IBeaconAccess>(
                 new Tool.Host.BeaconAccessImpl(ReviewHints));
+            componentServices.Register<AgentLilara.PluginSDK.Services.IChannelAccess>(
+                new Tool.Host.ChannelAccessImpl(this));
             if (_signalLogger != null)
                 componentServices.Register<ISignalLogger>(_signalLogger);
 

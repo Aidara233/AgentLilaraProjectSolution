@@ -1015,7 +1015,7 @@ namespace AgentCoreProcessor.Engine
                 var botId = ctx.Adapters.GetBotPlatformId("qq");
                 if (!string.IsNullOrEmpty(botId))
                     sb.AppendLine($"身份信息：你的QQ号是 {botId}。");
-                sb.AppendLine("[图片标记说明] 上下文中的 <img/> 标记表示用户发送的图片。desc/text 属性为自动生成的摘要，仅供快速参考。涉及具体内容时请使用工具查看原图或获取完整文字。");
+                sb.AppendLine("[图片说明] 消息末尾附带用户发送的图片。正文中的 [IMG:N] 标记表示图片在原文中的位置，对应末尾第 N 张图片。");
             }
             else
             {
@@ -1025,7 +1025,7 @@ namespace AgentCoreProcessor.Engine
                 var botId = ctx.Adapters.GetBotPlatformId("qq");
                 if (!string.IsNullOrEmpty(botId))
                     sb.AppendLine($"\n身份信息：你的QQ号是 {botId}。");
-                sb.AppendLine("\n[图片标记说明] 上下文中的 <img/> 标记表示用户发送的图片。desc/text 属性为自动生成的摘要，仅供快速参考。涉及具体内容时请使用工具查看原图或获取完整文字。");
+                sb.AppendLine("\n[图片说明] 消息末尾附带用户发送的图片。正文中的 [IMG:N] 标记表示图片在原文中的位置，对应末尾第 N 张图片。");
             }
 
             return sb.ToString();
@@ -1117,8 +1117,8 @@ namespace AgentCoreProcessor.Engine
             return parts.Count > 0 ? " " + string.Join(" ", parts) : "";
         }
 
-        /// <summary>为一组消息批次构建缺失引用的 <quoted-context> 块（递归展开）。</summary>
-        private async Task<string?> BuildQuotedContextForBatchAsync(
+        /// <summary>为一组消息批次构建缺失引用的 <quoted-context> 块（递归展开）。返回文本 + 收集到的图片路径。</summary>
+        private async Task<(string Text, List<string> ImagePaths)?> BuildQuotedContextForBatchAsync(
             List<UserMessage> batch, int channelId, int maxDepth, bool includeSurrounding)
         {
             var visibleIds = new HashSet<string>();
@@ -1128,23 +1128,24 @@ namespace AgentCoreProcessor.Engine
 
             var included = new HashSet<string>(visibleIds);
             var sb = new StringBuilder();
+            var imagePaths = new List<string>();
 
             foreach (var m in batch)
             {
                 if (!string.IsNullOrEmpty(m.ReplyToPlatformMessageId)
                     && !included.Contains(m.ReplyToPlatformMessageId))
                 {
-                    await AppendQuotedContextRecursiveAsync(sb, m.ReplyToPlatformMessageId,
+                    await AppendQuotedContextRecursiveAsync(sb, imagePaths, m.ReplyToPlatformMessageId,
                         channelId, maxDepth, included, includeSurrounding);
                 }
             }
 
-            return sb.Length > 0 ? sb.ToString() : null;
+            return sb.Length > 0 ? (sb.ToString(), imagePaths) : null;
         }
 
-        /// <summary>递归构建单条 quoted-context（含引用链展开）。</summary>
+        /// <summary>递归构建单条 quoted-context（含引用链展开）。同时收集图片路径。</summary>
         private async Task AppendQuotedContextRecursiveAsync(
-            StringBuilder sb, string targetId, int channelId,
+            StringBuilder sb, List<string> imagePaths, string targetId, int channelId,
             int remainingDepth, HashSet<string> included, bool includeSurrounding)
         {
             if (remainingDepth <= 0 || string.IsNullOrEmpty(targetId) || included.Contains(targetId))
@@ -1154,6 +1155,9 @@ namespace AgentCoreProcessor.Engine
 
             var target = await ctx.Session.GetByPlatformMessageIdAsync(channelId, targetId);
             if (target == null) return;
+
+            // 收集目标消息的图片路径
+            await CollectImagePaths(target, imagePaths);
 
             sb.AppendLine("<quoted-context>");
 
@@ -1171,6 +1175,8 @@ namespace AgentCoreProcessor.Engine
                     sb.AppendLine($"<msg{idAttr} user=\"{name}\"{quotedAttr}{replyAttr}>");
                     sb.AppendLine(EscapeXml(m.Content));
                     sb.AppendLine("</msg>");
+                    // 收集上下文消息的图片
+                    await CollectImagePaths(m, imagePaths);
                 }
             }
             else
@@ -1186,8 +1192,71 @@ namespace AgentCoreProcessor.Engine
             sb.AppendLine("</quoted-context>");
 
             if (!string.IsNullOrEmpty(target.ReplyToPlatformMessageId))
-                await AppendQuotedContextRecursiveAsync(sb, target.ReplyToPlatformMessageId,
+                await AppendQuotedContextRecursiveAsync(sb, imagePaths, target.ReplyToPlatformMessageId,
                     channelId, remainingDepth - 1, included, includeSurrounding);
+        }
+
+        /// <summary>收集一条 DB 消息的图片路径到指定列表。</summary>
+        private static async Task CollectImagePaths(UserMessage m, List<string> imagePaths)
+        {
+            if (string.IsNullOrEmpty(m.ImageHashes)) return;
+            foreach (var hash in m.ImageHashes.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var path = await ImageStorage.GetModelInputPathAsync(hash.Trim());
+                if (!string.IsNullOrEmpty(path))
+                    imagePaths.Add(path);
+            }
+        }
+
+        /// <summary>构建 quoted-context Message（含图片 ContentParts）。</summary>
+        private async Task AddQuotedContextMessage(List<Message> msgs, string text, List<string> imagePaths)
+        {
+            var msg = new Message { Role = "user", Content = text };
+            if (imagePaths.Count > 0)
+            {
+                var parts = await BuildContentPartsWithImagePaths(text, imagePaths);
+                if (parts.Count > 1) msg.ContentParts = parts;
+            }
+            msgs.Add(msg);
+        }
+
+        /// <summary>将文本 + 一批消息的图片组装为 ContentParts（文本在前，图片全部追尾）。</summary>
+        private async Task<List<ContentPart>> BuildContentPartsWithImages(string text, IEnumerable<UserMessage> msgs)
+        {
+            var parts = new List<ContentPart> { ContentPart.FromText(text) };
+            foreach (var m in msgs)
+            {
+                if (string.IsNullOrEmpty(m.ImageHashes)) continue;
+                foreach (var hash in m.ImageHashes.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var path = await ImageStorage.GetModelInputPathAsync(hash.Trim());
+                    if (!string.IsNullOrEmpty(path))
+                        parts.Add(ContentPart.FromImagePath(path));
+                }
+            }
+            return parts;
+        }
+
+        /// <summary>将文本 + 一组图片 hash 列表组装为 ContentParts。</summary>
+        private Task<List<ContentPart>> BuildContentPartsWithImagePaths(string text, IEnumerable<string> imagePaths)
+        {
+            var parts = new List<ContentPart> { ContentPart.FromText(text) };
+            foreach (var path in imagePaths)
+            {
+                if (!string.IsNullOrEmpty(path))
+                    parts.Add(ContentPart.FromImagePath(path));
+            }
+            return Task.FromResult(parts);
+        }
+
+        /// <summary>组装带图片的 Message：Content 保留文本，ContentParts 追图。</summary>
+        private async Task AddMessageWithImages(List<Message> msgs, string text, IEnumerable<UserMessage> sourceMsgs)
+        {
+            var msg = new Message { Role = "user", Content = text };
+            var contentParts = await BuildContentPartsWithImages(text, sourceMsgs);
+            if (contentParts.Count > 1) // >1 意味着除了 text 还有图片
+                msg.ContentParts = contentParts;
+            msgs.Add(msg);
         }
 
         public async Task<List<Message>?> BuildStartInjectAsync()
@@ -1228,12 +1297,12 @@ namespace AgentCoreProcessor.Engine
                                 histSb.AppendLine("</message>");
                             }
                             histSb.Append("</conversation_history>");
-                            msgs.Add(new Message { Role = "user", Content = histSb.ToString() });
+                            await AddMessageWithImages(msgs, histSb.ToString(), historyMsgs);
 
                             // 初始历史引用缺省补块（递归 1 层）
                             var histQc = await BuildQuotedContextForBatchAsync(historyMsgs, channelId, maxDepth: 1, includeSurrounding: false);
-                            if (!string.IsNullOrEmpty(histQc))
-                                msgs.Add(new Message { Role = "user", Content = histQc });
+                            if (histQc != null)
+                                await AddQuotedContextMessage(msgs, histQc.Value.Text, histQc.Value.ImagePaths);
                         }
                         else
                         {
@@ -1246,12 +1315,12 @@ namespace AgentCoreProcessor.Engine
                                 var replyNote = !string.IsNullOrEmpty(m.ReplyToPlatformMessageId) ? $" (回复 #{m.ReplyToPlatformMessageId})" : "";
                                 histSb.AppendLine($"{mentionPrefix}{msgId}{name}: {m.Content}{replyNote}");
                             }
-                            msgs.Add(new Message { Role = "user", Content = histSb.ToString() });
+                            await AddMessageWithImages(msgs, histSb.ToString(), historyMsgs);
 
                             // 历史引用缺省补块（递归 1 层，带 ±3 上下文）
                             var histQc = await BuildQuotedContextForBatchAsync(historyMsgs, channelId, maxDepth: 1, includeSurrounding: true);
-                            if (!string.IsNullOrEmpty(histQc))
-                                msgs.Add(new Message { Role = "user", Content = histQc });
+                            if (histQc != null)
+                                await AddQuotedContextMessage(msgs, histQc.Value.Text, histQc.Value.ImagePaths);
                         }
                     }
 
@@ -1388,8 +1457,24 @@ namespace AgentCoreProcessor.Engine
                         if (nms.Message.MentionedPlatformIds is { Count: > 0 })
                             nmsAttrs.Add($"mentioned_users=\"{EscapeXml(string.Join(",", nms.Message.MentionedPlatformIds))}\"");
                         var nmsAttrStr = nmsAttrs.Count > 0 ? " " + string.Join(" ", nmsAttrs) : "";
-                        msgs.Add(new Message { Role = "user", Content =
-                            $"<new_messages>\n<message role=\"user\" sender=\"{EscapeXml(nmsName)}\"{nmsAttrStr}>\n{EscapeXml(nms.Message.Content)}\n</message>\n</new_messages>" });
+                        var nmsText = $"<new_messages>\n<message role=\"user\" sender=\"{EscapeXml(nmsName)}\"{nmsAttrStr}>\n{EscapeXml(nms.Message.Content)}\n</message>\n</new_messages>";
+                        var nmsMsg = new Message { Role = "user", Content = nmsText };
+                        // 图片：从 IncomingMessage.Attachments 解析
+                        if (nms.Message.Attachments is { Count: > 0 })
+                        {
+                            var imgPaths = new List<string>();
+                            foreach (var att in nms.Message.Attachments.Where(a => a.Type == AttachmentType.Image && !string.IsNullOrEmpty(a.Hash)))
+                            {
+                                var p = await ImageStorage.GetModelInputPathAsync(att.Hash!);
+                                if (!string.IsNullOrEmpty(p)) imgPaths.Add(p);
+                            }
+                            if (imgPaths.Count > 0)
+                            {
+                                var parts = await BuildContentPartsWithImagePaths(nmsText, imgPaths);
+                                if (parts.Count > 1) nmsMsg.ContentParts = parts;
+                            }
+                        }
+                        msgs.Add(nmsMsg);
 
                         // 新消息引用缺省补块（递归 2 层）
                         if (!string.IsNullOrEmpty(nms.Message.ReplyTo))
@@ -1398,11 +1483,12 @@ namespace AgentCoreProcessor.Engine
                             if (target == null)
                             {
                                 var qcSb = new StringBuilder();
+                                var qcImagePaths = new List<string>();
                                 var included = new HashSet<string>();
-                                await AppendQuotedContextRecursiveAsync(qcSb, nms.Message.ReplyTo,
+                                await AppendQuotedContextRecursiveAsync(qcSb, qcImagePaths, nms.Message.ReplyTo,
                                     channelId, remainingDepth: 2, included, includeSurrounding: false);
                                 if (qcSb.Length > 0)
-                                    msgs.Add(new Message { Role = "user", Content = qcSb.ToString() });
+                                    await AddQuotedContextMessage(msgs, qcSb.ToString(), qcImagePaths);
                             }
                         }
                         break;
@@ -1467,12 +1553,13 @@ namespace AgentCoreProcessor.Engine
                             sb.AppendLine("</message>");
                         }
                         sb.Append("</new_messages>");
-                        msgs.Add(new Message { Role = "user", Content = sb.ToString() });
+                        // Working：只追当前批次新消息的图片（老图已在 agent 堆叠历史中）
+                        await AddMessageWithImages(msgs, sb.ToString(), newMsgs);
 
                         // 新消息引用缺省补块（递归 2 层）
                         var roundQc = await BuildQuotedContextForBatchAsync(newMsgs, channelId, maxDepth: 2, includeSurrounding: false);
-                        if (!string.IsNullOrEmpty(roundQc))
-                            msgs.Add(new Message { Role = "user", Content = roundQc });
+                        if (roundQc != null)
+                            await AddQuotedContextMessage(msgs, roundQc.Value.Text, roundQc.Value.ImagePaths);
                     }
                     else
                     {
@@ -1486,12 +1573,13 @@ namespace AgentCoreProcessor.Engine
                             sb.AppendLine($"{mentionPrefix}{msgId}{name}: {m.Content}{replyNote}");
                         }
                         sb.Append("</新消息>");
-                        msgs.Add(new Message { Role = "user", Content = sb.ToString() });
+                        // Express：直接追加该批次所有图片
+                        await AddMessageWithImages(msgs, sb.ToString(), newMsgs);
 
                         // 新消息引用缺省补块（递归 2 层，带 ±3 上下文）
                         var roundQc = await BuildQuotedContextForBatchAsync(newMsgs, channelId, maxDepth: 2, includeSurrounding: true);
-                        if (!string.IsNullOrEmpty(roundQc))
-                            msgs.Add(new Message { Role = "user", Content = roundQc });
+                        if (roundQc != null)
+                            await AddQuotedContextMessage(msgs, roundQc.Value.Text, roundQc.Value.ImagePaths);
                     }
 
                     // 游标推进到所有新消息（包括被裁剪的）

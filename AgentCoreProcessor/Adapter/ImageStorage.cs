@@ -26,15 +26,6 @@ namespace AgentCoreProcessor.Adapter
         /// <summary>缩略图 JPEG 质量（0-100）</summary>
         public static int ThumbnailQuality { get; set; } = 85;
 
-        /// <summary>单张图片直传大小上限（字节），超出则必须手动查看</summary>
-        public static long MaxDirectSendSize { get; set; } = 1024 * 1024; // 1MB
-
-        /// <summary>单轮图片直传总大小上限（字节）</summary>
-        public static long MaxTotalDirectSendSize { get; set; } = 3 * 1024 * 1024; // 3MB
-
-        /// <summary>单轮图片直传最大数量</summary>
-        public static int MaxDirectSendCount { get; set; } = 5;
-
         public static void Init(ImageRepository repo, EventBus? eventBus = null)
         {
             _repo = repo;
@@ -80,9 +71,7 @@ namespace AgentCoreProcessor.Adapter
                     CreatedAt = DateTime.Now
                 });
 
-                // 超过直传上限时立即生成缩略图
-                if (bytes.Length > MaxDirectSendSize)
-                    await EnsureThumbnailAsync(hash);
+                await EnsureThumbnailAsync(hash);
 
                 _eventBus?.PublishSignal("new-image", hash);
             }
@@ -120,8 +109,7 @@ namespace AgentCoreProcessor.Adapter
                     CreatedAt = DateTime.Now
                 });
 
-                if (bytes.Length > MaxDirectSendSize)
-                    await EnsureThumbnailAsync(hash);
+                await EnsureThumbnailAsync(hash);
 
                 _eventBus?.PublishSignal("new-image", hash);
             }

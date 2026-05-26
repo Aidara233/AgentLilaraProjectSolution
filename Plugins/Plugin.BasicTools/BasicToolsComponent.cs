@@ -1,10 +1,12 @@
 // Plugins/Plugin.BasicTools/BasicToolsComponent.cs
 using AgentLilara.PluginSDK;
+using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.BasicTools;
 
-[Component(Name = "basic-tools", Scope = ComponentScope.Global)]
-public class BasicToolsComponent : GlobalComponentBase
+[Component(Name = "basic-tools", Scope = ComponentScope.Loop)]
+[LoopApplicability(Channel = Applicability.Enabled, System = Applicability.Disabled)]
+public class BasicToolsComponent : LoopComponentBase
 {
     private SpeakTool? _speak;
     private SendMediaTool? _sendMedia;
@@ -26,10 +28,26 @@ public class BasicToolsComponent : GlobalComponentBase
         }
     }
 
-    public override Task OnInitAsync(IGlobalComponentContext context, InitReason reason)
+    public override Task OnInitAsync(ILoopComponentContext context, InitReason reason)
     {
-        _speak = new SpeakTool();
-        _sendMedia = new SendMediaTool();
+        var channelAccess = context.GetService<IChannelAccess>();
+        var channelId = ParseChannelId(context.LoopId);
+
+        _speak = channelAccess != null
+            ? new SpeakTool(channelAccess, channelId)
+            : new SpeakTool();
+        _sendMedia = channelAccess != null
+            ? new SendMediaTool(channelAccess, channelId)
+            : new SendMediaTool();
         return Task.CompletedTask;
+    }
+
+    private static int ParseChannelId(string loopId)
+    {
+        // loopId 格式: "channel:123"
+        var colonIndex = loopId.LastIndexOf(':');
+        if (colonIndex >= 0 && int.TryParse(loopId[(colonIndex + 1)..], out var id))
+            return id;
+        return 0;
     }
 }
