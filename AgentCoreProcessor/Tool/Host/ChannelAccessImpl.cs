@@ -88,8 +88,7 @@ namespace AgentCoreProcessor.Tool.Host
                     attachments.Add(new MessageAttachment
                     {
                         Type = AttachmentType.Image,
-                        LocalPath = IsLocalPath(path) ? path : null,
-                        SourceUrl = IsLocalPath(path) ? null : path
+                        LocalPath = path
                     });
                 }
             }
@@ -107,10 +106,13 @@ namespace AgentCoreProcessor.Tool.Host
             return sentId;
         }
 
-        public async Task<string?> SendMediaAsync(int channelId, string mediaType, string pathOrUrl)
+        public async Task<string?> SendMediaAsync(int channelId, string mediaType, string identifier)
         {
             var channel = await _ctx.Session.GetChannelByIdAsync(channelId);
             if (channel == null) return null;
+
+            var resolvedPath = ResolveSafePath(identifier);
+            if (resolvedPath == null) return null;
 
             var adapter = _ctx.Adapters.ResolveByChannelId(channel.Name);
             if (adapter == null) return null;
@@ -128,8 +130,7 @@ namespace AgentCoreProcessor.Tool.Host
                 new()
                 {
                     Type = attachmentType,
-                    LocalPath = IsLocalPath(pathOrUrl) ? pathOrUrl : null,
-                    SourceUrl = IsLocalPath(pathOrUrl) ? null : pathOrUrl,
+                    LocalPath = resolvedPath,
                     Category = mediaType == "sticker" ? "sticker" : null
                 }
             };
@@ -148,12 +149,16 @@ namespace AgentCoreProcessor.Tool.Host
 
         public async Task<string?> SendFileAsync(int channelId, string filePath, string? fileName = null)
         {
+            var resolvedPath = ResolveSafePath(filePath);
+            if (resolvedPath == null) return null;
+
             var channel = await _ctx.Session.GetChannelByIdAsync(channelId);
             if (channel == null) return null;
 
             var adapter = _ctx.Adapters.ResolveByChannelId(channel.Name);
             if (adapter == null) return null;
 
+            var name = fileName ?? System.IO.Path.GetFileName(resolvedPath);
             var sentId = await adapter.SendMessageAsync(new OutgoingMessage
             {
                 ChannelId = channel.Name,
@@ -163,13 +168,13 @@ namespace AgentCoreProcessor.Tool.Host
                     new()
                     {
                         Type = AttachmentType.File,
-                        LocalPath = filePath,
-                        FileName = fileName ?? System.IO.Path.GetFileName(filePath)
+                        LocalPath = resolvedPath,
+                        FileName = name
                     }
                 }
             });
 
-            await _ctx.Session.SaveBotMessageAsync(channelId, $"[发送文件] {fileName ?? filePath}", sentId);
+            await _ctx.Session.SaveBotMessageAsync(channelId, $"[发送文件] {name}", sentId);
             return sentId;
         }
 
@@ -181,8 +186,10 @@ namespace AgentCoreProcessor.Tool.Host
             new(@"<at\s+user=""([^""]+)""\s*/>", RegexOptions.Compiled);
         private static readonly Regex ReplyTagRegex =
             new(@"<reply\s+id=""([^""]+)""\s*/>", RegexOptions.Compiled);
-        private static readonly Regex ImgTagRegex =
-            new(@"<img\s+path=""([^""]+)""\s*/>", RegexOptions.Compiled);
+        private static readonly Regex ImgHashRegex =
+            new(@"<img\s+hash=""([^""]+)""\s*/>", RegexOptions.Compiled);
+        private static readonly Regex ImgWorkRegex =
+            new(@"<img\s+work=""([^""]+)""\s*/>", RegexOptions.Compiled);
 
         /// <summary>
         /// 解析 content 中的 <at/> <reply/> <img/> 标签。
@@ -202,14 +209,33 @@ namespace AgentCoreProcessor.Tool.Host
                 raw = raw.Remove(replyMatch.Index, replyMatch.Length).TrimStart();
             }
 
-            // <img/> — 提取路径后移除标记
-            var imgMatches = ImgTagRegex.Matches(raw);
-            if (imgMatches.Count > 0)
+            // <img hash="..."/> — ImageStorage 图片
+            var hashMatches = ImgHashRegex.Matches(raw);
+            if (hashMatches.Count > 0)
             {
                 imagePaths = new List<string>();
-                foreach (Match m in imgMatches)
-                    imagePaths.Add(m.Groups[1].Value);
-                raw = ImgTagRegex.Replace(raw, "").Trim();
+                foreach (Match m in hashMatches)
+                {
+                    var hash = m.Groups[1].Value;
+                    var record = await ImageStorage.GetByHashAsync(hash);
+                    if (record?.LocalPath != null)
+                        imagePaths.Add(record.LocalPath);
+                }
+                raw = ImgHashRegex.Replace(raw, "").Trim();
+            }
+
+            // <img work="..."/> — Workspace 相对路径
+            var workMatches = ImgWorkRegex.Matches(raw);
+            if (workMatches.Count > 0)
+            {
+                imagePaths ??= new List<string>();
+                foreach (Match m in workMatches)
+                {
+                    var resolved = ResolveWorkspacePath(m.Groups[1].Value);
+                    if (resolved != null)
+                        imagePaths.Add(resolved);
+                }
+                raw = ImgWorkRegex.Replace(raw, "").Trim();
             }
 
             // 构建参与者名→platformId 映射
@@ -268,9 +294,27 @@ namespace AgentCoreProcessor.Tool.Host
             return map;
         }
 
-        private static bool IsLocalPath(string path)
+        /// <summary>解析安全路径：hash:xxx → ImageStorage, 其他 → Workspace 相对路径。</summary>
+        private static string? ResolveSafePath(string identifier)
         {
-            return path.Length > 1 && (path[1] == ':' || path.StartsWith('/') || path.StartsWith("\\\\"));
+            if (identifier.StartsWith("hash:"))
+            {
+                var hash = identifier[5..];
+                var record = ImageStorage.GetByHashAsync(hash).GetAwaiter().GetResult();
+                return record?.LocalPath;
+            }
+            return ResolveWorkspacePath(identifier);
+        }
+
+        /// <summary>将相对路径解析到 Workspace，校验不越界。</summary>
+        private static string? ResolveWorkspacePath(string relativePath)
+        {
+            var workspace = Config.PathConfig.WorkspacePath;
+            Directory.CreateDirectory(workspace);
+            var full = Path.GetFullPath(Path.Combine(workspace, relativePath));
+            if (!full.StartsWith(workspace, StringComparison.OrdinalIgnoreCase))
+                return null;
+            return full;
         }
     }
 }

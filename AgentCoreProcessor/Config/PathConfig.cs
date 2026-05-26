@@ -10,6 +10,7 @@ namespace AgentCoreProcessor.Config
         public static string CoreConfigPath => Path.Combine(StoragePath, "Core");
         public static string DatabasePath => Path.Combine(StoragePath, "Database");
         public static string LogPath => Path.Combine(StoragePath, "Logs");
+        public static string WorkspacePath => Path.Combine(StoragePath, "Workspace");
 
         public static void Load()
         {
