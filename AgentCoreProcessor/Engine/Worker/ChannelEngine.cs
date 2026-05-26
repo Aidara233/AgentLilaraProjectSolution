@@ -272,7 +272,7 @@ namespace AgentCoreProcessor.Engine
             };
             foreach (var m in modules) m.Attach(bus);
 
-            // 直接订阅 ToolExecutedEvent —— 原 SpeakModule/SignalDispatchModule 内联
+            // 订阅 ToolExecutedEvent — 追踪标记 + 残留信号类工具（待后续插件化）
             bus.Subscribe<ToolExecutedEvent>(e =>
             {
                 if (!e.Result.IsSuccess) return;
@@ -280,15 +280,8 @@ namespace AgentCoreProcessor.Engine
                 switch (e.Call.Tool)
                 {
                     case "speak":
-                        HandleSpeakToolAsync(data).GetAwaiter().GetResult();
-                        hadSpeakThisRound = true;
-                        break;
                     case "send_media":
-                        HandleSendMediaToolAsync(data).GetAwaiter().GetResult();
                         hadSpeakThisRound = true;
-                        break;
-                    case "memory":
-                        HandleMemoryToolAsync(data).GetAwaiter().GetResult();
                         break;
                     case "dream_permission":
                         ctx.EventBus.PublishSignal("dream-permission", null);
@@ -312,7 +305,6 @@ namespace AgentCoreProcessor.Engine
                         HandleAlertToolAsync(data).GetAwaiter().GetResult();
                         break;
                 }
-                // 非输出工具（speak/send_media/wait/deescalate 以外）→ 标记有实际工作
                 if (e.Call.Tool is not "speak" and not "send_media" and not "wait" and not "deescalate")
                     hadWorkThisRound = true;
             });
@@ -622,78 +614,6 @@ namespace AgentCoreProcessor.Engine
         }
 
         // ── 内联工具事件处理（原 SpeakModule / SignalDispatchModule 回调） ──
-
-        private async Task HandleSpeakToolAsync(string rawText)
-        {
-            var adapter = ctx.Adapters.ResolveByChannelId(channelName);
-            if (adapter == null) return;
-            unrespondedMessageCount = 0;
-            var (content, replyTo, mentions) = ParseBotOutput(rawText, currentParticipantSnapshot ?? new());
-            using var speakSpan = Signal.Open(LogGroup.Adapter, "发送消息",
-                new { channelId, platform = adapter.Platform, content, replyTo, mentions });
-            var sentId = await adapter.SendMessageAsync(new OutgoingMessage
-            {
-                ChannelId = channelName,
-                Content = content,
-                ReplyTo = replyTo,
-                Mentions = mentions
-            });
-            speakSpan.SetCloseDetail(new { messageId = sentId });
-            await ctx.Session.SaveBotMessageAsync(channelId, content, sentId);
-        }
-
-        private async Task HandleSendMediaToolAsync(string jsonData)
-        {
-            var adapter = ctx.Adapters.ResolveByChannelId(channelName);
-            if (adapter == null) return;
-            unrespondedMessageCount = 0;
-            try
-            {
-                var json = Newtonsoft.Json.Linq.JObject.Parse(jsonData);
-                var type = json["type"]?.ToString() ?? "";
-                var path = json["path"]?.ToString() ?? "";
-                var text = json["text"]?.ToString();
-
-                var attachmentType = type switch
-                {
-                    "image" or "sticker" => AttachmentType.Image,
-                    "voice" => AttachmentType.Audio,
-                    "file" => AttachmentType.File,
-                    _ => AttachmentType.Image
-                };
-
-                var attachments = new List<MessageAttachment>
-                {
-                    new()
-                    {
-                        Type = attachmentType,
-                        LocalPath = IsLocalPath(path) ? path : null,
-                        SourceUrl = IsLocalPath(path) ? null : path,
-                        Category = type == "sticker" ? "sticker" : null
-                    }
-                };
-
-                using var mediaSpan = Signal.Open(LogGroup.Adapter, "发送媒体",
-                    new { channelId, platform = adapter.Platform, type, text, attachmentCount = attachments.Count });
-                var sentId = await adapter.SendMessageAsync(new OutgoingMessage
-                {
-                    ChannelId = channelName,
-                    Content = text ?? "",
-                    Attachments = attachments
-                });
-                mediaSpan.SetCloseDetail(new { messageId = sentId });
-                var desc = $"[发送{type}]" + (string.IsNullOrEmpty(text) ? "" : $" {text}");
-                await ctx.Session.SaveBotMessageAsync(channelId, desc, sentId);
-            }
-            catch (Exception ex) { Signal.Error(LogGroup.Adapter, "发送媒体失败", new { channelId, error = ex.GetType().Name, message = ex.Message }); }
-        }
-
-        private async Task HandleMemoryToolAsync(string content)
-        {
-            if (_lastSessionContext == null) return;
-            await ctx.MemorySvc.StoreAsync(content, _lastSessionContext.Person.Id, _lastSessionContext.Channel.Id,
-                type: MemoryType.Fact);
-        }
 
         private async Task HandleReviewHintToolAsync(string content)
         {
@@ -1949,49 +1869,6 @@ namespace AgentCoreProcessor.Engine
 
             return PokeRegex.Replace(text, "").Trim();
         }
-
-        // ---- 消息分条发送 ----
-
-        private async Task SendSegmentsAsync(string text, IncomingMessage lastMsg,
-            SessionContext lastSc, Dictionary<int, ParticipantInfo> participantSnapshot)
-        {
-            var segments = text
-                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                .Select(s => s.Trim())
-                .Where(s => s.Length > 0)
-                .ToList();
-
-            string? firstReplyTo = null;
-            var rng = new Random();
-            for (int i = 0; i < segments.Count; i++)
-            {
-                if (i > 0)
-                    await Task.Delay(rng.Next(600, 2000));
-                var (content, replyTo, mentions) = ParseBotOutput(segments[i], participantSnapshot);
-                if (i == 0) firstReplyTo = replyTo;
-                using var segSpan = Signal.Open(LogGroup.Adapter, "发送消息段",
-                    new { channelId = lastMsg.ChannelId, platform = lastMsg.Platform, segment = i + 1, total = segments.Count, content });
-                var sentId = await ctx.Adapters.SendMessageAsync(lastMsg.Platform, new OutgoingMessage
-                {
-                    ChannelId = lastMsg.ChannelId,
-                    Content = content,
-                    ReplyTo = i == 0 ? firstReplyTo : null,
-                    Mentions = mentions
-                });
-                segSpan.SetCloseDetail(new { messageId = sentId });
-                await ctx.Session.SaveBotMessageAsync(lastSc.Channel.Id, content, sentId);
-            }
-        }
-
-        private static readonly System.Text.RegularExpressions.Regex AtTagRegex =
-            new(@"<at\s+user=""([^""]+)""\s*/>", System.Text.RegularExpressions.RegexOptions.Compiled);
-        private static readonly System.Text.RegularExpressions.Regex ReplyTagRegex =
-            new(@"<reply\s+id=""([^""]+)""\s*/>", System.Text.RegularExpressions.RegexOptions.Compiled);
-
-        private (string Content, string? ReplyTo, List<string>? Mentions) ParseBotOutput(
-            string raw, Dictionary<int, ParticipantInfo> participants)
-            => BotOutputParser.Parse(raw, participants);
-
 
         private async Task HandleAlertAsync(Person person, SessionContext sc, string reason)
             => await AlertHandler.HandleAsync(person, sc, reason, ctx);
