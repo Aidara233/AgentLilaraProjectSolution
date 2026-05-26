@@ -17,7 +17,7 @@ return await db.QueryAsync<MemoryEntry>($"SELECT * FROM Memories WHERE Id IN ({i
 ```
 全部传入 `List<int>` 目前安全，但模式危险——若将来改为接受外部字符串输入即构成 SQL 注入。6 个位置应统一改为参数化：先生成 `?,?,?` 占位符，再传参。`MessageRepository.GetDistinctDaysByUsersAsync` 是新增发现（之前模块5未覆盖 MessageRepository）。
 
-**2. PersonaMemoryRepository.GetCountAsync 全量加载含 BLOB 列** (`PersonaMemoryRepository.cs:34-38`)
+**2. PersonaMemoryRepository.GetCountAsync 全量加载含 BLOB 列** (`PersonaMemoryRepository.cs:34-38`) ✅ 已修复 2026-05-26
 ```csharp
 public async Task<int> GetCountAsync()
 {
@@ -37,7 +37,7 @@ Person 创建和 User 创建不是原子的。如果 User 插入失败（UNIQUE 
 
 ### 🟡 BUG — 轻度
 
-**4. ImageRepository.GetFilteredCountAsync 滥用 ImageRecord 实体接收 COUNT** (`ImageRepository.cs:147-152`)
+**4. ImageRepository.GetFilteredCountAsync 滥用 ImageRecord 实体接收 COUNT** (`ImageRepository.cs:147-152`) ✅ 已修复 2026-05-26
 ```csharp
 var sql = "SELECT COUNT(*) as Id FROM ImageRecords";
 var results = await db.QueryAsync<ImageRecord>(sql, args.ToArray());
@@ -64,7 +64,7 @@ catch { /* 列已存在则忽略 */ }
 ```
 裸 `catch {}` 吞掉所有异常类型。如果 ALTER TABLE 因磁盘满、表锁定、权限等非"列已存在"原因失败，也会被静默忽略——后续 INSERT 因缺少列而失败，根因被掩盖。应至少检查异常消息包含 "duplicate column"。
 
-**7. EvaluationScoreRepository.GetAsync 使用 ContinueWith 而非 await** (`EvaluationScoreRepository.cs:17-21`)
+**7. EvaluationScoreRepository.GetAsync 使用 ContinueWith 而非 await** (`EvaluationScoreRepository.cs:17-21`) ✅ 已修复 2026-05-26
 ```csharp
 return db.QueryAsync<EvaluationScore>(...)
     .ContinueWith(t => t.Result.Count > 0 ? t.Result[0] : null);
@@ -81,7 +81,7 @@ if (record != null) {
 ```
 两个并发请求同时读到 `SeenCount=5`，都写入 `SeenCount=6` → 丢失一次计数。对 SeenCount 这种非关键统计字段影响可忽略，但模式本身存在。应 `UPDATE ImageRecords SET SeenCount = SeenCount + 1 WHERE Hash = ?`。
 
-**9. ChannelRepository.FindByNameAsync 多余 ToList** (`ChannelRepository.cs:17-21`)
+**9. ChannelRepository.FindByNameAsync 多余 ToList** (`ChannelRepository.cs:17-21`) ✅ 已修复 2026-05-26
 ```csharp
 var results = await db.Table<Channel>().Where(c => c.Name == name).ToListAsync();
 return results.Count > 0 ? results[0] : null;
@@ -90,7 +90,7 @@ return results.Count > 0 ? results[0] : null;
 
 ### 🟠 设计问题 — 中度
 
-**10. MemoryRepository.DeleteExpiredAsync + MemoryLinkRepository.DeleteOrphanedAsync 逐条 N+1** (MemoryRepository:109-121, MemoryLinkRepository:65-78)
+**10. MemoryRepository.DeleteExpiredAsync + MemoryLinkRepository.DeleteOrphanedAsync 逐条 N+1** (MemoryRepository:109-121, MemoryLinkRepository:65-78) ✅ 已修复 2026-05-26
 两个低频清理方法都采用"全查 → foreach 逐条删"模式。与模块5已发现的 `TempMemoryRepository.ClearAllAsync` 相同问题。应直接用 SQL：
 - `DELETE FROM Memories WHERE IsPersistent = 0 AND ExpiresAt IS NOT NULL AND ExpiresAt < ?`
 - `DELETE FROM MemoryLinks WHERE NOT EXISTS (SELECT 1 FROM Memories...)`
@@ -102,13 +102,13 @@ return results.Count > 0 ? results[0] : null;
 
 ### 🟢 ISSUE — 轻度
 
-**13. MemoryRepository 与 TempMemoryRepository GetAllWithMatchScoreAsync 评分逻辑重复** (MemoryRepository.cs:22-43, TempMemoryRepository.cs:49-66)
+**13. MemoryRepository 与 TempMemoryRepository GetAllWithMatchScoreAsync 评分逻辑重复** (MemoryRepository.cs:22-43, TempMemoryRepository.cs:49-66) ✅ 已修复 2026-05-26
 两份完全相同的评分逻辑（person匹配+1, channel匹配+1, Knowledge类型+1）。其中一个修改后另一个容易忘记同步。
 
 **14. MessageRepository.GetContextAroundAsync 三个独立查询可合并** (`MessageRepository.cs:41-59`)
 取前后上下文用 3 次独立 `QueryAsync`（before + target + after），返回后在内存中拼接。可用一个 UNION ALL 查询一次完成。
 
-**15. ImageRepository.GetPagedAsync 和 GetFilteredCountAsync 过滤条件重复** — 两个方法有 ~30 行完全相同的 WHERE 子句构建代码。其中一个改过滤逻辑时容易漏掉另一个。
+**15. ImageRepository.GetPagedAsync 和 GetFilteredCountAsync 过滤条件重复** — 两个方法有 ~30 行完全相同的 WHERE 子句构建代码。 ✅ 已修复 2026-05-26其中一个改过滤逻辑时容易漏掉另一个。
 
 ---
 

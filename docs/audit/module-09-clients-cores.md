@@ -32,7 +32,7 @@ set {
 
 任何 bug fix 或参数映射改进需改两处。应提取基类，参数化 Text 事件行为。
 
-**3. CoreBase.GenerateWithToolsAsync 错误路径不设 span detail** (`CoreBase.cs:135-155`)
+**3. CoreBase.GenerateWithToolsAsync 错误路径不设 span detail** (`CoreBase.cs:135-155`) ✅ 已修复 2026-05-26
 ```csharp
 try { ... LogOutput(...); }
 catch {
@@ -58,7 +58,7 @@ catch { return null; }
 ```
 图片加载失败（文件不存在/权限不足/OOM/非法 base64）静默丢弃。AI 收到缺图的消息，不知道图片加载失败，可能产生幻觉描述。
 
-**5. Processor.InjectPersona 每次构造读文件** (`Processor.cs:79-97`)
+**5. Processor.InjectPersona 每次构造读文件** (`Processor.cs:79-97`) ✅ 已修复 2026-05-26
 ```csharp
 private void InjectPersona()
 {
@@ -68,10 +68,10 @@ private void InjectPersona()
 ```
 `AgentCore.InvokeAsync` 每次调用都 new Processor → 读 Persona.txt。频道循环每轮一次，高频操作（每分钟多次）。Persona.txt 内容不变，应静态缓存。
 
-**6. SiliconFlowEmbeddingProvider 无重试机制** (`SiliconFlowEmbeddingProvider.cs:39-74`)
+**6. SiliconFlowEmbeddingProvider 无重试机制** (`SiliconFlowEmbeddingProvider.cs:39-74`) ✅ 已修复 2026-05-26
 对比 `Processor.ProcessAsync` 有一次重试（`onRetryReset` + 再调 `StreamChatAsync`），Embedding 调用无任何容错。网络瞬断 → `EnsureSuccessStatusCode` 直接抛 → 整个记忆召回路径不可用。
 
-**7. ClaudeModelClient StreamChatAsync 中 mergedUsage 被传给 BuildSyntheticResponse 的 usageResp** (`ClaudeModelClient.cs:161-166`)
+**7. ClaudeModelClient StreamChatAsync 中 mergedUsage 被传给 BuildSyntheticResponse 的 usageResp** (`ClaudeModelClient.cs:161-166`) ✅ 已修复 2026-05-26
 ```csharp
 if (resp.Usage != null || resp.StreamStartMessage?.Usage != null)
 {
@@ -107,7 +107,7 @@ while (true) {
 
 **11. CoreBase 三个 Generate 方法 boilerplate 重复** — `GenerateAsync`、`GenerateOnceAsync`、`GenerateWithToolsAsync` 各有 30+ 行相同模板：Signal.Debug 请求发出、首 token 计时、Signal span 生命周期、catch-LogOutput-throw。三个方法的错误处理也不一致（span detail 设不设、firstTokenLogged 回不回调）。
 
-**12. PreprocessingCore 锚点首次调用时阻塞** (`PreprocessingCore.cs:46-50`)
+**12. PreprocessingCore 锚点首次调用时阻塞** (`PreprocessingCore.cs:46-50`) ✅ 已修复 2026-05-26
 ```csharp
 public async Task IsTaskAsync(string content) {
     await InitAnchorsAsync();  // 首次触发时会发 HTTP embedding 请求
@@ -116,10 +116,10 @@ public async Task IsTaskAsync(string content) {
 
 ### 🟢 ISSUE — 轻度
 
-**13. AgentCore.InvokeAsync 每次 new Processor 而非复用** (`AgentCore.cs:61`)
+**13. AgentCore.InvokeAsync 每次 new Processor 而非复用** (`AgentCore.cs:61`) ✅ 已修复 2026-05-26
 频道循环每轮都调用 `InvokeAsync` → 每次都 new Processor → 读 Persona.txt + 读配置文件 JSON。对比系统循环的 `InvokeWithHistoryAsync` 复用 Processor 实例。频道循环可同样复用。
 
-**14. CoreBase.LogOutput 写 DB 用 fire-and-forget** (`CoreBase.cs:453-468`)
+**14. CoreBase.LogOutput 写 DB 用 fire-and-forget** (`CoreBase.cs:453-468`) ✅ 已修复 2026-05-26
 ```csharp
 _ = CallLogRepo.InsertAsync(new ModelCallLog { ... });
 ```

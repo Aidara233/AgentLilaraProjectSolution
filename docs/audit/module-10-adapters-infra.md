@@ -83,7 +83,7 @@ private static EventBus? _eventBus;
 
 更好的设计：Parser 做纯函数式消息转换（`JObject → IncomingMessage`），Actions 接收 `Func<string, JObject, Task<JObject?>>` 委托作为 API 通道，不依赖具体 Adapter 类型。
 
-**10. FileAdapter.ProcessInputFiles 和 ProcessInputWithDelayAsync ~60% 重复** (`FileAdapter.cs:96-189`)
+**10. FileAdapter.ProcessInputFiles 和 ProcessInputWithDelayAsync ~60% 重复** (`FileAdapter.cs:96-189`) ✅ 已修复 2026-05-26
 两个方法有 ~35 行几乎相同的文件扫描/解析/删除/异常处理逻辑。区别仅在：一个是同步 `for` 循环，一个是带 `Task.Delay` 的异步 `foreach`。应提取公共的 `ProcessOneFile(string filePath)` → 两边复用。
 
 **11. ImageStorage 门面过厚（~25 个方法，490 行）** (`ImageStorage.cs`)
@@ -109,7 +109,7 @@ return true;
 ```
 新增支持 channel 过滤的适配器类型（如 TelegramAdapter）需修改 `AdapterManager`。应将 `CanHandleChannel` 提升为 `IAdapter` 的默认接口方法，OneBotAdapter 覆盖实现。
 
-**15. TextUtil.StripMarkdownCodeFence 仅处理首尾围栏** (`TextUtil.cs:9-18`)
+**15. TextUtil.StripMarkdownCodeFence 仅处理首尾围栏** (`TextUtil.cs:9-18`) ✅ 已修复 2026-05-26
 ```csharp
 if (lines[0].TrimStart().StartsWith("```") && lines[^1].Trim() == "```")
     return string.Join('\n', lines[1..^1]).Trim();
@@ -129,7 +129,7 @@ catch (Exception) { }
 ```
 图片下载失败（URL 过期、网络不通）静默跳过。消息中的图片丢失，AI 只看到文本部分，无法知道原来有图片。
 
-**18. VectorUtil.CosineSimilarity 无零向量保护** — `normA` 或 `normB` 为 0 时返回 0（正确）。但 `BytesToFloats` 假设 `bytes.Length` 是 4 的倍数——如果 BLOB 数据损坏（不完整的 float），会抛 `ArgumentException`。
+**18. VectorUtil.CosineSimilarity 无零向量保护** — `normA` 或 `normB` 为 0 时返回 0（正确）。但 `BytesToFloats` 假设 `bytes.Length` 是 4 的倍数——如果 BLOB 数据损坏（不完整的 float），会抛 `ArgumentException`。 ✅ 已修复 2026-05-26
 
 ---
 

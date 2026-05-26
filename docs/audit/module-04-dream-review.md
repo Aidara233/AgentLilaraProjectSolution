@@ -12,7 +12,7 @@
 **1. PrepareLinkAsync 对 oldest-dreamed 记忆空转标记** (`DreamEngine.cs:425-445`)
 当通过 `GetOldestDreamedAsync` 获取的目标记忆没有 embedding（走 else 分支用 `GetRecentAsync` 粗筛），若 `filtered.Count == 0`，代码仍将 target 的 `LastDreamTime` 更新为当前时间后 return null。但由于 target 本身就是"最久未梦到的已梦记忆"，更新后其排序后移，下次又会被 `GetOldestDreamedAsync` 选中，形成"空转循环"——每次打开这个记忆都发现无候选、标记 dreamed、然后被下一次 oldest 选中。同一记忆可能被反复捡起做无用工。
 
-**2. Daydream 无空闲时长阈值，默认冷却仅 120s** (`DreamEngineSpawnCheck.cs:108-114`)
+**2. Daydream 无空闲时长阈值，默认冷却仅 120s** (`DreamEngineSpawnCheck.cs:108-114`) ✅ 已修复 2026-05-26
 Nap 有 `NapIdleThreshold`（默认 600s）限制最短空闲时长，而 Daydream 无对应阈值，仅检查 `IsIdle` + 冷却期。默认冷却 120s 意味着系统空闲时每 2 分钟就会触发一次走神（创建 DreamEngine、查 DB、建 session）。虽然单次开销小，但频率过高会在空闲期产生持续的 DB 和 API 开销。且 `DaydreamEnabled` 默认 false，一旦开启就会高频触发。
 
 ### 🟡 BUG — 轻度
@@ -49,13 +49,13 @@ notice = null!;  // 仅为了阻止后续 Insert，语义不清晰
 **10. CalcTimeWindowScore 默认 Peak 在窗口外缺注释** (`DreamConfig.cs:35,190-225`)
 默认 `DeepSleepTimePeak = "00:00"`，而窗口是 `"02:00"` - `"06:00"`。Peak 在窗口外的结果是：整个窗口期都是下降段（从 Start 到尾单调递减）。这是一个合理的"鼓励早睡"设计——窗口早期评分最高，但配置默认值会让不熟悉归一化算法的读者困惑。应加注释说明。
 
-**11. ExecuteTrustEvaluationAsync 每次都 Load ReviewConfig 文件** (`DreamEngine.cs:979-980`)
+**11. ExecuteTrustEvaluationAsync 每次都 Load ReviewConfig 文件** (`DreamEngine.cs:979-980`) ✅ 已修复 2026-05-26
 信任评估在 Phase2 阶段调用，此时 ReviewEngine 已构造并已持有同一份 `ReviewConfig`。重新从磁盘加载是冗余 IO。
 
 **12. DreamEngine 使用 static Random 实例** (`DreamEngine.cs:43`) ✅ 已修复 2026-05-26
 `private static readonly Random rng = new()` — 虽然当前保证同时只有一个 DreamEngine 实例，但 static Random 在多实例场景下不是线程安全的。如果将来允许并行做梦（如小睡+走神同时），会出问题。建议改为实例字段。
 
-**13. ReviewEngine.BuildBudgetStatus 每轮重复注入** (`ReviewEngine.cs:655-665, 251-256, 280`)
+**13. ReviewEngine.BuildBudgetStatus 每轮重复注入** (`ReviewEngine.cs:655-665, 251-256, 280`) ✅ 已修复 2026-05-26
 `BuildBudgetStatus()` 在 `BuildStartInjectAsync`（首轮）和 `BuildRoundInjectAsync`（每轮）都调用。首轮注入后紧接着第一轮的 `BuildRoundInjectAsync` 会再次注入，造成首轮出现两条预算状态消息。浪费 token，且可能让模型困惑。
 
 ---

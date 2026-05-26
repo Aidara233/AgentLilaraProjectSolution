@@ -90,7 +90,37 @@ namespace AgentCoreProcessor.Engine
             };
             await messages.SaveAsync(userMessage);
 
-            // 5. 获取最近历史消息（按频道）
+            // 5. 引用消息补入库：本地查不到时用 API 拉到的内容创建 stub
+            if (!string.IsNullOrEmpty(msg.ReplyTo) && !string.IsNullOrEmpty(msg.QuotedContent))
+            {
+                var quoted = await messages.GetByPlatformMessageIdAsync(channel.Id, msg.ReplyTo);
+                if (quoted == null)
+                {
+                    int stubUserId = 0;
+                    if (!string.IsNullOrEmpty(msg.QuotedSenderPlatformId))
+                    {
+                        try
+                        {
+                            var stubUser = await users.FindOrCreateAsync(msg.Platform, msg.QuotedSenderPlatformId);
+                            stubUserId = stubUser.Id;
+                        }
+                        catch { }
+                    }
+
+                    await messages.SaveAsync(new UserMessage
+                    {
+                        UserId = stubUserId,
+                        ChannelId = channel.Id,
+                        Content = msg.QuotedContent,
+                        SenderName = msg.QuotedSenderName ?? "未知用户",
+                        IsFromBot = false,
+                        Time = msg.Time.AddSeconds(-1), // 略早于当前消息
+                        PlatformMessageId = msg.ReplyTo
+                    });
+                }
+            }
+
+            // 6. 获取最近历史消息（按频道）
             var recent = await GetContextByChannelAsync(channel.Id);
 
             return new SessionContext

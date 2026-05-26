@@ -9,7 +9,7 @@
 
 ### 🔴 BUG — 中度
 
-**1. MemoryService.RecallAsync O(N*M) 线性查找** (`MemoryService.cs:210-215`)
+**1. MemoryService.RecallAsync O(N*M) 线性查找** (`MemoryService.cs:210-215`) ✅ 已修复 2026-05-26
 ```csharp
 var entry = mainEntries.FirstOrDefault(m => m.Id == s.Id);
 ```
@@ -28,7 +28,7 @@ foreach (var entry in all)
 
 ### 🟡 BUG — 轻度
 
-**4. MemoryAccessImpl.DeleteTempAsync 全量加载再查** (`MemoryAccessImpl.cs:244-249`)
+**4. MemoryAccessImpl.DeleteTempAsync 全量加载再查** (`MemoryAccessImpl.cs:244-249`) ✅ 已修复 2026-05-26
 ```csharp
 var all = await tempMemories.GetAllAsync();
 var entry = all.FirstOrDefault(m => m.Id == id);
@@ -38,7 +38,7 @@ var entry = all.FirstOrDefault(m => m.Id == id);
 **5. MemoryExtractionCore.ParseResults fallback 全标 high confidence** (`MemoryExtractionCore.cs:119-124`)
 JSON 解析失败 + 内容不以 `[`/`{` 开头时，按行拆分并全部标记为 high confidence fact。模型输出非结构化文本（如自然语言解释）时，每行都被当作"事实"入库，产生垃圾记忆。
 
-**6. MemoryQueryCore 仅存在于 worktree** (`Core/MemoryQueryCore.cs`)
+**6. MemoryQueryCore 仅存在于 worktree** (`Core/MemoryQueryCore.cs`) ✅ 已修复 2026-05-26
 此文件在 `.claude/worktrees/` 分支中存在但主源码中已不存在，且 grep 确认无任何引用。如果是有意废弃的，worktree 中应同步删除；如果是待合并功能，应合并。
 
 ### 🟠 设计问题 — 重度

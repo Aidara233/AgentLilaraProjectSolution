@@ -26,7 +26,7 @@ case "speak":
 
 ### 🟡 BUG — 轻度
 
-**3. Express 模式无跨轮次退避** (`ChannelEngine.cs:886-919`)
+**3. Express 模式无跨轮次退避** (`ChannelEngine.cs:886-919`) ✅ 已修复 2026-05-26
 Express 单轮有重试，但连续多个 gate cycle 失败不会累积退避。与 Agent 模式的 `BackoffSeconds` 不一致，极端情况下可能 spam API。
 
 **4. ChannelExtractionWorker 的 fire-and-forget 无法等待** (`ChannelExtractionWorker.cs:73-99`)
@@ -50,7 +50,7 @@ private void InitChannel(ISystemContext ctx, Database.Channel channel) { ... }
 
 ### 🟢 ISSUE — 轻度
 
-**7. DeserializeMessages 双重序列化** (`ChannelContextPersistence.cs:133-134`)
+**7. DeserializeMessages 双重序列化** (`ChannelContextPersistence.cs:133-134`) ✅ 已修复 2026-05-26
 `JsonConvert.SerializeObject(dynamic) → JsonConvert.DeserializeObject<T>()` 绕了一圈。`dynamic` 对象实际是 `JToken`，直接用 `((JToken)obj).ToObject<List<Message>>()` 即可。
 
 **8. LoopGate 缺少关键注释** (`LoopGate.cs:26,34`)

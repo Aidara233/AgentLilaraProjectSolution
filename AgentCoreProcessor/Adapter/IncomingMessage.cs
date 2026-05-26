@@ -28,6 +28,12 @@ namespace AgentCoreProcessor.Adapter
         /// <summary>被引用消息的文本内容（适配器层填充）。</summary>
         public string? QuotedContent { get; set; }
 
+        /// <summary>被引用消息发送者的平台用户ID（适配器层从 get_msg API 填充）。</summary>
+        public string? QuotedSenderPlatformId { get; set; }
+
+        /// <summary>被引用消息发送者的显示名（适配器层从 get_msg API 填充）。</summary>
+        public string? QuotedSenderName { get; set; }
+
         /// <summary>平台侧消息ID（用于数据库关联）。</summary>
         public string? PlatformMessageId { get; set; }
 

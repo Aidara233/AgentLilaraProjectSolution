@@ -17,13 +17,13 @@
 
 ### 🟡 BUG — 轻度
 
-**3. ContextCompressionModule 死代码** (`ContextCompressionModule.cs:18`)
+**3. ContextCompressionModule 死代码** (`ContextCompressionModule.cs:18`) ✅ 已修复 2026-05-26
 `summarizationCore` 字段创建但从未使用。压缩逻辑已全部移入 `CompressionTierModule`。
 
-**4. CompressSyncAsync 命名误导** (`CompressionTierModule.cs:118-120`)
+**4. CompressSyncAsync 命名误导** (`CompressionTierModule.cs:118-120`) ✅ 已修复 2026-05-26
 方法叫 `_Sync` 但实际直接 return `CompressAsync` 的 Task，不做同步等待。同步阻塞是由调用方（SystemEngine 构造函数）做的。名实不符。
 
-**5. subAgents 字典泄漏** (`SystemEngine.cs:762-771`)
+**5. subAgents 字典泄漏** (`SystemEngine.cs:762-771`) ✅ 已修复 2026-05-26
 死掉的子 agent 只在 `GetActiveSubAgents()`（WebUI 查询）时清理。若长时间无人查看 WebUI，死 agent 对象累积。
 
 ### 🟠 设计问题 — 中度

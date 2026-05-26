@@ -211,6 +211,8 @@ namespace AgentCoreProcessor.Adapter
             var displayName = !string.IsNullOrWhiteSpace(card) ? card : nickname;
 
             string? quotedContent = null;
+            string? quotedSenderPlatformId = null;
+            string? quotedSenderName = null;
             if (replyTo != null)
             {
                 try
@@ -223,6 +225,15 @@ namespace AgentCoreProcessor.Adapter
                                   ?? msgData?["message"]?.ToString();
                         if (!string.IsNullOrEmpty(rawMsg))
                             quotedContent = rawMsg.Length > 200 ? rawMsg[..200] + "..." : rawMsg;
+
+                        var sender = msgData?["sender"];
+                        if (sender != null)
+                        {
+                            quotedSenderPlatformId = sender["user_id"]?.ToString();
+                            var card = sender["card"]?.ToString();
+                            var nick = sender["nickname"]?.ToString();
+                            quotedSenderName = !string.IsNullOrWhiteSpace(card) ? card : nick;
+                        }
                     }
                 }
                 catch { }
@@ -240,6 +251,8 @@ namespace AgentCoreProcessor.Adapter
                 IsMentioned = isMentioned,
                 ReplyTo = replyTo,
                 QuotedContent = quotedContent,
+                QuotedSenderPlatformId = quotedSenderPlatformId,
+                QuotedSenderName = quotedSenderName,
                 PlatformMessageId = data["message_id"]?.ToString(),
                 Time = DateTime.Now,
                 Attachments = attachments,
