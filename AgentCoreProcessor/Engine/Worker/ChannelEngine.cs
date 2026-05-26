@@ -59,8 +59,8 @@ namespace AgentCoreProcessor.Engine
 
         // ---- 消息缓冲 ----
         private readonly object bufferLock = new();
-        private readonly List<(IncomingMessage Message, SessionContext Context)> buffer = new();
         private DateTime lastBufferTime;
+        private int _bufferedMessageCount; // 自上次 gate 开放以来的新消息计数
 
 
         // ---- 冲动值 ----
@@ -133,10 +133,8 @@ namespace AgentCoreProcessor.Engine
         private readonly List<IInjectProvider> _injectProviders = new();
 
         // 当前处理批次（供 Agent host 注入使用）
-        private List<(IncomingMessage Message, SessionContext Context)>? activeBatch;
         private Dictionary<int, ParticipantInfo>? currentParticipantSnapshot;
-        private IncomingMessage? currentLastMsg;
-        private SessionContext? currentLastSc;
+        private SessionContext? _lastSessionContext;
         private bool isInWorkingSession = false;
         private bool hadSpeakThisRound;
         private bool hadWorkThisRound; // 本轮是否执行了非输出工具（speak/send_media/wait/deescalate 以外）
@@ -209,10 +207,12 @@ namespace AgentCoreProcessor.Engine
                 ctx, channelId, channelConfig, recentParticipants,
                 () => LastCompletionTime);
 
-            buffer.Add((initialMessage, initialContext));
             CollectImagePaths(initialMessage);
             recentParticipants.TryAdd(initialContext.User.Id, ParticipantInfo.From(initialContext.User, initialContext.Person, initialMessage));
             impulseTracker.Accumulate(initialMessage, recentParticipants.Count, initialMessage.IsSystemEvent);
+            _lastSessionContext = initialContext;
+            _bufferedMessageCount = 1;
+            _bufferTriggered = true;
             InitModules();
             ScheduleBufferSignal();
 
@@ -317,13 +317,13 @@ namespace AgentCoreProcessor.Engine
             });
         }
 
-        /// <summary>由 SpawnCheck 调用，将新消息加入缓冲。</summary>
+        /// <summary>由 SpawnCheck 调用，通知新消息到达。不存消息本身（已在 DB），只做冲动值+参与者+触发判断。</summary>
         public void EnqueueMessage(IncomingMessage msg, SessionContext sc, string? traceParentSpanId = null)
         {
             lock (bufferLock)
             {
-                buffer.Add((msg, sc));
                 lastBufferTime = DateTime.Now;
+                _bufferedMessageCount++;
                 CollectImagePaths(msg);
                 _traceParentSpanId = traceParentSpanId ?? SignalContext.Current?.CurrentSpanId;
             }
@@ -332,6 +332,7 @@ namespace AgentCoreProcessor.Engine
                 ParticipantInfo.From(sc.User, sc.Person, msg),
                 (_, _) => ParticipantInfo.From(sc.User, sc.Person, msg));
             impulseTracker.Accumulate(msg, recentParticipants.Count, msg.IsSystemEvent);
+            _lastSessionContext = sc;
 
             // 已触发过 → 只续期计时器
             if (_bufferTriggered)
@@ -341,10 +342,7 @@ namespace AgentCoreProcessor.Engine
             else
             {
                 // 前置滤波：检查是否该响应
-                List<(IncomingMessage Message, SessionContext Context)> snapshot;
-                lock (bufferLock) { snapshot = new List<(IncomingMessage, SessionContext)>(buffer); }
-
-                var shouldRespond = impulseTracker.ShouldRespond(snapshot, LastCompletionTime);
+                var shouldRespond = impulseTracker.ShouldRespond(msg, _bufferedMessageCount, LastCompletionTime);
                 if (shouldRespond)
                 {
                     _bufferTriggered = true;
@@ -354,23 +352,11 @@ namespace AgentCoreProcessor.Engine
                         decision = "respond",
                         impulse = impulseTracker.Impulse,
                         threshold = ctx.ImpulseConfig.Threshold,
-                        messageCount = snapshot.Count,
-                        hasMention = snapshot.Any(b => b.Message.IsMentioned),
+                        messageCount = _bufferedMessageCount,
+                        hasMention = msg.IsMentioned,
                         idleSeconds = (int)(DateTime.Now - (LastCompletionTime ?? DateTime.Now)).TotalSeconds
                     });
                     ScheduleBufferSignal();
-                }
-                else
-                {
-                    // 未触发时防止 buffer 无限增长
-                    lock (bufferLock)
-                    {
-                        if (buffer.Count > 50)
-                        {
-                            TrackMemoryExtraction(buffer.GetRange(0, buffer.Count - 20), buffer[^1].Context);
-                            buffer.RemoveRange(0, buffer.Count - 20);
-                        }
-                    }
                 }
             }
 
@@ -488,17 +474,18 @@ namespace AgentCoreProcessor.Engine
                 _totalGateCycles++;
                 await componentHost.OnActivatedAsync();
 
-                // ② 状态准备
-                var batch = CollectBuffer();
-                bool hasNewMessages = batch != null && batch.Count > 0;
+                // ② 状态准备：从 DB 检查新消息
+                bool hasNewMessages;
+                lock (bufferLock)
+                {
+                    hasNewMessages = _bufferedMessageCount > 0;
+                    _bufferedMessageCount = 0;
+                    _bufferTriggered = false;
+                }
 
                 if (hasNewMessages)
                 {
-                    activeBatch = batch;
-                    currentLastMsg = batch![^1].Message;
-                    currentLastSc = batch[^1].Context;
                     currentParticipantSnapshot = new Dictionary<int, ParticipantInfo>(recentParticipants);
-                    _pendingCursor = _lastConsumedMessageId;
 
                     // 消费 pending 图片
                     List<(string Path, string? Hash, string? Category)> pendingCopy;
@@ -511,13 +498,15 @@ namespace AgentCoreProcessor.Engine
                     if (pendingCopy.Count > 0)
                         ResolveImagePresentation(pendingCopy);
 
-                    // 标记已处理
-                    foreach (var (msg, _) in batch)
+                    // 从 DB 拉取新消息用于 processedTicks
+                    var tickMsgs = await ctx.Session.GetMessagesAfterIdAsync(channelId, _lastConsumedMessageId);
+                    foreach (var m in tickMsgs)
                     {
-                        processedTicks.AddLast(msg.Time.Ticks);
+                        processedTicks.AddLast(m.Time.Ticks);
                         while (processedTicks.Count > MaxProcessedTicksWindow)
                             processedTicks.RemoveFirst();
                     }
+                    processedMessageCount += tickMsgs.Count;
 
                     // 重置 Working 轮次状态
                     loopControlModule.OnNewMessage();
@@ -578,18 +567,19 @@ namespace AgentCoreProcessor.Engine
                     Signal.Error(LogGroup.Engine, "模型调用失败，引擎终止",
                         new { error = ex.GetType().Name, message = ex.Message, channelId });
 
-                    if (currentLastMsg != null)
+                    try
                     {
-                        try
+                        var errAdapter = ctx.Adapters.ResolveByChannelId(channelName);
+                        if (errAdapter != null)
                         {
-                            await ctx.Adapters.SendMessageAsync(currentLastMsg.Platform, new OutgoingMessage
+                            await errAdapter.SendMessageAsync(new OutgoingMessage
                             {
-                                ChannelId = currentLastMsg.ChannelId,
+                                ChannelId = channelName,
                                 Content = $"[错误] 处理消息时发生异常：{ex.Message}"
                             });
                         }
-                        catch (Exception notifyEx) { Signal.Warn(LogGroup.Adapter, "错误通知发送失败", new { channelId, error = notifyEx.Message }); }
                     }
+                    catch (Exception notifyEx) { Signal.Warn(LogGroup.Adapter, "错误通知发送失败", new { channelId, error = notifyEx.Message }); }
 
                     IsAlive = false;
                     isInWorkingSession = false;
@@ -631,85 +621,27 @@ namespace AgentCoreProcessor.Engine
 
         private async Task HandleSpeakToolAsync(string rawText)
         {
-            if (currentLastMsg == null)
-            {
-                // 冷启动 fallback：用 channelName 推断适配器
-                var adapter = ctx.Adapters.ResolveByChannelId(channelName);
-                if (adapter == null) return;
-                var (content, _, _) = ParseBotOutput(rawText, currentParticipantSnapshot ?? new());
-                using var speakSpan = Signal.Open(LogGroup.Adapter, "发送消息(冷启动)",
-                    new { channelId, platform = adapter.Platform, content });
-                var sentId = await adapter.SendMessageAsync(new OutgoingMessage
-                {
-                    ChannelId = channelName,
-                    Content = content
-                });
-                speakSpan.SetCloseDetail(new { messageId = sentId });
-                await ctx.Session.SaveBotMessageAsync(channelId, content, sentId);
-                return;
-            }
-            if (currentLastSc == null || currentParticipantSnapshot == null) return;
+            var adapter = ctx.Adapters.ResolveByChannelId(channelName);
+            if (adapter == null) return;
             unrespondedMessageCount = 0;
-            var (content2, replyTo, mentions) = ParseBotOutput(rawText, currentParticipantSnapshot);
-            using var speakSpan2 = Signal.Open(LogGroup.Adapter, "发送消息",
-                new { channelId, platform = currentLastMsg.Platform, content = content2, replyTo, mentions });
-            var sentId2 = await ctx.Adapters.SendMessageAsync(currentLastMsg.Platform, new OutgoingMessage
+            var (content, replyTo, mentions) = ParseBotOutput(rawText, currentParticipantSnapshot ?? new());
+            using var speakSpan = Signal.Open(LogGroup.Adapter, "发送消息",
+                new { channelId, platform = adapter.Platform, content, replyTo, mentions });
+            var sentId = await adapter.SendMessageAsync(new OutgoingMessage
             {
-                ChannelId = currentLastMsg.ChannelId,
-                Content = content2,
+                ChannelId = channelName,
+                Content = content,
                 ReplyTo = replyTo,
                 Mentions = mentions
             });
-            speakSpan2.SetCloseDetail(new { messageId = sentId2 });
-            await ctx.Session.SaveBotMessageAsync(currentLastSc.Channel.Id, content2, sentId2);
+            speakSpan.SetCloseDetail(new { messageId = sentId });
+            await ctx.Session.SaveBotMessageAsync(channelId, content, sentId);
         }
 
         private async Task HandleSendMediaToolAsync(string jsonData)
         {
-            if (currentLastMsg == null && currentLastSc == null)
-            {
-                // 冷启动 fallback
-                var adapter = ctx.Adapters.ResolveByChannelId(channelName);
-                if (adapter == null) return;
-                try
-                {
-                    var json = Newtonsoft.Json.Linq.JObject.Parse(jsonData);
-                    var type = json["type"]?.ToString() ?? "";
-                    var path = json["path"]?.ToString() ?? "";
-                    var text = json["text"]?.ToString();
-                    var attachmentType = type switch
-                    {
-                        "image" or "sticker" => AttachmentType.Image,
-                        "voice" => AttachmentType.Audio,
-                        "file" => AttachmentType.File,
-                        _ => AttachmentType.Image
-                    };
-                    var attachments = new List<MessageAttachment>
-                    {
-                        new()
-                        {
-                            Type = attachmentType,
-                            LocalPath = IsLocalPath(path) ? path : null,
-                            SourceUrl = IsLocalPath(path) ? null : path,
-                            Category = type == "sticker" ? "sticker" : null
-                        }
-                    };
-                    using var mediaSpan = Signal.Open(LogGroup.Adapter, "发送媒体(冷启动)",
-                        new { channelId, platform = adapter.Platform, type, text });
-                    var sentId = await adapter.SendMessageAsync(new OutgoingMessage
-                    {
-                        ChannelId = channelName,
-                        Content = text ?? "",
-                        Attachments = attachments
-                    });
-                    mediaSpan.SetCloseDetail(new { messageId = sentId });
-                    var desc = $"[发送{type}]" + (string.IsNullOrEmpty(text) ? "" : $" {text}");
-                    await ctx.Session.SaveBotMessageAsync(channelId, desc, sentId);
-                }
-                catch (Exception ex) { Signal.Error(LogGroup.Adapter, "发送媒体失败(冷启动)", new { channelId, error = ex.GetType().Name, message = ex.Message }); }
-                return;
-            }
-            if (currentLastMsg == null || currentLastSc == null) return;
+            var adapter = ctx.Adapters.ResolveByChannelId(channelName);
+            if (adapter == null) return;
             unrespondedMessageCount = 0;
             try
             {
@@ -738,37 +670,37 @@ namespace AgentCoreProcessor.Engine
                 };
 
                 using var mediaSpan = Signal.Open(LogGroup.Adapter, "发送媒体",
-                    new { channelId, platform = currentLastMsg.Platform, type, text, attachmentCount = attachments.Count });
-                var sentId = await ctx.Adapters.SendMessageAsync(currentLastMsg.Platform, new OutgoingMessage
+                    new { channelId, platform = adapter.Platform, type, text, attachmentCount = attachments.Count });
+                var sentId = await adapter.SendMessageAsync(new OutgoingMessage
                 {
-                    ChannelId = currentLastMsg.ChannelId,
+                    ChannelId = channelName,
                     Content = text ?? "",
                     Attachments = attachments
                 });
                 mediaSpan.SetCloseDetail(new { messageId = sentId });
                 var desc = $"[发送{type}]" + (string.IsNullOrEmpty(text) ? "" : $" {text}");
-                await ctx.Session.SaveBotMessageAsync(currentLastSc.Channel.Id, desc, sentId);
+                await ctx.Session.SaveBotMessageAsync(channelId, desc, sentId);
             }
             catch (Exception ex) { Signal.Error(LogGroup.Adapter, "发送媒体失败", new { channelId, error = ex.GetType().Name, message = ex.Message }); }
         }
 
         private async Task HandleMemoryToolAsync(string content)
         {
-            if (currentLastSc == null) return;
-            await ctx.MemorySvc.StoreAsync(content, currentLastSc.Person.Id, currentLastSc.Channel.Id,
+            if (_lastSessionContext == null) return;
+            await ctx.MemorySvc.StoreAsync(content, _lastSessionContext.Person.Id, _lastSessionContext.Channel.Id,
                 type: MemoryType.Fact);
         }
 
         private async Task HandleReviewHintToolAsync(string content)
         {
-            if (currentLastSc == null) return;
-            await ctx.ReviewHints.CreateAsync(content, currentLastSc.Person.Id, currentLastSc.Channel.Id);
+            if (_lastSessionContext == null) return;
+            await ctx.ReviewHints.CreateAsync(content, _lastSessionContext.Person.Id, _lastSessionContext.Channel.Id);
         }
 
         private async Task HandleAlertToolAsync(string reason)
         {
-            if (currentLastSc == null) return;
-            await HandleAlertAsync(currentLastSc.Person, currentLastSc, reason);
+            if (_lastSessionContext == null) return;
+            await HandleAlertAsync(_lastSessionContext.Person, _lastSessionContext, reason);
         }
 
         private static bool IsLocalPath(string path)
@@ -783,17 +715,6 @@ namespace AgentCoreProcessor.Engine
         }
 
 
-
-        private List<(IncomingMessage Message, SessionContext Context)>? CollectBuffer()
-        {
-            lock (bufferLock)
-            {
-                if (buffer.Count == 0) return null;
-                var batch = new List<(IncomingMessage, SessionContext)>(buffer);
-                buffer.Clear();
-                return batch;
-            }
-        }
 
 
 
@@ -884,10 +805,10 @@ namespace AgentCoreProcessor.Engine
 
             // Post-processing
             impulseTracker.ApplyPostResponseUpdate();
-            if (activeBatch != null && currentLastSc != null)
+            if (_lastSessionContext != null)
             {
-                TrackMemoryExtraction(activeBatch, currentLastSc);
-                await IncrementDailyProgressAsync(currentLastSc.Person);
+                TrackMemoryExtraction(_lastSessionContext);
+                await IncrementDailyProgressAsync(_lastSessionContext.Person);
             }
 
             // Handle agent stop reason
@@ -1055,10 +976,10 @@ namespace AgentCoreProcessor.Engine
 
             // Post-processing
             impulseTracker.ApplyPostResponseUpdate();
-            if (activeBatch != null && currentLastSc != null)
+            if (_lastSessionContext != null)
             {
-                TrackMemoryExtraction(activeBatch, currentLastSc);
-                await IncrementDailyProgressAsync(currentLastSc.Person);
+                TrackMemoryExtraction(_lastSessionContext);
+                await IncrementDailyProgressAsync(_lastSessionContext.Person);
             }
 
             // 推进游标
@@ -1255,13 +1176,20 @@ namespace AgentCoreProcessor.Engine
                 _loadedConversation = null; // 只注入一次
             }
 
-            // 记忆检索注入
-            if (currentLastSc != null && activeBatch != null && activeBatch.Count > 0)
+            // 记忆检索注入（从 DB 新消息拼接 query）
+            if (_lastSessionContext != null && _lastConsumedMessageId > 0)
             {
-                var query = string.Join(" ", activeBatch.Select(b => b.Message.Content));
-                var memorySection = await BuildMemorySection(currentLastSc, query);
-                if (!string.IsNullOrEmpty(memorySection))
-                    msgs.Add(new Message { Role = "user", Content = memorySection });
+                var queryMsgs = await ctx.Session.GetMessagesAfterIdAsync(channelId, _lastConsumedMessageId);
+                if (queryMsgs.Count > 0)
+                {
+                    var query = string.Join(" ", queryMsgs.Where(m => !m.IsFromBot).Select(m => m.Content));
+                    if (!string.IsNullOrEmpty(query))
+                    {
+                        var memorySection = await BuildMemorySection(_lastSessionContext, query);
+                        if (!string.IsNullOrEmpty(memorySection))
+                            msgs.Add(new Message { Role = "user", Content = memorySection });
+                    }
+                }
             }
 
             // IInjectProvider start injections
@@ -1292,7 +1220,7 @@ namespace AgentCoreProcessor.Engine
                 totalMessages = msgs.Count,
                 prefixLen = fixedPrefix?.Length ?? 0,
                 summaryLen = contextSummary?.Length ?? 0,
-                newMessageCount = activeBatch?.Count ?? 0,
+                newMessageCount = _bufferedMessageCount,
                 estimatedTokens = msgs.Sum(m => (m.Content?.Length ?? 0)) / 3
             });
 
@@ -1358,6 +1286,13 @@ namespace AgentCoreProcessor.Engine
                 var newMsgs = await ctx.Session.GetMessagesAfterIdAsync(channelId, _lastConsumedMessageId);
                 if (newMsgs.Count > 0)
                 {
+                    // Express 模式裁剪：只保留最近一组窗口，避免上下文爆炸
+                    var allNewMsgs = newMsgs;
+                    if (!isWorkingMode && newMsgs.Count > ExpressHistoryMaxMessages)
+                    {
+                        newMsgs = newMsgs.Skip(newMsgs.Count - ExpressHistoryMaxMessages).ToList();
+                    }
+
                     if (isWorkingMode)
                     {
                         var sb = new StringBuilder("<new_messages>\n");
@@ -1385,7 +1320,8 @@ namespace AgentCoreProcessor.Engine
                         msgs.Add(new Message { Role = "user", Content = sb.ToString() });
                     }
 
-                    var maxNewId = newMsgs.Max(m => m.Id);
+                    // 游标推进到所有新消息（包括被裁剪的）
+                    var maxNewId = allNewMsgs.Max(m => m.Id);
                     if (maxNewId > _lastConsumedMessageId)
                         _lastConsumedMessageId = maxNewId;
                 }
@@ -1698,13 +1634,9 @@ namespace AgentCoreProcessor.Engine
             }
         }
 
-        private void TrackMemoryExtraction(
-            List<(IncomingMessage Message, SessionContext Context)> messages, SessionContext sc)
+        private void TrackMemoryExtraction(SessionContext sc)
         {
             this.lastContext = sc;
-            processedMessageCount += messages.Count;
-            unrespondedMessageCount += messages.Count;
-
             extractionWorker.Trigger(sc, _sessionRootSpanId);
         }
 

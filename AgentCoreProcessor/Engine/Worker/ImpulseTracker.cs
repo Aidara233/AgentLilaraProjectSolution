@@ -48,6 +48,19 @@ namespace AgentCoreProcessor.Engine
             return respond;
         }
 
+        /// <summary>单消息判断（无需 batch 快照）。</summary>
+        public bool ShouldRespond(IncomingMessage msg, int messageCount, DateTime? lastCompletionTime)
+        {
+            if (msg.IsPrivate) return true;
+            if (msg.IsMentioned && !msg.IsSystemEvent) return true;
+
+            if (lastCompletionTime != null &&
+                (DateTime.Now - lastCompletionTime.Value).TotalSeconds < config.PostResponseCooldownSeconds)
+                return false;
+
+            return impulse >= config.Threshold;
+        }
+
         public void Accumulate(IncomingMessage msg, int participantCount, bool isSystemEvent = false)
         {
             ApplyDecay();
