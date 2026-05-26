@@ -137,7 +137,7 @@ namespace AgentCoreProcessor.Engine
         private readonly DreamMemoryTracker _memoryTracker;
         private readonly BudgetState _budget;
         private readonly DreamConfig _config;
-        private readonly Random _rng = new();
+        // 使用 Random.Shared（.NET 6+ 线程安全）
         private readonly List<FragmentDescriptor> _todo = new();
         private readonly List<FragmentDescriptor> _running = new();
         private readonly HashSet<FragmentType> _excludedTypes = new();
@@ -277,7 +277,7 @@ namespace AgentCoreProcessor.Engine
             float total = 0;
             foreach (var (_, w) in weights) total += w;
 
-            float roll = (float)(_rng.NextDouble() * total);
+            float roll = (float)(Random.Shared.NextDouble() * total);
             foreach (var (type, w) in weights)
             {
                 roll -= w;

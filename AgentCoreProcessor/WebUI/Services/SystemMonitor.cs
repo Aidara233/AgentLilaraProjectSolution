@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using AgentCoreProcessor.Engine;
+using AgentCoreProcessor.Logging;
 
 namespace AgentCoreProcessor.WebUI.Services
 {
@@ -83,8 +84,9 @@ namespace AgentCoreProcessor.WebUI.Services
 
                 OnStateChanged?.Invoke();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Signal.Warn(LogGroup.Engine, "系统快照采集失败", new { error = ex.Message });
             }
         }
 

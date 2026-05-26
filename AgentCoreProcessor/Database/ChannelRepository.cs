@@ -15,10 +15,9 @@ namespace AgentCoreProcessor.Database
         /// <summary>按名称查找频道。</summary>
         public async Task<Channel?> FindByNameAsync(string name)
         {
-            var results = await db.Table<Channel>()
+            return await db.Table<Channel>()
                 .Where(c => c.Name == name)
-                .ToListAsync();
-            return results.Count > 0 ? results[0] : null;
+                .FirstOrDefaultAsync();
         }
 
         /// <summary>查找已有频道，不存在则自动创建。</summary>

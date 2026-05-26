@@ -58,7 +58,8 @@ namespace AgentCoreProcessor.Core
         public async Task<ModelOutput> InvokeAsync(List<Message> messages, Engine.EngineMode mode)
         {
             SwitchMode(mode);
-            processor = new Processor(currentMode, usePersona: UsePersona);
+            if (processor == null || processor.CfgName != currentMode)
+                processor = new Processor(currentMode, usePersona: UsePersona);
             ApplyExtraMessages();
             SetConversationHistory(messages);
 

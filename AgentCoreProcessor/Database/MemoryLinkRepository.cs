@@ -20,10 +20,10 @@ namespace AgentCoreProcessor.Database
         public async Task<List<MemoryLink>> GetLinksForAsync(List<int> memoryIds, float minStrength = 0.5f)
         {
             if (memoryIds.Count == 0) return new List<MemoryLink>();
-            var idList = string.Join(",", memoryIds);
+            var placeholders = string.Join(",", memoryIds.Select(_ => "?"));
             var links = await db.QueryAsync<MemoryLink>(
-                $"SELECT * FROM MemoryLinks WHERE (SourceId IN ({idList}) OR TargetId IN ({idList})) AND Strength >= ?",
-                minStrength);
+                $"SELECT * FROM MemoryLinks WHERE (SourceId IN ({placeholders}) OR TargetId IN ({placeholders})) AND Strength >= ?",
+                memoryIds.Cast<object>().Concat(new object[] { minStrength }).ToArray());
             return links;
         }
 
@@ -62,19 +62,12 @@ namespace AgentCoreProcessor.Database
         public Task<int> DeleteAsync(MemoryLink link) => db.DeleteAsync(link);
 
         /// <summary>删除指向不存在记忆的孤立关联。</summary>
-        public async Task<int> DeleteOrphanedAsync()
+        public Task DeleteOrphanedAsync()
         {
-            var orphaned = await db.QueryAsync<MemoryLink>(
-                @"SELECT ml.* FROM MemoryLinks ml
-                  WHERE NOT EXISTS (SELECT 1 FROM Memories WHERE Id = ml.SourceId)
-                     OR NOT EXISTS (SELECT 1 FROM Memories WHERE Id = ml.TargetId)");
-            int count = 0;
-            foreach (var link in orphaned)
-            {
-                await db.DeleteAsync(link);
-                count++;
-            }
-            return count;
+            return db.ExecuteAsync(
+                @"DELETE FROM MemoryLinks
+                  WHERE NOT EXISTS (SELECT 1 FROM Memories WHERE Id = MemoryLinks.SourceId)
+                     OR NOT EXISTS (SELECT 1 FROM Memories WHERE Id = MemoryLinks.TargetId)");
         }
 
         /// <summary>删除指定记忆的所有关联。</summary>
@@ -89,8 +82,8 @@ namespace AgentCoreProcessor.Database
         public async Task DeleteByIdsAsync(List<int> ids)
         {
             if (ids.Count == 0) return;
-            var idList = string.Join(",", ids);
-            await db.ExecuteAsync($"DELETE FROM MemoryLinks WHERE Id IN ({idList})");
+            var placeholders = string.Join(",", ids.Select(_ => "?"));
+            await db.ExecuteAsync($"DELETE FROM MemoryLinks WHERE Id IN ({placeholders})", ids.Cast<object>().ToArray());
         }
 
         /// <summary>获取指定记忆的所有关联。</summary>

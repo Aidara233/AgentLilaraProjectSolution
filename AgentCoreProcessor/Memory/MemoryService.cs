@@ -207,10 +207,10 @@ namespace AgentCoreProcessor.Memory
                 .ToList();
 
             // 6. 更新主库记忆的 LastAccessedAt（跳过临时和人设记忆）
+            var mainEntryDict = mainEntries.ToDictionary(m => m.Id);
             foreach (var s in result.Where(s => !s.IsTemp && !s.IsPersona))
             {
-                var entry = mainEntries.FirstOrDefault(m => m.Id == s.Id);
-                if (entry != null)
+                if (mainEntryDict.TryGetValue(s.Id, out var entry))
                     await memories.UpdateAsync(entry);
             }
 

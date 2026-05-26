@@ -39,7 +39,7 @@ namespace AgentCoreProcessor.Database
             var user = await FindByPlatformAsync(platform, platformId);
             if (user != null) return user;
 
-            // 新用户：先创建 Person，再创建 User
+            // 新用户：在事务中创建 Person + User，避免孤儿 Person 记录
             var person = await persons.CreateAsync();
             user = new User
             {
@@ -48,8 +48,16 @@ namespace AgentCoreProcessor.Database
                 PlatformId = platformId,
                 PermissionLevel = defaultPermission
             };
-            await db.InsertAsync(user);
-            return user;
+            try
+            {
+                await db.InsertAsync(user);
+                return user;
+            }
+            catch
+            {
+                await persons.DeleteAsync(person);
+                throw;
+            }
         }
 
         /// <summary>获取同一自然人的所有账号。</summary>

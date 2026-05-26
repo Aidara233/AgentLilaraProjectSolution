@@ -1,3 +1,4 @@
+using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Models;
 using Anthropic.SDK;
 using Anthropic.SDK.Common;
@@ -438,7 +439,7 @@ namespace AgentCoreProcessor.Client
 
                 return null;
             }
-            catch { return null; }
+            catch (Exception ex) { Signal.Warn(LogGroup.Model, "图片加载失败", new { path = part.ImagePath, error = ex.Message }); return null; }
         }
 
         private static string InferMediaType(string path)

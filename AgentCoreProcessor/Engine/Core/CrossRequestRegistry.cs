@@ -358,7 +358,7 @@ internal class CrossRequestRegistry
 
                     latest[req.RequestId] = req;
                 }
-                catch { }
+                catch (Exception ex) { Signal.Warn(LogGroup.Engine, "跨请求日志解析失败", new { error = ex.Message }); }
             }
 
             foreach (var (id, req) in latest)

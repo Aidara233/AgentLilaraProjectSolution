@@ -55,7 +55,6 @@ namespace AgentCoreProcessor.Engine
         {
             stopCts = new CancellationTokenSource();
             instructionQueue.Writer.TryWrite(initialInstruction);
-            instructionQueue.Writer.Complete();
             backgroundTask = Task.Run(() => RunLoopAsync(stopCts.Token));
         }
 

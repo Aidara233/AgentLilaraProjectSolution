@@ -33,8 +33,9 @@ namespace AgentCoreProcessor.Database
 
         public async Task<int> GetCountAsync()
         {
-            var all = await GetAllAsync();
-            return all.Count;
+            var result = await db.QueryAsync<CountResult>(
+                "SELECT COUNT(*) AS Value FROM PersonaMemories");
+            return result.Count > 0 ? result[0].Value : 0;
         }
     }
 }

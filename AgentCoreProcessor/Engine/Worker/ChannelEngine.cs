@@ -334,8 +334,11 @@ namespace AgentCoreProcessor.Engine
             impulseTracker.Accumulate(msg, recentParticipants.Count, msg.IsSystemEvent);
             _lastSessionContext = sc;
 
+            bool isTriggered;
+            lock (bufferLock) { isTriggered = _bufferTriggered; }
+
             // 已触发过 → 只续期计时器
-            if (_bufferTriggered)
+            if (isTriggered)
             {
                 ScheduleBufferSignal();
             }
@@ -345,7 +348,7 @@ namespace AgentCoreProcessor.Engine
                 var shouldRespond = impulseTracker.ShouldRespond(msg, _bufferedMessageCount, LastCompletionTime);
                 if (shouldRespond)
                 {
-                    _bufferTriggered = true;
+                    lock (bufferLock) { _bufferTriggered = true; }
                     Signal.Event(LogGroup.Engine, "冲动值决策", new
                     {
                         channelId,

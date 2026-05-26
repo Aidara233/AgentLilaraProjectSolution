@@ -211,7 +211,7 @@ internal class ComponentHost
         var tasks = _loopComponents.Select(async inst =>
         {
             try { return await inst.Component.OnShutdownRequestedAsync(reason); }
-            catch { return ShutdownResponse.Ok; }
+            catch (Exception ex) { Signal.Warn(LogGroup.Plugin, "组件关闭回调异常", new { component = inst.Component.Meta.Name, error = ex.Message }); return ShutdownResponse.Ok; }
         });
         try { await Task.WhenAll(tasks).WaitAsync(cts.Token); }
         catch (OperationCanceledException)

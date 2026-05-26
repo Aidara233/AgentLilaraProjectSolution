@@ -12,7 +12,7 @@ namespace AgentCoreProcessor.Engine
     {
         private readonly LoopGate _inner = new();
         private readonly EventBus _eventBus;
-        private volatile bool _forceWake;
+        private int _forceWake; // 0=false, 1=true; 用 int 以支持 Interlocked 原子操作
 
         /// <summary>最近一次触发事件的信号追踪 ID（供引擎建立因果链）。</summary>
         public string? LastTriggerSignalId { get; private set; }
@@ -30,7 +30,7 @@ namespace AgentCoreProcessor.Engine
         /// <summary>强制唤醒，跳过 ShouldActivate 直接开闸。</summary>
         public void ForceWake()
         {
-            _forceWake = true;
+            Interlocked.Exchange(ref _forceWake, 1);
             _inner.Signal();
         }
 
@@ -83,8 +83,7 @@ namespace AgentCoreProcessor.Engine
             {
                 await WaitForTriggerAsync(Timeout.InfiniteTimeSpan, ct);
 
-                bool isForceWake = _forceWake;
-                _forceWake = false;
+                bool isForceWake = Interlocked.Exchange(ref _forceWake, 0) == 1;
 
                 if (!isForceWake && ShouldActivate != null && !await ShouldActivate())
                     continue;

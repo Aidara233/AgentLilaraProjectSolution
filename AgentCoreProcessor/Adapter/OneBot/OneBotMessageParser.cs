@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Engine;
+using AgentCoreProcessor.Logging;
 using Newtonsoft.Json.Linq;
 
 namespace AgentCoreProcessor.Adapter
@@ -14,7 +15,7 @@ namespace AgentCoreProcessor.Adapter
     {
         private readonly OneBotAdapter adapter;
 
-        private readonly HashSet<long> recentMessageIds = new();
+        private readonly Dictionary<long, DateTime> recentMessageIds = new();
         private DateTime lastMessageIdCleanup = DateTime.Now;
 
         public OneBotMessageParser(OneBotAdapter adapter)
@@ -34,11 +35,16 @@ namespace AgentCoreProcessor.Adapter
                     {
                         if ((DateTime.Now - lastMessageIdCleanup).TotalSeconds > 60)
                         {
-                            recentMessageIds.Clear();
+                            // 滑动窗口：仅清理 120 秒前的旧 ID，窗口内的保留防止边界重入
+                            var cutoff = DateTime.Now.AddSeconds(-120);
+                            var expired = recentMessageIds.Where(kv => kv.Value < cutoff).Select(kv => kv.Key).ToList();
+                            foreach (var id in expired)
+                                recentMessageIds.Remove(id);
                             lastMessageIdCleanup = DateTime.Now;
                         }
-                        if (!recentMessageIds.Add(messageId))
+                        if (recentMessageIds.ContainsKey(messageId))
                             return null;
+                        recentMessageIds[messageId] = DateTime.Now;
                     }
                 }
                 return await ParseMessageEventAsync(data);
@@ -136,8 +142,9 @@ namespace AgentCoreProcessor.Adapter
                                     SegmentIndex = imgIndex
                                 });
                             }
-                            catch (Exception)
+                            catch (Exception ex)
                             {
+                                Signal.Warn(LogGroup.Adapter, "图片下载失败", new { url = imageUrl, error = ex.Message });
                             }
                         }
                         break;

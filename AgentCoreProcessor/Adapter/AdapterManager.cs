@@ -50,8 +50,9 @@ namespace AgentCoreProcessor.Adapter
                     var adapter = AdapterFactory.Create(config);
                     RegisterAdapter(adapter, config.Enabled);
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    Signal.Error(LogGroup.Adapter, "适配器配置加载失败", new { file = Path.GetFileName(file), error = ex.Message });
                 }
             }
         }
@@ -79,8 +80,9 @@ namespace AgentCoreProcessor.Adapter
                 File.WriteAllText(newPath, JsonConvert.SerializeObject(newConfig, Formatting.Indented));
                 File.Delete(legacyPath);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Signal.Error(LogGroup.Adapter, "旧配置迁移失败", new { path = legacyPath, error = ex.Message });
             }
         }
 

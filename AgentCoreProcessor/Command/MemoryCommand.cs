@@ -85,8 +85,8 @@ namespace AgentCoreProcessor.Command
         {
             if (parts.Length > 1 && parts[1].ToLower() == "clear")
             {
-                var cleared = await ctx.TempMemories.ClearAllAsync();
-                return CommandResult.Ok($"已清空 {cleared} 条临时记忆。");
+                await ctx.TempMemories.ClearAllAsync();
+                return CommandResult.Ok("已清空临时记忆。");
             }
             var temps = await ctx.TempMemories.GetAllAsync();
             if (temps.Count == 0)

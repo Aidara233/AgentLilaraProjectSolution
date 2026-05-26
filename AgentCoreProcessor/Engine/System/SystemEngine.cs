@@ -684,6 +684,7 @@ namespace AgentCoreProcessor.Engine
 
             session.OnCompleted = s =>
             {
+                lock (subAgentLock) { subAgents.Remove(s.SessionId); }
                 var result = s.LastResult ?? "(无结果)";
                 var isFailed = result.StartsWith("异常终止") || result == "达到最大轮次限制"
                     || result == "API 调用连续失败，子 agent 中止";
@@ -710,6 +711,7 @@ namespace AgentCoreProcessor.Engine
             // 设置完成回调（迁移至新委托系统）
             session.OnCompleted = s =>
             {
+                lock (subAgentLock) { subAgents.Remove(s.SessionId); }
                 var result = s.LastResult ?? "(无结果)";
                 var isFailed = result.StartsWith("异常终止") || result == "达到最大轮次限制"
                     || result == "API 调用连续失败，子 agent 中止";

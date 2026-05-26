@@ -237,14 +237,13 @@ namespace AgentCoreProcessor.Tool.Host
 
         public async Task<int> CountTempAsync()
         {
-            var all = await tempMemories.GetAllAsync();
-            return all.Count;
+            var result = await tempMemories.GetCountAsync();
+            return result;
         }
 
         public async Task DeleteTempAsync(int id)
         {
-            var all = await tempMemories.GetAllAsync();
-            var entry = all.FirstOrDefault(m => m.Id == id);
+            var entry = await tempMemories.GetByIdAsync(id);
             if (entry != null) await tempMemories.DeleteAsync(entry);
         }
 

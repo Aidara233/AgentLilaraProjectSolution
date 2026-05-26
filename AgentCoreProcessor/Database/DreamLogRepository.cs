@@ -24,12 +24,10 @@ namespace AgentCoreProcessor.Database
         public Task CreateDetailAsync(DreamFragmentDetail detail)
             => db.InsertAsync(detail);
 
-        public Task CreateDetailsAsync(List<DreamFragmentDetail> details)
+        public async Task CreateDetailsAsync(List<DreamFragmentDetail> details)
         {
-            var tasks = new List<Task>();
             foreach (var d in details)
-                tasks.Add(db.InsertAsync(d));
-            return Task.WhenAll(tasks);
+                await db.InsertAsync(d);
         }
 
         public Task<List<DreamSession>> GetRecentSessionsAsync(int limit = 20)

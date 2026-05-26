@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Engine;
+using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Tool;
 
 namespace AgentCoreProcessor.MCP
@@ -55,8 +56,9 @@ namespace AgentCoreProcessor.MCP
                             totalTools++;
                     }
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    Signal.Error(LogGroup.Adapter, "MCP服务器连接失败", new { server = entry.Name, error = ex.Message });
                 }
             }
 

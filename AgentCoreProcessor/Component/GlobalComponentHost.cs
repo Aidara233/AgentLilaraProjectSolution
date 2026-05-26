@@ -89,8 +89,9 @@ internal class GlobalComponentHost
         inst.Context.SetEnabledDirect(true);
         RegisterTools(inst);
         try { await inst.Component.OnEnabledAsync(); }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Signal.Warn(LogGroup.Plugin, "组件启用回调异常", new { component = name, error = ex.Message });
         }
     }
 
@@ -101,8 +102,9 @@ internal class GlobalComponentHost
         inst.Context.SetEnabledDirect(false);
         UnregisterTools(inst);
         try { await inst.Component.OnDisabledAsync(); }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Signal.Warn(LogGroup.Plugin, "组件禁用回调异常", new { component = name, error = ex.Message });
         }
     }
     public async Task ShutdownAsync(ShutdownReason reason)
@@ -113,7 +115,7 @@ internal class GlobalComponentHost
         var tasks = _components.Select(async inst =>
         {
             try { return await inst.Component.OnShutdownRequestedAsync(reason); }
-            catch { return ShutdownResponse.Ok; }
+            catch (Exception ex) { Signal.Warn(LogGroup.Plugin, "组件关闭回调异常", new { component = inst.Component.Meta.Name, error = ex.Message }); return ShutdownResponse.Ok; }
         });
 
         try { await Task.WhenAll(tasks).WaitAsync(cts.Token); }

@@ -34,5 +34,7 @@ namespace AgentCoreProcessor.Database
 
         public Task<List<Person>> GetAllAsync() => db.GetAllAsync<Person>();
 
+        public Task<int> DeleteAsync(Person person) => db.DeleteAsync(person);
+
     }
 }

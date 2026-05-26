@@ -49,7 +49,7 @@ namespace AgentCoreProcessor.Database
             await db.CreateTableAsync<ModelCallLog>();
             // migration: 2026-05-24 添加 IsError 列
             try { await db.ExecuteAsync("ALTER TABLE ModelCallLogs ADD COLUMN IsError INTEGER NOT NULL DEFAULT 0"); }
-            catch { /* 列已存在则忽略 */ }
+            catch (Exception ex) when (ex.Message.Contains("duplicate column")) { /* 列已存在，跳过 */ }
             await db.CreateTableAsync<EvaluationScore>();
             await db.CreateTableAsync<ReviewSession>();
             await db.CreateTableAsync<ReviewAction>();

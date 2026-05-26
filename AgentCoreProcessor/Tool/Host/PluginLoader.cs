@@ -52,6 +52,7 @@ namespace AgentCoreProcessor.Tool.Host
             var dlls = Directory.GetFiles(PluginDir, "*.dll", SearchOption.AllDirectories);
             if (dlls.Length == 0)
             {
+                Signal.Debug(LogGroup.Plugin, "插件目录为空，跳过加载", new { dir = PluginDir });
                 return;
             }
 
@@ -135,6 +136,7 @@ namespace AgentCoreProcessor.Tool.Host
                         }
                         else
                         {
+                            Signal.Warn(LogGroup.Plugin, "插件工具注册失败（名称冲突）", new { tool = tool.Name, dll = Path.GetFileName(dllPath) });
                         }
                     }
                 }

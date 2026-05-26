@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using AgentCoreProcessor.Logging;
 
 namespace AgentCoreProcessor.Engine
 {
@@ -38,8 +39,9 @@ namespace AgentCoreProcessor.Engine
                 {
                     ((Action<TEvent>)handler)(e);
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    Signal.Warn(LogGroup.Engine, "LoopBus处理器异常", new { error = ex.Message });
                 }
             }
         }

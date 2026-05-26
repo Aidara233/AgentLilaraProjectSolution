@@ -65,6 +65,17 @@ namespace AgentCoreProcessor.Database
             return results;
         }
 
+        /// <summary>按 ID 获取临时记忆。</summary>
+        public Task<TempMemoryEntry?> GetByIdAsync(int id) => db.GetByIdAsync<TempMemoryEntry>(id);
+
+        /// <summary>获取临时记忆总数。</summary>
+        public async Task<int> GetCountAsync()
+        {
+            var result = await db.QueryAsync<CountResult>(
+                "SELECT COUNT(*) AS Value FROM TempMemories");
+            return result.Count > 0 ? result[0].Value : 0;
+        }
+
         /// <summary>删除一条临时记忆。</summary>
         public Task<int> DeleteAsync(TempMemoryEntry entry) => db.DeleteAsync(entry);
 
@@ -72,13 +83,9 @@ namespace AgentCoreProcessor.Database
         public Task<int> UpdateAsync(TempMemoryEntry entry) => db.UpdateAsync(entry);
 
         /// <summary>清空全部临时记忆。</summary>
-        public async Task<int> ClearAllAsync()
+        public Task ClearAllAsync()
         {
-            var all = await GetAllAsync();
-            int count = 0;
-            foreach (var entry in all)
-                count += await db.DeleteAsync(entry);
-            return count;
+            return db.ExecuteAsync("DELETE FROM TempMemories");
         }
 
         /// <summary>获取指定频道最近 N 条临时记忆（按时间降序）。</summary>
@@ -93,9 +100,9 @@ namespace AgentCoreProcessor.Database
         public async Task<List<TempMemoryEntry>> GetByIdsAsync(List<int> ids)
         {
             if (ids.Count == 0) return new List<TempMemoryEntry>();
-            var idList = string.Join(",", ids);
+            var placeholders = string.Join(",", ids.Select(_ => "?"));
             return await db.QueryAsync<TempMemoryEntry>(
-                $"SELECT * FROM TempMemories WHERE Id IN ({idList})");
+                $"SELECT * FROM TempMemories WHERE Id IN ({placeholders})", ids.Cast<object>().ToArray());
         }
     }
 }

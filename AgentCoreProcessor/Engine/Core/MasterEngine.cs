@@ -241,7 +241,7 @@ namespace AgentCoreProcessor.Engine
                     await db.ExecuteAsync("ALTER TABLE ImageRecords ADD COLUMN Description TEXT");
                     await db.ExecuteAsync("ALTER TABLE ImageRecords ADD COLUMN SeenCount INTEGER DEFAULT 0");
                 }
-                catch { }
+                catch (Exception ex) when (ex.Message.Contains("duplicate column")) { /* 列已存在，跳过 */ }
                 await File.WriteAllTextAsync(schemaV3, "migrated");
             }
 
@@ -253,7 +253,7 @@ namespace AgentCoreProcessor.Engine
                     await db.ExecuteAsync("ALTER TABLE ImageRecords ADD COLUMN OcrText TEXT");
                     await db.ExecuteAsync("ALTER TABLE ImageRecords ADD COLUMN HasText INTEGER");
                 }
-                catch { }
+                catch (Exception ex) when (ex.Message.Contains("duplicate column")) { /* 列已存在，跳过 */ }
                 await File.WriteAllTextAsync(schemaV4, "migrated");
             }
 
@@ -264,7 +264,7 @@ namespace AgentCoreProcessor.Engine
                 {
                     await db.ExecuteAsync("ALTER TABLE Channels ADD COLUMN LastExtractedMessageId INTEGER DEFAULT 0");
                 }
-                catch { }
+                catch (Exception ex) when (ex.Message.Contains("duplicate column")) { /* 列已存在，跳过 */ }
                 await File.WriteAllTextAsync(schemaV5, "migrated");
             }
 
@@ -276,7 +276,7 @@ namespace AgentCoreProcessor.Engine
                     await db.ExecuteAsync("ALTER TABLE DreamFragments ADD COLUMN InputMemoryIds TEXT");
                     await db.ExecuteAsync("ALTER TABLE DreamFragments ADD COLUMN OutputRaw TEXT");
                 }
-                catch { }
+                catch (Exception ex) when (ex.Message.Contains("duplicate column")) { /* 列已存在，跳过 */ }
                 await File.WriteAllTextAsync(dreamSchemaV1, "migrated");
             }
 
@@ -659,7 +659,7 @@ namespace AgentCoreProcessor.Engine
                         var vec = await embeddingProvider!.GetEmbeddingAsync(line);
                         embBytes = SiliconFlowEmbeddingProvider.FloatsToBytes(vec);
                     }
-                    catch { }
+                    catch (Exception ex) { Signal.Warn(LogGroup.Engine, "Persona嵌入失败", new { line, error = ex.Message }); }
 
                     await PersonaMemories.CreateAsync(line, embBytes);
                     loaded++;

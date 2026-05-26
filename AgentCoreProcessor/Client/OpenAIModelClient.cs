@@ -1,3 +1,4 @@
+using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Tool;
 using OpenAI;
@@ -336,7 +337,7 @@ namespace AgentCoreProcessor.Client
 
                 return null;
             }
-            catch { return null; }
+            catch (Exception ex) { Signal.Warn(LogGroup.Model, "图片加载失败", new { path = part.ImagePath, error = ex.Message }); return null; }
         }
 
         private static string InferMediaType(string path)
@@ -418,7 +419,7 @@ namespace AgentCoreProcessor.Client
                 if (missMatches.Count > 0)
                     _ = int.TryParse(missMatches[^1].Groups[1].Value, out missTokens);
             }
-            catch { }
+            catch (Exception ex) { Signal.Warn(LogGroup.Model, "缓存token解析失败", new { error = ex.Message }); }
             return (hitTokens, missTokens);
         }
 

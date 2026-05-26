@@ -118,9 +118,10 @@ namespace AgentCoreProcessor.Database
         public async Task<int> GetDistinctDaysByUsersAsync(List<int> userIds)
         {
             if (userIds.Count == 0) return 0;
-            var ids = string.Join(",", userIds);
+            var placeholders = string.Join(",", userIds.Select(_ => "?"));
             var result = await db.QueryAsync<CountResult>(
-                $"SELECT COUNT(DISTINCT date(Time)) AS Value FROM UserMessages WHERE UserId IN ({ids})");
+                $"SELECT COUNT(DISTINCT date(Time)) AS Value FROM UserMessages WHERE UserId IN ({placeholders})",
+                userIds.Cast<object>().ToArray());
             return result.Count > 0 ? result[0].Value : 0;
         }
     }

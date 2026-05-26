@@ -25,12 +25,14 @@ namespace AgentCoreProcessor.Adapter
             if (message.ChannelId.StartsWith("group_"))
             {
                 action = "send_group_msg";
-                p["group_id"] = long.Parse(message.ChannelId[6..]);
+                if (!long.TryParse(message.ChannelId[6..], out var groupId)) return null;
+                p["group_id"] = groupId;
             }
             else if (message.ChannelId.StartsWith("private_"))
             {
                 action = "send_private_msg";
-                p["user_id"] = long.Parse(message.ChannelId[8..]);
+                if (!long.TryParse(message.ChannelId[8..], out var userId)) return null;
+                p["user_id"] = userId;
             }
             else
             {

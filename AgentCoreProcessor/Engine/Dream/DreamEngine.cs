@@ -40,7 +40,7 @@ namespace AgentCoreProcessor.Engine
         private readonly SleepTalkCore sleepTalkCore = new();
 
         private volatile bool shouldWake = false;
-        private static readonly Random rng = new();
+        // 使用 Random.Shared（.NET 6+ 线程安全）替代 static Random
 
         // 实时进度（供 WebUI 读取）
         internal string? CurrentFragment { get; private set; }
@@ -348,7 +348,7 @@ namespace AgentCoreProcessor.Engine
 
                 var channels = await ctx.Session.GetAllChannelsAsync();
                 if (channels.Count == 0) return;
-                var targetChannel = channels[rng.Next(channels.Count)];
+                var targetChannel = channels[Random.Shared.Next(channels.Count)];
                 var parts = targetChannel.Name.Split(':', 2);
                 if (parts.Length != 2) return;
                 var sentId = await ctx.Adapters.SendMessageAsync(parts[0], new OutgoingMessage
@@ -1082,13 +1082,13 @@ namespace AgentCoreProcessor.Engine
                 SleepLevel.Nap => 0.15,
                 _ => 0.0
             };
-            if (rng.NextDouble() >= chance) return;
+            if (Random.Shared.NextDouble() >= chance) return;
 
             try
             {
                 var channels = await ctx.Session.GetAllChannelsAsync();
                 if (channels.Count == 0) return;
-                var targetChannel = channels[rng.Next(channels.Count)];
+                var targetChannel = channels[Random.Shared.Next(channels.Count)];
                 var parts = targetChannel.Name.Split(':', 2);
                 if (parts.Length != 2) return;
                 var talk = await sleepTalkCore.GenerateAsync(fragmentSummary);
@@ -1177,10 +1177,8 @@ namespace AgentCoreProcessor.Engine
         {
             try
             {
-                var expiredCount = await ctx.Memories.DeleteExpiredAsync();
-                var orphanedCount = await ctx.MemoryLinks.DeleteOrphanedAsync();
-                if (expiredCount > 0 || orphanedCount > 0)
-                    Signal.Event(LogGroup.Engine, "过期清理", new { expiredMemories = expiredCount, orphanedLinks = orphanedCount });
+                await ctx.Memories.DeleteExpiredAsync();
+                await ctx.MemoryLinks.DeleteOrphanedAsync();
             }
             catch (Exception ex)
             {

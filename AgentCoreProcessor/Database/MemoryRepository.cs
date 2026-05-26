@@ -64,9 +64,9 @@ namespace AgentCoreProcessor.Database
         public async Task<List<MemoryEntry>> GetByIdsAsync(List<int> ids)
         {
             if (ids.Count == 0) return new List<MemoryEntry>();
-            var idList = string.Join(",", ids);
+            var placeholders = string.Join(",", ids.Select(_ => "?"));
             return await db.QueryAsync<MemoryEntry>(
-                $"SELECT * FROM Memories WHERE Id IN ({idList})");
+                $"SELECT * FROM Memories WHERE Id IN ({placeholders})", ids.Cast<object>().ToArray());
         }
 
         /// <summary>创建一条主库记忆。</summary>
@@ -105,27 +105,20 @@ namespace AgentCoreProcessor.Database
         /// <summary>删除一条记忆。</summary>
         public Task<int> DeleteAsync(MemoryEntry memory) => db.DeleteAsync(memory);
 
-        /// <summary>删除过期的非持久记忆，返回删除数。</summary>
-        public async Task<int> DeleteExpiredAsync()
+        /// <summary>删除过期的非持久记忆。</summary>
+        public Task DeleteExpiredAsync()
         {
-            var expired = await db.QueryAsync<MemoryEntry>(
-                "SELECT * FROM Memories WHERE IsPersistent = 0 AND ExpiresAt IS NOT NULL AND ExpiresAt < ?",
+            return db.ExecuteAsync(
+                "DELETE FROM Memories WHERE IsPersistent = 0 AND ExpiresAt IS NOT NULL AND ExpiresAt < ?",
                 DateTime.Now);
-            int count = 0;
-            foreach (var m in expired)
-            {
-                await db.DeleteAsync(m);
-                count++;
-            }
-            return count;
         }
 
         /// <summary>批量按 ID 删除记忆。</summary>
         public async Task DeleteByIdsAsync(List<int> ids)
         {
             if (ids.Count == 0) return;
-            var idList = string.Join(",", ids);
-            await db.ExecuteAsync($"DELETE FROM Memories WHERE Id IN ({idList})");
+            var placeholders = string.Join(",", ids.Select(_ => "?"));
+            await db.ExecuteAsync($"DELETE FROM Memories WHERE Id IN ({placeholders})", ids.Cast<object>().ToArray());
         }
 
         public Task<MemoryEntry?> GetByIdAsync(int id) => db.GetByIdAsync<MemoryEntry>(id);

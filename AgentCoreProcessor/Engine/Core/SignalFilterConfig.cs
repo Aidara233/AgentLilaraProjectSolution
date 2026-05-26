@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using AgentCoreProcessor.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -113,7 +114,7 @@ public class SignalFilterManager
 
             File.WriteAllText(_configPath, root.ToString(Formatting.Indented));
         }
-        catch { }
+        catch (Exception ex) { Signal.Warn(LogGroup.Engine, "信号过滤配置保存失败", new { path = _configPath, error = ex.Message }); }
     }
 
     private static SignalFilterConfig ParseConfig(JObject obj)
