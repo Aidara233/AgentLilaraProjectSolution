@@ -131,6 +131,6 @@ namespace AgentCoreProcessor.Engine
         }
 
         private List<Message>? DeserializeMessages(dynamic obj)
-            => JsonConvert.DeserializeObject<List<Message>>(JsonConvert.SerializeObject(obj));
+            => (obj is Newtonsoft.Json.Linq.JToken jt) ? jt.ToObject<List<Message>>() : null;
     }
 }

@@ -573,7 +573,11 @@ namespace AgentCoreProcessor.Engine
             }
 
             // ④ 清理已死亡的实例
-            lock (engineLock) { activeEngines.RemoveAll(e => !e.IsAlive); }
+            lock (engineLock)
+            {
+                activeEngines.RemoveAll(e => !e.IsAlive);
+                _engineTasks.RemoveAll(t => !t.Engine.IsAlive);
+            }
         }
 
         // ---- 引擎管理 ----

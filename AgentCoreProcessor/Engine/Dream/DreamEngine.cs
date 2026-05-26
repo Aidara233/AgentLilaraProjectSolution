@@ -972,12 +972,15 @@ namespace AgentCoreProcessor.Engine
 
         // ---- 信任评估（纯框架逻辑，不变） ----
 
+        private static ReviewConfig? _cachedReviewConfig;
+
         private async Task ExecuteTrustEvaluationAsync()
         {
             try
             {
-                var reviewCfg = ReviewConfig.Load(
+                _cachedReviewConfig ??= ReviewConfig.Load(
                     System.IO.Path.Combine(Config.PathConfig.StoragePath, "Dream", "ReviewConfig.json"));
+                var reviewCfg = _cachedReviewConfig;
                 var persons = await ctx.Session.GetAllPersonsAsync();
 
                 foreach (var person in persons)

@@ -679,6 +679,7 @@ namespace AgentCoreProcessor.Engine
         /// <summary>创建并启动子 agent。</summary>
         public IAgentSession CreateSubAgent(string instruction)
         {
+            CleanupDeadSubAgents();
             var pool = ctx.GlobalComponentHost?.GetToolWhitelist("sub-agent") ?? new HashSet<string>();
             var session = new TaskSession(ctx, toolWhitelist: pool);
 
@@ -705,6 +706,7 @@ namespace AgentCoreProcessor.Engine
         /// <summary>创建并启动子 agent（关联委托）。完成后自动更新委托状态。</summary>
         public IAgentSession CreateSubAgentForDelegation(string instruction, string? delegationId)
         {
+            CleanupDeadSubAgents();
             var pool = ctx.GlobalComponentHost?.GetToolWhitelist("sub-agent") ?? new HashSet<string>();
             var session = new TaskSession(ctx, delegationId, toolWhitelist: pool);
 
@@ -760,15 +762,27 @@ namespace AgentCoreProcessor.Engine
             }
         }
 
+        /// <summary>清理已死亡的子 agent（OnCompleted 回调未触发的极端情况）。</summary>
+        private void CleanupDeadSubAgents()
+        {
+            lock (subAgentLock)
+            {
+                CleanupDeadSubAgentsLocked();
+            }
+        }
+
+        private void CleanupDeadSubAgentsLocked()
+        {
+            var dead = subAgents.Where(kv => !kv.Value.IsAlive).Select(kv => kv.Key).ToList();
+            foreach (var key in dead) subAgents.Remove(key);
+        }
+
         /// <summary>获取所有活跃子 agent。</summary>
         public List<IAgentSession> GetActiveSubAgents()
         {
             lock (subAgentLock)
             {
-                // 清理已死亡的
-                var dead = subAgents.Where(kv => !kv.Value.IsAlive).Select(kv => kv.Key).ToList();
-                foreach (var key in dead) subAgents.Remove(key);
-
+                CleanupDeadSubAgentsLocked();
                 return subAgents.Values.ToList();
             }
         }

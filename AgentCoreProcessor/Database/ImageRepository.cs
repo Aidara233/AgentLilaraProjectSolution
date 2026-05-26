@@ -79,8 +79,9 @@ namespace AgentCoreProcessor.Database
 
         public Task DeleteAsync(ImageRecord record) => db.DeleteAsync(record);
 
-        public async Task<List<ImageRecord>> GetPagedAsync(int offset, int limit,
-            string? statusFilter = null, string? categoryFilter = null, string? keyword = null)
+        /// <summary>构建过滤条件的 WHERE 子句和参数，供 GetPagedAsync 和 GetFilteredCountAsync 共用。</summary>
+        private (List<string> Where, List<object> Args) BuildFilterClause(
+            string? statusFilter, string? categoryFilter, string? keyword)
         {
             var where = new List<string>();
             var args = new List<object>();
@@ -102,6 +103,14 @@ namespace AgentCoreProcessor.Database
                 args.Add($"%{keyword}%");
                 args.Add($"%{keyword}%");
             }
+
+            return (where, args);
+        }
+
+        public async Task<List<ImageRecord>> GetPagedAsync(int offset, int limit,
+            string? statusFilter = null, string? categoryFilter = null, string? keyword = null)
+        {
+            var (where, args) = BuildFilterClause(statusFilter, categoryFilter, keyword);
 
             var sql = "SELECT * FROM ImageRecords";
             if (where.Count > 0)
@@ -116,26 +125,7 @@ namespace AgentCoreProcessor.Database
         public async Task<int> GetFilteredCountAsync(
             string? statusFilter = null, string? categoryFilter = null, string? keyword = null)
         {
-            var where = new List<string>();
-            var args = new List<object>();
-
-            if (statusFilter == "pending")
-                where.Add("(Description IS NULL OR HasText IS NULL)");
-            else if (statusFilter == "done")
-                where.Add("(Description IS NOT NULL AND HasText IS NOT NULL)");
-
-            if (!string.IsNullOrEmpty(categoryFilter))
-            {
-                where.Add("Category = ?");
-                args.Add(categoryFilter);
-            }
-
-            if (!string.IsNullOrEmpty(keyword))
-            {
-                where.Add("(Description LIKE ? OR OcrText LIKE ?)");
-                args.Add($"%{keyword}%");
-                args.Add($"%{keyword}%");
-            }
+            var (where, args) = BuildFilterClause(statusFilter, categoryFilter, keyword);
 
             var sql = "SELECT COUNT(*) AS Value FROM ImageRecords";
             if (where.Count > 0)

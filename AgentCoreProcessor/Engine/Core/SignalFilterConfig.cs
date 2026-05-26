@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -44,7 +45,7 @@ public class SignalFilterConfig
 public class SignalFilterManager
 {
     private readonly string _configPath;
-    private Dictionary<string, SignalFilterConfig> _configs = new();
+    private ConcurrentDictionary<string, SignalFilterConfig> _configs = new();
 
     public SignalFilterManager(string configPath)
     {
@@ -81,7 +82,7 @@ public class SignalFilterManager
             var json = File.ReadAllText(_configPath);
             var root = JObject.Parse(json);
 
-            _configs = new Dictionary<string, SignalFilterConfig>();
+            _configs = new ConcurrentDictionary<string, SignalFilterConfig>();
             foreach (var (key, value) in root)
             {
                 if (value is not JObject obj) continue;
@@ -142,9 +143,9 @@ public class SignalFilterManager
         return config;
     }
 
-    private static Dictionary<string, SignalFilterConfig> CreateDefaults()
+    private static ConcurrentDictionary<string, SignalFilterConfig> CreateDefaults()
     {
-        return new Dictionary<string, SignalFilterConfig>
+        return new ConcurrentDictionary<string, SignalFilterConfig>
         {
             ["channel"] = new SignalFilterConfig(),
             ["system"] = new SignalFilterConfig

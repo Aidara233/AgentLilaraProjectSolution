@@ -25,14 +25,14 @@ internal class ProviderRegistry
 
     public bool Unregister(string providerId)
     {
-        if (!_providers.TryRemove(providerId, out var entry))
+        if (!_providers.TryGetValue(providerId, out var entry))
             return false;
 
         if (entry.BuiltIn)
-        {
-            _providers.TryAdd(providerId, entry);
             return false;
-        }
+
+        if (!_providers.TryRemove(providerId, out _))
+            return false;
 
         OnChanged?.Invoke();
         return true;

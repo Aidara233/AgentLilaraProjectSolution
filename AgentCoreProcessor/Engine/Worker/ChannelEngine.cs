@@ -56,6 +56,7 @@ namespace AgentCoreProcessor.Engine
         private long _busyFlag = 0;
         private long _completionTicks = 0;
         private int _totalGateCycles = 0;
+        private int _consecutiveExpressFailures = 0;
 
         // ---- 消息缓冲 ----
         private readonly object bufferLock = new();
@@ -875,6 +876,14 @@ namespace AgentCoreProcessor.Engine
             // Call model (with retry)
             agentCore.AdditionalTools = componentHost!.GetVisibleTools().ToList();
             agentCore.GlobalComponentTools = ctx.GlobalComponentHost?.GetAllTools().ToList();
+
+            // 跨周期退避：连续 Express 失败时累积延迟
+            if (_consecutiveExpressFailures > 0 && _consecutiveExpressFailures <= agentConfig.BackoffSeconds.Length)
+            {
+                var backoff = agentConfig.BackoffSeconds[_consecutiveExpressFailures - 1];
+                await Task.Delay(TimeSpan.FromSeconds(backoff));
+            }
+
             ModelOutput output;
             using (var modelSpan = Signal.Open(LogGroup.Model, $"Express模型调用 ch:{channelId}",
                 new
@@ -903,6 +912,7 @@ namespace AgentCoreProcessor.Engine
                         }
                         output = await agentCore.InvokeAsync(messages, EngineMode.Express);
                         success = true;
+                        _consecutiveExpressFailures = 0;
                         modelSpan.SetCloseDetail(new
                         {
                             responseText = output.Text,
@@ -917,6 +927,7 @@ namespace AgentCoreProcessor.Engine
                 }
                 if (!success)
                 {
+                    _consecutiveExpressFailures++;
                     modelSpan.SetCloseDetail(new { error = lastEx!.GetType().Name, message = lastEx.Message, attempts = agentConfig.ModelCallMaxAttempts });
                     throw lastEx;
                 }

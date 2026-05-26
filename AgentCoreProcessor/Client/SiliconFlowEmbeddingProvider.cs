@@ -46,31 +46,46 @@ namespace AgentCoreProcessor.Client
             };
 
             var json = JsonConvert.SerializeObject(requestBody);
-            using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
-            request.Headers.Authorization =
-                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
-            request.Content = new StringContent(json, Encoding.UTF8, "application/json");
 
-            using var response = await httpClient.SendAsync(request);
-            response.EnsureSuccessStatusCode();
-
-            var responseJson = await response.Content.ReadAsStringAsync();
-            var responseObj = JObject.Parse(responseJson);
-            var dataArray = responseObj["data"] as JArray
-                ?? throw new InvalidOperationException("Embedding API 返回格式异常：缺少 data 字段");
-
-            // 按 index 排序，确保与输入顺序一致
-            var results = dataArray
-                .OrderBy(d => d["index"]?.Value<int>() ?? 0)
-                .Select(d =>
+            const int maxRetries = 3;
+            for (int attempt = 0; attempt < maxRetries; attempt++)
+            {
+                try
                 {
-                    var embeddingArray = d["embedding"] as JArray
-                        ?? throw new InvalidOperationException("Embedding API 返回格式异常：缺少 embedding 字段");
-                    return embeddingArray.Select(v => v.Value<float>()).ToArray();
-                })
-                .ToList();
+                    using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
+                    request.Headers.Authorization =
+                        new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+                    request.Content = new StringContent(json, Encoding.UTF8, "application/json");
 
-            return results;
+                    using var response = await httpClient.SendAsync(request);
+                    response.EnsureSuccessStatusCode();
+
+                    var responseJson = await response.Content.ReadAsStringAsync();
+                    var responseObj = JObject.Parse(responseJson);
+                    var dataArray = responseObj["data"] as JArray
+                        ?? throw new InvalidOperationException("Embedding API 返回格式异常：缺少 data 字段");
+
+                    // 按 index 排序，确保与输入顺序一致
+                    var results = dataArray
+                        .OrderBy(d => d["index"]?.Value<int>() ?? 0)
+                        .Select(d =>
+                        {
+                            var embeddingArray = d["embedding"] as JArray
+                                ?? throw new InvalidOperationException("Embedding API 返回格式异常：缺少 embedding 字段");
+                            return embeddingArray.Select(v => v.Value<float>()).ToArray();
+                        })
+                        .ToList();
+
+                    return results;
+                }
+                catch (HttpRequestException) when (attempt < maxRetries - 1)
+                {
+                    var delay = (int)Math.Pow(2, attempt + 1) * 1000;
+                    await Task.Delay(delay);
+                }
+            }
+
+            throw new InvalidOperationException($"Embedding API 调用失败（{maxRetries} 次重试后）");
         }
 
         // ---- 序列化工具方法（委托给 VectorUtil）----

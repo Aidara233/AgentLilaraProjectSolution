@@ -104,8 +104,10 @@ namespace AgentCoreProcessor.Engine
                 return Task.FromResult(true);
             }
 
-            // ③ 走神（需启用 + 冷却期已过）
-            if (cfg.DaydreamEnabled && (lastDaydreamTime == null ||
+            // ③ 走神（需启用 + 空闲足够长 + 冷却期已过）
+            if (cfg.DaydreamEnabled
+                && ctx.IdleDuration.TotalSeconds > cfg.DaydreamIdleThreshold
+                && (lastDaydreamTime == null ||
                 (DateTime.Now - lastDaydreamTime.Value).TotalSeconds > cfg.DaydreamCooldown))
             {
                 pendingLevel = SleepLevel.Daydream;

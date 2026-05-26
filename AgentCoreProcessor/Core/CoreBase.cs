@@ -476,7 +476,11 @@ namespace AgentCoreProcessor.Core
                         CacheHitTokens = usage?.PromptCacheHitTokens ?? 0,
                         IsError = isError,
                         LogFileName = fileName
-                    });
+                    }).ContinueWith(t =>
+                    {
+                        if (t.IsFaulted)
+                            Signal.Warn(LogGroup.Engine, "Token统计写入失败", new { error = t.Exception?.InnerException?.Message });
+                    }, TaskContinuationOptions.OnlyOnFaulted);
                 }
             }
             catch (Exception ex)

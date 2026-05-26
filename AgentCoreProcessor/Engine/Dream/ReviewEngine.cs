@@ -247,13 +247,7 @@ namespace AgentCoreProcessor.Engine
             if (!string.IsNullOrEmpty(seedContent))
                 msgs.Add(new Message { Role = "user", Content = seedContent });
 
-            // 预算状态
-            msgs.Add(new Message
-            {
-                Role = "user",
-                Content = BuildBudgetStatus()
-            });
-
+            // 预算状态由 BuildRoundInjectAsync 负责注入（避免首轮重复）
             return msgs;
         }
 

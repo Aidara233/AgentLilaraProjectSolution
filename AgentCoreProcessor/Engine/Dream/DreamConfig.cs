@@ -12,6 +12,9 @@ namespace AgentCoreProcessor.Engine
         /// <summary>走神是否启用（默认关闭，功能定位待协商）</summary>
         public bool DaydreamEnabled { get; set; } = false;
 
+        /// <summary>走神空闲阈值（秒）。仅当系统空闲超过此时间才可能触发走神。</summary>
+        public int DaydreamIdleThreshold { get; set; } = 300;
+
         /// <summary>走神冷却期（秒）</summary>
         public int DaydreamCooldown { get; set; } = 120;
 

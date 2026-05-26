@@ -89,13 +89,24 @@ namespace AgentCoreProcessor.WebUI.Services
             if (!string.IsNullOrEmpty(coreFilter))
                 files = files.Where(f => Path.GetFileName(f).Contains(coreFilter, StringComparison.OrdinalIgnoreCase));
 
-            var entries = files.Take(count * 3).Select(f => ParseEntry(f)).ToList();
+            var entries = new List<ModelLogEntry>();
+            foreach (var f in files)
+            {
+                var entry = ParseEntry(f);
+                if (entry != null)
+                {
+                    // caller 过滤提前，避免 count 不足
+                    if (!string.IsNullOrEmpty(callerFilter)
+                        && (entry.Caller == null
+                            || !entry.Caller.Contains(callerFilter, StringComparison.OrdinalIgnoreCase)))
+                        continue;
 
-            if (!string.IsNullOrEmpty(callerFilter))
-                entries = entries.Where(e => e.Caller != null
-                    && e.Caller.Contains(callerFilter, StringComparison.OrdinalIgnoreCase)).ToList();
+                    entries.Add(entry);
+                    if (entries.Count >= count) break;
+                }
+            }
 
-            return entries.Take(count).ToList();
+            return entries;
         }
 
         public string? ReadContent(string fileName)
