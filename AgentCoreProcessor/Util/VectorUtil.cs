@@ -41,6 +41,8 @@ namespace AgentCoreProcessor.Util
         /// <summary>byte[] 转 float[]，从 SQLite BLOB 读取。</summary>
         public static float[] BytesToFloats(byte[] bytes)
         {
+            if (bytes.Length % 4 != 0)
+                throw new ArgumentException($"BLOB 数据长度 {bytes.Length} 不是 4 的倍数，可能已损坏");
             var floats = new float[bytes.Length / 4];
             Buffer.BlockCopy(bytes, 0, floats, 0, bytes.Length);
             return floats;

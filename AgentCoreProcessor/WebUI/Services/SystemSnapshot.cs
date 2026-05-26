@@ -14,7 +14,7 @@ namespace AgentCoreProcessor.WebUI.Services
         public List<WorkerSnapshot> Workers { get; init; } = new();
         public DreamStateSnapshot? DreamState { get; init; }
         public SystemEngineSnapshot? SystemEngine { get; init; }
-        public List<AlertItem> Alerts { get; init; } = new();
+        public List<AlertItem> Alerts { get; set; } = new();
         public DateTime SnapshotTime { get; init; } = DateTime.Now;
     }
 }

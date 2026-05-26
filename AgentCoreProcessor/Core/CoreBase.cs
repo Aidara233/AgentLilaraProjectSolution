@@ -137,8 +137,19 @@ namespace AgentCoreProcessor.Core
                 await processor.Client.StreamChatWithToolsAsync(OnStreamEvent, ct);
                 LogOutput(BuildOutputContent(textLog, toolCallLog), reasoningLog.ToString(), usage);
             }
-            catch// (Exception ex)
+            catch (Exception ex)
             {
+                span.SetCloseDetail(new
+                {
+                    elapsed_ms = sw.ElapsedMilliseconds,
+                    model = cfg.Model,
+                    caller = CallerTag,
+                    tokens_in = usage.PromptTokens,
+                    tokens_out = usage.CompletionTokens,
+                    tool_calls = toolCallLog.Count,
+                    error = ex.Message
+                });
+
                 LogOutput(BuildOutputContent(textLog, toolCallLog), reasoningLog.ToString(), usage, isError: true);
                 throw;
             }

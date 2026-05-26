@@ -54,10 +54,7 @@ namespace AgentCoreProcessor.Database
 
             foreach (var m in all)
             {
-                int matchCount = 0;
-                if (m.PersonId != null && m.PersonId == personId) matchCount++;
-                if (m.ChannelId != null && m.ChannelId == channelId) matchCount++;
-                if (m.Type == MemoryType.Knowledge) matchCount++;
+                int matchCount = MemoryType.GetMatchScore(m.PersonId, m.ChannelId, m.Type, personId, channelId);
 
                 results.Add((m, matchCount));
             }

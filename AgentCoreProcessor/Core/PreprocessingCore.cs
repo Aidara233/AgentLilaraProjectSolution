@@ -38,6 +38,8 @@ namespace AgentCoreProcessor.Core
         public PreprocessingCore(IEmbeddingProvider embedding)
         {
             this.embedding = embedding;
+            // 后台预初始化锚点向量，避免首次调用 IsTaskAsync 时阻塞
+            _ = InitAnchorsAsync();
         }
 
         /// <summary>

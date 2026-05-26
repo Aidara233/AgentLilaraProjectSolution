@@ -137,12 +137,12 @@ namespace AgentCoreProcessor.Database
                 args.Add($"%{keyword}%");
             }
 
-            var sql = "SELECT COUNT(*) as Id FROM ImageRecords";
+            var sql = "SELECT COUNT(*) AS Value FROM ImageRecords";
             if (where.Count > 0)
                 sql += " WHERE " + string.Join(" AND ", where);
 
-            var results = await db.QueryAsync<ImageRecord>(sql, args.ToArray());
-            return results.Count > 0 ? results[0].Id : 0;
+            var results = await db.QueryAsync<CountResult>(sql, args.ToArray());
+            return results.Count > 0 ? results[0].Value : 0;
         }
 
         public async Task ClearAllDescriptionsAsync()

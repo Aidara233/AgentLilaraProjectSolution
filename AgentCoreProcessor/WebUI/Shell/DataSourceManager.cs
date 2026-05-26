@@ -60,17 +60,20 @@ internal class DataSourceManager : IDisposable
                 state.RetryCount = 0;
                 return result;
             }
-            catch (Exception) when (attempt < 3)
-            {
-                state.RetryCount = attempt + 1;
-                var delay = (int)Math.Pow(2, attempt) * 1000;
-                await Task.Delay(delay, ct);
-            }
             catch (Exception ex)
             {
-                state.IsLoading = false;
-                state.Error = ex.Message;
-                return null;
+                if (attempt < 2)
+                {
+                    state.RetryCount = attempt + 1;
+                    var delay = (int)Math.Pow(2, attempt) * 1000;
+                    await Task.Delay(delay, ct);
+                }
+                else
+                {
+                    state.IsLoading = false;
+                    state.Error = ex.Message;
+                    return null;
+                }
             }
         }
 

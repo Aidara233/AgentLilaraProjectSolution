@@ -733,7 +733,7 @@ namespace AgentCoreProcessor.Engine
                     () => agent?.History ?? new List<Message>(),
                     () =>
                     {
-                        compressionTierModule!.CompressSyncAsync(
+                        compressionTierModule!.CompressL3Async(
                             agent?.History ?? new List<Message>(),
                             (summary, retained) =>
                             {

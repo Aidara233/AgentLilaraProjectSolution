@@ -132,6 +132,7 @@ namespace AgentCoreProcessor.Client
             // Anthropic 流式拆在两个事件：message_start(StreamStartMessage.Usage) 含 input+cache，
             // message_delta(resp.Usage) 只含 output。累积合并，只覆盖非零字段。
             var mergedUsage = new Models.Usage();
+            var lastSentTotal = -1;
 
             (List<SdkMessage> messages, string fullContent) = await StreamInternalAsync(client, null, ct, (resp, _) =>
             {
@@ -159,8 +160,11 @@ namespace AgentCoreProcessor.Client
                     mergedUsage.TotalTokens = mergedUsage.PromptTokens + mergedUsage.CompletionTokens;
                 }
 
-                if (resp.Usage != null || resp.StreamStartMessage?.Usage != null)
+                // 仅在 TotalTokens 变化时回调，避免 message_delta 重复触发
+                if ((resp.Usage != null || resp.StreamStartMessage?.Usage != null)
+                    && mergedUsage.TotalTokens != lastSentTotal)
                 {
+                    lastSentTotal = mergedUsage.TotalTokens;
                     var usageResp = BuildSyntheticResponse(null, null);
                     usageResp.Usage = mergedUsage;
                     onDelta(usageResp);

@@ -1,7 +1,5 @@
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading.Tasks;
-using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Models;
 
 namespace AgentCoreProcessor.Engine.Modules
@@ -15,7 +13,6 @@ namespace AgentCoreProcessor.Engine.Modules
 
         private const int RecentRoundsToKeep = 10;
 
-        private readonly SummarizationCore summarizationCore = new();
         private readonly ContextPersistence persistence;
         private string? currentSummary;
         private List<Message> keptMessages = new();

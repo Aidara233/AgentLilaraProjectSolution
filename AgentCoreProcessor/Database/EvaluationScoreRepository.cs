@@ -14,11 +14,13 @@ namespace AgentCoreProcessor.Database
                 "SELECT * FROM EvaluationScores WHERE TargetType = ? AND TargetId = ?",
                 targetType, targetId);
 
-        public Task<EvaluationScore?> GetAsync(string targetType, int targetId, string dimension)
-            => db.QueryAsync<EvaluationScore>(
+        public async Task<EvaluationScore?> GetAsync(string targetType, int targetId, string dimension)
+        {
+            var results = await db.QueryAsync<EvaluationScore>(
                 "SELECT * FROM EvaluationScores WHERE TargetType = ? AND TargetId = ? AND Dimension = ?",
-                targetType, targetId, dimension)
-                .ContinueWith(t => t.Result.Count > 0 ? t.Result[0] : null);
+                targetType, targetId, dimension);
+            return results.Count > 0 ? results[0] : null;
+        }
 
         public Task<List<EvaluationScore>> GetAllByTypeAsync(string targetType)
             => db.QueryAsync<EvaluationScore>(

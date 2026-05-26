@@ -67,20 +67,9 @@ namespace AgentCoreProcessor.WebUI.Services
                     SystemEngine = systemState,
                     SnapshotTime = DateTime.Now
                 };
+                snapshot.Alerts = alertService.CollectAlerts(snapshot);
 
-                Current = new SystemSnapshot
-                {
-                    IsIdle = snapshot.IsIdle,
-                    IdleDuration = snapshot.IdleDuration,
-                    LastMessageTime = snapshot.LastMessageTime,
-                    MuteMode = snapshot.MuteMode,
-                    EngineSummary = snapshot.EngineSummary,
-                    Workers = snapshot.Workers,
-                    DreamState = snapshot.DreamState,
-                    SystemEngine = snapshot.SystemEngine,
-                    Alerts = alertService.CollectAlerts(snapshot),
-                    SnapshotTime = snapshot.SnapshotTime
-                };
+                Current = snapshot;
 
                 OnStateChanged?.Invoke();
             }

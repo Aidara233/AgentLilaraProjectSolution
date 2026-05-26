@@ -140,7 +140,7 @@ namespace AgentCoreProcessor.Engine
                 {
                     if (compressionTierModule != null && agent != null)
                     {
-                        compressionTierModule.CompressSyncAsync(
+                        compressionTierModule.CompressL3Async(
                             agent.History,
                             (summary, retained) =>
                             {

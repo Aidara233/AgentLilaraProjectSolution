@@ -7,5 +7,16 @@ namespace AgentCoreProcessor.Database
         public const string Feedback = "feedback";
         public const string Inference = "inference";
         public const string Event = "event";
+
+        /// <summary>计算记忆标签匹配分。person/channel 匹配各+1，Knowledge 类型+1。</summary>
+        public static int GetMatchScore(int? entryPersonId, int? entryChannelId, string entryType,
+            int? targetPersonId, int? targetChannelId)
+        {
+            int matchCount = 0;
+            if (entryPersonId != null && entryPersonId == targetPersonId) matchCount++;
+            if (entryChannelId != null && entryChannelId == targetChannelId) matchCount++;
+            if (entryType == Knowledge) matchCount++;
+            return matchCount;
+        }
     }
 }

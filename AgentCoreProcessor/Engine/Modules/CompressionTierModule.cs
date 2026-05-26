@@ -115,8 +115,8 @@ namespace AgentCoreProcessor.Engine.Modules
             }
         }
 
-        /// <summary>同步压缩（L3 硬保底）。</summary>
-        public Task CompressSyncAsync(List<Message> history, Action<string, List<Message>> onComplete)
+        /// <summary>压缩（L3 硬保底），委托给异步实现。</summary>
+        public Task CompressL3Async(List<Message> history, Action<string, List<Message>> onComplete)
             => CompressAsync(history, onComplete);
 
         private static int EstimateChars(Message m)
