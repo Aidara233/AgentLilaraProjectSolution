@@ -134,6 +134,10 @@ public class DownloadTool : ITool
                 sftp.DownloadFile(remote, fs);
             }
         }
+        else
+        {
+            throw new FileNotFoundException($"远端路径不存在: {remote}");
+        }
     }
 
     private static ToolResult Fail(string err) => new() { Status = "failed", Error = err };

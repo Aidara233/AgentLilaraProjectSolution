@@ -9,7 +9,6 @@ namespace Plugin.SshTools;
     Review = Applicability.Disabled, SubAgent = Applicability.Enabled)]
 public class SshLoopComponent : LoopComponentBase
 {
-    private ILoopComponentContext _ctx = null!;
     private string _loopId = "";
     private string _workDir = "";
     private List<SshTask> _pendingNotifications = new();
@@ -42,7 +41,6 @@ public class SshLoopComponent : LoopComponentBase
 
     public override Task OnInitAsync(ILoopComponentContext context, InitReason reason)
     {
-        _ctx = context;
         _loopId = context.LoopId;
 
         var global = SshToolsAccessor.Global
