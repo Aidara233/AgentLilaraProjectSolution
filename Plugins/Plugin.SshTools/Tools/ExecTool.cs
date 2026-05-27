@@ -1,5 +1,7 @@
 // Plugins/Plugin.SshTools/Tools/ExecTool.cs
 using Renci.SshNet;
+using System.Text;
+using System.Text.Json;
 using AgentLilara.PluginSDK;
 
 namespace Plugin.SshTools;
@@ -82,7 +84,7 @@ public class ExecTool : ITool
                 if (stdout.Length > MaxOutputChars || stderr.Length > MaxOutputChars)
                     result["hint"] = "输出已截断，需完整内容请用 ssh_exec \"command > file\" 重定向后 ssh_download";
 
-                return Task.FromResult(Ok(System.Text.Json.JsonSerializer.Serialize(result)));
+                return Task.FromResult(Ok(JsonSerializer.Serialize(result)));
             }
             catch (Exception ex)
             {
@@ -108,18 +110,22 @@ public class ExecTool : ITool
         {
             try
             {
-                using var sshCmd = client.CreateCommand(fullCommand);
-                var ar = sshCmd.BeginExecute();
-                ar.AsyncWaitHandle.WaitOne();
-                var stdout = sshCmd.EndExecute(ar);
-                var stderr = sshCmd.Error;
-                var exitCode = sshCmd.ExitStatus ?? 0;
-                WriteOutputAndComplete(taskId, stdout, stderr, exitCode);
+                try
+                {
+                    using var sshCmd = client.CreateCommand(fullCommand);
+                    var ar = sshCmd.BeginExecute();
+                    ar.AsyncWaitHandle.WaitOne();
+                    var stdout = sshCmd.EndExecute(ar);
+                    var stderr = sshCmd.Error;
+                    var exitCode = sshCmd.ExitStatus ?? 0;
+                    WriteOutputAndComplete(taskId, stdout, stderr, exitCode);
+                }
+                catch (Exception ex)
+                {
+                    _global.CompleteTask(taskId, null, null, null, SshTaskStatus.Failed, ex.Message);
+                }
             }
-            catch (Exception ex)
-            {
-                _global.CompleteTask(taskId, null, null, null, SshTaskStatus.Failed, ex.Message);
-            }
+            finally { cts.Dispose(); }
         }, cts.Token);
 
         return taskId;
@@ -135,19 +141,23 @@ public class ExecTool : ITool
         {
             try
             {
-                // 继续等待已开始的命令
-                asyncResult.AsyncWaitHandle.WaitOne();
-                var stdout = sshCmd.EndExecute(asyncResult);
-                var stderr = sshCmd.Error;
-                var exitCode = sshCmd.ExitStatus ?? 0;
-                sshCmd.Dispose();
-                WriteOutputAndComplete(taskId, stdout, stderr, exitCode);
+                try
+                {
+                    // 继续等待已开始的命令
+                    asyncResult.AsyncWaitHandle.WaitOne();
+                    var stdout = sshCmd.EndExecute(asyncResult);
+                    var stderr = sshCmd.Error;
+                    var exitCode = sshCmd.ExitStatus ?? 0;
+                    sshCmd.Dispose();
+                    WriteOutputAndComplete(taskId, stdout, stderr, exitCode);
+                }
+                catch (Exception ex)
+                {
+                    try { sshCmd.Dispose(); } catch { }
+                    _global.CompleteTask(taskId, null, null, null, SshTaskStatus.Failed, ex.Message);
+                }
             }
-            catch (Exception ex)
-            {
-                try { sshCmd.Dispose(); } catch { }
-                _global.CompleteTask(taskId, null, null, null, SshTaskStatus.Failed, ex.Message);
-            }
+            finally { cts.Dispose(); }
         }, cts.Token);
 
         return taskId;
@@ -187,7 +197,7 @@ public class ExecTool : ITool
     {
         var escapedPath = EscapeShellArg(path);
         // 用 base64 安全写入（避免特殊字符/换行问题）
-        var encoded = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(content));
+        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(content));
         using var cmd = client.CreateCommand($"echo {EscapeShellArg(encoded)} | base64 -d > {escapedPath}");
         cmd.Execute();
     }
