@@ -49,7 +49,10 @@ public class SshGlobalComponent : GlobalComponentBase
         _config = SshConfig.Load(_configDir);
 
         if (!string.IsNullOrEmpty(_config.Host))
-            Connect();
+        {
+            try { Connect(); }
+            catch (Exception ex) { Console.Error.WriteLine($"[SshGlobal] 初始连接失败 ({_config.Host}:{_config.Port}): {ex.Message}"); }
+        }
 
         SshToolsAccessor.Configure(this);
 
