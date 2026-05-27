@@ -301,10 +301,12 @@ namespace AgentCoreProcessor.Adapter
 
             string content;
             bool isMentioned = false;
+            string? systemEventSubType = null;
 
             switch (noticeType)
             {
                 case "notify" when subType == "poke":
+                    systemEventSubType = "poke";
                     var targetId = data["target_id"]?.Value<long>() ?? 0;
                     if (targetId == selfId)
                     {
@@ -323,6 +325,7 @@ namespace AgentCoreProcessor.Adapter
                     var operatorId = data["operator_id"]?.Value<long>() ?? 0;
                     if (banUserId == selfId)
                     {
+                        systemEventSubType = duration > 0 ? "ban" : "unban";
                         content = duration > 0
                             ? $"【系统】你被 {operatorId} 禁言了 {duration} 秒"
                             : $"【系统】你被 {operatorId} 解除了禁言";
@@ -338,11 +341,13 @@ namespace AgentCoreProcessor.Adapter
                     break;
 
                 case "group_recall":
+                    systemEventSubType = "recall";
                     var recallOperator = data["operator_id"]?.Value<long>() ?? 0;
                     content = $"【系统】{recallOperator} 撤回了一条消息";
                     break;
 
                 case "group_upload":
+                    systemEventSubType = "upload";
                     var file = data["file"] as JObject;
                     var fileName = file?["name"]?.ToString() ?? "未知文件";
                     content = $"【系统】{GetUserLabel(data, userId)} 上传了文件: {fileName}";
@@ -361,6 +366,7 @@ namespace AgentCoreProcessor.Adapter
                 IsPrivate = isPrivate,
                 IsMentioned = isMentioned,
                 IsSystemEvent = true,
+                SystemEventSubType = systemEventSubType,
                 Time = DateTime.Now
             };
         }

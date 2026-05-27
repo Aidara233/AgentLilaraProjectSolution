@@ -45,5 +45,8 @@ namespace AgentCoreProcessor.Adapter
 
         /// <summary>是否为系统事件（戳一戳、禁言等 notice 转换而来）。</summary>
         public bool IsSystemEvent { get; set; } = false;
+
+        /// <summary>系统事件子类型（ban、unban、poke 等），用于引擎层路由判断。</summary>
+        public string? SystemEventSubType { get; set; }
     }
 }

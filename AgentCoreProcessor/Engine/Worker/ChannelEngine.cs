@@ -63,6 +63,8 @@ namespace AgentCoreProcessor.Engine
         private DateTime lastBufferTime;
         private int _bufferedMessageCount; // 自上次 gate 开放以来的新消息计数
 
+        // ---- 禁言状态 ----
+        private bool _isBanned; // 当前是否被禁言，禁言期间不唤醒引擎
 
         // ---- 冲动值 ----
         private readonly ImpulseTracker impulseTracker;
@@ -307,6 +309,10 @@ namespace AgentCoreProcessor.Engine
             impulseTracker.Accumulate(msg, recentParticipants.Count, msg.IsSystemEvent);
             _lastSessionContext = sc;
 
+            // 禁言状态追踪
+            if (msg.SystemEventSubType == "ban") _isBanned = true;
+            else if (msg.SystemEventSubType == "unban") _isBanned = false;
+
             bool isTriggered;
             lock (bufferLock) { isTriggered = _bufferTriggered; }
 
@@ -314,6 +320,10 @@ namespace AgentCoreProcessor.Engine
             if (isTriggered)
             {
                 ScheduleBufferSignal();
+            }
+            else if (_isBanned)
+            {
+                // 禁言期间不唤醒，消息照常 buffer
             }
             else
             {
