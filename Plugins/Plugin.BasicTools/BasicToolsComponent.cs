@@ -51,7 +51,7 @@ public class BasicToolsComponent : LoopComponentBase
         if (adapterAccess != null && channelAccess != null)
         {
             var detail = await channelAccess.GetChannelDetailAsync(channelId);
-            if (detail != null)
+            if (detail != null && !string.IsNullOrEmpty(detail.Name))
             {
                 var adapterId = adapterAccess.GetAdapterIdForChannel(detail.Name);
                 if (adapterId != null)

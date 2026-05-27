@@ -40,7 +40,7 @@ public class GroupFileToolsComponent : LoopComponentBase
             channelId = 0;
 
         var detail = await channelAccess.GetChannelDetailAsync(channelId);
-        if (detail == null) return;
+        if (detail == null || string.IsNullOrEmpty(detail.Name)) return;
 
         var adapterId = adapterAccess.GetAdapterIdForChannel(detail.Name);
         if (adapterId == null) return;
