@@ -111,9 +111,7 @@ namespace AgentCoreProcessor.Adapter
                     switch (att.Type)
                     {
                         case AttachmentType.Image:
-                            var imgFile = att.LocalPath != null
-                                ? $"file:///{att.LocalPath.Replace('\\', '/')}"
-                                : att.SourceUrl ?? "";
+                            var imgFile = att.LocalPath ?? att.SourceUrl ?? "";
                             segments.Add(new JObject
                             {
                                 ["type"] = "image",
@@ -121,9 +119,7 @@ namespace AgentCoreProcessor.Adapter
                             });
                             break;
                         case AttachmentType.Audio:
-                            var audioFile = att.LocalPath != null
-                                ? $"file:///{att.LocalPath.Replace('\\', '/')}"
-                                : att.SourceUrl ?? "";
+                            var audioFile = att.LocalPath ?? att.SourceUrl ?? "";
                             segments.Add(new JObject
                             {
                                 ["type"] = "record",
