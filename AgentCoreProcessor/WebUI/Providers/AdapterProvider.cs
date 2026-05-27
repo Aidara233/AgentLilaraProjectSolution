@@ -183,7 +183,9 @@ internal class AdapterProvider : IWebUIProvider
                     Fields = new()
                     {
                         new() { Field = "ws_url", Label = "WS URL", Type = FormFieldType.Text, Required = true },
+                        new() { Field = "http_url", Label = "HTTP URL", Type = FormFieldType.Text },
                         new() { Field = "token", Label = "Token", Type = FormFieldType.Text },
+                        new() { Field = "http_token", Label = "HTTP Token", Type = FormFieldType.Text },
                         new() { Field = "filter_mode", Label = "过滤模式", Type = FormFieldType.Select,
                             Options = new() { new() { Value = "none", Label = "无" }, new() { Value = "whitelist", Label = "白名单" }, new() { Value = "blacklist", Label = "黑名单" } } },
                         new() { Field = "bot_names", Label = "机器人名（逗号分隔）", Type = FormFieldType.Text },
@@ -617,7 +619,9 @@ internal class AdapterConfigSource : IDataSource
             Data = new JsonObject
             {
                 ["ws_url"] = s["wsUrl"]?.ToString() ?? s["WsUrl"]?.ToString() ?? s["ws_url"]?.ToString() ?? "",
+                ["http_url"] = s["httpUrl"]?.ToString() ?? s["HttpUrl"]?.ToString() ?? s["http_url"]?.ToString() ?? "",
                 ["token"] = s["token"]?.ToString() ?? s["Token"]?.ToString() ?? "",
+                ["http_token"] = s["httpToken"]?.ToString() ?? s["HttpToken"]?.ToString() ?? s["http_token"]?.ToString() ?? "",
                 ["filter_mode"] = s["filterMode"]?.ToString() ?? s["FilterMode"]?.ToString() ?? s["filter_mode"]?.ToString() ?? "none",
                 ["bot_names"] = FormatBotNames(s),
                 ["filter_list"] = FormatFilterList(s),
@@ -671,7 +675,9 @@ internal class AdapterConfigSource : IDataSource
         var s = cfg.Settings;
         // OneBot 字段（统一 camelCase，清理旧 PascalCase/snake_case 键）
         s["wsUrl"] = data["ws_url"]?.ToString() ?? PickOld(s, "wsUrl", "WsUrl", "ws_url");
+        s["httpUrl"] = data["http_url"]?.ToString() ?? PickOld(s, "httpUrl", "HttpUrl", "http_url");
         s["token"] = data["token"]?.ToString() ?? PickOld(s, "token", "Token");
+        s["httpToken"] = data["http_token"]?.ToString() ?? PickOld(s, "httpToken", "HttpToken", "http_token");
         s["filterMode"] = data["filter_mode"]?.ToString() ?? PickOld(s, "filterMode", "FilterMode", "filter_mode");
         var botNamesStr = data["bot_names"]?.ToString() ?? "";
         s["botNames"] = new Newtonsoft.Json.Linq.JArray(

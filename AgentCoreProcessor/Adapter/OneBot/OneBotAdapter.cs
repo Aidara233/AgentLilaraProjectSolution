@@ -349,11 +349,14 @@ namespace AgentCoreProcessor.Adapter
         {
             try
             {
-                var url = $"{config.HttpUrl.TrimEnd('/')}/{action}";
+                var baseUrl = config.HttpUrl.TrimEnd('/');
+                var httpToken = !string.IsNullOrEmpty(config.HttpToken) ? config.HttpToken : config.Token;
+                var url = !string.IsNullOrEmpty(httpToken)
+                    ? $"{baseUrl}/{action}?access_token={Uri.EscapeDataString(httpToken)}"
+                    : $"{baseUrl}/{action}";
+
                 var content = new StringContent((param ?? new JObject()).ToString(Formatting.None),
                     Encoding.UTF8, "application/json");
-                if (!string.IsNullOrEmpty(config.Token))
-                    content.Headers.TryAddWithoutValidation("Authorization", $"Bearer {config.Token}");
 
                 using var resp = await HttpClient.PostAsync(url, content);
                 var body = await resp.Content.ReadAsStringAsync();
