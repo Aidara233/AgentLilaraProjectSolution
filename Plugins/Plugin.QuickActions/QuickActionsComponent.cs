@@ -9,11 +9,12 @@ public class QuickActionsComponent : LoopComponentBase
 {
     private PokeTool? _poke;
     private RecallTool? _recall;
+    private SetGroupCardTool? _setGroupCard;
 
     public override ComponentMeta Meta => new()
     {
         Name = "quick-actions",
-        Description = "快捷操作工具（poke, recall）",
+        Description = "快捷操作工具（poke, recall, set_group_card）",
         DefaultEnabled = true,
         PromptPriority = 90
     };
@@ -24,6 +25,7 @@ public class QuickActionsComponent : LoopComponentBase
         {
             if (_poke != null) yield return _poke;
             if (_recall != null) yield return _recall;
+            if (_setGroupCard != null) yield return _setGroupCard;
         }
     }
 
@@ -47,5 +49,6 @@ public class QuickActionsComponent : LoopComponentBase
 
         _poke = new PokeTool(adapterAccess, adapterId);
         _recall = new RecallTool(adapterAccess, adapterId);
+        _setGroupCard = new SetGroupCardTool(adapterAccess, adapterId);
     }
 }
