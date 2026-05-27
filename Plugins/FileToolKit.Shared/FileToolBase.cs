@@ -36,7 +36,7 @@ namespace FileToolKit.Shared
         protected static Task<ToolResult> Fail(string error) =>
             Task.FromResult(new ToolResult { Status = "failed", Error = error });
 
-        protected static string Truncate(string text, int maxLen, int totalCount, string itemLabel)
+        protected static string TruncateWithSummary(string text, int maxLen, int totalCount, string itemLabel)
         {
             if (text.Length <= maxLen) return text;
             return text[..maxLen] + $"\n... (结果已截断，共 {totalCount} {itemLabel})";
@@ -52,7 +52,7 @@ namespace FileToolKit.Shared
                 ".tar" => "tar",
                 ".gz" or ".tgz" => "tar.gz",
                 ".7z" => "7z",
-                _ => "zip"
+                _ => ext.TrimStart('.')
             };
         }
 
@@ -63,9 +63,11 @@ namespace FileToolKit.Shared
             _ => $"{bytes / (1024.0 * 1024):F1}MB"
         };
 
-        /// <summary>简单 glob 转正则，支持 ** * ?</summary>
+        /// <summary>简单 glob 转正则，支持 ** * ?。调用方应缓存结果，Compiled 有开销。</summary>
         protected static Regex ConvertGlobToRegex(string glob)
         {
+            // 折叠 3+ 个连续 * 为 **
+            glob = Regex.Replace(glob, @"\*{3,}", "**");
             var pattern = Regex.Escape(glob)
                 .Replace("\\*\\*", "~~~DOTSTAR~~~")
                 .Replace("\\*", "[^/\\\\]*")
