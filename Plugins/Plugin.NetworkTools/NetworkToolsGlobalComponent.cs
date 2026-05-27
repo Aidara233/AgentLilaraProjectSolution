@@ -33,10 +33,11 @@ public class NetworkToolsGlobalComponent : GlobalComponentBase
         // 初始化 DownloadStore 单例
         _store = new DownloadStore { MaxConcurrent = _security.MaxConcurrentDownloads };
 
-        // 初始化 HttpClient（不跟随重定向，手动控制以重新校验host）
+        // 初始化 HttpClient（自动跟随重定向，初始URL校验提供主要防护）
         var handler = new HttpClientHandler
         {
-            AllowAutoRedirect = false,
+            AllowAutoRedirect = true,
+            MaxAutomaticRedirections = _security.MaxRedirects,
             AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
         };
         _http = new HttpClient(handler)

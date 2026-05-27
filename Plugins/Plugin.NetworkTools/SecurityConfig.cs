@@ -39,7 +39,8 @@ public class SecurityConfig
         try
         {
             var json = File.ReadAllText(path);
-            return JsonSerializer.Deserialize<SecurityConfig>(json) ?? new SecurityConfig();
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return JsonSerializer.Deserialize<SecurityConfig>(json, options) ?? new SecurityConfig();
         }
         catch
         {
@@ -83,13 +84,18 @@ public class SecurityConfig
 
         if (!IPAddress.TryParse(host, out var ip))
         {
-            // 尝试DNS解析
+            // 尝试DNS解析 — 检查所有解析出的IP，任一为内网即拒绝
             try
             {
                 var addresses = Dns.GetHostAddresses(host);
                 if (addresses.Length == 0)
                     return $"无法解析域名: {host}";
-                ip = addresses[0];
+                foreach (var addr in addresses)
+                {
+                    if (IsPrivateIp(addr))
+                        return $"禁止访问内网地址: {addr} ({host})";
+                }
+                return null; // 所有IP均为公网，通过
             }
             catch
             {
@@ -97,6 +103,7 @@ public class SecurityConfig
             }
         }
 
+        // host本身是IP地址，直接校验
         if (IsPrivateIp(ip))
             return $"禁止访问内网地址: {ip}";
 

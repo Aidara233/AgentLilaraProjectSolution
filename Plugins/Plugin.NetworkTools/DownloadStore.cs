@@ -23,15 +23,12 @@ public class DownloadStore
         {
             if (_activeCount >= MaxConcurrent)
                 return false;
+            if (!_tasks.TryAdd(task.Id, task))
+                return false;
             _activeCount++;
         }
         task.Status = DownloadStatus.Downloading;
         task.StartedAt = DateTime.UtcNow;
-        if (!_tasks.TryAdd(task.Id, task))
-        {
-            DecrementActive();
-            return false;
-        }
         return true;
     }
 
@@ -64,8 +61,8 @@ public class DownloadStore
         if (!_tasks.TryGetValue(id, out var task))
             return false;
 
-        if (task.Status is DownloadStatus.Completed or DownloadStatus.Cancelled)
-            return false;
+        if (task.Status != DownloadStatus.Downloading)
+            return false;  // 已是终态（completed/failed/cancelled），不再重复处理
 
         task.Cts?.Cancel();
         task.Status = DownloadStatus.Cancelled;
@@ -79,6 +76,7 @@ public class DownloadStore
 
     public void MarkCompleted(DownloadTask task, long totalBytes)
     {
+        if (task.Status != DownloadStatus.Downloading) return;  // 已是终态，不再处理
         task.Status = DownloadStatus.Completed;
         task.BytesDownloaded = totalBytes;
         task.CompletedAt = DateTime.UtcNow;
@@ -90,6 +88,7 @@ public class DownloadStore
 
     public void MarkFailed(DownloadTask task, string error)
     {
+        if (task.Status != DownloadStatus.Downloading) return;  // 已是终态，不再处理
         task.Status = DownloadStatus.Failed;
         task.Error = error;
         task.CompletedAt = DateTime.UtcNow;

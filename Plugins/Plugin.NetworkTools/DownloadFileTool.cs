@@ -74,6 +74,11 @@ public class DownloadFileTool : ITool
             catch { return Fail("headers格式无效"); }
         }
 
+        // 提前创建目录（避免后台任务同步异常导致进程崩溃）
+        var dir = Path.GetDirectoryName(fullPath)!;
+        try { Directory.CreateDirectory(dir); }
+        catch (Exception ex) { return Fail($"无法创建目录: {ex.Message}"); }
+
         // 注册下载任务
         var cts = new CancellationTokenSource();
         var task = new DownloadTask
@@ -111,9 +116,6 @@ public class DownloadFileTool : ITool
     {
         try
         {
-            var dir = Path.GetDirectoryName(task.SavePath)!;
-            Directory.CreateDirectory(dir);
-
             using var request = new HttpRequestMessage(HttpMethod.Get, task.Url);
             if (headers != null)
             {
