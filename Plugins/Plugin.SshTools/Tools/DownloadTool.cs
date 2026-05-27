@@ -51,8 +51,8 @@ public class DownloadTool : ITool
         if (!fullLocal.StartsWith(fullWorkspace + Path.DirectorySeparatorChar) && fullLocal != fullWorkspace)
             return Task.FromResult(Fail($"local_path 必须在 workspace 内: {_workspaceDir}"));
 
-        var client = _global.Client;
-        if (client?.IsConnected != true)
+        var client = _global.EnsureConnected();
+        if (client == null)
             return Task.FromResult(Fail("SSH 未连接"));
 
         var timeoutSeconds = DefaultTimeoutSeconds;

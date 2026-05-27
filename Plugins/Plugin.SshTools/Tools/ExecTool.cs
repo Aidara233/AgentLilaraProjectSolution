@@ -47,8 +47,8 @@ public class ExecTool : ITool
         if (int.TryParse(timeoutStr, out var t))
             timeoutSeconds = t;
 
-        var client = _global.Client;
-        if (client?.IsConnected != true)
+        var client = _global.EnsureConnected();
+        if (client == null)
             return Task.FromResult(Fail("SSH 未连接"));
 
         var fullCommand = $"cd {EscapeShellArg(_workDir)} && {command}";
@@ -171,7 +171,7 @@ public class ExecTool : ITool
 
         try
         {
-            var client = _global.Client;
+            var client = _global.EnsureConnected();
             if (client?.IsConnected == true)
             {
                 if (!string.IsNullOrEmpty(stdout))

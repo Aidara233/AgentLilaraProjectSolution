@@ -55,8 +55,8 @@ public class UploadTool : ITool
             ? (remotePath.StartsWith('/') ? remotePath : $"{_workDir}/{remotePath}")
             : _workDir;
 
-        var client = _global.Client;
-        if (client?.IsConnected != true)
+        var client = _global.EnsureConnected();
+        if (client == null)
             return Task.FromResult(Fail("SSH 未连接"));
 
         var timeoutSeconds = DefaultTimeoutSeconds;

@@ -15,6 +15,7 @@ public class SshGlobalComponent : GlobalComponentBase
     private string _configDir = "";
     private ISignalLogger? _log;
     private Timer? _idleTimer;
+    private DateTime _lastConnectAttempt;
     private readonly object _lock = new();
 
     private readonly ConcurrentDictionary<string, SshTask> _runningTasks = new();
@@ -73,28 +74,63 @@ public class SshGlobalComponent : GlobalComponentBase
         return Task.CompletedTask;
     }
 
-    public void Connect()
+    public bool Connect()
     {
         lock (_lock)
         {
-            if (_client?.IsConnected == true) return;
+            if (_client?.IsConnected == true) return true;
+
+            // 限频：两次连接尝试间隔至少 5 秒
+            if ((DateTime.UtcNow - _lastConnectAttempt).TotalSeconds < 5)
+                return false;
+
+            _lastConnectAttempt = DateTime.UtcNow;
+
+            // 清除旧连接
+            try { _client?.Dispose(); } catch { }
+            _client = null;
 
             var keyPath = _config.ResolveKeyPath(_configDir);
             if (string.IsNullOrEmpty(keyPath) || !File.Exists(keyPath))
-                throw new InvalidOperationException($"SSH 私钥不存在: {keyPath}");
+            {
+                _log?.Warn("ssh", "connect-key-missing", new { keyPath });
+                return false;
+            }
 
-            var keyFile = new PrivateKeyFile(keyPath);
-            var connectionInfo = new ConnectionInfo(_config.Host, _config.Port, _config.Username,
-                new PrivateKeyAuthenticationMethod(_config.Username, keyFile));
+            try
+            {
+                var keyFile = new PrivateKeyFile(keyPath);
+                var connectionInfo = new ConnectionInfo(_config.Host, _config.Port, _config.Username,
+                    new PrivateKeyAuthenticationMethod(_config.Username, keyFile));
+                connectionInfo.Timeout = TimeSpan.FromSeconds(10);
 
-            _client = new SshClient(connectionInfo);
-            _client.Connect();
+                _client = new SshClient(connectionInfo);
+                _client.Connect();
+                _log?.Event("ssh", "connected", new { host = _config.Host, port = _config.Port });
 
-            _idleTimer?.Dispose();
-            _idleTimer = new Timer(OnIdleCheck, null,
-                TimeSpan.FromSeconds(_config.IdleTimeoutSeconds),
-                TimeSpan.FromSeconds(_config.IdleTimeoutSeconds));
+                _idleTimer?.Dispose();
+                _idleTimer = new Timer(OnIdleCheck, null,
+                    TimeSpan.FromSeconds(_config.IdleTimeoutSeconds),
+                    TimeSpan.FromSeconds(_config.IdleTimeoutSeconds));
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _log?.Warn("ssh", "connect-failed", new { host = _config.Host, port = _config.Port, error = ex.Message });
+                try { _client?.Dispose(); } catch { }
+                _client = null;
+                return false;
+            }
         }
+    }
+
+    /// <summary>工具调用前确保连接可用，必要时自动重连。</summary>
+    public SshClient? EnsureConnected()
+    {
+        var c = _client;
+        if (c?.IsConnected == true) return c;
+        return Connect() ? _client : null;
     }
 
     public string RegisterTask(string loopId, string command, CancellationTokenSource cts)

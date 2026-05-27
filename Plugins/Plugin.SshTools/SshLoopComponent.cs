@@ -116,8 +116,8 @@ public class SshLoopComponent : LoopComponentBase
 
     private static void EnsureRemoteWorkDir(SshGlobalComponent global, string workDir)
     {
-        var client = global.Client;
-        if (client?.IsConnected != true) return;
+        var client = global.EnsureConnected();
+        if (client == null) return;
 
         try
         {
