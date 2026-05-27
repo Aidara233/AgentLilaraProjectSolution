@@ -272,7 +272,7 @@ namespace AgentCoreProcessor.Engine
             };
             foreach (var m in modules) m.Attach(bus);
 
-            // 订阅 ToolExecutedEvent — 追踪标记 + 残留信号类工具（待后续插件化）
+            // 订阅 ToolExecutedEvent — 输出追踪
             bus.Subscribe<ToolExecutedEvent>(e =>
             {
                 if (!e.Result.IsSuccess) return;
@@ -282,33 +282,6 @@ namespace AgentCoreProcessor.Engine
                 if (meta?.OutputOnly == true)
                 {
                     hadSpeakThisRound = true;
-                }
-                else
-                {
-                    switch (e.Call.Tool)
-                    {
-                        case "dream_permission":
-                            ctx.EventBus.PublishSignal("dream-permission", null);
-                            break;
-                        case "force_sleep":
-                            ctx.EventBus.PublishSignal("force-sleep", null);
-                            break;
-                        case "dream_config":
-                            ctx.EventBus.PublishSignal("dream-config", data);
-                            break;
-                        case "adjust_sleep_score":
-                            ctx.EventBus.PublishSignal("sleep-score-offset", data);
-                            break;
-                        case "trigger_red_alert":
-                            ctx.EventBus.PublishSignal("red-alert", null);
-                            break;
-                        case "mark_review_hint":
-                            HandleReviewHintToolAsync(data).GetAwaiter().GetResult();
-                            break;
-                        case "alert":
-                            HandleAlertToolAsync(data).GetAwaiter().GetResult();
-                            break;
-                    }
                 }
 
                 // OutputOnly 工具和核心流控工具（wait/deescalate）不算"工作"
@@ -620,24 +593,6 @@ namespace AgentCoreProcessor.Engine
             lifeCtx.Close(new { engineType = EngineType, channelId, reason = "cold_timeout" });
         }
 
-        // ── 内联工具事件处理（原 SpeakModule / SignalDispatchModule 回调） ──
-
-        private async Task HandleReviewHintToolAsync(string content)
-        {
-            if (_lastSessionContext == null) return;
-            await ctx.ReviewHints.CreateAsync(content, _lastSessionContext.Person.Id, _lastSessionContext.Channel.Id);
-        }
-
-        private async Task HandleAlertToolAsync(string reason)
-        {
-            if (_lastSessionContext == null) return;
-            await HandleAlertAsync(_lastSessionContext.Person, _lastSessionContext, reason);
-        }
-
-        private static bool IsLocalPath(string path)
-        {
-            return path.Length > 1 && (path[1] == ':' || path.StartsWith('/') || path.StartsWith("\\\\"));
-        }
 
         private static string EscapeXml(string? text)
         {
@@ -1874,9 +1829,6 @@ namespace AgentCoreProcessor.Engine
 
             return PokeRegex.Replace(text, "").Trim();
         }
-
-        private async Task HandleAlertAsync(Person person, SessionContext sc, string reason)
-            => await AlertHandler.HandleAsync(person, sc, reason, ctx);
 
         private async Task IncrementDailyProgressAsync(Person person)
         {
