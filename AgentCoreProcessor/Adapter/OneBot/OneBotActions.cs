@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Engine;
@@ -50,97 +51,136 @@ namespace AgentCoreProcessor.Adapter
                 });
             }
 
-            var content = message.Content ?? "";
-            var atDelim = BotOutputParser.AtDelimiter;
-            var atPrefix = BotOutputParser.AtPrefix;
-
-            if (content.Contains(atDelim))
+            if (message.Segments is { Count: > 0 })
             {
-                var parts = content.Split(atDelim);
-                foreach (var part in parts)
+                // 新路径：有序 segments（文本/图片/@ 交错）
+                foreach (var seg in message.Segments)
                 {
-                    if (part.StartsWith(atPrefix))
+                    switch (seg.Type)
                     {
-                        var qq = part[atPrefix.Length..];
-                        segments.Add(new JObject
-                        {
-                            ["type"] = "at",
-                            ["data"] = new JObject { ["qq"] = qq }
-                        });
-                    }
-                    else if (part.Length > 0)
-                    {
-                        segments.Add(new JObject
-                        {
-                            ["type"] = "text",
-                            ["data"] = new JObject { ["text"] = part }
-                        });
-                    }
-                }
-            }
-            else
-            {
-                if (message.Mentions != null)
-                {
-                    foreach (var qq in message.Mentions)
-                    {
-                        segments.Add(new JObject
-                        {
-                            ["type"] = "at",
-                            ["data"] = new JObject { ["qq"] = qq }
-                        });
-                    }
-                }
-
-                var textContent = message.Mentions is { Count: > 0 } && !content.StartsWith(" ")
-                    ? " " + content
-                    : content;
-                segments.Add(new JObject
-                {
-                    ["type"] = "text",
-                    ["data"] = new JObject { ["text"] = textContent }
-                });
-            }
-            p["message"] = segments;
-
-            // 处理附件
-            if (message.Attachments is { Count: > 0 })
-            {
-                foreach (var att in message.Attachments)
-                {
-                    switch (att.Type)
-                    {
-                        case AttachmentType.Image:
-                            var imgFile = att.LocalPath ?? att.SourceUrl ?? "";
+                        case SegmentType.Text:
+                            if (!string.IsNullOrEmpty(seg.Text))
+                                segments.Add(new JObject
+                                {
+                                    ["type"] = "text",
+                                    ["data"] = new JObject { ["text"] = seg.Text }
+                                });
+                            break;
+                        case SegmentType.At:
+                            segments.Add(new JObject
+                            {
+                                ["type"] = "at",
+                                ["data"] = new JObject { ["qq"] = seg.AtPlatformId }
+                            });
+                            break;
+                        case SegmentType.Image:
+                            var imgFile = EncodeFileForOneBot(seg.ImagePath, null);
                             segments.Add(new JObject
                             {
                                 ["type"] = "image",
                                 ["data"] = new JObject { ["file"] = imgFile }
                             });
                             break;
-                        case AttachmentType.Audio:
-                            var audioFile = att.LocalPath ?? att.SourceUrl ?? "";
-                            segments.Add(new JObject
-                            {
-                                ["type"] = "record",
-                                ["data"] = new JObject { ["file"] = audioFile }
-                            });
-                            break;
-                        case AttachmentType.File:
-                            // 文件上传走单独 API，不走 message segment
-                            try { await SendFileAsync(message.ChannelId, att); }
-                            catch (Exception ex) { Signal.Warn(LogGroup.Adapter, "文件上传失败", new { error = ex.Message }); }
+                        case SegmentType.Reply:
+                            // reply 已在消息级处理，segments 里不应出现
                             break;
                     }
                 }
             }
+            else
+            {
+                // 旧路径：Content + Mentions + Attachments（兼容非 ChannelAccessImpl 调用方）
+                var content = message.Content ?? "";
+                var atDelim = BotOutputParser.AtDelimiter;
+                var atPrefix = BotOutputParser.AtPrefix;
+
+                if (content.Contains(atDelim))
+                {
+                    var parts = content.Split(atDelim);
+                    foreach (var part in parts)
+                    {
+                        if (part.StartsWith(atPrefix))
+                        {
+                            var qq = part[atPrefix.Length..];
+                            segments.Add(new JObject
+                            {
+                                ["type"] = "at",
+                                ["data"] = new JObject { ["qq"] = qq }
+                            });
+                        }
+                        else if (part.Length > 0)
+                        {
+                            segments.Add(new JObject
+                            {
+                                ["type"] = "text",
+                                ["data"] = new JObject { ["text"] = part }
+                            });
+                        }
+                    }
+                }
+                else
+                {
+                    if (message.Mentions != null)
+                    {
+                        foreach (var qq in message.Mentions)
+                        {
+                            segments.Add(new JObject
+                            {
+                                ["type"] = "at",
+                                ["data"] = new JObject { ["qq"] = qq }
+                            });
+                        }
+                    }
+
+                    var textContent = message.Mentions is { Count: > 0 } && !content.StartsWith(" ")
+                        ? " " + content
+                        : content;
+                    segments.Add(new JObject
+                    {
+                        ["type"] = "text",
+                        ["data"] = new JObject { ["text"] = textContent }
+                    });
+                }
+
+                // 处理附件（追加到末尾）
+                if (message.Attachments is { Count: > 0 })
+                {
+                    foreach (var att in message.Attachments)
+                    {
+                        switch (att.Type)
+                        {
+                            case AttachmentType.Image:
+                                var imgFile = EncodeFileForOneBot(att.LocalPath, att.SourceUrl);
+                                segments.Add(new JObject
+                                {
+                                    ["type"] = "image",
+                                    ["data"] = new JObject { ["file"] = imgFile }
+                                });
+                                break;
+                            case AttachmentType.Audio:
+                                var audioFile = EncodeFileForOneBot(att.LocalPath, att.SourceUrl);
+                                segments.Add(new JObject
+                                {
+                                    ["type"] = "record",
+                                    ["data"] = new JObject { ["file"] = audioFile }
+                                });
+                                break;
+                            case AttachmentType.File:
+                                try { await SendFileAsync(message.ChannelId, att); }
+                                catch (Exception ex) { Signal.Warn(LogGroup.Adapter, "文件上传失败", new { error = ex.Message }); }
+                                break;
+                        }
+                    }
+                }
+            }
+            p["message"] = segments;
 
             var resp = await adapter.CallApiAsync(action, p);
             if (resp != null)
             {
                 if (resp["retcode"]?.Value<int>() != 0)
                 {
-                    Signal.Warn(LogGroup.Adapter, "OneBot API返回错误", new { retcode = resp["retcode"]?.Value<int>(), action });
+                    Signal.Warn(LogGroup.Adapter, "OneBot API返回错误", new { retcode = resp["retcode"]?.Value<int>(), action, message = resp["message"]?.ToString(), wording = resp["wording"]?.ToString() });
                 }
                 else
                 {
@@ -150,7 +190,15 @@ namespace AgentCoreProcessor.Adapter
                         adapter.TrackSentMessage(sentId);
                         return sentId.ToString();
                     }
+                    else
+                    {
+                        Signal.Warn(LogGroup.Adapter, "OneBot API成功但无message_id", new { action, data = resp["data"]?.ToString() });
+                    }
                 }
+            }
+            else
+            {
+                Signal.Warn(LogGroup.Adapter, "OneBot API无响应（超时或断连）", new { action });
             }
             return null;
         }
@@ -236,6 +284,16 @@ namespace AgentCoreProcessor.Adapter
                     ["name"] = fileName
                 });
             }
+        }
+
+        private static string EncodeFileForOneBot(string? localPath, string? sourceUrl)
+        {
+            if (localPath != null && File.Exists(localPath))
+            {
+                var bytes = File.ReadAllBytes(localPath);
+                return $"base64://{Convert.ToBase64String(bytes)}";
+            }
+            return sourceUrl ?? "";
         }
     }
 }

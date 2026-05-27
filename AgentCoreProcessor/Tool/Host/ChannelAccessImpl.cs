@@ -78,44 +78,57 @@ namespace AgentCoreProcessor.Tool.Host
             var adapter = _ctx.Adapters.ResolveByChannelId(channel.Name);
             if (adapter == null) return null;
 
-            var (parsedContent, replyTo, mentions, imagePaths) = await ParseOutputTags(channelId, content);
+            var (segments, replyTo) = await ParseOutputTags(channelId, content);
 
-            var attachments = new List<MessageAttachment>();
-            if (imagePaths != null)
+            // 兼容旧路径：提取纯文本和 mention 列表
+            var textContent = "";
+            var mentions = new List<string>();
+            if (segments.Count > 0)
             {
-                foreach (var path in imagePaths)
+                foreach (var seg in segments)
                 {
-                    attachments.Add(new MessageAttachment
-                    {
-                        Type = AttachmentType.Image,
-                        LocalPath = path
-                    });
+                    if (seg.Type == SegmentType.Text)
+                        textContent += seg.Text;
+                    else if (seg.Type == SegmentType.At)
+                        mentions.Add(seg.AtPlatformId!);
                 }
             }
 
             var sentId = await adapter.SendMessageAsync(new OutgoingMessage
             {
                 ChannelId = channel.Name,
-                Content = parsedContent,
+                Content = textContent,
                 ReplyTo = replyTo,
-                Mentions = mentions,
-                Attachments = attachments.Count > 0 ? attachments : null
+                Mentions = mentions.Count > 0 ? mentions : null,
+                Segments = segments.Count > 0 ? segments : null
             });
 
-            await _ctx.Session.SaveBotMessageAsync(channelId, parsedContent, sentId);
+            await _ctx.Session.SaveBotMessageAsync(channelId, textContent, sentId);
             return sentId;
         }
 
         public async Task<string?> SendMediaAsync(int channelId, string mediaType, string identifier)
         {
             var channel = await _ctx.Session.GetChannelByIdAsync(channelId);
-            if (channel == null) return null;
+            if (channel == null)
+            {
+                Logging.Signal.Warn(Logging.LogGroup.Adapter, "SendMedia: channel not found", new { channelId });
+                return null;
+            }
 
             var resolvedPath = ResolveSafePath(identifier);
-            if (resolvedPath == null) return null;
+            if (resolvedPath == null)
+            {
+                Logging.Signal.Warn(Logging.LogGroup.Adapter, "SendMedia: path resolve failed", new { identifier, workspace = Config.PathConfig.WorkspacePath });
+                return null;
+            }
 
             var adapter = _ctx.Adapters.ResolveByChannelId(channel.Name);
-            if (adapter == null) return null;
+            if (adapter == null)
+            {
+                Logging.Signal.Warn(Logging.LogGroup.Adapter, "SendMedia: adapter not found", new { channelName = channel.Name });
+                return null;
+            }
 
             var attachmentType = mediaType switch
             {
@@ -182,79 +195,91 @@ namespace AgentCoreProcessor.Tool.Host
 
         private const char AtDelimiter = '\x01';
         private const string AtPrefix = "AT:";
-        private static readonly Regex AtTagRegex =
-            new(@"<at\s+user=""([^""]+)""\s*/>", RegexOptions.Compiled);
-        private static readonly Regex ReplyTagRegex =
-            new(@"<reply\s+id=""([^""]+)""\s*/>", RegexOptions.Compiled);
-        private static readonly Regex ImgHashRegex =
-            new(@"<img\s+hash=""([^""]+)""\s*/>", RegexOptions.Compiled);
-        private static readonly Regex ImgWorkRegex =
-            new(@"<img\s+work=""([^""]+)""\s*/>", RegexOptions.Compiled);
+        private static readonly Regex OutputTagRegex =
+            new(@"(?:<reply\s+id=""([^""]+)""\s*/>)|(?:<img\s+hash=""([^""]+)""\s*/>)|(?:<img\s+work=""([^""]+)""\s*/>)|(?:<at\s+user=""([^""]+)""\s*/>)",
+                RegexOptions.Compiled);
 
         /// <summary>
-        /// 解析 content 中的 <at/> <reply/> <img/> 标签。
+        /// 解析 content 中的标签，返回有序 segmens（文本/图片/@/回复 交错排列）。
         /// </summary>
-        private async Task<(string Content, string? ReplyTo, List<string>? Mentions, List<string>? ImagePaths)>
+        private async Task<(List<MessageSegment> Segments, string? ReplyTo)>
             ParseOutputTags(int channelId, string raw)
         {
             string? replyTo = null;
-            List<string>? mentions = null;
-            List<string>? imagePaths = null;
 
-            // <reply/>
-            var replyMatch = ReplyTagRegex.Match(raw);
-            if (replyMatch.Success)
+            // 先统一找所有标签位置
+            var tagMatches = OutputTagRegex.Matches(raw);
+            if (tagMatches.Count == 0 && string.IsNullOrWhiteSpace(raw))
+                return (new List<MessageSegment>(), replyTo);
+
+            // 构建参与者映射（仅当有 <at/> 标签时）
+            Dictionary<string, string>? nameMap = null;
+            var hasAt = false;
+            foreach (Match m in tagMatches)
             {
-                replyTo = replyMatch.Groups[1].Value;
-                raw = raw.Remove(replyMatch.Index, replyMatch.Length).TrimStart();
+                if (m.Groups[4].Success) { hasAt = true; break; }
+            }
+            if (hasAt)
+                nameMap = await BuildParticipantMapAsync(channelId);
+
+            var segments = new List<MessageSegment>();
+            var pos = 0;
+
+            foreach (Match m in tagMatches.OrderBy(m => m.Index))
+            {
+                // 标签前的文本
+                if (m.Index > pos)
+                {
+                    var text = raw[pos..m.Index].Trim();
+                    if (text.Length > 0)
+                    {
+                        // 合并连着的纯文本（<at/> 转换后的形式）
+                        segments.Add(new MessageSegment { Type = SegmentType.Text, Text = text });
+                    }
+                }
+
+                if (m.Groups[1].Success) // <reply id="..."/>
+                {
+                    replyTo = m.Groups[1].Value;
+                    // reply 不作为 segment 内容，仅作为消息级元数据
+                }
+                else if (m.Groups[2].Success || m.Groups[3].Success) // <img hash="..."/> or <img work="..."/>
+                {
+                    string? imagePath = null;
+                    if (m.Groups[2].Success)
+                    {
+                        var record = await ImageStorage.GetByHashAsync(m.Groups[2].Value);
+                        imagePath = record?.LocalPath;
+                    }
+                    else
+                    {
+                        imagePath = ResolveWorkspacePath(m.Groups[3].Value);
+                    }
+                    if (imagePath != null)
+                        segments.Add(new MessageSegment { Type = SegmentType.Image, ImagePath = imagePath });
+                }
+                else if (m.Groups[4].Success) // <at user="..."/>
+                {
+                    var userName = m.Groups[4].Value;
+                    var platformId = nameMap?.GetValueOrDefault(userName);
+                    if (platformId != null)
+                        segments.Add(new MessageSegment { Type = SegmentType.At, AtPlatformId = platformId });
+                    else
+                        segments.Add(new MessageSegment { Type = SegmentType.Text, Text = $"@{userName} " });
+                }
+
+                pos = m.Index + m.Length;
             }
 
-            // <img hash="..."/> — ImageStorage 图片
-            var hashMatches = ImgHashRegex.Matches(raw);
-            if (hashMatches.Count > 0)
+            // 结尾剩余文本
+            if (pos < raw.Length)
             {
-                imagePaths = new List<string>();
-                foreach (Match m in hashMatches)
-                {
-                    var hash = m.Groups[1].Value;
-                    var record = await ImageStorage.GetByHashAsync(hash);
-                    if (record?.LocalPath != null)
-                        imagePaths.Add(record.LocalPath);
-                }
-                raw = ImgHashRegex.Replace(raw, "").Trim();
+                var tail = raw[pos..].Trim();
+                if (tail.Length > 0)
+                    segments.Add(new MessageSegment { Type = SegmentType.Text, Text = tail });
             }
 
-            // <img work="..."/> — Workspace 相对路径
-            var workMatches = ImgWorkRegex.Matches(raw);
-            if (workMatches.Count > 0)
-            {
-                imagePaths ??= new List<string>();
-                foreach (Match m in workMatches)
-                {
-                    var resolved = ResolveWorkspacePath(m.Groups[1].Value);
-                    if (resolved != null)
-                        imagePaths.Add(resolved);
-                }
-                raw = ImgWorkRegex.Replace(raw, "").Trim();
-            }
-
-            // 构建参与者名→platformId 映射
-            var nameToPlatformId = await BuildParticipantMapAsync(channelId);
-
-            // <at user="name"/>
-            raw = AtTagRegex.Replace(raw, match =>
-            {
-                var userName = match.Groups[1].Value;
-                if (nameToPlatformId.TryGetValue(userName, out var platformId))
-                {
-                    mentions ??= new List<string>();
-                    if (!mentions.Contains(platformId)) mentions.Add(platformId);
-                    return $"{AtDelimiter}{AtPrefix}{platformId}{AtDelimiter}";
-                }
-                return $"@{userName} ";
-            });
-
-            return (raw.Trim(), replyTo, mentions, imagePaths);
+            return (segments, replyTo);
         }
 
         /// <summary>
@@ -309,7 +334,7 @@ namespace AgentCoreProcessor.Tool.Host
         /// <summary>将相对路径解析到 Workspace，校验不越界。</summary>
         private static string? ResolveWorkspacePath(string relativePath)
         {
-            var workspace = Config.PathConfig.WorkspacePath;
+            var workspace = Path.GetFullPath(Config.PathConfig.WorkspacePath);
             Directory.CreateDirectory(workspace);
             var full = Path.GetFullPath(Path.Combine(workspace, relativePath));
             if (!full.StartsWith(workspace, StringComparison.OrdinalIgnoreCase))
