@@ -5,15 +5,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>Plugin.FileOps</RootNamespace>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\AgentLilara.PluginSDK\AgentLilara.PluginSDK.csproj">
       <Private>false</Private>
     </ProjectReference>
-    <ProjectReference Include="..\FileToolKit.Shared\FileToolKit.Shared.csproj">
-      <Private>false</Private>
-    </ProjectReference>
+    <ProjectReference Include="..\FileToolKit.Shared\FileToolKit.Shared.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -21,7 +20,7 @@
   </ItemGroup>
 
   <Target Name="CopyToHostPlugins" AfterTargets="Build">
-    <Copy SourceFiles="$(OutputPath)Plugin.FileOps.dll"
+    <Copy SourceFiles="$(OutputPath)Plugin.FileOps.dll;$(OutputPath)FileToolKit.Shared.dll;$(OutputPath)SharpCompress.dll"
           DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\" />
   </Target>
 
