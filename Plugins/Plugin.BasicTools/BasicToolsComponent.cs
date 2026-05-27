@@ -10,11 +10,12 @@ public class BasicToolsComponent : LoopComponentBase
 {
     private SpeakTool? _speak;
     private SendMediaTool? _sendMedia;
+    private SendFileTool? _sendFile;
 
     public override ComponentMeta Meta => new()
     {
         Name = "basic-tools",
-        Description = "基础通信工具（speak, send_media）",
+        Description = "基础通信工具（speak, send_media, send_file）",
         DefaultEnabled = true,
         PromptPriority = 100
     };
@@ -25,6 +26,7 @@ public class BasicToolsComponent : LoopComponentBase
         {
             if (_speak != null) yield return _speak;
             if (_sendMedia != null) yield return _sendMedia;
+            if (_sendFile != null) yield return _sendFile;
         }
     }
 
@@ -39,6 +41,9 @@ public class BasicToolsComponent : LoopComponentBase
         _sendMedia = channelAccess != null
             ? new SendMediaTool(channelAccess, channelId)
             : new SendMediaTool();
+        _sendFile = channelAccess != null
+            ? new SendFileTool(channelAccess, channelId)
+            : new SendFileTool();
         return Task.CompletedTask;
     }
 
