@@ -76,22 +76,27 @@ public class NetworkToolsLoopComponent : LoopComponentBase
 
     public override string? BuildPromptSection()
     {
-        if (_pendingNotifications.Count == 0) return null;
-
         var sb = new StringBuilder();
-        sb.AppendLine("[网络下载通知]");
 
-        foreach (var n in _pendingNotifications)
+        // 持久提示：下载是异步的，不要轮询
+        sb.AppendLine("[网络工具] download_file 为异步执行，完成后自动在此通知结果。"
+            + "不要反复调用 list_downloads 检查进度。");
+
+        if (_pendingNotifications.Count > 0)
         {
-            if (n.Status == "completed")
-                sb.AppendLine($"- 下载完成: {n.FileName} ({FormatSize(n.Size)}) → {n.RelativePath}");
-            else if (n.Status == "failed")
-                sb.AppendLine($"- 下载失败: {n.FileName}: {n.Error}");
-            else if (n.Status == "cancelled")
-                sb.AppendLine($"- 下载已取消: {n.FileName}");
+            sb.AppendLine("[下载通知]");
+            foreach (var n in _pendingNotifications)
+            {
+                if (n.Status == "completed")
+                    sb.AppendLine($"- 下载完成: {n.FileName} ({FormatSize(n.Size)}) → {n.RelativePath}");
+                else if (n.Status == "failed")
+                    sb.AppendLine($"- 下载失败: {n.FileName}: {n.Error}");
+                else if (n.Status == "cancelled")
+                    sb.AppendLine($"- 下载已取消: {n.FileName}");
+            }
+            _pendingNotifications.Clear();
         }
 
-        _pendingNotifications.Clear();
         return sb.ToString().TrimEnd();
     }
 

@@ -88,7 +88,11 @@ public class CrossLoopComponent : LoopComponentBase
         if (active.Count == 0 && completed.Count == 0)
             return null;
 
-        var parts = new List<string> { "[跨循环请求状态]" };
+        var parts = new List<string>
+        {
+            "[跨循环请求] 异步请求/委托完成后会自动通知，不要反复调用 check_messages 或 list_requests 轮询。",
+            ""
+        };
 
         foreach (var req in active)
         {
