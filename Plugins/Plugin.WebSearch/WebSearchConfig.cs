@@ -20,9 +20,16 @@ public class WebSearchConfig
             return cfg;
         }
 
-        var text = File.ReadAllText(path);
-        return JsonSerializer.Deserialize<WebSearchConfig>(text,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
+        try
+        {
+            var text = File.ReadAllText(path);
+            return JsonSerializer.Deserialize<WebSearchConfig>(text,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
+        }
+        catch
+        {
+            return new WebSearchConfig();
+        }
     }
 }
 
