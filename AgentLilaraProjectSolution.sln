@@ -25,6 +25,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Plugin.CrossLoopTools", "Pl
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Plugin.ScheduledTasks", "Plugins\Plugin.ScheduledTasks\Plugin.ScheduledTasks.csproj", "{F1869ECD-E617-49B8-B48C-8F2290836CAF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Plugin.NetworkTools", "Plugins\Plugin.NetworkTools\Plugin.NetworkTools.csproj", "{7E8C8EC0-4654-4C9D-A72B-3C4FD5B503C9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -155,6 +157,18 @@ Global
 		{F1869ECD-E617-49B8-B48C-8F2290836CAF}.Release|x64.Build.0 = Release|Any CPU
 		{F1869ECD-E617-49B8-B48C-8F2290836CAF}.Release|x86.ActiveCfg = Release|Any CPU
 		{F1869ECD-E617-49B8-B48C-8F2290836CAF}.Release|x86.Build.0 = Release|Any CPU
+		{7E8C8EC0-4654-4C9D-A72B-3C4FD5B503C9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7E8C8EC0-4654-4C9D-A72B-3C4FD5B503C9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7E8C8EC0-4654-4C9D-A72B-3C4FD5B503C9}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{7E8C8EC0-4654-4C9D-A72B-3C4FD5B503C9}.Debug|x64.Build.0 = Debug|Any CPU
+		{7E8C8EC0-4654-4C9D-A72B-3C4FD5B503C9}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{7E8C8EC0-4654-4C9D-A72B-3C4FD5B503C9}.Debug|x86.Build.0 = Debug|Any CPU
+		{7E8C8EC0-4654-4C9D-A72B-3C4FD5B503C9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7E8C8EC0-4654-4C9D-A72B-3C4FD5B503C9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7E8C8EC0-4654-4C9D-A72B-3C4FD5B503C9}.Release|x64.ActiveCfg = Release|Any CPU
+		{7E8C8EC0-4654-4C9D-A72B-3C4FD5B503C9}.Release|x64.Build.0 = Release|Any CPU
+		{7E8C8EC0-4654-4C9D-A72B-3C4FD5B503C9}.Release|x86.ActiveCfg = Release|Any CPU
+		{7E8C8EC0-4654-4C9D-A72B-3C4FD5B503C9}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -168,6 +182,7 @@ Global
 		{3EDEE486-96C7-43F7-90CF-BFE3570016A1} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
 		{DF7D458C-DCF3-4A27-8EE4-A7DDA3594B83} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
 		{F1869ECD-E617-49B8-B48C-8F2290836CAF} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
+		{7E8C8EC0-4654-4C9D-A72B-3C4FD5B503C9} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {8CEA9C9A-F71A-47CA-9F61-06EB3E4ED44F}
