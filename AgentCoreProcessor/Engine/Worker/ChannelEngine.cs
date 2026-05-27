@@ -716,7 +716,7 @@ namespace AgentCoreProcessor.Engine
 
                 EndWorkingSession();
 
-                gate.Signal();
+                // 不主动唤醒：让 Express 等待真正的消息到来，避免连续两次空转 Express
             }
             else if (agent.StopReason == AgentStopReason.MaxRounds)
             {
