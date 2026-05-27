@@ -1385,6 +1385,29 @@ namespace AgentCoreProcessor.Engine
                                 var parts = await BuildContentPartsWithImagePaths(nmsText, imgPaths);
                                 if (parts.Count > 1) nmsMsg.ContentParts = parts;
                             }
+
+                            // 文件附件：追加 URL 和元数据，模型可用 download_file 下载
+                            var fileAtts = nms.Message.Attachments
+                                .Where(a => a.Type == AttachmentType.File && !string.IsNullOrEmpty(a.SourceUrl))
+                                .ToList();
+                            if (fileAtts.Count > 0)
+                            {
+                                var fileLines = new StringBuilder();
+                                fileLines.AppendLine();
+                                fileLines.AppendLine("[消息附件-文件]");
+                                foreach (var fa in fileAtts)
+                                {
+                                    var sizeStr = fa.FileSize.HasValue
+                                        ? fa.FileSize.Value >= 1_000_000
+                                            ? $"{(fa.FileSize.Value / 1_000_000.0):F1}MB"
+                                            : fa.FileSize.Value >= 1_000
+                                                ? $"{(fa.FileSize.Value / 1_000.0):F1}KB"
+                                                : $"{fa.FileSize.Value}B"
+                                        : "未知大小";
+                                    fileLines.AppendLine($"- {fa.FileName ?? "未知文件"} ({sizeStr}) url={fa.SourceUrl}");
+                                }
+                                nmsMsg.Content += fileLines.ToString();
+                            }
                         }
                         // 新消息引用缺省补块（递归 2 层）—— 放在消息前面，让模型先看被引用的内容
                         if (!string.IsNullOrEmpty(nms.Message.ReplyTo))

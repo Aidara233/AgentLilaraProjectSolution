@@ -264,6 +264,35 @@ namespace AgentCoreProcessor.Adapter
             return resp?["retcode"]?.Value<int>() == 0;
         }
 
+        // ── 第四批 API：群文件 ──
+
+        public async Task<JToken?> GetGroupRootFilesAsync(long groupId)
+        {
+            var resp = await adapter.CallApiAsync("get_group_root_files",
+                new JObject { ["group_id"] = groupId });
+            if (resp?["retcode"]?.Value<int>() == 0)
+                return resp["data"];
+            return null;
+        }
+
+        public async Task<JToken?> GetGroupFilesByFolderAsync(long groupId, string folderId)
+        {
+            var resp = await adapter.CallApiAsync("get_group_files_by_folder",
+                new JObject { ["group_id"] = groupId, ["folder_id"] = folderId });
+            if (resp?["retcode"]?.Value<int>() == 0)
+                return resp["data"];
+            return null;
+        }
+
+        public async Task<string?> GetGroupFileUrlAsync(long groupId, string fileId, int busid)
+        {
+            var resp = await adapter.CallApiAsync("get_group_file_url",
+                new JObject { ["group_id"] = groupId, ["file_id"] = fileId, ["busid"] = busid });
+            if (resp?["retcode"]?.Value<int>() == 0)
+                return resp["data"]?["url"]?.ToString();
+            return null;
+        }
+
         private async Task<string?> SendFileAsync(string channelId, MessageAttachment att)
         {
             var filePath = att.LocalPath ?? att.SourceUrl;

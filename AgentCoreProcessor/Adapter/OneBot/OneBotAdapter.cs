@@ -394,6 +394,26 @@ namespace AgentCoreProcessor.Adapter
                     new ActionParam { Name = "card", Label = "新名片", Type = "text" }
                 }
             },
+            new AdapterAction
+            {
+                Name = "get_group_file_list", Label = "获取群文件列表", Description = "列出群文件根目录（文件夹和文件），busid 留空默认 102",
+                Params = new()
+                {
+                    new ActionParam { Name = "group_id", Label = "群号", Type = "text" },
+                    new ActionParam { Name = "folder_id", Label = "文件夹ID（可选，留空查根目录）", Type = "text", Required = false },
+                    new ActionParam { Name = "busid", Label = "业务ID（可选，默认102）", Type = "text", Required = false }
+                }
+            },
+            new AdapterAction
+            {
+                Name = "get_group_file_url", Label = "获取群文件下载链接", Description = "获取指定群文件的下载URL。busid 从文件列表中的 busid 字段获取",
+                Params = new()
+                {
+                    new ActionParam { Name = "group_id", Label = "群号", Type = "text" },
+                    new ActionParam { Name = "file_id", Label = "文件ID", Type = "text" },
+                    new ActionParam { Name = "busid", Label = "业务ID（从文件列表获取）", Type = "text" }
+                }
+            },
         };
 
         public async Task<ActionResult> ExecuteActionAsync(string action, Dictionary<string, string> parameters)
@@ -439,6 +459,23 @@ namespace AgentCoreProcessor.Adapter
                         var card = parameters.GetValueOrDefault("card", "");
                         var cardSet = await actions.SetGroupCardAsync(cardGroupId, cardUserId, card);
                         return new ActionResult { Success = cardSet };
+
+                    case "get_group_file_list":
+                        if (!parameters.TryGetValue("group_id", out var fgid) || !long.TryParse(fgid, out var fileGroupId))
+                            return new ActionResult { Success = false, Error = "缺少 group_id 参数" };
+                        var folderId = parameters.GetValueOrDefault("folder_id", "/");
+                        var data = await actions.GetGroupFilesByFolderAsync(fileGroupId, folderId);
+                        return new ActionResult { Success = data != null, Result = data?.ToString() };
+
+                    case "get_group_file_url":
+                        if (!parameters.TryGetValue("group_id", out var ugid) || !long.TryParse(ugid, out var urlGroupId))
+                            return new ActionResult { Success = false, Error = "缺少 group_id 参数" };
+                        if (!parameters.TryGetValue("file_id", out var fileId) || string.IsNullOrEmpty(fileId))
+                            return new ActionResult { Success = false, Error = "缺少 file_id 参数" };
+                        if (!parameters.TryGetValue("busid", out var busidStr) || !int.TryParse(busidStr, out var busid))
+                            return new ActionResult { Success = false, Error = "缺少 busid 参数" };
+                        var url = await actions.GetGroupFileUrlAsync(urlGroupId, fileId, busid);
+                        return new ActionResult { Success = url != null, Result = url };
 
                     default:
                         return new ActionResult { Success = false, Error = $"未知操作: {action}" };
