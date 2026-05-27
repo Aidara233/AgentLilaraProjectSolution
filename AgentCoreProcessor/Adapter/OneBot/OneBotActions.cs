@@ -145,6 +145,7 @@ namespace AgentCoreProcessor.Adapter
                 // 处理附件（追加到末尾）
                 if (message.Attachments is { Count: > 0 })
                 {
+                    string? fileResult = null;
                     foreach (var att in message.Attachments)
                     {
                         switch (att.Type)
@@ -166,11 +167,14 @@ namespace AgentCoreProcessor.Adapter
                                 });
                                 break;
                             case AttachmentType.File:
-                                try { await SendFileAsync(message.ChannelId, att); }
+                                try { fileResult = await SendFileAsync(message.ChannelId, att); }
                                 catch (Exception ex) { Signal.Warn(LogGroup.Adapter, "文件上传失败", new { error = ex.Message }); }
                                 break;
                         }
                     }
+                    // 纯文件消息（无文本内容）：跳过空 send_msg，直接返回文件上传结果
+                    if (fileResult != null && segments.Count == 0 && string.IsNullOrEmpty(message.Content))
+                        return fileResult;
                 }
             }
             p["message"] = segments;
@@ -257,33 +261,57 @@ namespace AgentCoreProcessor.Adapter
             return resp?["retcode"]?.Value<int>() == 0;
         }
 
-        private async Task SendFileAsync(string channelId, MessageAttachment att)
+        private async Task<string?> SendFileAsync(string channelId, MessageAttachment att)
         {
             var filePath = att.LocalPath ?? att.SourceUrl;
-            if (string.IsNullOrEmpty(filePath)) return;
+            if (string.IsNullOrEmpty(filePath)) return null;
 
-            var fileName = att.FileName ?? System.IO.Path.GetFileName(filePath);
+            var fileName = att.FileName ?? Path.GetFileName(filePath);
+
+            string action;
+            var p = new JObject();
 
             if (channelId.StartsWith("group_"))
             {
-                var groupId = long.Parse(channelId[6..]);
-                await adapter.CallApiAsync("upload_group_file", new JObject
-                {
-                    ["group_id"] = groupId,
-                    ["file"] = filePath,
-                    ["name"] = fileName
-                });
+                action = "upload_group_file";
+                if (!long.TryParse(channelId[6..], out var groupId)) return null;
+                p["group_id"] = groupId;
             }
             else if (channelId.StartsWith("private_"))
             {
-                var userId = long.Parse(channelId[8..]);
-                await adapter.CallApiAsync("upload_private_file", new JObject
-                {
-                    ["user_id"] = userId,
-                    ["file"] = filePath,
-                    ["name"] = fileName
-                });
+                action = "upload_private_file";
+                if (!long.TryParse(channelId[8..], out var userId)) return null;
+                p["user_id"] = userId;
             }
+            else
+            {
+                return null;
+            }
+
+            p["file"] = filePath;
+            p["name"] = fileName;
+
+            var resp = await adapter.CallApiAsync(action, p);
+            if (resp != null)
+            {
+                if (resp["retcode"]?.Value<int>() != 0)
+                {
+                    Signal.Warn(LogGroup.Adapter, "文件上传API返回错误", new
+                    {
+                        action,
+                        retcode = resp["retcode"]?.Value<int>(),
+                        message = resp["message"]?.ToString(),
+                        wording = resp["wording"]?.ToString(),
+                        filePath,
+                        fileName
+                    });
+                    return null;
+                }
+                return "0"; // upload_group_file 不返回 message_id，用 "0" 表示成功
+            }
+
+            Signal.Warn(LogGroup.Adapter, "文件上传API无响应", new { action, filePath });
+            return null;
         }
 
         private static string EncodeFileForOneBot(string? localPath, string? sourceUrl)
