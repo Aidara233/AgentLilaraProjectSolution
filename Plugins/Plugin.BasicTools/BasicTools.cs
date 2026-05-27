@@ -87,7 +87,12 @@ namespace Plugin.BasicTools
                 {
                     try
                     {
-                        await channelAccess.SendFileAsync(channelId, filePath, fileName);
+                        var sentId = await channelAccess.SendFileAsync(channelId, filePath, fileName);
+                        if (sentId != null)
+                        {
+                            var displayName = fileName ?? System.IO.Path.GetFileName(filePath);
+                            await channelAccess.SendMessageAsync(channelId, $"文件 {displayName} 发送成功");
+                        }
                     }
                     catch { /* 后台发送失败，适配器层已记日志 */ }
                 }, CancellationToken.None);
