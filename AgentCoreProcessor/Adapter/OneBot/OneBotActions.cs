@@ -288,7 +288,8 @@ namespace AgentCoreProcessor.Adapter
                 return null;
             }
 
-            p["file"] = filePath;
+            // NapCat 在虚拟机中运行，无法访问主机文件系统，需要 base64 编码
+            p["file"] = EncodeFileForOneBot(filePath, null);
             p["name"] = fileName;
 
             var resp = await adapter.CallApiAsync(action, p);
