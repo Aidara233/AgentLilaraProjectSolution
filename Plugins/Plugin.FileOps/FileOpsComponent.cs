@@ -24,6 +24,8 @@ public class FileOpsComponent : GlobalComponentBase
         _tools.Add(new ArchiveCreateTool(workspaceDir));
         _tools.Add(new ArchiveExtractTool(workspaceDir));
         _tools.Add(new ArchiveListTool(workspaceDir));
+        _tools.Add(new SearchFilesTool(workspaceDir));
+        _tools.Add(new GrepFilesTool(workspaceDir));
         return Task.CompletedTask;
     }
 }
