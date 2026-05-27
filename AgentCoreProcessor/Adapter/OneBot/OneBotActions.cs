@@ -172,8 +172,11 @@ namespace AgentCoreProcessor.Adapter
                                 break;
                         }
                     }
-                    // 纯文件消息（无文本内容）：跳过空 send_msg，直接返回文件上传结果
-                    if (fileResult != null && segments.Count == 0 && string.IsNullOrEmpty(message.Content))
+                    // 纯文件消息（无文本、无@、无引用）：跳过空 send_msg，直接返回文件上传结果
+                    if (fileResult != null
+                        && string.IsNullOrEmpty(message.Content)
+                        && message.Mentions is not { Count: > 0 }
+                        && string.IsNullOrEmpty(message.ReplyTo))
                         return fileResult;
                 }
             }
