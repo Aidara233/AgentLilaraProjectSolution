@@ -1580,6 +1580,8 @@ namespace AgentCoreProcessor.Engine
                 hadSpeak = hadSpeakThisRound
             });
             isInWorkingSession = false;
+            // 清除 agent 确保下次 Working 会话从干净状态开始（防止 BuildStartInjectAsync 重复注入）
+            agent = null;
         }
         public void OnEvent(EngineEvent e)
         {
