@@ -326,7 +326,8 @@ namespace AgentCoreProcessor.Adapter
                         content = duration > 0
                             ? $"【系统】你被 {operatorId} 禁言了 {duration} 秒"
                             : $"【系统】你被 {operatorId} 解除了禁言";
-                        isMentioned = true;
+                        // 被禁言时不唤醒（发了也白发），解禁时可以唤醒
+                        isMentioned = duration <= 0;
                     }
                     else
                     {
