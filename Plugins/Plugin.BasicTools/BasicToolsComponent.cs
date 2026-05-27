@@ -11,11 +11,12 @@ public class BasicToolsComponent : LoopComponentBase
     private SpeakTool? _speak;
     private SendMediaTool? _sendMedia;
     private SendFileTool? _sendFile;
+    private AdapterActionTool? _adapterAction;
 
     public override ComponentMeta Meta => new()
     {
         Name = "basic-tools",
-        Description = "基础通信工具（speak, send_media, send_file）",
+        Description = "基础通信工具（speak, send_media, send_file, adapter_action）",
         DefaultEnabled = true,
         PromptPriority = 100
     };
@@ -27,10 +28,11 @@ public class BasicToolsComponent : LoopComponentBase
             if (_speak != null) yield return _speak;
             if (_sendMedia != null) yield return _sendMedia;
             if (_sendFile != null) yield return _sendFile;
+            if (_adapterAction != null) yield return _adapterAction;
         }
     }
 
-    public override Task OnInitAsync(ILoopComponentContext context, InitReason reason)
+    public override async Task OnInitAsync(ILoopComponentContext context, InitReason reason)
     {
         var channelAccess = context.GetService<IChannelAccess>();
         var channelId = ParseChannelId(context.LoopId);
@@ -44,7 +46,19 @@ public class BasicToolsComponent : LoopComponentBase
         _sendFile = channelAccess != null
             ? new SendFileTool(channelAccess, channelId)
             : new SendFileTool();
-        return Task.CompletedTask;
+
+        var adapterAccess = context.GetService<IAdapterAccess>();
+        if (adapterAccess != null && channelAccess != null)
+        {
+            var detail = await channelAccess.GetChannelDetailAsync(channelId);
+            if (detail != null)
+            {
+                var adapterId = adapterAccess.GetAdapterIdForChannel(detail.PlatformChannelId);
+                if (adapterId != null)
+                    _adapterAction = new AdapterActionTool(adapterAccess, adapterId);
+            }
+        }
+
     }
 
     private static int ParseChannelId(string loopId)

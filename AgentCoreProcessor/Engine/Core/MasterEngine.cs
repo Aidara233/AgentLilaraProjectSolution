@@ -455,6 +455,8 @@ namespace AgentCoreProcessor.Engine
                 new Tool.Host.ChannelAccessImpl(this));
             _toolContext.Register<AgentLilara.PluginSDK.Services.IBeaconAccess>(
                 new Tool.Host.BeaconAccessImpl(ReviewHints));
+            _toolContext.Register<AgentLilara.PluginSDK.Services.IAdapterAccess>(
+                new Tool.Host.AdapterAccessImpl(adapterManager));
             _pluginLoader = new Tool.Host.PluginLoader(_toolContext, ProviderRegistry);
             _pluginLoader.LoadAll();
             Signal.Event(LogGroup.Plugin, "插件加载完成", new { count = Tool.ToolRegistry.All.Count });
@@ -468,6 +470,8 @@ namespace AgentCoreProcessor.Engine
                 new Tool.Host.BeaconAccessImpl(ReviewHints));
             componentServices.Register<AgentLilara.PluginSDK.Services.IChannelAccess>(
                 new Tool.Host.ChannelAccessImpl(this));
+            componentServices.Register<AgentLilara.PluginSDK.Services.IAdapterAccess>(
+                new Tool.Host.AdapterAccessImpl(adapterManager));
             if (_signalLogger != null)
                 componentServices.Register<ISignalLogger>(_signalLogger);
 
