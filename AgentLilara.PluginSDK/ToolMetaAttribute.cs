@@ -22,6 +22,9 @@ namespace AgentLilara.PluginSDK
 
         /// <summary>是否在 Express 模式下可用（fire-and-forget，结果不回注）。</summary>
         public bool ExpressAvailable { get; set; }
+
+        /// <summary>纯输出工具（如 speak/send_media），用于引擎追踪本轮是否发过言。</summary>
+        public bool OutputOnly { get; set; }
     }
 
     /// <summary>

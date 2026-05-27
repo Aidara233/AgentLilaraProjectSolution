@@ -277,35 +277,42 @@ namespace AgentCoreProcessor.Engine
             {
                 if (!e.Result.IsSuccess) return;
                 var data = e.Result.Data ?? "";
-                switch (e.Call.Tool)
+                var meta = Tool.ToolRegistry.GetMeta(e.Call.Tool);
+
+                if (meta?.OutputOnly == true)
                 {
-                    case "speak":
-                    case "send_media":
-                        hadSpeakThisRound = true;
-                        break;
-                    case "dream_permission":
-                        ctx.EventBus.PublishSignal("dream-permission", null);
-                        break;
-                    case "force_sleep":
-                        ctx.EventBus.PublishSignal("force-sleep", null);
-                        break;
-                    case "dream_config":
-                        ctx.EventBus.PublishSignal("dream-config", data);
-                        break;
-                    case "adjust_sleep_score":
-                        ctx.EventBus.PublishSignal("sleep-score-offset", data);
-                        break;
-                    case "trigger_red_alert":
-                        ctx.EventBus.PublishSignal("red-alert", null);
-                        break;
-                    case "mark_review_hint":
-                        HandleReviewHintToolAsync(data).GetAwaiter().GetResult();
-                        break;
-                    case "alert":
-                        HandleAlertToolAsync(data).GetAwaiter().GetResult();
-                        break;
+                    hadSpeakThisRound = true;
                 }
-                if (e.Call.Tool is not "speak" and not "send_media" and not "wait" and not "deescalate")
+                else
+                {
+                    switch (e.Call.Tool)
+                    {
+                        case "dream_permission":
+                            ctx.EventBus.PublishSignal("dream-permission", null);
+                            break;
+                        case "force_sleep":
+                            ctx.EventBus.PublishSignal("force-sleep", null);
+                            break;
+                        case "dream_config":
+                            ctx.EventBus.PublishSignal("dream-config", data);
+                            break;
+                        case "adjust_sleep_score":
+                            ctx.EventBus.PublishSignal("sleep-score-offset", data);
+                            break;
+                        case "trigger_red_alert":
+                            ctx.EventBus.PublishSignal("red-alert", null);
+                            break;
+                        case "mark_review_hint":
+                            HandleReviewHintToolAsync(data).GetAwaiter().GetResult();
+                            break;
+                        case "alert":
+                            HandleAlertToolAsync(data).GetAwaiter().GetResult();
+                            break;
+                    }
+                }
+
+                // OutputOnly 工具和核心流控工具（wait/deescalate）不算"工作"
+                if (meta?.OutputOnly != true && e.Call.Tool is not "wait" and not "deescalate")
                     hadWorkThisRound = true;
             });
         }
