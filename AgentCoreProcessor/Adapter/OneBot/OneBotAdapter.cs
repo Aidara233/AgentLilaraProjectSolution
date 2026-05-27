@@ -502,7 +502,22 @@ namespace AgentCoreProcessor.Adapter
                         return new ActionResult { Success = url != null, Result = url };
 
                     default:
-                        return new ActionResult { Success = false, Error = $"未知操作: {action}" };
+                        // 透传：未知 action 直接当作 OneBot API 名称调用
+                        var rawParams = new JObject();
+                        foreach (var kv in parameters)
+                        {
+                            if (long.TryParse(kv.Value, out var n))
+                                rawParams[kv.Key] = n;
+                            else
+                                rawParams[kv.Key] = kv.Value;
+                        }
+                        var rawResp = await CallApiAsync(action, rawParams);
+                        if (rawResp != null && rawResp["retcode"]?.Value<int>() == 0)
+                            return new ActionResult { Success = true, Result = rawResp["data"]?.ToString() ?? "OK" };
+                        return new ActionResult { Success = false,
+                            Error = rawResp?["wording"]?.ToString()
+                                ?? rawResp?["message"]?.ToString()
+                                ?? $"操作失败: {action}" };
                 }
             }
             catch (Exception ex)
