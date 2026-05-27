@@ -468,6 +468,10 @@ namespace AgentCoreProcessor.Engine
                     _bufferTriggered = false;
                 }
 
+                // 消费触发本轮响应的冲动值，防止处理期间到达的消息看到旧高峰值而误触发
+                if (hasNewMessages)
+                    impulseTracker.ApplyPostResponseUpdate();
+
                 if (hasNewMessages)
                 {
                     currentParticipantSnapshot = new Dictionary<int, ParticipantInfo>(recentParticipants);
@@ -492,6 +496,13 @@ namespace AgentCoreProcessor.Engine
                             processedTicks.RemoveFirst();
                     }
                     processedMessageCount += tickMsgs.Count;
+
+                    // 游标已被 BuildRoundInjectAsync 推进、无新消息且无跨循环请求时，跳回等待
+                    if (tickMsgs.Count == 0 && _pendingCrossRequests.IsEmpty)
+                    {
+                        loopControlModule.OnNewMessage();
+                        continue;
+                    }
 
                     // 重置 Working 轮次状态
                     loopControlModule.OnNewMessage();
