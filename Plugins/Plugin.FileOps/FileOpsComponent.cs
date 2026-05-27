@@ -20,7 +20,10 @@ public class FileOpsComponent : GlobalComponentBase
 
     public override Task OnInitAsync(IGlobalComponentContext context, InitReason reason)
     {
-        // 工具在后续 Task 中逐个添加
+        var workspaceDir = context.Storage.WorkspaceDirectory;
+        _tools.Add(new ArchiveCreateTool(workspaceDir));
+        _tools.Add(new ArchiveExtractTool(workspaceDir));
+        _tools.Add(new ArchiveListTool(workspaceDir));
         return Task.CompletedTask;
     }
 }
