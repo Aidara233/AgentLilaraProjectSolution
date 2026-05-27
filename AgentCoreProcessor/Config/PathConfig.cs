@@ -25,6 +25,7 @@ namespace AgentCoreProcessor.Config
             var json = JObject.Parse(File.ReadAllText(configPath));
             StoragePath = json["storagePath"]?.ToString()
                 ?? throw new InvalidOperationException("paths.json 中缺少 storagePath 字段");
+            Directory.CreateDirectory(WorkspacePath);
         }
     }
 }
