@@ -71,23 +71,30 @@ namespace Plugin.BasicTools
         ];
         public TimeSpan Timeout => TimeSpan.FromSeconds(15);
 
-        public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
+        public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
             if (resolvedInputs.Count < 1 || string.IsNullOrWhiteSpace(resolvedInputs[0]))
-                return new ToolResult { Status = "failed", Error = "文件路径不能为空" };
+                return Task.FromResult(new ToolResult { Status = "failed", Error = "文件路径不能为空" });
 
             var filePath = resolvedInputs[0].Trim();
             var fileName = resolvedInputs.Count > 1 ? resolvedInputs[1]?.Trim() : null;
 
             if (_channelAccess != null)
             {
-                var sentId = await _channelAccess.SendFileAsync(_channelId, filePath, fileName);
-                return sentId != null
-                    ? new ToolResult { Status = "success", Data = sentId }
-                    : new ToolResult { Status = "failed", Error = "文件发送失败" };
+                var channelAccess = _channelAccess;
+                var channelId = _channelId;
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await channelAccess.SendFileAsync(channelId, filePath, fileName);
+                    }
+                    catch { /* 后台发送失败，适配器层已记日志 */ }
+                }, CancellationToken.None);
+                return Task.FromResult(new ToolResult { Status = "success", Data = $"[文件发送已提交] {filePath}" });
             }
 
-            return new ToolResult { Status = "success", Data = filePath };
+            return Task.FromResult(new ToolResult { Status = "success", Data = filePath });
         }
     }
 

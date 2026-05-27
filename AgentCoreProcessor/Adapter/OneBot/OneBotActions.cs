@@ -74,7 +74,7 @@ namespace AgentCoreProcessor.Adapter
                             });
                             break;
                         case SegmentType.Image:
-                            var imgFile = EncodeFileForOneBot(seg.ImagePath, null);
+                            var imgFile = await EncodeFileForOneBotAsync(seg.ImagePath, null);
                             segments.Add(new JObject
                             {
                                 ["type"] = "image",
@@ -151,7 +151,7 @@ namespace AgentCoreProcessor.Adapter
                         switch (att.Type)
                         {
                             case AttachmentType.Image:
-                                var imgFile = EncodeFileForOneBot(att.LocalPath, att.SourceUrl);
+                                var imgFile = await EncodeFileForOneBotAsync(att.LocalPath, att.SourceUrl);
                                 segments.Add(new JObject
                                 {
                                     ["type"] = "image",
@@ -159,7 +159,7 @@ namespace AgentCoreProcessor.Adapter
                                 });
                                 break;
                             case AttachmentType.Audio:
-                                var audioFile = EncodeFileForOneBot(att.LocalPath, att.SourceUrl);
+                                var audioFile = await EncodeFileForOneBotAsync(att.LocalPath, att.SourceUrl);
                                 segments.Add(new JObject
                                 {
                                     ["type"] = "record",
@@ -292,7 +292,7 @@ namespace AgentCoreProcessor.Adapter
             }
 
             // NapCat 在虚拟机中运行，无法访问主机文件系统，需要 base64 编码
-            p["file"] = EncodeFileForOneBot(filePath, null);
+            p["file"] = await EncodeFileForOneBotAsync(filePath, null);
             p["name"] = fileName;
 
             var resp = await adapter.CallApiAsync(action, p);
@@ -318,12 +318,13 @@ namespace AgentCoreProcessor.Adapter
             return null;
         }
 
-        private static string EncodeFileForOneBot(string? localPath, string? sourceUrl)
+        private static async Task<string> EncodeFileForOneBotAsync(string? localPath, string? sourceUrl)
         {
             if (localPath != null && File.Exists(localPath))
             {
-                var bytes = File.ReadAllBytes(localPath);
-                return $"base64://{Convert.ToBase64String(bytes)}";
+                var bytes = await File.ReadAllBytesAsync(localPath);
+                var base64 = await Task.Run(() => Convert.ToBase64String(bytes));
+                return $"base64://{base64}";
             }
             return sourceUrl ?? "";
         }
