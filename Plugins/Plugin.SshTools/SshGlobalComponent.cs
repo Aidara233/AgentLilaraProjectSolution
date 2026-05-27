@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using Renci.SshNet;
 using AgentLilara.PluginSDK;
+using AgentLilara.PluginSDK.Logging;
 
 namespace Plugin.SshTools;
 
@@ -12,6 +13,7 @@ public class SshGlobalComponent : GlobalComponentBase
     private SshClient? _client;
     private SshConfig _config = null!;
     private string _configDir = "";
+    private ISignalLogger? _log;
     private Timer? _idleTimer;
     private readonly object _lock = new();
 
@@ -38,6 +40,7 @@ public class SshGlobalComponent : GlobalComponentBase
     public override Task OnInitAsync(IGlobalComponentContext context, InitReason reason)
     {
         _ctx = context;
+        _log = context.GetService<ISignalLogger>();
 
         // 注册唤醒回调：任务完成 → WakeLoop
         OnTaskCompleted = loopId =>
@@ -51,7 +54,7 @@ public class SshGlobalComponent : GlobalComponentBase
         if (!string.IsNullOrEmpty(_config.Host))
         {
             try { Connect(); }
-            catch (Exception ex) { Console.Error.WriteLine($"[SshGlobal] 初始连接失败 ({_config.Host}:{_config.Port}): {ex.Message}"); }
+            catch (Exception ex) { _log?.Warn("ssh", "init-connect-failed", new { host = _config.Host, port = _config.Port, error = ex.Message }); }
         }
 
         SshToolsAccessor.Configure(this);
