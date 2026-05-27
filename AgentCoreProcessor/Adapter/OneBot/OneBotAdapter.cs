@@ -345,6 +345,26 @@ namespace AgentCoreProcessor.Adapter
             }
         }
 
+        internal async Task<JObject?> CallApiHttpAsync(string action, JObject? param = null)
+        {
+            try
+            {
+                var url = $"{config.HttpUrl.TrimEnd('/')}/{action}";
+                var content = new StringContent((param ?? new JObject()).ToString(Formatting.None),
+                    Encoding.UTF8, "application/json");
+                if (!string.IsNullOrEmpty(config.Token))
+                    content.Headers.TryAddWithoutValidation("Authorization", $"Bearer {config.Token}");
+
+                using var resp = await HttpClient.PostAsync(url, content);
+                var body = await resp.Content.ReadAsStringAsync();
+                return JObject.Parse(body);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         private async Task<long> GetSelfIdAsync()
         {
             var resp = await CallApiAsync("get_login_info");
@@ -502,7 +522,7 @@ namespace AgentCoreProcessor.Adapter
                         return new ActionResult { Success = url != null, Result = url };
 
                     default:
-                        // 透传：未知 action 直接当作 OneBot API 名称调用
+                        // 透传：走 HTTP REST API（go-cqhttp 扩展端点只能 HTTP）
                         var rawParams = new JObject();
                         foreach (var kv in parameters)
                         {
@@ -511,7 +531,7 @@ namespace AgentCoreProcessor.Adapter
                             else
                                 rawParams[kv.Key] = kv.Value;
                         }
-                        var rawResp = await CallApiAsync(action, rawParams);
+                        var rawResp = await CallApiHttpAsync(action, rawParams);
                         if (rawResp != null && rawResp["retcode"]?.Value<int>() == 0)
                             return new ActionResult { Success = true, Result = rawResp["data"]?.ToString() ?? "OK" };
                         return new ActionResult { Success = false,
