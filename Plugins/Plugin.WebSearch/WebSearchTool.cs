@@ -70,7 +70,7 @@ public class WebSearchTool : ITool
             var results = await _backend.SearchAsync(request, ct);
             return new ToolResult { Status = "success", Data = results };
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             return new ToolResult { Status = "failed", Error = "搜索超时" };
         }
