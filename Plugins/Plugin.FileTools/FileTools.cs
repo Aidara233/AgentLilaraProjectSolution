@@ -4,40 +4,26 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentLilara.PluginSDK;
+using FileToolKit.Shared;
 
 namespace Plugin.FileTools
 {
     [ToolMeta(Group = "file", ContinueLoop = true, CapabilitySummary = "读取文本文件内容")]
-    public class ReadTextTool : ITool
+    public class ReadTextTool : FileToolBase
     {
-        private readonly string _workspaceDir;
+        public ReadTextTool(string workspaceDir) : base(workspaceDir) { }
 
-        public string Name => "read_text";
-        public string Description => "读取文本文件内容。路径相对于 Workspace 目录，只能访问该目录内的文件。支持指定行范围。";
-        public IReadOnlyList<ToolParameter> Parameters =>
+        public override string Name => "read_text";
+        public override string Description => "读取文本文件内容。路径相对于 Workspace 目录，只能访问该目录内的文件。支持指定行范围。";
+        public override IReadOnlyList<ToolParameter> Parameters =>
         [
             new("path", "文件路径（相对于 Workspace 目录）", 0),
             new("start_line", "（可选）起始行号，从1开始", 1, isRequired: false),
             new("end_line", "（可选）结束行号", 2, isRequired: false)
         ];
-        public TimeSpan Timeout => TimeSpan.FromSeconds(10);
+        public override TimeSpan Timeout => TimeSpan.FromSeconds(10);
 
-        public ReadTextTool(IToolContext ctx)
-        {
-            _workspaceDir = Path.Combine(ctx.Storage.GlobalDirectory, "..", "..", "Workspace");
-            _workspaceDir = Path.GetFullPath(_workspaceDir);
-            Directory.CreateDirectory(_workspaceDir);
-        }
-
-        /// <summary>Component 模式构造函数</summary>
-        public ReadTextTool(IPluginStorage storage)
-        {
-            _workspaceDir = Path.Combine(storage.GlobalDirectory, "..", "..", "Workspace");
-            _workspaceDir = Path.GetFullPath(_workspaceDir);
-            Directory.CreateDirectory(_workspaceDir);
-        }
-
-        public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
+        public override Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
             var path = resolvedInputs.Count > 0 ? resolvedInputs[0].Trim() : "";
             var startStr = resolvedInputs.Count > 1 ? resolvedInputs[1].Trim() : "";
@@ -75,50 +61,24 @@ namespace Plugin.FileTools
                 return Fail($"读取失败: {ex.Message}");
             }
         }
-
-        private string? ResolvePath(string relativePath)
-        {
-            var full = Path.GetFullPath(Path.Combine(_workspaceDir, relativePath));
-            return full.StartsWith(_workspaceDir, StringComparison.OrdinalIgnoreCase) ? full : null;
-        }
-
-        private static Task<ToolResult> Ok(string data) =>
-            Task.FromResult(new ToolResult { Status = "success", Data = data });
-        private static Task<ToolResult> Fail(string err) =>
-            Task.FromResult(new ToolResult { Status = "failed", Error = err });
     }
 
     [ToolMeta(Group = "file", ContinueLoop = true, CapabilitySummary = "写入或追加文本文件")]
-    public class WriteTextTool : ITool
+    public class WriteTextTool : FileToolBase
     {
-        private readonly string _workspaceDir;
+        public WriteTextTool(string workspaceDir) : base(workspaceDir) { }
 
-        public string Name => "write_text";
-        public string Description => "写入文本文件。路径相对于 Workspace 目录。action: write(覆盖写入) / append(追加)。自动创建不存在的目录。";
-        public IReadOnlyList<ToolParameter> Parameters =>
+        public override string Name => "write_text";
+        public override string Description => "写入文本文件。路径相对于 Workspace 目录。action: write(覆盖写入) / append(追加)。自动创建不存在的目录。";
+        public override IReadOnlyList<ToolParameter> Parameters =>
         [
             new("path", "文件路径（相对于 Workspace 目录）", 0),
             new("content", "要写入的文本内容", 1),
             new("action", "（可选）write=覆盖（默认）/ append=追加", 2, isRequired: false)
         ];
-        public TimeSpan Timeout => TimeSpan.FromSeconds(10);
+        public override TimeSpan Timeout => TimeSpan.FromSeconds(10);
 
-        public WriteTextTool(IToolContext ctx)
-        {
-            _workspaceDir = Path.Combine(ctx.Storage.GlobalDirectory, "..", "..", "Workspace");
-            _workspaceDir = Path.GetFullPath(_workspaceDir);
-            Directory.CreateDirectory(_workspaceDir);
-        }
-
-        /// <summary>Component 模式构造函数</summary>
-        public WriteTextTool(IPluginStorage storage)
-        {
-            _workspaceDir = Path.Combine(storage.GlobalDirectory, "..", "..", "Workspace");
-            _workspaceDir = Path.GetFullPath(_workspaceDir);
-            Directory.CreateDirectory(_workspaceDir);
-        }
-
-        public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
+        public override Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
             var path = resolvedInputs.Count > 0 ? resolvedInputs[0].Trim() : "";
             var content = resolvedInputs.Count > 1 ? resolvedInputs[1] : "";
@@ -149,52 +109,26 @@ namespace Plugin.FileTools
                 return Fail($"写入失败: {ex.Message}");
             }
         }
-
-        private string? ResolvePath(string relativePath)
-        {
-            var full = Path.GetFullPath(Path.Combine(_workspaceDir, relativePath));
-            return full.StartsWith(_workspaceDir, StringComparison.OrdinalIgnoreCase) ? full : null;
-        }
-
-        private static Task<ToolResult> Ok(string data) =>
-            Task.FromResult(new ToolResult { Status = "success", Data = data });
-        private static Task<ToolResult> Fail(string err) =>
-            Task.FromResult(new ToolResult { Status = "failed", Error = err });
     }
 
     [ToolMeta(Group = "file", ContinueLoop = true, CapabilitySummary = "列出目录内容")]
-    public class ListDirTool : ITool
+    public class ListDirTool : FileToolBase
     {
-        private readonly string _workspaceDir;
+        public ListDirTool(string workspaceDir) : base(workspaceDir) { }
 
-        public string Name => "list_dir";
-        public string Description => "列出目录下的文件和子目录。路径相对于 Workspace 目录，为空则列出根目录。";
-        public IReadOnlyList<ToolParameter> Parameters =>
+        public override string Name => "list_dir";
+        public override string Description => "列出目录下的文件和子目录。路径相对于 Workspace 目录，为空则列出根目录。";
+        public override IReadOnlyList<ToolParameter> Parameters =>
         [
             new("path", "（可选）目录路径，相对于 Workspace，为空则列出根目录", 0, isRequired: false)
         ];
-        public TimeSpan Timeout => TimeSpan.FromSeconds(5);
+        public override TimeSpan Timeout => TimeSpan.FromSeconds(5);
 
-        public ListDirTool(IToolContext ctx)
-        {
-            _workspaceDir = Path.Combine(ctx.Storage.GlobalDirectory, "..", "..", "Workspace");
-            _workspaceDir = Path.GetFullPath(_workspaceDir);
-            Directory.CreateDirectory(_workspaceDir);
-        }
-
-        /// <summary>Component 模式构造函数</summary>
-        public ListDirTool(IPluginStorage storage)
-        {
-            _workspaceDir = Path.Combine(storage.GlobalDirectory, "..", "..", "Workspace");
-            _workspaceDir = Path.GetFullPath(_workspaceDir);
-            Directory.CreateDirectory(_workspaceDir);
-        }
-
-        public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
+        public override Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
             var path = resolvedInputs.Count > 0 ? resolvedInputs[0].Trim() : "";
             var fullPath = string.IsNullOrEmpty(path)
-                ? _workspaceDir
+                ? WorkspaceDir
                 : ResolvePath(path);
 
             if (fullPath == null)
@@ -216,54 +150,23 @@ namespace Plugin.FileTools
             }
             return Ok(sb.ToString().TrimEnd());
         }
-
-        private string? ResolvePath(string relativePath)
-        {
-            var full = Path.GetFullPath(Path.Combine(_workspaceDir, relativePath));
-            return full.StartsWith(_workspaceDir, StringComparison.OrdinalIgnoreCase) ? full : null;
-        }
-
-        private static string FormatSize(long bytes) => bytes switch
-        {
-            < 1024 => $"{bytes}B",
-            < 1024 * 1024 => $"{bytes / 1024.0:F1}KB",
-            _ => $"{bytes / (1024.0 * 1024):F1}MB"
-        };
-
-        private static Task<ToolResult> Ok(string data) =>
-            Task.FromResult(new ToolResult { Status = "success", Data = data });
-        private static Task<ToolResult> Fail(string err) =>
-            Task.FromResult(new ToolResult { Status = "failed", Error = err });
     }
 
     [ToolMeta(Group = "file", ContinueLoop = true)]
-    public class MoveFileTool : ITool
+    public class MoveFileTool : FileToolBase
     {
-        private readonly string _workspaceDir;
+        public MoveFileTool(string workspaceDir) : base(workspaceDir) { }
 
-        public string Name => "move_file";
-        public string Description => "移动或重命名文件/目录。源和目标路径都相对于 Workspace 目录。";
-        public IReadOnlyList<ToolParameter> Parameters =>
+        public override string Name => "move_file";
+        public override string Description => "移动或重命名文件/目录。源和目标路径都相对于 Workspace 目录。";
+        public override IReadOnlyList<ToolParameter> Parameters =>
         [
             new("source", "源路径", 0),
             new("destination", "目标路径", 1)
         ];
-        public TimeSpan Timeout => TimeSpan.FromSeconds(10);
+        public override TimeSpan Timeout => TimeSpan.FromSeconds(10);
 
-        public MoveFileTool(IToolContext ctx)
-        {
-            _workspaceDir = Path.Combine(ctx.Storage.GlobalDirectory, "..", "..", "Workspace");
-            _workspaceDir = Path.GetFullPath(_workspaceDir);
-        }
-
-        /// <summary>Component 模式构造函数</summary>
-        public MoveFileTool(IPluginStorage storage)
-        {
-            _workspaceDir = Path.Combine(storage.GlobalDirectory, "..", "..", "Workspace");
-            _workspaceDir = Path.GetFullPath(_workspaceDir);
-        }
-
-        public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
+        public override Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
             var src = resolvedInputs.Count > 0 ? resolvedInputs[0].Trim() : "";
             var dst = resolvedInputs.Count > 1 ? resolvedInputs[1].Trim() : "";
@@ -292,46 +195,22 @@ namespace Plugin.FileTools
             }
             catch (Exception ex) { return Fail($"移动失败: {ex.Message}"); }
         }
-
-        private string? ResolvePath(string relativePath)
-        {
-            var full = Path.GetFullPath(Path.Combine(_workspaceDir, relativePath));
-            return full.StartsWith(_workspaceDir, StringComparison.OrdinalIgnoreCase) ? full : null;
-        }
-
-        private static Task<ToolResult> Ok(string data) =>
-            Task.FromResult(new ToolResult { Status = "success", Data = data });
-        private static Task<ToolResult> Fail(string err) =>
-            Task.FromResult(new ToolResult { Status = "failed", Error = err });
     }
 
     [ToolMeta(Group = "file", ContinueLoop = true)]
-    public class DeleteFileTool : ITool
+    public class DeleteFileTool : FileToolBase
     {
-        private readonly string _workspaceDir;
+        public DeleteFileTool(string workspaceDir) : base(workspaceDir) { }
 
-        public string Name => "delete_file";
-        public string Description => "删除文件或空目录。路径相对于 Workspace 目录。非空目录需要先清空。";
-        public IReadOnlyList<ToolParameter> Parameters =>
+        public override string Name => "delete_file";
+        public override string Description => "删除文件或空目录。路径相对于 Workspace 目录。非空目录需要先清空。";
+        public override IReadOnlyList<ToolParameter> Parameters =>
         [
             new("path", "要删除的文件或空目录路径", 0)
         ];
-        public TimeSpan Timeout => TimeSpan.FromSeconds(5);
+        public override TimeSpan Timeout => TimeSpan.FromSeconds(5);
 
-        public DeleteFileTool(IToolContext ctx)
-        {
-            _workspaceDir = Path.Combine(ctx.Storage.GlobalDirectory, "..", "..", "Workspace");
-            _workspaceDir = Path.GetFullPath(_workspaceDir);
-        }
-
-        /// <summary>Component 模式构造函数</summary>
-        public DeleteFileTool(IPluginStorage storage)
-        {
-            _workspaceDir = Path.Combine(storage.GlobalDirectory, "..", "..", "Workspace");
-            _workspaceDir = Path.GetFullPath(_workspaceDir);
-        }
-
-        public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
+        public override Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
             var path = resolvedInputs.Count > 0 ? resolvedInputs[0].Trim() : "";
             if (string.IsNullOrEmpty(path))
@@ -361,47 +240,23 @@ namespace Plugin.FileTools
             }
             catch (Exception ex) { return Fail($"删除失败: {ex.Message}"); }
         }
-
-        private string? ResolvePath(string relativePath)
-        {
-            var full = Path.GetFullPath(Path.Combine(_workspaceDir, relativePath));
-            return full.StartsWith(_workspaceDir, StringComparison.OrdinalIgnoreCase) ? full : null;
-        }
-
-        private static Task<ToolResult> Ok(string data) =>
-            Task.FromResult(new ToolResult { Status = "success", Data = data });
-        private static Task<ToolResult> Fail(string err) =>
-            Task.FromResult(new ToolResult { Status = "failed", Error = err });
     }
 
     [ToolMeta(Group = "file", ContinueLoop = true)]
-    public class CopyFileTool : ITool
+    public class CopyFileTool : FileToolBase
     {
-        private readonly string _workspaceDir;
+        public CopyFileTool(string workspaceDir) : base(workspaceDir) { }
 
-        public string Name => "copy_file";
-        public string Description => "复制文件。源和目标路径都相对于 Workspace 目录。";
-        public IReadOnlyList<ToolParameter> Parameters =>
+        public override string Name => "copy_file";
+        public override string Description => "复制文件。源和目标路径都相对于 Workspace 目录。";
+        public override IReadOnlyList<ToolParameter> Parameters =>
         [
             new("source", "源文件路径", 0),
             new("destination", "目标文件路径", 1)
         ];
-        public TimeSpan Timeout => TimeSpan.FromSeconds(10);
+        public override TimeSpan Timeout => TimeSpan.FromSeconds(10);
 
-        public CopyFileTool(IToolContext ctx)
-        {
-            _workspaceDir = Path.Combine(ctx.Storage.GlobalDirectory, "..", "..", "Workspace");
-            _workspaceDir = Path.GetFullPath(_workspaceDir);
-        }
-
-        /// <summary>Component 模式构造函数</summary>
-        public CopyFileTool(IPluginStorage storage)
-        {
-            _workspaceDir = Path.Combine(storage.GlobalDirectory, "..", "..", "Workspace");
-            _workspaceDir = Path.GetFullPath(_workspaceDir);
-        }
-
-        public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
+        public override Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
             var src = resolvedInputs.Count > 0 ? resolvedInputs[0].Trim() : "";
             var dst = resolvedInputs.Count > 1 ? resolvedInputs[1].Trim() : "";
@@ -426,16 +281,5 @@ namespace Plugin.FileTools
             }
             catch (Exception ex) { return Fail($"复制失败: {ex.Message}"); }
         }
-
-        private string? ResolvePath(string relativePath)
-        {
-            var full = Path.GetFullPath(Path.Combine(_workspaceDir, relativePath));
-            return full.StartsWith(_workspaceDir, StringComparison.OrdinalIgnoreCase) ? full : null;
-        }
-
-        private static Task<ToolResult> Ok(string data) =>
-            Task.FromResult(new ToolResult { Status = "success", Data = data });
-        private static Task<ToolResult> Fail(string err) =>
-            Task.FromResult(new ToolResult { Status = "failed", Error = err });
     }
 }
