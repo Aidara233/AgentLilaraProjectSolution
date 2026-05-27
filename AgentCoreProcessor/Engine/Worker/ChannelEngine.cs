@@ -879,6 +879,11 @@ namespace AgentCoreProcessor.Engine
             // 推进游标
             if (_pendingCursor > _lastConsumedMessageId)
                 _lastConsumedMessageId = _pendingCursor;
+
+            // Express 模式持久化游标（防止冷超时重启后消息锚点丢失）
+            if (_lastConsumedMessageId > 0)
+                persistence?.SaveContext(contextSummary, "express", new List<List<Message>>(),
+                    _lastConsumedMessageId, _escalateReason);
         }
 
         // ═══════════════════════════════════════════════════════════
