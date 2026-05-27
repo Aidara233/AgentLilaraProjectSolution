@@ -207,7 +207,12 @@ namespace Plugin.FileOps
                             {
                                 ct.ThrowIfCancellationRequested();
                                 if (!entry.IsDirectory)
+                                {
+                                    var destPath = Path.GetFullPath(Path.Combine(targetFull, entry.Key ?? ""));
+                                    if (!destPath.StartsWith(targetFull, StringComparison.OrdinalIgnoreCase))
+                                        continue;
                                     entry.WriteToDirectory(targetFull, new ExtractionOptions { ExtractFullPath = true, Overwrite = true });
+                                }
                             }
                         }
                         break;
