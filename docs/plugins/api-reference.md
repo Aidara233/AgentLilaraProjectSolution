@@ -430,7 +430,22 @@ void SetState(SleepLevel level);
 ```csharp
 string? GetBotPlatformId(string platform);
 Task<string?> ExecuteActionAsync(string adapterId, string action, string? paramsJson = null);
+List<AdapterActionInfo> GetAvailableActions(string adapterId);
+string? GetAdapterIdForChannel(string channelId);
 ```
+
+关联 DTO：
+
+```csharp
+class AdapterActionInfo {
+    string Name; string Label; string Description; List<ActionParamInfo> Params;
+}
+class ActionParamInfo {
+    string Name; string Label; string Type; bool Required;
+}
+```
+
+`GetAvailableActions()` 返回适配器支持的完整操作列表（标签、描述、参数元数据）。`GetAdapterIdForChannel()` 按频道 ID 查找对应的适配器实例 ID。`ExecuteActionAsync` 的 `paramsJson` 为 JSON 对象字符串如 `{"user_id":"123456"}`。
 
 ### ILoopControl
 

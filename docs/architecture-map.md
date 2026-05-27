@@ -11,9 +11,10 @@ AgentLilaraProjectSolution/
 ├── AgentLilara.PluginSDK/   共享契约类库（ITool/IToolContext/服务接口），插件开发者引用此项目
 ├── AgentCoreProcessor/      主程序
 │     ├── Adapter/     平台适配（File/OneBot QQ），消息收发，通用操作接口
-│     │     ├── OneBot/  OneBotAdapter(WS协议) + OneBotMessageParser(解析) + OneBotActions(操作,base64图片编码) + OneBotConfig
+│     │     ├── OneBot/  OneBotAdapter(WS协议) + OneBotMessageParser(解析+notice事件分类) + OneBotActions(操作+base64图片编码) + OneBotConfig
 │     │     ├── File/    FileAdapter（文件轮询，测试用）
-│     │     └── 通用:    IAdapter / AdapterManager / AdapterFactory / AdapterStatus / AdapterAction
+│     │     └── 通用:    IAdapter / AdapterManager / AdapterFactory / AdapterStatus / AdapterAction / ActionResult / AdapterAccessImpl(IAdapterAccess桥接)
+│     │     ├── 消息模型: IncomingMessage (含 IsSystemEvent/SystemEventSubType) + OutgoingMessage + MessageAttachment
 │     ├── Client/      IModelClient 抽象层（Claude/OpenAI 双协议）+ Embedding + IVisionProvider + IOcrProvider
 │     ├── Command/     框架指令系统（/help /status /config 等）
 │     ├── Config/      PathConfig 绝对路径管理
@@ -27,7 +28,7 @@ AgentLilaraProjectSolution/
 │     ├── WebUI/       Blazor Server 管理面板（嵌入式，同进程）
 │     └── Program.cs   入口（WebApplication 宿主，默认启动 Web 服务器 + 适配器）
 └── Plugins/
-      ├── Plugin.BasicTools/      speak + send_media
+      ├── Plugin.BasicTools/      speak + send_media + adapter_action
       └── Plugin.CrossLoopTools/  跨循环委托与通信
 ```
 
@@ -126,8 +127,19 @@ Adapter → EventBus(MessageEvent) → ChannelEngineSpawnCheck
   ③ 按 ChannelId 路由: 有活跃 ChannelEngine → EnqueueMessage / 无 → 创建新 ChannelEngine
   （睡眠行为由 ChannelEngineSpawnCheck 按 SleepState 拦截处理）
 
+Notice 事件分流 (OneBotMessageParser.ParseNoticeEvent):
+  系统事件转为 IncomingMessage(IsSystemEvent=true, SystemEventSubType=...)
+  已处理: poke/ban/unban/recall/upload
+  SystemEventSubType 供引擎层路由: ban→阻断唤醒, unban→强制唤醒
+  不计入冲动值 (ImpulseTracker 跳过了 IsSystemEvent)
+
 ChannelEngine (频道循环，常驻，一个活跃频道一个):
   实现 ISubEngine + IAgentHost
+
+  禁言阻断:
+    收到 SystemEventSubType="ban" → _isBanned=true → EnqueueMessage 跳过唤醒
+    消息照常 buffer + 记忆提取照常，仅不跑推理
+    SystemEventSubType="unban" → _isBanned=false + IsMentioned=true → 强制唤醒 drain
 
   闸门驱动循环 (Gate, auto-reset):
     gate.WaitAsync(coldTimeout) → 放行后立即重置 → 收集 → 执行 → 回到等待
