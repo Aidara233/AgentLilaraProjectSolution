@@ -16,7 +16,7 @@ public class SshGlobalComponent : GlobalComponentBase
     private readonly object _lock = new();
 
     private readonly ConcurrentDictionary<string, SshTask> _runningTasks = new();
-    private readonly ConcurrentQueue<SshTask> _completedTasks = new();
+    private readonly ConcurrentDictionary<string, SshTask> _completedTasks = new();
 
     /// <summary>异步任务完成回调，由 LoopComponent 注册以唤醒 loop。</summary>
     public Action<string>? OnTaskCompleted { get; set; }
@@ -122,7 +122,7 @@ public class SshGlobalComponent : GlobalComponentBase
             task.Status = status;
             task.Error = error;
             task.CompletedAt = DateTime.UtcNow;
-            _completedTasks.Enqueue(task);
+            _completedTasks[taskId] = task;
             ResetIdleTimer();
 
             // 唤醒对应 loop
@@ -133,8 +133,7 @@ public class SshGlobalComponent : GlobalComponentBase
     public bool TryGetTask(string taskId, out SshTask? task)
     {
         if (_runningTasks.TryGetValue(taskId, out task)) return true;
-        task = _completedTasks.FirstOrDefault(t => t.TaskId == taskId);
-        return task != null;
+        return _completedTasks.TryGetValue(taskId, out task);
     }
 
     public List<SshTask> GetAllRunningTasks() => _runningTasks.Values.ToList();
@@ -143,15 +142,14 @@ public class SshGlobalComponent : GlobalComponentBase
     public List<SshTask> DrainCompletedTasks(string loopId)
     {
         var result = new List<SshTask>();
-        var remaining = new List<SshTask>();
-        while (_completedTasks.TryDequeue(out var task))
+        foreach (var kvp in _completedTasks)
         {
-            if (task.LoopId == loopId)
-                result.Add(task);
-            else
-                remaining.Add(task);
+            if (kvp.Value.LoopId == loopId)
+            {
+                result.Add(kvp.Value);
+                _completedTasks.TryRemove(kvp.Key, out _);
+            }
         }
-        foreach (var t in remaining) _completedTasks.Enqueue(t);
         return result;
     }
 
