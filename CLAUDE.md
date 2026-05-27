@@ -21,7 +21,9 @@
 - Token 统计：ModelCallLog 数据库表记录每次调用（含 usage + caller tag），LogsProvider WebUI 页面待开发
   - CallerTag 标识调用来源：Channel:{id} / System / SubAgent:{sessionId} / Review:{mode} / Dream:{phase}
 - 工具管理：ToolRegistry 动态注册/卸载 + ToolProfileManager 链式继承 + WebUI /p/plugins 管理
-- Express 工具（fire-and-forget）：Express/Working 统一使用原生 tool_use（useNativeTools=true）。Express 唯一区别是不续轮（工具结果不回注、不触发下一轮）。ToolMetaAttribute.ExpressAvailable=true 标记 Express 可用工具（speak, send_media, escalate）。
+- Express 工具（fire-and-forget）：Express/Working 统一使用原生 tool_use（useNativeTools=true）。Express 唯一区别是不续轮（工具结果不回注、不触发下一轮）。ToolMetaAttribute.ExpressAvailable=true 标记 Express 可用工具（speak, send_media, escalate）。ToolMetaAttribute.OutputOnly=true 标记纯输出工具，引擎据此跳过 hadWorkThisRound 计数。
+- 消息段交错：MessageSegment（Text/Image/At/Reply）按原文顺序排列。OutgoingMessage.Segments 优先于旧 Content+Attachments 路径。OneBotActions 直接消费 Segments 构建分段消息数组。
+- 图片发送：本地图片通过 base64:// 编码传给 NapCat（不依赖 file:/// 或裸路径）。
 - 多模态图片处理：ContentPart 支持 text/image(path或base64)、图片感知（img 标记+直传/描述分流）、ViewImageTool Working专用、SkiaSharp 缩略图
 
 ## 工作规范

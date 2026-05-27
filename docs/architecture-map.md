@@ -11,7 +11,7 @@ AgentLilaraProjectSolution/
 ├── AgentLilara.PluginSDK/   共享契约类库（ITool/IToolContext/服务接口），插件开发者引用此项目
 ├── AgentCoreProcessor/      主程序
 │     ├── Adapter/     平台适配（File/OneBot QQ），消息收发，通用操作接口
-│     │     ├── OneBot/  OneBotAdapter(协议层) + OneBotMessageParser(解析层) + OneBotActions(操作层) + OneBotConfig
+│     │     ├── OneBot/  OneBotAdapter(WS协议) + OneBotMessageParser(解析) + OneBotActions(操作,base64图片编码) + OneBotConfig
 │     │     ├── File/    FileAdapter（文件轮询，测试用）
 │     │     └── 通用:    IAdapter / AdapterManager / AdapterFactory / AdapterStatus / AdapterAction
 │     ├── Client/      IModelClient 抽象层（Claude/OpenAI 双协议）+ Embedding + IVisionProvider + IOcrProvider
@@ -380,7 +380,7 @@ AgentLilara.PluginSDK (共享契约，独立类库):
   IToolContext: GetService<T>() / Storage
   IPluginStorage: GlobalDirectory / InstanceDirectory
   IPromptContributor: SectionKey / Priority / BuildSection()
-  ToolMetaAttribute: Group / ContinueLoop / AllowSubAgent / CapabilitySummary / Permission / Scope / ExpressAvailable
+  ToolMetaAttribute: Group / ContinueLoop / AllowSubAgent / CapabilitySummary / Permission / Scope / ExpressAvailable / OutputOnly
   ToolParameter: Name / Description / Index / IsRequired（控制 JSON Schema required 数组）
   EngineMode: Express / Working（SDK 枚举，供 ILoopControl 使用）
   Services/: IMemoryAccess（完整数据访问：语义搜索/向量操作/批量读取/临时库/关联图）
