@@ -30,12 +30,6 @@ internal class AdapterProvider : IWebUIProvider
 
     private static string SrcId(string platform, string suffix) => $"adapter-{platform}-{suffix}";
 
-    private static readonly string[] OneBotActions = new[]
-    {
-        "get_group_list", "get_group_member_list", "get_friend_list",
-        "recall", "poke", "set_group_card"
-    };
-
     private List<PageDefinition> BuildPages()
     {
         var pages = new List<PageDefinition>();
@@ -199,7 +193,7 @@ internal class AdapterProvider : IWebUIProvider
                 ListenEvent = "adapter-selected",
                 Layout = new() { Order = 3, PreferredCols = 4 }
             }
-        }, OneBotActions));
+        }));
 
         // ═══ File 详情 ═══
         pages.Add(BuildPlatformPage("file", "File 适配器", new()
@@ -261,12 +255,12 @@ internal class AdapterProvider : IWebUIProvider
                 ListenEvent = "adapter-selected",
                 Layout = new() { Order = 2, PreferredCols = 4 }
             }
-        }, null));
+        }));
 
         return pages;
     }
 
-    private PageDefinition BuildPlatformPage(string platform, string title, List<CardDefinition> baseCards, string[]? actionNames)
+    private PageDefinition BuildPlatformPage(string platform, string title, List<CardDefinition> baseCards)
     {
         var cards = new List<CardDefinition>(baseCards);
         var dataSources = new List<DataSourceDefinition>
@@ -277,32 +271,36 @@ internal class AdapterProvider : IWebUIProvider
             new() { Id = SrcId(platform, "config"), Source = new AdapterConfigSource(Adapters) }
         };
 
-        if (actionNames != null)
+        // 从适配器实例动态获取可用操作（而非硬编码列表）
+        var actions = GetAdapterActions(platform);
+        int actionOrder = baseCards.Count;
+        foreach (var a in actions)
         {
-            int actionOrder = baseCards.Count;
-            foreach (var name in actionNames)
+            var dsId = SrcId(platform, $"action-{a.Name}");
+            cards.Add(new()
             {
-                var def = GetActionDef(name);
-                var dsId = SrcId(platform, $"action-{name}");
-                cards.Add(new()
+                Id = $"{platform}-action-{a.Name}",
+                Type = CardType.Action,
+                DataSourceId = dsId,
+                Title = a.Label,
+                Schema = new ActionCardSchema
                 {
-                    Id = $"{platform}-action-{name}",
-                    Type = CardType.Action,
-                    DataSourceId = dsId,
-                    Title = def.Label,
-                    Schema = new ActionCardSchema
+                    ActionId = a.Name,
+                    ActionLabel = a.Label,
+                    Description = a.Description,
+                    Params = a.Params.Select(p => new ActionParamDef
                     {
-                        ActionId = name,
-                        ActionLabel = def.Label,
-                        Description = def.Description,
-                        Params = def.Params,
-                        SubmitLabel = def.SubmitLabel
-                    },
-                    ListenEvent = "adapter-selected",
-                    Layout = new() { Order = actionOrder++, PreferredCols = 4 }
-                });
-                dataSources.Add(new() { Id = dsId, Source = new ActionExecSource(Adapters, name) });
-            }
+                        Name = p.Name,
+                        Label = p.Label,
+                        Type = p.Type,
+                        Required = p.Required
+                    }).ToList(),
+                    SubmitLabel = "执行"
+                },
+                ListenEvent = "adapter-selected",
+                Layout = new() { Order = actionOrder++, PreferredCols = 4 }
+            });
+            dataSources.Add(new() { Id = dsId, Source = new ActionExecSource(Adapters, a.Name) });
         }
 
         return new()
@@ -314,31 +312,15 @@ internal class AdapterProvider : IWebUIProvider
         };
     }
 
-    private static (string Label, string Description, List<ActionParamDef> Params, string SubmitLabel) GetActionDef(string name) => name switch
+    private List<AdapterAction> GetAdapterActions(string platform)
     {
-        "get_group_list" => ("获取群列表", "返回所有已加入的群。", new(), "获取"),
-        "get_group_member_list" => ("获取群成员列表", "返回指定群的成员列表。", new()
-        {
-            new() { Name = "group_id", Label = "群号", Required = true }
-        }, "获取"),
-        "get_friend_list" => ("获取好友列表", "返回好友列表。", new(), "获取"),
-        "recall" => ("撤回消息", "撤回指定消息。", new()
-        {
-            new() { Name = "message_id", Label = "消息ID", Required = true }
-        }, "撤回"),
-        "poke" => ("戳一戳", "向指定用户发送戳一戳。", new()
-        {
-            new() { Name = "user_id", Label = "用户QQ", Required = true },
-            new() { Name = "group_id", Label = "群号（可选）", Required = false }
-        }, "发送"),
-        "set_group_card" => ("设置群名片", "修改指定群成员的群名片。", new()
-        {
-            new() { Name = "group_id", Label = "群号", Required = true },
-            new() { Name = "user_id", Label = "用户QQ", Required = true },
-            new() { Name = "card", Label = "新名片", Required = true }
-        }, "设置"),
-        _ => (name, "", new(), "执行")
-    };
+        // 找到第一个匹配类型的适配器实例，查询其可用操作
+        var adapterId = Adapters.GetAllConfigs()
+            .FirstOrDefault(c => c.Type.Equals(platform, StringComparison.OrdinalIgnoreCase))?.Id;
+        if (adapterId == null) return new();
+
+        return Adapters.GetAdapterById(adapterId)?.GetAvailableActions() ?? new();
+    }
 }
 
 // ════════════════════════════════════════════════════════
