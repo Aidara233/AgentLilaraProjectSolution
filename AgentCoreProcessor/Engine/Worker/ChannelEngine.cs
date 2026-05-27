@@ -3,7 +3,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
@@ -1860,31 +1859,6 @@ namespace AgentCoreProcessor.Engine
             extractionWorker.Cancel();
         }
 
-
-        // ---- Express 轻量动作 ----
-
-        private static readonly Regex PokeRegex = new(@"\[POKE:(\d+)\]", RegexOptions.Compiled);
-
-        private async Task<string> ProcessPokeMarkers(string text, IncomingMessage lastMsg)
-        {
-            var matches = PokeRegex.Matches(text);
-            if (matches.Count == 0) return text;
-
-            foreach (Match match in matches)
-            {
-                var targetUid = match.Groups[1].Value;
-                long? groupId = lastMsg.ChannelId.StartsWith("group_")
-                    ? long.Parse(lastMsg.ChannelId[6..])
-                    : null;
-
-                var parameters = new Dictionary<string, string> { ["user_id"] = targetUid };
-                if (groupId.HasValue) parameters["group_id"] = groupId.Value.ToString();
-
-                var result = await ctx.Adapters.ExecuteActionAsync(lastMsg.Platform, lastMsg.ChannelId, "poke", parameters);
-            }
-
-            return PokeRegex.Replace(text, "").Trim();
-        }
 
         private async Task IncrementDailyProgressAsync(Person person)
         {
