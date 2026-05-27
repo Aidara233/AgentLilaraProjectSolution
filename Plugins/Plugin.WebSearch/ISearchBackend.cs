@@ -19,6 +19,7 @@ public class SearchResults
     public string Query { get; set; } = "";
     public string? Answer { get; set; }
     public List<SearchResultItem> Results { get; set; } = new();
+    public int Count => Results.Count;
 }
 
 public class SearchResultItem
