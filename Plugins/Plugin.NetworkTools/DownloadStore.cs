@@ -27,7 +27,12 @@ public class DownloadStore
         }
         task.Status = DownloadStatus.Downloading;
         task.StartedAt = DateTime.UtcNow;
-        return _tasks.TryAdd(task.Id, task);
+        if (!_tasks.TryAdd(task.Id, task))
+        {
+            DecrementActive();
+            return false;
+        }
+        return true;
     }
 
     public DownloadTask? Get(string id)
@@ -116,6 +121,7 @@ public class DownloadStore
         foreach (var task in _tasks.Values)
             task.Cts?.Cancel();
         _tasks.Clear();
+        _notifications.Clear();
         _activeCount = 0;
     }
 
