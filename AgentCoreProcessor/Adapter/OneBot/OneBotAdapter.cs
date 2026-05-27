@@ -419,29 +419,11 @@ namespace AgentCoreProcessor.Adapter
             },
             new AdapterAction
             {
-                Name = "get_group_file_list", Label = "获取群文件列表", Description = "列出群文件根目录（文件夹和文件），busid 留空默认 102",
+                Name = "get_group_files", Label = "获取群文件列表", Description = "列出群文件根目录或子目录。返回文件和文件夹列表（含 file_id/busid/size 等）",
                 Params = new()
                 {
                     new ActionParam { Name = "group_id", Label = "群号", Type = "text" },
-                    new ActionParam { Name = "folder_id", Label = "文件夹ID（可选，留空查根目录）", Type = "text", Required = false },
-                    new ActionParam { Name = "busid", Label = "业务ID（可选，默认102）", Type = "text", Required = false }
-                }
-            },
-            new AdapterAction
-            {
-                Name = "get_group_files_by_folder", Label = "获取群文件列表(按文件夹)", Description = "列出指定文件夹下的群文件，folder_id 默认根目录",
-                Params = new()
-                {
-                    new ActionParam { Name = "group_id", Label = "群号", Type = "text" },
-                    new ActionParam { Name = "folder_id", Label = "文件夹ID（可选，默认根目录）", Type = "text", Required = false }
-                }
-            },
-            new AdapterAction
-            {
-                Name = "get_group_root_files", Label = "获取群文件根目录", Description = "列出群文件根目录，无需 folder_id",
-                Params = new()
-                {
-                    new ActionParam { Name = "group_id", Label = "群号", Type = "text" }
+                    new ActionParam { Name = "folder_id", Label = "文件夹ID（可选，留空查根目录）", Type = "text", Required = false }
                 }
             },
             new AdapterAction
@@ -502,6 +484,7 @@ namespace AgentCoreProcessor.Adapter
 
                     case "get_group_file_list":
                     case "get_group_files_by_folder":
+                    case "get_group_files":
                         if (!parameters.TryGetValue("group_id", out var fgid) || !long.TryParse(fgid, out var fileGroupId))
                             return new ActionResult { Success = false, Error = "缺少 group_id 参数" };
                         var folderId = parameters.GetValueOrDefault("folder_id", "/");
