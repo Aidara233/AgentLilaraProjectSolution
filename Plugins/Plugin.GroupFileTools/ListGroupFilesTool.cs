@@ -18,16 +18,18 @@ public class ListGroupFilesTool : ITool
     }
 
     public string Name => "list_group_files";
-    public string Description => "查询群文件。先列文件，拿到 file_id+busid 后用 download_group_file 下载。"
-        + "folder_id 不填默认根目录。keyword 模糊匹配文件名。sort_by: time/size/name，默认 time。";
+    public string Description => "查询群文件。拿到 file_id+busid 后用 download_group_file 下载。"
+        + "folder_id 默认根目录。keyword 模糊匹配文件名和上传者。ext 按扩展名过滤（如 .c .pdf）。"
+        + "sort_by: time/size/name，默认 time。limit 默认10。";
 
     public IReadOnlyList<ToolParameter> Parameters =>
     [
         new("group_id", "群号", 0),
         new("folder_id", "文件夹ID（可选，默认根目录）", 1, isRequired: false),
-        new("keyword", "文件名关键词（可选）", 2, isRequired: false),
-        new("sort_by", "排序方式: time/size/name（默认time）", 3, isRequired: false),
-        new("limit", "返回条数（默认30）", 4, isRequired: false)
+        new("keyword", "文件名或上传者关键词（可选）", 2, isRequired: false),
+        new("ext", "文件扩展名过滤，如 .c .pdf（可选）", 3, isRequired: false),
+        new("sort_by", "排序方式: time/size/name（默认time）", 4, isRequired: false),
+        new("limit", "返回条数（默认10，最大50）", 5, isRequired: false)
     ];
 
     public TimeSpan Timeout => TimeSpan.FromSeconds(10);
@@ -43,10 +45,11 @@ public class ListGroupFilesTool : ITool
 
         var folderId = resolvedInputs.Count > 1 ? resolvedInputs[1]?.Trim() : null;
         var keyword = resolvedInputs.Count > 2 ? resolvedInputs[2]?.Trim() : null;
-        var sortBy = resolvedInputs.Count > 3 ? resolvedInputs[3]?.Trim() : "time";
-        var limitStr = resolvedInputs.Count > 4 ? resolvedInputs[4]?.Trim() : "30";
-        if (!int.TryParse(limitStr, out var limit) || limit < 1) limit = 30;
-        if (limit > 100) limit = 100;
+        var ext = resolvedInputs.Count > 3 ? resolvedInputs[3]?.Trim() : null;
+        var sortBy = resolvedInputs.Count > 4 ? resolvedInputs[4]?.Trim() : "time";
+        var limitStr = resolvedInputs.Count > 5 ? resolvedInputs[5]?.Trim() : "10";
+        if (!int.TryParse(limitStr, out var limit) || limit < 1) limit = 10;
+        if (limit > 50) limit = 50;
 
         var folderParam = string.IsNullOrEmpty(folderId) ? null : $",\"folder_id\":\"{folderId}\"";
         var paramJson = $"{{\"group_id\":\"{groupId}\"{folderParam}}}";
@@ -64,9 +67,22 @@ public class ListGroupFilesTool : ITool
         var header = lines[0];
         var items = lines.Skip(1).ToList();
 
-        // 过滤 keyword
+        // 过滤 keyword（文件名或上传者）
         if (!string.IsNullOrEmpty(keyword))
             items = items.Where(l => l.Contains(keyword, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        // 过滤扩展名
+        if (!string.IsNullOrEmpty(ext))
+        {
+            var exts = ext.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                .Select(e => e.StartsWith('.') ? e : $".{e}")
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            items = items.Where(l =>
+            {
+                var name = ExtractName(l);
+                return exts.Any(e => name.EndsWith(e, StringComparison.OrdinalIgnoreCase));
+            }).ToList();
+        }
 
         // 排序（简单按前缀类型分：文件夹[D]优先，然后按sort_by）
         var folders = items.Where(l => l.TrimStart().StartsWith("[D]")).ToList();
