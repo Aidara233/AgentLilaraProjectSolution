@@ -53,7 +53,7 @@ public class BasicToolsComponent : LoopComponentBase
             var detail = await channelAccess.GetChannelDetailAsync(channelId);
             if (detail != null)
             {
-                var adapterId = adapterAccess.GetAdapterIdForChannel(detail.PlatformChannelId);
+                var adapterId = adapterAccess.GetAdapterIdForChannel(detail.Name);
                 if (adapterId != null)
                     _adapterAction = new AdapterActionTool(adapterAccess, adapterId);
             }

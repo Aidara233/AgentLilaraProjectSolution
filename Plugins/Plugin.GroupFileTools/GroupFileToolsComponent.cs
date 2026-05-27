@@ -42,7 +42,7 @@ public class GroupFileToolsComponent : LoopComponentBase
         var detail = await channelAccess.GetChannelDetailAsync(channelId);
         if (detail == null) return;
 
-        var adapterId = adapterAccess.GetAdapterIdForChannel(detail.PlatformChannelId);
+        var adapterId = adapterAccess.GetAdapterIdForChannel(detail.Name);
         if (adapterId == null) return;
 
         // Workspace 路径

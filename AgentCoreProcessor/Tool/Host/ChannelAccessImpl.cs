@@ -41,7 +41,7 @@ namespace AgentCoreProcessor.Tool.Host
                 Id = ch.Id,
                 Name = ch.Name,
                 Platform = "",
-                PlatformChannelId = ""
+                PlatformChannelId = ch.Name
             };
         }
 
