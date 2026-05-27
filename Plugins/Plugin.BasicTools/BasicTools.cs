@@ -48,6 +48,50 @@ namespace Plugin.BasicTools
     }
 
     [ToolMeta(Group = null, ContinueLoop = false, ExpressAvailable = true, OutputOnly = true)]
+    public class SendFileTool : ITool
+    {
+        private readonly IChannelAccess? _channelAccess;
+        private readonly int _channelId;
+
+        public SendFileTool() { }
+
+        public SendFileTool(IChannelAccess channelAccess, int channelId)
+        {
+            _channelAccess = channelAccess;
+            _channelId = channelId;
+        }
+
+        public string Name => "send_file";
+        public string Description => "发送文件到当前频道。file_path: hash:xxx（图库）或 Workspace 相对路径。"
+            + "file_name 可选，不填则使用原文件名。";
+        public IReadOnlyList<ToolParameter> Parameters =>
+        [
+            new("file_path", "文件路径：hash:xxx（图库）或 Workspace 相对路径", 0),
+            new("file_name", "可选，自定义显示文件名", 1)
+        ];
+        public TimeSpan Timeout => TimeSpan.FromSeconds(15);
+
+        public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
+        {
+            if (resolvedInputs.Count < 1 || string.IsNullOrWhiteSpace(resolvedInputs[0]))
+                return new ToolResult { Status = "failed", Error = "文件路径不能为空" };
+
+            var filePath = resolvedInputs[0].Trim();
+            var fileName = resolvedInputs.Count > 1 ? resolvedInputs[1]?.Trim() : null;
+
+            if (_channelAccess != null)
+            {
+                var sentId = await _channelAccess.SendFileAsync(_channelId, filePath, fileName);
+                return sentId != null
+                    ? new ToolResult { Status = "success", Data = sentId }
+                    : new ToolResult { Status = "failed", Error = "文件发送失败" };
+            }
+
+            return new ToolResult { Status = "success", Data = filePath };
+        }
+    }
+
+    [ToolMeta(Group = null, ContinueLoop = false, ExpressAvailable = true, OutputOnly = true)]
     public class SendMediaTool : ITool
     {
         private readonly IChannelAccess? _channelAccess;
