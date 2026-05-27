@@ -221,18 +221,21 @@ public interface IPageContext
 ```csharp
 public interface IPluginStorage
 {
-    string GlobalDirectory { get; }    // 插件全局目录（配置、共享数据）
-    string InstanceDirectory { get; }  // 当前实例目录（循环隔离）
+    string GlobalDirectory { get; }      // 插件全局目录（配置、共享数据）
+    string InstanceDirectory { get; }    // 当前实例目录（循环隔离）
+    string WorkspaceDirectory { get; }   // 共享工作区目录（Storage/Workspace/）
 }
 ```
 
 - Global 组件：`GlobalDirectory = InstanceDirectory`
 - Loop 组件：`InstanceDirectory` 为每个循环独立（如 `per-channel-xxx/`）
+- **WorkspaceDirectory**：所有文件工具共享的沙箱目录。插件内需要访问 Workspace 时，优先使用此属性，**不要**通过 `GlobalDirectory` 做 `..` 相对跳转。
 
 路径示例：
 ```
-Storage/Plugins/file-tools/          ← GlobalDirectory
-Storage/Plugins/file-tools/per-channel-abc123/  ← InstanceDirectory (Loop)
+Storage/PluginData/file-tools/         ← GlobalDirectory
+Storage/PluginData/file-tools/per-channel-abc123/  ← InstanceDirectory (Loop)
+Storage/Workspace/                     ← WorkspaceDirectory（所有文件插件共用）
 ```
 
 ---
