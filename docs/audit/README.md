@@ -99,7 +99,7 @@
 - Plugins/Plugin.ReviewTools/ (15 个复盘工具)
 - Plugins/Plugin.ScheduledTasks/ (schedule/list/cancel)
 - Tool/Host/ (BeaconAccessImpl, ChannelAccessImpl, MemoryAccessImpl, PersonAccessImpl, ReviewAccessImpl, ReviewControlImpl, ToolContextImpl)
-- Tool/Core/ (CoreTools, CompressTool, DeescalateTool, EscalateTool, ManageComponentsTool)
+- Tool/Core/ (CoreTools, CompressTool, DeescalateTool, EscalateTool)
 
 ### 7. WebUI
 - Components/Pages/ (Dashboard, Login, LogTrace, McpStatus, Memory_Graph)

@@ -30,13 +30,7 @@ catch (Exception) { }     // DisableComponentAsync
 
 ### 🟡 BUG — 轻度
 
-**3. ManageComponentsTool 依赖 AsyncLocal 跨线程传递** (`ManageComponentsTool.cs:20`)
-```csharp
-public static readonly AsyncLocal<LoopContext?> CurrentLoop = new();
-```
-`AsyncLocal<T>` 在 `Task.Run` 或 `ThreadPool` 切换时不保证流动。虽然当前工具执行在同步路径内线程未切换，但任何将来引入的并行工具执行都会导致 `CurrentLoop.Value` 为 null，返回"会话上下文未设置"。
-
-**4. PluginLoader 空 catch 块** (`PluginLoader.cs:136-138`) ✅ 已修复 2026-05-26
+**3. PluginLoader 空 catch 块** (`PluginLoader.cs:136-138`) ✅ 已修复 2026-05-26
 ```csharp
 if (ToolRegistry.Register(tool))
     entry.ToolNames.Add(tool.Name);

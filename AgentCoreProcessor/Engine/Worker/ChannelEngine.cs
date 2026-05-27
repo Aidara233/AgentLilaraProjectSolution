@@ -856,8 +856,6 @@ namespace AgentCoreProcessor.Engine
             // Fire-and-forget tools (speak/send_media/escalate etc.)
             if (output.HasToolCalls && output.ToolCalls != null)
             {
-                Tool.Core.ManageComponentsTool.CurrentLoop.Value =
-                    new Tool.Core.ManageComponentsTool.LoopContext("channel");
                 using var expressToolSpan = Signal.Open(LogGroup.Tool, $"Express工具: {string.Join(", ", output.ToolCalls.Select(c => c.Tool))}",
                     new { calls = output.ToolCalls.Select(c => new { c.Tool, c.Inputs }) });
                 var executor = new ToolExecutor(componentHost.TryGetTool, null);

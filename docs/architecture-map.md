@@ -55,7 +55,6 @@ MasterEngine (内核，实现 ISystemContext)
   │     Profile: components(enabled/disabled/unavailable) + blockedTools/unblockedTools
   │     _root → channel/system/sub-agent 继承链
   │     channelMapping: channelId → profileName
-  │     会话级组件激活: manage_components 工具
   ├── GlobalComponentHost + ComponentHost(per-loop) + ModuleBus(per-loop)
   │     Component 系统: IGlobalComponent(全局) / ILoopComponent(per-loop)
   │     ComponentRegistry: 类型注册，PluginLoader 扫描 [Component] 标记
@@ -151,7 +150,7 @@ ChannelEngine (频道循环，常驻，一个活跃频道一个):
   Express 模式 (直接调 Core，不走 Agent):
     ExecuteExpressCycleAsync: 构建上下文 → AgentCore.InvokeAsync → 发文本 + 静默执行 Express 工具
     Express 工具 (fire-and-forget): ToolMetaAttribute.ExpressAvailable=true
-    核心 Express 工具: escalate(切Working) / manage_components(组件管理)
+    核心 Express 工具: escalate(切Working)
     非 native 提供商 fallback: 仍解析 [ESCALATE] 文本标记
 
   模式切换:
@@ -392,7 +391,7 @@ AgentLilara.PluginSDK (共享契约，独立类库):
              IBeaconAccess（信标创建）/ IPersonAccess（人物查询/更新）
 
 主程序 Tool/ (宿主层):
-  Core/CoreTools.cs          — 核心工具（continue_loop + wait + manage_components + escalate），不可卸载
+  Core/CoreTools.cs          — 核心工具（continue_loop + wait + escalate），不可卸载
   Core/EscalateTool.cs       — Express→Working 模式切换工具（ExpressAvailable=true）
   Host/PluginLoader          — 扫描 {BaseDirectory}/Plugins/*.dll，AssemblyLoadContext 隔离加载
   Host/ToolContextImpl       — IToolContext 实现（ConcurrentDictionary 服务容器）

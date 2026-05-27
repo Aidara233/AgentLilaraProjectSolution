@@ -441,7 +441,7 @@ namespace AgentCoreProcessor.Engine
             // 注册核心工具（不可卸载的循环控制工具）
             Tool.ToolRegistry.Register(new Tool.Core.ContinueLoopTool());
             Tool.ToolRegistry.Register(new Tool.Core.WaitTool());
-            Tool.ToolRegistry.Register(new Tool.Core.ManageComponentsTool());
+
             Tool.ToolRegistry.Register(new Tool.Core.EscalateTool());
             Tool.ToolRegistry.Register(new Tool.Core.DeescalateTool());
 
