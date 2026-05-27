@@ -167,7 +167,8 @@ internal class ChannelListSource : IDataSource
             if (hasEngine)
             {
                 var snap = eng!.GetSnapshot();
-                engineStatus = snap.IsBusy ? "运行" : "待机";
+                var mode = snap.IsWorkingMode ? "Working" : "Express";
+                engineStatus = snap.IsBusy ? mode : $"{mode}（空闲）";
             }
             else
             {
@@ -219,7 +220,8 @@ internal class ChannelInfoSource : IDataSource
         if (hasEngine)
         {
             var snap = eng!.GetSnapshot();
-            engineStatus = snap.IsBusy ? "运行" : "待机";
+            var mode = snap.IsWorkingMode ? "Working" : "Express";
+            engineStatus = snap.IsBusy ? mode : $"{mode}（空闲）";
             extractionRunning = snap.ExtractionRunning;
             extractedCount = snap.ExtractedMessageCount;
         }
