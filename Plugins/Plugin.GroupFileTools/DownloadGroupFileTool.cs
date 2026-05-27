@@ -56,7 +56,7 @@ public class DownloadGroupFileTool : ITool
 
         // 获取下载 URL
         var url = await _adapterAccess.ExecuteActionAsync(_adapterId, "get_group_file_url",
-            $"{{\\\"group_id\\\":\\\"{groupId}\\\",\\\"file_id\\\":\\\"{fileId}\\\",\\\"busid\\\":{busid}}}");
+            $"{{\"group_id\":\"{groupId}\",\"file_id\":\"{fileId}\",\"busid\":{busid}}}");
         if (string.IsNullOrEmpty(url))
             return new ToolResult { Status = "failed", Error = "获取下载链接失败，请确认 file_id 和 busid 正确" };
 

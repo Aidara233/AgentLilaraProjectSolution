@@ -48,8 +48,8 @@ public class ListGroupFilesTool : ITool
         if (!int.TryParse(limitStr, out var limit) || limit < 1) limit = 30;
         if (limit > 100) limit = 100;
 
-        var folderParam = string.IsNullOrEmpty(folderId) ? null : $",\\\"folder_id\\\":\\\"{folderId}\\\"";
-        var paramJson = $"{{\\\"group_id\\\":\\\"{groupId}\\\"{folderParam}}}";
+        var folderParam = string.IsNullOrEmpty(folderId) ? null : $",\"folder_id\":\"{folderId}\"";
+        var paramJson = $"{{\"group_id\":\"{groupId}\"{folderParam}}}";
 
         var rawJson = await _adapterAccess.ExecuteActionAsync(_adapterId, "get_group_files", paramJson);
         if (rawJson == null)
