@@ -417,25 +417,6 @@ namespace AgentCoreProcessor.Adapter
                     new ActionParam { Name = "card", Label = "新名片", Type = "text" }
                 }
             },
-            new AdapterAction
-            {
-                Name = "get_group_files", Label = "获取群文件列表", Description = "列出群文件（最多30条摘要）。拿到 file_id+busid 后用 get_group_file_url 获取下载链接，再用 download_file 下载到本地",
-                Params = new()
-                {
-                    new ActionParam { Name = "group_id", Label = "群号", Type = "text" },
-                    new ActionParam { Name = "folder_id", Label = "文件夹ID（可选，留空查根目录）", Type = "text", Required = false }
-                }
-            },
-            new AdapterAction
-            {
-                Name = "get_group_file_url", Label = "获取群文件下载链接", Description = "获取指定群文件的下载URL。busid 从文件列表中的 busid 字段获取",
-                Params = new()
-                {
-                    new ActionParam { Name = "group_id", Label = "群号", Type = "text" },
-                    new ActionParam { Name = "file_id", Label = "文件ID", Type = "text" },
-                    new ActionParam { Name = "busid", Label = "业务ID（从文件列表获取）", Type = "text" }
-                }
-            },
         };
 
         public async Task<ActionResult> ExecuteActionAsync(string action, Dictionary<string, string> parameters)
