@@ -239,6 +239,12 @@ namespace AgentCoreProcessor.Adapter
                 catch { }
             }
 
+            // 若被引用的消息是 bot 发的，视为被提及（比 adapter.IsSentMessage 更可靠，不依赖内存 HashSet）
+            if (!isMentioned && !string.IsNullOrEmpty(quotedSenderPlatformId) && quotedSenderPlatformId == selfId.ToString())
+            {
+                isMentioned = true;
+            }
+
             return new IncomingMessage
             {
                 Platform = adapter.Platform,

@@ -1172,6 +1172,11 @@ namespace AgentCoreProcessor.Engine
                     {
                         if (isWorkingMode)
                         {
+                            // 初始历史引用缺省补块（递归 1 层）—— 放在历史消息前面，让模型先看到被引用的内容
+                            var histQc = await BuildQuotedContextForBatchAsync(historyMsgs, channelId, maxDepth: 1, includeSurrounding: false);
+                            if (histQc != null)
+                                await AddQuotedContextMessage(msgs, histQc.Value.Text, histQc.Value.ImagePaths);
+
                             var histSb = new StringBuilder("<conversation_history>\n");
                             foreach (var m in historyMsgs)
                             {
@@ -1183,14 +1188,14 @@ namespace AgentCoreProcessor.Engine
                             }
                             histSb.Append("</conversation_history>");
                             await AddMessageWithImages(msgs, histSb.ToString(), historyMsgs);
-
-                            // 初始历史引用缺省补块（递归 1 层）
-                            var histQc = await BuildQuotedContextForBatchAsync(historyMsgs, channelId, maxDepth: 1, includeSurrounding: false);
-                            if (histQc != null)
-                                await AddQuotedContextMessage(msgs, histQc.Value.Text, histQc.Value.ImagePaths);
                         }
                         else
                         {
+                            // 历史引用缺省补块（递归 1 层，带 ±3 上下文）—— 放在对话历史前面
+                            var histQc = await BuildQuotedContextForBatchAsync(historyMsgs, channelId, maxDepth: 1, includeSurrounding: true);
+                            if (histQc != null)
+                                await AddQuotedContextMessage(msgs, histQc.Value.Text, histQc.Value.ImagePaths);
+
                             var histSb = new StringBuilder("[对话历史]\n");
                             foreach (var m in historyMsgs)
                             {
@@ -1201,11 +1206,6 @@ namespace AgentCoreProcessor.Engine
                                 histSb.AppendLine($"{mentionPrefix}{msgId}{name}: {m.Content}{replyNote}");
                             }
                             await AddMessageWithImages(msgs, histSb.ToString(), historyMsgs);
-
-                            // 历史引用缺省补块（递归 1 层，带 ±3 上下文）
-                            var histQc = await BuildQuotedContextForBatchAsync(historyMsgs, channelId, maxDepth: 1, includeSurrounding: true);
-                            if (histQc != null)
-                                await AddQuotedContextMessage(msgs, histQc.Value.Text, histQc.Value.ImagePaths);
                         }
                     }
 
@@ -1359,9 +1359,7 @@ namespace AgentCoreProcessor.Engine
                                 if (parts.Count > 1) nmsMsg.ContentParts = parts;
                             }
                         }
-                        msgs.Add(nmsMsg);
-
-                        // 新消息引用缺省补块（递归 2 层）
+                        // 新消息引用缺省补块（递归 2 层）—— 放在消息前面，让模型先看被引用的内容
                         if (!string.IsNullOrEmpty(nms.Message.ReplyTo))
                         {
                             var target = await ctx.Session.GetByPlatformMessageIdAsync(channelId, nms.Message.ReplyTo);
@@ -1376,6 +1374,7 @@ namespace AgentCoreProcessor.Engine
                                     await AddQuotedContextMessage(msgs, qcSb.ToString(), qcImagePaths);
                             }
                         }
+                        msgs.Add(nmsMsg);
                         break;
                     }
                     case BusEventSignal bes:
@@ -1438,13 +1437,13 @@ namespace AgentCoreProcessor.Engine
                             sb.AppendLine("</message>");
                         }
                         sb.Append("</new_messages>");
-                        // Working：只追当前批次新消息的图片（老图已在 agent 堆叠历史中）
-                        await AddMessageWithImages(msgs, sb.ToString(), newMsgs);
-
-                        // 新消息引用缺省补块（递归 2 层）
+                        // 新消息引用缺省补块（递归 2 层）—— 放在新消息前面
                         var roundQc = await BuildQuotedContextForBatchAsync(newMsgs, channelId, maxDepth: 2, includeSurrounding: false);
                         if (roundQc != null)
                             await AddQuotedContextMessage(msgs, roundQc.Value.Text, roundQc.Value.ImagePaths);
+
+                        // Working：只追当前批次新消息的图片（老图已在 agent 堆叠历史中）
+                        await AddMessageWithImages(msgs, sb.ToString(), newMsgs);
                     }
                     else
                     {
@@ -1458,13 +1457,13 @@ namespace AgentCoreProcessor.Engine
                             sb.AppendLine($"{mentionPrefix}{msgId}{name}: {m.Content}{replyNote}");
                         }
                         sb.Append("</新消息>");
-                        // Express：直接追加该批次所有图片
-                        await AddMessageWithImages(msgs, sb.ToString(), newMsgs);
-
-                        // 新消息引用缺省补块（递归 2 层，带 ±3 上下文）
+                        // 新消息引用缺省补块（递归 2 层，带 ±3 上下文）—— 放在新消息前面
                         var roundQc = await BuildQuotedContextForBatchAsync(newMsgs, channelId, maxDepth: 2, includeSurrounding: true);
                         if (roundQc != null)
                             await AddQuotedContextMessage(msgs, roundQc.Value.Text, roundQc.Value.ImagePaths);
+
+                        // Express：直接追加该批次所有图片
+                        await AddMessageWithImages(msgs, sb.ToString(), newMsgs);
                     }
 
                     // 游标推进到所有新消息（包括被裁剪的）
