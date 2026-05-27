@@ -910,6 +910,7 @@ namespace AgentCoreProcessor.Engine
                 var botId = ctx.Adapters.GetBotPlatformId("qq");
                 if (!string.IsNullOrEmpty(botId))
                     sb.AppendLine($"身份信息：你的QQ号是 {botId}。");
+                sb.AppendLine(FormatChannelContext());
                 sb.AppendLine("[图片说明] 消息末尾附带用户发送的图片。正文中的 [IMG:N] 标记表示图片在原文中的位置，对应末尾第 N 张图片。");
             }
             else
@@ -920,10 +921,26 @@ namespace AgentCoreProcessor.Engine
                 var botId = ctx.Adapters.GetBotPlatformId("qq");
                 if (!string.IsNullOrEmpty(botId))
                     sb.AppendLine($"\n身份信息：你的QQ号是 {botId}。");
+                sb.AppendLine(FormatChannelContext());
                 sb.AppendLine("\n[图片说明] 消息末尾附带用户发送的图片。正文中的 [IMG:N] 标记表示图片在原文中的位置，对应末尾第 N 张图片。");
             }
 
             return sb.ToString();
+        }
+
+        private string FormatChannelContext()
+        {
+            if (string.IsNullOrEmpty(channelName)) return "";
+            var parts = channelName.Split('_', 2);
+            if (parts.Length != 2) return "";
+            var type = parts[0];
+            var id = parts[1];
+            return type switch
+            {
+                "group" => $"当前频道：群聊，群号: {id}。对群成员操作时需提供 group_id={id}。",
+                "private" => $"当前频道：私聊，对方QQ: {id}。",
+                _ => ""
+            };
         }
 
         private void EnsureAgent()
