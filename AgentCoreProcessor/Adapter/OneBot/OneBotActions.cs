@@ -266,7 +266,64 @@ namespace AgentCoreProcessor.Adapter
 
         // ── 第四批 API：群文件 ──
 
-        public async Task<JToken?> GetGroupRootFilesAsync(long groupId)
+        public async Task<string?> GetGroupFileListSummaryAsync(long groupId, string? folderId = null)
+        {
+            JToken? data;
+            if (string.IsNullOrEmpty(folderId) || folderId == "/")
+                data = await GetGroupRootFilesAsync(groupId);
+            else
+                data = await GetGroupFilesByFolderAsync(groupId, folderId);
+
+            if (data == null) return null;
+            return SummarizeFileList(data);
+        }
+
+        private static string SummarizeFileList(JToken data)
+        {
+            var files = data["files"] as JArray ?? new JArray();
+            var folders = data["folders"] as JArray ?? new JArray();
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"[群文件] 共 {folders.Count} 个文件夹, {files.Count} 个文件");
+
+            // 文件夹列表
+            foreach (var f in folders)
+            {
+                var fname = f["folder_name"]?.ToString() ?? "?";
+                var fid = f["folder_id"]?.ToString() ?? "";
+                sb.AppendLine($"  [D] {fname} (folder_id={fid})");
+            }
+
+            // 文件列表：按 modify_time 降序取最近 30 个
+            var recent = files
+                .Select(f => new
+                {
+                    Name = f["file_name"]?.ToString() ?? "?",
+                    Fid = f["file_id"]?.ToString() ?? "",
+                    Busid = f["busid"]?.Value<int>() ?? 102,
+                    Size = f["file_size"]?.Value<long>() ?? f["size"]?.Value<long>() ?? 0,
+                    Uploader = f["uploader_name"]?.ToString() ?? "",
+                    Mtime = f["modify_time"]?.Value<long>() ?? 0
+                })
+                .OrderByDescending(f => f.Mtime)
+                .Take(30)
+                .ToList();
+
+            foreach (var f in recent)
+            {
+                var sizeStr = f.Size >= 1_000_000 ? $"{f.Size / 1_000_000.0:F1}MB"
+                    : f.Size >= 1_000 ? $"{f.Size / 1_000.0:F1}KB"
+                    : $"{f.Size}B";
+                sb.AppendLine($"  {f.Name} ({sizeStr}) file_id={f.Fid} busid={f.Busid}");
+            }
+
+            if (files.Count > 30)
+                sb.AppendLine($"  ... 还有 {files.Count - 30} 个文件未显示");
+
+            return sb.ToString().TrimEnd();
+        }
+
+        private async Task<JToken?> GetGroupRootFilesAsync(long groupId)
         {
             var resp = await adapter.CallApiAsync("get_group_root_files",
                 new JObject { ["group_id"] = groupId });

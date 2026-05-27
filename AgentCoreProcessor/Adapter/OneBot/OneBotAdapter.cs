@@ -419,7 +419,7 @@ namespace AgentCoreProcessor.Adapter
             },
             new AdapterAction
             {
-                Name = "get_group_files", Label = "获取群文件列表", Description = "列出群文件根目录或子目录。返回文件和文件夹列表（含 file_id/busid/size 等）",
+                Name = "get_group_files", Label = "获取群文件列表", Description = "列出群文件（最多30条摘要）。拿到 file_id+busid 后用 get_group_file_url 获取下载链接，再用 download_file 下载到本地",
                 Params = new()
                 {
                     new ActionParam { Name = "group_id", Label = "群号", Type = "text" },
@@ -485,17 +485,12 @@ namespace AgentCoreProcessor.Adapter
                     case "get_group_file_list":
                     case "get_group_files_by_folder":
                     case "get_group_files":
+                    case "get_group_root_files":
                         if (!parameters.TryGetValue("group_id", out var fgid) || !long.TryParse(fgid, out var fileGroupId))
                             return new ActionResult { Success = false, Error = "缺少 group_id 参数" };
                         var folderId = parameters.GetValueOrDefault("folder_id", "/");
-                        var data = await actions.GetGroupFilesByFolderAsync(fileGroupId, folderId);
-                        return new ActionResult { Success = data != null, Result = data?.ToString() };
-
-                    case "get_group_root_files":
-                        if (!parameters.TryGetValue("group_id", out var rgid) || !long.TryParse(rgid, out var rootGroupId))
-                            return new ActionResult { Success = false, Error = "缺少 group_id 参数" };
-                        var rootData = await actions.GetGroupRootFilesAsync(rootGroupId);
-                        return new ActionResult { Success = rootData != null, Result = rootData?.ToString() };
+                        var summary = await actions.GetGroupFileListSummaryAsync(fileGroupId, folderId);
+                        return new ActionResult { Success = summary != null, Result = summary };
 
                     case "get_group_file_url":
                         if (!parameters.TryGetValue("group_id", out var ugid) || !long.TryParse(ugid, out var urlGroupId))
