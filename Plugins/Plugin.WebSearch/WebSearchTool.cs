@@ -1,3 +1,4 @@
+using System.Text.Json;
 using AgentLilara.PluginSDK;
 
 namespace Plugin.WebSearch;
@@ -68,7 +69,7 @@ public class WebSearchTool : ITool
             };
 
             var results = await _backend.SearchAsync(request, ct);
-            return new ToolResult { Status = "success", Data = results };
+            return new ToolResult { Status = "success", Data = JsonSerializer.Serialize(results) };
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
