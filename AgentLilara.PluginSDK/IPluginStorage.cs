@@ -10,5 +10,8 @@ namespace AgentLilara.PluginSDK
 
         /// <summary>当前实例目录（会话状态）。PerSession 每实例不同，Singleton 等同 Global。</summary>
         string InstanceDirectory { get; }
+
+        /// <summary>共享工作区目录（Storage/Workspace/），所有文件工具共用。</summary>
+        string WorkspaceDirectory { get; }
     }
 }

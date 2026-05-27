@@ -51,6 +51,7 @@ namespace AgentCoreProcessor.Tool.Host
     {
         public string GlobalDirectory { get; }
         public string InstanceDirectory { get; }
+        public string WorkspaceDirectory => Config.PathConfig.WorkspacePath;
 
         public PluginStorageImpl(string pluginName, string? instanceId = null)
         {

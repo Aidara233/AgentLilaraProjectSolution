@@ -327,4 +327,5 @@ internal class ComponentStorage : IPluginStorage
 
     public string GlobalDirectory { get; }
     public string InstanceDirectory { get; }
+    public string WorkspaceDirectory => PathConfig.WorkspacePath;
 }
