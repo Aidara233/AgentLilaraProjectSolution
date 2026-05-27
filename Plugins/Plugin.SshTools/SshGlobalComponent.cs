@@ -103,11 +103,11 @@ public class SshGlobalComponent : GlobalComponentBase
                 var connectionInfo = new ConnectionInfo(_config.Host, _config.Port, _config.Username,
                     new PrivateKeyAuthenticationMethod(_config.Username, keyFile))
                 {
-                    Timeout = TimeSpan.FromSeconds(10),
-                    KeepAliveInterval = TimeSpan.FromSeconds(30)
+                    Timeout = TimeSpan.FromSeconds(10)
                 };
 
                 _client = new SshClient(connectionInfo);
+                _client.KeepAliveInterval = TimeSpan.FromSeconds(30);
                 _client.Connect();
                 _client.ErrorOccurred += (_, args) =>
                     _log?.Warn("ssh", "connection-error", new { host = _config.Host, port = _config.Port, error = args.Exception?.Message });
