@@ -457,6 +457,9 @@ namespace AgentCoreProcessor.Engine
                 new Tool.Host.BeaconAccessImpl(ReviewHints));
             _toolContext.Register<AgentLilara.PluginSDK.Services.IAdapterAccess>(
                 new Tool.Host.AdapterAccessImpl(adapterManager));
+            var dicePool = new Tool.Host.DicePoolImpl();
+            _toolContext.Register<AgentLilara.PluginSDK.Services.IDiceRegistry>(dicePool);
+            _toolContext.Register<AgentLilara.PluginSDK.Services.IDiceService>(dicePool);
             _pluginLoader = new Tool.Host.PluginLoader(_toolContext, ProviderRegistry);
             _pluginLoader.LoadAll();
             Signal.Event(LogGroup.Plugin, "插件加载完成", new { count = Tool.ToolRegistry.All.Count });
@@ -472,6 +475,8 @@ namespace AgentCoreProcessor.Engine
                 new Tool.Host.ChannelAccessImpl(this));
             componentServices.Register<AgentLilara.PluginSDK.Services.IAdapterAccess>(
                 new Tool.Host.AdapterAccessImpl(adapterManager));
+            componentServices.Register<AgentLilara.PluginSDK.Services.IDiceRegistry>(dicePool);
+            componentServices.Register<AgentLilara.PluginSDK.Services.IDiceService>(dicePool);
             if (_signalLogger != null)
                 componentServices.Register<ISignalLogger>(_signalLogger);
 
