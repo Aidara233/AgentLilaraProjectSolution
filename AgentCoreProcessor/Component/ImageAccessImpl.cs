@@ -8,71 +8,43 @@ using AgentLilara.PluginSDK.Services;
 namespace AgentCoreProcessor.Component
 {
     /// <summary>
-    /// IImageAccess 实现，桥接插件层到内部 ImageStorage / Vision / OCR 基础设施。
+    /// IImageAccess 实现，桥接插件层到内部 ImageStorage / OCR 基础设施。
     /// </summary>
     internal class ImageAccessImpl : IImageAccess
     {
         private readonly string _workspaceDir;
-        private readonly IVisionProvider? _vision;
         private readonly IOcrProvider? _ocr;
 
-        public ImageAccessImpl(string workspaceDir, IVisionProvider? vision, IOcrProvider? ocr)
+        public ImageAccessImpl(string workspaceDir, IOcrProvider? ocr)
         {
             _workspaceDir = Path.GetFullPath(workspaceDir);
-            _vision = vision;
             _ocr = ocr;
             Directory.CreateDirectory(_workspaceDir);
         }
 
-        public async Task<ImageReadResult> ReadImageAsync(
-            string identifier, string source = "workspace",
-            bool forceRefresh = false, string? contextHint = null)
+        public async Task<ImageResolveResult> ResolveImageAsync(string identifier, string source = "workspace")
         {
             try
             {
-                var record = await ResolveImageAsync(identifier, source);
+#pragma warning disable CS8622
+                var (record, displayName) = await ResolveInternalAsync(identifier, source);
+#pragma warning restore CS8622
                 if (record == null)
-                    return new ImageReadResult { Success = false, Error = BuildNotFoundError(identifier, source) };
+                    return new ImageResolveResult { Success = false, Error = BuildNotFoundError(identifier, source) };
 
-                // 有缓存且不强制刷新 → 直接返回
-                if (!forceRefresh && !string.IsNullOrEmpty(record.Description))
-                {
-                    return new ImageReadResult
-                    {
-                        Success = true,
-                        Description = record.Description,
-                        ImageId = record.Id,
-                        ImageHash = record.Hash,
-                        Category = record.Category,
-                        WasCached = true
-                    };
-                }
-
-                // 调视觉模型生成描述
-                if (_vision == null)
-                    return new ImageReadResult { Success = false, Error = "视觉模型未配置，无法生成图片描述" };
-
-                var description = await _vision.DescribeImageAsync(record.LocalPath, contextHint);
-                if (string.IsNullOrEmpty(description))
-                    return new ImageReadResult { Success = false, Error = "视觉模型返回了空描述" };
-
-                await ImageStorage.UpdateDescriptionAsync(record.Hash, description);
-                // 重新读取记录以获取最新的 Id 等字段
-                var updated = await ImageStorage.GetByHashAsync(record.Hash);
-
-                return new ImageReadResult
+                return new ImageResolveResult
                 {
                     Success = true,
-                    Description = description,
-                    ImageId = updated?.Id ?? record.Id,
+                    LocalPath = record.LocalPath,
+                    ImageId = record.Id,
                     ImageHash = record.Hash,
-                    Category = updated?.Category ?? record.Category,
-                    WasCached = false
+                    Category = record.Category,
+                    DisplayName = displayName
                 };
             }
             catch (Exception ex)
             {
-                return new ImageReadResult { Success = false, Error = $"读取图片失败: {ex.Message}" };
+                return new ImageResolveResult { Success = false, Error = $"解析图片失败: {ex.Message}" };
             }
         }
 
@@ -80,7 +52,7 @@ namespace AgentCoreProcessor.Component
         {
             try
             {
-                var record = await ResolveImageAsync(identifier, source);
+                var (record, _) = await ResolveInternalAsync(identifier, source);
                 if (record == null)
                     return new ImageOcrResult { Success = false, Error = BuildNotFoundError(identifier, source) };
 
@@ -107,7 +79,7 @@ namespace AgentCoreProcessor.Component
         {
             try
             {
-                var record = await ResolveImageAsync(identifier, source);
+                var (record, _) = await ResolveInternalAsync(identifier, source);
                 if (record == null)
                     return new ImageOcrResult { Success = false, Error = BuildNotFoundError(identifier, source) };
 
@@ -134,15 +106,16 @@ namespace AgentCoreProcessor.Component
 
         // ── 标识符解析 ──
 
-        private async Task<Database.ImageRecord?> ResolveImageAsync(string identifier, string source)
+        private async Task<(Database.ImageRecord? record, string displayName)> ResolveInternalAsync(
+            string identifier, string source)
         {
             if (source == "received")
             {
                 if (!int.TryParse(identifier, out var id))
-                    return null;
+                    return (null, "");
 
-                // 标记为 null 调用方处理
-                return await ImageStorage.GetByIdAsync(id);
+                var record = await ImageStorage.GetByIdAsync(id);
+                return (record, record != null ? $"Id={record.Id}" : "");
             }
 
             // workspace 模式：沙箱检查 → 入库（如需要）→ 按 hash 查询
@@ -153,13 +126,15 @@ namespace AgentCoreProcessor.Component
 
             if (!fullPath.StartsWith(workspaceRoot, StringComparison.OrdinalIgnoreCase)
                 && !fullPath.Equals(_workspaceDir, StringComparison.OrdinalIgnoreCase))
-                return null;
+                return (null, "");
 
             if (!File.Exists(fullPath))
-                return null;
+                return (null, "");
 
+            var fileName = Path.GetFileName(identifier);
             var (_, hash) = await ImageStorage.CopyToStorageAsync(fullPath);
-            return await ImageStorage.GetByHashAsync(hash);
+            var resolved = await ImageStorage.GetByHashAsync(hash);
+            return (resolved, fileName);
         }
 
         private static string BuildNotFoundError(string identifier, string source)

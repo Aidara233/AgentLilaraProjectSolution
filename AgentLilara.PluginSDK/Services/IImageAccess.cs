@@ -3,22 +3,16 @@ using System.Threading.Tasks;
 namespace AgentLilara.PluginSDK.Services
 {
     /// <summary>
-    /// 图片访问接口。桥接插件的读图/OCR需求到内部 ImageStorage + Vision/OCR 提供者。
+    /// 图片访问接口。桥接插件的读图/OCR需求到内部 ImageStorage。
     /// </summary>
     public interface IImageAccess
     {
         /// <summary>
-        /// 读取/描述图片内容。优先返回缓存描述，缓存缺失时调视觉模型生成。
+        /// 解析图片标识符到本地路径。入库（如需要），不调任何外部API。
         /// </summary>
         /// <param name="identifier">图片标识：workspace 相对路径或 received 图片的数据库主键 ID</param>
         /// <param name="source">"workspace"（默认）或 "received"</param>
-        /// <param name="forceRefresh">true 时忽略缓存，强制重新生成描述</param>
-        /// <param name="contextHint">可选的上下文提示，引导视觉模型聚焦</param>
-        Task<ImageReadResult> ReadImageAsync(
-            string identifier,
-            string source = "workspace",
-            bool forceRefresh = false,
-            string? contextHint = null);
+        Task<ImageResolveResult> ResolveImageAsync(string identifier, string source = "workspace");
 
         /// <summary>
         /// 对图片执行 OCR 文字识别。始终调用 API（忽略缓存结果），写回数据库。
@@ -32,17 +26,17 @@ namespace AgentLilara.PluginSDK.Services
     }
 
     /// <summary>
-    /// 图片读取结果。
+    /// 图片解析结果。包含本地路径和元数据，供工具构造 ContentAttachment。
     /// </summary>
-    public class ImageReadResult
+    public class ImageResolveResult
     {
         public bool Success { get; set; }
-        public string? Description { get; set; }
+        public string? LocalPath { get; set; }
         public string? Error { get; set; }
         public int? ImageId { get; set; }
         public string? ImageHash { get; set; }
         public string? Category { get; set; }
-        public bool WasCached { get; set; }
+        public string? DisplayName { get; set; }
     }
 
     /// <summary>

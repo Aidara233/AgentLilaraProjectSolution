@@ -482,7 +482,7 @@ namespace AgentCoreProcessor.Engine
 
             // 图片访问服务（桥接 ImageStorage/Vision/OCR 到插件层）
             var imageAccess = new Component.ImageAccessImpl(
-                Config.PathConfig.WorkspacePath, visionProvider, ocrProvider);
+                Config.PathConfig.WorkspacePath, ocrProvider);
             _toolContext.Register<AgentLilara.PluginSDK.Services.IImageAccess>(imageAccess);
             componentServices.Register<AgentLilara.PluginSDK.Services.IImageAccess>(imageAccess);
 

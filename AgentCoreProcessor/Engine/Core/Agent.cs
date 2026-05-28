@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -302,6 +303,21 @@ namespace AgentCoreProcessor.Engine
                             ? (results[i].Data ?? "成功")
                             : $"失败: {results[i].Error ?? results[i].Status}";
                         parts.Add(ContentPart.FromToolResult(calls[i].ToolUseId!, data, !results[i].IsSuccess));
+
+                        // 图片附件：在 tool_result 后追加 image ContentPart
+                        if (results[i].IsSuccess && results[i].Attachments != null)
+                        {
+                            foreach (var att in results[i].Attachments)
+                            {
+                                if (att.Type == "image")
+                                {
+                                    if (!string.IsNullOrEmpty(att.FilePath) && File.Exists(att.FilePath))
+                                        parts.Add(ContentPart.FromImagePath(att.FilePath));
+                                    else if (!string.IsNullOrEmpty(att.Base64Data))
+                                        parts.Add(ContentPart.FromImageBase64(att.Base64Data, att.MediaType ?? "image/png"));
+                                }
+                            }
+                        }
                     }
                 }
                 return new Message { Role = "user", Content = "[tool results]", ContentParts = parts };

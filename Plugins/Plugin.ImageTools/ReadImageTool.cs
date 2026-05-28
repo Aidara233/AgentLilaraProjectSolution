@@ -3,7 +3,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.ImageTools;
 
-[ToolMeta(Group = "image", ContinueLoop = true, CapabilitySummary = "读取/描述图片内容")]
+[ToolMeta(Group = "image", ContinueLoop = true, CapabilitySummary = "读取图片，将真实像素传入模型上下文")]
 public class ReadImageTool : ITool
 {
     private readonly IImageAccess _imageAccess;
@@ -11,14 +11,13 @@ public class ReadImageTool : ITool
     public ReadImageTool(IImageAccess imageAccess) => _imageAccess = imageAccess;
 
     public string Name => "read_image";
-    public string Description => "读取并描述图片内容。默认从 Workspace 目录读取文件，也可指定 source=received 按数据库ID读取已接收的图片。返回视觉描述文本。";
+    public string Description => "读取一张图片，将图片本身传入模型上下文让模型直接\"看到\"。默认从 Workspace 目录读取，也可指定 source=received 按数据库ID读取已接收的图片。";
     public IReadOnlyList<ToolParameter> Parameters => new[]
     {
         new ToolParameter("image", "图片标识：workspace相对路径或received图片的数据库ID", 0),
-        new ToolParameter("source", "可选，workspace（默认）或 received", 1, isRequired: false),
-        new ToolParameter("context_hint", "可选，帮助视觉模型聚焦描述的上下文提示，如\"关注图中文字\"", 2, isRequired: false)
+        new ToolParameter("source", "可选，workspace（默认）或 received", 1, isRequired: false)
     };
-    public TimeSpan Timeout => TimeSpan.FromSeconds(30);
+    public TimeSpan Timeout => TimeSpan.FromSeconds(10);
 
     public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
     {
@@ -28,19 +27,27 @@ public class ReadImageTool : ITool
             "received" => "received",
             _ => "workspace"
         };
-        var contextHint = resolvedInputs.ElementAtOrDefault(2)?.Trim();
-        if (string.IsNullOrEmpty(contextHint)) contextHint = null;
 
         if (string.IsNullOrEmpty(identifier))
             return new ToolResult { Status = "failed", Error = "image 参数不能为空" };
 
-        var result = await _imageAccess.ReadImageAsync(identifier, source, contextHint: contextHint);
+        var result = await _imageAccess.ResolveImageAsync(identifier, source);
         if (!result.Success)
             return new ToolResult { Status = "failed", Error = result.Error ?? "读取图片失败" };
 
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine(result.Description ?? "(无描述)");
-        sb.Append($"ImageId={result.ImageId}, Hash={result.ImageHash}, Category={result.Category ?? "null"}, Cached={result.WasCached}");
-        return new ToolResult { Status = "success", Data = sb.ToString() };
+        var marker = $"[IMAGE:{result.DisplayName}]";
+        return new ToolResult
+        {
+            Status = "success",
+            Data = $"图片: {result.DisplayName}\n{marker}\nId={result.ImageId}, Hash={result.ImageHash}",
+            Attachments = new List<ContentAttachment>
+            {
+                new ContentAttachment
+                {
+                    Type = "image",
+                    FilePath = result.LocalPath
+                }
+            }
+        };
     }
 }
