@@ -35,11 +35,10 @@ public class ReadImageTool : ITool
         if (!result.Success)
             return new ToolResult { Status = "failed", Error = result.Error ?? "读取图片失败" };
 
-        var marker = $"[IMAGE:{result.DisplayName}]";
         return new ToolResult
         {
             Status = "success",
-            Data = $"图片: {result.DisplayName}\n{marker}\nId={result.ImageId}, Hash={result.ImageHash}",
+            Data = $"图片已读取: {result.DisplayName} (Id={result.ImageId}, Hash={result.ImageHash})，图片紧随其后",
             Attachments = new List<ContentAttachment>
             {
                 new ContentAttachment
