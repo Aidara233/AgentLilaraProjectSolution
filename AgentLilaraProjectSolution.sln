@@ -45,6 +45,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Plugin.DicePool", "Plugins\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Plugin.ImageTools", "Plugins\Plugin.ImageTools\Plugin.ImageTools.csproj", "{9E57AD2F-778C-4F6C-96DE-30BCECFB29CF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Plugin.ExternalDice", "Plugins\Plugin.ExternalDice\Plugin.ExternalDice.csproj", "{B8D9E2F1-A3C4-5678-9DEF-0123456789AB}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -295,6 +297,18 @@ Global
 		{9E57AD2F-778C-4F6C-96DE-30BCECFB29CF}.Release|x64.Build.0 = Release|Any CPU
 		{9E57AD2F-778C-4F6C-96DE-30BCECFB29CF}.Release|x86.ActiveCfg = Release|Any CPU
 		{9E57AD2F-778C-4F6C-96DE-30BCECFB29CF}.Release|x86.Build.0 = Release|Any CPU
+		{B8D9E2F1-A3C4-5678-9DEF-0123456789AB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B8D9E2F1-A3C4-5678-9DEF-0123456789AB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B8D9E2F1-A3C4-5678-9DEF-0123456789AB}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{B8D9E2F1-A3C4-5678-9DEF-0123456789AB}.Debug|x64.Build.0 = Debug|Any CPU
+		{B8D9E2F1-A3C4-5678-9DEF-0123456789AB}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{B8D9E2F1-A3C4-5678-9DEF-0123456789AB}.Debug|x86.Build.0 = Debug|Any CPU
+		{B8D9E2F1-A3C4-5678-9DEF-0123456789AB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B8D9E2F1-A3C4-5678-9DEF-0123456789AB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B8D9E2F1-A3C4-5678-9DEF-0123456789AB}.Release|x64.ActiveCfg = Release|Any CPU
+		{B8D9E2F1-A3C4-5678-9DEF-0123456789AB}.Release|x64.Build.0 = Release|Any CPU
+		{B8D9E2F1-A3C4-5678-9DEF-0123456789AB}.Release|x86.ActiveCfg = Release|Any CPU
+		{B8D9E2F1-A3C4-5678-9DEF-0123456789AB}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -318,6 +332,7 @@ Global
 		{C3F4BBF7-3613-40DA-A4DD-F8F747F2276F} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
 		{099CEEBF-A6EA-4E82-B6F3-77915D8548AB} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
 		{9E57AD2F-778C-4F6C-96DE-30BCECFB29CF} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
+		{B8D9E2F1-A3C4-5678-9DEF-0123456789AB} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {8CEA9C9A-F71A-47CA-9F61-06EB3E4ED44F}
