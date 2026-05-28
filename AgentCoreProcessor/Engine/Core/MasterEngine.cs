@@ -480,6 +480,12 @@ namespace AgentCoreProcessor.Engine
             if (_signalLogger != null)
                 componentServices.Register<ISignalLogger>(_signalLogger);
 
+            // 图片访问服务（桥接 ImageStorage/Vision/OCR 到插件层）
+            var imageAccess = new Component.ImageAccessImpl(
+                Config.PathConfig.WorkspacePath, visionProvider, ocrProvider);
+            _toolContext.Register<AgentLilara.PluginSDK.Services.IImageAccess>(imageAccess);
+            componentServices.Register<AgentLilara.PluginSDK.Services.IImageAccess>(imageAccess);
+
             globalComponentHost = new GlobalComponentHost(
                 _moduleBus, componentServices,
                 loopId => WakeLoop(loopId));
