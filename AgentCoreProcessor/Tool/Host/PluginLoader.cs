@@ -135,7 +135,7 @@ namespace AgentCoreProcessor.Tool.Host
                         }
                         else
                         {
-                            Signal.Warn(LogGroup.Plugin, "插件工具注册失败（名称冲突）", new { tool = tool.Name, dll = Path.GetFileName(dllPath) });
+                            Signal.Warn(LogGroup.Plugin, "插件工具注册失败（名称冲突）", new { tool = tool.Name, dll = fileName });
                         }
                     }
                 }
@@ -163,7 +163,7 @@ namespace AgentCoreProcessor.Tool.Host
                     }
                     catch (Exception ex)
                     {
-                        Console.Error.WriteLine($"[PluginLoader] Provider 注册失败: {ex.Message}");
+                        Signal.Warn(LogGroup.Plugin, "Provider 注册失败", new { type = type.Name, error = ex.Message });
                     }
                 }
 
@@ -176,6 +176,13 @@ namespace AgentCoreProcessor.Tool.Host
                     || entry.InjectProviderNames.Count > 0 || entry.LifecycleNames.Count > 0)
                 {
                     loadedPlugins.Add(entry);
+                    Signal.Debug(LogGroup.Plugin, "插件已加载", new
+                    {
+                        dll = fileName,
+                        tools = entry.ToolNames.Count,
+                        components = entry.ComponentNames.Count,
+                        providers = entry.ProviderIds.Count
+                    });
                 }
                 else
                 {
@@ -184,7 +191,7 @@ namespace AgentCoreProcessor.Tool.Host
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[PluginLoader] 插件加载失败 {dllPath}: {ex.Message}");
+                Signal.Error(LogGroup.Plugin, "插件加载失败", new { dll = fileName, error = ex.Message });
                 loadContext?.Unload();
             }
         }
