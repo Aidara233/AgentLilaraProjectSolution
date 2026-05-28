@@ -39,6 +39,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Plugin.FileOps", "Plugins\P
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Plugin.SshTools", "Plugins\Plugin.SshTools\Plugin.SshTools.csproj", "{535D2829-3BDD-42CD-B6FE-D98F881EC2BD}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Plugin.SkillTools", "Plugins\Plugin.SkillTools\Plugin.SkillTools.csproj", "{C3F4BBF7-3613-40DA-A4DD-F8F747F2276F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -253,6 +255,18 @@ Global
 		{535D2829-3BDD-42CD-B6FE-D98F881EC2BD}.Release|x64.Build.0 = Release|Any CPU
 		{535D2829-3BDD-42CD-B6FE-D98F881EC2BD}.Release|x86.ActiveCfg = Release|Any CPU
 		{535D2829-3BDD-42CD-B6FE-D98F881EC2BD}.Release|x86.Build.0 = Release|Any CPU
+		{C3F4BBF7-3613-40DA-A4DD-F8F747F2276F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C3F4BBF7-3613-40DA-A4DD-F8F747F2276F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C3F4BBF7-3613-40DA-A4DD-F8F747F2276F}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{C3F4BBF7-3613-40DA-A4DD-F8F747F2276F}.Debug|x64.Build.0 = Debug|Any CPU
+		{C3F4BBF7-3613-40DA-A4DD-F8F747F2276F}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{C3F4BBF7-3613-40DA-A4DD-F8F747F2276F}.Debug|x86.Build.0 = Debug|Any CPU
+		{C3F4BBF7-3613-40DA-A4DD-F8F747F2276F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C3F4BBF7-3613-40DA-A4DD-F8F747F2276F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C3F4BBF7-3613-40DA-A4DD-F8F747F2276F}.Release|x64.ActiveCfg = Release|Any CPU
+		{C3F4BBF7-3613-40DA-A4DD-F8F747F2276F}.Release|x64.Build.0 = Release|Any CPU
+		{C3F4BBF7-3613-40DA-A4DD-F8F747F2276F}.Release|x86.ActiveCfg = Release|Any CPU
+		{C3F4BBF7-3613-40DA-A4DD-F8F747F2276F}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -273,6 +287,7 @@ Global
 		{200BF849-4CBF-4008-B0A0-BDE2209A725B} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
 		{F146A4DC-DF83-4E7C-89F8-F5D4530B89F7} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
 		{535D2829-3BDD-42CD-B6FE-D98F881EC2BD} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
+		{C3F4BBF7-3613-40DA-A4DD-F8F747F2276F} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {8CEA9C9A-F71A-47CA-9F61-06EB3E4ED44F}

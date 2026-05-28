@@ -1,6 +1,7 @@
 // AgentCoreProcessor/Component/ComponentConfig.cs
 using System.Text.Json;
 using AgentCoreProcessor.Config;
+using AgentLilara.PluginSDK;
 
 namespace AgentCoreProcessor.Component;
 
@@ -43,6 +44,16 @@ internal class ComponentConfig
     {
         if (Components.TryGetValue(componentName, out var entry))
             return entry.IsEnabled(engineType);
+        return defaultEnabled;
+    }
+
+    /// <summary>检查组件是否对指定引擎类型启用，尊重 LoopApplicability 声明。</summary>
+    public bool IsEnabled(string componentName, string engineType, bool defaultEnabled, Applicability applicability)
+    {
+        if (Components.TryGetValue(componentName, out var entry))
+            return entry.IsEnabled(engineType);
+        if (applicability == Applicability.NotApplicable)
+            return false;
         return defaultEnabled;
     }
 

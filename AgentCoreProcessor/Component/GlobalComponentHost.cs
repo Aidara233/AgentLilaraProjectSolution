@@ -145,7 +145,15 @@ internal class GlobalComponentHost
         var names = new HashSet<string>();
         foreach (var inst in _components)
         {
-            if (!_config.IsEnabled(inst.Component.Meta.Name, engineType, inst.Component.Meta.DefaultEnabled))
+            var applicability = engineType switch
+            {
+                "channel" => inst.Registration.ChannelApplicability,
+                "system" => inst.Registration.SystemApplicability,
+                "review" => inst.Registration.ReviewApplicability,
+                "sub-agent" => inst.Registration.SubAgentApplicability,
+                _ => Applicability.Enabled
+            };
+            if (!_config.IsEnabled(inst.Component.Meta.Name, engineType, inst.Component.Meta.DefaultEnabled, applicability))
                 continue;
             foreach (var tool in inst.Component.Tools)
             {

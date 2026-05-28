@@ -748,13 +748,14 @@ internal class ComponentPermTogglesSource : IDataSource
             });
 
         var config = ComponentConfig.Load();
+        var reg = ComponentRegistry.Get(_selectedComponent);
         var data = new JsonObject
         {
             ["componentName"] = _selectedComponent,
-            ["channel"] = config.IsEnabled(_selectedComponent, "channel") ? "启用" : "禁用",
-            ["system"] = config.IsEnabled(_selectedComponent, "system") ? "启用" : "禁用",
-            ["subAgent"] = config.IsEnabled(_selectedComponent, "sub-agent") ? "启用" : "禁用",
-            ["review"] = config.IsEnabled(_selectedComponent, "review") ? "启用" : "禁用",
+            ["channel"] = config.IsEnabled(_selectedComponent, "channel", true, reg?.ChannelApplicability ?? Applicability.Enabled) ? "启用" : "禁用",
+            ["system"] = config.IsEnabled(_selectedComponent, "system", true, reg?.SystemApplicability ?? Applicability.Enabled) ? "启用" : "禁用",
+            ["subAgent"] = config.IsEnabled(_selectedComponent, "sub-agent", true, reg?.SubAgentApplicability ?? Applicability.Enabled) ? "启用" : "禁用",
+            ["review"] = config.IsEnabled(_selectedComponent, "review", true, reg?.ReviewApplicability ?? Applicability.Enabled) ? "启用" : "禁用",
         };
         return Task.FromResult(new DataResult { Data = data });
     }
@@ -777,7 +778,16 @@ internal class ComponentPermTogglesSource : IDataSource
             return Task.FromResult(new ActionResult { Success = false, Message = $"未知操作: {action}" });
 
         var config = ComponentConfig.Load();
-        var current = config.IsEnabled(_selectedComponent, engineType);
+        var reg = ComponentRegistry.Get(_selectedComponent);
+        var applicability = engineType switch
+        {
+            "channel" => reg?.ChannelApplicability ?? Applicability.Enabled,
+            "system" => reg?.SystemApplicability ?? Applicability.Enabled,
+            "sub-agent" => reg?.SubAgentApplicability ?? Applicability.Enabled,
+            "review" => reg?.ReviewApplicability ?? Applicability.Enabled,
+            _ => Applicability.Enabled
+        };
+        var current = config.IsEnabled(_selectedComponent, engineType, true, applicability);
         config.SetEnabled(_selectedComponent, engineType, !current);
 
         var label = !current ? "启用" : "禁用";
