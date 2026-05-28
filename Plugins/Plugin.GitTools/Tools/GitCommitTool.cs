@@ -49,7 +49,7 @@ public class GitCommitTool : GitToolBase
                 return Fail($"git add 失败: {addResult.Error}");
         }
 
-        var commitArgs = $"commit -m {message.Trim()}";
+        var commitArgs = new List<string> { "commit", "-m", message.Trim() };
         var result = await Runner.RunAsync(fullPath, commitArgs, 10, ct);
         if (!result.Success)
             return Fail($"git commit 失败: {result.Error}");

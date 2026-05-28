@@ -24,7 +24,13 @@ public class GitRunner
 
     public bool IsAvailable => _gitAvailable;
 
-    public async Task<GitResult> RunAsync(string workingDir, string args, int timeoutSeconds = 10, CancellationToken ct = default)
+    public Task<GitResult> RunAsync(string workingDir, string args, int timeoutSeconds = 10, CancellationToken ct = default)
+    {
+        var argList = args.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return RunAsync(workingDir, argList, timeoutSeconds, ct);
+    }
+
+    public async Task<GitResult> RunAsync(string workingDir, IEnumerable<string> args, int timeoutSeconds = 10, CancellationToken ct = default)
     {
         if (!_gitAvailable)
             return new GitResult { Success = false, Error = "git CLI not found. Please install git and ensure it is in PATH." };
@@ -41,7 +47,7 @@ public class GitRunner
 
         psi.EnvironmentVariables["GIT_TERMINAL_PROMPT"] = "0";
 
-        foreach (var arg in args.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        foreach (var arg in args)
         {
             psi.ArgumentList.Add(arg);
         }
