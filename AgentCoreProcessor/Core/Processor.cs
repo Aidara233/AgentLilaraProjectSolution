@@ -40,6 +40,7 @@ namespace AgentCoreProcessor.Core
                 cfgName = value;
                 var cfg = ApiClientCfg.FromJson(File.ReadAllText(Path.Combine(cfgDirectoryPath, cfgName) + ".json"));
                 client = ModelClientFactory.Create(cfg);
+                if (UsePersona) InjectPersona();
             }
         }
 

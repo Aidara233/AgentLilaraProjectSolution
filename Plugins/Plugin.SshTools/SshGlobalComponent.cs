@@ -52,11 +52,7 @@ public class SshGlobalComponent : GlobalComponentBase
         _configDir = Path.GetFullPath(Path.Combine(context.Storage.GlobalDirectory, ".."));
         _config = SshConfig.Load(_configDir);
 
-        if (!string.IsNullOrEmpty(_config.Host))
-        {
-            try { Connect(); }
-            catch (Exception ex) { _log?.Warn("ssh", "init-connect-failed", new { host = _config.Host, port = _config.Port, error = ex.Message }); }
-        }
+        // 懒连接：不在启动时连接，首次工具调用时由 EnsureConnected() 按需建立连接
 
         SshToolsAccessor.Configure(this);
 

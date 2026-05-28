@@ -130,6 +130,7 @@ internal class ConfigProvider : IWebUIProvider
         return new PageDefinition
         {
             Route = $"config/{group}",
+            LayoutType = PageLayoutType.Sidebar,
             Meta = new PageMeta
             {
                 Title = title,
@@ -151,13 +152,12 @@ internal class ConfigProvider : IWebUIProvider
                         {
                             new() { Field = "name", Header = "文件名" },
                             new() { Field = "path", Header = "路径" },
-                            new() { Field = "_link", Header = "", Format = ColumnFormat.Link },
                         },
                         Searchable = true,
                         Paginated = false,
                     },
                     LinkEvent = "config-selected",
-                    Layout = new CardLayout { MinWidth = "400px" },
+                    Layout = new CardLayout { PreferredCols = 3, GridColumnStart = 1 },
                 },
                 new()
                 {
@@ -171,7 +171,7 @@ internal class ConfigProvider : IWebUIProvider
                         Description = "选择左侧配置文件进行编辑。修改后点击保存。",
                         SubmitLabel = "保存修改",
                     },
-                    Layout = new CardLayout { MinWidth = "500px", Order = 1 },
+                    Layout = new CardLayout { PreferredCols = 9 },
                 },
             },
             DataSources = new List<DataSourceDefinition>
@@ -281,7 +281,6 @@ internal class ConfigListSource : IDataSource
                 ["path"] = relPath,
                 ["size"] = FormatSize(size),
                 ["exists"] = exists,
-                ["_link"] = exists ? $"/p/config/{_group}/{name}" : null,
             });
         }
 
