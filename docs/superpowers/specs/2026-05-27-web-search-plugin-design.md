@@ -1,5 +1,7 @@
 # Plugin.WebSearch — 网页搜索插件
 
+> **状态：已完成 (2026-05-27)** — 所有功能已实现
+
 ## Summary
 
 为 Agent 提供网页搜索能力。独立插件，不依赖 NetworkTools。ISearchBackend 统一后端接口，Tavily 作为首个实现，后续可通过修改配置切换后端。

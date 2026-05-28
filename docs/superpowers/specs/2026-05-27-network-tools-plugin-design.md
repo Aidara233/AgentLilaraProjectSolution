@@ -1,5 +1,7 @@
 # Plugin.NetworkTools — 网络访问插件
 
+> **状态：已完成 (2026-05-27)** — 所有功能已实现
+
 ## Summary
 
 为 Agent 提供基础 HTTP 网络访问能力：同步请求、异步文件下载、下载进度管理。参照 ScheduledTasks 的双组件（Global+Loop）模式，下载完成后通过 WakeLoop + BuildPromptSection 通知 Agent。

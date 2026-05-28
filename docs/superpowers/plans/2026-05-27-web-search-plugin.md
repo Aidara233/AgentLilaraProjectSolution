@@ -1,5 +1,7 @@
 # Plugin.WebSearch Implementation Plan
 
+> **状态：已完成 (2026-05-27)** — 所有功能已实现
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 为 Agent 提供网页搜索能力，ISearchBackend 统一接口 + Tavily 首个实现

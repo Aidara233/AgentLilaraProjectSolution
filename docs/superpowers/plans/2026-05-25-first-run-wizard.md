@@ -1,5 +1,7 @@
 # First-Run Configuration Wizard - Implementation Plan
 
+> **状态：已完成 (2026-05-27)** — 所有功能已实现
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace hardcoded paths and API keys with a first-run console wizard that collects credentials and auto-generates all config files from templates.

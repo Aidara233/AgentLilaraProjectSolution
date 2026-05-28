@@ -1,5 +1,7 @@
 # Plugin.SshTools 设计
 
+> **状态：已完成 (2026-05-27)** — 所有功能已实现
+
 ## 概述
 
 为 Agent Lilara 提供 SSH 远程执行和文件传输能力，对接本地 PVE 虚拟机。复用现有 `Storage/SSH/RemoteShellConfig.json` + 密钥。

@@ -1,5 +1,7 @@
 # First-Run Configuration Wizard
 
+> **状态：已完成 (2026-05-27)** — 所有功能已实现
+
 ## Summary
 
 Eliminate hardcoded paths and pre-filled API keys. On first run (no `paths.json`), launch an interactive console wizard that collects Storage path + model API credentials, then auto-generates all required config files from templates.

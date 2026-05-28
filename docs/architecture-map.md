@@ -18,7 +18,7 @@ AgentLilaraProjectSolution/
 │     ├── Client/      IModelClient 抽象层（Claude/OpenAI 双协议）+ Embedding + IVisionProvider + IOcrProvider
 │     ├── Command/     框架指令系统（/help /status /config 等）
 │     ├── Config/      PathConfig 绝对路径管理
-│     ├── Core/        业务核心（AgentCore+PreprocessingCore+MemoryExtractionCore+MemoryQueryCore+ConsolidationCore+ConsolidationFinalCore+WeightCore+LinkCore+CombineCore+DedupCore+ReviewCore+SummarizationCore+SleepTalkCore等），继承 CoreBase，各自 JSON 配置
+│     ├── Core/        业务核心（AgentCore+PreprocessingCore+MemoryExtractionCore+ConsolidationCore+ConsolidationFinalCore+WeightCore+LinkCore+CombineCore+DedupCore+SummarizationCore+SleepTalkCore等），继承 CoreBase，各自 JSON 配置
 │     ├── Database/    实体 + Repository（SQLite，13张表）
 │     ├── Engine/      引擎生态（MasterEngine 内核 + 子引擎 + Worker闸门循环 + 内务模块）
 │     ├── Memory/      MemoryService 检索管线
@@ -28,8 +28,26 @@ AgentLilaraProjectSolution/
 │     ├── WebUI/       Blazor Server 管理面板（嵌入式，同进程）
 │     └── Program.cs   入口（WebApplication 宿主，默认启动 Web 服务器 + 适配器）
 └── Plugins/
-      ├── Plugin.BasicTools/      speak + send_media + adapter_action
-      └── Plugin.CrossLoopTools/  跨循环委托与通信
+      ├── Plugin.BasicTools/      speak + send_media
+      ├── Plugin.WorkingTools/    pinboard + thinking_notes + retain_list + mark_for_review
+      ├── Plugin.MemoryTools/     memory（记忆读写，依赖 IMemoryAccess）
+      ├── Plugin.FileTools/       read_text + write_text + list_dir + move/delete/copy
+      ├── Plugin.FileOps/         archive + search/grep + file_info/hash/compare
+      ├── Plugin.GroupFileTools/  分组文件操作
+      ├── Plugin.CrossLoopTools/  跨循环委托与通信
+      ├── Plugin.SystemTools/     create_sub_agent + stop_sub_agent
+      ├── Plugin.ReviewTools/     review_* 15个复盘工具
+      ├── Plugin.ScheduledTasks/  定时任务（插件化实现）
+      ├── Plugin.SkillTools/      casual-chat / code-review / system-maintenance
+      ├── Plugin.NetworkTools/    网络工具
+      ├── Plugin.SshTools/        SSH 工具
+      ├── Plugin.WebSearch/       网页搜索
+      ├── Plugin.DicePool/        骰子系统
+      ├── Plugin.ExternalDice/    外部骰子
+      ├── Plugin.ImageTools/      图片处理
+      ├── Plugin.DocumentTools/   文档处理
+      ├── Plugin.QuickActions/    快捷操作
+      └── FileToolKit.Shared/     FileToolBase 抽象基类（路径解析/沙箱）
 ```
 
 ## 引擎生态
@@ -285,23 +303,15 @@ SystemEngine (系统循环，单例，纯调度者):
 ## 冲动值决策 (per Channel, ImpulseConfig.json 全参数可配置)
 
 ```
-私聊/控制台 → 缓冲聚合后一定回复
+私聊 → 缓冲聚合后一定回复
 @提及(CQ at 或文本包含 botNames 或引用bot消息) → 穿透冷却期，必回
-群聊 → 冲动值 ≥ 动态阈值:
-  累加: BaseMessageScore × channelAffinity × participantFactor × ratioFactor
-    participantFactor: 1人=1.0, 2人=0.9, 3人=0.8, 4+=0.6
-    ratioFactor: clamp(reality / max(expectation, base), lower, upper)
-  衰减: 每秒 -0.1 (线性)
-  动态阈值: BaseThreshold + messageRate × ScaleFactor
-    messageRate: EMA 跟踪消息频率，活跃频道阈值更高(bot占比更低)
-  触发后: impulse -= threshold (不归零，保持活跃状态)
+群聊 → 冲动值 ≥ 阈值(100):
+  累加（加法模型）: BaseScore(10) + AffinityBonusMax(5) × channelAffinity - ParticipantDiscount(0/2/4/6)
+    @提及额外 +MentionBonus(30)
+  衰减: 指数衰减，半衰期 30s
+  触发后: impulse = min(impulse, PostResponseCap(20))
   发言后冷却 3s
-
-EMA 社交满足度 (per Channel):
-  expectation: bot主动发言 +2.0, 被@触发发言 +0.5
-  reality: bot被@/引用/叫名字 +2.0 × trustMultiplier
-  两者按时间指数衰减 (EmaDecayRate^elapsed)
-  trustMultiplier 只影响 reality，不直接影响冲动值累加
+  系统事件仅 @提及 时加分，不计 BaseScore
 ```
 
 ## 做梦系统
@@ -414,11 +424,24 @@ AgentLilara.PluginSDK (共享契约，独立类库):
 
 插件项目 (独立 DLL，输出到 {BaseDirectory}/Plugins/):
   Plugin.BasicTools      — speak + send_media（输出能力）[GlobalComponent: basic-tools]
-  Plugin.WorkingTools    — pinboard + thinking_notes + retain_list + task_management + mark_for_review（工作状态+复盘标记）[LoopComponent: working-tools, IInjectProvider]
+  Plugin.WorkingTools    — pinboard + thinking_notes + retain_list + mark_for_review（工作状态+复盘标记）[LoopComponent: working-tools, IInjectProvider]
   Plugin.MemoryTools     — memory（记忆读写，依赖 IMemoryAccess 服务）[GlobalComponent: memory-tools]
   Plugin.FileTools       — read_text + write_text + list_dir + move/delete/copy（文件系统）[GlobalComponent: file-tools]
-  Plugin.CrossLoopTools -- send_request + evaluate_request + complete_request + send_notify + report_progress + list_loops 等（跨循环委托与通信）[LoopComponent: cross-loop]
-  Plugin.SystemTools     — create_sub_agent + stop_sub_agent + send_instruction + list_sub_agents（子agent管理）[LoopComponent: system-ops]
+  Plugin.FileOps         — archive_create/extract/list + search/grep + file_info/hash/compare
+  Plugin.GroupFileTools  — 分组文件操作
+  Plugin.CrossLoopTools  — send_request + evaluate_request + complete_request + send_notify 等（跨循环委托与通信）[LoopComponent: cross-loop]
+  Plugin.SystemTools     — create_sub_agent + stop_sub_agent（子agent管理）[LoopComponent: system-ops]
+  Plugin.ReviewTools     — review_* 15个复盘工具
+  Plugin.ScheduledTasks  — 定时任务（插件化实现）
+  Plugin.SkillTools      — casual-chat / code-review / system-maintenance
+  Plugin.NetworkTools    — 网络工具
+  Plugin.SshTools        — SSH 工具
+  Plugin.WebSearch       — 网页搜索
+  Plugin.DicePool        — 骰子系统
+  Plugin.ExternalDice    — 外部骰子
+  Plugin.ImageTools      — 图片处理
+  Plugin.DocumentTools   — 文档处理
+  Plugin.QuickActions    — 快捷操作
 
 ToolCall: 原生 tool_use (Claude API) 为主路径
   NativeToolCallHandler: 按 properties 顺序映射命名参数到位置输入
@@ -554,28 +577,19 @@ Storage/
 
 数据桥接:
   SystemMonitor — 2s 周期采集 SystemSnapshot（引擎摘要/Worker快照/Dream状态）
-  LogStreamService — 旧日志推送（待 Phase 3 迁移后移除）
   快照方法: WorkerEngine.GetSnapshot() / DreamEngineSpawnCheck.GetDreamSnapshot()
            MasterEngine.GetSpawnCheck<T>() / GetActiveEnginesSnapshot()
 
-页面:
-  Dashboard    — 系统状态/引擎摘要/活跃Worker表格/做梦状态/实时日志尾部
+页面 (卡片系统 Phase 3 已完成，旧独立页面全部删除):
+  Dashboard    — 系统状态/引擎摘要/活跃频道表格/做梦状态/实时日志尾部
   Logs/Trace   — Signal 信号追踪（SVG渲染/虚拟化/实时推送/因果链高亮）
-  Logs         — 旧实时日志流（待迁移到卡片系统后移除）
+  Logs/Tokens  — Token 统计（按 Core / 按 Model 汇总）
+  Logs/Model   — 模型调用历史 + 详情查看
   Console      — 频道选择/创建 + 聊天式消息流 + 模拟用户/替Bot说话/自定义发送者 + @提及/私聊模拟
-  EngineControl — 引擎启停/静音模式开关
-  DreamControl  — 睡眠许可/强制睡觉/睡意偏移/红色警报
-  WorkerDetail  — 单频道Worker完整状态（冲动值/EMA/轮次/授权工具）
-  Messages     — 频道消息历史分页浏览 + 搜索
-  Memories     — 主记忆/临时记忆浏览 + 人物/关键词过滤
-  People       — 人物目录 + 信任等级 + 关联账号展开
-  ConfigEditor — JSON配置组编辑器（类型感知输入/敏感字段遮罩）
-  Config/Tools — 工具启用/禁用管理
-  Config/Profiles — 组件配置管理（继承树+组件状态+工具屏蔽+频道映射）
+  其余页面全部通过卡片系统动态渲染（/p/{route}），不再使用独立 .razor 页面
 
 启动行为:
-  默认启动 Web 服务器（所有模式），ConsoleAdapter 已移除（仅 --debug 保留纯控制台）
-  --debug / --test 模式不启动 Web 服务器
+  默认启动 Web 服务器（所有模式），--debug / --test 模式不启动 Web 服务器
   ASP.NET 日志压制到 Warning 级别，控制台输出干净
 
 卡片式数据驱动系统 (Phase 1+2 已实现):
@@ -603,7 +617,6 @@ Signal API (静态门面，开发者入口)
   └── LogQuery / LogAccessImpl (查询 + SDK ILogAccess 桥接)
 
 SDK 接口: ISignalLogger (写) / ILogAccess (读写，继承 ISignalLogger)
-兼容层: FrameworkLogger 保留旧 API，底层转发 Signal（过渡期，待 WebUI 迁移后移除）
 
 信号模型:
   Signal.Begin → 新信号源◉（适配器收消息、Timer每tick独立信号）

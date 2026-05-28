@@ -1,5 +1,7 @@
 # Plugin.SshTools Implementation Plan
 
+> **状态：已完成 (2026-05-27)** — 所有功能已实现
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Create an SSH plugin providing remote command execution + file transfer to a PVE VM, with async task management and local workspace sandboxing.
