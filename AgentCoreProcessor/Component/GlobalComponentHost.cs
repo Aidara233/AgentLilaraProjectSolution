@@ -51,7 +51,6 @@ internal class GlobalComponentHost
                     new { type = reg.Type.FullName, error = ex.Message });
             }
         }
-
     }
 
     public IEnumerable<ITool> GetVisibleTools(string loopType)

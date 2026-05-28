@@ -60,7 +60,6 @@ namespace AgentCoreProcessor.Tool.Host
             {
                 LoadPlugin(dllPath);
             }
-
         }
 
         /// <summary>重载所有插件。运行时调用。</summary>
