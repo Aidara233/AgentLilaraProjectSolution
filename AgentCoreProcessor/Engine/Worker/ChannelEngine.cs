@@ -516,6 +516,13 @@ namespace AgentCoreProcessor.Engine
                     fixedPrefix = null;
                 }
 
+                // 守卫：无新消息且无跨循环请求/信号缓冲时，不执行空循环
+                // （防止 Working 期间已消费的消息通过延迟 buffer timer 重复激活）
+                if (!hasNewMessages && _pendingCrossRequests.IsEmpty && _signalBuffer.IsEmpty)
+                {
+                    continue;
+                }
+
                 // ③ 循环会话
                 if (sessionCtx == null)
                 {
