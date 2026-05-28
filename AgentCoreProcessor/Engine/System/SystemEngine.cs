@@ -100,12 +100,16 @@ namespace AgentCoreProcessor.Engine
         private readonly ConcurrentQueue<CrossRequest> _pendingCrossRequests = new();
         internal IAgentMessaging? _messaging;
 
+        // 信号白名单（可配置，只有白名单内的 SignalEvent 才能唤醒系统循环）
+        private readonly HashSet<string> _signalWhitelist;
+
         public SystemEngine(ISystemContext ctx)
         {
             this.ctx = ctx;
             this.agentCore = new AgentCore("SystemCore", usePersona: false);
             agentCore.CallerTag = "System";
             useNativeTools = agentCore.UseNativeTools;
+            _signalWhitelist = LoadSignalWhitelist();
 
             var systemLoopPath = Path.Combine(PathConfig.StoragePath, "SystemLoop");
             persistence = new ContextPersistence(systemLoopPath);
@@ -167,7 +171,12 @@ namespace AgentCoreProcessor.Engine
             gate = new Gate(ctx.EventBus);
             gate.ShouldActivate = () => Task.FromResult(true);
             gate.ExecuteAsync = ExecuteSystemCycleAsync;
-            gate.EventFilter = e => e is TimerEvent or SignalEvent;
+            gate.EventFilter = e =>
+            {
+                if (e is SignalEvent signal)
+                    return _signalWhitelist.Contains(signal.SignalName);
+                return false;
+            };
 
         }
 
@@ -1044,6 +1053,45 @@ namespace AgentCoreProcessor.Engine
             name = name.Replace(c, '_');
         if (name.Length > 64) name = name[..64];
         return name;
+    }
+
+    private static readonly string[] DefaultSignalWhitelist = new[]
+    {
+        "task-submitted",
+        "force-sleep",
+        "sleep-approve",
+        "sleep-deny",
+        "delegation-result"
+    };
+
+    private static HashSet<string> LoadSignalWhitelist()
+    {
+        var path = Path.Combine(PathConfig.StoragePath, "Engine", "SystemSignalWhitelist.json");
+        try
+        {
+            if (File.Exists(path))
+            {
+                var json = File.ReadAllText(path);
+                var arr = Newtonsoft.Json.JsonConvert.DeserializeObject<string[]>(json);
+                if (arr != null && arr.Length > 0)
+                    return new HashSet<string>(arr, StringComparer.OrdinalIgnoreCase);
+            }
+        }
+        catch (Exception ex)
+        {
+            Signal.Warn(LogGroup.Engine, "SystemSignalWhitelist 加载失败，使用默认值", new { error = ex.Message });
+        }
+
+        // 写出默认配置供后续编辑
+        try
+        {
+            var dir = Path.GetDirectoryName(path)!;
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+            File.WriteAllText(path, Newtonsoft.Json.JsonConvert.SerializeObject(DefaultSignalWhitelist, Newtonsoft.Json.Formatting.Indented));
+        }
+        catch { }
+
+        return new HashSet<string>(DefaultSignalWhitelist, StringComparer.OrdinalIgnoreCase);
     }
 }
 
