@@ -37,7 +37,6 @@ public class SkillToolsComponent : GlobalComponentBase
     {
         _skillsDir = Path.Combine(context.Storage.GlobalDirectory, "Skills");
         Directory.CreateDirectory(_skillsDir);
-
         ScanSkills();
 
         Func<string, SkillEntry?> getSkill = name =>
