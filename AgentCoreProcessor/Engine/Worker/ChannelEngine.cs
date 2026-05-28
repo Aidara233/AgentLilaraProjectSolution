@@ -121,12 +121,17 @@ namespace AgentCoreProcessor.Engine
         // TrustProgress 每日自动增长跟踪
         private readonly Dictionary<int, (DateTime Date, float Accumulated)> dailyProgressTracker = new();
 
+        // Working 模式图片去重追踪（跨轮累积，同 hash 不重复追加图片）
+        private readonly HashSet<string> _seenImageHashes = new();
+
+        // StartInject 已消费的最大消息 Id（防止 BuildRoundInjectAsync 重复拉取）
+        private int _startInjectMaxId;
+
         // Express/Working 自适应切换
         private bool isWorkingMode = false;
 
         // 统一游标：两种模式共用的最后消费消息 DB Id
         private int _lastConsumedMessageId;
-        private int _pendingCursor;
         // escalate 理由暂存（Express→Working 时注入一次）
         private string? _escalateReason;
 
@@ -702,9 +707,9 @@ namespace AgentCoreProcessor.Engine
             else
                 loopControlModule.ConsecutiveOutputOnly++;
 
-            // 推进游标（从 BuildStartInjectAsync 的 DB 查询）
-            if (_pendingCursor > _lastConsumedMessageId)
-                _lastConsumedMessageId = _pendingCursor;
+            // 推进游标到 StartInject 已消费的最大 ID
+            if (_startInjectMaxId > _lastConsumedMessageId)
+                _lastConsumedMessageId = _startInjectMaxId;
 
             // Persist after agent finishes
             PersistCurrentContext();
@@ -755,6 +760,10 @@ namespace AgentCoreProcessor.Engine
         /// <summary>Express 模式：单次 Core 调用，不走 Agent。</summary>
         private async Task ExecuteExpressCycleAsync()
         {
+            // Express 每轮重构上下文，重置图片去重追踪
+            _seenImageHashes.Clear();
+            _startInjectMaxId = 0;
+
             // Build messages for single-shot call
             var messages = new List<Message>();
 
@@ -896,9 +905,9 @@ namespace AgentCoreProcessor.Engine
                 await IncrementDailyProgressAsync(_lastSessionContext.Person);
             }
 
-            // 推进游标
-            if (_pendingCursor > _lastConsumedMessageId)
-                _lastConsumedMessageId = _pendingCursor;
+            // 推进游标到 StartInject 已消费的最大 ID
+            if (_startInjectMaxId > _lastConsumedMessageId)
+                _lastConsumedMessageId = _startInjectMaxId;
 
             // Express 模式持久化游标（防止冷超时重启后消息锚点丢失）
             if (_lastConsumedMessageId > 0)
@@ -921,7 +930,7 @@ namespace AgentCoreProcessor.Engine
                 if (!string.IsNullOrEmpty(botId))
                     sb.AppendLine($"身份信息：你的QQ号是 {botId}。");
                 sb.AppendLine(FormatChannelContext());
-                sb.AppendLine("[图片说明] 消息末尾附带用户发送的图片。正文中的 [IMG:N] 标记表示图片在原文中的位置，对应末尾第 N 张图片。");
+                sb.AppendLine("[图片说明] 正文中的 [IMG:N] 标记表示该位置有图片，下方紧随对应的 [IMG:N] + 实际图片。相同图片不会重复出现。");
             }
             else
             {
@@ -932,7 +941,7 @@ namespace AgentCoreProcessor.Engine
                 if (!string.IsNullOrEmpty(botId))
                     sb.AppendLine($"\n身份信息：你的QQ号是 {botId}。");
                 sb.AppendLine(FormatChannelContext());
-                sb.AppendLine("\n[图片说明] 消息末尾附带用户发送的图片。正文中的 [IMG:N] 标记表示图片在原文中的位置，对应末尾第 N 张图片。");
+                sb.AppendLine("\n[图片说明] 正文中的 [IMG:N] 标记表示该位置有图片，下方紧随对应的 [IMG:N] + 实际图片。相同图片不会重复出现。");
             }
 
             return sb.ToString();
@@ -1142,20 +1151,64 @@ namespace AgentCoreProcessor.Engine
             msgs.Add(msg);
         }
 
-        /// <summary>将文本 + 一批消息的图片组装为 ContentParts（文本在前，图片全部追尾）。</summary>
-        private async Task<List<ContentPart>> BuildContentPartsWithImages(string text, IEnumerable<UserMessage> msgs)
+        /// <summary>按 [IMG:N] 标记拆分文本，交错插入 [图N] 标签 + 图片。同 hash 去重。</summary>
+        private async Task<List<ContentPart>> BuildInterleavedContentParts(
+            string text, IEnumerable<UserMessage> msgs, HashSet<string> seenHashes)
         {
-            var parts = new List<ContentPart> { ContentPart.FromText(text) };
+            // 收集图片路径（顺序与 [IMG:N] 对应）
+            var imagePaths = new List<string>();
+            var imageHashes = new List<string>();
             foreach (var m in msgs)
             {
                 if (string.IsNullOrEmpty(m.ImageHashes)) continue;
                 foreach (var hash in m.ImageHashes.Split(',', StringSplitOptions.RemoveEmptyEntries))
                 {
-                    var path = await ImageStorage.GetModelInputPathAsync(hash.Trim());
-                    if (!string.IsNullOrEmpty(path))
-                        parts.Add(ContentPart.FromImagePath(path));
+                    var trimmed = hash.Trim();
+                    var path = await ImageStorage.GetModelInputPathAsync(trimmed);
+                    imagePaths.Add(path ?? "");
+                    imageHashes.Add(trimmed);
                 }
             }
+
+            var regex = new System.Text.RegularExpressions.Regex(@"\[IMG:(\d+)\]");
+            var matches = regex.Matches(text);
+            var parts = new List<ContentPart>();
+            int lastEnd = 0;
+
+            foreach (System.Text.RegularExpressions.Match match in matches)
+            {
+                // 标记前的文本
+                if (match.Index > lastEnd)
+                    parts.Add(ContentPart.FromText(text[lastEnd..match.Index]));
+
+                int imgIndex = int.Parse(match.Groups[1].Value);
+                if (imgIndex >= 0 && imgIndex < imagePaths.Count && !string.IsNullOrEmpty(imagePaths[imgIndex]))
+                {
+                    var hash = imageHashes[imgIndex];
+                    if (seenHashes.Contains(hash))
+                    {
+                        // 重复图片：只引用标签
+                        parts.Add(ContentPart.FromText($"[IMG:{imgIndex}]"));
+                    }
+                    else
+                    {
+                        // 首次出现：标记 + 图片
+                        seenHashes.Add(hash);
+                        parts.Add(ContentPart.FromText($"[IMG:{imgIndex}]"));
+                        parts.Add(ContentPart.FromImagePath(imagePaths[imgIndex]));
+                    }
+                }
+
+                lastEnd = match.Index + match.Length;
+            }
+
+            // 剩余文本
+            if (lastEnd < text.Length)
+                parts.Add(ContentPart.FromText(text[lastEnd..]));
+
+            if (parts.Count == 0)
+                parts.Add(ContentPart.FromText(text));
+
             return parts;
         }
 
@@ -1169,16 +1222,6 @@ namespace AgentCoreProcessor.Engine
                     parts.Add(ContentPart.FromImagePath(path));
             }
             return Task.FromResult(parts);
-        }
-
-        /// <summary>组装带图片的 Message：Content 保留文本，ContentParts 追图。</summary>
-        private async Task AddMessageWithImages(List<Message> msgs, string text, IEnumerable<UserMessage> sourceMsgs)
-        {
-            var msg = new Message { Role = "user", Content = text };
-            var contentParts = await BuildContentPartsWithImages(text, sourceMsgs);
-            if (contentParts.Count > 1) // >1 意味着除了 text 还有图片
-                msg.ContentParts = contentParts;
-            msgs.Add(msg);
         }
 
         public async Task<List<Message>?> BuildStartInjectAsync()
@@ -1224,7 +1267,12 @@ namespace AgentCoreProcessor.Engine
                                 histSb.AppendLine("</message>");
                             }
                             histSb.Append("</conversation_history>");
-                            await AddMessageWithImages(msgs, histSb.ToString(), historyMsgs);
+                            {
+                                var parts = await BuildInterleavedContentParts(histSb.ToString(), historyMsgs, _seenImageHashes);
+                                var msg = new Message { Role = "user", Content = histSb.ToString() };
+                                if (parts.Count > 1) msg.ContentParts = parts;
+                                msgs.Add(msg);
+                            }
                         }
                         else
                         {
@@ -1242,19 +1290,20 @@ namespace AgentCoreProcessor.Engine
                                 var replyNote = !string.IsNullOrEmpty(m.ReplyToPlatformMessageId) ? $" (回复 #{m.ReplyToPlatformMessageId})" : "";
                                 histSb.AppendLine($"{mentionPrefix}{msgId}{name}: {m.Content}{replyNote}");
                             }
-                            await AddMessageWithImages(msgs, histSb.ToString(), historyMsgs);
+                            {
+                                var parts = await BuildInterleavedContentParts(histSb.ToString(), historyMsgs, _seenImageHashes);
+                                var msg = new Message { Role = "user", Content = histSb.ToString() };
+                                if (parts.Count > 1) msg.ContentParts = parts;
+                                msgs.Add(msg);
+                            }
                         }
                     }
 
-                    // 记录待推进游标（本批次最大消息 Id）
-                    // 必须立即推进 _lastConsumedMessageId，否则 BuildRoundInjectAsync
-                    // 会用旧游标查到同一批消息，导致重复注入（Express 模式下表现为一条消息触发两次回复）。
-                    var maxId = recentMsgs.Max(m => m.Id);
-                    if (maxId > _lastConsumedMessageId)
-                    {
-                        _pendingCursor = maxId;
-                        _lastConsumedMessageId = maxId;
-                    }
+                    // Express：_startInjectMaxId 只覆盖实际消费的历史消息，剩余留给 BuildRoundInjectAsync 拾取
+                    // Working：所有 recentMsgs 都已被注入，标记全部为已消费
+                    _startInjectMaxId = isWorkingMode
+                        ? recentMsgs.Max(m => m.Id)
+                        : (historyMsgs.Count > 0 ? historyMsgs.Max(m => m.Id) : _lastConsumedMessageId);
                 }
             }
 
@@ -1478,9 +1527,11 @@ namespace AgentCoreProcessor.Engine
             }
 
             // 统一新消息追赶：从 DB 拉取游标之后的全量消息（所有模式生效）
-            if (_lastConsumedMessageId > 0)
+            // 用 Math.Max 跳过 BuildStartInjectAsync 已注入的消息
+            var effectiveCursor = Math.Max(_lastConsumedMessageId, _startInjectMaxId);
+            if (effectiveCursor > 0)
             {
-                var newMsgs = await ctx.Session.GetMessagesAfterIdAsync(channelId, _lastConsumedMessageId);
+                var newMsgs = await ctx.Session.GetMessagesAfterIdAsync(channelId, effectiveCursor);
                 if (newMsgs.Count > 0)
                 {
                     // Express 模式裁剪：只保留最近一组窗口，避免上下文爆炸
@@ -1508,7 +1559,12 @@ namespace AgentCoreProcessor.Engine
                             await AddQuotedContextMessage(msgs, roundQc.Value.Text, roundQc.Value.ImagePaths);
 
                         // Working：只追当前批次新消息的图片（老图已在 agent 堆叠历史中）
-                        await AddMessageWithImages(msgs, sb.ToString(), newMsgs);
+                        {
+                            var parts = await BuildInterleavedContentParts(sb.ToString(), newMsgs, _seenImageHashes);
+                            var msg = new Message { Role = "user", Content = sb.ToString() };
+                            if (parts.Count > 1) msg.ContentParts = parts;
+                            msgs.Add(msg);
+                        }
                     }
                     else
                     {
@@ -1527,8 +1583,13 @@ namespace AgentCoreProcessor.Engine
                         if (roundQc != null)
                             await AddQuotedContextMessage(msgs, roundQc.Value.Text, roundQc.Value.ImagePaths);
 
-                        // Express：直接追加该批次所有图片
-                        await AddMessageWithImages(msgs, sb.ToString(), newMsgs);
+                        // Express：交错图片
+                        {
+                            var parts = await BuildInterleavedContentParts(sb.ToString(), newMsgs, _seenImageHashes);
+                            var msg = new Message { Role = "user", Content = sb.ToString() };
+                            if (parts.Count > 1) msg.ContentParts = parts;
+                            msgs.Add(msg);
+                        }
                     }
 
                     // 游标推进到所有新消息（包括被裁剪的）
