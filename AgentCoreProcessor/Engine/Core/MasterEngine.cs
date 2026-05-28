@@ -213,6 +213,104 @@ namespace AgentCoreProcessor.Engine
             return tools;
         }
 
+        /// <summary>
+        /// 即时切换组件在指定引擎类型下的启用状态。
+        /// 同时持久化配置并通知所有运行中的实例。
+        /// </summary>
+        public async Task ToggleComponentLiveAsync(string componentName, string engineType, bool enabled)
+        {
+            // 1. 持久化配置
+            var config = ComponentConfig.Load();
+            config.SetEnabled(componentName, engineType, enabled);
+
+            // 2. Global 组件：GlobalComponentHost 实例始终存在，直接切换
+            if (GlobalComponentHost != null)
+            {
+                var reg = ComponentRegistry.Get(componentName);
+                if (reg != null && reg.Scope == ComponentScope.Global)
+                {
+                    if (enabled)
+                        await GlobalComponentHost.EnableComponentAsync(componentName);
+                    else
+                        await GlobalComponentHost.DisableComponentAsync(componentName);
+                }
+            }
+
+            // 3. Loop 组件：遍历所有活跃引擎中匹配的 ComponentHost
+            var loopType = engineType switch
+            {
+                "channel" => "channel",
+                "system" => "system",
+                "sub-agent" => "sub-agent",
+                "review" => "review",
+                _ => engineType
+            };
+            foreach (var engine in GetActiveEnginesSnapshot())
+            {
+                if (engine.ComponentHost == null) continue;
+                if (engine.EngineType != loopType) continue;
+
+                if (enabled)
+                    await engine.ComponentHost.EnableComponentAsync(componentName);
+                else
+                    await engine.ComponentHost.DisableComponentAsync(componentName);
+            }
+        }
+
+        /// <summary>
+        /// 重载单个插件：卸载旧 DLL + 重新加载 + 为 Global 组件重建实例。
+        /// </summary>
+        public async Task ReloadPluginAsync(string pluginName)
+        {
+            // 先移除相关 Global 组件实例（关闭 + 从列表中移除）
+            if (GlobalComponentHost != null)
+            {
+                var plugin = PluginLoader.LoadedPlugins
+                    .FirstOrDefault(p => Path.GetFileNameWithoutExtension(p.FileName).Equals(pluginName, StringComparison.OrdinalIgnoreCase));
+                if (plugin != null)
+                {
+                    foreach (var compName in plugin.ComponentNames)
+                    {
+                        var reg = ComponentRegistry.Get(compName);
+                        if (reg != null && reg.Scope == ComponentScope.Global)
+                            await GlobalComponentHost.RemoveComponentAsync(compName);
+                    }
+                }
+            }
+
+            // 卸载并重新加载 DLL
+            PluginLoader.ReloadSingle(pluginName);
+            ComponentConfig.Invalidate();
+
+            // 为新注册的 Global 组件创建实例
+            if (GlobalComponentHost != null)
+            {
+                var config = ComponentConfig.Load();
+                var plugin = PluginLoader.LoadedPlugins
+                    .FirstOrDefault(p => Path.GetFileNameWithoutExtension(p.FileName).Equals(pluginName, StringComparison.OrdinalIgnoreCase));
+                if (plugin != null)
+                {
+                    foreach (var compName in plugin.ComponentNames)
+                    {
+                        var reg = ComponentRegistry.Get(compName);
+                        if (reg != null && reg.Scope == ComponentScope.Global)
+                        {
+                            // 尊重配置：如果该组件对任何引擎类型都未禁用，则创建
+                            if (config.IsEnabled(compName, "channel", true, reg.ChannelApplicability) ||
+                                config.IsEnabled(compName, "system", true, reg.SystemApplicability) ||
+                                config.IsEnabled(compName, "review", true, reg.ReviewApplicability) ||
+                                config.IsEnabled(compName, "sub-agent", true, reg.SubAgentApplicability))
+                            {
+                                await GlobalComponentHost.CreateAndEnableComponentAsync(compName);
+                            }
+                        }
+                    }
+                }
+            }
+
+            Signal.Event(LogGroup.Plugin, "插件已重载", new { plugin = pluginName });
+        }
+
         // ---- 初始化 ----
 
         public async Task InitAsync()

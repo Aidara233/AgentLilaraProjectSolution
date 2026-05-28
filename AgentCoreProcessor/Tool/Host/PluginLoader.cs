@@ -69,6 +69,38 @@ namespace AgentCoreProcessor.Tool.Host
             LoadAll();
         }
 
+        /// <summary>卸载并重新加载单个插件（按文件名匹配）。</summary>
+        public void ReloadSingle(string pluginName)
+        {
+            var entries = loadedPlugins
+                .Where(p => Path.GetFileNameWithoutExtension(p.FileName).Equals(pluginName, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (entries.Count == 0)
+                throw new InvalidOperationException($"未找到插件: {pluginName}");
+
+            foreach (var entry in entries)
+            {
+                foreach (var id in entry.ProviderIds)
+                    _providerRegistry?.Unregister(id);
+                foreach (var name in entry.ToolNames)
+                    ToolRegistry.Unregister(name);
+                foreach (var name in entry.ComponentNames)
+                    ComponentRegistry.Unregister(name);
+
+                entry.LoadContext.Unload();
+                loadedPlugins.Remove(entry);
+                _injectProviderTypes.RemoveAll(t => entry.InjectProviderNames.Contains(t.Name));
+                _lifecycleTypes.RemoveAll(t => entry.LifecycleNames.Contains(t.Name));
+            }
+
+            // 重新扫描同名 DLL
+            var dlls = Directory.GetFiles(PluginDir, "*.dll", SearchOption.AllDirectories)
+                .Where(d => Path.GetFileNameWithoutExtension(d).Equals(pluginName, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            foreach (var dll in dlls)
+                LoadPlugin(dll);
+        }
+
         /// <summary>卸载所有插件。</summary>
         public void UnloadAll()
         {

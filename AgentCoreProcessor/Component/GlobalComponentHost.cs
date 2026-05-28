@@ -106,6 +106,51 @@ internal class GlobalComponentHost
             Signal.Warn(LogGroup.Plugin, "组件禁用回调异常", new { component = name, error = ex.Message });
         }
     }
+
+    /// <summary>
+    /// 为刚注册的组件创建实例并启用（用于插件热重载后重建 Global 组件）。
+    /// 如果组件实例已存在，则等同于 EnableComponentAsync。
+    /// </summary>
+    public async Task CreateAndEnableComponentAsync(string componentName)
+    {
+        // 如果已有实例，直接启用
+        var existing = _components.FirstOrDefault(i => i.Component.Meta.Name == componentName);
+        if (existing != null)
+        {
+            await EnableComponentAsync(componentName);
+            return;
+        }
+
+        // 从 ComponentRegistry 查找新注册的类型
+        var reg = ComponentRegistry.Get(componentName);
+        if (reg == null || reg.Scope != ComponentScope.Global) return;
+
+        try
+        {
+            var instance = CreateInstance(reg);
+            if (instance == null) return;
+            _components.Add(instance);
+            await instance.Component.OnInitAsync(instance.Context, InitReason.Fresh);
+            RegisterTools(instance);
+        }
+        catch (Exception ex)
+        {
+            Signal.Error(LogGroup.Plugin, $"重载组件实例化失败: {componentName}",
+                new { component = componentName, error = ex.Message });
+        }
+    }
+
+    /// <summary>移除并关闭指定组件实例（用于插件热重载前清理旧实例）。</summary>
+    public async Task RemoveComponentAsync(string name)
+    {
+        var inst = _components.FirstOrDefault(i => i.Component.Meta.Name == name);
+        if (inst == null) return;
+
+        UnregisterTools(inst);
+        try { await inst.Component.OnShutdownAsync(ShutdownReason.Destroy).WaitAsync(TimeSpan.FromSeconds(3)); }
+        catch { }
+        _components.Remove(inst);
+    }
     public async Task ShutdownAsync(ShutdownReason reason)
     {
         var timeout = _config.ShutdownTimeoutMs;

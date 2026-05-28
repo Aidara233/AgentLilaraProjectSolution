@@ -305,9 +305,10 @@ namespace AgentCoreProcessor.Engine
                         parts.Add(ContentPart.FromToolResult(calls[i].ToolUseId!, data, !results[i].IsSuccess));
 
                         // 图片附件：在 tool_result 后追加 image ContentPart
-                        if (results[i].IsSuccess && results[i].Attachments != null)
+                        var attachments = results[i].Attachments;
+                        if (results[i].IsSuccess && attachments != null)
                         {
-                            foreach (var att in results[i].Attachments)
+                            foreach (var att in attachments)
                             {
                                 if (att.Type == "image")
                                 {

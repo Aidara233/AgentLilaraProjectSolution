@@ -112,6 +112,23 @@ internal class PluginsProvider : IWebUIProvider
             },
             new()
             {
+                Id = "plugin-reload-single", Type = CardType.Action, DataSourceId = "plugin-reload-single", Title = "重载此插件",
+                Schema = new ActionCardSchema
+                {
+                    ActionId = "reload",
+                    ActionLabel = "热重载",
+                    Description = "卸载并重新加载此插件 DLL，不影响其他插件。",
+                    SubmitLabel = "重载",
+                    Params = new()
+                    {
+                        new() { Name = "confirm", Label = "确认", Type = "select", Required = true,
+                            Options = new() { new() { Value = "yes", Label = "是，执行重载" } } }
+                    }
+                },
+                Layout = new CardLayout { PreferredCols = 6 }
+            },
+            new()
+            {
                 Id = "plugin-tools", Type = CardType.Table, DataSourceId = "plugin-tools", Title = "工具列表",
                 Schema = new TableSchema
                 {
@@ -151,6 +168,7 @@ internal class PluginsProvider : IWebUIProvider
         DataSources = new List<DataSourceDefinition>
         {
             new() { Id = "plugin-info", Source = new PluginInfoSource(_engine) },
+            new() { Id = "plugin-reload-single", Source = new PluginReloadSingleSource(_engine) },
             new() { Id = "plugin-tools", Source = new PluginToolsSource(_engine) },
             new() { Id = "plugin-components", Source = new PluginComponentsSource(_engine) },
         }
@@ -255,7 +273,7 @@ internal class PluginsProvider : IWebUIProvider
         DataSources = new List<DataSourceDefinition>
         {
             new() { Id = "perm-list", Source = new ComponentPermListSource(_engine) },
-            new() { Id = "perm-toggles", Source = new ComponentPermTogglesSource() },
+            new() { Id = "perm-toggles", Source = new ComponentPermTogglesSource(_engine) },
         }
     };
 
@@ -342,7 +360,8 @@ internal class PluginReloadSource : IDataSource
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
     {
-        if (action != "reload")
+        var actionId = data?["actionId"]?.ToString() ?? action;
+        if (actionId != "reload")
             return Task.FromResult(new ActionResult { Success = false, Message = "未知操作" });
 
         try
@@ -353,6 +372,43 @@ internal class PluginReloadSource : IDataSource
         catch (Exception ex)
         {
             return Task.FromResult(new ActionResult { Success = false, Message = $"重载失败: {ex.Message}" });
+        }
+    }
+}
+
+// ================ 单插件热重载数据源 ================
+
+internal class PluginReloadSingleSource : IDataSource
+{
+    private readonly MasterEngine _engine;
+    private string _pluginName = "";
+    public PluginReloadSingleSource(MasterEngine engine) => _engine = engine;
+    public bool SupportsPush => false;
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        _pluginName = query?.RouteParams?.GetValueOrDefault("name") ?? "";
+        return Task.FromResult(new DataResult { Data = new JsonObject() });
+    }
+
+    public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+    {
+        var actionId = data?["actionId"]?.ToString() ?? action;
+        if (actionId != "reload")
+            return new ActionResult { Success = false, Message = "未知操作" };
+
+        if (string.IsNullOrEmpty(_pluginName))
+            return new ActionResult { Success = false, Message = "未指定插件" };
+
+        try
+        {
+            await _engine.ReloadPluginAsync(_pluginName);
+            return new ActionResult { Success = true, Message = $"插件 {_pluginName} 已重载" };
+        }
+        catch (Exception ex)
+        {
+            return new ActionResult { Success = false, Message = $"重载失败: {ex.Message}" };
         }
     }
 }
@@ -723,7 +779,11 @@ internal class ComponentPermListSource : IDataSource
 
 internal class ComponentPermTogglesSource : IDataSource
 {
+    private readonly MasterEngine _engine;
     private string _selectedComponent = "";
+
+    public ComponentPermTogglesSource(MasterEngine engine) => _engine = engine;
+
     public bool SupportsPush => false;
     public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
 
@@ -760,10 +820,10 @@ internal class ComponentPermTogglesSource : IDataSource
         return Task.FromResult(new DataResult { Data = data });
     }
 
-    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+    public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(_selectedComponent))
-            return Task.FromResult(new ActionResult { Success = false, Message = "未选择组件" });
+            return new ActionResult { Success = false, Message = "未选择组件" };
 
         var engineType = action switch
         {
@@ -775,7 +835,7 @@ internal class ComponentPermTogglesSource : IDataSource
         };
 
         if (engineType == null)
-            return Task.FromResult(new ActionResult { Success = false, Message = $"未知操作: {action}" });
+            return new ActionResult { Success = false, Message = $"未知操作: {action}" };
 
         var config = ComponentConfig.Load();
         var reg = ComponentRegistry.Get(_selectedComponent);
@@ -788,9 +848,17 @@ internal class ComponentPermTogglesSource : IDataSource
             _ => Applicability.Enabled
         };
         var current = config.IsEnabled(_selectedComponent, engineType, true, applicability);
-        config.SetEnabled(_selectedComponent, engineType, !current);
+        var target = !current;
 
-        var label = !current ? "启用" : "禁用";
-        return Task.FromResult(new ActionResult { Success = true, Message = $"{_selectedComponent} × {engineType} → {label}" });
+        try
+        {
+            await _engine.ToggleComponentLiveAsync(_selectedComponent, engineType, target);
+            var label = target ? "启用" : "禁用";
+            return new ActionResult { Success = true, Message = $"{_selectedComponent} × {engineType} → {label}（已即时生效）" };
+        }
+        catch (Exception ex)
+        {
+            return new ActionResult { Success = false, Message = $"切换失败: {ex.Message}" };
+        }
     }
 }
