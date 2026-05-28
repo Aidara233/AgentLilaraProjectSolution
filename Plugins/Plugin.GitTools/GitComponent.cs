@@ -28,6 +28,7 @@ public class GitComponent : LoopComponentBase
     private GitPullTool? _pullTool;
     private GitBranchTool? _branchTool;
     private GitCloneTool? _cloneTool;
+    private GitInitTool? _initTool;
     private GitListReposTool? _listReposTool;
     private GitHubPrTool? _prTool;
     private GitHubIssueTool? _issueTool;
@@ -55,6 +56,7 @@ public class GitComponent : LoopComponentBase
             if (_pullTool != null) yield return _pullTool;
             if (_branchTool != null) yield return _branchTool;
             if (_cloneTool != null) yield return _cloneTool;
+            if (_initTool != null) yield return _initTool;
             if (_listReposTool != null) yield return _listReposTool;
             if (_prTool != null) yield return _prTool;
             if (_issueTool != null) yield return _issueTool;
@@ -90,6 +92,7 @@ public class GitComponent : LoopComponentBase
         _pullTool = new GitPullTool(workspace, runner);
         _branchTool = new GitBranchTool(workspace, runner);
         _cloneTool = new GitCloneTool(workspace, runner, repos);
+        _initTool = new GitInitTool(workspace, runner, repos);
         _listReposTool = new GitListReposTool(workspace, runner, repos);
         _prTool = new GitHubPrTool(workspace, runner, gh, repos);
         _issueTool = new GitHubIssueTool(workspace, runner, gh, repos);
