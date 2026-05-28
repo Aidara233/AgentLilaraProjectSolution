@@ -1247,9 +1247,14 @@ namespace AgentCoreProcessor.Engine
                     }
 
                     // 记录待推进游标（本批次最大消息 Id）
+                    // 必须立即推进 _lastConsumedMessageId，否则 BuildRoundInjectAsync
+                    // 会用旧游标查到同一批消息，导致重复注入（Express 模式下表现为一条消息触发两次回复）。
                     var maxId = recentMsgs.Max(m => m.Id);
                     if (maxId > _lastConsumedMessageId)
+                    {
                         _pendingCursor = maxId;
+                        _lastConsumedMessageId = maxId;
+                    }
                 }
             }
 
