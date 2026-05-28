@@ -9,7 +9,7 @@
   "frequencyPenalty": null,
   "presencePenalty": null,
   "stream": true,
-  "promptCaching": true,
+  "enableCaching": true,
   "useNativeTools": true,
   "extraBody": null,
   "n": 1,

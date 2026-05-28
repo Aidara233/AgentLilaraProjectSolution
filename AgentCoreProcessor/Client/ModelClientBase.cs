@@ -118,7 +118,7 @@ namespace AgentCoreProcessor.Client
         public virtual Task StreamChatWithToolsAsync(Action<StreamEvent> onEvent, CancellationToken ct = default)
             => throw new NotSupportedException($"Provider {apiClientCfg.Provider} 不支持原生工具调用");
 
-        public virtual void AddToolResult(string toolUseId, string result, bool isError = false) { }
+        public virtual void AddToolResult(string toolUseId, string result, bool isError = false, List<string>? imagePaths = null) { }
 
         public virtual void Dispose() { }
     }

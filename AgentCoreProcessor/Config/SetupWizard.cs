@@ -69,9 +69,9 @@ namespace AgentCoreProcessor.Config
             Console.WriteLine("------------------------------------------------------------");
             Console.WriteLine(" 配置预览:");
             Console.WriteLine($"   Storage  : {storagePath}");
-            Console.WriteLine($"   主力模型  : {(heavy.Provider == "claude" ? "Claude 格式" : "OpenAI 格式")}  {heavy.Model}  @ {heavy.Endpoint}");
-            Console.WriteLine($"   泛用模型  : {(general.Provider == "claude" ? "Claude 格式" : "OpenAI 格式")}  {general.Model}  @ {general.Endpoint}");
-            Console.WriteLine($"   轻量模型  : {(light.Provider == "claude" ? "Claude 格式" : "OpenAI 格式")}  {light.Model}  @ {light.Endpoint}");
+            Console.WriteLine($"   主力模型  : [{heavy.Provider}]  {heavy.Model}  @ {heavy.Endpoint}");
+            Console.WriteLine($"   泛用模型  : [{general.Provider}]  {general.Model}  @ {general.Endpoint}");
+            Console.WriteLine($"   轻量模型  : [{light.Provider}]  {light.Model}  @ {light.Endpoint}");
             Console.WriteLine($"   Embedding: {(embedding.Enabled ? "启用" : "禁用")}  {(embedding.Enabled ? $"{embedding.Model} @ {embedding.Endpoint}" : "")}");
             Console.WriteLine($"   Vision   : {(vision.Enabled ? "启用" : "禁用")}  {(vision.Enabled ? $"{vision.Model} @ {vision.Endpoint}" : "")}");
             Console.WriteLine($"   OCR      : {(ocr.Enabled ? "启用" : "禁用")}  {(ocr.Enabled ? $"{ocr.Model} @ {ocr.Endpoint}" : "")}");
@@ -142,9 +142,11 @@ namespace AgentCoreProcessor.Config
             var endpoint = Console.ReadLine()?.Trim() ?? "";
             Console.Write("   Model:    ");
             var model = Console.ReadLine()?.Trim() ?? "";
-            Console.Write($"   Claude API 格式? (y/N): ");
-            var useClaude = Console.ReadLine()?.Trim().ToLowerInvariant();
-            var provider = useClaude == "y" || useClaude == "yes" ? "claude" : "openai";
+            Console.Write($"   API 协议 (claude/openai) [{defaultProvider}]: ");
+            var input = Console.ReadLine()?.Trim().ToLowerInvariant();
+            var provider = string.IsNullOrEmpty(input) ? defaultProvider
+                : (input == "claude" || input == "anthropic") ? "claude"
+                : "openai";
 
             return new ModelConfig
             {

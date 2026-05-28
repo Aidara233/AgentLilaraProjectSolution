@@ -30,6 +30,6 @@ namespace AgentCoreProcessor.Client
         IModelClient SetTools(List<ToolDefinition> tools);
         List<ToolDefinition>? GetTools();
         Task StreamChatWithToolsAsync(Action<StreamEvent> onEvent, CancellationToken ct = default);
-        void AddToolResult(string toolUseId, string result, bool isError = false);
+        void AddToolResult(string toolUseId, string result, bool isError = false, List<string>? imagePaths = null);
     }
 }

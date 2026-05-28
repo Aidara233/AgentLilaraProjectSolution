@@ -26,7 +26,7 @@ namespace AgentCoreProcessor.Client
     {
         private const int DefaultMaxTokens = 4096;
         private AnthropicClient? _client;
-        private readonly List<(string ToolUseId, string Result, bool IsError)> _pendingToolResults = new();
+        private readonly List<(string ToolUseId, string Result, bool IsError, List<string>? ImagePaths)> _pendingToolResults = new();
 
         public ClaudeModelClient() : base() { }
         public ClaudeModelClient(ApiClientCfg cfg) : base(cfg) { }
@@ -54,9 +54,9 @@ namespace AgentCoreProcessor.Client
             return _client;
         }
 
-        public override void AddToolResult(string toolUseId, string result, bool isError = false)
+        public override void AddToolResult(string toolUseId, string result, bool isError = false, List<string>? imagePaths = null)
         {
-            _pendingToolResults.Add((toolUseId, result, isError));
+            _pendingToolResults.Add((toolUseId, result, isError, imagePaths));
         }
 
         /// <summary>构建 MessageParameters，含 tools（如有设置）、pending tool results。</summary>
@@ -105,7 +105,7 @@ namespace AgentCoreProcessor.Client
             }
 
             // Prompt Caching
-            if (apiClientCfg.PromptCaching)
+            if (apiClientCfg.ShouldEnableCaching())
             {
                 parameters.PromptCaching = PromptCacheType.FineGrained;
                 if (parameters.System != null)
@@ -328,23 +328,37 @@ namespace AgentCoreProcessor.Client
             // 追加 pending tool results 到一条 user 消息的末尾
             if (_pendingToolResults.Count > 0)
             {
-                var toolResultBlocks = _pendingToolResults.Select(tr =>
-                    (ContentBase)new ToolResultContent
+                var contentBlocks = new List<ContentBase>();
+
+                foreach (var tr in _pendingToolResults)
+                {
+                    contentBlocks.Add(new ToolResultContent
                     {
                         ToolUseId = tr.ToolUseId,
                         Content = new List<ContentBase> { new TextContent { Text = tr.Result } },
                         IsError = tr.IsError ? true : null
-                    }).ToList();
+                    });
+
+                    // 工具结果附带的图片
+                    if (tr.ImagePaths != null)
+                    {
+                        foreach (var path in tr.ImagePaths)
+                        {
+                            var img = BuildImageContent(new Models.ContentPart { Type = "image", ImagePath = path });
+                            if (img != null) contentBlocks.Add(img);
+                        }
+                    }
+                }
 
                 if (messages.Count > 0 && messages[^1].Role == RoleType.User)
                 {
                     messages[^1].Content ??= new List<ContentBase>();
-                    messages[^1].Content.AddRange(toolResultBlocks);
+                    messages[^1].Content.AddRange(contentBlocks);
                 }
                 else
                 {
                     var trMsg = new SdkMessage(RoleType.User, "tool_results");
-                    trMsg.Content = toolResultBlocks;
+                    trMsg.Content = contentBlocks;
                     messages.Add(trMsg);
                 }
                 _pendingToolResults.Clear();

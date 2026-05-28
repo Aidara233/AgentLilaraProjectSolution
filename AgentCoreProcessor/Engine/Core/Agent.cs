@@ -338,7 +338,7 @@ namespace AgentCoreProcessor.Engine
 
         /// <summary>
         /// 确保 tool_use 的 input 始终是 JSON 对象（非数组）。
-        /// Anthropic API 要求 tool_use.input 必须是 JSON object，数组格式会导致 400。
+        /// 各 API 均要求 tool_use.input 为 JSON object，数组格式会导致 400。
         /// </summary>
         private string BuildToolInputJson(ToolCall call)
         {

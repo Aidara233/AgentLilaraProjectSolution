@@ -36,7 +36,9 @@ namespace AgentCoreProcessor.Client
         [JsonProperty("stream")]
         public bool Stream { get; set; } = true;
 
-        // OpenAI-style extra_body 支持：允许用户在请求体中注入额外字段（例如 {"thinking": {"type": "enabled"}}）
+        // 通用：向 API 请求体注入额外字段。各客户端自行决定读取方式：
+        // - ClaudeModelClient: 读取 "thinking" → 映射到 SDK ThinkingParameters
+        // - OpenAIModelClient: 全部透传到 HTTP 请求体
         [JsonProperty("extraBody")]
         public Dictionary<string, object>? ExtraBody { get; set; } = null;
 
@@ -57,13 +59,22 @@ namespace AgentCoreProcessor.Client
         [JsonProperty("provider")]
         public string Provider { get; set; } = "openai";
 
-        // Claude 专用：API 版本号
+        // Claude 专用：API 版本号。provider 不为 claude 时忽略。
         [JsonProperty("anthropicVersion")]
         public string? AnthropicVersion { get; set; } = null;
 
-        // Claude 专用：启用 prompt caching（在 system 和前缀消息上设置 cache_control）
+        // 通用：启用请求级缓存。各客户端自行实现：
+        // - Claude: 在 system/前缀消息上设置 cache_control
+        // - OpenAI: 无客户端控制，服务端自动缓存，usage 报告 cached tokens
+        [JsonProperty("enableCaching")]
+        public bool EnableCaching { get; set; } = false;
+
+        // 向后兼容：旧配置中的 "promptCaching" 反序列化到此
         [JsonProperty("promptCaching")]
         public bool PromptCaching { get; set; } = false;
+
+        /// <summary>任一为 true 即启用缓存。</summary>
+        public bool ShouldEnableCaching() => EnableCaching || PromptCaching;
 
         // 启用原生工具调用（Anthropic tool_use / OpenAI function calling）
         [JsonProperty("useNativeTools")]

@@ -25,7 +25,7 @@ namespace AgentCoreProcessor.Client
     {
         private ChatClient? _chatClient;
         private CacheCaptureHandler? _cacheHandler;
-        private readonly List<ChatMessage> _pendingToolMessages = new();
+        private readonly List<(string ToolUseId, string Result, bool IsError, List<string>? ImagePaths)> _pendingToolResults = new();
 
         public OpenAIModelClient() : base() { }
         public OpenAIModelClient(ApiClientCfg cfg) : base(cfg) { }
@@ -35,7 +35,15 @@ namespace AgentCoreProcessor.Client
             if (_chatClient != null) return _chatClient;
 
             _cacheHandler = new CacheCaptureHandler();
-            var httpClient = new HttpClient(_cacheHandler);
+            HttpMessageHandler innerHandler = _cacheHandler;
+
+            // ExtraBody 透传：通过 HTTP 拦截器注入额外字段到请求体
+            if (apiClientCfg.ExtraBody != null && apiClientCfg.ExtraBody.Count > 0)
+            {
+                innerHandler = new ExtraBodyInjectHandler(innerHandler, apiClientCfg.ExtraBody);
+            }
+
+            var httpClient = new HttpClient(innerHandler);
             httpClient.Timeout = TimeSpan.FromMinutes(10);
 
             var credential = new ApiKeyCredential(apiClientCfg.ApiKey);
@@ -61,9 +69,9 @@ namespace AgentCoreProcessor.Client
             return _chatClient;
         }
 
-        public override void AddToolResult(string toolUseId, string result, bool isError = false)
+        public override void AddToolResult(string toolUseId, string result, bool isError = false, List<string>? imagePaths = null)
         {
-            _pendingToolMessages.Add(new ToolChatMessage(toolUseId, result));
+            _pendingToolResults.Add((toolUseId, result, isError, imagePaths));
         }
 
         public override async Task<string> StreamChatAsync(Action<ApiResponse> onDelta, CancellationToken ct = default)
@@ -251,11 +259,38 @@ namespace AgentCoreProcessor.Client
                         break;
                 }
             }
-            // 追加 pending tool messages
-            if (_pendingToolMessages.Count > 0)
+            // 追加 pending tool results，图片通过单独 user message 注入（OpenAI 不支持 tool message 内嵌图片）
+            if (_pendingToolResults.Count > 0)
             {
-                messages.AddRange(_pendingToolMessages);
-                _pendingToolMessages.Clear();
+                foreach (var (toolUseId, result, isError, imagePaths) in _pendingToolResults)
+                {
+                    messages.Add(new ToolChatMessage(toolUseId, result));
+
+                    if (imagePaths != null && imagePaths.Count > 0)
+                    {
+                        var imgParts = new List<ChatMessageContentPart>();
+                        foreach (var path in imagePaths)
+                        {
+                            if (File.Exists(path))
+                            {
+                                try
+                                {
+                                    var bytes = File.ReadAllBytes(path);
+                                    var mediaType = InferMediaType(path);
+                                    imgParts.Add(ChatMessageContentPart.CreateImagePart(
+                                        BinaryData.FromBytes(bytes), mediaType));
+                                }
+                                catch (Exception ex)
+                                {
+                                    Signal.Warn(LogGroup.Model, "图片加载失败", new { path, error = ex.Message });
+                                }
+                            }
+                        }
+                        if (imgParts.Count > 0)
+                            messages.Add(new UserChatMessage(imgParts));
+                    }
+                }
+                _pendingToolResults.Clear();
             }
             return messages;
         }
@@ -516,6 +551,48 @@ namespace AgentCoreProcessor.Client
                 }
 
                 return response;
+            }
+        }
+
+        /// <summary>
+        /// 将 ExtraBody 中的字段注入到 HTTP 请求体 JSON 中。
+        /// 不覆盖已有键，仅追加新键。
+        /// </summary>
+        private class ExtraBodyInjectHandler : DelegatingHandler
+        {
+            private readonly Dictionary<string, object> _extraBody;
+
+            public ExtraBodyInjectHandler(HttpMessageHandler inner, Dictionary<string, object> extraBody)
+                : base(inner)
+            {
+                _extraBody = extraBody;
+            }
+
+            protected override async Task<HttpResponseMessage> SendAsync(
+                HttpRequestMessage request, CancellationToken ct)
+            {
+                if (request.Content != null && _extraBody.Count > 0)
+                {
+                    var body = await request.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                    var json = JsonNode.Parse(body)?.AsObject();
+                    if (json != null)
+                    {
+                        foreach (var kvp in _extraBody)
+                        {
+                            if (!json.ContainsKey(kvp.Key))
+                                json[kvp.Key] = JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(kvp.Value));
+                        }
+                        var newBody = json.ToJsonString();
+                        var newContent = new StringContent(newBody, Encoding.UTF8, "application/json");
+                        foreach (var (key, values) in request.Content.Headers)
+                        {
+                            if (!key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase))
+                                newContent.Headers.TryAddWithoutValidation(key, values);
+                        }
+                        request.Content = newContent;
+                    }
+                }
+                return await base.SendAsync(request, ct).ConfigureAwait(false);
             }
         }
     }

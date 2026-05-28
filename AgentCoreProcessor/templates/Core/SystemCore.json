@@ -6,7 +6,7 @@
   "temperature": 0.4,
   "maxTokens": 8192,
   "stream": true,
-  "promptCaching": true,
+  "enableCaching": true,
   "useNativeTools": true,
   "conversationHistory": [
     {
