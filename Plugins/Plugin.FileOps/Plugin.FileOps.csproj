@@ -19,7 +19,7 @@
     <PackageReference Include="SharpCompress" Version="0.38.0" />
   </ItemGroup>
 
-  <Target Name="CopyToHostPlugins" AfterTargets="Build">
+  <Target Name="CopyToHostPlugins" AfterTargets="Build" Condition=" '$(SolutionDir)' != '' And '$(SolutionDir)' != '*Undefined*' ">
     <Copy SourceFiles="$(OutputPath)Plugin.FileOps.dll;$(OutputPath)FileToolKit.Shared.dll;$(OutputPath)SharpCompress.dll"
           DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\" />
   </Target>
