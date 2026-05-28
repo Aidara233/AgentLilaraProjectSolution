@@ -973,6 +973,10 @@ namespace AgentCoreProcessor.Engine
         {
             if (agent != null) return;
 
+            // 新 Working 会话：清空 Express 遗留的图片去重状态，
+            // 防止 BuildInterleavedContentParts 误将 Express 已见过的图片标记为重复
+            _seenImageHashes.Clear();
+
             fixedPrefix = BuildFixedPrefix();
 
             var authorized = componentHost!.GetAllVisibleToolNames();
