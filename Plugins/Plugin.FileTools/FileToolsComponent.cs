@@ -28,6 +28,7 @@ public class FileToolsComponent : GlobalComponentBase
         _tools.Add(new MoveFileTool(workspaceDir));
         _tools.Add(new DeleteFileTool(workspaceDir));
         _tools.Add(new CopyFileTool(workspaceDir));
+        _tools.Add(new UpdateTextTool(workspaceDir));
 
         var diceReg = context.GetService<IDiceRegistry>();
         if (diceReg != null)
