@@ -5,6 +5,7 @@ public interface ILogQuery
     List<LogEvent> GetBySignal(string signalId);
     List<LogEvent> GetByScope(string scope, long? since = null, int limit = 200);
     List<LogEvent> GetRecent(int limit = 200, string? group = null, int? minLevel = null);
+    List<LogEvent> GetRecentBefore(long beforeTimestamp, int limit = 200);
     List<LogEvent> GetOpenSpans();
     List<LogEvent> GetSignalList(int limit = 50);
     List<TokenUsageRecord> GetTokenUsage(long? since = null, string? model = null, string? callerTag = null);

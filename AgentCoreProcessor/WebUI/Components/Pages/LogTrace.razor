@@ -59,6 +59,11 @@
             <i class="bi bi-arrow-down-circle"></i>
         </button>
 
+        <button class="btn btn-sm btn-outline-secondary" @onclick="LoadOlder" title="加载更早的事件"
+                disabled="@(!_hasOlder || _loadingOlder)">
+            <i class="bi bi-arrow-up-circle"></i> @(_loadingOlder ? "加载中..." : "加载更早")
+        </button>
+
         <button class="btn btn-sm btn-outline-secondary" @onclick="Refresh" title="刷新">
             <i class="bi bi-arrow-clockwise"></i>
         </button>
@@ -79,6 +84,8 @@
     private bool _showOpenOnly = false;
     private bool _paused = false;
     private bool _autoScroll = true;
+    private bool _hasOlder = true;
+    private bool _loadingOlder = false;
     private List<SignalSummary> _signals = new();
     private TraceViewModel? _trace;
     private HashSet<string> _hiddenScopes = new();
@@ -90,6 +97,8 @@
     private ElementReference _textRef;
     private ElementReference _detailRef;
     private IJSObjectReference? _jsModule;
+
+    private const int PAGE_SIZE = 200;
 
     protected override void OnInitialized()
     {
@@ -110,15 +119,49 @@
     {
         var filter = BuildFilter();
         _trace = string.IsNullOrEmpty(_selectedSignal)
-            ? TraceService.GetRecentTrace(500, filter)
+            ? TraceService.GetRecentTrace(PAGE_SIZE, filter)
             : TraceService.GetTrace(_selectedSignal, filter);
-        // Update available scopes (before filtering by scope)
-        var unfilteredScopes = string.IsNullOrEmpty(_selectedSignal)
-            ? TraceService.GetRecentTrace(500)
-            : TraceService.GetTrace(_selectedSignal);
-        _allScopes = unfilteredScopes.Scopes;
+        _allScopes = _trace.Scopes;
         _hiddenScopes.RemoveWhere(s => !_allScopes.Contains(s));
+        _hasOlder = _trace.Rows.Count >= PAGE_SIZE;
         await RenderGraph();
+    }
+
+    private async Task LoadOlder()
+    {
+        if (_trace == null || _trace.Rows.Count == 0 || _loadingOlder) return;
+        _loadingOlder = true;
+        StateHasChanged();
+
+        try
+        {
+            var oldestTimestamp = _trace.Rows[0].Timestamp;
+            var filter = BuildFilter();
+            var older = string.IsNullOrEmpty(_selectedSignal)
+                ? TraceService.GetRecentBefore(oldestTimestamp, PAGE_SIZE, filter)
+                : TraceService.GetTraceBefore(_selectedSignal, oldestTimestamp, PAGE_SIZE);
+
+            if (older.Rows.Count == 0)
+            {
+                _hasOlder = false;
+            }
+            else
+            {
+                _hasOlder = older.Rows.Count >= PAGE_SIZE;
+                if (_jsModule != null)
+                    await _jsModule.InvokeVoidAsync("prependRows", older.Rows, _hasOlder);
+                // Update local scopes
+                foreach (var s in older.Scopes)
+                {
+                    if (!_allScopes.Contains(s)) _allScopes.Add(s);
+                }
+            }
+        }
+        finally
+        {
+            _loadingOlder = false;
+            StateHasChanged();
+        }
     }
 
     private async Task ApplyFilters()

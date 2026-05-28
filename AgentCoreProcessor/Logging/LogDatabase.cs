@@ -55,6 +55,8 @@ public class LogDatabase : IDisposable
             CREATE INDEX IF NOT EXISTS idx_events_level_time ON events(level, timestamp);
             CREATE INDEX IF NOT EXISTS idx_events_parent ON events(parent_id);
             CREATE INDEX IF NOT EXISTS idx_events_cause ON events(cause_span_id);
+            CREATE INDEX IF NOT EXISTS idx_events_time ON events(timestamp);
+            CREATE INDEX IF NOT EXISTS idx_events_origin_time ON events(is_signal_origin, timestamp);
             """;
         cmd2.ExecuteNonQuery();
 

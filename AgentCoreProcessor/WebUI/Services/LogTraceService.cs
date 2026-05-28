@@ -55,15 +55,13 @@ internal class LogTraceService
     public TraceViewModel GetTrace(string signalId, TraceFilter? filter = null)
     {
         var events = _query.GetBySignal(signalId);
-        if (filter != null) events = ApplyFilter(events, filter);
-        return BuildViewModel(events);
+        return BuildViewModel(events, filter);
     }
 
     public TraceViewModel GetRecentTrace(int limit = 500, TraceFilter? filter = null)
     {
         var events = _query.GetRecent(limit);
-        if (filter != null) events = ApplyFilter(events, filter);
-        return BuildViewModel(events);
+        return BuildViewModel(events, filter);
     }
 
     public TraceViewModel GetTraceBefore(string signalId, long beforeTimestamp, int limit = 200)
@@ -79,18 +77,15 @@ internal class LogTraceService
 
     public TraceViewModel GetRecentBefore(long beforeTimestamp, int limit = 200, TraceFilter? filter = null)
     {
-        var events = _query.GetRecent(limit + 200)
-            .Where(e => e.Timestamp < beforeTimestamp)
-            .Take(limit)
-            .ToList();
-        if (filter != null) events = ApplyFilter(events, filter);
-        return BuildViewModel(events);
+        var events = _query.GetRecentBefore(beforeTimestamp, limit);
+        return BuildViewModel(events, filter);
     }
 
-    private TraceViewModel BuildViewModel(List<LogEvent> events)
+    private TraceViewModel BuildViewModel(List<LogEvent> events, TraceFilter? filter = null)
     {
         var scopes = events.Select(e => e.Scope).Distinct().ToList();
-        var rows = events
+        var filtered = filter != null ? ApplyFilter(events, filter) : events;
+        var rows = filtered
             .OrderBy(e => e.Timestamp).ThenBy(e => e.Id)
             .Select(evt => new TraceRow
             {

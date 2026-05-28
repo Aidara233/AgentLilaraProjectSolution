@@ -96,13 +96,28 @@ public class LogQuery : ILogQuery
         return ReadEvents(cmd);
     }
 
+    public List<LogEvent> GetRecentBefore(long beforeTimestamp, int limit = 200)
+    {
+        using var cmd = _db.Connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT id, signal_id, scope, branch, parent_id, span_id, cause_span_id, group_name, level, type, timestamp, name, detail, is_signal_origin
+            FROM events
+            WHERE timestamp < @before
+            ORDER BY timestamp DESC
+            LIMIT @limit
+            """;
+        cmd.Parameters.AddWithValue("@before", beforeTimestamp);
+        cmd.Parameters.AddWithValue("@limit", limit);
+        return ReadEvents(cmd);
+    }
+
     public List<LogEvent> GetSignalList(int limit = 50)
     {
         using var cmd = _db.Connection.CreateCommand();
         cmd.CommandText = """
             SELECT id, signal_id, scope, branch, parent_id, span_id, cause_span_id, group_name, level, type, timestamp, name, detail, is_signal_origin
             FROM events
-            WHERE type = 'open' AND parent_id IS NULL
+            WHERE is_signal_origin = 1
             ORDER BY timestamp DESC
             LIMIT @limit
             """;

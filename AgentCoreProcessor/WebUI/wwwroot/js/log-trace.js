@@ -1319,6 +1319,7 @@ export function appendRow(row, autoScroll) {
 
 export function appendRows(rows, autoScroll) {
     if (!state || !state.graphEl) return;
+    const prevLen = state.rows.length;
     for (const row of rows) {
         state.rows.push(row);
     }
@@ -1327,15 +1328,18 @@ export function appendRows(rows, autoScroll) {
     if (!_appendPending) {
         _appendPending = true;
         const highlightId = state._lastHighlightRowId;
+        const shifted = state.rows.length < prevLen + rows.length;
         requestAnimationFrame(() => {
             _appendPending = false;
-            rebuildState();
-            // Restore highlight if one was active before rebuild
+            if (shifted) {
+                rebuildState();
+            } else {
+                incrementalUpdate(prevLen);
+            }
             if (highlightId >= 0 && state._applyHighlight) {
                 const ri = state.rows.findIndex(r => r.id === highlightId);
                 if (ri >= 0) state._applyHighlight(ri);
             }
-            // Skip auto-scroll if user is hovering on a row
             if (_appendAutoScroll && state.textEl && !state.hoverPaused) {
                 state.textEl.scrollTop = state.textEl.scrollHeight;
                 state.graphEl.scrollTop = state.graphEl.scrollHeight;
@@ -1343,6 +1347,58 @@ export function appendRows(rows, autoScroll) {
             _appendAutoScroll = false;
         });
     }
+}
+
+function incrementalUpdate(fromIdx) {
+    if (!state || state.rows.length === 0) return;
+    const rows = state.rows;
+    const scopes = sortScopes([...new Set(rows.map(r => r.scope))]);
+    const scopesChanged = scopes.length !== state.scopes.length || scopes.some((s, i) => s !== state.scopes[i]);
+
+    if (scopesChanged) {
+        rebuildState();
+        return;
+    }
+
+    const { byId, childrenOf, closeToOpen, causeSpanIdToRowId, engineLifecycles, startupSignalClosed, ceaseIndices } = buildLookupMaps(rows);
+    state.byId = byId;
+    state.childrenOf = childrenOf;
+    state.closeToOpen = closeToOpen;
+    state.causeSpanIdToRowId = causeSpanIdToRowId;
+    state.effectsOf = buildEffectsOf(causeSpanIdToRowId);
+    state.engineLifecycles = engineLifecycles;
+    state.startupSignalClosed = startupSignalClosed;
+    state.ceaseIndices = ceaseIndices;
+
+    const { meta, maxSlots } = assignSlots(rows, state.scopes);
+    state.rowMeta = meta;
+
+    const columns = computeColumns(state.scopes, maxSlots);
+    const colsChanged = columns.length !== state.columns.length ||
+        columns.some((c, i) => c.width !== state.columns[i].width);
+
+    if (colsChanged) {
+        state.columns = columns;
+        renderHeader(state.graphEl, columns);
+        renderSvg(state.graphEl, columns, rows, meta);
+        renderTextRows(state.textEl, rows);
+    } else {
+        // Just resize SVG and text container height
+        const totalHeight = rows.length * ROW_HEIGHT;
+        if (state.svgEl) {
+            state.svgEl.setAttribute('height', totalHeight);
+            const spacer = state.svgEl.querySelector('.spacer');
+            if (spacer) spacer.setAttribute('height', totalHeight);
+        }
+        if (state._textContainer) {
+            state._textContainer.style.height = totalHeight + 'px';
+        }
+        state._spans = buildSpanMap(rows, meta);
+    }
+
+    state._renderStart = -1;
+    state._renderEnd = -1;
+    renderVisibleRange();
 }
 
 function rebuildState() {

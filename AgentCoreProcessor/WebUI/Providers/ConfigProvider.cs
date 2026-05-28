@@ -177,7 +177,7 @@ internal class ConfigProvider : IWebUIProvider
             DataSources = new List<DataSourceDefinition>
             {
                 new() { Id = $"{group}-list", Source = new ConfigListSource(files, group) },
-                new() { Id = $"{group}-detail", Source = new ConfigEditSource(_storageRoot) },
+                new() { Id = $"{group}-detail", Source = new ConfigEditSource(_storageRoot, files) },
             },
         };
     }
