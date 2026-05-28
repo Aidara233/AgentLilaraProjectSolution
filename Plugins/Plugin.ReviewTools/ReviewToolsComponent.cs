@@ -28,21 +28,18 @@ public class ReviewToolsComponent : GlobalComponentBase
         _tools.Add(new ReviewFocusTool(toolCtx));
         _tools.Add(new ReviewBrowseTool(toolCtx));
         _tools.Add(new ReviewSearchMessagesTool(toolCtx));
-        _tools.Add(new ReviewSearchMemoryTool(toolCtx));
         _tools.Add(new ReviewGetPersonTool(toolCtx));
         _tools.Add(new ReviewListBeaconsTool(toolCtx));
 
         // 行动组
-        _tools.Add(new ReviewWriteMemoryTool(toolCtx));
         _tools.Add(new ReviewUpdatePersonTool(toolCtx));
         _tools.Add(new ReviewEvaluateTool(toolCtx));
-        _tools.Add(new ReviewLinkMemoryTool(toolCtx));
-        _tools.Add(new ReviewGetLinksTool(toolCtx));
 
         // 元工具组
         _tools.Add(new ReviewThinkingNotesTool(toolCtx));
         _tools.Add(new ReviewSaveProgressTool(toolCtx));
         _tools.Add(new ReviewRequestReinforcementTool(toolCtx));
+        _tools.Add(new ReviewLogTool(toolCtx));
         _tools.Add(new ReviewCompleteTool(toolCtx));
 
         return Task.CompletedTask;

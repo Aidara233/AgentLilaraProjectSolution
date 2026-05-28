@@ -141,20 +141,45 @@ namespace AgentCoreProcessor.Tool.Host
 
         // ===== 关联图 =====
 
-        public async Task<List<AgentLilara.PluginSDK.Services.MemoryEntry>> GetLinkedAsync(int memoryId)
+        public async Task<List<AgentLilara.PluginSDK.Services.LinkedMemoryEntry>> GetLinkedAsync(int memoryId)
         {
             var memLinks = await links.GetByMemoryIdAsync(memoryId);
+            if (memLinks.Count == 0) return new();
+
             var linkedIds = memLinks
                 .Select(l => l.SourceId == memoryId ? l.TargetId : l.SourceId)
                 .Distinct()
                 .ToList();
             var entries = await memories.GetByIdsAsync(linkedIds);
-            return entries.Select(m => ToSdkEntry(m, 0)).ToList();
+            var entryMap = entries.ToDictionary(e => e.Id);
+
+            return memLinks.Select(link =>
+            {
+                var otherId = link.SourceId == memoryId ? link.TargetId : link.SourceId;
+                if (!entryMap.TryGetValue(otherId, out var entry))
+                    return null;
+
+                return new AgentLilara.PluginSDK.Services.LinkedMemoryEntry
+                {
+                    LinkId = link.Id,
+                    MemoryId = otherId,
+                    Content = entry.Content,
+                    Type = entry.Type,
+                    Subject = entry.Subject,
+                    PersonId = entry.PersonId,
+                    ChannelId = entry.ChannelId,
+                    Importance = entry.Importance,
+                    Confidence = entry.Confidence,
+                    Strength = link.Strength,
+                    LinkType = link.LinkType,
+                    LinkedAt = link.CreatedAt
+                };
+            }).Where(x => x != null).Cast<AgentLilara.PluginSDK.Services.LinkedMemoryEntry>().ToList();
         }
 
-        public async Task LinkAsync(int fromId, int toId, float strength = 1.0f)
+        public async Task LinkAsync(int fromId, int toId, float strength = 1.0f, string linkType = "semantic")
         {
-            await links.CreateOrUpdateAsync(fromId, toId, strength, "manual");
+            await links.CreateOrUpdateAsync(fromId, toId, strength, linkType);
         }
 
         public async Task UnlinkAsync(int fromId, int toId)

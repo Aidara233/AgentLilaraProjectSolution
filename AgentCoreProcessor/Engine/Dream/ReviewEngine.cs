@@ -61,9 +61,11 @@ namespace AgentCoreProcessor.Engine
 
         private static readonly HashSet<string> ActionTools = new()
         {
-            "review_thinking_notes", "review_write_memory", "review_update_person",
-            "review_evaluate", "review_link_memory", "review_save_progress",
-            "review_complete", "review_request_reinforcement"
+            "review_thinking_notes", "review_update_person",
+            "review_evaluate", "review_save_progress",
+            "review_complete", "review_request_reinforcement",
+            "review_log",
+            "memory_store", "memory_link_create", "memory_link_delete"
         };
 
         private static string ReviewConfigPath =>
@@ -339,8 +341,9 @@ namespace AgentCoreProcessor.Engine
 
         private static readonly HashSet<string> NavigationTools = new()
         {
-            "review_browse", "review_search_messages", "review_search_memory",
-            "review_focus", "review_get_person", "review_list_beacons", "review_get_links"
+            "review_browse", "review_search_messages",
+            "review_focus", "review_get_person", "review_list_beacons",
+            "memory_search", "memory_link_get"
         };
 
         private bool _compressionApplied;
@@ -492,11 +495,11 @@ namespace AgentCoreProcessor.Engine
             {
                 "review_browse" => $"[已压缩] 浏览了 {resultLen} 行消息{inputInfo}",
                 "review_search_messages" => $"[已压缩] 搜索消息{inputInfo}，返回 {resultLen} 行结果",
-                "review_search_memory" => $"[已压缩] 搜索记忆{inputInfo}，返回 {resultLen} 行结果",
+                "memory_search" => $"[已压缩] 搜索记忆{inputInfo}，返回 {resultLen} 行结果",
                 "review_focus" => $"[已压缩] 移动游标{inputInfo}",
                 "review_get_person" => $"[已压缩] 查看人物信息{inputInfo}",
                 "review_list_beacons" => $"[已压缩] 列出信标，返回 {resultLen} 行",
-                "review_get_links" => $"[已压缩] 查看记忆关联{inputInfo}",
+                "memory_link_get" => $"[已压缩] 查看记忆关联{inputInfo}",
                 _ => $"[已压缩] {toolName}{inputInfo}"
             };
         }
@@ -507,9 +510,11 @@ namespace AgentCoreProcessor.Engine
             return toolName switch
             {
                 "review_evaluate" => $"[已压缩] 评价{inputInfo}",
-                "review_write_memory" => $"[已压缩] 写入记忆{inputInfo}",
+                "memory_store" => $"[已压缩] 写入记忆{inputInfo}",
                 "review_update_person" => $"[已压缩] 更新人物{inputInfo}",
-                "review_link_memory" => $"[已压缩] 关联记忆{inputInfo}",
+                "memory_link_create" => $"[已压缩] 创建记忆关联{inputInfo}",
+                "memory_link_delete" => $"[已压缩] 删除记忆关联{inputInfo}",
+                "review_log" => $"[已压缩] 记录日志{inputInfo}",
                 "review_thinking_notes" => resultText ?? "[已压缩] 更新笔记",
                 _ => $"[已压缩] {toolName}"
             };
@@ -667,7 +672,7 @@ namespace AgentCoreProcessor.Engine
 你的任务没有固定目标。从下方的起始内容出发，跟着好奇心走：
 - 用 review_browse 顺序阅读消息流
 - 用 review_focus 跳转到感兴趣的位置
-- 用 review_search_messages / review_search_memory 拉取特定条件的消息或记忆
+- 用 review_search_messages / memory_search 拉取特定条件的消息或记忆
 - 发现有价值的东西就行动（写记忆、更新人物、评价、修正矛盾）
 
 ## 习惯

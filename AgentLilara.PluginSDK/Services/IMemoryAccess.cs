@@ -38,11 +38,11 @@ namespace AgentLilara.PluginSDK.Services
 
         // ===== 关联图 =====
 
-        /// <summary>获取关联记忆。</summary>
-        Task<List<MemoryEntry>> GetLinkedAsync(int memoryId);
+        /// <summary>获取关联记忆（含关联元数据）。</summary>
+        Task<List<LinkedMemoryEntry>> GetLinkedAsync(int memoryId);
 
         /// <summary>创建关联。</summary>
-        Task LinkAsync(int fromId, int toId, float strength = 1.0f);
+        Task LinkAsync(int fromId, int toId, float strength = 1.0f, string linkType = "semantic");
 
         /// <summary>删除关联。</summary>
         Task UnlinkAsync(int fromId, int toId);
@@ -141,5 +141,21 @@ namespace AgentLilara.PluginSDK.Services
         public float? MinImportance { get; set; }
         public int Offset { get; set; } = 0;
         public int Limit { get; set; } = 50;
+    }
+
+    public class LinkedMemoryEntry
+    {
+        public int LinkId { get; set; }
+        public int MemoryId { get; set; }
+        public string Content { get; set; } = "";
+        public string? Type { get; set; }
+        public string? Subject { get; set; }
+        public int? PersonId { get; set; }
+        public int? ChannelId { get; set; }
+        public float Importance { get; set; }
+        public string? Confidence { get; set; }
+        public float Strength { get; set; }
+        public string LinkType { get; set; } = "";
+        public DateTime LinkedAt { get; set; }
     }
 }

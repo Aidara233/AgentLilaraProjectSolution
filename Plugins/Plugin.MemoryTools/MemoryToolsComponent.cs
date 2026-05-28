@@ -8,30 +8,34 @@ namespace Plugin.MemoryTools;
 public class MemoryToolsComponent : GlobalComponentBase
 {
     private IGlobalComponentContext _ctx = null!;
-    private MemoryTool? _memoryTool;
+    private List<ITool> _tools = new();
 
     public override ComponentMeta Meta => new()
     {
         Name = "memory-tools",
-        Description = "记忆存储与检索",
+        Description = "记忆存储、检索、筛选、关联与统计",
         DefaultEnabled = true,
         PromptPriority = 100
     };
 
-    public override IEnumerable<ITool> Tools
-    {
-        get
-        {
-            if (_memoryTool != null) yield return _memoryTool;
-        }
-    }
+    public override IEnumerable<ITool> Tools => _tools;
 
     public override Task OnInitAsync(IGlobalComponentContext context, InitReason reason)
     {
         _ctx = context;
         var memoryAccess = context.GetService<IMemoryAccess>();
-        if (memoryAccess != null)
-            _memoryTool = new MemoryTool(memoryAccess);
+
+        _tools.Add(new MemoryStoreTool(memoryAccess));
+        _tools.Add(new MemoryGetTool(memoryAccess));
+        _tools.Add(new MemoryUpdateTool(memoryAccess));
+        _tools.Add(new MemoryDeleteTool(memoryAccess));
+        _tools.Add(new MemorySearchTool(memoryAccess));
+        _tools.Add(new MemoryListTool(memoryAccess));
+        _tools.Add(new MemoryLinkCreateTool(memoryAccess));
+        _tools.Add(new MemoryLinkDeleteTool(memoryAccess));
+        _tools.Add(new MemoryLinkGetTool(memoryAccess));
+        _tools.Add(new MemoryStatsTool(memoryAccess));
+
         return Task.CompletedTask;
     }
 }
