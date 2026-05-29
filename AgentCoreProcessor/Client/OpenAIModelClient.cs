@@ -155,6 +155,13 @@ namespace AgentCoreProcessor.Client
             var thinkingText = new StringBuilder();
             Models.Usage? lastUsage = null;
 
+            // 设置实时 reasoning 提取回调（DeepSeek 等推理模型的 reasoning_content 不被 SDK 暴露）
+            ReasoningExtractor.CurrentCallback.Value = (text) =>
+            {
+                thinkingText.Append(text);
+                onEvent(new StreamEvent { Type = StreamEventType.Thinking, Content = text });
+            };
+
             AsyncCollectionResult<StreamingChatCompletionUpdate> stream =
                 chatClient.CompleteChatStreamingAsync(messages, options, ct);
 
@@ -236,6 +243,9 @@ namespace AgentCoreProcessor.Client
                     });
                 }
             }
+
+            // 清除 reasoning 提取回调
+            ReasoningExtractor.CurrentCallback.Value = null;
 
             // 从原始 SSE 补充 DeepSeek prompt_cache_hit_tokens（SDK 不解析此字段）
             SupplementCacheTokens(lastUsage);
@@ -490,13 +500,26 @@ namespace AgentCoreProcessor.Client
         }
 
         /// <summary>
+        /// 从 SSE 流中实时提取 reasoning_content 的回调基础设施。
+        /// TeeStream 在每次 Read 时检查此回调并发射推理文本。
+        /// </summary>
+        private static class ReasoningExtractor
+        {
+            internal static readonly AsyncLocal<Action<string>?> CurrentCallback = new();
+        }
+
+        /// <summary>
         /// 将读取的字节同时写入 MemoryStream，用于捕获原始 SSE 响应。
+        /// 同时实时解析 SSE 行中的 reasoning_content，通过 ReasoningExtractor 回调发射。
         /// </summary>
         private class TeeStream : Stream
         {
             private readonly Stream _inner;
             private readonly MemoryStream _captured = new();
             private bool _disposed;
+
+            // SSE 行缓冲：跨 Read 调用保留不完整行
+            private readonly StringBuilder _lineBuffer = new();
 
             public byte[] Captured => _captured.ToArray();
 
@@ -515,22 +538,93 @@ namespace AgentCoreProcessor.Client
             public override int Read(byte[] buffer, int offset, int count)
             {
                 int bytes = _inner.Read(buffer, offset, count);
-                if (bytes > 0) _captured.Write(buffer, offset, bytes);
+                if (bytes > 0)
+                {
+                    _captured.Write(buffer, offset, bytes);
+                    ExtractReasoningFromChunk(buffer, offset, bytes);
+                }
                 return bytes;
             }
 
             public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken ct)
             {
                 int bytes = await _inner.ReadAsync(buffer, offset, count, ct).ConfigureAwait(false);
-                if (bytes > 0) await _captured.WriteAsync(buffer, offset, bytes, ct).ConfigureAwait(false);
+                if (bytes > 0)
+                {
+                    await _captured.WriteAsync(buffer, offset, bytes, ct).ConfigureAwait(false);
+                    ExtractReasoningFromChunk(buffer, offset, bytes);
+                }
                 return bytes;
             }
 
             public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
             {
                 int bytes = await _inner.ReadAsync(buffer, ct).ConfigureAwait(false);
-                if (bytes > 0) _captured.Write(buffer.Span[..bytes]);
+                if (bytes > 0)
+                {
+                    _captured.Write(buffer.Span[..bytes]);
+                    ExtractReasoningFromChunk(buffer.Span[..bytes]);
+                }
                 return bytes;
+            }
+
+            /// <summary>从 SSE 数据块中实时提取 reasoning_content 并通过回调发射。</summary>
+            private void ExtractReasoningFromChunk(byte[] buffer, int offset, int count)
+            {
+                var callback = ReasoningExtractor.CurrentCallback.Value;
+                if (callback == null) return;
+                ProcessSseChunk(buffer, offset, count, callback);
+            }
+
+            private void ExtractReasoningFromChunk(ReadOnlySpan<byte> span)
+            {
+                var callback = ReasoningExtractor.CurrentCallback.Value;
+                if (callback == null) return;
+                var arr = span.ToArray();
+                ProcessSseChunk(arr, 0, arr.Length, callback);
+            }
+
+            private void ProcessSseChunk(byte[] buffer, int offset, int count, Action<string> callback)
+            {
+                // 将字节追加到行缓冲
+                _lineBuffer.Append(Encoding.UTF8.GetString(buffer, offset, count));
+
+                // 按 \n 拆行，保留最后一个不完整行
+                var text = _lineBuffer.ToString();
+                var lines = text.Split('\n');
+                _lineBuffer.Clear();
+                for (int i = 0; i < lines.Length - 1; i++)
+                {
+                    ProcessSseLine(lines[i], callback);
+                }
+                var last = lines[^1];
+                if (!string.IsNullOrEmpty(last))
+                    _lineBuffer.Append(last);
+            }
+
+            private readonly Regex ReasoningRegex = new(
+                @"""reasoning_content""\s*:\s*""([^""\\]*(?:\\.[^""\\]*)*)""",
+                RegexOptions.Compiled);
+
+            private void ProcessSseLine(string line, Action<string> callback)
+            {
+                if (string.IsNullOrEmpty(line) || !line.StartsWith("data:", StringComparison.Ordinal))
+                    return;
+                var content = line["data:".Length..].Trim();
+                if (content == "[DONE]" || content.Length == 0)
+                    return;
+
+                var match = ReasoningRegex.Match(content);
+                while (match.Success)
+                {
+                    if (match.Groups[1].Value is { Length: > 0 } val)
+                    {
+                        var text = System.Text.RegularExpressions.Regex.Unescape(val);
+                        if (!string.IsNullOrEmpty(text))
+                            callback(text);
+                    }
+                    match = match.NextMatch();
+                }
             }
 
             public override void Flush() => _inner.Flush();
