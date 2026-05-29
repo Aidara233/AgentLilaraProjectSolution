@@ -389,11 +389,9 @@ internal class ModelDetailSource : IDataSource
                 ? string.Join(", ", toolsArr.Select(t => t.ToString()))
                 : "—";
 
-            // 系统提示词（取前 2000 字符概要）
             var systemPrompt = root["systemPrompt"]?.ToString();
-            var systemPromptDisplay = systemPrompt != null
-                ? (systemPrompt.Length > 2000 ? systemPrompt[..2000] + "\n\n[... 截断，完整内容见原始文件]" : systemPrompt)
-                : (root["systemPromptHash"]?.ToString() is string hash ? $"[hash: {hash}]" : "—");
+            var systemPromptDisplay = systemPrompt
+                ?? (root["systemPromptHash"]?.ToString() is string hash ? $"[hash: {hash}]" : "—");
 
             // 消息摘要（含 contentParts）
             var messagesDisplay = "—";
@@ -403,6 +401,14 @@ internal class ModelDetailSource : IDataSource
                 foreach (var m in msgArr)
                 {
                     var role = m["role"]?.ToString() ?? "?";
+                    var roleLabel = role switch
+                    {
+                        "user" => "用户",
+                        "assistant" => "助手",
+                        "system" => "系统",
+                        "tool" => "工具",
+                        _ => role
+                    };
                     if (m["contentParts"] is JArray parts && parts.Count > 0)
                     {
                         var partDescs = new List<string>();
@@ -412,7 +418,7 @@ internal class ModelDetailSource : IDataSource
                             switch (type)
                             {
                                 case "text" when p["text"]?.ToString() is string t:
-                                    partDescs.Add(t.Length > 200 ? t[..200] + "..." : t);
+                                    partDescs.Add(t);
                                     break;
                                 case "image" when p["image"] != null:
                                     var img = p["image"];
@@ -433,12 +439,12 @@ internal class ModelDetailSource : IDataSource
                                     break;
                             }
                         }
-                        msgLines.Add($"[{role}] {string.Join(" | ", partDescs)}");
+                        msgLines.Add($"═══ {roleLabel} ═══\n{string.Join(" | ", partDescs)}");
                     }
                     else
                     {
                         var content = m["content"]?.ToString() ?? "";
-                        msgLines.Add($"[{role}] {(content.Length > 300 ? content[..300] + "..." : content)}");
+                        msgLines.Add($"═══ {roleLabel} ═══\n{content}");
                     }
                 }
                 messagesDisplay = string.Join("\n", msgLines);
