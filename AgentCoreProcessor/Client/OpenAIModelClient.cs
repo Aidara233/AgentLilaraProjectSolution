@@ -255,7 +255,38 @@ namespace AgentCoreProcessor.Client
                         messages.Add(BuildAssistantMessage(msg));
                         break;
                     default: // user
-                        messages.Add(BuildUserMessage(msg));
+                        // 如果消息包含 tool_result ContentPart，拆分为独立的 ToolChatMessage
+                        // OpenAI 要求 tool_calls 后必须紧跟 tool role 消息，不能混在 user message 中
+                        var toolResultParts = msg.ContentParts?
+                            .Where(p => p.Type == "tool_result" && p.ToolUseId != null)
+                            .ToList();
+                        if (toolResultParts != null && toolResultParts.Count > 0)
+                        {
+                            foreach (var part in toolResultParts)
+                            {
+                                messages.Add(new ToolChatMessage(part.ToolUseId!, part.Text ?? ""));
+
+                                // tool_result 后紧跟的图片（ViewImageTool 等）通过单独 user message 注入
+                                var idx = msg.ContentParts!.IndexOf(part);
+                                var trailingImages = new List<ChatMessageContentPart>();
+                                for (int j = idx + 1; j < msg.ContentParts.Count; j++)
+                                {
+                                    var next = msg.ContentParts[j];
+                                    if (next.Type == "image")
+                                    {
+                                        var imgPart = BuildImagePart(next);
+                                        if (imgPart != null) trailingImages.Add(imgPart);
+                                    }
+                                    else break; // 只取紧邻的图片
+                                }
+                                if (trailingImages.Count > 0)
+                                    messages.Add(new UserChatMessage(trailingImages));
+                            }
+                        }
+                        else
+                        {
+                            messages.Add(BuildUserMessage(msg));
+                        }
                         break;
                 }
             }
