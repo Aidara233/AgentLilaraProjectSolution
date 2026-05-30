@@ -97,10 +97,13 @@ namespace AgentCoreProcessor.Engine
                 // 本轮注入
                 var roundInject = await _host.BuildRoundInjectAsync();
 
-                // 拼装消息：历史 + 本轮注入
+                // 拼装消息：历史 + 本轮注入，同时写入 _history 确保持久化和跨轮可见
                 var messages = new List<Message>(_history);
                 if (roundInject != null)
+                {
                     messages.AddRange(roundInject);
+                    _history.AddRange(roundInject);
+                }
 
                 // 调模型（内层重试：同样 messages 最多尝试 MaxAttempts 次）
                 ModelOutput output;
