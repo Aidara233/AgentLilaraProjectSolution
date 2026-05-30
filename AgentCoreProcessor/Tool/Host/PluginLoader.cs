@@ -161,7 +161,7 @@ namespace AgentCoreProcessor.Tool.Host
                         var tool = InstantiateTool(type);
                         if (tool == null) continue;
 
-                        if (ToolRegistry.Register(tool))
+                        if (ToolRegistry.Register(tool, isNonComponent: true))
                         {
                             entry.ToolNames.Add(tool.Name);
                         }

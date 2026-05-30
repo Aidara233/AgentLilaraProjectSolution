@@ -370,7 +370,7 @@ namespace AgentCoreProcessor.Client
             return options;
         }
 
-        private static ChatMessage BuildUserMessage(Models.Message msg)
+        private ChatMessage BuildUserMessage(Models.Message msg)
         {
             if (msg.ContentParts != null && msg.ContentParts.Count > 0)
             {
@@ -379,7 +379,7 @@ namespace AgentCoreProcessor.Client
                 {
                     if (part.Type == "text" && part.Text != null)
                         parts.Add(ChatMessageContentPart.CreateTextPart(part.Text));
-                    else if (part.Type == "image")
+                    else if (part.Type == "image" && !apiClientCfg.DisableImageMessages)
                     {
                         var imgPart = BuildImagePart(part);
                         if (imgPart != null) parts.Add(imgPart);

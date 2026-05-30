@@ -537,11 +537,11 @@ namespace AgentCoreProcessor.Engine
             };
 
             // 注册核心工具（不可卸载的循环控制工具）
-            Tool.ToolRegistry.Register(new Tool.Core.ContinueLoopTool());
-            Tool.ToolRegistry.Register(new Tool.Core.WaitTool());
+            Tool.ToolRegistry.Register(new Tool.Core.ContinueLoopTool(), isNonComponent: true);
+            Tool.ToolRegistry.Register(new Tool.Core.WaitTool(), isNonComponent: true);
 
-            Tool.ToolRegistry.Register(new Tool.Core.EscalateTool());
-            Tool.ToolRegistry.Register(new Tool.Core.DeescalateTool());
+            Tool.ToolRegistry.Register(new Tool.Core.EscalateTool(), isNonComponent: true);
+            Tool.ToolRegistry.Register(new Tool.Core.DeescalateTool(), isNonComponent: true);
 
             // 插件加载
             _toolContext = new Tool.Host.ToolContextImpl(new Tool.Host.PluginStorageImpl("_system"));

@@ -85,6 +85,7 @@ AgentLilaraProjectSolution/
     Plugin.ReviewTools/           ← 复盘工具（15个 review_* 工具）— Global, review only
     Plugin.CrossLoopTools/        ← 跨循环通信（12个工具）— Loop, channel + system
     Plugin.ScheduledTasks/        ← 定时任务（schedule/cancel/list）— Loop, channel only
+    Plugin.Email/                 ← 邮件收发（send_email, check_unread, check_email, read_email, search_email, download_attachment, delete_email, mark_all_read, list_folders）— Global
     Plugin.SkillTools/            ← 技能工具（casual-chat, code-review, system-maintenance）
     Plugin.NetworkTools/          ← 网络工具
     Plugin.SshTools/              ← SSH 工具

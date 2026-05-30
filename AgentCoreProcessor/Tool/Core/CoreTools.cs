@@ -27,7 +27,7 @@ namespace AgentCoreProcessor.Tool.Core
     /// <summary>
     /// 循环挂起信号。Working 模式下显式停止循环。不调用则默认继续下一轮。
     /// </summary>
-    [ToolMeta(ContinueLoop = false)]
+    [ToolMeta(ContinueLoop = false, EngineTypes = new[] { "channel", "system" })]
     internal class WaitTool : ITool
     {
         public string Name => "wait";

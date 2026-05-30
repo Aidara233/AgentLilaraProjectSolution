@@ -128,6 +128,8 @@ namespace AgentCoreProcessor.Engine
 
                 var authorized = _ctx.GlobalComponentHost?.GetToolWhitelist("review")
                     ?? new HashSet<string>();
+                _core.EngineType = "review";
+                _core.GlobalComponentTools = _ctx.GlobalComponentHost?.GetVisibleTools("review").ToList();
                 _agent = new Agent(this, _core, agentConfig, authorized);
                 await _agent.RunAsync(_cts.Token);
 

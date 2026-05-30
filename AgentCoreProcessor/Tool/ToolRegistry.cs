@@ -20,6 +20,7 @@ namespace AgentCoreProcessor.Tool
         private static readonly ConcurrentDictionary<string, ITool> _tools = new();
         private static readonly ConcurrentDictionary<string, ToolMetaAttribute> _metaCache = new();
         private static readonly ConcurrentDictionary<string, DisabledToolInfo> _disabledTools = new();
+        private static readonly HashSet<string> _nonComponentTools = new();
 
         private static string ConfigPath => Path.Combine(PathConfig.StoragePath, "ToolConfig.json");
 
@@ -33,19 +34,24 @@ namespace AgentCoreProcessor.Tool
 
         // ---- 注册/查询 ----
 
-        public static bool Register(ITool tool)
+        public static bool Register(ITool tool, bool isNonComponent = false)
         {
             if (!_tools.TryAdd(tool.Name, tool)) return false;
             // 缓存元数据
             var meta = Attribute.GetCustomAttribute(tool.GetType(), typeof(ToolMetaAttribute))
                 as ToolMetaAttribute;
             if (meta != null) _metaCache[tool.Name] = meta;
+            if (isNonComponent)
+            {
+                lock (_nonComponentTools) _nonComponentTools.Add(tool.Name);
+            }
             return true;
         }
 
         public static bool Unregister(string toolName)
         {
             _metaCache.TryRemove(toolName, out _);
+            lock (_nonComponentTools) _nonComponentTools.Remove(toolName);
             return _tools.TryRemove(toolName, out _);
         }
 
@@ -62,6 +68,21 @@ namespace AgentCoreProcessor.Tool
         }
 
         public static IReadOnlyDictionary<string, ITool> All => _tools;
+
+        /// <summary>非组件工具名称集合（核心工具 + MCP + 纯插件工具）。</summary>
+        public static IReadOnlySet<string> NonComponentToolNames
+        {
+            get { lock (_nonComponentTools) return new HashSet<string>(_nonComponentTools); }
+        }
+
+        /// <summary>检查工具是否适用于指定引擎类型。null 表示所有引擎可用。</summary>
+        public static bool IsApplicableToEngine(string toolName, string? engineType)
+        {
+            if (string.IsNullOrEmpty(engineType)) return true;
+            var meta = GetMeta(toolName);
+            if (meta?.EngineTypes == null) return true; // 未声明 = 全引擎可用
+            return meta.EngineTypes.Contains(engineType);
+        }
 
         // ---- 描述生成（JSON 降级路径用） ----
 
@@ -127,10 +148,12 @@ namespace AgentCoreProcessor.Tool
 
         // ---- 禁用管理 ----
 
-        public static List<ToolDefinition> GetExpressToolDefinitions()
+        public static List<ToolDefinition> GetExpressToolDefinitions(string? engineType = null)
         {
             return _tools.Values
-                .Where(t => !IsDisabled(t.Name) && (GetMeta(t.Name)?.ExpressAvailable ?? false))
+                .Where(t => !IsDisabled(t.Name)
+                            && (GetMeta(t.Name)?.ExpressAvailable ?? false)
+                            && IsApplicableToEngine(t.Name, engineType))
                 .Select(t => new ToolDefinition
                 {
                     Name = t.Name,

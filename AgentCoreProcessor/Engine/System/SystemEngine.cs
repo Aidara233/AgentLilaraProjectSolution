@@ -360,7 +360,7 @@ namespace AgentCoreProcessor.Engine
                             foreach (var m in retained)
                                 agent.AddToHistory(m);
                             PersistAgentHistory();
-                        }));
+                        }), isNonComponent: true);
                 }
             }
 
@@ -371,8 +371,9 @@ namespace AgentCoreProcessor.Engine
             {
                 await componentHost!.OnActivatedAsync();
                 await componentHost.OnBeforeInvokeAsync();
+                agentCore.EngineType = "system";
                 agentCore.AdditionalTools = componentHost.GetVisibleTools().ToList();
-                agentCore.GlobalComponentTools = ctx.GlobalComponentHost?.GetAllTools().ToList();
+                agentCore.GlobalComponentTools = ctx.GlobalComponentHost?.GetVisibleTools("system").ToList();
                 await agent!.RunAsync(ct);
                 await componentHost.OnAfterInvokeAsync();
 

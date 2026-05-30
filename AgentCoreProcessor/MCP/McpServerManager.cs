@@ -52,7 +52,7 @@ namespace AgentCoreProcessor.MCP
 
                     foreach (var tool in conn.Tools)
                     {
-                        if (ToolRegistry.Register(tool))
+                        if (ToolRegistry.Register(tool, isNonComponent: true))
                             totalTools++;
                     }
                 }

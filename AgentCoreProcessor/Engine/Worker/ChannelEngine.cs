@@ -679,11 +679,12 @@ namespace AgentCoreProcessor.Engine
                         foreach (var m in retained) agent.AddToHistory(m);
                         PersistCurrentContext();
                         gate.Signal();
-                    }));
+                    }), isNonComponent: true);
             }
 
+            agentCore.EngineType = "channel";
             agentCore.AdditionalTools = componentHost!.GetVisibleTools().ToList();
-            agentCore.GlobalComponentTools = ctx.GlobalComponentHost?.GetAllTools().ToList();
+            agentCore.GlobalComponentTools = ctx.GlobalComponentHost?.GetVisibleTools("channel").ToList();
 
             // Working 积压检查：游标后有大量未消费消息时，不进 Agent，直接回退 Express
             if (_lastConsumedMessageId > 0)
@@ -792,8 +793,9 @@ namespace AgentCoreProcessor.Engine
             }
 
             // Call model (with retry)
+            agentCore.EngineType = "channel";
             agentCore.AdditionalTools = componentHost!.GetVisibleTools().ToList();
-            agentCore.GlobalComponentTools = ctx.GlobalComponentHost?.GetAllTools().ToList();
+            agentCore.GlobalComponentTools = ctx.GlobalComponentHost?.GetVisibleTools("channel").ToList();
 
             // 跨周期退避：连续 Express 失败时累积延迟
             if (_consecutiveExpressFailures > 0 && _consecutiveExpressFailures <= agentConfig.BackoffSeconds.Length)

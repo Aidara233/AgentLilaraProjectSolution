@@ -9,6 +9,7 @@
   "enableCaching": true,
   "useNativeTools": true,
   "forceToolCall": true,
+  "disableImageMessages": true,
   "extraBody": {
     "thinking": {"type": "disabled"}
   },

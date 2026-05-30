@@ -84,6 +84,10 @@ namespace AgentCoreProcessor.Client
         [JsonProperty("forceToolCall")]
         public bool ForceToolCall { get; set; } = false;
 
+        // 禁用 image_url 消息格式（DeepSeek 等不支持图片的兼容 API 需设为 true）
+        [JsonProperty("disableImageMessages")]
+        public bool DisableImageMessages { get; set; } = false;
+
         // 预设消息模板（从配置文件加载，system prompt + few-shot 示例）
         [JsonProperty("conversationHistory")]
         public List<Message> PresetMessages { get; set; } = new List<Message>();

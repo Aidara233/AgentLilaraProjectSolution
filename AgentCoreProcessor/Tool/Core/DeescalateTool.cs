@@ -6,7 +6,7 @@ using AgentLilara.PluginSDK;
 
 namespace AgentCoreProcessor.Tool.Core
 {
-    [ToolMeta(ContinueLoop = false)]
+    [ToolMeta(ContinueLoop = false, EngineTypes = new[] { "channel" })]
     internal class DeescalateTool : ITool
     {
         public string Name => "deescalate";

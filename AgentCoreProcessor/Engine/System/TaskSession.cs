@@ -104,7 +104,10 @@ namespace AgentCoreProcessor.Engine
             conversationHistory.Add(new Message { Role = "user", Content = $"[指令] {instruction}" });
 
             var taskDoneTool = new TaskDoneTool(this);
-            ToolRegistry.Register(taskDoneTool);
+            ToolRegistry.Register(taskDoneTool, isNonComponent: true);
+
+            agentCore.EngineType = "sub-agent";
+            agentCore.GlobalComponentTools = ctx.GlobalComponentHost?.GetVisibleTools("sub-agent").ToList();
 
             List<ToolCall>? lastCalls = null;
             List<ToolResult>? lastResults = null;
@@ -251,6 +254,7 @@ namespace AgentCoreProcessor.Engine
     /// <summary>
     /// 子 agent 专用工具：标记任务完成并汇报结果。
     /// </summary>
+    [ToolMeta(EngineTypes = new[] { "sub-agent" })]
     internal class TaskDoneTool : ITool
     {
         private readonly TaskSession _session;

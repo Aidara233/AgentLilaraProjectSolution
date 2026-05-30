@@ -12,6 +12,7 @@
   "enableCaching": true,
   "useNativeTools": true,
   "forceToolCall": true,
+  "disableImageMessages": true,
   "extraBody": null,
   "n": 1,
   "conversationHistory": [

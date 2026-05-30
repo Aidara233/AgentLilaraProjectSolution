@@ -27,6 +27,9 @@ namespace AgentCoreProcessor.Core
         /// <summary>全局组件工具列表，对所有循环可见。</summary>
         public List<ITool>? GlobalComponentTools { get; set; }
 
+        /// <summary>当前引擎类型（如 "channel"、"system"、"review"、"sub-agent"），用于工具过滤。</summary>
+        public string? EngineType { get; set; }
+
         protected override bool UsePersona => !noPersona;
 
         public AgentCore() : base("WorkingCore")
@@ -65,7 +68,7 @@ namespace AgentCoreProcessor.Core
 
             if (mode == Engine.EngineMode.Express)
             {
-                var expressDefs = ToolRegistry.GetExpressToolDefinitions();
+                var expressDefs = ToolRegistry.GetExpressToolDefinitions(EngineType);
                 // 合并全局组件中 ExpressAvailable 的工具
                 if (GlobalComponentTools != null)
                 {
@@ -165,16 +168,18 @@ namespace AgentCoreProcessor.Core
 
         private async Task<(List<ToolCall> Calls, string? Thinking)> GenerateWithNativeToolsAsync()
         {
-            // 使用全部已注册工具（过滤在 ComponentHost 层完成）
-            var toolDefs = ToolRegistry.All.Values
-                .Where(t => !ToolRegistry.IsDisabled(t.Name))
-                .Select(ToDefinition)
+            // 只取非组件工具（核心 + MCP + 纯插件），按引擎类型过滤
+            var toolDefs = ToolRegistry.NonComponentToolNames
+                .Select(ToolRegistry.Get)
+                .Where(t => t != null && !ToolRegistry.IsDisabled(t.Name)
+                            && ToolRegistry.IsApplicableToEngine(t.Name, EngineType))
+                .Select(ToDefinition!)
                 .ToList();
 
-            // 合并全局组件工具
+            // 合并全局组件工具（已由引擎按 EngineType 过滤）
             MergeTools(toolDefs, GlobalComponentTools);
 
-            // 合并 loop 组件工具
+            // 合并 loop 组件工具（已由 ComponentHost 过滤）
             MergeTools(toolDefs, AdditionalTools);
 
             NativeToolCallHandler handler = new(toolDefs);

@@ -9,6 +9,7 @@ using AgentLilara.PluginSDK;
 
 namespace AgentCoreProcessor.Tool.Core
 {
+    [ToolMeta(EngineTypes = new[] { "channel", "system" })]
     internal class CompressTool : ITool
     {
         private readonly CompressionTierModule _compression;
