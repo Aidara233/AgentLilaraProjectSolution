@@ -100,7 +100,7 @@ public class ScheduledTasksTimerComponent : GlobalComponentBase
                     _log?.Debug(LogGroup, "global-timer-idle");
                     using var idleCts = CancellationTokenSource.CreateLinkedTokenSource(shutdownCt);
                     _delayCts = idleCts;
-                    try { await Task.Delay(Timeout.InfiniteTimeSpan, idleCts.Token); }
+                    try { await Task.Delay(Timeout.Infinite, idleCts.Token); }
                     catch (OperationCanceledException) when (!shutdownCt.IsCancellationRequested) { }
                     finally { _delayCts = null; }
                     continue;
@@ -111,10 +111,13 @@ public class ScheduledTasksTimerComponent : GlobalComponentBase
                 {
                     _log?.Event(LogGroup, "global-timer-fire", new { loopId, overdue = -(int)delay.TotalSeconds });
                     _ctx.WakeLoop(loopId!);
-                    // Brief pause to let the Loop component process before re-scanning
                     try { await Task.Delay(2000, shutdownCt); } catch { break; }
                     continue;
                 }
+
+                // Clamp to max supported Timer duration (~49.7 days) to avoid ArgumentOutOfRangeException
+                var maxDelay = TimeSpan.FromMilliseconds(0xfffffffe);
+                if (delay > maxDelay) delay = maxDelay;
 
                 _log?.Debug(LogGroup, "global-timer-waiting", new
                 {
