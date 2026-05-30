@@ -46,6 +46,9 @@ namespace AgentCoreProcessor.Engine
         /// <summary>工具执行完毕后的回调。Host 用此发布事件到总线。</summary>
         public Func<ToolCall, ToolResult, ITool?, Task>? OnToolExecuted { get; set; }
 
+        /// <summary>每轮完成后的回调（tool_results 已写入 _history）。Host 用此持久化上下文。</summary>
+        public Func<Task>? OnRoundCompleted { get; set; }
+
         /// <summary>对话内容在 history 中的起始偏移（跳过框架注入部分）。</summary>
         public int ConversationOffset { get; set; }
 
@@ -178,6 +181,8 @@ namespace AgentCoreProcessor.Engine
                 if (!output.HasToolCalls || output.ToolCalls == null || output.ToolCalls.Count == 0)
                 {
                     StopReason = AgentStopReason.Completed;
+                    if (OnRoundCompleted != null)
+                        await OnRoundCompleted();
                     return;
                 }
 
@@ -218,6 +223,10 @@ namespace AgentCoreProcessor.Engine
 
                 // 工具结果加入历史（Claude API 要求 tool_use 后必须跟 tool_result）
                 _history.Add(FormatToolResults(output.ToolCalls, results));
+
+                // 每轮持久化
+                if (OnRoundCompleted != null)
+                    await OnRoundCompleted();
 
                 // wait 工具 → 停止
                 if (output.ToolCalls.Any(c => c.Tool == "wait"))

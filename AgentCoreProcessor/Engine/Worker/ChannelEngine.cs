@@ -988,6 +988,11 @@ namespace AgentCoreProcessor.Engine
                 bus.Publish(new ToolExecutedEvent(call, result, toolDef));
                 return Task.CompletedTask;
             };
+            agent.OnRoundCompleted = () =>
+            {
+                PersistCurrentContext();
+                return Task.CompletedTask;
+            };
 
             // Restore persisted context (loaded into _loadedConversation for BuildStartInjectAsync)
             if (persistence != null && _loadedConversation == null)
