@@ -713,7 +713,8 @@ namespace AgentCoreProcessor.Client
                         var newContent = new StringContent(newBody, Encoding.UTF8, "application/json");
                         foreach (var (key, values) in request.Content.Headers)
                         {
-                            if (!key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase))
+                            if (!key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase) &&
+                                !key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase))
                                 newContent.Headers.TryAddWithoutValidation(key, values);
                         }
                         request.Content = newContent;
