@@ -113,7 +113,7 @@ namespace AgentCoreProcessor.Engine
         private SessionContext? lastContext;
 
         // Express 对话历史：从数据库拉取最近 N 条消息
-        private const int ExpressHistoryMaxMessages = 20;
+        private const int HistoryMaxMessages = 20;
 
         // 记忆提取 Worker（独立信号 + 独立文件）
         private ChannelExtractionWorker extractionWorker = null!;
@@ -781,10 +781,10 @@ namespace AgentCoreProcessor.Engine
             var roundInject = await ((IAgentHost)this).BuildRoundInjectAsync();
             if (roundInject != null) messages.AddRange(roundInject);
 
-            // Express 总量封顶：新旧消息总共 ExpressHistoryMaxMessages 条，优先保留新消息
-            if (messages.Count > ExpressHistoryMaxMessages)
+            // Express 总量封顶：新旧消息总共 HistoryMaxMessages 条，优先保留新消息
+            if (messages.Count > HistoryMaxMessages)
             {
-                var excess = messages.Count - ExpressHistoryMaxMessages;
+                var excess = messages.Count - HistoryMaxMessages;
                 // 从框架消息之后开始裁剪（保留框架 + 最新消息）
                 var maxRemovable = messages.Count - _frameworkMessageCount;
                 if (excess > maxRemovable) excess = maxRemovable;
@@ -1253,14 +1253,12 @@ namespace AgentCoreProcessor.Engine
             // Express：新消息多时自动挤掉旧历史（总量封顶 X）
             // Working：此处拉初始上下文；后续轮次由 BuildRoundInjectAsync 强制拉全量
             {
-                var recentMsgs = await ctx.Session.GetContextByChannelAsync(channelId, ExpressHistoryMaxMessages);
+                var recentMsgs = await ctx.Session.GetContextByChannelAsync(channelId, HistoryMaxMessages);
                 if (recentMsgs.Count > 0)
                 {
                     // Express：按游标分离，已消费的为历史
-                    // Working：全量注入初始上下文，不切割（BuildRoundInjectAsync 内容不持久化到 _history）
-                    var historyMsgs = isWorkingMode
-                        ? recentMsgs.ToList()
-                        : recentMsgs.Where(m => m.Id <= _lastConsumedMessageId).ToList();
+                    // Working：同样按游标分离，未消费的留给 BuildRoundInjectAsync 作为 <new_messages> 注入
+                    var historyMsgs = recentMsgs.Where(m => m.Id <= _lastConsumedMessageId).ToList();
                     if (historyMsgs.Count > 0)
                     {
                         if (isWorkingMode)
@@ -1312,11 +1310,8 @@ namespace AgentCoreProcessor.Engine
                         }
                     }
 
-                    // Express：_startInjectMaxId 只覆盖实际消费的历史消息，剩余留给 BuildRoundInjectAsync 拾取
-                    // Working：所有 recentMsgs 都已被注入，标记全部为已消费
-                    _startInjectMaxId = isWorkingMode
-                        ? recentMsgs.Max(m => m.Id)
-                        : (historyMsgs.Count > 0 ? historyMsgs.Max(m => m.Id) : _lastConsumedMessageId);
+                    // _startInjectMaxId 只覆盖实际消费的历史消息，剩余留给 BuildRoundInjectAsync 拾取
+                    _startInjectMaxId = historyMsgs.Count > 0 ? historyMsgs.Max(m => m.Id) : _lastConsumedMessageId;
                 }
             }
 
@@ -1549,9 +1544,9 @@ namespace AgentCoreProcessor.Engine
                 {
                     // Express 模式裁剪：只保留最近一组窗口，避免上下文爆炸
                     var allNewMsgs = newMsgs;
-                    if (!isWorkingMode && newMsgs.Count > ExpressHistoryMaxMessages)
+                    if (!isWorkingMode && newMsgs.Count > HistoryMaxMessages)
                     {
-                        newMsgs = newMsgs.Skip(newMsgs.Count - ExpressHistoryMaxMessages).ToList();
+                        newMsgs = newMsgs.Skip(newMsgs.Count - HistoryMaxMessages).ToList();
                     }
 
                     if (isWorkingMode)
