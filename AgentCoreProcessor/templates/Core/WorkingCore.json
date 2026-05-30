@@ -13,7 +13,9 @@
   "useNativeTools": true,
   "forceToolCall": true,
   "disableImageMessages": true,
-  "extraBody": null,
+  "extraBody": {
+    "thinking": {"type": "disabled"}
+  },
   "n": 1,
   "conversationHistory": [
     {
