@@ -709,6 +709,9 @@ namespace AgentCoreProcessor.Client
                             if (!json.ContainsKey(kvp.Key))
                                 json[kvp.Key] = JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(kvp.Value));
                         }
+                        // thinking 参数与 reasoning_effort 互斥（DeepSeek 等兼容 API）
+                        if (_extraBody.ContainsKey("thinking"))
+                            json.Remove("reasoning_effort");
                         var newBody = json.ToJsonString();
                         var newContent = new StringContent(newBody, Encoding.UTF8, "application/json");
                         foreach (var (key, values) in request.Content.Headers)
