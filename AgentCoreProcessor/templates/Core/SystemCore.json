@@ -9,6 +9,9 @@
   "enableCaching": true,
   "useNativeTools": true,
   "forceToolCall": true,
+  "extraBody": {
+    "thinking": {"type": "disabled"}
+  },
   "conversationHistory": [
     {
       "role": "system",
