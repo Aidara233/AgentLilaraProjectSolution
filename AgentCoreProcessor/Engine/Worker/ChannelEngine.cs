@@ -1544,7 +1544,7 @@ namespace AgentCoreProcessor.Engine
             // 游标为 0 时（冷启动）拉取最近 HistoryMaxMessages 条，后续轮次拉增量
             var effectiveCursor = Math.Max(_lastConsumedMessageId, _startInjectMaxId);
             {
-                var rawNewMsgs = await ctx.Session.GetMessagesAfterIdAsync(channelId, effectiveCursor);
+                var rawNewMsgs = await ctx.Session.GetLatestMessagesAfterIdAsync(channelId, effectiveCursor, HistoryMaxMessages);
                 if (rawNewMsgs.Count > 0)
                 {
                     var allNewMsgs = rawNewMsgs;

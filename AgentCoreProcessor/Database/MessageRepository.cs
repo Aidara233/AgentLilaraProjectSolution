@@ -98,6 +98,16 @@ namespace AgentCoreProcessor.Database
                 channelId, afterId, limit);
         }
 
+        /// <summary>获取指定频道中 Id > afterId 的最近 N 条消息（按 Id 降序取最新，再反转升序返回）。</summary>
+        public async Task<List<UserMessage>> GetLatestAfterIdAsync(int channelId, int afterId, int limit = 20)
+        {
+            var results = await db.QueryAsync<UserMessage>(
+                "SELECT * FROM UserMessages WHERE ChannelId = ? AND Id > ? ORDER BY Id DESC LIMIT ?",
+                channelId, afterId, limit);
+            results.Reverse();
+            return results;
+        }
+
         /// <summary>获取指定频道中 Id <= beforeId 的最近 N 条消息（按 Id 升序返回）。</summary>
         public async Task<List<UserMessage>> GetBeforeIdAsync(int channelId, int beforeId, int limit = 10)
         {

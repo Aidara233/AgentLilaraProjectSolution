@@ -197,6 +197,10 @@ namespace AgentCoreProcessor.Engine
         public Task<List<UserMessage>> GetMessagesAfterIdAsync(int channelId, int afterId, int limit = 50)
             => messages.GetAfterIdAsync(channelId, afterId, limit);
 
+        /// <summary>获取指定频道中 Id > afterId 的最近 N 条消息（降序取最新，升序返回）。</summary>
+        public Task<List<UserMessage>> GetLatestMessagesAfterIdAsync(int channelId, int afterId, int limit = 20)
+            => messages.GetLatestAfterIdAsync(channelId, afterId, limit);
+
         /// <summary>获取指定频道中 Id <= beforeId 的最近 N 条消息（升序）。</summary>
         public Task<List<UserMessage>> GetMessagesBeforeIdAsync(int channelId, int beforeId, int limit = 10)
             => messages.GetBeforeIdAsync(channelId, beforeId, limit);
