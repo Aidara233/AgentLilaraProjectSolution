@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentLilara.PluginSDK;
@@ -10,6 +11,8 @@ namespace Plugin.BasicTools
     [ToolMeta(Group = null, ContinueLoop = false, ExpressAvailable = true, OutputOnly = true)]
     public class SpeakTool : ITool
     {
+        private static readonly Random _rng = new();
+
         private readonly IChannelAccess? _channelAccess;
         private readonly int _channelId;
 
@@ -22,28 +25,89 @@ namespace Plugin.BasicTools
         }
 
         public string Name => "speak";
-        public string Description => "发送消息给当前频道，支持图文混排（<img work=\"rel/path\"/> 引用 Workspace 图片，"
+        public string Description => "逐条发送消息到当前频道。content 为字符串数组，每条单独发送，"
+            + "支持图文混排（<img work=\"rel/path\"/> 引用 Workspace 图片，"
             + "<img hash=\"xxx\"/> 引用图库图片）。可用标签：<at user=\"名字\"/> @提及、<reply id=\"消息ID\"/> 回复消息";
         public IReadOnlyList<ToolParameter> Parameters =>
-            [new("content", "要发送的文本内容（可含 <img/> <at/> <reply/> 标签）", 0)];
-        public TimeSpan Timeout => TimeSpan.FromSeconds(10);
+            [new("content", "要发送的消息数组，每条为独立消息（可含 <img/> <at/> <reply/> 标签）", 0)];
+        public TimeSpan Timeout => TimeSpan.FromSeconds(30);
+
+        public JsonNode GetInputSchema()
+        {
+            return new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["content"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["items"] = new JsonObject { ["type"] = "string" },
+                        ["description"] = "要发送的消息数组，每条为独立消息（可含 <img/> <at/> <reply/> 标签）"
+                    }
+                },
+                ["required"] = new JsonArray { "content" }
+            };
+        }
 
         public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
             if (resolvedInputs.Count < 1 || string.IsNullOrWhiteSpace(resolvedInputs[0]))
                 return new ToolResult { Status = "failed", Error = "消息内容不能为空" };
 
-            var content = resolvedInputs[0];
+            var messages = ParseArrayInput(resolvedInputs[0]);
+            if (messages.Count == 0)
+                return new ToolResult { Status = "failed", Error = "消息内容不能为空" };
 
-            if (_channelAccess != null)
+            if (_channelAccess == null)
+                return new ToolResult { Status = "success", Data = string.Join("\n---\n", messages) };
+
+            var sentIds = new List<string>();
+            for (int i = 0; i < messages.Count; i++)
             {
-                var sentId = await _channelAccess.SendMessageAsync(_channelId, content);
-                return sentId != null
-                    ? new ToolResult { Status = "success", Data = sentId }
-                    : new ToolResult { Status = "failed", Error = "消息发送失败" };
+                ct.ThrowIfCancellationRequested();
+
+                var sentId = await _channelAccess.SendMessageAsync(_channelId, messages[i]);
+                if (sentId != null)
+                    sentIds.Add(sentId);
+
+                if (i < messages.Count - 1)
+                {
+                    var delayMs = _rng.Next(1000, 2001);
+                    await Task.Delay(delayMs, ct);
+                }
             }
 
-            return new ToolResult { Status = "success", Data = content };
+            return sentIds.Count > 0
+                ? new ToolResult { Status = "success", Data = string.Join(",", sentIds) }
+                : new ToolResult { Status = "failed", Error = "消息发送失败" };
+        }
+
+        private static List<string> ParseArrayInput(string raw)
+        {
+            try
+            {
+                var parsed = JsonNode.Parse(raw) as JsonArray;
+                if (parsed == null) return [];
+                var list = new List<string>();
+                foreach (var item in parsed)
+                {
+                    if (item != null)
+                    {
+                        var s = item.GetValue<string>();
+                        if (!string.IsNullOrWhiteSpace(s))
+                            list.Add(s);
+                    }
+                }
+                return list;
+            }
+            catch
+            {
+                // 兼容旧格式：单条字符串
+                if (!string.IsNullOrWhiteSpace(raw))
+                    return [raw];
+                return [];
+            }
         }
     }
 
