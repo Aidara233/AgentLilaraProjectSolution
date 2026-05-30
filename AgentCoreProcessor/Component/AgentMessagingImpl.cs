@@ -218,6 +218,21 @@ internal class AgentMessagingImpl : IAgentMessaging
 
     // ═══════ 通知队列 ═══════
 
+    /// <summary>将收到的跨循环请求入队为一次性通知（由 ChannelEngine drain 调用）。</summary>
+    internal void EnqueueIncoming(CrossRequest request)
+    {
+        _notifications.Enqueue(new DelegationNotification
+        {
+            RequestId = request.RequestId,
+            Title = request.Title,
+            NewState = request.State,
+            ResponseType = EngineCrossReqType.Accept, // 标记位，FormatState 按 state=Submitted 识别
+            ResponderId = request.InitiatorId,
+            Content = request.Content,
+            Timestamp = request.SubmittedAt
+        });
+    }
+
     public List<DelegationNotificationInfo> DrainNotifications()
     {
         var list = new List<DelegationNotificationInfo>();

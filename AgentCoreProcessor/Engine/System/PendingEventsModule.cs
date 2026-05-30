@@ -48,7 +48,9 @@ namespace AgentCoreProcessor.Engine.Modules
             }
             sb.AppendLine();
 
-            return Task.FromResult<string?>(sb.ToString());
+            var text = sb.ToString();
+            pendingCrossRequests.Clear();
+            return Task.FromResult<string?>(text);
         }
     }
 

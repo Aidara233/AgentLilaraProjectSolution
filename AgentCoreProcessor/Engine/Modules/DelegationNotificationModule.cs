@@ -52,6 +52,7 @@ internal class DelegationNotificationModule : EngineModule
 
     private static string FormatState(string state, string responseType)
     {
+        if (state == "Submitted") return "收到新委托请求";
         return responseType switch
         {
             "Accept" => "已被接受",

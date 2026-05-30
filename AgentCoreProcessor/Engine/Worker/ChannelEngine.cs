@@ -464,6 +464,15 @@ namespace AgentCoreProcessor.Engine
                 _totalGateCycles++;
                 await componentHost.OnActivatedAsync();
 
+                // 排空跨循环请求队列，转为一次性通知（防止同会话每轮重复注入）
+                var incomingCross = DrainCrossRequests();
+                if (incomingCross.Count > 0 && _messaging is Component.AgentMessagingImpl impl)
+                {
+                    foreach (var req in incomingCross)
+                        impl.EnqueueIncoming(req);
+                }
+                var hasPendingNotifications = (_messaging as Component.AgentMessagingImpl)?.HasPendingNotifications == true;
+
                 // ② 状态准备：从 DB 检查新消息
                 bool hasNewMessages;
                 lock (bufferLock)
@@ -502,8 +511,8 @@ namespace AgentCoreProcessor.Engine
                     }
                     processedMessageCount += tickMsgs.Count;
 
-                    // 游标已被 BuildRoundInjectAsync 推进、无新消息且无跨循环请求时，跳回等待
-                    if (tickMsgs.Count == 0 && _pendingCrossRequests.IsEmpty)
+                    // 游标已被 BuildRoundInjectAsync 推进、无新消息且无跨循环请求/通知时，跳回等待
+                    if (tickMsgs.Count == 0 && _pendingCrossRequests.IsEmpty && !hasPendingNotifications)
                     {
                         loopControlModule.OnNewMessage();
                         continue;
@@ -516,9 +525,9 @@ namespace AgentCoreProcessor.Engine
                     fixedPrefix = null;
                 }
 
-                // 守卫：无新消息且无跨循环请求/信号缓冲时，不执行空循环
+                // 守卫：无新消息且无跨循环请求/通知/信号缓冲时，不执行空循环
                 // （防止 Working 期间已消费的消息通过延迟 buffer timer 重复激活）
-                if (!hasNewMessages && _pendingCrossRequests.IsEmpty && _signalBuffer.IsEmpty)
+                if (!hasNewMessages && _pendingCrossRequests.IsEmpty && !hasPendingNotifications && _signalBuffer.IsEmpty)
                 {
                     continue;
                 }
