@@ -707,7 +707,7 @@ namespace AgentCoreProcessor.Client
                         foreach (var kvp in _extraBody)
                         {
                             if (!json.ContainsKey(kvp.Key))
-                                json[kvp.Key] = JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(kvp.Value));
+                                json[kvp.Key] = JsonNode.Parse(Newtonsoft.Json.JsonConvert.SerializeObject(kvp.Value));
                         }
                         // thinking 参数与 reasoning_effort 互斥（DeepSeek 等兼容 API）
                         if (_extraBody.ContainsKey("thinking"))
