@@ -8,6 +8,7 @@
   "stream": true,
   "enableCaching": true,
   "useNativeTools": true,
+  "forceToolCall": true,
   "conversationHistory": [
     {
       "role": "system",

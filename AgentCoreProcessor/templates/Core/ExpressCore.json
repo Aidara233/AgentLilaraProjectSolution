@@ -11,6 +11,7 @@
   "stream": true,
   "enableCaching": true,
   "useNativeTools": true,
+  "forceToolCall": true,
   "extraBody": null,
   "n": 1,
   "conversationHistory": [

@@ -9,6 +9,8 @@
   "frequencyPenalty": null,
   "presencePenalty": null,
   "stream": true,
+  "useNativeTools": true,
+  "forceToolCall": true,
   "n": 1,
   "conversationHistory": []
 }
