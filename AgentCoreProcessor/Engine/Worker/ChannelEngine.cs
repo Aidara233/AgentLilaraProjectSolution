@@ -1348,23 +1348,6 @@ namespace AgentCoreProcessor.Engine
                 }
             }
 
-            // Working 模式：framework 到此为止，后面是对话内容
-            _frameworkMessageCount = msgs.Count;
-
-            // Working 模式：escalate 理由注入（仅一次）
-            if (isWorkingMode && !string.IsNullOrEmpty(_escalateReason))
-            {
-                msgs.Add(new Message { Role = "user", Content = $"[模式切换] 已从 Express 切换至 Working 模式。切换原因：{_escalateReason}" });
-                _escalateReason = null;
-            }
-
-            // Working 模式：插入持久化的旧对话 rounds
-            if (isWorkingMode && _loadedConversation != null && _loadedConversation.Count > 0)
-            {
-                msgs.AddRange(_loadedConversation);
-                _loadedConversation = null; // 只注入一次
-            }
-
             // 记忆检索注入（从 DB 新消息拼接 query）
             if (_lastSessionContext != null && _lastConsumedMessageId > 0)
             {
@@ -1401,6 +1384,23 @@ namespace AgentCoreProcessor.Engine
 
             // Component prompt sections
             BuildComponentInjections(msgs);
+
+            // framework 到此为止（每次会话重新生成，不持久化），后面是对话内容（会被持久化到 ChannelContexts json）
+            _frameworkMessageCount = msgs.Count;
+
+            // Working 模式：escalate 理由注入（仅一次，对话内容）
+            if (isWorkingMode && !string.IsNullOrEmpty(_escalateReason))
+            {
+                msgs.Add(new Message { Role = "user", Content = $"[模式切换] 已从 Express 切换至 Working 模式。切换原因：{_escalateReason}" });
+                _escalateReason = null;
+            }
+
+            // Working 模式：插入持久化的旧对话 rounds（对话内容）
+            if (isWorkingMode && _loadedConversation != null && _loadedConversation.Count > 0)
+            {
+                msgs.AddRange(_loadedConversation);
+                _loadedConversation = null; // 只注入一次
+            }
 
             Signal.Event(LogGroup.Engine, "上下文组装完成", new
             {
@@ -1536,14 +1536,20 @@ namespace AgentCoreProcessor.Engine
 
             // 统一新消息追赶：从 DB 拉取游标之后的全量消息（所有模式生效）
             // 用 Math.Max 跳过 BuildStartInjectAsync 已注入的消息
+            // 游标为 0 时（冷启动）拉取最近 HistoryMaxMessages 条，后续轮次拉增量
             var effectiveCursor = Math.Max(_lastConsumedMessageId, _startInjectMaxId);
-            if (effectiveCursor > 0)
             {
-                var newMsgs = await ctx.Session.GetMessagesAfterIdAsync(channelId, effectiveCursor);
-                if (newMsgs.Count > 0)
+                var rawNewMsgs = await ctx.Session.GetMessagesAfterIdAsync(channelId, effectiveCursor);
+                if (rawNewMsgs.Count > 0)
                 {
+                    var allNewMsgs = rawNewMsgs;
+                    var newMsgs = rawNewMsgs;
+                    // 游标为 0 时裁剪到 HistoryMaxMessages，避免加载全库
+                    if (effectiveCursor == 0 && newMsgs.Count > HistoryMaxMessages)
+                    {
+                        newMsgs = newMsgs.Skip(newMsgs.Count - HistoryMaxMessages).ToList();
+                    }
                     // Express 模式裁剪：只保留最近一组窗口，避免上下文爆炸
-                    var allNewMsgs = newMsgs;
                     if (!isWorkingMode && newMsgs.Count > HistoryMaxMessages)
                     {
                         newMsgs = newMsgs.Skip(newMsgs.Count - HistoryMaxMessages).ToList();
