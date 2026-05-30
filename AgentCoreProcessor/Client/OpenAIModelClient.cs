@@ -365,6 +365,8 @@ namespace AgentCoreProcessor.Client
                 options.FrequencyPenalty = (float)apiClientCfg.FrequencyPenalty.Value;
             if (apiClientCfg.PresencePenalty.HasValue)
                 options.PresencePenalty = (float)apiClientCfg.PresencePenalty.Value;
+            if (apiClientCfg.ForceToolCall)
+                options.ToolChoice = ChatToolChoice.CreateRequiredChoice();
             return options;
         }
 

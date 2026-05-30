@@ -104,6 +104,10 @@ namespace AgentCoreProcessor.Client
                 }
             }
 
+            // 强制工具调用
+            if (apiClientCfg.ForceToolCall && parameters.Tools?.Count > 0)
+                parameters.ToolChoice = new ToolChoice { Type = ToolChoiceType.Any };
+
             // Prompt Caching
             if (apiClientCfg.ShouldEnableCaching())
             {

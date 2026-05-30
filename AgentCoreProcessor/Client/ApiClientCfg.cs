@@ -80,6 +80,10 @@ namespace AgentCoreProcessor.Client
         [JsonProperty("useNativeTools")]
         public bool UseNativeTools { get; set; } = false;
 
+        // 强制模型调用工具（tool_choice: required/any），默认 false=auto
+        [JsonProperty("forceToolCall")]
+        public bool ForceToolCall { get; set; } = false;
+
         // 预设消息模板（从配置文件加载，system prompt + few-shot 示例）
         [JsonProperty("conversationHistory")]
         public List<Message> PresetMessages { get; set; } = new List<Message>();
