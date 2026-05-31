@@ -181,6 +181,13 @@ namespace AgentCoreProcessor.Adapter
             return record?.Description;
         }
 
+        public static async Task<string?> GetOcrTextAsync(string hash)
+        {
+            if (_repo == null) return null;
+            var record = await _repo.GetByHashAsync(hash);
+            return record?.OcrText;
+        }
+
         public static async Task UpdateDescriptionAsync(string hash, string description)
         {
             if (_repo == null) return;

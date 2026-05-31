@@ -14,6 +14,7 @@ using AgentCoreProcessor.Memory;
 using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Component;
 using AgentCoreProcessor.Engine.Modules;
+using AgentCoreProcessor.Engine.Vision;
 using AgentCoreProcessor.Tool;
 using AgentCoreProcessor.Tool.Core;
 using AgentLilara.PluginSDK;
@@ -166,6 +167,7 @@ namespace AgentCoreProcessor.Engine
         private readonly HashSet<string> _pendingPhase2Hashes = new();
         private readonly HashSet<string> _roundImageHashes = new();
         private readonly HashSet<string> _injectedDescriptions = new();
+        private readonly HashSet<string> _injectedOcrTexts = new();
 
         // Phase 6: 关注规则
         private readonly object watchRulesLock = new();
@@ -1028,7 +1030,7 @@ namespace AgentCoreProcessor.Engine
                 if (!string.IsNullOrEmpty(botId))
                     sb.AppendLine($"身份信息：你的QQ号是 {botId}。");
                 sb.AppendLine(FormatChannelContext());
-                sb.AppendLine("[图片说明] 正文中的 [IMG:N] 标记表示该位置有图片。[图片描述] 后跟随图片的视觉内容描述。相同图片不会重复出现。");
+                sb.AppendLine("[图片说明] 正文中的 [IMG:N] 标记表示该位置有图片。[图片描述] 后跟随图片的视觉内容描述。[图中文字] 后跟随OCR提取的文字。文字较长时会被截断，可使用 get_image_text 工具传入图片hash查看全文。相同图片不会重复出现。");
             }
             else
             {
@@ -1039,7 +1041,7 @@ namespace AgentCoreProcessor.Engine
                 if (!string.IsNullOrEmpty(botId))
                     sb.AppendLine($"\n身份信息：你的QQ号是 {botId}。");
                 sb.AppendLine(FormatChannelContext());
-                sb.AppendLine("\n[图片说明] 正文中的 [IMG:N] 标记表示该位置有图片，下方紧随对应的 [IMG:N] + 实际图片。相同图片不会重复出现。");
+                sb.AppendLine("\n[图片说明] 正文中的 [IMG:N] 标记表示该位置有图片，下方紧随对应的 [IMG:N] + 实际图片。[图中文字] 后跟随OCR提取的文字。文字较长时会被截断，可使用 get_image_text 工具传入图片hash查看全文。相同图片不会重复出现。");
             }
 
             return sb.ToString();
@@ -1068,6 +1070,7 @@ namespace AgentCoreProcessor.Engine
             // 防止 BuildInterleavedContentParts 误将 Express 已见过的图片标记为重复
             _seenImageHashes.Clear();
             _injectedDescriptions.Clear();
+            _injectedOcrTexts.Clear();
 
             fixedPrefix = BuildFixedPrefix();
 
@@ -1327,6 +1330,12 @@ namespace AgentCoreProcessor.Engine
                             _injectedDescriptions.Add(hash);
                             parts.Add(ContentPart.FromText($"[图片描述] {desc}"));
                         }
+                        var ocrInjection = await BuildOcrInjectionTextAsync(hash, !isWorkingMode);
+                        if (!string.IsNullOrEmpty(ocrInjection))
+                        {
+                            _injectedOcrTexts.Add(hash);
+                            parts.Add(ContentPart.FromText(ocrInjection));
+                        }
                     }
                 }
 
@@ -1359,6 +1368,9 @@ namespace AgentCoreProcessor.Engine
                         var desc = await ImageStorage.GetDescriptionAsync(hashes[i]);
                         if (!string.IsNullOrEmpty(desc))
                             parts.Add(ContentPart.FromText($"[图片描述] {desc}"));
+                        var ocrInjection = await BuildOcrInjectionTextAsync(hashes[i], !isWorkingMode);
+                        if (!string.IsNullOrEmpty(ocrInjection))
+                            parts.Add(ContentPart.FromText(ocrInjection));
                     }
                 }
             }
@@ -1792,6 +1804,18 @@ namespace AgentCoreProcessor.Engine
                 {
                     _injectedDescriptions.Add(hash);
                     msgs.Add(new Message { Role = "user", Content = $"[图片描述] 之前图片的描述已就绪：{desc}" });
+                }
+            }
+
+            // 滞后 OCR 补注
+            foreach (var hash in _roundImageHashes)
+            {
+                if (_injectedOcrTexts.Contains(hash)) continue;
+                var ocrInjection = await BuildOcrInjectionTextAsync(hash, !isWorkingMode);
+                if (!string.IsNullOrEmpty(ocrInjection))
+                {
+                    _injectedOcrTexts.Add(hash);
+                    msgs.Add(new Message { Role = "user", Content = ocrInjection });
                 }
             }
 
@@ -2230,6 +2254,29 @@ namespace AgentCoreProcessor.Engine
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// 为指定图片构建 OCR 文字注入文本。根据文字长度和模式决定注入形式。
+        /// 返回 null 表示无需注入（无 OCR 或 HasText 未知）。
+        /// </summary>
+        private static async Task<string?> BuildOcrInjectionTextAsync(string hash, bool isExpress)
+        {
+            var record = await ImageStorage.GetByHashAsync(hash);
+            if (record?.HasText != true) return null;
+            var ocrText = record.OcrText;
+            if (string.IsNullOrEmpty(ocrText)) return null;
+
+            var threshold = VisionEngineConfig.Load().OcrRichTextThreshold;
+            if (ocrText.Length <= threshold || isExpress)
+            {
+                return $"[图中文字] {ocrText}";
+            }
+            else
+            {
+                var preview = ocrText[..threshold];
+                return $"[图中文字] 文字较长({ocrText.Length}字)，预览：{preview}... 使用 get_image_text {hash} 查看全文";
+            }
         }
 
         private string BuildSimpleVisionContext()

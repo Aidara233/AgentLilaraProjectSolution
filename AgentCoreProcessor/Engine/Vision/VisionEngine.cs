@@ -339,11 +339,15 @@ namespace AgentCoreProcessor.Engine.Vision
                 if (path == null) return;
 
                 string? output = null;
+                var promptText = phase1Config!.PromptTemplate;
+                if (!string.IsNullOrEmpty(record.OcrText) && record.OcrText.Length > config.OcrRichTextThreshold)
+                    promptText = "[OCR提示] 此图片的文字内容已通过OCR另行提取，你只需描述图片的视觉布局、类型和画面内容，无需转录文字。\n\n" + promptText;
+
                 for (int attempt = 0; attempt <= config.VisionRetryCount; attempt++)
                 {
                     try
                     {
-                        output = await phase1Provider!.DescribeImageAsync(path);
+                        output = await phase1Provider!.DescribeImageAsync(path, promptText);
                         break;
                     }
                     catch (System.Net.Http.HttpRequestException ex) when (
