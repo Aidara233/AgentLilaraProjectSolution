@@ -1255,89 +1255,18 @@ namespace AgentCoreProcessor.Engine
         {
             var msgs = new List<Message>();
 
-            // 框架前缀（系统配置、工具描述等）
+            // ═══ FRAMEWORK: 每次会话重新生成，不持久化 ═══
+            // （只有人为可能调整的内容放在此处，其余全部走持久化以最大化缓存利用率）
+
+            // 1. 框架前缀（系统配置、工具描述等）
             if (fixedPrefix == null) fixedPrefix = BuildFixedPrefix();
             msgs.Add(new Message { Role = "user", Content = fixedPrefix });
 
-            // 上下文摘要（压缩后的历史）
+            // 2. 上下文摘要（压缩后的历史）
             if (!string.IsNullOrEmpty(contextSummary))
                 msgs.Add(new Message { Role = "user", Content = $"[上下文摘要]\n{contextSummary}" });
 
-            // 统一从 DB 拉取最近 N 条消息作为历史上下文
-            // 如果有持久化的旧对话（_loadedConversation），它已经是完整上下文，无需重复从 DB 拉取
-            {
-                var hasLoadedConversation = isWorkingMode && _loadedConversation != null && _loadedConversation.Count > 0;
-                if (!hasLoadedConversation)
-                {
-                    var recentMsgs = await ctx.Session.GetContextByChannelAsync(channelId, HistoryMaxMessages);
-                if (recentMsgs.Count > 0)
-                {
-                    // Express：按游标分离，已消费的为历史
-                    // Working：同样按游标分离，未消费的留给 BuildRoundInjectAsync 作为 <new_messages> 注入
-                    var historyMsgs = recentMsgs.Where(m => m.Id <= _lastConsumedMessageId).ToList();
-                    if (historyMsgs.Count > 0)
-                    {
-                        if (isWorkingMode)
-                        {
-                            // 初始历史引用缺省补块（递归 1 层）—— 放在历史消息前面，让模型先看到被引用的内容
-                            var histQc = await BuildQuotedContextForBatchAsync(historyMsgs, channelId, maxDepth: 1, includeSurrounding: false);
-                            if (histQc != null)
-                                await AddQuotedContextMessage(msgs, histQc.Value.Text, histQc.Value.ImagePaths);
-
-                            var histSb = new StringBuilder("<conversation_history>\n");
-                            foreach (var m in historyMsgs)
-                            {
-                                var name = m.IsFromBot ? "assistant" : EscapeXml(m.SenderName);
-                                var attrs = FormatMessageAttrs(m);
-                                histSb.AppendLine($"<message role=\"{(m.IsFromBot ? "assistant" : "user")}\" sender=\"{name}\"{attrs}>");
-                                histSb.AppendLine(EscapeXml(m.Content));
-                                histSb.AppendLine("</message>");
-                            }
-                            histSb.Append("</conversation_history>");
-                            {
-                                var parts = await BuildInterleavedContentParts(histSb.ToString(), historyMsgs, _seenImageHashes);
-                                var msg = new Message { Role = "user", Content = histSb.ToString() };
-                                if (parts.Count > 1) msg.ContentParts = parts;
-                                msgs.Add(msg);
-                            }
-                        }
-                        else
-                        {
-                            // 历史引用缺省补块（递归 1 层，带 ±3 上下文）—— 放在对话历史前面
-                            var histQc = await BuildQuotedContextForBatchAsync(historyMsgs, channelId, maxDepth: 1, includeSurrounding: true);
-                            if (histQc != null)
-                                await AddQuotedContextMessage(msgs, histQc.Value.Text, histQc.Value.ImagePaths);
-
-                            var histSb = new StringBuilder("[对话历史]\n");
-                            foreach (var m in historyMsgs)
-                            {
-                                var mentionPrefix = IsBotMentionedInMessage(m) ? "[@你] " : "";
-                                var name = m.IsFromBot ? "你" : m.SenderName;
-                                var msgId = !string.IsNullOrEmpty(m.PlatformMessageId) ? $"[#{m.PlatformMessageId}]" : "";
-                                var replyNote = !string.IsNullOrEmpty(m.ReplyToPlatformMessageId) ? $" (回复 #{m.ReplyToPlatformMessageId})" : "";
-                                histSb.AppendLine($"{mentionPrefix}{msgId}{name}: {m.Content}{replyNote}");
-                            }
-                            {
-                                var parts = await BuildInterleavedContentParts(histSb.ToString(), historyMsgs, _seenImageHashes);
-                                var msg = new Message { Role = "user", Content = histSb.ToString() };
-                                if (parts.Count > 1) msg.ContentParts = parts;
-                                msgs.Add(msg);
-                            }
-                        }
-                    }
-
-                    // _startInjectMaxId 只覆盖实际消费的历史消息，剩余留给 BuildRoundInjectAsync 拾取
-                    _startInjectMaxId = historyMsgs.Count > 0 ? historyMsgs.Max(m => m.Id) : _lastConsumedMessageId;
-                    }
-                }
-                else
-                {
-                    // 有持久化对话：_loadedConversation 已是完整上下文，游标即边界
-                    _startInjectMaxId = _lastConsumedMessageId;
-                }
-            }
-
-            // 参与者列表注入（名字、平台ID、内部ID、信任等级、权限、快速记忆）
+            // 3. 参与者列表注入（名字、平台ID、内部ID、信任等级、权限、快速记忆）
             if (currentParticipantSnapshot != null && currentParticipantSnapshot.Count > 0)
             {
                 if (isWorkingMode)
@@ -1370,23 +1299,7 @@ namespace AgentCoreProcessor.Engine
                 }
             }
 
-            // 记忆检索注入（从 DB 新消息拼接 query）
-            if (_lastSessionContext != null && _lastConsumedMessageId > 0)
-            {
-                var queryMsgs = await ctx.Session.GetMessagesAfterIdAsync(channelId, _lastConsumedMessageId);
-                if (queryMsgs.Count > 0)
-                {
-                    var query = string.Join(" ", queryMsgs.Where(m => !m.IsFromBot).Select(m => m.Content));
-                    if (!string.IsNullOrEmpty(query))
-                    {
-                        var memorySection = await BuildMemorySection(_lastSessionContext, query);
-                        if (!string.IsNullOrEmpty(memorySection))
-                            msgs.Add(new Message { Role = "user", Content = memorySection });
-                    }
-                }
-            }
-
-            // IInjectProvider start injections
+            // 4. IInjectProvider start injections
             var iCtx = new InjectContext
             {
                 Mode = isWorkingMode ? "working" : "express",
@@ -1401,27 +1314,109 @@ namespace AgentCoreProcessor.Engine
                     if (!string.IsNullOrEmpty(s))
                         msgs.Add(new Message { Role = "user", Content = s });
                 }
-                catch (Exception ex) { Signal.Warn(LogGroup.Engine, $"InjectProvider.Start失败: {p.GetType().Name}", new { provider = p.GetType().Name, error = ex.Message }); }
+                catch (Exception ex) { Signal.Warn(LogGroup.Engine, $"InjectProvider.Start 失败: {p.GetType().Name}", new { provider = p.GetType().Name, error = ex.Message }); }
             }
 
-            // Component prompt sections
+            // 5. Component prompt sections
             BuildComponentInjections(msgs);
 
-            // framework 到此为止（每次会话重新生成，不持久化），后面是对话内容（会被持久化到 ChannelContexts json）
+            // ── framework 边界：以下内容会被持久化，不再从 DB 重复拉取 ──
             _frameworkMessageCount = msgs.Count;
 
-            // Working 模式：escalate 理由注入（仅一次，对话内容）
+            // ═══ CONVERSATION: 持久化到 ChannelContexts json，会话恢复时直接注入 ═══
+
+            // 6. escalate 理由（仅一次，解释为何进入 Working 模式）
             if (isWorkingMode && !string.IsNullOrEmpty(_escalateReason))
             {
                 msgs.Add(new Message { Role = "user", Content = $"[模式切换] 已从 Express 切换至 Working 模式。切换原因：{_escalateReason}" });
                 _escalateReason = null;
             }
 
-            // Working 模式：插入持久化的旧对话 rounds（对话内容）
+            // 7. 初始历史 / 持久化对话
             if (isWorkingMode && _loadedConversation != null && _loadedConversation.Count > 0)
             {
+                // 会话恢复：_loadedConversation 已是完整上下文（含历史消息、助手回应、工具结果）
                 msgs.AddRange(_loadedConversation);
-                _loadedConversation = null; // 只注入一次
+                _loadedConversation = null;
+                _startInjectMaxId = _lastConsumedMessageId;
+            }
+            else
+            {
+                // 首次会话：从 DB 拉取历史消息，注入后会被 PersistCurrentContext 持久化
+                {
+                    _startInjectMaxId = _lastConsumedMessageId;
+                    var recentMsgs = await ctx.Session.GetContextByChannelAsync(channelId, HistoryMaxMessages);
+                    if (recentMsgs.Count > 0)
+                    {
+                        var historyMsgs = recentMsgs.Where(m => m.Id <= _lastConsumedMessageId).ToList();
+                        if (historyMsgs.Count > 0)
+                        {
+                            if (isWorkingMode)
+                            {
+                                var histQc = await BuildQuotedContextForBatchAsync(historyMsgs, channelId, maxDepth: 1, includeSurrounding: false);
+                                if (histQc != null)
+                                    await AddQuotedContextMessage(msgs, histQc.Value.Text, histQc.Value.ImagePaths);
+
+                                var histSb = new StringBuilder("<conversation_history>\n");
+                                foreach (var m in historyMsgs)
+                                {
+                                    var name = m.IsFromBot ? "assistant" : EscapeXml(m.SenderName);
+                                    var attrs = FormatMessageAttrs(m);
+                                    histSb.AppendLine($"<message role=\"{(m.IsFromBot ? "assistant" : "user")}\" sender=\"{name}\"{attrs}>");
+                                    histSb.AppendLine(EscapeXml(m.Content));
+                                    histSb.AppendLine("</message>");
+                                }
+                                histSb.Append("</conversation_history>");
+                                {
+                                    var parts = await BuildInterleavedContentParts(histSb.ToString(), historyMsgs, _seenImageHashes);
+                                    var msg = new Message { Role = "user", Content = histSb.ToString() };
+                                    if (parts.Count > 1) msg.ContentParts = parts;
+                                    msgs.Add(msg);
+                                }
+                            }
+                            else
+                            {
+                                var histQc = await BuildQuotedContextForBatchAsync(historyMsgs, channelId, maxDepth: 1, includeSurrounding: true);
+                                if (histQc != null)
+                                    await AddQuotedContextMessage(msgs, histQc.Value.Text, histQc.Value.ImagePaths);
+
+                                var histSb = new StringBuilder("[对话历史]\n");
+                                foreach (var m in historyMsgs)
+                                {
+                                    var mentionPrefix = IsBotMentionedInMessage(m) ? "[@你] " : "";
+                                    var name = m.IsFromBot ? "你" : m.SenderName;
+                                    var msgId = !string.IsNullOrEmpty(m.PlatformMessageId) ? $"[#{m.PlatformMessageId}]" : "";
+                                    var replyNote = !string.IsNullOrEmpty(m.ReplyToPlatformMessageId) ? $" (回复 #{m.ReplyToPlatformMessageId})" : "";
+                                    histSb.AppendLine($"{mentionPrefix}{msgId}{name}: {m.Content}{replyNote}");
+                                }
+                                {
+                                    var parts = await BuildInterleavedContentParts(histSb.ToString(), historyMsgs, _seenImageHashes);
+                                    var msg = new Message { Role = "user", Content = histSb.ToString() };
+                                    if (parts.Count > 1) msg.ContentParts = parts;
+                                    msgs.Add(msg);
+                                }
+                            }
+                        }
+
+                        _startInjectMaxId = historyMsgs.Count > 0 ? historyMsgs.Max(m => m.Id) : _lastConsumedMessageId;
+                    }
+                }
+            }
+
+            // 8. 记忆检索（持久化：相同 query 结果不变，会话恢复时已在 _loadedConversation 中）
+            if (_lastSessionContext != null && _lastConsumedMessageId > 0)
+            {
+                var queryMsgs = await ctx.Session.GetMessagesAfterIdAsync(channelId, _lastConsumedMessageId);
+                if (queryMsgs.Count > 0)
+                {
+                    var query = string.Join(" ", queryMsgs.Where(m => !m.IsFromBot).Select(m => m.Content));
+                    if (!string.IsNullOrEmpty(query))
+                    {
+                        var memorySection = await BuildMemorySection(_lastSessionContext, query);
+                        if (!string.IsNullOrEmpty(memorySection))
+                            msgs.Add(new Message { Role = "user", Content = memorySection });
+                    }
+                }
             }
 
             Signal.Event(LogGroup.Engine, "上下文组装完成", new
