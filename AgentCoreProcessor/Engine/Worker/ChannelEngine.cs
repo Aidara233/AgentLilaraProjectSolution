@@ -223,9 +223,10 @@ namespace AgentCoreProcessor.Engine
             impulseTracker.Accumulate(initialMessage, recentParticipants.Count, initialMessage.IsSystemEvent);
             _lastSessionContext = initialContext;
             _bufferedMessageCount = 1;
-            _bufferTriggered = true;
+            _bufferTriggered = impulseTracker.ShouldRespond(initialMessage, _bufferedMessageCount, null);
             InitModules();
-            ScheduleBufferSignal();
+            if (_bufferTriggered)
+                ScheduleBufferSignal();
 
         }
 
