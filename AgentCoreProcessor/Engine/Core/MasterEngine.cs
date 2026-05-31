@@ -366,6 +366,22 @@ namespace AgentCoreProcessor.Engine
                 await File.WriteAllTextAsync(schemaV5, "migrated");
             }
 
+            var schemaV6 = Path.Combine(databaseDirectory, ".image_schema_v6");
+            if (!File.Exists(schemaV6))
+            {
+                try
+                {
+                    await db.ExecuteAsync("ALTER TABLE ImageRecords ADD COLUMN Phase INTEGER DEFAULT 0");
+                    await db.ExecuteAsync("ALTER TABLE ImageRecords ADD COLUMN Classification TEXT");
+                    await db.ExecuteAsync("ALTER TABLE ImageRecords ADD COLUMN FirstSeenMessageId INTEGER");
+                    await db.ExecuteAsync("ALTER TABLE ImageRecords ADD COLUMN RefineFocus TEXT");
+                    // 存量数据：已有描述的标记为 Phase=2（等价于旧系统的完整处理）
+                    await db.ExecuteAsync("UPDATE ImageRecords SET Phase = 2 WHERE Description IS NOT NULL AND Phase = 0");
+                }
+                catch (Exception ex) when (ex.Message.Contains("duplicate column")) { /* 列已存在，跳过 */ }
+                await File.WriteAllTextAsync(schemaV6, "migrated");
+            }
+
             var dreamSchemaV1 = Path.Combine(databaseDirectory, ".dream_schema_v1");
             if (!File.Exists(dreamSchemaV1))
             {
@@ -542,6 +558,7 @@ namespace AgentCoreProcessor.Engine
 
             Tool.ToolRegistry.Register(new Tool.Core.EscalateTool(), isNonComponent: true);
             Tool.ToolRegistry.Register(new Tool.Core.DeescalateTool(), isNonComponent: true);
+            Tool.ToolRegistry.Register(new Tool.Core.RefineImageTool(), isNonComponent: true);
 
             // 插件加载
             _toolContext = new Tool.Host.ToolContextImpl(new Tool.Host.PluginStorageImpl("_system"));

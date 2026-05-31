@@ -51,10 +51,14 @@ internal class VisionProvider : IWebUIProvider
                         new() { Field = "ocr_status", Label = "OCR", Type = StatusFieldType.Badge },
                         new() { Field = "vision_errors", Label = "识图错误" },
                         new() { Field = "ocr_errors", Label = "OCR错误" },
+                        new() { Field = "phase1", Label = "Phase1" },
+                        new() { Field = "phase2", Label = "Phase2" },
+                        new() { Field = "phase3", Label = "Phase3" },
                         new() { Field = "suspended", Label = "暂停", Type = StatusFieldType.Badge }
                     },
                     Actions = new()
                     {
+                        new() { Id = "start", Label = "启动引擎", Confirm = "" },
                         new() { Id = "wake", Label = "立即处理", Confirm = "" },
                         new() { Id = "stop", Label = "停止引擎", Danger = true, Confirm = "确认停止视觉引擎？下次心跳会自动重启。" }
                     }
@@ -63,19 +67,22 @@ internal class VisionProvider : IWebUIProvider
             },
             new()
             {
-                Id = "vision-config", Type = CardType.Status, DataSourceId = "vision-config", Title = "配置",
-                Schema = new StatusSchema
+                Id = "vision-config", Type = CardType.Form, DataSourceId = "vision-config", Title = "配置",
+                Schema = new FormSchema
                 {
+                    ShowSubmit = true,
+                    ShowReset = false,
                     Fields = new()
                     {
-                        new() { Field = "vision_enabled", Label = "识图启用", Type = StatusFieldType.Badge },
-                        new() { Field = "ocr_enabled", Label = "OCR启用", Type = StatusFieldType.Badge },
-                        new() { Field = "vision_concurrency", Label = "识图并发" },
-                        new() { Field = "ocr_concurrency", Label = "OCR并发" },
-                        new() { Field = "batch_size", Label = "批次大小" },
-                        new() { Field = "ocr_threshold", Label = "OCR富文本阈值" },
-                        new() { Field = "retry", Label = "重试" }
-                    }
+                        new() { Field = "visionEnabled", Label = "识图启用", Type = FormFieldType.Toggle },
+                        new() { Field = "ocrEnabled", Label = "OCR启用", Type = FormFieldType.Toggle },
+                        new() { Field = "phase1Concurrency", Label = "P1并发", Type = FormFieldType.Number },
+                        new() { Field = "phase2Concurrency", Label = "P2并发", Type = FormFieldType.Number },
+                        new() { Field = "ocrConcurrency", Label = "OCR并发", Type = FormFieldType.Number },
+                        new() { Field = "batchSize", Label = "批次大小", Type = FormFieldType.Number },
+                        new() { Field = "refineTriggerCount", Label = "精炼触发数(条)", Type = FormFieldType.Number },
+                        new() { Field = "ocrRichTextThreshold", Label = "OCR富文本阈值", Type = FormFieldType.Number },
+                    },
                 },
                 Layout = new CardLayout { PreferredCols = 6 }
             },
@@ -86,8 +93,8 @@ internal class VisionProvider : IWebUIProvider
                 {
                     Fields = new()
                     {
-                        new() { Field = "ocr_pending", Label = "OCR待处理" },
-                        new() { Field = "vision_pending", Label = "识图待处理" },
+                        new() { Field = "ocr_pending", Label = "待OCR" },
+                        new() { Field = "vision_pending", Label = "待Phase1" },
                         new() { Field = "total_images", Label = "图片总数" }
                     }
                 },
@@ -118,6 +125,7 @@ internal class VisionProvider : IWebUIProvider
                         new() { Field = "thumbnail", Header = "预览", Width = "96px", Format = ColumnFormat.Image, Sortable = false },
                         new() { Field = "time", Header = "时间", Width = "110px" },
                         new() { Field = "category", Header = "分类", Width = "70px", Format = ColumnFormat.Badge },
+                        new() { Field = "phase", Header = "阶段", Width = "55px", Format = ColumnFormat.Badge },
                         new() { Field = "ocr", Header = "OCR文本" },
                         new() { Field = "description", Header = "描述" },
                         new() { Field = "status", Header = "状态", Width = "70px", Format = ColumnFormat.Badge },
@@ -172,6 +180,9 @@ internal class VisionStatusSource : IDataSource
                 ["vision_errors"] = "—",
                 ["ocr_errors"] = "—",
                 ["suspended"] = "—",
+                ["phase1"] = "—",
+                ["phase2"] = "—",
+                ["phase3"] = "—",
                 ["_disabled_actions"] = new JsonArray("wake", "stop")
             };
             return Task.FromResult(new DataResult { Data = data });
@@ -186,7 +197,11 @@ internal class VisionStatusSource : IDataSource
             ["ocr_status"] = snap.OcrAvailable ? "可用" : "未配置",
             ["vision_errors"] = snap.VisionErrors.ToString(),
             ["ocr_errors"] = snap.OcrErrors.ToString(),
-            ["suspended"] = snap.VisionSuspended ? $"是: {snap.SuspendReason}" : "否"
+            ["phase1"] = snap.Phase1Count.ToString(),
+            ["phase2"] = snap.Phase2Count.ToString(),
+            ["phase3"] = snap.Phase3Count.ToString(),
+            ["suspended"] = snap.VisionSuspended ? $"是: {snap.SuspendReason}" : "否",
+            ["_disabled_actions"] = new JsonArray("start")
         };
         return Task.FromResult(new DataResult { Data = result });
     }
@@ -198,6 +213,15 @@ internal class VisionStatusSource : IDataSource
 
         switch (action)
         {
+            case "start":
+            {
+                var spawnCheck = _engine.GetSpawnCheck<VisionEngineSpawnCheck>();
+                if (spawnCheck == null)
+                    return Task.FromResult(new ActionResult { Success = false, Message = "SpawnCheck 未注册" });
+                var newEngine = spawnCheck.Create(_engine);
+                _engine.StartEngine(newEngine);
+                return Task.FromResult(new ActionResult { Success = true, Message = "视觉引擎已启动" });
+            }
             case "wake":
                 if (instance == null)
                     return Task.FromResult(new ActionResult { Success = false, Message = "引擎未运行" });
@@ -229,19 +253,41 @@ internal class VisionConfigSource : IDataSource
 
         var data = new JsonObject
         {
-            ["vision_enabled"] = config.VisionEnabled ? "启用" : "禁用",
-            ["ocr_enabled"] = config.OcrEnabled ? "启用" : "禁用",
-            ["vision_concurrency"] = config.VisionConcurrency.ToString(),
-            ["ocr_concurrency"] = config.OcrConcurrency.ToString(),
-            ["batch_size"] = config.BatchSize.ToString(),
-            ["ocr_threshold"] = $"{config.OcrRichTextThreshold} 字符",
-            ["retry"] = $"{config.VisionRetryCount} 次 / {config.VisionRetryDelayMs}ms"
+            ["visionEnabled"] = config.VisionEnabled,
+            ["ocrEnabled"] = config.OcrEnabled,
+            ["phase1Concurrency"] = config.Phase1Concurrency,
+            ["phase2Concurrency"] = config.Phase2Concurrency,
+            ["ocrConcurrency"] = config.OcrConcurrency,
+            ["batchSize"] = config.BatchSize,
+            ["refineTriggerCount"] = config.RefineTriggerCount,
+            ["ocrRichTextThreshold"] = config.OcrRichTextThreshold,
         };
         return Task.FromResult(new DataResult { Data = data });
     }
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-        => Task.FromResult(new ActionResult { Success = true });
+    {
+        var check = _engine.GetSpawnCheck<VisionEngineSpawnCheck>();
+        var instance = check?.ActiveInstance;
+        var config = instance?.GetSnapshot()?.Config ?? VisionEngineConfig.Load();
+
+        // 从表单数据更新配置
+        if (data != null)
+        {
+            config.VisionEnabled = string.Equals(data["visionEnabled"]?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+            config.OcrEnabled = string.Equals(data["ocrEnabled"]?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+            if (int.TryParse(data["phase1Concurrency"]?.ToString(), out var p1c)) config.Phase1Concurrency = p1c;
+            if (int.TryParse(data["phase2Concurrency"]?.ToString(), out var p2c)) config.Phase2Concurrency = p2c;
+            if (int.TryParse(data["ocrConcurrency"]?.ToString(), out var oc)) config.OcrConcurrency = oc;
+            if (int.TryParse(data["batchSize"]?.ToString(), out var bs)) config.BatchSize = bs;
+            if (int.TryParse(data["refineTriggerCount"]?.ToString(), out var rt)) config.RefineTriggerCount = rt;
+            if (int.TryParse(data["ocrRichTextThreshold"]?.ToString(), out var ott)) config.OcrRichTextThreshold = ott;
+        }
+
+        config.Save();
+        instance?.UpdateConfig(config);
+        return Task.FromResult(new ActionResult { Success = true, Message = "配置已保存并生效" });
+    }
 }
 
 internal class VisionQueueSource : IDataSource
@@ -291,9 +337,23 @@ internal class VisionGallerySource : IDataSource
         var arr = new JsonArray();
         foreach (var img in images)
         {
-            var status = img.Description != null ? "完成"
-                : img.HasText != null ? "待识图"
-                : "待OCR";
+            var status = img.Phase switch
+            {
+                0 => img.HasText != null ? "待粗扫" : "待OCR",
+                1 => "已粗扫",
+                2 => "已精炼",
+                3 => "已强制",
+                _ => "完成"
+            };
+
+            var phaseLabel = img.Phase switch
+            {
+                0 => "—",
+                1 => "P1",
+                2 => "P2",
+                3 => "P3",
+                _ => "?"
+            };
 
             var thumbUrl = $"/images/thumbs/{img.Hash}.jpg";
 
@@ -303,7 +363,8 @@ internal class VisionGallerySource : IDataSource
                 ["thumbnail"] = thumbUrl,
                 ["_img_src"] = thumbUrl,
                 ["time"] = img.CreatedAt.ToString("MM-dd HH:mm"),
-                ["category"] = img.Category ?? "—",
+                ["category"] = img.Classification ?? img.Category ?? "—",
+                ["phase"] = phaseLabel,
                 ["ocr"] = Truncate(img.OcrText, 80),
                 ["description"] = Truncate(img.Description, 100),
                 ["status"] = status,

@@ -17,13 +17,13 @@ public class SendEmailTool : ITool
     }
 
     public string Name => "send_email";
-    public string Description => "发送邮件。收件人可逗号分隔多个。attachments 可选，逗号分隔 Workspace 相对路径。";
+    public string Description => "发送邮件。收件人可逗号分隔多个。attachments 可选，逗号分隔相对路径（如 报告.pdf,images/photo.png），文件必须在工作目录中。";
     public IReadOnlyList<ToolParameter> Parameters =>
     [
         new("to", "收件人地址（可逗号分隔多个）", 0),
         new("subject", "邮件主题", 1),
         new("body", "邮件正文", 2),
-        new("attachments", "可选，附件路径（逗号分隔 Workspace 相对路径）", 3, isRequired: false)
+        new("attachments", "可选，附件相对路径（逗号分隔，如 报告.pdf,图/photo.png）", 3, isRequired: false)
     ];
     public TimeSpan Timeout => TimeSpan.FromSeconds(30);
 
@@ -61,7 +61,8 @@ public class SendEmailTool : ITool
                     if (string.IsNullOrEmpty(trimmed)) continue;
 
                     var fullPath = Path.GetFullPath(Path.Combine(_storage.WorkspaceDirectory, trimmed));
-                    if (!fullPath.StartsWith(_storage.WorkspaceDirectory, StringComparison.OrdinalIgnoreCase))
+                    var workspaceRoot = Path.GetFullPath(_storage.WorkspaceDirectory);
+                    if (!fullPath.StartsWith(workspaceRoot, StringComparison.OrdinalIgnoreCase))
                         return new ToolResult { Status = "failed", Error = $"路径超出工作区范围: {trimmed}" };
 
                     if (!File.Exists(fullPath))

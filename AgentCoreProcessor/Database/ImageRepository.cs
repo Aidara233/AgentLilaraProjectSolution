@@ -62,7 +62,7 @@ namespace AgentCoreProcessor.Database
         public async Task<List<ImageRecord>> GetVisionPendingAsync(int limit = 50)
         {
             return await db.QueryAsync<ImageRecord>(
-                "SELECT * FROM ImageRecords WHERE HasText IS NOT NULL AND Description IS NULL ORDER BY CreatedAt DESC LIMIT ?",
+                "SELECT * FROM ImageRecords WHERE HasText IS NOT NULL AND Phase = 0 ORDER BY CreatedAt DESC LIMIT ?",
                 limit);
         }
 
@@ -75,6 +75,62 @@ namespace AgentCoreProcessor.Database
                 record.OcrText = ocrText;
                 await db.UpdateAsync(record);
             }
+        }
+
+        public async Task UpdatePhaseAsync(string hash, int phase)
+        {
+            var record = await GetByHashAsync(hash);
+            if (record != null)
+            {
+                record.Phase = phase;
+                await db.UpdateAsync(record);
+            }
+        }
+
+        public async Task UpdateClassificationAsync(string hash, string classification)
+        {
+            var record = await GetByHashAsync(hash);
+            if (record != null)
+            {
+                record.Classification = classification;
+                await db.UpdateAsync(record);
+            }
+        }
+
+        public async Task SetFirstSeenMessageIdIfNullAsync(string hash, int messageId)
+        {
+            var record = await GetByHashAsync(hash);
+            if (record != null && record.FirstSeenMessageId == null)
+            {
+                record.FirstSeenMessageId = messageId;
+                await db.UpdateAsync(record);
+            }
+        }
+
+        public async Task UpdateRefineFocusAsync(string hash, string focus)
+        {
+            var record = await GetByHashAsync(hash);
+            if (record != null)
+            {
+                record.RefineFocus = string.IsNullOrEmpty(record.RefineFocus) ? focus : record.RefineFocus + "; " + focus;
+                await db.UpdateAsync(record);
+            }
+        }
+
+        public async Task<List<ImageRecord>> GetByPhaseAsync(int phase, int limit = 50)
+        {
+            return await db.QueryAsync<ImageRecord>(
+                "SELECT * FROM ImageRecords WHERE Phase = ? ORDER BY CreatedAt DESC LIMIT ?",
+                phase, limit);
+        }
+
+        public async Task<List<ImageRecord>> GetByHashesAsync(List<string> hashes)
+        {
+            if (hashes.Count == 0) return new List<ImageRecord>();
+            var placeholders = string.Join(",", hashes.Select(_ => "?"));
+            return await db.QueryAsync<ImageRecord>(
+                $"SELECT * FROM ImageRecords WHERE Hash IN ({placeholders})",
+                hashes.Cast<object>().ToArray());
         }
 
         public Task DeleteAsync(ImageRecord record) => db.DeleteAsync(record);

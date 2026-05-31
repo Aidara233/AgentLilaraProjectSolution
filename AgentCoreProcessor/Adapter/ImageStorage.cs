@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
@@ -420,6 +422,44 @@ namespace AgentCoreProcessor.Adapter
             await _repo.UpdateOcrAsync(hash, hasText, ocrText);
         }
 
+        // ── Phase / Classification / RefineFocus ──
+
+        public static async Task UpdatePhaseAsync(string hash, int phase)
+        {
+            if (_repo == null) return;
+            await _repo.UpdatePhaseAsync(hash, phase);
+        }
+
+        public static async Task UpdateClassificationAsync(string hash, string classification)
+        {
+            if (_repo == null) return;
+            await _repo.UpdateClassificationAsync(hash, classification);
+        }
+
+        public static async Task SetFirstSeenMessageIdIfNullAsync(string hash, int messageId)
+        {
+            if (_repo == null) return;
+            await _repo.SetFirstSeenMessageIdIfNullAsync(hash, messageId);
+        }
+
+        public static async Task UpdateRefineFocusAsync(string hash, string focus)
+        {
+            if (_repo == null) return;
+            await _repo.UpdateRefineFocusAsync(hash, focus);
+        }
+
+        public static async Task<List<ImageRecord>> GetByPhaseAsync(int phase, int limit = 50)
+        {
+            if (_repo == null) return new List<ImageRecord>();
+            return await _repo.GetByPhaseAsync(phase, limit);
+        }
+
+        public static async Task<List<ImageRecord>> GetByHashesAsync(List<string> hashes)
+        {
+            if (_repo == null) return new List<ImageRecord>();
+            return await _repo.GetByHashesAsync(hashes);
+        }
+
         /// <summary>分页查询图片（WebUI 用）。</summary>
         public static async Task<List<ImageRecord>> GetPagedAsync(int offset, int limit,
             string? statusFilter = null, string? categoryFilter = null, string? keyword = null)
@@ -471,6 +511,9 @@ namespace AgentCoreProcessor.Adapter
             if (record != null)
             {
                 record.Description = null;
+                record.Phase = 0;
+                record.Classification = null;
+                record.RefineFocus = null;
                 await _repo.UpdateAsync(record);
             }
         }

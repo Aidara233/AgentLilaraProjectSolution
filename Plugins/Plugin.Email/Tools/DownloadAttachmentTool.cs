@@ -17,12 +17,13 @@ public class DownloadAttachmentTool : ITool
     }
 
     public string Name => "download_attachment";
-    public string Description => "下载邮件指定附件到工作目录。";
+    public string Description => "下载邮件指定附件到 Workspace。attachment_name 需与 check_email/read_email 显示的文件名完全一致。"
+        + " dest_path 为相对路径（如 报告.pdf、images/photo.png），文件将保存到工作目录。";
     public IReadOnlyList<ToolParameter> Parameters =>
     [
         new("uid", "邮件 UID", 0),
         new("attachment_name", "附件文件名（需与 check_email 显示的名称完全一致）", 1),
-        new("dest_path", "目标路径（Workspace 相对路径，含文件名）", 2)
+        new("dest_path", "目标相对路径（如 报告.pdf、images/photo.png），保存到工作目录", 2)
     ];
     public TimeSpan Timeout => TimeSpan.FromSeconds(60);
 
@@ -37,7 +38,8 @@ public class DownloadAttachmentTool : ITool
 
         // 沙箱校验
         var fullPath = Path.GetFullPath(Path.Combine(_storage.WorkspaceDirectory, destPath));
-        if (!fullPath.StartsWith(_storage.WorkspaceDirectory, StringComparison.OrdinalIgnoreCase))
+        var workspaceRoot = Path.GetFullPath(_storage.WorkspaceDirectory);
+        if (!fullPath.StartsWith(workspaceRoot, StringComparison.OrdinalIgnoreCase))
             return new ToolResult { Status = "failed", Error = "路径超出工作区范围" };
 
         // 确保父目录存在
@@ -69,7 +71,7 @@ public class DownloadAttachmentTool : ITool
                     await messagePart.Message.WriteToAsync(fs, ct);
                 }
 
-                return new ToolResult { Status = "success", Data = $"附件 {attachmentName} 已保存到: {destPath}" };
+                return new ToolResult { Status = "success", Data = $"附件 {attachmentName} 已保存到工作目录: {destPath}" };
             }, ct);
 
             return result;

@@ -17,6 +17,10 @@ namespace AgentCoreProcessor.Database
         public string? Description { get; set; }
         public string? OcrText { get; set; }
         public bool? HasText { get; set; }
+        public int Phase { get; set; } = 0;
+        public string? Classification { get; set; }
+        public int? FirstSeenMessageId { get; set; }
+        public string? RefineFocus { get; set; }
         public int SeenCount { get; set; } = 0;
         public long FileSize { get; set; }
         public DateTime CreatedAt { get; set; }

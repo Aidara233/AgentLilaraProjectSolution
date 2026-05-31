@@ -17,4 +17,7 @@ namespace AgentCoreProcessor.Engine
 
     /// <summary>模式切换（Express ↔ Working）。</summary>
     public record ModeSwitchSignal(string NewMode, string? Reason) : ChannelSignal;
+
+    /// <summary>Vision 精炼请求（Phase 2 或 3）。由 ChannelEngine 打包上下文后通过 EventBus 发送。</summary>
+    public record VisionRefineSignal(string Hash, int TargetPhase, string? Focus, string? ContextText) : ChannelSignal;
 }

@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
@@ -162,6 +163,9 @@ namespace AgentCoreProcessor.Engine
 
         // 未消费的图片路径
         private readonly List<(string Path, string? Hash, string? Category)> pendingImageInfos = new();
+        private readonly HashSet<string> _pendingPhase2Hashes = new();
+        private readonly HashSet<string> _roundImageHashes = new();
+        private readonly HashSet<string> _injectedDescriptions = new();
 
         // Phase 6: 关注规则
         private readonly object watchRulesLock = new();
@@ -305,6 +309,17 @@ namespace AgentCoreProcessor.Engine
                 _bufferedMessageCount++;
                 CollectImagePaths(msg);
                 _traceParentSpanId = traceParentSpanId ?? SignalContext.Current?.CurrentSpanId;
+
+                // @提及+图片 → 立即触发 Phase 2
+                if (msg.IsMentioned && msg.Attachments?.Any(a => a.Type == AttachmentType.Image && !string.IsNullOrEmpty(a.Hash)) == true)
+                {
+                    foreach (var att in msg.Attachments.Where(a => a.Type == AttachmentType.Image && !string.IsNullOrEmpty(a.Hash)))
+                    {
+                        _pendingPhase2Hashes.Add(att.Hash!);
+                        ctx.EventBus.PublishSignal("refine-image",
+                            new { hash = att.Hash!, targetPhase = 2, focus = (string?)null, contextText = (string?)null });
+                    }
+                }
             }
             recentParticipants.AddOrUpdate(
                 sc.User.Id,
@@ -371,11 +386,33 @@ namespace AgentCoreProcessor.Engine
                 .ContinueWith(_ => FlushBuffer(), TaskContinuationOptions.NotOnCanceled);
         }
 
-        /// <summary>缓冲到期：直接开闸（冲动值已在触发时通过）。</summary>
-        private void FlushBuffer()
+        /// <summary>缓冲到期：等待 Vision Phase 2 就绪后开闸。</summary>
+        private async void FlushBuffer()
         {
             _bufferFirstMessageTime = null;
             _bufferTriggered = false;
+
+            // 等待 @+图 触发的 Phase 2 完成（最多 5s）
+            if (_pendingPhase2Hashes.Count > 0)
+            {
+                var deadline = DateTime.Now.AddSeconds(5);
+                while (_pendingPhase2Hashes.Count > 0 && DateTime.Now < deadline)
+                {
+                    var done = new List<string>();
+                    foreach (var hash in _pendingPhase2Hashes)
+                    {
+                        var record = await ImageStorage.GetByHashAsync(hash);
+                        if (record != null && record.Phase >= 2)
+                            done.Add(hash);
+                    }
+                    foreach (var h in done)
+                        _pendingPhase2Hashes.Remove(h);
+                    if (_pendingPhase2Hashes.Count > 0)
+                        await Task.Delay(200);
+                }
+                _pendingPhase2Hashes.Clear();
+            }
+
             gate.Signal();
         }
 
@@ -508,6 +545,24 @@ namespace AgentCoreProcessor.Engine
                         processedTicks.AddLast(m.Time.Ticks);
                         while (processedTicks.Count > MaxProcessedTicksWindow)
                             processedTicks.RemoveFirst();
+
+                        // @提及 + 含图 → 触发 Phase 2 精炼
+                        if (IsBotMentionedInMessage(m) && !string.IsNullOrEmpty(m.ImageHashes))
+                        {
+                            foreach (var hash in m.ImageHashes.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                            {
+                                var trimmed = hash.Trim();
+                                var record = await ImageStorage.GetByHashAsync(trimmed);
+                                if (record != null && record.Phase == 1)
+                                {
+                                    var ctxText = BuildSimpleVisionContext();
+                                    ctx.EventBus.PublishSignal("refine-image",
+                                        new { hash = trimmed, targetPhase = 2, focus = (string?)null, contextText = ctxText });
+                                    Signal.Event(LogGroup.Engine, "触发Phase2精炼(@mention)",
+                                        new { channelId, hash = trimmed });
+                                }
+                            }
+                        }
                     }
                     processedMessageCount += tickMsgs.Count;
 
@@ -648,6 +703,7 @@ namespace AgentCoreProcessor.Engine
         /// <summary>Working 模式：Agent 多轮循环。</summary>
         private async Task ExecuteWorkingCycleAsync()
         {
+            _roundImageHashes.Clear();
             EnsureAgent();
 
             // Lazy register compress tool
@@ -777,6 +833,7 @@ namespace AgentCoreProcessor.Engine
         /// <summary>Express 模式：单次 Core 调用，不走 Agent。</summary>
         private async Task ExecuteExpressCycleAsync()
         {
+            _roundImageHashes.Clear();
             // Express 每轮重构上下文，重置图片去重追踪
             _seenImageHashes.Clear();
             _startInjectMaxId = 0;
@@ -906,6 +963,28 @@ namespace AgentCoreProcessor.Engine
                         break;
                     }
                 }
+
+                // Check for refine_image in Express
+                for (int i = 0; i < output.ToolCalls.Count; i++)
+                {
+                    var call = output.ToolCalls[i];
+                    if (call.Tool == "refine_image")
+                    {
+                        var result = expressResults[i];
+                        var data = result.Data ?? "";
+                        var segs = data.Split('|', 2);
+                        var imageRef = segs.Length > 0 ? segs[0] : "";
+                        var focus = segs.Length > 1 ? segs[1] : "";
+                        var hash = await ResolveImageRefAsync(imageRef);
+                        if (hash != null)
+                        {
+                            ctx.EventBus.PublishSignal("refine-image",
+                                new { hash, targetPhase = 3, focus, contextText = (string?)null });
+                            Signal.Event(LogGroup.Engine, "Vision精炼请求(Express)",
+                                new { channelId, hash, focus });
+                        }
+                    }
+                }
             }
             else if (output.IsText)
             {
@@ -948,7 +1027,7 @@ namespace AgentCoreProcessor.Engine
                 if (!string.IsNullOrEmpty(botId))
                     sb.AppendLine($"身份信息：你的QQ号是 {botId}。");
                 sb.AppendLine(FormatChannelContext());
-                sb.AppendLine("[图片说明] 正文中的 [IMG:N] 标记表示该位置有图片，下方紧随对应的 [IMG:N] + 实际图片。相同图片不会重复出现。");
+                sb.AppendLine("[图片说明] 正文中的 [IMG:N] 标记表示该位置有图片。[图片描述] 后跟随图片的视觉内容描述。相同图片不会重复出现。");
             }
             else
             {
@@ -987,15 +1066,32 @@ namespace AgentCoreProcessor.Engine
             // 新 Working 会话：清空 Express 遗留的图片去重状态，
             // 防止 BuildInterleavedContentParts 误将 Express 已见过的图片标记为重复
             _seenImageHashes.Clear();
+            _injectedDescriptions.Clear();
 
             fixedPrefix = BuildFixedPrefix();
 
             var authorized = componentHost!.GetAllVisibleToolNames();
             agent = new Agent(this, agentCore, agentConfig, authorized, componentHost!.TryGetTool);
-            agent.OnToolExecuted = (call, result, toolDef) =>
+            agent.OnToolExecuted = async (call, result, toolDef) =>
             {
                 bus.Publish(new ToolExecutedEvent(call, result, toolDef));
-                return Task.CompletedTask;
+
+                if (call.Tool == "refine_image")
+                {
+                    var data = result.Data ?? "";
+                    var segs = data.Split('|', 2);
+                    var imageRef = segs.Length > 0 ? segs[0] : "";
+                    var focus = segs.Length > 1 ? segs[1] : "";
+                    var hash = await ResolveImageRefAsync(imageRef);
+                    if (hash != null)
+                    {
+                        var contextText = BuildSimpleVisionContext();
+                        ctx.EventBus.PublishSignal("refine-image",
+                            new { hash, targetPhase = 3, focus, contextText });
+                        Signal.Event(LogGroup.Engine, "Vision精炼请求(Working)",
+                            new { channelId, hash, focus });
+                    }
+                }
             };
             agent.OnRoundCompleted = () =>
             {
@@ -1219,10 +1315,17 @@ namespace AgentCoreProcessor.Engine
                     }
                     else
                     {
-                        // 首次出现：标记 + 图片
+                        // 首次出现：标记 + 图片 + 描述
                         seenHashes.Add(hash);
+                        _roundImageHashes.Add(hash);
                         parts.Add(ContentPart.FromText($"[IMG:{imgIndex}]"));
                         parts.Add(ContentPart.FromImagePath(imagePaths[imgIndex]));
+                        var desc = await ImageStorage.GetDescriptionAsync(hash);
+                        if (!string.IsNullOrEmpty(desc))
+                        {
+                            _injectedDescriptions.Add(hash);
+                            parts.Add(ContentPart.FromText($"[图片描述] {desc}"));
+                        }
                     }
                 }
 
@@ -1240,15 +1343,25 @@ namespace AgentCoreProcessor.Engine
         }
 
         /// <summary>将文本 + 一组图片 hash 列表组装为 ContentParts。</summary>
-        private Task<List<ContentPart>> BuildContentPartsWithImagePaths(string text, IEnumerable<string> imagePaths)
+        private async Task<List<ContentPart>> BuildContentPartsWithImagePaths(string text, IEnumerable<string> imagePaths, List<string>? imageHashes = null)
         {
             var parts = new List<ContentPart> { ContentPart.FromText(text) };
-            foreach (var path in imagePaths)
+            var hashes = imageHashes ?? new List<string>();
+            for (int i = 0; i < imagePaths.Count(); i++)
             {
+                var path = imagePaths.ElementAt(i);
                 if (!string.IsNullOrEmpty(path))
+                {
                     parts.Add(ContentPart.FromImagePath(path));
+                    if (i < hashes.Count)
+                    {
+                        var desc = await ImageStorage.GetDescriptionAsync(hashes[i]);
+                        if (!string.IsNullOrEmpty(desc))
+                            parts.Add(ContentPart.FromText($"[图片描述] {desc}"));
+                    }
+                }
             }
-            return Task.FromResult(parts);
+            return parts;
         }
 
         public async Task<List<Message>?> BuildStartInjectAsync()
@@ -1464,14 +1577,15 @@ namespace AgentCoreProcessor.Engine
                         if (nms.Message.Attachments is { Count: > 0 })
                         {
                             var imgPaths = new List<string>();
+                            var imgHashes = new List<string>();
                             foreach (var att in nms.Message.Attachments.Where(a => a.Type == AttachmentType.Image && !string.IsNullOrEmpty(a.Hash)))
                             {
                                 var p = await ImageStorage.GetModelInputPathAsync(att.Hash!);
-                                if (!string.IsNullOrEmpty(p)) imgPaths.Add(p);
+                                if (!string.IsNullOrEmpty(p)) { imgPaths.Add(p); imgHashes.Add(att.Hash!); }
                             }
                             if (imgPaths.Count > 0)
                             {
-                                var parts = await BuildContentPartsWithImagePaths(nmsText, imgPaths);
+                                var parts = await BuildContentPartsWithImagePaths(nmsText, imgPaths, imgHashes);
                                 if (parts.Count > 1) nmsMsg.ContentParts = parts;
                             }
 
@@ -1666,6 +1780,18 @@ namespace AgentCoreProcessor.Engine
             if (isWorkingMode && loopControlModule.ConsecutiveOutputOnly >= 2)
             {
                 msgs.Add(new Message { Role = "user", Content = "你已连续多轮没有执行实际工作（仅发言/等待）。如果工作已完成，可用 deescalate 切换回轻量模式；如果需要继续深思或等待结果则不必。" });
+            }
+
+            // 滞后描述补注：本轮图片的描述可能在后续轮次才就绪
+            foreach (var hash in _roundImageHashes)
+            {
+                if (_injectedDescriptions.Contains(hash)) continue;
+                var desc = await ImageStorage.GetDescriptionAsync(hash);
+                if (!string.IsNullOrEmpty(desc))
+                {
+                    _injectedDescriptions.Add(hash);
+                    msgs.Add(new Message { Role = "user", Content = $"[图片描述] 之前图片的描述已就绪：{desc}" });
+                }
             }
 
             return msgs.Count > 0 ? msgs : null;
@@ -2073,6 +2199,44 @@ namespace AgentCoreProcessor.Engine
                         break;
                 }
             }
+        }
+
+        // ── Vision 辅助 ──
+
+        private async Task<string?> ResolveImageRefAsync(string imageRef)
+        {
+            if (string.IsNullOrEmpty(imageRef)) return null;
+
+            // 直接 hash（32 位 hex）
+            if (Regex.IsMatch(imageRef, @"^[a-f0-9]{32}$"))
+                return imageRef;
+
+            // [IMG:N] 索引：从上轮消息的 ImageHashes 列表中查找
+            var match = Regex.Match(imageRef, @"\[IMG:(\d+)\]");
+            if (match.Success)
+            {
+                var idx = int.Parse(match.Groups[1].Value);
+                // 获取最近一轮新消息的图片哈希
+                var lastNewMsgs = await ctx.Session.GetLatestMessagesAfterIdAsync(channelId, _lastConsumedMessageId, 20);
+                var allHashes = new List<string>();
+                foreach (var m in lastNewMsgs)
+                {
+                    if (!string.IsNullOrEmpty(m.ImageHashes))
+                        allHashes.AddRange(m.ImageHashes.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(h => h.Trim()));
+                }
+                if (idx >= 0 && idx < allHashes.Count)
+                    return allHashes[idx];
+            }
+
+            return null;
+        }
+
+        private string BuildSimpleVisionContext()
+        {
+            var parts = new List<string>();
+            var type = channelName.StartsWith("group") ? "群聊" : "私聊";
+            parts.Add($"频道类型：{type}");
+            return string.Join("\n", parts);
         }
     }
 }

@@ -9,6 +9,7 @@ public class EmailComponent : GlobalComponentBase
     private EmailConnectionManager _connMgr = null!;
     private readonly List<ITool> _tools = new();
     private CancellationTokenSource? _shutdownCts;
+    private string _workspaceDir = "";
 
     public override ComponentMeta Meta => new()
     {
@@ -24,6 +25,7 @@ public class EmailComponent : GlobalComponentBase
     {
         var config = EmailConfig.Load(context.Storage.GlobalDirectory);
         _connMgr = new EmailConnectionManager(config);
+        _workspaceDir = context.Storage.WorkspaceDirectory;
 
         if (_connMgr.Configured)
         {
@@ -56,7 +58,7 @@ public class EmailComponent : GlobalComponentBase
     public override string? BuildPromptSection(LoopInfo caller)
     {
         if (_connMgr?.ImapConnected == true)
-            return "[邮件] 邮件系统已连接，可收发邮件。";
+            return $"[邮件] 已连接 {_connMgr.SmtpUsername}。邮件附件下载/发送使用工作目录相对路径。";
         return null;
     }
 }

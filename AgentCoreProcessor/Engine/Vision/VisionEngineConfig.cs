@@ -29,6 +29,15 @@ namespace AgentCoreProcessor.Engine.Vision
         [JsonProperty("ocrRichTextThreshold")]
         public int OcrRichTextThreshold { get; set; } = 80;
 
+        [JsonProperty("refineTriggerCount")]
+        public int RefineTriggerCount { get; set; } = 3;
+
+        [JsonProperty("phase1Concurrency")]
+        public int Phase1Concurrency { get; set; } = 5;
+
+        [JsonProperty("phase2Concurrency")]
+        public int Phase2Concurrency { get; set; } = 2;
+
         private static string ConfigPath => Path.Combine(
             Config.PathConfig.StoragePath, "Engine", "VisionEngineConfig.json");
 

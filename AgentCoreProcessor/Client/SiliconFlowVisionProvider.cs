@@ -3,6 +3,7 @@ using System.IO;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Engine.Vision;
 using Newtonsoft.Json.Linq;
 
 namespace AgentCoreProcessor.Client
@@ -17,6 +18,9 @@ namespace AgentCoreProcessor.Client
         private readonly string apiKey;
         private readonly string endpoint;
         private readonly string model;
+        private readonly double temperature;
+        private readonly int maxTokens;
+        private readonly string? promptTemplate;
 
         public SiliconFlowVisionProvider(string apiKey,
             string endpoint = "https://api.siliconflow.cn/v1/chat/completions",
@@ -25,6 +29,20 @@ namespace AgentCoreProcessor.Client
             this.apiKey = apiKey;
             this.endpoint = endpoint;
             this.model = model;
+            temperature = 0.3;
+            maxTokens = 512;
+            promptTemplate = null;
+            httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+        }
+
+        public SiliconFlowVisionProvider(string apiKey, PhaseConfig config)
+        {
+            this.apiKey = apiKey;
+            endpoint = config.Endpoint;
+            model = config.Model;
+            temperature = config.Temperature;
+            maxTokens = config.MaxTokens;
+            promptTemplate = config.PromptTemplate;
             httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
         }
 
@@ -33,6 +51,8 @@ namespace AgentCoreProcessor.Client
             var imageBytes = await File.ReadAllBytesAsync(imagePath);
             var base64 = Convert.ToBase64String(imageBytes);
             var mimeType = GuessMimeType(imagePath);
+
+            var promptText = BuildPrompt(contextHint);
 
             var messages = new JArray
             {
@@ -44,7 +64,7 @@ namespace AgentCoreProcessor.Client
                         new JObject
                         {
                             ["type"] = "text",
-                            ["text"] = BuildPrompt(contextHint)
+                            ["text"] = promptText
                         },
                         new JObject
                         {
@@ -62,9 +82,13 @@ namespace AgentCoreProcessor.Client
             {
                 ["model"] = model,
                 ["messages"] = messages,
-                ["max_tokens"] = 512,
-                ["temperature"] = 0.3
+                ["max_tokens"] = maxTokens,
+                ["temperature"] = temperature
             };
+
+            // Qwen3.6 等 thinking 模型需显式禁用，否则推理链消耗 token 导致 content 为空
+            if (promptTemplate != null)
+                body["enable_thinking"] = false;
 
             var json = body.ToString(Newtonsoft.Json.Formatting.None);
             using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
@@ -82,8 +106,13 @@ namespace AgentCoreProcessor.Client
             return content ?? "[视觉模型未返回描述]";
         }
 
-        private static string BuildPrompt(string? contextHint)
+        private string BuildPrompt(string? contextHint)
         {
+            // Phase 模式：prompt 由 VisionEngine 预填充后传入
+            if (promptTemplate != null)
+                return !string.IsNullOrEmpty(contextHint) ? contextHint : promptTemplate;
+
+            // 旧模式：ctx.Vision 使用
             if (!string.IsNullOrEmpty(contextHint))
                 return contextHint;
 

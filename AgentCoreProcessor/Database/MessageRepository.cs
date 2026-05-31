@@ -20,6 +20,14 @@ namespace AgentCoreProcessor.Database
             return message;
         }
 
+        /// <summary>按数据库 ID 查找单条消息。</summary>
+        public async Task<UserMessage?> GetByIdAsync(int messageId)
+        {
+            var results = await db.QueryAsync<UserMessage>(
+                "SELECT * FROM UserMessages WHERE Id = ? LIMIT 1", messageId);
+            return results.Count > 0 ? results[0] : null;
+        }
+
         /// <summary>获取指定频道的最近 N 条消息（按频道级上下文）。</summary>
         public Task<List<UserMessage>> GetRecentByChannelAsync(int channelId, int limit)
         {

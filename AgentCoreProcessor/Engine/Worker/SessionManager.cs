@@ -90,6 +90,13 @@ namespace AgentCoreProcessor.Engine
             };
             await messages.SaveAsync(userMessage);
 
+            // 记录图片的 FirstSeenMessageId
+            if (imageHashes is { Count: > 0 })
+            {
+                foreach (var hash in imageHashes)
+                    await ImageStorage.SetFirstSeenMessageIdIfNullAsync(hash, userMessage.Id);
+            }
+
             // 5. 引用消息补入库：本地查不到时用 API 拉到的内容创建 stub
             if (!string.IsNullOrEmpty(msg.ReplyTo) && !string.IsNullOrEmpty(msg.QuotedContent))
             {
@@ -204,6 +211,10 @@ namespace AgentCoreProcessor.Engine
         /// <summary>获取指定频道中 Id <= beforeId 的最近 N 条消息（升序）。</summary>
         public Task<List<UserMessage>> GetMessagesBeforeIdAsync(int channelId, int beforeId, int limit = 10)
             => messages.GetBeforeIdAsync(channelId, beforeId, limit);
+
+        /// <summary>按数据库 ID 查找单条消息。</summary>
+        public Task<UserMessage?> GetMessageByIdAsync(int messageId)
+            => messages.GetByIdAsync(messageId);
 
         /// <summary>按平台消息ID查找消息（用于引用上下文）。</summary>
         public Task<UserMessage?> GetByPlatformMessageIdAsync(int channelId, string platformMessageId)

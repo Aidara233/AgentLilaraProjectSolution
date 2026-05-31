@@ -64,6 +64,7 @@
     private Dictionary<string, string> _values = new();
     private HashSet<string> _collapsedGroups = new();
     private bool _initialized;
+    private bool _dataFetched;
 
     protected override void OnParametersSet()
     {
@@ -78,8 +79,10 @@
                 _initialized = true;
             }
         }
-        else
+        else if (!_dataFetched)
         {
+            // 仅首次加载时从服务端数据填充，后续重渲染不覆盖用户编辑
+            _dataFetched = true;
             _values = new Dictionary<string, string>();
             if (Data is JsonObject obj)
             {
@@ -122,7 +125,7 @@
                 __builder.OpenElement(8, "input");
                 __builder.AddAttribute(9, "type", "checkbox");
                 __builder.AddAttribute(10, "class", "form-check-input");
-                __builder.AddAttribute(11, "checked", _values.TryGetValue(field.Field, out var tv) && tv == "true");
+                __builder.AddAttribute(11, "checked", _values.TryGetValue(field.Field, out var tv) && string.Equals(tv, "true", StringComparison.OrdinalIgnoreCase));
                 __builder.AddAttribute(12, "onchange", Microsoft.AspNetCore.Components.EventCallback.Factory.Create<Microsoft.AspNetCore.Components.ChangeEventArgs>(
                     this, async e => await SetValue(field.Field, e.Value?.ToString() == "True" ? "true" : "false")));
                 __builder.CloseElement();
@@ -215,6 +218,7 @@
     private void HandleReset()
     {
         _initialized = false;
+        _dataFetched = false;
         OnParametersSet();
     }
 }
