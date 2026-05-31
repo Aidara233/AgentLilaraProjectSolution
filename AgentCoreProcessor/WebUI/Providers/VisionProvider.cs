@@ -120,6 +120,7 @@ internal class VisionProvider : IWebUIProvider
                 Id = "gallery", Type = CardType.Table, DataSourceId = "gallery", Title = "图片库",
                 Schema = new TableSchema
                 {
+                    Searchable = true,
                     Columns = new()
                     {
                         new() { Field = "thumbnail", Header = "预览", Width = "96px", Format = ColumnFormat.Image, Sortable = false },
@@ -132,6 +133,26 @@ internal class VisionProvider : IWebUIProvider
                         new() { Field = "size", Header = "大小", Width = "70px" }
                     },
                     DefaultPageSize = 30,
+                    Filters = new()
+                    {
+                        new() { Field = "phase", Label = "阶段", AllowEmpty = true, Options = new()
+                        {
+                            new() { Value = "0", Label = "待处理" },
+                            new() { Value = "1", Label = "已粗扫" },
+                            new() { Value = "2", Label = "已精炼" },
+                            new() { Value = "3", Label = "已强制" }
+                        }},
+                        new() { Field = "classification", Label = "类型", AllowEmpty = true, Options = new()
+                        {
+                            new() { Value = "info-screenshot", Label = "截图/文档" },
+                            new() { Value = "info-photo", Label = "信息照片" },
+                            new() { Value = "share-photo", Label = "分享照片" },
+                            new() { Value = "share-art", Label = "插画/绘画" },
+                            new() { Value = "meme", Label = "梗图/meme" },
+                            new() { Value = "sticker", Label = "表情/贴纸" },
+                            new() { Value = "unknown", Label = "未知" }
+                        }}
+                    },
                     RowActions = new()
                     {
                         new() { Id = "retry-ocr", Label = "重OCR" },
@@ -331,8 +352,22 @@ internal class VisionGallerySource : IDataSource
         var offset = (page - 1) * pageSize;
         var keyword = query?.Search;
 
-        var images = await ImageStorage.GetPagedAsync(offset, pageSize, null, null, keyword);
-        var total = await ImageStorage.GetFilteredCountAsync(null, null, keyword);
+        int? phaseFilter = null;
+        string? classificationFilter = null;
+
+        if (query?.Filters != null)
+        {
+            foreach (var f in query.Filters)
+            {
+                if (f.Field == "phase" && int.TryParse(f.Value, out var p))
+                    phaseFilter = p;
+                else if (f.Field == "classification" && !string.IsNullOrEmpty(f.Value))
+                    classificationFilter = f.Value;
+            }
+        }
+
+        var images = await ImageStorage.GetPagedAsync(offset, pageSize, null, null, keyword, phaseFilter, classificationFilter);
+        var total = await ImageStorage.GetFilteredCountAsync(null, null, keyword, phaseFilter, classificationFilter);
 
         var arr = new JsonArray();
         foreach (var img in images)

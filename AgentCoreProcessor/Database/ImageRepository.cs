@@ -137,7 +137,8 @@ namespace AgentCoreProcessor.Database
 
         /// <summary>构建过滤条件的 WHERE 子句和参数，供 GetPagedAsync 和 GetFilteredCountAsync 共用。</summary>
         private (List<string> Where, List<object> Args) BuildFilterClause(
-            string? statusFilter, string? categoryFilter, string? keyword)
+            string? statusFilter, string? categoryFilter, string? keyword,
+            int? phaseFilter, string? classificationFilter)
         {
             var where = new List<string>();
             var args = new List<object>();
@@ -153,6 +154,18 @@ namespace AgentCoreProcessor.Database
                 args.Add(categoryFilter);
             }
 
+            if (phaseFilter.HasValue)
+            {
+                where.Add("Phase = ?");
+                args.Add(phaseFilter.Value);
+            }
+
+            if (!string.IsNullOrEmpty(classificationFilter))
+            {
+                where.Add("Classification = ?");
+                args.Add(classificationFilter);
+            }
+
             if (!string.IsNullOrEmpty(keyword))
             {
                 where.Add("(Description LIKE ? OR OcrText LIKE ?)");
@@ -164,9 +177,10 @@ namespace AgentCoreProcessor.Database
         }
 
         public async Task<List<ImageRecord>> GetPagedAsync(int offset, int limit,
-            string? statusFilter = null, string? categoryFilter = null, string? keyword = null)
+            string? statusFilter = null, string? categoryFilter = null, string? keyword = null,
+            int? phaseFilter = null, string? classificationFilter = null)
         {
-            var (where, args) = BuildFilterClause(statusFilter, categoryFilter, keyword);
+            var (where, args) = BuildFilterClause(statusFilter, categoryFilter, keyword, phaseFilter, classificationFilter);
 
             var sql = "SELECT * FROM ImageRecords";
             if (where.Count > 0)
@@ -179,9 +193,10 @@ namespace AgentCoreProcessor.Database
         }
 
         public async Task<int> GetFilteredCountAsync(
-            string? statusFilter = null, string? categoryFilter = null, string? keyword = null)
+            string? statusFilter = null, string? categoryFilter = null, string? keyword = null,
+            int? phaseFilter = null, string? classificationFilter = null)
         {
-            var (where, args) = BuildFilterClause(statusFilter, categoryFilter, keyword);
+            var (where, args) = BuildFilterClause(statusFilter, categoryFilter, keyword, phaseFilter, classificationFilter);
 
             var sql = "SELECT COUNT(*) AS Value FROM ImageRecords";
             if (where.Count > 0)

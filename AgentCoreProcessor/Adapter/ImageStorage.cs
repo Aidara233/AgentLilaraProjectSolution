@@ -462,18 +462,20 @@ namespace AgentCoreProcessor.Adapter
 
         /// <summary>分页查询图片（WebUI 用）。</summary>
         public static async Task<List<ImageRecord>> GetPagedAsync(int offset, int limit,
-            string? statusFilter = null, string? categoryFilter = null, string? keyword = null)
+            string? statusFilter = null, string? categoryFilter = null, string? keyword = null,
+            int? phaseFilter = null, string? classificationFilter = null)
         {
             if (_repo == null) return new List<ImageRecord>();
-            return await _repo.GetPagedAsync(offset, limit, statusFilter, categoryFilter, keyword);
+            return await _repo.GetPagedAsync(offset, limit, statusFilter, categoryFilter, keyword, phaseFilter, classificationFilter);
         }
 
         /// <summary>获取筛选后的图片总数。</summary>
         public static async Task<int> GetFilteredCountAsync(
-            string? statusFilter = null, string? categoryFilter = null, string? keyword = null)
+            string? statusFilter = null, string? categoryFilter = null, string? keyword = null,
+            int? phaseFilter = null, string? classificationFilter = null)
         {
             if (_repo == null) return 0;
-            return await _repo.GetFilteredCountAsync(statusFilter, categoryFilter, keyword);
+            return await _repo.GetFilteredCountAsync(statusFilter, categoryFilter, keyword, phaseFilter, classificationFilter);
         }
 
         /// <summary>清空所有图片的描述（触发全部重新生成）。</summary>
