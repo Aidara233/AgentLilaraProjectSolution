@@ -260,7 +260,7 @@ namespace AgentCoreProcessor.Engine.Vision
                 return;
             }
 
-            if (string.IsNullOrEmpty(output))
+            if (string.IsNullOrWhiteSpace(output))
             {
                 Interlocked.Increment(ref _visionErrors);
                 Signal.Warn(LogGroup.Engine, "Phase2(下文)空输出", new { hash = img.Hash });
@@ -362,7 +362,7 @@ namespace AgentCoreProcessor.Engine.Vision
                     }
                 }
 
-                if (string.IsNullOrEmpty(output))
+                if (string.IsNullOrWhiteSpace(output))
                 {
                     Interlocked.Increment(ref _visionErrors);
                     Signal.Warn(LogGroup.Engine, "Phase1空输出", new { hash = record.Hash });
@@ -421,7 +421,7 @@ namespace AgentCoreProcessor.Engine.Vision
                     return;
                 }
 
-                if (string.IsNullOrEmpty(output))
+                if (string.IsNullOrWhiteSpace(output))
                 {
                     Interlocked.Increment(ref _visionErrors);
                     Signal.Warn(LogGroup.Engine, $"Phase{signal.TargetPhase}空输出", new { hash = signal.Hash });
@@ -471,6 +471,8 @@ namespace AgentCoreProcessor.Engine.Vision
         private static (string Classification, string Description) ParseVisionOutput(string output)
         {
             output = output.Trim();
+            if (output.Length == 0)
+                return ("unknown", "[视觉模型返回空内容]");
 
             // 1. 尝试直接解析 JSON
             var result = TryParseJson(output);
@@ -492,7 +494,7 @@ namespace AgentCoreProcessor.Engine.Vision
                 if (result != null) return result.Value;
             }
 
-            // 4. 兜底
+            // 4. 兜底：整段文本当描述
             return ("unknown", output);
         }
 
@@ -504,7 +506,8 @@ namespace AgentCoreProcessor.Engine.Vision
                 var classification = obj["classification"]?.ToString()?.Trim() ?? "";
                 var description = obj["description"]?.ToString()?.Trim() ?? "";
                 classification = NormalizeClassification(classification);
-                if (!string.IsNullOrEmpty(description))
+                // 有分类就接受，description 可为空（后续 Phase 会补充）
+                if (!string.IsNullOrEmpty(classification) || !string.IsNullOrEmpty(description))
                     return (classification, description);
             }
             catch { }
