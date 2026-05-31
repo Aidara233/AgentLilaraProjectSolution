@@ -1263,11 +1263,13 @@ namespace AgentCoreProcessor.Engine
             if (!string.IsNullOrEmpty(contextSummary))
                 msgs.Add(new Message { Role = "user", Content = $"[上下文摘要]\n{contextSummary}" });
 
-            // 统一从 DB 拉取最近 N 条消息（两种模式共用，X 条为历史+新消息总和）
-            // Express：新消息多时自动挤掉旧历史（总量封顶 X）
-            // Working：此处拉初始上下文；后续轮次由 BuildRoundInjectAsync 强制拉全量
+            // 统一从 DB 拉取最近 N 条消息作为历史上下文
+            // 如果有持久化的旧对话（_loadedConversation），它已经是完整上下文，无需重复从 DB 拉取
             {
-                var recentMsgs = await ctx.Session.GetContextByChannelAsync(channelId, HistoryMaxMessages);
+                var hasLoadedConversation = isWorkingMode && _loadedConversation != null && _loadedConversation.Count > 0;
+                if (!hasLoadedConversation)
+                {
+                    var recentMsgs = await ctx.Session.GetContextByChannelAsync(channelId, HistoryMaxMessages);
                 if (recentMsgs.Count > 0)
                 {
                     // Express：按游标分离，已消费的为历史
@@ -1326,6 +1328,12 @@ namespace AgentCoreProcessor.Engine
 
                     // _startInjectMaxId 只覆盖实际消费的历史消息，剩余留给 BuildRoundInjectAsync 拾取
                     _startInjectMaxId = historyMsgs.Count > 0 ? historyMsgs.Max(m => m.Id) : _lastConsumedMessageId;
+                    }
+                }
+                else
+                {
+                    // 有持久化对话：_loadedConversation 已是完整上下文，游标即边界
+                    _startInjectMaxId = _lastConsumedMessageId;
                 }
             }
 
