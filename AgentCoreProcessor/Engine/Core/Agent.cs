@@ -384,7 +384,11 @@ namespace AgentCoreProcessor.Engine
                             int i = 0;
                             foreach (var prop in props.Properties())
                             {
-                                obj[prop.Name] = i < call.Inputs.Count ? call.Inputs[i] : "";
+                                var raw = i < call.Inputs.Count ? call.Inputs[i] : "";
+                                Newtonsoft.Json.Linq.JToken val;
+                                try { val = Newtonsoft.Json.Linq.JToken.Parse(raw); }
+                                catch { val = raw; }
+                                obj[prop.Name] = val;
                                 i++;
                             }
                             return obj.ToString(Newtonsoft.Json.Formatting.None);

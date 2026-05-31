@@ -82,7 +82,7 @@ namespace AgentCoreProcessor.Core
                             foreach (var (key, _) in properties)
                             {
                                 if (args.TryGetPropertyValue(key, out var val))
-                                    call.Inputs.Add(val?.ToString() ?? "");
+                                    call.Inputs.Add(val?.ToJsonString() ?? "");
                                 else
                                     call.Inputs.Add("");
                             }
@@ -91,7 +91,7 @@ namespace AgentCoreProcessor.Core
                         {
                             // 无 schema 信息时，按属性顺序填入
                             foreach (var (_, val) in args)
-                                call.Inputs.Add(val?.ToString() ?? "");
+                                call.Inputs.Add(val?.ToJsonString() ?? "");
                         }
                     }
                 }

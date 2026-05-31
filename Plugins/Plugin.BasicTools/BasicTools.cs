@@ -85,29 +85,48 @@ namespace Plugin.BasicTools
 
         private static List<string> ParseArrayInput(string raw)
         {
+            if (string.IsNullOrWhiteSpace(raw))
+                return [];
+
+            // 标准路径：JSON 字符串数组反序列化，处理所有边缘情况（非字符串元素、特殊字符等）
             try
             {
-                var parsed = JsonNode.Parse(raw) as JsonArray;
-                if (parsed == null) return [];
-                var list = new List<string>();
-                foreach (var item in parsed)
+                var list = System.Text.Json.JsonSerializer.Deserialize<List<string>>(raw);
+                if (list != null)
                 {
-                    if (item != null)
+                    list.RemoveAll(string.IsNullOrWhiteSpace);
+                    if (list.Count > 0) return list;
+                }
+            }
+            catch { }
+
+            // 兼容路径：手动解析，支持 {"content": [...]} 对象格式和单元素容错
+            try
+            {
+                var node = JsonNode.Parse(raw);
+                JsonArray? arr = null;
+                if (node is JsonArray a)
+                    arr = a;
+                else if (node is JsonObject obj && obj.TryGetPropertyValue("content", out var cv) && cv is JsonArray ca)
+                    arr = ca;
+
+                if (arr != null)
+                {
+                    var list = new List<string>();
+                    foreach (var item in arr)
                     {
+                        if (item == null) continue;
                         var s = item.GetValue<string>();
                         if (!string.IsNullOrWhiteSpace(s))
                             list.Add(s);
                     }
+                    if (list.Count > 0) return list;
                 }
-                return list;
             }
-            catch
-            {
-                // 兼容旧格式：单条字符串
-                if (!string.IsNullOrWhiteSpace(raw))
-                    return [raw];
-                return [];
-            }
+            catch { }
+
+            // 最终 fallback：单条字符串
+            return [raw];
         }
     }
 
