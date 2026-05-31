@@ -55,8 +55,12 @@ public class DownloadFileTool : ITool
         if (reject != null) return Fail(reject);
 
         // 解析保存路径
-        var fullPath = Path.GetFullPath(Path.Combine(_workspaceDir, savePath));
-        if (!fullPath.StartsWith(_workspaceDir, StringComparison.OrdinalIgnoreCase))
+        var sanitized = savePath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var fullPath = Path.GetFullPath(Path.Combine(_workspaceDir, sanitized));
+        var workspaceRootWithSep = _workspaceDir.EndsWith(Path.DirectorySeparatorChar)
+            ? _workspaceDir : _workspaceDir + Path.DirectorySeparatorChar;
+        if (!fullPath.StartsWith(workspaceRootWithSep, StringComparison.OrdinalIgnoreCase)
+            && !fullPath.Equals(_workspaceDir, StringComparison.OrdinalIgnoreCase))
             return Fail("路径不合法：不能访问Workspace目录之外");
 
         // 提取文件名

@@ -26,7 +26,8 @@ namespace FileToolKit.Shared
 
         protected string? ResolvePath(string relativePath)
         {
-            var full = Path.GetFullPath(Path.Combine(WorkspaceDir, relativePath));
+            var sanitized = relativePath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var full = Path.GetFullPath(Path.Combine(WorkspaceDir, sanitized));
             var workspaceRoot = WorkspaceDir.EndsWith(Path.DirectorySeparatorChar)
                 ? WorkspaceDir : WorkspaceDir + Path.DirectorySeparatorChar;
             return full.StartsWith(workspaceRoot, StringComparison.OrdinalIgnoreCase)

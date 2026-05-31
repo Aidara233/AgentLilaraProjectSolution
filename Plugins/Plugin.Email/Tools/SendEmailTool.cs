@@ -60,9 +60,13 @@ public class SendEmailTool : ITool
                     var trimmed = relPath.Trim();
                     if (string.IsNullOrEmpty(trimmed)) continue;
 
-                    var fullPath = Path.GetFullPath(Path.Combine(_storage.WorkspaceDirectory, trimmed));
+                    var sanitized = trimmed.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                    var fullPath = Path.GetFullPath(Path.Combine(_storage.WorkspaceDirectory, sanitized));
                     var workspaceRoot = Path.GetFullPath(_storage.WorkspaceDirectory);
-                    if (!fullPath.StartsWith(workspaceRoot, StringComparison.OrdinalIgnoreCase))
+                    var workspaceRootWithSep = workspaceRoot.EndsWith(Path.DirectorySeparatorChar)
+                        ? workspaceRoot : workspaceRoot + Path.DirectorySeparatorChar;
+                    if (!fullPath.StartsWith(workspaceRootWithSep, StringComparison.OrdinalIgnoreCase)
+                        && !fullPath.Equals(workspaceRoot, StringComparison.OrdinalIgnoreCase))
                         return new ToolResult { Status = "failed", Error = $"路径超出工作区范围: {trimmed}" };
 
                     if (!File.Exists(fullPath))

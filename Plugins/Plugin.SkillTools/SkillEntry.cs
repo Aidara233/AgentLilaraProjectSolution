@@ -50,7 +50,11 @@ public class SkillEntry
 
         // 防止目录遍历
         var fullPath = Path.GetFullPath(path);
-        if (!fullPath.StartsWith(Path.GetFullPath(DirectoryPath)))
+        var dirRoot = Path.GetFullPath(DirectoryPath);
+        var dirRootWithSep = dirRoot.EndsWith(Path.DirectorySeparatorChar)
+            ? dirRoot : dirRoot + Path.DirectorySeparatorChar;
+        if (!fullPath.StartsWith(dirRootWithSep, StringComparison.OrdinalIgnoreCase)
+            && !fullPath.Equals(dirRoot, StringComparison.OrdinalIgnoreCase))
             return null;
 
         return File.ReadAllText(fullPath);

@@ -37,9 +37,13 @@ public class DownloadAttachmentTool : ITool
         var destPath = resolvedInputs[2].Trim();
 
         // 沙箱校验
-        var fullPath = Path.GetFullPath(Path.Combine(_storage.WorkspaceDirectory, destPath));
+        var sanitized = destPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var fullPath = Path.GetFullPath(Path.Combine(_storage.WorkspaceDirectory, sanitized));
         var workspaceRoot = Path.GetFullPath(_storage.WorkspaceDirectory);
-        if (!fullPath.StartsWith(workspaceRoot, StringComparison.OrdinalIgnoreCase))
+        var workspaceRootWithSep = workspaceRoot.EndsWith(Path.DirectorySeparatorChar)
+            ? workspaceRoot : workspaceRoot + Path.DirectorySeparatorChar;
+        if (!fullPath.StartsWith(workspaceRootWithSep, StringComparison.OrdinalIgnoreCase)
+            && !fullPath.Equals(workspaceRoot, StringComparison.OrdinalIgnoreCase))
             return new ToolResult { Status = "failed", Error = "路径超出工作区范围" };
 
         // 确保父目录存在

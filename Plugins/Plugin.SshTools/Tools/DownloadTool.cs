@@ -46,7 +46,8 @@ public class DownloadTool : ITool
 
         if (string.IsNullOrEmpty(localPath))
             localPath = ".";
-        var fullLocal = Path.GetFullPath(Path.Combine(_workspaceDir, localPath));
+        var sanitized = localPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var fullLocal = Path.GetFullPath(Path.Combine(_workspaceDir, sanitized));
         var fullWorkspace = Path.GetFullPath(_workspaceDir);
         if (!fullLocal.StartsWith(fullWorkspace + Path.DirectorySeparatorChar) && fullLocal != fullWorkspace)
             return Task.FromResult(Fail($"local_path 必须在 workspace 内: {_workspaceDir}"));

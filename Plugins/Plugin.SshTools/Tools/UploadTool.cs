@@ -42,7 +42,8 @@ public class UploadTool : ITool
             return Task.FromResult(Fail("local_path 不能为空"));
 
         // 沙箱校验
-        var fullLocal = Path.GetFullPath(Path.Combine(_workspaceDir, localPath));
+        var sanitized = localPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var fullLocal = Path.GetFullPath(Path.Combine(_workspaceDir, sanitized));
         var fullWorkspace = Path.GetFullPath(_workspaceDir);
         if (!fullLocal.StartsWith(fullWorkspace + Path.DirectorySeparatorChar)
             && fullLocal != fullWorkspace)
