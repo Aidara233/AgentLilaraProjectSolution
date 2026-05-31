@@ -82,7 +82,7 @@ namespace AgentCoreProcessor.Core
                             foreach (var (key, _) in properties)
                             {
                                 if (args.TryGetPropertyValue(key, out var val))
-                                    call.Inputs.Add(val?.ToJsonString() ?? "");
+                                    call.Inputs.Add(val?.ToString() ?? "");
                                 else
                                     call.Inputs.Add("");
                             }
