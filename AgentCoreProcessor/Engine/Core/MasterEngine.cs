@@ -559,6 +559,7 @@ namespace AgentCoreProcessor.Engine
             Tool.ToolRegistry.Register(new Tool.Core.EscalateTool(), isNonComponent: true);
             Tool.ToolRegistry.Register(new Tool.Core.DeescalateTool(), isNonComponent: true);
             Tool.ToolRegistry.Register(new Tool.Core.RefineImageTool(), isNonComponent: true);
+            Tool.ToolRegistry.Register(new Tool.Core.GetImageTextTool(), isNonComponent: true);
 
             // 插件加载
             _toolContext = new Tool.Host.ToolContextImpl(new Tool.Host.PluginStorageImpl("_system"));
