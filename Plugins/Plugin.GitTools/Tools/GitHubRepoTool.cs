@@ -42,7 +42,7 @@ public class GitHubRepoTool : GitToolBase
         if (!_gh.IsConfigured) return Fail("GitHub token 未配置。请在 GitHubConfig.json 中设置 token。");
 
         var (owner, repoName) = ResolveGitHubRepo(repo);
-        if (owner == null) return Fail($"无法确定仓库 {repo} 的 GitHub owner/repo。");
+        if (owner == null || repoName == null) return Fail($"无法确定仓库 {repo} 的 GitHub owner/repo。");
 
         return action switch
         {
@@ -127,7 +127,7 @@ public class GitHubRepoTool : GitToolBase
             if (result.Success)
             {
                 var url = result.Output.Trim();
-                var match = System.Text.RegularExpressions.Regex.Match(url, @"github\.com[:/]([^/]+)/([^/]+?)(\.git)?$");
+                var match = System.Text.RegularExpressions.Regex.Match(url, @"github\.com[:/]([^/]+)/([^/]+?)(\.git)?");
                 if (match.Success) return (match.Groups[1].Value, match.Groups[2].Value);
             }
         }
