@@ -484,7 +484,7 @@ namespace AgentCoreProcessor.Engine
                     ctx.Memories, ctx.MemoryLinks);
             }
 
-            // 记录片段
+            // 记录片段 + 持久化
             var rec = new FragmentRecord
             {
                 Type = "patrol_step",
@@ -497,6 +497,7 @@ namespace AgentCoreProcessor.Engine
             };
             fragmentRecords.Add(rec);
             LastCompletedRecord = rec;
+            await PersistFragmentAsync(rec, patrol!.StepsTaken);
 
             // 三角缓冲攒够就清
             int buffered = patrol!.TriangleBuffer.Sum(kv => kv.Value.Count);
