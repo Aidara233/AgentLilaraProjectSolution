@@ -72,10 +72,8 @@ internal class DreamProvider : IWebUIProvider
                 {
                     Fields = new()
                     {
-                        new() { Field = "resources", Label = "资源池", Type = StatusFieldType.Progress },
-                        new() { Field = "tokens_used", Label = "主预算消耗", Type = StatusFieldType.Progress },
                         new() { Field = "budget_status", Label = "预算状态", Type = StatusFieldType.Badge },
-                        new() { Field = "tokens_detail", Label = "Token 详情" },
+                        new() { Field = "tokens_detail", Label = "主预算" },
                         new() { Field = "reserve", Label = "增援预算" }
                     }
                 },
@@ -304,8 +302,9 @@ internal class DreamProvider : IWebUIProvider
                         new() { Field = "deep_window", Label = "大睡窗口" },
                         new() { Field = "deep_budget", Label = "大睡Token预算" },
                         new() { Field = "deep_max_minutes", Label = "大睡时间上限" },
-                        new() { Field = "total_resources", Label = "资源池总量" },
-                        new() { Field = "resource_costs", Label = "片段资源占用" }
+                        new() { Field = "patrol_config", Label = "巡逻步数" },
+                        new() { Field = "relation_batch", Label = "关系分类配置" },
+                        new() { Field = "decay", Label = "衰减/冷启动" }
                     }
                 },
                 Layout = new CardLayout { PreferredCols = 6 }
@@ -320,11 +319,12 @@ internal class DreamProvider : IWebUIProvider
                         new() { Field = "main_budget", Label = "主预算" },
                         new() { Field = "reserve_budget", Label = "增援预算" },
                         new() { Field = "total_budget", Label = "总预算" },
-                        new() { Field = "consolidation_cost", Label = "Consolidation (资源/Token)" },
-                        new() { Field = "weight_cost", Label = "Weight (资源/Token)" },
-                        new() { Field = "link_cost", Label = "Link (资源/Token)" },
-                        new() { Field = "combine_cost", Label = "Combine (资源/Token)" },
-                        new() { Field = "dedup_cost", Label = "Dedup (资源/Token)" }
+                        new() { Field = "patrol_steps", Label = "巡逻步数(大/小/走神)" },
+                        new() { Field = "batch_targets", Label = "每轮候选上限" },
+                        new() { Field = "triangle_buffer", Label = "三角缓冲触发" },
+                        new() { Field = "decay_threshold", Label = "衰减清理阈值" },
+                        new() { Field = "embedding_topk", Label = "Embedding Top-K" },
+                        new() { Field = "cold_start_pool", Label = "冷启动池大小" }
                     }
                 },
                 Layout = new CardLayout { PreferredCols = 12 }
@@ -446,10 +446,8 @@ internal class DreamResourcesSource : IDataSource
         {
             var idle = new JsonObject
             {
-                ["resources"] = "0",
-                ["tokens_used"] = "0",
                 ["budget_status"] = "空闲",
-                ["tokens_detail"] = "—",
+                ["tokens_detail"] = "无活跃做梦",
                 ["reserve"] = "—"
             };
             return Task.FromResult(new DataResult { Data = idle });
@@ -829,11 +827,8 @@ internal class FragmentDetailSource : IDataSource
 
     private static string FragmentTypeLabel(string type) => type switch
     {
-        "Consolidation" => "整合",
-        "Weight" => "权重",
-        "Link" => "关联",
-        "Combine" => "组合",
-        "Dedup" => "去重",
+        "order" => "秩序阶段",
+        "patrol_step" => "巡逻步进",
         _ => type
     };
 
@@ -841,6 +836,10 @@ internal class FragmentDetailSource : IDataSource
     {
         return d.Action switch
         {
+            "order_link" => $"秩序建联 #{d.MemoryId}: {d.Note}",
+            "conflict_link" => $"矛盾边 #{d.MemoryId}: {d.Note}",
+            "decay" => $"衰减 #{d.MemoryId}: {d.OldValue} → {d.NewValue}" + (d.Note != null ? $" ({d.Note})" : ""),
+            "expire_delete" => $"过期删除 #{d.MemoryId}: 衰减至{d.OldValue}" + (d.Note != null ? $" ({d.Note})" : ""),
             "weight_adjust" => $"权重调整 #{d.MemoryId}: {d.OldValue} → {d.NewValue}" + (d.Note != null ? $" ({d.Note})" : ""),
             "link_create" => $"建立关联 #{d.MemoryId}: {d.Note}",
             "link_strengthen" => $"强化关联 #{d.MemoryId}: {d.OldValue} → {d.NewValue}",
