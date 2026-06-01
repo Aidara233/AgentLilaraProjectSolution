@@ -409,6 +409,7 @@ namespace AgentCoreProcessor
                     var remaining = engine.GetAliveCount();
                     Signal.Error(LogGroup.Engine, "引擎强杀", new { remaining });
                 }
+                engine.ShutdownComponentsAsync().GetAwaiter().GetResult();
             });
 
             Console.WriteLine($"[WebUI] 管理面板: http://localhost:{webConfig.Port}");

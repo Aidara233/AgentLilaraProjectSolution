@@ -488,18 +488,29 @@ namespace AgentCoreProcessor.Engine
                         {
                             var umiHost = umiJson["host"]?.ToString() ?? "127.0.0.1";
                             var umiPort = umiJson["port"]?.Value<int>() ?? 1846;
-                            var umiProvider = new UmiOcrProvider(umiHost, umiPort);
-                            var healthy = await umiProvider.HealthCheckAsync();
-                            if (healthy)
-                            {
-                                ocrProviders.Add(umiProvider);
-                                Signal.Event(LogGroup.Engine, "Umi-OCR本地提供者已就绪", new { host = umiHost, port = umiPort });
-                            }
+                            var umiAutoStart = umiJson["autoStart"]?.Value<bool>() ?? false;
+                            var umiExePath = umiJson["exePath"]?.ToString() ?? "";
+
+                            UmiOcrProvider? umiProvider;
+                            if (umiAutoStart && !string.IsNullOrEmpty(umiExePath))
+                                umiProvider = await UmiOcrProvider.CreateWithAutoStartAsync(umiExePath, umiHost, umiPort);
                             else
                             {
-                                Signal.Warn(LogGroup.Engine, "Umi-OCR未响应，请确认Umi-OCR.exe正在运行",
+                                umiProvider = new UmiOcrProvider(umiHost, umiPort);
+                                if (!await umiProvider.HealthCheckAsync())
+                                {
+                                    Signal.Warn(LogGroup.Engine, "Umi-OCR未响应，请确认Umi-OCR.exe正在运行",
+                                        new { host = umiHost, port = umiPort });
+                                    umiProvider.Dispose();
+                                    umiProvider = null;
+                                }
+                            }
+
+                            if (umiProvider != null)
+                            {
+                                ocrProviders.Add(umiProvider);
+                                Signal.Event(LogGroup.Engine, "Umi-OCR本地提供者已就绪",
                                     new { host = umiHost, port = umiPort });
-                                umiProvider.Dispose();
                             }
                         }
                     }
@@ -905,13 +916,14 @@ namespace AgentCoreProcessor.Engine
             }
         }
 
-        /// <summary>关闭 GlobalComponentHost（由外部调用或 Dispose 时）。</summary>
+        /// <summary>关闭 GlobalComponentHost 和 OCR 提供者（由外部调用或 Dispose 时）。</summary>
         public async Task ShutdownComponentsAsync()
         {
             if (globalComponentHost != null)
             {
                 await globalComponentHost.ShutdownAsync(ShutdownReason.Destroy);
             }
+            (ocrProvider as IDisposable)?.Dispose();
         }
     }
 }

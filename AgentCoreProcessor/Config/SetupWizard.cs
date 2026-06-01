@@ -72,6 +72,8 @@ namespace AgentCoreProcessor.Config
             var umiEnabled = umiEnable != "n" && umiEnable != "no";
             var umiHost = "127.0.0.1";
             var umiPort = 1846;
+            var umiAutoStart = false;
+            var umiExePath = "";
             if (umiEnabled)
             {
                 Console.Write($"   地址 [{umiHost}]: ");
@@ -80,6 +82,16 @@ namespace AgentCoreProcessor.Config
                 Console.Write($"   端口 [{umiPort}]: ");
                 var p = Console.ReadLine()?.Trim();
                 if (!string.IsNullOrEmpty(p) && int.TryParse(p, out var port)) umiPort = port;
+                Console.Write("   自动启动? (y/N): ");
+                var auto = Console.ReadLine()?.Trim().ToLowerInvariant();
+                umiAutoStart = auto == "y" || auto == "yes";
+                if (umiAutoStart)
+                {
+                    var defaultExe = @"E:\Tool\Umi-OCR_Paddle_v2.1.4\Umi-OCR.exe";
+                    Console.Write($"   Umi-OCR.exe 路径 [{defaultExe}]: ");
+                    var path = Console.ReadLine()?.Trim();
+                    umiExePath = string.IsNullOrEmpty(path) ? defaultExe : path;
+                }
             }
             Console.WriteLine();
 
@@ -93,7 +105,7 @@ namespace AgentCoreProcessor.Config
             Console.WriteLine($"   Embedding: {(embedding.Enabled ? "启用" : "禁用")}  {(embedding.Enabled ? $"{embedding.Model} @ {embedding.Endpoint}" : "")}");
             Console.WriteLine($"   Vision   : {(vision.Enabled ? "启用" : "禁用")}  {(vision.Enabled ? $"{vision.Model} @ {vision.Endpoint}" : "")}");
             Console.WriteLine($"   OCR(远程): {(ocr.Enabled ? "启用" : "禁用")}  {(ocr.Enabled ? $"{ocr.Model} @ {ocr.Endpoint}" : "")}");
-            Console.WriteLine($"   OCR(本地): {(umiEnabled ? $"启用  {umiHost}:{umiPort}" : "禁用")}");
+            Console.WriteLine($"   OCR(本地): {(umiEnabled ? $"启用  {umiHost}:{umiPort}" + (umiAutoStart ? " (自动启动)" : "") : "禁用")}");
             Console.WriteLine("------------------------------------------------------------");
             Console.Write(" 确认写入? (Y/n): ");
             var confirm = Console.ReadLine()?.Trim().ToLowerInvariant();
@@ -133,6 +145,8 @@ namespace AgentCoreProcessor.Config
                 ["UMI_OCR_ENABLED"] = umiEnabled ? "true" : "false",
                 ["UMI_OCR_HOST"] = umiHost,
                 ["UMI_OCR_PORT"] = umiPort.ToString(),
+                ["UMI_OCR_AUTO_START"] = umiAutoStart ? "true" : "false",
+                ["UMI_OCR_EXE_PATH"] = umiExePath,
             };
 
             // Release templates

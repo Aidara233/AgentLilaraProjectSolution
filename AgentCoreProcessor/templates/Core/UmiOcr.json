@@ -1,5 +1,7 @@
 {
   "enabled": {{UMI_OCR_ENABLED}},
   "host": "{{UMI_OCR_HOST}}",
-  "port": {{UMI_OCR_PORT}}
+  "port": {{UMI_OCR_PORT}},
+  "autoStart": {{UMI_OCR_AUTO_START}},
+  "exePath": "{{UMI_OCR_EXE_PATH}}"
 }

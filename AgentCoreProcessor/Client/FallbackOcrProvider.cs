@@ -9,7 +9,7 @@ namespace AgentCoreProcessor.Client
     /// 按优先级依次尝试多个 IOcrProvider，首次成功即返回。
     /// 所有提供者都失败时返回空结果。
     /// </summary>
-    internal class FallbackOcrProvider : IOcrProvider
+    internal class FallbackOcrProvider : IOcrProvider, IDisposable
     {
         private readonly List<IOcrProvider> _providers;
 
@@ -45,6 +45,12 @@ namespace AgentCoreProcessor.Client
 
             Signal.Warn(LogGroup.Engine, "所有OCR提供者均失败");
             return new OcrResult { HasText = false, Text = null };
+        }
+
+        public void Dispose()
+        {
+            foreach (var p in _providers)
+                (p as IDisposable)?.Dispose();
         }
     }
 }
