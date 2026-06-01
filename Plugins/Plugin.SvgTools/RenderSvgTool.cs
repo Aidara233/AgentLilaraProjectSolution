@@ -1,7 +1,7 @@
-using System.Drawing.Imaging;
 using System.Text;
 using AgentLilara.PluginSDK;
-using Svg;
+using SkiaSharp;
+using Svg.Skia;
 
 namespace Plugin.SvgTools;
 
@@ -36,28 +36,35 @@ public class RenderSvgTool : ITool
         try
         {
             using var svgStream = new MemoryStream(Encoding.UTF8.GetBytes(svgCode));
-            var svgDoc = SvgDocument.Open<SvgDocument>(svgStream);
+            var svg = new SKSvg();
+            svg.Load(svgStream);
             ct.ThrowIfCancellationRequested();
 
-            // 兜底：无尺寸时设默认值
-            if (svgDoc.Width.IsEmpty || svgDoc.Width.Value <= 0)
-                svgDoc.Width = 800;
-            if (svgDoc.Height.IsEmpty || svgDoc.Height.Value <= 0)
-                svgDoc.Height = 600;
+            if (svg.Picture == null)
+                return Task.FromResult(new ToolResult { Status = "failed", Error = "SVG 解析失败：无法渲染" });
 
-            var width = (int)svgDoc.Width.Value;
-            var height = (int)svgDoc.Height.Value;
+            var width = (int)Math.Ceiling(svg.Picture.CullRect.Width);
+            var height = (int)Math.Ceiling(svg.Picture.CullRect.Height);
 
+            if (width <= 0 || height <= 0)
+                return Task.FromResult(new ToolResult { Status = "failed", Error = $"SVG 尺寸无效：{width}x{height}" });
+
+            using var bitmap = new SKBitmap(width, height);
+            using var canvas = new SKCanvas(bitmap);
+            canvas.Clear(SKColors.Transparent);
+            canvas.DrawPicture(svg.Picture);
+            canvas.Flush();
             ct.ThrowIfCancellationRequested();
 
-            using var bitmap = svgDoc.Draw();
+            using var image = SKImage.FromBitmap(bitmap);
+            using var data = image.Encode(SKEncodedImageFormat.Png, 100);
             ct.ThrowIfCancellationRequested();
 
             var workspaceDir = _storage.WorkspaceDirectory;
             Directory.CreateDirectory(workspaceDir);
             var outputPath = Path.Combine(workspaceDir, $"{filename}.png");
             using var fileStream = File.Create(outputPath);
-            bitmap.Save(fileStream, ImageFormat.Png);
+            data.SaveTo(fileStream);
 
             return Task.FromResult(new ToolResult
             {
@@ -72,10 +79,6 @@ public class RenderSvgTool : ITool
         catch (OperationCanceledException)
         {
             return Task.FromResult(new ToolResult { Status = "cancelled", Error = "渲染已取消" });
-        }
-        catch (SvgException ex)
-        {
-            return Task.FromResult(new ToolResult { Status = "failed", Error = $"SVG 解析失败：{ex.Message}" });
         }
         catch (Exception ex)
         {

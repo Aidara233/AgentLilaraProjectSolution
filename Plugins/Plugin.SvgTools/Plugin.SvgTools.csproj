@@ -12,17 +12,21 @@
     <ProjectReference Include="..\..\AgentLilara.PluginSDK\AgentLilara.PluginSDK.csproj">
       <Private>false</Private>
     </ProjectReference>
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Svg" Version="3.4.7" />
+    <PackageReference Include="Svg.Skia" Version="5.0.0" />
   </ItemGroup>
 
   <Target Name="CopyToHostPlugins" AfterTargets="Build" Condition=" '$(SolutionDir)' != '' And '$(SolutionDir)' != '*Undefined*' ">
+    <!-- 托管 DLL（排除 SDK 和宿主已提供的 SkiaSharp） -->
     <ItemGroup>
-      <PluginDlls Include="$(OutputPath)*.dll" Exclude="$(OutputPath)AgentLilara.PluginSDK.dll" />
+      <PluginDlls Include="$(OutputPath)*.dll" Exclude="$(OutputPath)AgentLilara.PluginSDK.dll;$(OutputPath)SkiaSharp.dll" />
     </ItemGroup>
-    <Copy SourceFiles="@(PluginDlls)" DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(PluginDlls)"
+          DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\"
+          SkipUnchangedFiles="true" />
+    <!-- 只复制 HarfBuzzSharp native DLL（libSkiaSharp 宿主已提供） -->
+    <Copy SourceFiles="$(OutputPath)runtimes\win-x64\native\libHarfBuzzSharp.dll"
+          DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\"
+          SkipUnchangedFiles="true" />
   </Target>
 
 </Project>
