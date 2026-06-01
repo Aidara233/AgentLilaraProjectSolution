@@ -262,7 +262,7 @@ Task UpdateAsync(int id, string newContent);      // 自动重算 embedding
 
 // ===== 关联图 =====
 Task<List<MemoryEntry>> GetLinkedAsync(int memoryId);
-Task LinkAsync(int fromId, int toId, float strength = 1.0f);
+Task LinkAsync(int fromId, int toId, float relevance = 1.0f, float support = 1.0f, string linkType = "semantic");
 Task UnlinkAsync(int fromId, int toId);
 
 // ===== 向量操作 =====
@@ -284,7 +284,8 @@ Task DeleteTempAsync(int id);
 ```csharp
 class MemoryEntry {
     int Id; string Content; string? Type; string? Subject;
-    int? PersonId; int? ChannelId; float Importance; string? Confidence;
+    int? PersonId; int? ChannelId; float Importance; float Certainty;
+    int RecallCount; DateTime? LastRecalledAt; bool IsSuperseded;
     bool IsPersistent; DateTime CreatedAt; DateTime? ExpiresAt; float Score;
 }
 class TempMemoryEntry {
@@ -293,7 +294,7 @@ class TempMemoryEntry {
 }
 class MemoryWriteRequest {
     string Content; string? Type; string? Subject; int? PersonId;
-    int? ChannelId; float Importance; string Confidence; bool IsPersistent;
+    int? ChannelId; float Importance; float Certainty; bool IsPersistent;
     DateTime? ExpiresAt;
 }
 class TempMemoryWriteRequest {

@@ -387,7 +387,8 @@ ReviewEngine (由DreamEngine孵化，不注册SpawnCheck):
 	去重: Dedup片段 → 关联MemoryLink 1-hop集群 → DedupCore模型判断merge/discard → 清理重复+重定向关联
 	过期清理: 每次做梦RunAsync入口执行，DELETE IsPersistent=0 AND Expired + 孤立MemoryLink（纯SQL，无模型消耗）
 标记: ReviewHint表 (工作时标记 → 复盘时消费)
-低置信: Confidence(high/low) + Feedback(positive/negative)，低置信记忆标注"不太确定"
+双轴模型: Importance(0.0-1.0，半衰期衰减) + Certainty(0.0-1.0，仅证据可改变) + RecallCount/LastRecalledAt(命中追踪)
+关联边: Relevance(关联性) + Support(-1~+1，负值=矛盾)，矛盾边不删节点只降确定性
 ```
 
 12张表: Person / User / Channel / UserMessage / MemoryEntry / TempMemoryEntry / MemoryLink / PersonaMemoryEntry / ReviewHint / ImageRecord / EvaluationScore / (Topics 保留但不再使用)
