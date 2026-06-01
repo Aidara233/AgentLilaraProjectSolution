@@ -16,8 +16,16 @@
   </ItemGroup>
 
   <Target Name="CopyToHostPlugins" AfterTargets="Build" Condition=" '$(SolutionDir)' != '' And '$(SolutionDir)' != '*Undefined*' ">
-    <Copy SourceFiles="$(OutputPath)Plugin.SvgTools.dll"
-          DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\" />
+    <ItemGroup>
+      <PluginDlls Include="$(OutputPath)Plugin.SvgTools.dll" />
+      <PluginDlls Include="$(OutputPath)Svg.Skia.dll" />
+      <PluginDlls Include="$(OutputPath)Svg.Model.dll" />
+      <PluginDlls Include="$(OutputPath)Svg.Custom.dll" />
+      <PluginDlls Include="$(OutputPath)ShimSkiaSharp.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(PluginDlls)"
+          DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\"
+          SkipUnchangedFiles="true" />
   </Target>
 
 </Project>
