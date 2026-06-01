@@ -12,12 +12,15 @@
     <ProjectReference Include="..\..\AgentLilara.PluginSDK\AgentLilara.PluginSDK.csproj">
       <Private>false</Private>
     </ProjectReference>
-    <PackageReference Include="Svg.Skia" Version="5.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Svg" Version="3.4.7" />
   </ItemGroup>
 
   <Target Name="CopyToHostPlugins" AfterTargets="Build" Condition=" '$(SolutionDir)' != '' And '$(SolutionDir)' != '*Undefined*' ">
     <ItemGroup>
-      <PluginDlls Include="$(OutputPath)*.dll" Exclude="$(OutputPath)AgentLilara.PluginSDK.dll;$(OutputPath)SkiaSharp.dll;$(OutputPath)SkiaSharp.NativeAssets.*.dll" />
+      <PluginDlls Include="$(OutputPath)*.dll" Exclude="$(OutputPath)AgentLilara.PluginSDK.dll" />
     </ItemGroup>
     <Copy SourceFiles="@(PluginDlls)" DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\" SkipUnchangedFiles="true" />
   </Target>
