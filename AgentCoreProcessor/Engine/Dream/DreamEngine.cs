@@ -343,8 +343,15 @@ namespace AgentCoreProcessor.Engine
                 {
                     // 死胡同，重新冷启动
                     next = await SelectColdStartNode();
-                    if (next == null || patrol.Visited.Contains(next.Id))
-                        break; // 所有节点都走完了
+                    // 都走过一轮 → 选最久未访问的继续
+                    if (next == null)
+                    {
+                        var allRecent = await ctx.Memories.GetRecentAsync(1000);
+                        next = allRecent
+                            .OrderBy(m => m.LastDreamTime ?? DateTime.MinValue)
+                            .FirstOrDefault();
+                    }
+                    if (next == null) break;
                 }
 
                 current = next;
@@ -429,10 +436,10 @@ namespace AgentCoreProcessor.Engine
 
                     if (cos >= cfg.TriangleClassifyMinCos)
                     {
-                        // 加入 LLM 缓冲
-                        if (!patrol!.TriangleBuffer.ContainsKey(node.Id))
-                            patrol.TriangleBuffer[node.Id] = new();
-                        patrol.TriangleBuffer[node.Id].Add((neighbors[j].Id, cos));
+                        // 加入 LLM 缓冲：中心是 neighbor[i]，目标是 neighbor[j]
+                        if (!patrol!.TriangleBuffer.ContainsKey(neighbors[i].Id))
+                            patrol.TriangleBuffer[neighbors[i].Id] = new();
+                        patrol.TriangleBuffer[neighbors[i].Id].Add((neighbors[j].Id, cos));
                     }
                 }
             }
