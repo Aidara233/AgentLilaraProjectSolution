@@ -13,7 +13,7 @@ public class RenderSvgTool : ITool
     public RenderSvgTool(IPluginStorage storage) => _storage = storage;
 
     public string Name => "render_svg";
-    public string Description => "将 SVG 代码渲染为 PNG 图片并保存到 workspace。输入完整的 SVG 源码，返回渲染后的图片。";
+    public string Description => "将 SVG 代码渲染为 PNG 图片并保存到 workspace。输入完整的 SVG 源码。";
     public IReadOnlyList<ToolParameter> Parameters => new[]
     {
         new ToolParameter("svg_code", "完整的 SVG 源代码", 0),
@@ -62,18 +62,15 @@ public class RenderSvgTool : ITool
 
             var workspaceDir = _storage.WorkspaceDirectory;
             Directory.CreateDirectory(workspaceDir);
-            var outputPath = Path.Combine(workspaceDir, $"{filename}.png");
+            var outputName = $"{filename}.png";
+            var outputPath = Path.Combine(workspaceDir, outputName);
             using var fileStream = File.Create(outputPath);
             data.SaveTo(fileStream);
 
             return Task.FromResult(new ToolResult
             {
                 Status = "success",
-                Data = $"SVG 已渲染为图片 ({width}x{height})，保存到 workspace/{filename}.png，图片紧随其后",
-                Attachments = new List<ContentAttachment>
-                {
-                    new() { Type = "image", FilePath = outputPath }
-                }
+                Data = $"SVG 已渲染为图片 ({width}x{height})，保存到 {outputName}"
             });
         }
         catch (OperationCanceledException)
