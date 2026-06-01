@@ -97,7 +97,6 @@ namespace AgentCoreProcessor.Engine
             var startTime = DateTime.Now;
 
             var cfg = spawnCheck.GetConfig();
-            int executed = 0;
             int patrolBudget = level switch
             {
                 SleepLevel.Daydream => cfg.DaydreamPatrolSteps,
@@ -118,17 +117,17 @@ namespace AgentCoreProcessor.Engine
 
         finish:
             if (shouldWake)
-                Signal.Event(LogGroup.Engine, "做梦被唤醒", new { fragments = executed });
+                Signal.Event(LogGroup.Engine, "做梦被唤醒", new { steps = StepsCompleted });
 
-            int processed = level == SleepLevel.DeepSleep ? executed : 0;
+            int processed = level == SleepLevel.DeepSleep ? StepsCompleted : 0;
             spawnCheck.OnDreamCompleted(level, processed);
 
-            await PersistSessionAsync(startTime, executed);
+            await PersistSessionAsync(startTime, StepsCompleted);
 
             ctx.CurrentSleepState = SleepState.None;
             IsAlive = false;
 
-            lifeCtx.Close(new { engineType = EngineType, reason = "completed", fragments = executed });
+            lifeCtx.Close(new { engineType = EngineType, reason = "completed", steps = StepsCompleted, phase = CurrentPhase ?? "none" });
         }
 
         // ============================================================
