@@ -14,7 +14,7 @@ public class ReviewGetPersonTool : ITool
     public string Description => "查询人物详情（信任等级/维度分数/称呼/快速记忆/关联账号）。当你在消息中注意到某个人物并想了解更多时使用。不要仅凭单条消息下结论。";
     public IReadOnlyList<ToolParameter> Parameters =>
     [
-        new("person_id", "人物ID", 0)
+        new("person_id", "内部人物ID（见参与者列表 person_id）", 0)
     ];
     public TimeSpan Timeout => TimeSpan.FromSeconds(10);
 

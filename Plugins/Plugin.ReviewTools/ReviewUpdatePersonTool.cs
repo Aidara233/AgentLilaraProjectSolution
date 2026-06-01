@@ -19,7 +19,7 @@ public class ReviewUpdatePersonTool : ITool
     public string Description => "更新人物基础信息（称呼/别称/快速记忆）。更新前请先 review_get_person 了解当前状态，确认有实质变化再修改。评价请用 review_evaluate。";
     public IReadOnlyList<ToolParameter> Parameters =>
     [
-        new("person_id", "人物ID", 0),
+        new("person_id", "内部人物ID（见参与者列表 person_id）", 0),
         new("name", "新称呼（留空不改）", 1, false),
         new("aliases", "别称（逗号分隔，留空不改）", 2, false),
         new("fast_memory", "快速记忆（一句话概括，留空不改）", 3, false)

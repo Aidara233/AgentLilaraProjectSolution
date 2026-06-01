@@ -22,7 +22,7 @@ public class RecallTool : ITool
 
     public IReadOnlyList<ToolParameter> Parameters =>
     [
-        new("message_id", "要撤回的消息ID", 0)
+        new("message_id", "要撤回的消息ID（消息中的 id，即平台消息ID）", 0)
     ];
 
     public TimeSpan Timeout => TimeSpan.FromSeconds(5);

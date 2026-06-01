@@ -15,7 +15,7 @@ public class ReviewEvaluateTool : ITool
     public IReadOnlyList<ToolParameter> Parameters =>
     [
         new("target_type", "目标类型: person 或 channel", 0),
-        new("target_id", "目标ID", 1),
+        new("target_id", "内部ID（person_id 或 channel_id，见上下文）", 1),
         new("dimension", "维度: reliability/respect/value/stability（人物）或 value（频道）", 2),
         new("rating", "评价: ++/+/0/-/--", 3)
     ];

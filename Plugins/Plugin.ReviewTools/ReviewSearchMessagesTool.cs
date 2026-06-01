@@ -15,8 +15,8 @@ public class ReviewSearchMessagesTool : ITool
     public IReadOnlyList<ToolParameter> Parameters =>
     [
         new("query", "搜索关键词", 0),
-        new("channel_id", "限定频道ID", 1, false),
-        new("person_id", "限定人物ID", 2, false),
+        new("channel_id", "内部频道ID（频道信息中的 频道ID）", 1, false),
+        new("person_id", "内部人物ID（见参与者列表 person_id）", 2, false),
         new("time_start", "起始时间（yyyy-MM-dd）", 3, false),
         new("time_end", "结束时间（yyyy-MM-dd）", 4, false)
     ];

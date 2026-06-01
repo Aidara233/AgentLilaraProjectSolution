@@ -20,8 +20,8 @@ public class MemorySearchTool : ITool
     [
         new("query", "搜索关键词", 0),
         new("scope", "（可选）搜索范围：main / temp / both，默认 main", 1, false),
-        new("person_id", "（可选）按人物 ID 过滤", 2, false),
-        new("channel_id", "（可选）按频道 ID 过滤", 3, false),
+        new("person_id", "（可选）内部人物ID（见参与者列表 person_id）", 2, false),
+        new("channel_id", "（可选）内部频道ID（见频道信息 频道ID）", 3, false),
         new("limit", "（可选）最大返回条数，默认 10", 4, false)
     ];
     public TimeSpan Timeout => TimeSpan.FromSeconds(30);

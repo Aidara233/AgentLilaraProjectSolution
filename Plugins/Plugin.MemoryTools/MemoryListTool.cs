@@ -17,8 +17,8 @@ public class MemoryListTool : ITool
     public string Description => "条件筛选和分页浏览主记忆库。所有参数均可选，不传则不限制。";
     public IReadOnlyList<ToolParameter> Parameters =>
     [
-        new("person_id", "（可选）按人物 ID 过滤", 0, false),
-        new("channel_id", "（可选）按频道 ID 过滤", 1, false),
+        new("person_id", "（可选）内部人物ID（见参与者列表 person_id）", 0, false),
+        new("channel_id", "（可选）内部频道ID（见频道信息 频道ID）", 1, false),
         new("type", "（可选）按类型过滤：knowledge / fact / feedback / inference / event", 2, false),
         new("subject", "（可选）按主题标签过滤", 3, false),
         new("keyword", "（可选）内容关键词模糊匹配", 4, false),

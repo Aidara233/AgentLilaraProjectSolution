@@ -14,9 +14,9 @@ public class ReviewFocusTool : ITool
     public string Description => "移动阅读游标。使用 offset 时建议偏大（如 -30 ~ -50），多读几条无关消息的代价远小于错过关键上下文。";
     public IReadOnlyList<ToolParameter> Parameters =>
     [
-        new("message_id", "跳到指定消息ID", 0, false),
+        new("message_id", "数据库消息ID（消息中的 db_id，非平台 id）", 0, false),
         new("offset", "相对 message_id 偏移（负值=往前）", 1, false),
-        new("channel_id", "跳到该频道最新位置（无 message_id 时使用）", 2, false)
+        new("channel_id", "内部频道ID（频道信息中的 频道ID）", 2, false)
     ];
     public TimeSpan Timeout => TimeSpan.FromSeconds(10);
 

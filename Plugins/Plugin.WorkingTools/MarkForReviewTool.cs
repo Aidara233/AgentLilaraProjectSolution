@@ -18,8 +18,8 @@ public class MarkForReviewTool : ITool
     public IReadOnlyList<ToolParameter> Parameters =>
     [
         new("reason", "标记原因（为什么值得复盘关注）", 0),
-        new("channel_id", "频道ID（当前频道）", 1, false),
-        new("person_id", "相关人物ID", 2, false)
+        new("channel_id", "内部频道ID（见频道信息 频道ID）", 1, false),
+        new("person_id", "内部人物ID（见参与者列表 person_id）", 2, false)
     ];
     public TimeSpan Timeout => TimeSpan.FromSeconds(10);
 
