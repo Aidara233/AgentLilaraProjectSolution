@@ -14,7 +14,7 @@ namespace Plugin.FileTools
         public ReadTextTool(string workspaceDir) : base(workspaceDir) { }
 
         public override string Name => "read_text";
-        public override string Description => "读取文本文件内容。路径相对于 Workspace 目录，只能访问该目录内的文件。支持指定行范围。";
+        public override string Description => "读取文本文件内容。路径相对于 Workspace 目录，只能访问该目录内的文件。支持指定行范围。建议先用 grep_files 定位到具体行号，再用本工具按行号范围读取，避免全量加载大文件。";
         public override IReadOnlyList<ToolParameter> Parameters =>
         [
             new("path", "文件路径（相对于 Workspace 目录）", 0),
@@ -41,20 +41,55 @@ namespace Plugin.FileTools
 
             try
             {
-                var lines = File.ReadAllLines(fullPath);
-                int start = 1, end = lines.Length;
+                int start = 1, end = int.MaxValue;
+                bool hasRange = false;
+                if (int.TryParse(startStr, out var s) && s >= 1) { start = s; hasRange = true; }
+                if (int.TryParse(endStr, out var e) && e >= 1) { end = e; hasRange = true; }
 
-                if (int.TryParse(startStr, out var s) && s >= 1) start = s;
-                if (int.TryParse(endStr, out var e) && e >= 1) end = Math.Min(e, lines.Length);
-                if (start > lines.Length) return Ok($"(文件共 {lines.Length} 行，起始行超出范围)");
+                var sb = new System.Text.StringBuilder();
 
-                var selected = lines[(start - 1)..end];
-                var result = string.Join("\n", selected);
+                if (hasRange)
+                {
+                    using var reader = new StreamReader(fullPath);
+                    string? line;
+                    int lineNum = 0;
+                    while ((line = reader.ReadLine()) != null && lineNum < end)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        lineNum++;
+                        if (lineNum < start) continue;
+                        if (sb.Length > 0) sb.Append('\n');
+                        sb.Append(line);
+                    }
 
-                if (result.Length > 8000)
-                    result = result[..8000] + $"\n... (截断，文件共 {lines.Length} 行)";
+                    if (start > lineNum)
+                        return Ok($"(文件行数不足，起始行 {start} 超出当前行数 {lineNum})");
 
-                return Ok($"[{path}] 行 {start}-{end}/{lines.Length}\n{result}");
+                    var result = sb.ToString();
+                    if (result.Length > 8000)
+                        result = result[..8000] + $"\n... (截断)";
+
+                    return Ok($"[{path}] 行 {start}-{Math.Min(end, lineNum)}\n{result}");
+                }
+                else
+                {
+                    using var reader = new StreamReader(fullPath);
+                    string? line;
+                    int totalLines = 0;
+                    while ((line = reader.ReadLine()) != null)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        totalLines++;
+                        if (sb.Length > 0) sb.Append('\n');
+                        sb.Append(line);
+                    }
+
+                    var result = sb.ToString();
+                    if (result.Length > 8000)
+                        result = result[..8000] + $"\n... (截断，文件共 {totalLines} 行)";
+
+                    return Ok($"[{path}] 共 {totalLines} 行\n{result}");
+                }
             }
             catch (Exception ex)
             {

@@ -76,7 +76,7 @@ namespace Plugin.FileOps
         public GrepFilesTool(string workspaceDir) : base(workspaceDir) { }
 
         public override string Name => "grep_files";
-        public override string Description => "在目录中搜索文件内容（支持正则）。最多返回 30 条匹配，每条截断到 500 字符。";
+        public override string Description => "在目录中搜索文件内容（支持正则），返回匹配行的文件路径和行号。最多返回 30 条，每条截断到 500 字符。建议先用本工具定位到具体文件和行号，再用 read_text 按行号范围读取上下文。";
         public override IReadOnlyList<ToolParameter> Parameters =>
         [
             new("pattern", "搜索模式（正则表达式）", 0),
@@ -129,15 +129,19 @@ namespace Plugin.FileOps
 
                     try
                     {
-                        var lines = File.ReadAllLines(file);
-                        for (int i = 0; i < lines.Length && totalCount < maxResults; i++)
+                        using var reader = new StreamReader(file);
+                        string? line;
+                        int lineNum = 0;
+                        while ((line = reader.ReadLine()) != null && totalCount < maxResults)
                         {
-                            var match = regex.Match(lines[i]);
+                            ct.ThrowIfCancellationRequested();
+                            lineNum++;
+                            var match = regex.Match(line);
                             if (match.Success)
                             {
                                 var relative = Path.GetRelativePath(WorkspaceDir, file);
-                                var line = lines[i].Length > 500 ? lines[i][..500] + "..." : lines[i];
-                                sb.AppendLine($"{relative}:{i + 1}: {line}");
+                                var display = line.Length > 500 ? line[..500] + "..." : line;
+                                sb.AppendLine($"{relative}:{lineNum}: {display}");
                                 totalCount++;
                             }
                         }
