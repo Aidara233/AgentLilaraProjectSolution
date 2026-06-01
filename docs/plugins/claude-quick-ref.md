@@ -44,7 +44,8 @@
 | **Plugin.WebSearch** | 网页搜索 |
 | **Plugin.DicePool** | 骰子 |
 | **Plugin.ExternalDice** | 外部骰子 |
-| **Plugin.ImageTools** | 图片处理 |
+| **Plugin.ImageTools** | 图片读取与OCR |
+| **Plugin.SvgTools** | SVG 渲染（render_svg） |
 | **Plugin.DocumentTools** | 文档处理 |
 | **Plugin.GroupFileTools** | 分组文件操作 |
 | **Plugin.QuickActions** | 快捷操作 |
