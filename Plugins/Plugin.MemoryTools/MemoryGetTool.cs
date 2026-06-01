@@ -46,7 +46,7 @@ public class MemoryGetTool : ITool
             $"人物ID: {entry.PersonId?.ToString() ?? "无"}\n" +
             $"频道ID: {entry.ChannelId?.ToString() ?? "无"}\n" +
             $"重要性: {entry.Importance:F2}\n" +
-            $"可信度: {entry.Confidence ?? "无"}\n" +
+            $"确定性: {entry.Certainty:F2}\n" +
             $"持久化: {entry.IsPersistent}\n" +
             $"创建时间: {entry.CreatedAt:O}\n" +
             $"过期时间: {expires}");

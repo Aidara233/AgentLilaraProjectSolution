@@ -14,7 +14,7 @@ public class MemoryLinkGetTool : ITool
     private readonly IMemoryAccess? memory;
 
     public string Name => "memory_link_get";
-    public string Description => "查询与指定记忆关联的所有记忆，包含关联强度、类型、建立时间等元数据。";
+    public string Description => "查询与指定记忆关联的所有记忆，包含关联性、类型、建立时间等元数据。";
     public IReadOnlyList<ToolParameter> Parameters =>
     [
         new("memory_id", "记忆 ID", 0)
@@ -42,7 +42,7 @@ public class MemoryLinkGetTool : ITool
         sb.AppendLine($"记忆 ID:{memoryId} 的关联 ({links.Count} 条):");
         foreach (var l in links)
         {
-            sb.AppendLine($"[{l.MemoryId}] (strength={l.Strength:F2}, type={l.LinkType}, linked={l.LinkedAt:yyyy-MM-dd HH:mm}) {l.Content}");
+            sb.AppendLine($"[{l.MemoryId}] (relevance={l.Relevance:F2}, type={l.LinkType}, linked={l.LinkedAt:yyyy-MM-dd HH:mm}) {l.Content}");
             if (l.Subject != null) sb.AppendLine($"    subject: {l.Subject}");
         }
         return Ok(sb.ToString().TrimEnd());

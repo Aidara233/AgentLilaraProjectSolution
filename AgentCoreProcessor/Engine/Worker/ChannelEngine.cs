@@ -2070,7 +2070,7 @@ namespace AgentCoreProcessor.Engine
                 var sb = new StringBuilder("[记忆参考]\n");
                 foreach (var m in items)
                 {
-                    if (m.Confidence == "low")
+                    if (m.Certainty < 0.5f)
                         sb.AppendLine($"- {m.Content}（不太确定）");
                     else
                         sb.AppendLine($"- {m.Content}");
@@ -2079,7 +2079,7 @@ namespace AgentCoreProcessor.Engine
                 {
                     result = "ok",
                     count = items.Count,
-                    memories = items.Select(m => new { m.Content, m.Confidence, m.Score })
+                    memories = items.Select(m => new { m.Content, m.Certainty, m.Score })
                 });
                 return sb.ToString().TrimEnd();
             }

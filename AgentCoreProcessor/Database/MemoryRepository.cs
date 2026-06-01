@@ -70,7 +70,7 @@ namespace AgentCoreProcessor.Database
         public async Task<MemoryEntry> CreateAsync(
             string content, byte[]? embedding,
             int? personId = null, int? channelId = null,
-            int? sourceMessageId = null, float importance = 0.5f, string confidence = "high",
+            int? sourceMessageId = null, float importance = 0.5f, float certainty = 1.0f,
             string type = MemoryType.Fact, string? subject = null)
         {
             var memory = new MemoryEntry
@@ -80,7 +80,7 @@ namespace AgentCoreProcessor.Database
                 Content = content,
                 Embedding = embedding,
                 Importance = importance,
-                Confidence = confidence,
+                Certainty = certainty,
                 Type = type,
                 Subject = subject,
                 SourceMessageId = sourceMessageId,
@@ -149,7 +149,7 @@ namespace AgentCoreProcessor.Database
             string content, byte[]? embedding,
             string sourceMemoryIds, string sourceHash,
             int? personId = null, int? channelId = null,
-            float importance = 0.5f)
+            float importance = 0.5f, float certainty = 0.7f)
         {
             var memory = new MemoryEntry
             {
@@ -158,6 +158,7 @@ namespace AgentCoreProcessor.Database
                 Content = content,
                 Embedding = embedding,
                 Importance = importance,
+                Certainty = certainty,
                 IsDerived = true,
                 SourceMemoryIds = sourceMemoryIds,
                 SourceHash = sourceHash,

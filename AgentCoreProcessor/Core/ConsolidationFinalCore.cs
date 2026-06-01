@@ -49,6 +49,6 @@ namespace AgentCoreProcessor.Core
         public int? ChannelId { get; set; }
         public string? Type { get; set; }
         public string? Subject { get; set; }
-        public string? Confidence { get; set; }
+        public float Certainty { get; set; } = 1.0f;
     }
 }

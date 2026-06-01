@@ -50,7 +50,7 @@ namespace AgentCoreProcessor.Command
                 var flags = new StringBuilder();
                 if (m.IsTemp) flags.Append("[临时] ");
                 if (m.IsPersona) flags.Append("[人设] ");
-                if (m.Confidence == "low") flags.Append("[低置信] ");
+                if (m.Certainty < 0.5f) flags.Append("[低确定] ");
                 sb.AppendLine($"  {m.Score:F3} {flags}{m.Content}");
             }
             return CommandResult.Ok(sb.ToString().TrimEnd());

@@ -68,7 +68,7 @@ internal class MemoryProvider : IWebUIProvider
                         new() { Field = "subject", Header = "主题", Width = "120px" },
                         new() { Field = "content", Header = "内容" },
                         new() { Field = "importance", Header = "重要度", Width = "80px" },
-                        new() { Field = "confidence", Header = "置信", Width = "60px", Format = ColumnFormat.Badge },
+                        new() { Field = "certainty", Header = "确定性", Width = "60px", Format = ColumnFormat.Badge },
                         new() { Field = "created", Header = "创建", Width = "100px" }
                     },
                     DefaultPageSize = 25,
@@ -80,13 +80,10 @@ internal class MemoryProvider : IWebUIProvider
                             new() { Value = "fact", Label = "fact" },
                             new() { Value = "feedback", Label = "feedback" },
                             new() { Value = "inference", Label = "inference" },
-                            new() { Value = "event", Label = "event" }
+                            new() { Value = "event", Label = "event" },
+                            new() { Value = "state", Label = "state" },
+                            new() { Value = "preference", Label = "preference" }
                         }},
-                        new() { Field = "confidence", Label = "全部置信", Options = new()
-                        {
-                            new() { Value = "high", Label = "high" },
-                            new() { Value = "low", Label = "low" }
-                        }}
                     },
                     RowActions = new()
                     {
@@ -122,7 +119,7 @@ internal class MemoryProvider : IWebUIProvider
                         new() { Field = "type", Label = "类型", Type = StatusFieldType.Badge },
                         new() { Field = "subject", Label = "主题" },
                         new() { Field = "importance", Label = "重要度" },
-                        new() { Field = "confidence", Label = "置信度", Type = StatusFieldType.Badge },
+                        new() { Field = "certainty", Label = "确定性", Type = StatusFieldType.Badge },
                         new() { Field = "person_id", Label = "关联人物" },
                         new() { Field = "channel_id", Label = "关联频道" },
                         new() { Field = "is_derived", Label = "衍生记忆", Type = StatusFieldType.Badge },
@@ -181,7 +178,7 @@ internal class MemoryProvider : IWebUIProvider
                         new() { Field = "id", Header = "ID", Width = "60px" },
                         new() { Field = "type", Header = "类型", Width = "80px", Format = ColumnFormat.Badge },
                         new() { Field = "link_type", Header = "关联类型", Width = "90px", Format = ColumnFormat.Badge },
-                        new() { Field = "strength", Header = "强度", Width = "70px" },
+                        new() { Field = "relevance", Header = "强度", Width = "70px" },
                         new() { Field = "content", Header = "内容" }
                     },
                     Paginated = false, Searchable = false
@@ -235,7 +232,7 @@ internal class MemoryProvider : IWebUIProvider
                         new() { Field = "type", Header = "类型", Width = "90px", Format = ColumnFormat.Badge },
                         new() { Field = "subject", Header = "主题", Width = "120px" },
                         new() { Field = "content", Header = "内容" },
-                        new() { Field = "confidence", Header = "置信", Width = "60px", Format = ColumnFormat.Badge },
+                        new() { Field = "certainty", Header = "确定性", Width = "60px", Format = ColumnFormat.Badge },
                         new() { Field = "person_id", Header = "人物", Width = "60px" },
                         new() { Field = "channel_id", Header = "频道", Width = "60px" },
                         new() { Field = "created", Header = "创建", Width = "100px" }
@@ -249,13 +246,10 @@ internal class MemoryProvider : IWebUIProvider
                             new() { Value = "fact", Label = "fact" },
                             new() { Value = "feedback", Label = "feedback" },
                             new() { Value = "inference", Label = "inference" },
-                            new() { Value = "event", Label = "event" }
+                            new() { Value = "event", Label = "event" },
+                            new() { Value = "state", Label = "state" },
+                            new() { Value = "preference", Label = "preference" }
                         }},
-                        new() { Field = "confidence", Label = "全部置信", Options = new()
-                        {
-                            new() { Value = "high", Label = "high" },
-                            new() { Value = "low", Label = "low" }
-                        }}
                     },
                     RowActions = new()
                     {
@@ -463,7 +457,7 @@ internal class MainMemorySource : IDataSource
                 ["subject"] = m.Subject ?? "",
                 ["content"] = m.Content,
                 ["importance"] = m.Importance.ToString("F2"),
-                ["confidence"] = m.Confidence,
+                ["certainty"] = m.Certainty.ToString("F2"),
                 ["person"] = m.PersonId?.ToString() ?? "—",
                 ["created"] = m.CreatedAt.ToString("MM-dd HH:mm"),
                 ["_link"] = $"/p/memory/{m.Id}"
@@ -492,8 +486,9 @@ internal class MainMemorySource : IDataSource
                     case "type":
                         result = result.Where(m => m.Type == f.Value);
                         break;
-                    case "confidence":
-                        result = result.Where(m => m.Confidence == f.Value);
+                    case "certainty":
+                        if (float.TryParse(f.Value, out var certVal))
+                            result = result.Where(m => m.Certainty >= certVal);
                         break;
                     case "person":
                         if (int.TryParse(f.Value, out var personId) && personId > 0)
@@ -589,7 +584,7 @@ internal class MemoryDetailInfoSource : IDataSource
             ["type"] = m.Type,
             ["subject"] = m.Subject ?? "—",
             ["importance"] = m.Importance.ToString("F2"),
-            ["confidence"] = m.Confidence,
+            ["certainty"] = m.Certainty,
             ["person_id"] = m.PersonId?.ToString() ?? "—",
             ["channel_id"] = m.ChannelId?.ToString() ?? "—",
             ["is_derived"] = m.IsDerived ? "是" : "否",
@@ -707,7 +702,7 @@ internal class MemoryDetailLinksSource : IDataSource
         if (m != null)
         {
             var links = await _engine.MemoryLinks.GetByMemoryIdAsync(m.Id);
-            foreach (var link in links.OrderByDescending(l => l.Strength))
+            foreach (var link in links.OrderByDescending(l => l.Relevance))
             {
                 int otherId = link.SourceId == m.Id ? link.TargetId : link.SourceId;
                 var other = await _engine.Memories.GetByIdAsync(otherId);
@@ -718,7 +713,7 @@ internal class MemoryDetailLinksSource : IDataSource
                         ["id"] = other.Id,
                         ["type"] = other.Type,
                         ["link_type"] = link.LinkType,
-                        ["strength"] = link.Strength.ToString("F2"),
+                        ["relevance"] = link.Relevance.ToString("F2"),
                         ["content"] = other.Content.Length <= 120 ? other.Content : other.Content[..120] + "...",
                         ["_link"] = $"/p/memory/{other.Id}"
                     });
@@ -795,7 +790,7 @@ internal class TempMemorySource : IDataSource
                 ["type"] = t.Type,
                 ["subject"] = t.Subject ?? "",
                 ["content"] = t.Content,
-                ["confidence"] = t.Confidence,
+                ["certainty"] = t.Confidence,
                 ["person_id"] = t.PersonId?.ToString() ?? "—",
                 ["channel_id"] = t.ChannelId?.ToString() ?? "—",
                 ["created"] = t.CreatedAt.ToString("MM-dd HH:mm")
@@ -824,7 +819,7 @@ internal class TempMemorySource : IDataSource
                     case "type":
                         result = result.Where(t => t.Type == f.Value);
                         break;
-                    case "confidence":
+                    case "certainty":
                         result = result.Where(t => t.Confidence == f.Value);
                         break;
                 }

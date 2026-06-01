@@ -173,7 +173,7 @@ namespace AgentCoreProcessor.Engine
                         {
                             await ctx.MemorySvc.StoreAsync(item.Content,
                                 personId: null, channelId: null,
-                                confidence: item.Confidence,
+                                confidence: item.Certainty >= 0.7f ? "high" : "low",
                                 type: MemoryType.Knowledge, subject: item.Subject);
                         }
                         else if (item.Type == "feedback" && item.Sentiment != null)
@@ -188,7 +188,7 @@ namespace AgentCoreProcessor.Engine
                             string memType = item.Type ?? MemoryType.Fact;
                             await ctx.MemorySvc.StoreAsync(item.Content,
                                 personId, context.Channel.Id,
-                                confidence: item.Confidence,
+                                confidence: item.Certainty >= 0.7f ? "high" : "low",
                                 type: memType, subject: item.Subject);
                         }
                         count++;
@@ -202,7 +202,7 @@ namespace AgentCoreProcessor.Engine
                             type = r.Type,
                             content = r.Content,
                             subject = r.Subject,
-                            confidence = r.Confidence
+                            certainty = r.Certainty
                         })
                     });
                 }

@@ -48,7 +48,7 @@ namespace AgentCoreProcessor.Command
             {
                 var tags = new StringBuilder();
                 if (m.PersonId != null) tags.Append($"P{m.PersonId} ");
-                if (m.Confidence == "low") tags.Append("[低置信] ");
+                if (m.Certainty < 0.5f) tags.Append("[低确定] ");
                 if (m.Feedback != null) tags.Append($"[{m.Feedback}] ");
                 sb.AppendLine($"  [{m.Id}] {tags}{m.Content}");
             }

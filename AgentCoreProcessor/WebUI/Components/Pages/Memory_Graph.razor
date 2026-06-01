@@ -139,7 +139,7 @@ else
                     <div class="detail-label">#@_selectedNode.Id</div>
                     <div class="detail-content">@_selectedNode.Content</div>
                     <div class="detail-meta">
-                        <div>置信度: @_selectedNode.Confidence</div>
+                        <div>确定性: @_selectedNode.Certainty</div>
                         <div>重要度: @(_selectedNode.Importance.ToString("F2"))</div>
                         <div>关联数: @_selectedNode.LinkCount</div>
                     </div>
@@ -273,7 +273,7 @@ else
         public string Content { get; set; } = "";
         public string Type { get; set; } = "";
         public float Importance { get; set; }
-        public string Confidence { get; set; } = "";
+        public float Certainty { get; set; }
         public bool IsCore { get; set; }
         public bool IsDerived { get; set; }
         public int LinkCount { get; set; }
@@ -355,7 +355,7 @@ else
             {
                 double totalWeight = 0;
                 if (_nodeLinks.TryGetValue(n, out var l))
-                    totalWeight = l.Sum(link => link.Strength);
+                    totalWeight = l.Sum(link => link.Relevance);
                 if (totalWeight > bestWeight)
                 {
                     bestWeight = totalWeight;
@@ -444,7 +444,7 @@ else
         {
             double w = 0;
             if (_nodeLinks.TryGetValue(n, out var l))
-                w = l.Sum(link => link.Strength);
+                w = l.Sum(link => link.Relevance);
             if (w > bestWeight) { bestWeight = w; coreId = n; }
         }
 
@@ -518,8 +518,8 @@ else
         {
             if (_adj.ContainsKey(link.SourceId) && _adj.ContainsKey(link.TargetId))
             {
-                _adj[link.SourceId].Add((link.TargetId, link.Strength));
-                _adj[link.TargetId].Add((link.SourceId, link.Strength));
+                _adj[link.SourceId].Add((link.TargetId, link.Relevance));
+                _adj[link.TargetId].Add((link.SourceId, link.Relevance));
             }
         }
 
@@ -758,7 +758,7 @@ else
                 from = l.SourceId.ToString(),
                 to = l.TargetId.ToString(),
                 label = l.LinkType ?? "",
-                width = l.Strength
+                width = l.Relevance
             }).ToArray();
 
         var data = new { nodes, edges };
@@ -798,7 +798,7 @@ else
             {
                 var nb = link.SourceId == node ? link.TargetId : link.SourceId;
                 if (!_currentCluster.NodeIds.Contains(nb)) continue;
-                double edgeWeight = Math.Max(0.05, link.Strength);
+                double edgeWeight = Math.Max(0.05, link.Relevance);
                 double newWeight = w * edgeWeight;
                 if (!weights.ContainsKey(nb) || newWeight > weights[nb])
                 {
@@ -1067,7 +1067,7 @@ else
                 Content = mem.Content,
                 Type = mem.Type ?? "fact",
                 Importance = mem.Importance,
-                Confidence = mem.Confidence ?? "high",
+                Certainty = mem.Certainty,
                 IsCore = mem.Id == _currentCluster.CoreNodeId,
                 IsDerived = mem.IsDerived,
                 LinkCount = neighbors.Count,
@@ -1136,6 +1136,8 @@ else
         "feedback" => "#ffb74d",
         "inference" => "#ce93d8",
         "event" => "#f06292",
+        "state" => "#ef5350",
+        "preference" => "#ba68c8",
         _ => "#90a4ae"
     };
 

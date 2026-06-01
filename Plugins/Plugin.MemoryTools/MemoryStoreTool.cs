@@ -23,7 +23,7 @@ public class MemoryStoreTool : ITool
         new("person_id", "（可选）关联人物 ID", 4, false),
         new("channel_id", "（可选）关联频道 ID", 5, false),
         new("importance", "（可选）重要性 0.0-1.0，默认 0.5", 6, false),
-        new("confidence", "（可选）可信度：high / low，默认 high", 7, false),
+        new("certainty", "（可选）确定性 0.0-1.0，默认 1.0", 7, false),
         new("is_persistent", "（可选）是否持久化：true / false，默认 true", 8, false),
         new("expires_at", "（可选）过期时间 ISO 8601，如 2026-06-01T00:00:00", 9, false)
     ];
@@ -72,7 +72,7 @@ public class MemoryStoreTool : ITool
             PersonId = ParseInt(GetArg(inputs, 4)),
             ChannelId = ParseInt(GetArg(inputs, 5)),
             Importance = ParseFloat(GetArg(inputs, 6)) ?? 0.5f,
-            Confidence = GetArg(inputs, 7) ?? "high",
+            Certainty = ParseFloat(GetArg(inputs, 7)) ?? 1.0f,
             IsPersistent = GetArg(inputs, 8)?.ToLower() != "false",
             ExpiresAt = ParseDateTime(GetArg(inputs, 9))
         };

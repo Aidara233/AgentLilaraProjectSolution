@@ -14,7 +14,7 @@ namespace AgentCoreProcessor.Core
     internal class ExtractionResult
     {
         [JsonProperty("type")]
-        public string Type { get; set; } = "fact"; // knowledge | fact | feedback | inference | event
+        public string Type { get; set; } = "fact"; // knowledge | fact | feedback | inference | event | state | preference
 
         [JsonProperty("content")]
         public string Content { get; set; } = "";
@@ -22,17 +22,17 @@ namespace AgentCoreProcessor.Core
         [JsonProperty("subject")]
         public string? Subject { get; set; }
 
-        [JsonProperty("confidence")]
-        public string Confidence { get; set; } = "high"; // high | low
+        [JsonProperty("certainty")]
+        public float Certainty { get; set; } = 1.0f; // 0.0-1.0
 
         [JsonProperty("sentiment")]
         public string? Sentiment { get; set; } // positive | negative (feedback only)
 
         [JsonProperty("about")]
-        public string? About { get; set; } // 关于谁（对话中出现的名字）
+        public string? About { get; set; }
 
         [JsonProperty("correction")]
-        public string? Correction { get; set; } // negative feedback only
+        public string? Correction { get; set; }
     }
 
     /// <summary>

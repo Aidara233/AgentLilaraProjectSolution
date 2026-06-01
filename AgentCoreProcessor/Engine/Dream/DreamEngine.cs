@@ -468,7 +468,7 @@ namespace AgentCoreProcessor.Engine
 
             MemoryEntry? src = null, tgt = null;
             string? hash = null;
-            foreach (var pair in links.OrderByDescending(l => l.Strength))
+            foreach (var pair in links.OrderByDescending(l => l.Relevance))
             {
                 src = recent.FirstOrDefault(m => m.Id == pair.SourceId);
                 tgt = recent.FirstOrDefault(m => m.Id == pair.TargetId);
@@ -635,10 +635,13 @@ namespace AgentCoreProcessor.Engine
                 {
                     var idx = item["index"]?.Value<int>() ?? -1;
                     var imp = item["importance"]?.Value<float>() ?? -1;
+                    var cert = item["certainty"]?.Value<float>();
                     if (idx < 0 || idx >= batch.Count || imp < 0) continue;
                     var m = batch[idx];
                     var oldImp = m.Importance;
+                    var oldCert = m.Certainty;
                     m.Importance = Math.Clamp(imp, 0f, 1f);
+                    if (cert.HasValue) m.Certainty = Math.Clamp(cert.Value, 0f, 1f);
                     m.LastDreamTime = DateTime.Now;
                     if (imp <= 0.05f) { m.IsPersistent = false; m.ExpiresAt = DateTime.Now.AddDays(7); }
                     await ctx.Memories.UpdateAsync(m);
@@ -651,6 +654,15 @@ namespace AgentCoreProcessor.Engine
                         NewValue = m.Importance.ToString("F2"),
                         Note = m.Content.Length > 50 ? m.Content[..50] : m.Content
                     });
+                    if (cert.HasValue)
+                        currentDetails.Add(new FragmentDetailRecord
+                        {
+                            Action = "certainty_adjust",
+                            MemoryId = m.Id,
+                            OldValue = oldCert.ToString("F2"),
+                            NewValue = m.Certainty.ToString("F2"),
+                            Note = "LLM评估"
+                        });
                 }
             }
             catch (Exception ex) { Signal.Warn(LogGroup.Engine, "权重评估解析失败", new { error = ex.Message }); }
@@ -675,16 +687,17 @@ namespace AgentCoreProcessor.Engine
                 {
                     var ci = item["candidateIndex"]?.Value<int>() ?? -1;
                     var lt = item["linkType"]?.Value<string>() ?? "semantic";
-                    var st = item["strength"]?.Value<float>() ?? 0f;
-                    if (ci >= 0 && ci < filtered.Count && st >= 0.3f)
+                    var rel = item["relevance"]?.Value<float>() ?? 0f;
+                    var sup = item["support"]?.Value<float>() ?? 1.0f;
+                    if (ci >= 0 && ci < filtered.Count && rel >= 0.3f)
                     {
-                        await ctx.MemoryLinks.CreateOrUpdateAsync(target.Id, filtered[ci].Id, st, lt);
+                        await ctx.MemoryLinks.CreateOrUpdateAsync(target.Id, filtered[ci].Id, rel, lt, sup);
                         linksCreated++;
                         currentDetails.Add(new FragmentDetailRecord
                         {
                             Action = "link_create",
                             MemoryId = target.Id,
-                            Note = $"→#{filtered[ci].Id}, type={lt}, strength={st:F2}"
+                            Note = $"→#{filtered[ci].Id}, type={lt}, relevance={rel:F2}, support={sup:F2}"
                         });
                     }
                 }
@@ -874,7 +887,7 @@ namespace AgentCoreProcessor.Engine
                             {
                                 Content = temp.Content, PersonId = temp.PersonId,
                                 ChannelId = temp.ChannelId, Type = temp.Type,
-                                Subject = temp.Subject, Confidence = temp.Confidence
+                                Subject = temp.Subject, Certainty = TempConfidenceToFloat(temp.Confidence)
                             });
                             break;
                         case "merge":
@@ -883,7 +896,7 @@ namespace AgentCoreProcessor.Engine
                             {
                                 Content = content, PersonId = temp.PersonId,
                                 ChannelId = temp.ChannelId, Type = temp.Type,
-                                Subject = temp.Subject, Confidence = temp.Confidence
+                                Subject = temp.Subject, Certainty = TempConfidenceToFloat(temp.Confidence)
                             });
                             var mergeWith = item["mergeWith"] as JArray;
                             if (mergeWith != null)
@@ -901,7 +914,7 @@ namespace AgentCoreProcessor.Engine
                         {
                             Content = temp.Content, PersonId = temp.PersonId,
                             ChannelId = temp.ChannelId, Type = temp.Type,
-                            Subject = temp.Subject, Confidence = temp.Confidence
+                            Subject = temp.Subject, Certainty = TempConfidenceToFloat(temp.Confidence)
                         });
                     }
                 }
@@ -934,7 +947,7 @@ namespace AgentCoreProcessor.Engine
                             try { emb = VectorUtil.FloatsToBytes(await ctx.Embedding.GetEmbeddingAsync(c.Content)); }
                             catch { }
                             await ctx.Memories.CreateAsync(c.Content, emb, c.PersonId, c.ChannelId,
-                                confidence: c.Confidence ?? "high", type: c.Type ?? MemoryType.Fact, subject: c.Subject);
+                                certainty: c.Certainty, type: c.Type ?? MemoryType.Fact, subject: c.Subject);
                             break;
                         case "merge":
                             var content = item["content"]?.Value<string>() ?? candidates[index].Content;
@@ -943,7 +956,7 @@ namespace AgentCoreProcessor.Engine
                             try { memb = VectorUtil.FloatsToBytes(await ctx.Embedding.GetEmbeddingAsync(content)); }
                             catch { }
                             await ctx.Memories.CreateAsync(content, memb, mc.PersonId, mc.ChannelId,
-                                confidence: mc.Confidence ?? "high", type: mc.Type ?? MemoryType.Fact, subject: mc.Subject);
+                                certainty: mc.Certainty, type: mc.Type ?? MemoryType.Fact, subject: mc.Subject);
                             var mergeWith = item["mergeWith"] as JArray;
                             if (mergeWith != null)
                                 foreach (var mi in mergeWith)
@@ -960,7 +973,7 @@ namespace AgentCoreProcessor.Engine
                         try { emb = VectorUtil.FloatsToBytes(await ctx.Embedding.GetEmbeddingAsync(c.Content)); }
                         catch { }
                         await ctx.Memories.CreateAsync(c.Content, emb, c.PersonId, c.ChannelId,
-                            confidence: c.Confidence ?? "high", type: c.Type ?? MemoryType.Fact, subject: c.Subject);
+                            certainty: c.Certainty, type: c.Type ?? MemoryType.Fact, subject: c.Subject);
                     }
                 }
             }
@@ -1169,7 +1182,7 @@ namespace AgentCoreProcessor.Engine
                     var newSource = link.SourceId == oldId ? survivorId : link.SourceId;
                     var newTarget = link.TargetId == oldId ? survivorId : link.TargetId;
                     if (newSource == newTarget) continue;
-                    await ctx.MemoryLinks.CreateOrUpdateAsync(newSource, newTarget, link.Strength, link.LinkType);
+                    await ctx.MemoryLinks.CreateOrUpdateAsync(newSource, newTarget, link.Relevance, link.LinkType);
                     await ctx.MemoryLinks.DeleteAsync(link);
                 }
             }
@@ -1191,6 +1204,14 @@ namespace AgentCoreProcessor.Engine
 
         private static double ElapsedMinutes(DateTime startTime)
             => (DateTime.Now - startTime).TotalMinutes;
+
+        /// <summary>临时记忆 Confidence 字符串 → Certainty 浮点桥接</summary>
+        private static float TempConfidenceToFloat(string? confidence) => confidence switch
+        {
+            "high" => 1.0f,
+            "low" => 0.3f,
+            _ => 0.7f
+        };
 
         private static string ComputeHash(string input)
         {

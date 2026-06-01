@@ -42,7 +42,7 @@ namespace AgentLilara.PluginSDK.Services
         Task<List<LinkedMemoryEntry>> GetLinkedAsync(int memoryId);
 
         /// <summary>创建关联。</summary>
-        Task LinkAsync(int fromId, int toId, float strength = 1.0f, string linkType = "semantic");
+        Task LinkAsync(int fromId, int toId, float relevance = 1.0f, float support = 1.0f, string linkType = "semantic");
 
         /// <summary>删除关联。</summary>
         Task UnlinkAsync(int fromId, int toId);
@@ -88,7 +88,10 @@ namespace AgentLilara.PluginSDK.Services
         public int? PersonId { get; set; }
         public int? ChannelId { get; set; }
         public float Importance { get; set; }
-        public string? Confidence { get; set; }
+        public float Certainty { get; set; }
+        public int RecallCount { get; set; }
+        public DateTime? LastRecalledAt { get; set; }
+        public bool IsSuperseded { get; set; }
         public bool IsPersistent { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? ExpiresAt { get; set; }
@@ -115,7 +118,7 @@ namespace AgentLilara.PluginSDK.Services
         public int? PersonId { get; set; }
         public int? ChannelId { get; set; }
         public float Importance { get; set; } = 0.5f;
-        public string Confidence { get; set; } = "high";
+        public float Certainty { get; set; } = 1.0f;
         public bool IsPersistent { get; set; } = true;
         public DateTime? ExpiresAt { get; set; }
     }
@@ -139,6 +142,7 @@ namespace AgentLilara.PluginSDK.Services
         public DateTime? CreatedAfter { get; set; }
         public DateTime? CreatedBefore { get; set; }
         public float? MinImportance { get; set; }
+        public float? MinCertainty { get; set; }
         public int Offset { get; set; } = 0;
         public int Limit { get; set; } = 50;
     }
@@ -153,8 +157,9 @@ namespace AgentLilara.PluginSDK.Services
         public int? PersonId { get; set; }
         public int? ChannelId { get; set; }
         public float Importance { get; set; }
-        public string? Confidence { get; set; }
-        public float Strength { get; set; }
+        public float Certainty { get; set; }
+        public float Relevance { get; set; }
+        public float Support { get; set; }
         public string LinkType { get; set; } = "";
         public DateTime LinkedAt { get; set; }
     }

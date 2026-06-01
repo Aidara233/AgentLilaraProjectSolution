@@ -21,16 +21,18 @@ namespace AgentCoreProcessor.Memory
         private readonly IEmbeddingProvider embedding;
 
         // 综合排序权重
-        private const float SimilarityWeight = 0.5f;
-        private const float ImportanceWeight = 0.3f;
-        private const float LinkWeight = 0.2f;
-        private const float TempBoost = 0.1f; // 临时库偏置
-        private const float TagMatchBoost = 0.1f; // 每个匹配标签的额外加权
-        private const float KeywordBoost = 0.15f; // 关键词命中加分
-        private const float SubjectBoost = 0.2f; // Subject 精确匹配加分
-        private const float MinRecallScore = 0.25f; // 召回最低分数门槛，低于此值不返回
-        private const float PersonaPenalty = 0.05f; // 人设记忆降权，确保真记忆优先
-        private const float PersonaMinScore = 0.12f; // 人设记忆独立门槛（低于主门槛，因为没有标签/重要性加成）
+        private const float SimilarityWeight = 0.45f;
+        private const float ImportanceWeight = 0.25f;
+        private const float CertaintyWeight = 0.15f;
+        private const float LinkWeight = 0.15f;
+        private const float TempBoost = 0.1f;
+        private const float TagMatchBoost = 0.1f;
+        private const float KeywordBoost = 0.15f;
+        private const float SubjectBoost = 0.2f;
+        private const float MinRecallScore = 0.25f;
+        private const float PersonaPenalty = 0.05f;
+        private const float PersonaMinScore = 0.12f;
+        private const float RecallImportanceBoost = 0.05f; // 每次命中时重要性微调
 
         public MemoryService(
             MemoryRepository memories,
@@ -102,7 +104,7 @@ namespace AgentCoreProcessor.Memory
                     Subject = t.Subject,
                     Score = sim * SimilarityWeight + TempBoost + matchCount * TagMatchBoost,
                     IsTemp = true,
-                    Confidence = t.Confidence
+                    Certainty = t.Confidence == "high" ? 1.0f : 0.3f
                 });
             }
 
@@ -116,6 +118,7 @@ namespace AgentCoreProcessor.Memory
             })
             .OrderByDescending(x => x.Similarity * SimilarityWeight
                 + x.Entry.Importance * ImportanceWeight
+                + x.Entry.Certainty * CertaintyWeight
                 + x.MatchCount * TagMatchBoost)
             .Take(topK * 2)
             .ToList();
@@ -129,9 +132,10 @@ namespace AgentCoreProcessor.Memory
                     Subject = x.Entry.Subject,
                     Score = x.Similarity * SimilarityWeight
                         + x.Entry.Importance * ImportanceWeight
+                        + x.Entry.Certainty * CertaintyWeight
                         + x.MatchCount * TagMatchBoost,
                     IsTemp = false,
-                    Confidence = x.Entry.Confidence
+                    Certainty = x.Entry.Certainty
                 });
             }
 
@@ -154,7 +158,7 @@ namespace AgentCoreProcessor.Memory
                     if (!existingIds.Contains(linkedId) && !linkedIds.Contains(linkedId))
                     {
                         linkedIds.Add(linkedId);
-                        linkStrengths[linkedId] = link.Strength;
+                        linkStrengths[linkedId] = link.Relevance;
                     }
                 }
 
@@ -171,7 +175,7 @@ namespace AgentCoreProcessor.Memory
                             Content = entry.Content,
                             Score = sim * SimilarityWeight + entry.Importance * ImportanceWeight + linkStr * LinkWeight,
                             IsTemp = false,
-                            Confidence = entry.Confidence
+                            Certainty = entry.Certainty
                         });
                     }
                 }
@@ -206,12 +210,17 @@ namespace AgentCoreProcessor.Memory
                 .Take(topK)
                 .ToList();
 
-            // 6. 更新主库记忆的 LastAccessedAt（跳过临时和人设记忆）
+            // 6. 命中追踪：更新主库记忆的 RecallCount、LastRecalledAt、Importance 微调
             var mainEntryDict = mainEntries.ToDictionary(m => m.Id);
             foreach (var s in result.Where(s => !s.IsTemp && !s.IsPersona))
             {
                 if (mainEntryDict.TryGetValue(s.Id, out var entry))
+                {
+                    entry.RecallCount++;
+                    entry.LastRecalledAt = DateTime.Now;
+                    entry.Importance = Math.Clamp(entry.Importance + RecallImportanceBoost, 0f, 1f);
                     await memories.UpdateAsync(entry);
+                }
             }
 
             return result;
@@ -272,11 +281,12 @@ namespace AgentCoreProcessor.Memory
             {
                 if (sentiment == "positive")
                 {
-                    bestMatch.Confidence = "high";
+                    bestMatch.Certainty = Math.Clamp(bestMatch.Certainty + 0.2f, 0f, 1f);
                 }
                 else if (sentiment == "negative")
                 {
                     bestMatch.Feedback = "negative";
+                    bestMatch.Certainty = Math.Clamp(bestMatch.Certainty - 0.3f, 0f, 1f);
                     if (bestMatch.Importance > 0.3f)
                         bestMatch.Importance = 0.2f;
                 }
@@ -304,7 +314,7 @@ namespace AgentCoreProcessor.Memory
         public string? Subject { get; set; }
         public float Score { get; set; }
         public bool IsTemp { get; set; }
-        public string Confidence { get; set; } = "high";
+        public float Certainty { get; set; } = 1.0f;
         public bool IsPersona { get; set; }
     }
 }

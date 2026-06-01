@@ -20,12 +20,13 @@ namespace AgentCoreProcessor.Core
         {
             ResetProcessor();
             var sb = new StringBuilder();
-            sb.AppendLine("请评估以下记忆的重要性：");
+            sb.AppendLine("请评估以下记忆的重要性(importance)和确定性(certainty)：");
             for (int i = 0; i < memories.Count; i++)
             {
                 var m = memories[i];
-                sb.AppendLine($"[{i}] (当前重要性={m.Importance:F2}) {m.Content}");
+                sb.AppendLine($"[{i}] (当前重要性={m.Importance:F2}, 当前确定性={m.Certainty:F2}) {m.Content}");
             }
+            sb.AppendLine("\n输出JSON数组：[{\"index\": N, \"importance\": 0.0-1.0, \"certainty\": 0.0-1.0, \"note\": \"简短说明\"}]");
             return await GenerateOnceAsync(sb.ToString());
         }
     }

@@ -17,18 +17,18 @@ namespace AgentCoreProcessor.Database
         /// <summary>
         /// 一次查出多条记忆的所有强关联。用于检索时的关联扩展。
         /// </summary>
-        public async Task<List<MemoryLink>> GetLinksForAsync(List<int> memoryIds, float minStrength = 0.5f)
+        public async Task<List<MemoryLink>> GetLinksForAsync(List<int> memoryIds, float minRelevance = 0.5f)
         {
             if (memoryIds.Count == 0) return new List<MemoryLink>();
             var placeholders = string.Join(",", memoryIds.Select(_ => "?"));
             var links = await db.QueryAsync<MemoryLink>(
                 $"SELECT * FROM MemoryLinks WHERE (SourceId IN ({placeholders}) OR TargetId IN ({placeholders})) AND Strength >= ?",
-                memoryIds.Cast<object>().Concat(new object[] { minStrength }).ToArray());
+                memoryIds.Cast<object>().Concat(new object[] { minRelevance }).ToArray());
             return links;
         }
 
-        /// <summary>创建或更新关联。已存在则更新 Strength 和 UpdatedAt。</summary>
-        public async Task<MemoryLink> CreateOrUpdateAsync(int sourceId, int targetId, float strength, string linkType)
+        /// <summary>创建或更新关联。已存在则更新 Relevance、Support 和 UpdatedAt。</summary>
+        public async Task<MemoryLink> CreateOrUpdateAsync(int sourceId, int targetId, float relevance, string linkType, float support = 1.0f)
         {
             // 查找已有关联（双向）
             var existing = await db.QueryAsync<MemoryLink>(
@@ -38,8 +38,9 @@ namespace AgentCoreProcessor.Database
             if (existing.Count > 0)
             {
                 var link = existing[0];
-                link.Strength = strength;
+                link.Relevance = relevance;
                 link.LinkType = linkType;
+                link.Support = support;
                 link.UpdatedAt = DateTime.Now;
                 await db.UpdateAsync(link);
                 return link;
@@ -49,8 +50,9 @@ namespace AgentCoreProcessor.Database
             {
                 SourceId = sourceId,
                 TargetId = targetId,
-                Strength = strength,
+                Relevance = relevance,
                 LinkType = linkType,
+                Support = support,
                 CreatedAt = DateTime.Now,
                 UpdatedAt = DateTime.Now
             };

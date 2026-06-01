@@ -4,8 +4,7 @@ using SQLite;
 namespace AgentCoreProcessor.Database
 {
     /// <summary>
-    /// 记忆关联实体。存储记忆之间的关系（时间共现、行为序列等）。
-    /// 属于主记忆库的一部分，做梦时由"关联重建"片段维护。
+    /// 记忆关联实体。双轴边模型：Relevance（关联性）+ Support（支持度，负值=矛盾）。
     /// </summary>
     [Table("MemoryLinks")]
     internal class MemoryLink
@@ -19,8 +18,12 @@ namespace AgentCoreProcessor.Database
         /// <summary>目标记忆ID</summary>
         public int TargetId { get; set; }
 
-        /// <summary>关联强度 (0.0-1.0)</summary>
-        public float Strength { get; set; }
+        /// <summary>关联性 (0.0-1.0)。两条记忆在说同一件事的程度。</summary>
+        [Column("Strength")]
+        public float Relevance { get; set; }
+
+        /// <summary>支持度 (-1.0~1.0)。正数=相互支持，负数=矛盾，零=无关。用于确定性传播方向。</summary>
+        public float Support { get; set; } = 1.0f;
 
         /// <summary>关联类型（共现/时序/语义/因果等）</summary>
         public string LinkType { get; set; } = "";

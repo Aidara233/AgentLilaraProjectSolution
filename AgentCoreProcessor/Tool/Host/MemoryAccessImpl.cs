@@ -42,7 +42,7 @@ namespace AgentCoreProcessor.Tool.Host
                 personId: request.PersonId,
                 channelId: request.ChannelId,
                 importance: request.Importance,
-                confidence: request.Confidence,
+                certainty: request.Certainty,
                 type: request.Type ?? Database.MemoryType.Fact,
                 subject: request.Subject);
             if (!request.IsPersistent || request.ExpiresAt != null)
@@ -92,6 +92,8 @@ namespace AgentCoreProcessor.Tool.Host
                 query = query.Where(m => m.CreatedAt <= filter.CreatedBefore);
             if (filter.MinImportance != null)
                 query = query.Where(m => m.Importance >= filter.MinImportance);
+            if (filter.MinCertainty != null)
+                query = query.Where(m => m.Certainty >= filter.MinCertainty);
 
             return query
                 .Skip(filter.Offset)
@@ -169,17 +171,18 @@ namespace AgentCoreProcessor.Tool.Host
                     PersonId = entry.PersonId,
                     ChannelId = entry.ChannelId,
                     Importance = entry.Importance,
-                    Confidence = entry.Confidence,
-                    Strength = link.Strength,
+                    Certainty = entry.Certainty,
+                    Relevance = link.Relevance,
+                    Support = link.Support,
                     LinkType = link.LinkType,
                     LinkedAt = link.CreatedAt
                 };
             }).Where(x => x != null).Cast<AgentLilara.PluginSDK.Services.LinkedMemoryEntry>().ToList();
         }
 
-        public async Task LinkAsync(int fromId, int toId, float strength = 1.0f, string linkType = "semantic")
+        public async Task LinkAsync(int fromId, int toId, float relevance = 1.0f, float support = 1.0f, string linkType = "semantic")
         {
-            await links.CreateOrUpdateAsync(fromId, toId, strength, linkType);
+            await links.CreateOrUpdateAsync(fromId, toId, relevance, linkType, support);
         }
 
         public async Task UnlinkAsync(int fromId, int toId)
@@ -285,7 +288,10 @@ namespace AgentCoreProcessor.Tool.Host
                 PersonId = m.PersonId,
                 ChannelId = m.ChannelId,
                 Importance = m.Importance,
-                Confidence = m.Confidence,
+                Certainty = m.Certainty,
+                RecallCount = m.RecallCount,
+                LastRecalledAt = m.LastRecalledAt,
+                IsSuperseded = m.IsSuperseded,
                 IsPersistent = m.IsPersistent,
                 CreatedAt = m.CreatedAt,
                 ExpiresAt = m.ExpiresAt,

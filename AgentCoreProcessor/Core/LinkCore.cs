@@ -25,6 +25,8 @@ namespace AgentCoreProcessor.Core
             sb.AppendLine("\n候选记忆：");
             for (int i = 0; i < candidates.Count; i++)
                 sb.AppendLine($"[{i}] {candidates[i].Content}");
+            sb.AppendLine("\n输出JSON数组：[{\"candidateIndex\": N, \"linkType\": \"semantic|elaboration|tangential|causal\", \"relevance\": 0.0-1.0, \"support\": -1.0~1.0}]");
+            sb.AppendLine("relevance=关联性(两条记忆在说同一件事的程度), support=支持度(正=支持,负=矛盾)");
             return await GenerateOnceAsync(sb.ToString());
         }
     }

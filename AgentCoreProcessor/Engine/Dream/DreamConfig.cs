@@ -73,6 +73,9 @@ namespace AgentCoreProcessor.Engine
         /// <summary>大睡硬性时间上限（分钟）</summary>
         public int DeepSleepMaxMinutes { get; set; } = 120;
 
+        /// <summary>BFS 变更传播停止阈值，|Δ_i| + |Δ_c| 低于此值停止扩散</summary>
+        public float ChangePropagationEpsilon { get; set; } = 0.01f;
+
         // ---- 资源与并行配置 ----
 
         /// <summary>资源池总量</summary>

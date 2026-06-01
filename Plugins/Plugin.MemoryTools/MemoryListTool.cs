@@ -67,7 +67,7 @@ public class MemoryListTool : ITool
             if (m.ChannelId.HasValue) ids.Add($"ch={m.ChannelId}");
             var tags = ids.Count > 0 ? $" [{string.Join(", ", ids)}]" : "";
 
-            sb.AppendLine($"[{m.Id}] (type={m.Type}, imp={m.Importance:F1}, conf={m.Confidence}){tags} {m.Content}");
+            sb.AppendLine($"[{m.Id}] (type={m.Type}, imp={m.Importance:F1}, cert={m.Certainty}){tags} {m.Content}");
             if (m.Subject != null) sb.AppendLine($"    subject: {m.Subject}");
         }
         return Ok(sb.ToString().TrimEnd());

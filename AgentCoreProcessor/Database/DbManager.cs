@@ -50,6 +50,25 @@ namespace AgentCoreProcessor.Database
             // migration: 2026-05-24 添加 IsError 列
             try { await db.ExecuteAsync("ALTER TABLE ModelCallLogs ADD COLUMN IsError INTEGER NOT NULL DEFAULT 0"); }
             catch (Exception ex) when (ex.Message.Contains("duplicate column")) { /* 列已存在，跳过 */ }
+
+            // migration: 2026-06-01 双轴记忆模型 (Confidence→Certainty, 命中追踪, 被取代标记)
+            try { await db.ExecuteAsync("ALTER TABLE Memories ADD COLUMN Certainty REAL NOT NULL DEFAULT 1.0"); }
+            catch (Exception ex) when (ex.Message.Contains("duplicate column")) { }
+            try { await db.ExecuteAsync("ALTER TABLE Memories ADD COLUMN RecallCount INTEGER NOT NULL DEFAULT 0"); }
+            catch (Exception ex) when (ex.Message.Contains("duplicate column")) { }
+            try { await db.ExecuteAsync("ALTER TABLE Memories ADD COLUMN LastRecalledAt TEXT"); }
+            catch (Exception ex) when (ex.Message.Contains("duplicate column")) { }
+            try { await db.ExecuteAsync("ALTER TABLE Memories ADD COLUMN IsSuperseded INTEGER NOT NULL DEFAULT 0"); }
+            catch (Exception ex) when (ex.Message.Contains("duplicate column")) { }
+            // 现有数据迁移：旧 Confidence 字符串 → Certainty 浮点
+            try { await db.ExecuteAsync("UPDATE Memories SET Certainty = 1.0 WHERE Confidence = 'high'"); }
+            catch { }
+            try { await db.ExecuteAsync("UPDATE Memories SET Certainty = 0.3 WHERE Confidence = 'low'"); }
+            catch { }
+
+            // migration: 2026-06-01 双边轴模型 (Strength→Relevance, 加 Support)
+            try { await db.ExecuteAsync("ALTER TABLE MemoryLinks ADD COLUMN Support REAL NOT NULL DEFAULT 1.0"); }
+            catch (Exception ex) when (ex.Message.Contains("duplicate column")) { }
             await db.CreateTableAsync<EvaluationScore>();
             await db.CreateTableAsync<ReviewSession>();
             await db.CreateTableAsync<ReviewAction>();
