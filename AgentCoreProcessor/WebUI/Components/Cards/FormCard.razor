@@ -122,9 +122,9 @@
         if (field.Readonly)
         {
             __builder.OpenElement(6, "div");
-            __builder.AddAttribute(7, "class", "form-control form-control-sm bg-body-tertiary text-secondary");
-            __builder.AddAttribute(8, "style", "min-height: 2rem; white-space: pre-wrap;");
-            __builder.AddContent(9, _values.TryGetValue(field.Field, out var rv) ? rv : "");
+            __builder.AddAttribute(7, "class", "text-secondary py-1");
+            __builder.AddAttribute(8, "style", "white-space: pre-wrap; font-size: 0.875rem;");
+            __builder.AddContent(9, _values.TryGetValue(field.Field, out var rv) && !string.IsNullOrEmpty(rv) ? rv : (field.Placeholder ?? ""));
             __builder.CloseElement();
         }
         else switch (field.Type)
