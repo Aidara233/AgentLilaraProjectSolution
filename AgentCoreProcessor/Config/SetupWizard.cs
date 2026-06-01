@@ -58,11 +58,29 @@ namespace AgentCoreProcessor.Config
                 "Qwen/Qwen3-VL-8B-Instruct");
             Console.WriteLine();
 
-            // [7/7] OCR
-            Console.WriteLine(" [7/7] OCR 文字识别");
+            // [7/7] OCR (远程)
+            Console.WriteLine(" [7/8] OCR 文字识别（远程 SiliconFlow）");
             var ocr = AskAuxService("OCR",
                 "https://api.siliconflow.cn/v1/chat/completions",
                 "deepseek-ai/DeepSeek-OCR");
+            Console.WriteLine();
+
+            // [8/8] Umi-OCR (本地)
+            Console.WriteLine(" [8/8] OCR 文字识别（本地 Umi-OCR，需安装 Umi-OCR_Paddle）");
+            Console.Write("   启用? (Y/n): ");
+            var umiEnable = Console.ReadLine()?.Trim().ToLowerInvariant();
+            var umiEnabled = umiEnable != "n" && umiEnable != "no";
+            var umiHost = "127.0.0.1";
+            var umiPort = 1846;
+            if (umiEnabled)
+            {
+                Console.Write($"   地址 [{umiHost}]: ");
+                var h = Console.ReadLine()?.Trim();
+                if (!string.IsNullOrEmpty(h)) umiHost = h;
+                Console.Write($"   端口 [{umiPort}]: ");
+                var p = Console.ReadLine()?.Trim();
+                if (!string.IsNullOrEmpty(p) && int.TryParse(p, out var port)) umiPort = port;
+            }
             Console.WriteLine();
 
             // Preview
@@ -74,7 +92,8 @@ namespace AgentCoreProcessor.Config
             Console.WriteLine($"   轻量模型  : [{light.Provider}]  {light.Model}  @ {light.Endpoint}");
             Console.WriteLine($"   Embedding: {(embedding.Enabled ? "启用" : "禁用")}  {(embedding.Enabled ? $"{embedding.Model} @ {embedding.Endpoint}" : "")}");
             Console.WriteLine($"   Vision   : {(vision.Enabled ? "启用" : "禁用")}  {(vision.Enabled ? $"{vision.Model} @ {vision.Endpoint}" : "")}");
-            Console.WriteLine($"   OCR      : {(ocr.Enabled ? "启用" : "禁用")}  {(ocr.Enabled ? $"{ocr.Model} @ {ocr.Endpoint}" : "")}");
+            Console.WriteLine($"   OCR(远程): {(ocr.Enabled ? "启用" : "禁用")}  {(ocr.Enabled ? $"{ocr.Model} @ {ocr.Endpoint}" : "")}");
+            Console.WriteLine($"   OCR(本地): {(umiEnabled ? $"启用  {umiHost}:{umiPort}" : "禁用")}");
             Console.WriteLine("------------------------------------------------------------");
             Console.Write(" 确认写入? (Y/n): ");
             var confirm = Console.ReadLine()?.Trim().ToLowerInvariant();
@@ -111,6 +130,9 @@ namespace AgentCoreProcessor.Config
                 ["OCR_API_KEY"] = ocr.ApiKey,
                 ["OCR_ENDPOINT"] = ocr.Endpoint,
                 ["OCR_MODEL"] = ocr.Model,
+                ["UMI_OCR_ENABLED"] = umiEnabled ? "true" : "false",
+                ["UMI_OCR_HOST"] = umiHost,
+                ["UMI_OCR_PORT"] = umiPort.ToString(),
             };
 
             // Release templates

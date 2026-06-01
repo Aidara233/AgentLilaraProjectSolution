@@ -14,6 +14,8 @@ namespace AgentCoreProcessor.Client
         private readonly string endpoint;
         private readonly string model;
 
+        public string Name => "SiliconFlow-OCR";
+
         public SiliconFlowOcrProvider(string apiKey,
             string endpoint = "https://api.siliconflow.cn/v1/chat/completions",
             string model = "deepseek-ai/DeepSeek-OCR")

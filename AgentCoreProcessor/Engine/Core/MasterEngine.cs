@@ -471,9 +471,45 @@ namespace AgentCoreProcessor.Engine
                 Signal.Warn(LogGroup.Engine, "视觉提供者初始化失败", new { error = ex.Message });
             }
 
-            // OCR（从 OcrProvider.json 读取，不依赖 Base.json）
+            // OCR（先本地 Umi-OCR，后远程 SiliconFlow，支持 fallback 链）
             try
             {
+                var ocrProviders = new List<IOcrProvider>();
+
+                // 1. 本地 Umi-OCR（优先）
+                var umiConfigPath = Path.Combine(PathConfig.CoreConfigPath, "UmiOcr.json");
+                if (File.Exists(umiConfigPath))
+                {
+                    try
+                    {
+                        var umiJson = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(umiConfigPath));
+                        var umiEnabled = umiJson["enabled"]?.Value<bool>() ?? false;
+                        if (umiEnabled)
+                        {
+                            var umiHost = umiJson["host"]?.ToString() ?? "127.0.0.1";
+                            var umiPort = umiJson["port"]?.Value<int>() ?? 1846;
+                            var umiProvider = new UmiOcrProvider(umiHost, umiPort);
+                            var healthy = await umiProvider.HealthCheckAsync();
+                            if (healthy)
+                            {
+                                ocrProviders.Add(umiProvider);
+                                Signal.Event(LogGroup.Engine, "Umi-OCR本地提供者已就绪", new { host = umiHost, port = umiPort });
+                            }
+                            else
+                            {
+                                Signal.Warn(LogGroup.Engine, "Umi-OCR未响应，请确认Umi-OCR.exe正在运行",
+                                    new { host = umiHost, port = umiPort });
+                                umiProvider.Dispose();
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Signal.Warn(LogGroup.Engine, "Umi-OCR配置读取失败", new { error = ex.Message });
+                    }
+                }
+
+                // 2. 远程 SiliconFlow OCR（fallback）
                 var ocrConfigPath = Path.Combine(PathConfig.CoreConfigPath, "OcrProvider.json");
                 if (File.Exists(ocrConfigPath))
                 {
@@ -487,18 +523,22 @@ namespace AgentCoreProcessor.Engine
 
                         if (!string.IsNullOrEmpty(ocrApiKey))
                         {
-                            ocrProvider = new SiliconFlowOcrProvider(ocrApiKey, ocrEndpoint, ocrModel);
+                            ocrProviders.Add(new SiliconFlowOcrProvider(ocrApiKey, ocrEndpoint, ocrModel));
+                            Signal.Event(LogGroup.Engine, "SiliconFlow OCR远程提供者已就绪");
                         }
                         else
                         {
-                            Signal.Warn(LogGroup.Engine, "OCR提供者未配置apiKey，OCR处理不可用");
+                            Signal.Warn(LogGroup.Engine, "OCR远程提供者未配置apiKey");
                         }
                     }
                     else
                     {
-                        Signal.Event(LogGroup.Engine, "OCR提供者已禁用");
+                        Signal.Event(LogGroup.Engine, "OCR远程提供者已禁用");
                     }
                 }
+
+                if (ocrProviders.Count > 0)
+                    ocrProvider = new FallbackOcrProvider(ocrProviders);
             }
             catch (Exception ex)
             {

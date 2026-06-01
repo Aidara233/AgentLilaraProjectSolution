@@ -1,0 +1,5 @@
+{
+  "enabled": {{UMI_OCR_ENABLED}},
+  "host": "{{UMI_OCR_HOST}}",
+  "port": {{UMI_OCR_PORT}}
+}
