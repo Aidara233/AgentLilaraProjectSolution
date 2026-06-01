@@ -25,11 +25,12 @@ namespace Plugin.BasicTools
         }
 
         public string Name => "speak";
-        public string Description => "逐条发送消息到当前频道。content 为字符串数组，每条单独发送，"
+        public string Description => "逐条发送消息到当前频道。content 为一个字符串，"
+            + "多条消息用 \\n---\\n（换行+三个短横+换行）分隔，每条单独发送。"
             + "支持图文混排（<img work=\"rel/path\"/> 引用 Workspace 图片，"
             + "<img hash=\"xxx\"/> 引用图库图片）。可用标签：<at user=\"名字\"/> @提及、<reply id=\"消息ID\"/> 回复消息";
         public IReadOnlyList<ToolParameter> Parameters =>
-            [new("content", "要发送的消息数组，每条为独立消息（可含 <img/> <at/> <reply/> 标签）", 0)];
+            [new("content", "要发送的消息，多条用 \\n---\\n 分隔（可含 <img/> <at/> <reply/> 标签）", 0)];
         public TimeSpan Timeout => TimeSpan.FromSeconds(30);
 
         public JsonNode GetInputSchema()
@@ -41,9 +42,8 @@ namespace Plugin.BasicTools
                 {
                     ["content"] = new JsonObject
                     {
-                        ["type"] = "array",
-                        ["items"] = new JsonObject { ["type"] = "string" },
-                        ["description"] = "要发送的消息数组，每条为独立消息（可含 <img/> <at/> <reply/> 标签）"
+                        ["type"] = "string",
+                        ["description"] = "要发送的消息，多条用 \\n---\\n（换行+三个短横+换行）分隔（可含 <img/> <at/> <reply/> 标签）"
                     }
                 },
                 ["required"] = new JsonArray { "content" }
@@ -88,7 +88,22 @@ namespace Plugin.BasicTools
             if (string.IsNullOrWhiteSpace(raw))
                 return [];
 
-            // 标准路径：JSON 字符串数组反序列化，处理所有边缘情况（非字符串元素、特殊字符等）
+            // 主路径：\n---\n 分隔符切分多条消息
+            var separator = "\n---\n";
+            if (raw.Contains(separator))
+            {
+                var parts = raw.Split(separator, StringSplitOptions.None);
+                var list = new List<string>();
+                foreach (var p in parts)
+                {
+                    var trimmed = p.Trim();
+                    if (!string.IsNullOrWhiteSpace(trimmed))
+                        list.Add(trimmed);
+                }
+                if (list.Count > 0) return list;
+            }
+
+            // 兼容旧格式：JSON 字符串数组反序列化
             try
             {
                 var list = System.Text.Json.JsonSerializer.Deserialize<List<string>>(raw);
@@ -100,7 +115,7 @@ namespace Plugin.BasicTools
             }
             catch { }
 
-            // 兼容路径：手动解析，支持 {"content": [...]} 对象格式和单元素容错
+            // 兼容路径：手动解析 JSON 数组或 {"content": [...]} 对象
             try
             {
                 var node = JsonNode.Parse(raw);
