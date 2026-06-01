@@ -3,14 +3,19 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Client;
+using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Database;
+using AgentCoreProcessor.Engine;
+using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Util;
 using AgentLilara.PluginSDK.Services;
+using Newtonsoft.Json.Linq;
 
 namespace AgentCoreProcessor.Tool.Host
 {
     /// <summary>
     /// IMemoryAccess 桥接实现。将 SDK 接口映射到内部 Repository + EmbeddingProvider。
+    /// 写入主库后异步触发关系分类。
     /// </summary>
     internal class MemoryAccessImpl : IMemoryAccess
     {
@@ -18,6 +23,7 @@ namespace AgentCoreProcessor.Tool.Host
         private readonly TempMemoryRepository tempMemories;
         private readonly MemoryLinkRepository links;
         private readonly IEmbeddingProvider embedding;
+        private readonly RelationClassificationCore relationClassCore = new();
 
         public MemoryAccessImpl(
             MemoryRepository memories,
@@ -51,7 +57,81 @@ namespace AgentCoreProcessor.Tool.Host
                 entry.ExpiresAt = request.ExpiresAt;
                 await memories.UpdateAsync(entry);
             }
+
+            // 异步触发关系分类（fire-and-forget）
+            _ = Task.Run(() => ClassifyAndLinkAsync(entry, vec));
+
             return entry.Id;
+        }
+
+        /// <summary>
+        /// 异步搜索相似记忆并进行 LLM 关系分类、建边。
+        /// Fire-and-forget，失败不影响主流程。
+        /// </summary>
+        private async Task ClassifyAndLinkAsync(Database.MemoryEntry entry, float[] embVec)
+        {
+            try
+            {
+                var candidates = await memories.FindSimilarAsync(
+                    VectorUtil.FloatsToBytes(embVec), 10, 0.7f, excludeId: entry.Id);
+                if (candidates.Count == 0) return;
+
+                var cosScores = new List<float>();
+                foreach (var c in candidates)
+                {
+                    if (c.Embedding != null)
+                        cosScores.Add(VectorUtil.CosineSimilarity(
+                            embVec, VectorUtil.BytesToFloats(c.Embedding)));
+                    else
+                        cosScores.Add(0.7f);
+                }
+
+                // 分批调用关系分类（每轮最多 8 个候选）
+                for (int i = 0; i < candidates.Count; i += 8)
+                {
+                    var batchTargets = candidates.Skip(i).Take(8).ToList();
+                    var batchCos = cosScores.Skip(i).Take(8).ToList();
+
+                    var raw = await relationClassCore.ClassifyAsync(entry, batchTargets, batchCos);
+                    var result = ParseSupportResult(raw, batchTargets.Count);
+                    if (result == null) continue;
+
+                    foreach (var (idx, support) in result)
+                    {
+                        if (idx < 0 || idx >= batchTargets.Count) continue;
+                        if (Math.Abs(support) < 0.1f) continue;
+
+                        await links.CreateOrUpdateAsync(
+                            entry.Id, batchTargets[idx].Id,
+                            Math.Abs(support), "semantic",
+                            Math.Clamp(support, -1f, 1f));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Signal.Warn(LogGroup.Engine, "实时关系分类失败",
+                    new { entryId = entry.Id, error = ex.Message });
+            }
+        }
+
+        private static List<(int TargetIndex, float Support)>? ParseSupportResult(
+            string raw, int targetCount)
+        {
+            try
+            {
+                var array = JArray.Parse(TextUtil.StripMarkdownCodeFence(raw));
+                var results = new List<(int, float)>();
+                foreach (var item in array)
+                {
+                    var idx = item["targetIndex"]?.Value<int>() ?? -1;
+                    var sup = item["support"]?.Value<float>() ?? 0f;
+                    if (idx >= 0 && idx < targetCount)
+                        results.Add((idx, sup));
+                }
+                return results;
+            }
+            catch { return null; }
         }
 
         public async Task<List<AgentLilara.PluginSDK.Services.MemoryEntry>> SemanticSearchAsync(

@@ -135,17 +135,15 @@ namespace AgentCoreProcessor.Engine
         {
             var active = hasActiveDream ? activeDreamEngine : null;
             var lastRec = active?.LastCompletedRecord;
-            var running = active?.GetRunningFragments() ?? new List<DreamEngine.RunningFragmentInfo>();
             return new()
             {
                 ForceFlag = forceFlag,
                 LastDaydreamTime = lastDaydreamTime,
                 PendingLevel = pendingLevel,
                 HasActiveDream = hasActiveDream,
-                CurrentFragment = running.FirstOrDefault()?.Type ?? active?.CurrentFragment,
-                FragmentsCompleted = active?.FragmentsCompleted ?? 0,
-                FragmentsTotal = active?.FragmentsTotal ?? 0,
-                CurrentFragmentStartTime = active?.CurrentFragmentStartTime,
+                CurrentFragment = active?.CurrentPhase,
+                FragmentsCompleted = active?.StepsCompleted ?? 0,
+                FragmentsTotal = active?.StepsTotal ?? 0,
                 CurrentInputDescription = active?.CurrentInputDescription,
                 LastFragmentType = lastRec?.Type,
                 LastFragmentSummary = lastRec?.Summary,
@@ -158,20 +156,8 @@ namespace AgentCoreProcessor.Engine
                     Note = d.Note
                 }).ToList(),
                 CompletedFragments = active?.CompletedFragments.ToList(),
-                // 资源与预算
-                AvailableResources = active?.AvailableResources ?? 0,
-                TotalResources = active?.TotalResources ?? cfg.TotalResources,
-                TokensUsed = active?.TokensUsed ?? 0,
                 MainBudget = cfg.MainTokenBudget,
                 ReserveBudget = cfg.ReserveTokenBudget,
-                TodoCount = active?.TodoCount ?? 0,
-                RunningCount = active?.RunningCount ?? 0,
-                BudgetExhausted = active?.BudgetExhausted ?? false,
-                RunningFragments = running.Select(r => new RunningFragmentSnapshot
-                {
-                    Type = r.Type,
-                    ResourceCost = r.ResourceCost
-                }).ToList(),
             };
         }
 

@@ -378,17 +378,15 @@ internal class DreamStatusSource : IDataSource
             ? (int)(snap.FragmentsCompleted * 100.0 / snap.FragmentsTotal)
             : 0;
 
-        var runningList = snap.RunningFragments != null && snap.RunningFragments.Count > 0
-            ? string.Join(", ", snap.RunningFragments.Select(r => $"{SimplifyType(r.Type)}({r.ResourceCost})"))
-            : (snap.CurrentFragment ?? "准备中");
+        var running = snap.CurrentFragment ?? "准备中";
 
         var data = new JsonObject
         {
             ["state"] = "做梦中",
             ["level"] = snap.PendingLevel.ToString(),
             ["progress"] = $"{progressPct}|{snap.FragmentsCompleted}/{snap.FragmentsTotal}",
-            ["running"] = $"{snap.RunningCount} 并行: {runningList}",
-            ["todo"] = snap.TodoCount > 0 ? $"{snap.TodoCount} 个排队中" : "—",
+            ["running"] = $"阶段: {running}",
+            ["todo"] = "—",
             ["input_desc"] = snap.CurrentInputDescription ?? "—",
             ["force_flag"] = snap.ForceFlag ? "是" : "否"
         };
@@ -397,11 +395,8 @@ internal class DreamStatusSource : IDataSource
 
     private static string SimplifyType(string type) => type switch
     {
-        "Consolidation" => "整合",
-        "Weight" => "权重",
-        "Link" => "关联",
-        "Combine" => "组合",
-        "Dedup" => "去重",
+        "order" => "秩序阶段",
+        "patrol_step" => "巡逻步进",
         _ => type
     };
 
@@ -460,26 +455,13 @@ internal class DreamResourcesSource : IDataSource
             return Task.FromResult(new DataResult { Data = idle });
         }
 
-        var totalRes = snap.TotalResources;
-        var avail = snap.AvailableResources;
-        var usedRes = totalRes - avail;
-        var resPct = totalRes > 0 ? (int)(avail * 100.0 / totalRes) : 0;
-
         var mainBudget = snap.MainBudget;
         var reserveBudget = snap.ReserveBudget;
-        var tokensUsed = snap.TokensUsed;
-        var budgetPct = mainBudget > 0 ? (int)(tokensUsed * 100.0 / mainBudget) : 0;
-
-        var budgetLabel = snap.BudgetExhausted
-            ? (snap.MainBudget <= 0 && snap.ReserveBudget <= 0 ? "已全部耗尽" : "主预算耗尽")
-            : "正常";
 
         var data = new JsonObject
         {
-            ["resources"] = $"{resPct}|{avail}/{totalRes} (已用{usedRes})",
-            ["tokens_used"] = $"{budgetPct}|{tokensUsed:#,0}/{mainBudget:#,0}",
-            ["budget_status"] = budgetLabel,
-            ["tokens_detail"] = $"已花 {tokensUsed:#,0} / 主预算 {mainBudget:#,0}",
+            ["budget_status"] = "正常",
+            ["tokens_detail"] = $"主预算 {mainBudget:#,0}",
             ["reserve"] = $"增援 {reserveBudget:#,0}"
         };
         return Task.FromResult(new DataResult { Data = data });
@@ -551,33 +533,15 @@ internal class DreamActiveFragmentsSource : IDataSource
         {
             int seq = 1;
 
-            // 1. 运行中片段（排最前）
-            if (snap?.RunningFragments != null)
+            // 1. 当前阶段
+            if (snap?.CurrentFragment != null)
             {
-                foreach (var rf in snap.RunningFragments)
-                {
-                    arr.Add(new JsonObject
-                    {
-                        ["seq"] = "▶",
-                        ["type"] = rf.Type,
-                        ["status"] = "执行中",
-                        ["duration"] = $"资源{rf.ResourceCost}",
-                        ["summary"] = ""
-                    });
-                }
-            }
-            else if (snap?.CurrentFragment != null)
-            {
-                // 兜底: 兼容旧的单片段模式
-                var elapsed = snap.CurrentFragmentStartTime.HasValue
-                    ? $"{(DateTime.Now - snap.CurrentFragmentStartTime.Value).TotalSeconds:F0}s"
-                    : "—";
                 arr.Add(new JsonObject
                 {
                     ["seq"] = "▶",
                     ["type"] = snap.CurrentFragment,
                     ["status"] = "执行中",
-                    ["duration"] = elapsed,
+                    ["duration"] = "—",
                     ["summary"] = snap.CurrentInputDescription ?? "处理中…"
                 });
             }
@@ -599,21 +563,7 @@ internal class DreamActiveFragmentsSource : IDataSource
                 }
             }
 
-            // 3. 排队中的片段（todo）
-            if (snap != null && snap.TodoCount > 0)
-            {
-                for (int i = 0; i < snap.TodoCount; i++)
-                {
-                    arr.Add(new JsonObject
-                    {
-                        ["seq"] = "⏳",
-                        ["type"] = "—",
-                        ["status"] = "排队中",
-                        ["duration"] = "—",
-                        ["summary"] = "等待资源释放"
-                    });
-                }
-            }
+            // 3. 空等待
         }
         else
         {
@@ -1085,8 +1035,9 @@ internal class SleepConfigSource : IDataSource
             ["deep_window"] = $"{config.DeepSleepTimeStart} ~ {config.DeepSleepTimeEnd}",
             ["deep_budget"] = $"{config.MainTokenBudget:#,0} tokens (主) + {config.ReserveTokenBudget:#,0} tokens (增援)",
             ["deep_max_minutes"] = $"{config.DeepSleepMaxMinutes} 分钟",
-            ["total_resources"] = $"{config.TotalResources}",
-            ["resource_costs"] = $"C={config.ConsolidationResourceCost} W={config.WeightResourceCost} L={config.LinkResourceCost} B={config.CombineResourceCost} D={config.DedupResourceCost}"
+            ["patrol_config"] = $"大睡{config.MaxPatrolSteps}步 / 小睡{config.NapPatrolSteps}步 / 走神{config.DaydreamPatrolSteps}步",
+            ["relation_batch"] = $"每轮{config.RelationBatchMaxTargets}候选 / 缓冲{config.TriangleBufferSize}触发LLM",
+            ["decay"] = $"衰减阈值 {config.DecayThreshold:F3} / 冷启动池 {config.ColdStartPoolSize}"
         };
         return Task.FromResult(new DataResult { Data = data });
     }
@@ -1113,11 +1064,12 @@ internal class SleepBudgetSource : IDataSource
             ["main_budget"] = $"{config.MainTokenBudget:#,0}",
             ["reserve_budget"] = $"{config.ReserveTokenBudget:#,0}",
             ["total_budget"] = $"{(config.MainTokenBudget + config.ReserveTokenBudget):#,0}",
-            ["consolidation_cost"] = $"资源 {config.ConsolidationResourceCost} / Token ~{config.ConsolidationTokenEstimate}",
-            ["weight_cost"] = $"资源 {config.WeightResourceCost} / Token ~{config.WeightTokenEstimate}",
-            ["link_cost"] = $"资源 {config.LinkResourceCost} / Token ~{config.LinkTokenEstimate}",
-            ["combine_cost"] = $"资源 {config.CombineResourceCost} / Token ~{config.CombineTokenEstimate}",
-            ["dedup_cost"] = $"资源 {config.DedupResourceCost} / Token ~{config.DedupTokenEstimate}"
+            ["patrol_steps"] = $"大睡{config.MaxPatrolSteps} / 小睡{config.NapPatrolSteps} / 走神{config.DaydreamPatrolSteps}",
+            ["batch_targets"] = $"每轮最多 {config.RelationBatchMaxTargets} 候选",
+            ["triangle_buffer"] = $"攒 {config.TriangleBufferSize} 对触发LLM",
+            ["decay_threshold"] = $"衰减至 {config.DecayThreshold:F3} 清理",
+            ["embedding_topk"] = $"搜 Top-{config.EmbeddingTopK}",
+            ["cold_start_pool"] = $"冷启动 {config.ColdStartPoolSize} 候选"
         };
         return Task.FromResult(new DataResult { Data = data });
     }

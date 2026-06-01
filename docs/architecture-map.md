@@ -18,7 +18,7 @@ AgentLilaraProjectSolution/
 │     ├── Client/      IModelClient 抽象层（Claude/OpenAI 双协议）+ Embedding + IVisionProvider + IOcrProvider
 │     ├── Command/     框架指令系统（/help /status /config 等）
 │     ├── Config/      PathConfig 绝对路径管理
-│     ├── Core/        业务核心（AgentCore+PreprocessingCore+MemoryExtractionCore+ConsolidationCore+ConsolidationFinalCore+WeightCore+LinkCore+CombineCore+DedupCore+SummarizationCore+SleepTalkCore等），继承 CoreBase，各自 JSON 配置
+│     ├── Core/        业务核心（AgentCore+PreprocessingCore+MemoryExtractionCore+RelationClassificationCore+WeightCore+SummarizationCore+SleepTalkCore等），继承 CoreBase，各自 JSON 配置
 │     ├── Database/    实体 + Repository（SQLite，13张表）
 │     ├── Engine/      引擎生态（MasterEngine 内核 + 子引擎 + Worker闸门循环 + 内务模块）
 │     ├── Memory/      MemoryService 检索管线
@@ -317,12 +317,15 @@ SystemEngine (系统循环，单例，纯调度者):
 ## 做梦系统
 
 ```
+三阶段架构:
+  实时 — 外部工具写入主库时异步触发，embedding搜相似 → LLM关系分类 → 建边/矛盾边
+  秩序（小睡/大睡） — temp入库: embedding去重 → LLM关系分类(分批,cache复用) → LLM权重评估 → 建边 → ChangePropagation
+  巡逻（走神/小睡/大睡） — 冷启动选点 → 三角闭合 → MemoryDecay衰减 → 过期清理 → ChangePropagation → 沿冷邻居步进
+
 三级睡眠:
-  走神 — 随时，1片段 (Weight/Link)
-  小睡 — 空闲600s，5片段 (Consolidation为主)
-  大睡 — 红/黄评估+许可闸门，两阶段:
-    Phase1(浅睡): 集中清临时记忆，Consolidation权重极高
-    Phase2(深睡): 启动ReviewEngine + 并行跑Weight/Link/Combine
+  走神 — 仅巡逻，~3步，无LLM(除非三角缓冲攒够)
+  小睡 — 秩序(temp非空)+巡逻~15步，LLM分批调用
+  大睡 — 秩序(temp非空)+巡逻~100步，LLM分批调用
 
 睡眠状态管理 (SleepState 枚举，ISystemContext.CurrentSleepState):
   DreamEngine 启动时设置，结束时重置为 None
@@ -333,14 +336,8 @@ SystemEngine (系统循环，单例，纯调度者):
   小睡: 被@ + 叫醒关键词("起床/醒醒/wake/起来/叫醒/别睡了/醒来") → 打断
          仅被@ → 触发梦话(SleepTalkCore)，不打断
   大睡: 消息不打断，仅 force-wake 信号可唤醒
-         管理员@: ChannelEngineSpawnCheck 发 force-wake 信号
-         任务提交: TaskBridge.OnTaskSubmitted 发 force-wake 信号
 
-梦话 (SleepTalkCore):
-  片段完成后概率触发: 大睡25% / 小睡15% / 走神不触发
-  小睡被@时必定触发一条梦话
-  内容: 基于当前片段 + 触发词生成梦幻呓语(≤50字)
-  尊重 MuteMode
+梦话 (SleepTalkCore): 保留，逻辑不变
 
 触发条件 (DreamEngineSpawnCheck):
   红色(任一触发): customRedAlert / 临时记忆爆仓 / 大睡间隔过长
@@ -348,20 +345,13 @@ SystemEngine (系统循环，单例，纯调度者):
   → 决定锁定 → 许可闸门(管理员授权/超时自动) → 执行
   信号: force-sleep(触发睡觉) / force-wake(强制唤醒) / dream-config(配置更新)
 
-五种片段: Consolidation / Weight / Link / Combine / Dedup
+巡逻核心: 三角闭合（邻居对无边→embedding验证→LLM关系分类） + 衰减清理
+关系分类: RelationClassificationCore (新增），专注单中心+N候选，输出support值(-1~+1)
+ChangePropagation: BFS单轮扩散，所有节点变更(实时/秩序/巡逻)统一终点
+
 ReviewEngine (由DreamEngine孵化，不注册SpawnCheck):
   独立Agent循环 + 15个专用工具 + 自由探索模式（无固定目标）
-  游标机制: focus(message_id/offset/channel_id) + browse(count) 正序阅读
-  种子: 有信标→列出候选 / 无信标→随机频道 / 有进度→恢复
-  评价系统: review_evaluate(++/+/0/-/--) → session内缓冲 → complete时取平均应用
-    公式: delta = (boundary - current) * rate * averaged_coefficient
-    人物4维度(reliability/respect/value/stability) + 频道1维度(value)
-  Token预算制: ReviewConfig.json (基础50k + 备用15k + 压缩阈值30k)
-  空转检测: 连续N轮只有导航没有行动 → 提醒
-  信标来源: 工作端 mark_for_review 工具 + 框架自动(信任升级候选)
-  信任升级: 多维度检查(EvaluationScore) + 硬性条件(天数/记忆数/review次数)
-  日志: ReviewSessions + ReviewActions 表（业务级）+ Signal（技术级）
-  进度持久化: ReviewProgress.json (游标/评价缓冲/笔记/token计数)
+  不变，同旧描述
 ```
 
 ## 记忆系统
@@ -383,9 +373,9 @@ ReviewEngine (由DreamEngine孵化，不注册SpawnCheck):
     关键词命中加分 (KeywordBoost=0.15) + Subject匹配加分 (SubjectBoost=0.2)
     30s 意图缓存，同一轮对话内不重复调用
 
-整合: TempMemory → Consolidation(做梦) → Memory
-	去重: Dedup片段 → 关联MemoryLink 1-hop集群 → DedupCore模型判断merge/discard → 清理重复+重定向关联
-	过期清理: 每次做梦RunAsync入口执行，DELETE IsPersistent=0 AND Expired + 孤立MemoryLink（纯SQL，无模型消耗）
+整合: TempMemory → 秩序阶段(embedding去重+LLM关系分类) → Memory
+	关联建立: 实时(外部写入异步LLM) + 秩序(temp入库LLM) + 巡逻(三角闭合LLM)
+	过期清理: 每次做梦RunAsync入口执行 + 巡逻衰减清理
 标记: ReviewHint表 (工作时标记 → 复盘时消费)
 双轴模型: Importance(0.0-1.0，半衰期衰减) + Certainty(0.0-1.0，仅证据可改变) + RecallCount/LastRecalledAt(命中追踪)
 关联边: Relevance(关联性) + Support(-1~+1，负值=矛盾)，矛盾边不删节点只降确定性

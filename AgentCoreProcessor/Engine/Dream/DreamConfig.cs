@@ -9,14 +9,17 @@ namespace AgentCoreProcessor.Engine
     /// </summary>
     internal class DreamConfig
     {
-        /// <summary>走神是否启用（默认关闭，功能定位待协商）</summary>
-        public bool DaydreamEnabled { get; set; } = false;
-
         /// <summary>走神空闲阈值（秒）。仅当系统空闲超过此时间才可能触发走神。</summary>
         public int DaydreamIdleThreshold { get; set; } = 300;
 
         /// <summary>走神冷却期（秒）</summary>
         public int DaydreamCooldown { get; set; } = 120;
+
+        /// <summary>走神是否启用</summary>
+        public bool DaydreamEnabled { get; set; } = false;
+
+        /// <summary>走神巡逻步数</summary>
+        public int DaydreamPatrolSteps { get; set; } = 3;
 
         /// <summary>小睡空闲阈值（秒）</summary>
         public int NapIdleThreshold { get; set; } = 600;
@@ -64,116 +67,48 @@ namespace AgentCoreProcessor.Engine
 
         // ---- 预算配置 ----
 
-        /// <summary>主 token 预算，耗尽后停止向 todo 添加新片段</summary>
+        /// <summary>主 token 预算</summary>
         public int MainTokenBudget { get; set; } = 100000;
 
-        /// <summary>增援 token 预算，主预算+增援都耗尽后清空 todo</summary>
+        /// <summary>增援 token 预算</summary>
         public int ReserveTokenBudget { get; set; } = 30000;
 
         /// <summary>大睡硬性时间上限（分钟）</summary>
         public int DeepSleepMaxMinutes { get; set; } = 120;
 
-        /// <summary>BFS 变更传播停止阈值，|Δ_i| + |Δ_c| 低于此值停止扩散</summary>
+        /// <summary>BFS 变更传播停止阈值</summary>
         public float ChangePropagationEpsilon { get; set; } = 0.01f;
 
-        // ---- 资源与并行配置 ----
+        // ---- 秩序阶段配置 ----
 
-        /// <summary>资源池总量</summary>
-        public int TotalResources { get; set; } = 80;
+        /// <summary>embedding 去重搜 top-K</summary>
+        public int EmbeddingTopK { get; set; } = 10;
 
-        /// <summary>Consolidation 片段资源占用</summary>
-        public int ConsolidationResourceCost { get; set; } = 30;
+        /// <summary>秩序阶段 LLM 关系分类最低 cos 阈值</summary>
+        public float OrderClassifyMinCos { get; set; } = 0.7f;
 
-        /// <summary>Weight 片段资源占用</summary>
-        public int WeightResourceCost { get; set; } = 10;
+        // ---- 巡逻配置 ----
 
-        /// <summary>Link 片段资源占用</summary>
-        public int LinkResourceCost { get; set; } = 20;
+        /// <summary>大睡巡逻最大步数</summary>
+        public int MaxPatrolSteps { get; set; } = 100;
 
-        /// <summary>Combine 片段资源占用</summary>
-        public int CombineResourceCost { get; set; } = 20;
+        /// <summary>小睡巡逻步数</summary>
+        public int NapPatrolSteps { get; set; } = 15;
 
-        /// <summary>Dedup 片段资源占用</summary>
-        public int DedupResourceCost { get; set; } = 20;
+        /// <summary>冷启动候选池大小</summary>
+        public int ColdStartPoolSize { get; set; } = 20;
 
-        /// <summary>Consolidation 预估 token 消耗</summary>
-        public int ConsolidationTokenEstimate { get; set; } = 3000;
+        /// <summary>三角闭合 LLM 最低 cos 阈值</summary>
+        public float TriangleClassifyMinCos { get; set; } = 0.7f;
 
-        /// <summary>Weight 预估 token 消耗</summary>
-        public int WeightTokenEstimate { get; set; } = 1500;
+        /// <summary>LLM 三角缓冲攒批触发阈值</summary>
+        public int TriangleBufferSize { get; set; } = 10;
 
-        /// <summary>Link 预估 token 消耗</summary>
-        public int LinkTokenEstimate { get; set; } = 2000;
+        /// <summary>每轮关系分类最大候选数</summary>
+        public int RelationBatchMaxTargets { get; set; } = 8;
 
-        /// <summary>Combine 预估 token 消耗</summary>
-        public int CombineTokenEstimate { get; set; } = 2500;
-
-        /// <summary>Dedup 预估 token 消耗</summary>
-        public int DedupTokenEstimate { get; set; } = 2000;
-
-        /// <summary>按片段类型获取资源占用</summary>
-        public int GetResourceCost(FragmentType type) => type switch
-        {
-            FragmentType.Consolidation => ConsolidationResourceCost,
-            FragmentType.Weight => WeightResourceCost,
-            FragmentType.Link => LinkResourceCost,
-            FragmentType.Combine => CombineResourceCost,
-            FragmentType.Dedup => DedupResourceCost,
-            _ => 10
-        };
-
-        /// <summary>按片段类型获取预估 token 消耗</summary>
-        public int GetTokenEstimate(FragmentType type) => type switch
-        {
-            FragmentType.Consolidation => ConsolidationTokenEstimate,
-            FragmentType.Weight => WeightTokenEstimate,
-            FragmentType.Link => LinkTokenEstimate,
-            FragmentType.Combine => CombineTokenEstimate,
-            FragmentType.Dedup => DedupTokenEstimate,
-            _ => 2000
-        };
-
-        // ---- 整合配置 ----
-
-        /// <summary>整合第一轮每批最大条数</summary>
-        public int ConsolidationBatchSize { get; set; } = 50;
-
-        /// <summary>小组合并阈值：subject 条数低于此值时归入杂项批</summary>
-        public int ConsolidationSmallGroupThreshold { get; set; } = 5;
-
-        // ---- 片段参数配置 ----
-
-        /// <summary>权重评估每次处理的记忆条数</summary>
-        public int WeightBatchSize { get; set; } = 10;
-
-        /// <summary>关联重建每次处理的目标记忆数</summary>
-        public int LinkTargetCount { get; set; } = 3;
-
-        /// <summary>关联重建候选池大小（embedding 搜索返回数）</summary>
-        public int LinkCandidatePoolSize { get; set; } = 20;
-
-        /// <summary>关联重建 cosine 相似度最低阈值</summary>
-        public float LinkCosineThreshold { get; set; } = 0.3f;
-
-        /// <summary>关联重建过滤后取 top-k 候选</summary>
-        public int LinkTopK { get; set; } = 10;
-
-        /// <summary>记忆组合搜索的近期记忆池大小</summary>
-        public int CombineRecentPoolSize { get; set; } = 30;
-
-        /// <summary>记忆组合要求的最低关联强度</summary>
-        public float CombineStrengthThreshold { get; set; } = 0.7f;
-
-        /// <summary>记忆组合每次尝试的最大对数</summary>
-        public int CombineMaxPairs { get; set; } = 3;
-
-        // ---- 去重配置 ----
-
-        /// <summary>去重集群最大条数（种子+关联）</summary>
-        public int DedupClusterSize { get; set; } = 12;
-
-        /// <summary>去重集群最小条数，低于此数不触发</summary>
-        public int DedupMinClusterSize { get; set; } = 3;
+        /// <summary>衰减到此值以下标记过期删除</summary>
+        public float DecayThreshold { get; set; } = 0.05f;
 
         /// <summary>判断当前时间是否在大睡时间段内。</summary>
         public bool IsInDeepSleepWindow()
