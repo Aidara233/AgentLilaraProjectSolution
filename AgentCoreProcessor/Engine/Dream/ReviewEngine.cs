@@ -115,10 +115,10 @@ namespace AgentCoreProcessor.Engine
             var reviewAccess = new ReviewAccessImpl(this, _ctx);
             _ctx.ToolContext.Register<IReviewAccess>(reviewAccess);
 
+            ReviewSession? session = null;
             try
             {
-                // 创建 ReviewSession 记录
-                var session = await _ctx.ReviewLogs.CreateSessionAsync(new ReviewSession
+                session = await _ctx.ReviewLogs.CreateSessionAsync(new ReviewSession
                 {
                     StartTime = DateTime.Now,
                     SeedType = _seedType
@@ -138,6 +138,16 @@ namespace AgentCoreProcessor.Engine
                 _core.EngineType = "review";
                 _core.GlobalComponentTools = _ctx.GlobalComponentHost?.GetVisibleTools("review").ToList();
                 _agent = new Agent(this, _core, agentConfig, authorized);
+
+                // 全量记录工具调用到 ReviewActions
+                _agent.OnToolExecuted = (call, result, _) =>
+                {
+                    var summary = result.IsSuccess
+                        ? (result.Data?.Length > 120 ? result.Data[..120] + "…" : result.Data ?? "ok")
+                        : (result.Error ?? "error");
+                    return LogActionAsync(call.Tool, summary, call.RawInputJson);
+                };
+
                 await _agent.RunAsync(_cts.Token);
 
                 // 应用评价缓冲
@@ -152,29 +162,9 @@ namespace AgentCoreProcessor.Engine
                         await _ctx.ReviewHints.MarkProcessedAsync(h.Id);
                 }
 
-                // 更新 ReviewSession
-                session.EndTime = DateTime.Now;
-                session.StopReason = _reviewControl?.IsCompleted == true ? "completed"
-                    : TokensUsed >= _cfg.TokenBudget ? "budget" : "interrupted";
-                session.TokensUsed = TokensUsed;
-                session.RoundsExecuted = _agent.TotalRounds;
-                session.ChannelsVisited = System.Text.Json.JsonSerializer.Serialize(ChannelsVisited.ToList());
-                session.PersonsEncountered = System.Text.Json.JsonSerializer.Serialize(PersonsEncountered.ToList());
-                session.ThinkingNotes = ThinkingNotes;
+                // 记录评价数和信号ID（供 finally 写回 session）
                 session.EvaluationCount = evalCount;
                 session.SignalId = lifeCtx.SignalId;
-                await _ctx.ReviewLogs.UpdateSessionAsync(session);
-
-                Signal.Event(LogGroup.Engine, "Review完成", new
-                {
-                    seedType = _seedType,
-                    rounds = _agent.TotalRounds,
-                    stopReason = session.StopReason,
-                    completed = _reviewControl?.IsCompleted,
-                    reserveUsed = _reviewControl?.ReserveGranted,
-                    tokensUsed = TokensUsed,
-                    evaluationsApplied = evalCount
-                });
             }
             catch (OperationCanceledException) { }
             catch (Exception ex)
@@ -183,6 +173,31 @@ namespace AgentCoreProcessor.Engine
             }
             finally
             {
+                // 确保 session 落库（即使异常退出也不留僵尸记录）
+                if (session != null)
+                {
+                    session.EndTime = DateTime.Now;
+                    session.StopReason = _reviewControl?.IsCompleted == true ? "completed"
+                        : TokensUsed >= _cfg.TokenBudget ? "budget" : "interrupted";
+                    session.TokensUsed = TokensUsed;
+                    session.RoundsExecuted = _agent?.TotalRounds ?? 0;
+                    session.ChannelsVisited = System.Text.Json.JsonSerializer.Serialize(ChannelsVisited.ToList());
+                    session.PersonsEncountered = System.Text.Json.JsonSerializer.Serialize(PersonsEncountered.ToList());
+                    session.ThinkingNotes = ThinkingNotes;
+                    await _ctx.ReviewLogs.UpdateSessionAsync(session);
+
+                    Signal.Event(LogGroup.Engine, "Review完成", new
+                    {
+                        seedType = _seedType,
+                        rounds = session.RoundsExecuted,
+                        stopReason = session.StopReason,
+                        completed = _reviewControl?.IsCompleted,
+                        reserveUsed = _reviewControl?.ReserveGranted,
+                        tokensUsed = TokensUsed,
+                        evaluationsApplied = session.EvaluationCount
+                    });
+                }
+
                 _ctx.ToolContext.Unregister<IReviewAccess>();
                 _ctx.ToolContext.Unregister<IReviewControl>();
                 IsAlive = false;
