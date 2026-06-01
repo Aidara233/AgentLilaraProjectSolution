@@ -19,7 +19,7 @@ namespace Plugin.WorkingTools
         private const int MaxLines = 50;
 
         public string Name => "thinking_notes";
-        public string Description => "思考笔记：你的私人草稿本，内容每轮自动注入上下文。action: append(追加) / read(读取) / replace(替换全部) / clear(清空)。notebook 参数传当前频道ID（见循环状态提示）。append/replace 时 content 必填。";
+        public string Description => "思考笔记：你的私人草稿本，内容每轮自动注入上下文。action: append(追加) / read(读取) / replace(替换全部) / clear(清空)。notebook 参数传当前频道ID（见上方频道信息）。append/replace 时 content 必填。";
         public IReadOnlyList<ToolParameter> Parameters =>
         [
             new("action", "操作类型：append / read / clear / replace", 0),

@@ -1056,8 +1056,8 @@ namespace AgentCoreProcessor.Engine
             var id = parts[1];
             return type switch
             {
-                "group" => $"当前频道：群聊，群号: {id}。对群成员操作时需提供 group_id={id}。",
-                "private" => $"当前频道：私聊，对方QQ: {id}。",
+                "group" => $"当前频道：群聊，群号: {id}，频道ID: {channelId}。对群成员操作时需提供 group_id={id}。",
+                "private" => $"当前频道：私聊，对方QQ: {id}，频道ID: {channelId}。",
                 _ => ""
             };
         }
@@ -1166,6 +1166,7 @@ namespace AgentCoreProcessor.Engine
             var parts = new List<string>();
             if (!string.IsNullOrEmpty(m.PlatformMessageId))
                 parts.Add($"id=\"{EscapeXml(m.PlatformMessageId)}\"");
+            parts.Add($"db_id=\"{m.Id}\"");
             if (!string.IsNullOrEmpty(m.ReplyToPlatformMessageId))
                 parts.Add($"reply=\"{EscapeXml(m.ReplyToPlatformMessageId)}\"");
             if (IsBotMentionedInMessage(m))
@@ -1410,7 +1411,19 @@ namespace AgentCoreProcessor.Engine
                 }
                 else
                 {
-                    var partSb = new StringBuilder("[当前参与者]\n");
+                    var partSb = new StringBuilder();
+                    // 频道基本信息（express 模式）
+                    if (!string.IsNullOrEmpty(channelName))
+                    {
+                        var chParts = channelName.Split('_', 2);
+                        if (chParts.Length == 2)
+                        {
+                            var chType = chParts[0];
+                            var chId = chParts[1];
+                            partSb.AppendLine($"[频道] 类型: {chType}, 平台ID: {chId}, 频道ID: {channelId}");
+                        }
+                    }
+                    partSb.AppendLine("[当前参与者]");
                     foreach (var (_, p) in currentParticipantSnapshot)
                     {
                         partSb.Append($"- {p.DisplayName}");

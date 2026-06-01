@@ -43,7 +43,7 @@ namespace AgentCoreProcessor.Tool.Host
             if (messages.Count > 0)
                 _engine.CursorMessageId = messages.Last().Id;
 
-            return messages.Select(ToDto).ToList();
+            return await ToDtoListAsync(messages);
         }
 
         public async Task<List<ReviewMessageDto>> SearchMessagesAsync(
@@ -55,7 +55,7 @@ namespace AgentCoreProcessor.Tool.Host
             {
                 var messages = await _ctx.Session.SearchMessagesByChannelAsync(
                     channelId.Value, query, 0, limit);
-                return messages.Select(ToDto).ToList();
+                return await ToDtoListAsync(messages);
             }
 
             // 跨频道搜索：遍历所有频道取结果
@@ -66,7 +66,8 @@ namespace AgentCoreProcessor.Tool.Host
                 if (results.Count >= limit) break;
                 var msgs = await _ctx.Session.SearchMessagesByChannelAsync(
                     ch.Id, query, 0, limit - results.Count);
-                results.AddRange(msgs.Select(ToDto));
+                var dtos = await ToDtoListAsync(msgs);
+                results.AddRange(dtos);
             }
             return results.Take(limit).ToList();
         }
@@ -135,15 +136,33 @@ namespace AgentCoreProcessor.Tool.Host
         public void TrackChannel(int channelId) => _engine.ChannelsVisited.Add(channelId);
         public void TrackPerson(int personId) => _engine.PersonsEncountered.Add(personId);
 
-        private static ReviewMessageDto ToDto(UserMessage msg) => new()
+        private async Task<List<ReviewMessageDto>> ToDtoListAsync(List<UserMessage> messages)
         {
-            Id = msg.Id,
-            Time = msg.Time.ToString("MM-dd HH:mm"),
-            SenderName = msg.IsFromBot ? "Lilara"
-                : !string.IsNullOrEmpty(msg.SenderName) ? msg.SenderName
-                : $"U#{msg.UserId}",
-            Content = msg.Content,
-            IsFromBot = msg.IsFromBot
-        };
+            // 批量解析 PersonId
+            var userIds = messages.Select(m => m.UserId).Distinct().ToList();
+            var personMap = new Dictionary<int, int?>(); // userId -> personId
+            foreach (var uid in userIds)
+            {
+                var user = await _ctx.Session.GetUserByIdAsync(uid);
+                personMap[uid] = user?.PersonId;
+            }
+
+            return messages.Select(m =>
+            {
+                personMap.TryGetValue(m.UserId, out var personId);
+                return new ReviewMessageDto
+                {
+                    Id = m.Id,
+                    PlatformMessageId = m.PlatformMessageId,
+                    Time = m.Time.ToString("MM-dd HH:mm"),
+                    SenderName = m.IsFromBot ? "Lilara"
+                        : !string.IsNullOrEmpty(m.SenderName) ? m.SenderName
+                        : $"U#{m.UserId}",
+                    PersonId = personId,
+                    Content = m.Content,
+                    IsFromBot = m.IsFromBot
+                };
+            }).ToList();
+        }
     }
 }

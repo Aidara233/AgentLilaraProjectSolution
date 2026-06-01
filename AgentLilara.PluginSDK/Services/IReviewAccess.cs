@@ -44,6 +44,7 @@ namespace AgentLilara.PluginSDK.Services
     public class ReviewMessageDto
     {
         public int Id { get; set; }
+        public string? PlatformMessageId { get; set; }
         public string Time { get; set; } = "";
         public string SenderName { get; set; } = "";
         public int? PersonId { get; set; }
