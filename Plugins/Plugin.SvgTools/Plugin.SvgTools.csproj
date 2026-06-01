@@ -17,11 +17,7 @@
 
   <Target Name="CopyToHostPlugins" AfterTargets="Build" Condition=" '$(SolutionDir)' != '' And '$(SolutionDir)' != '*Undefined*' ">
     <ItemGroup>
-      <PluginDlls Include="$(OutputPath)Plugin.SvgTools.dll" />
-      <PluginDlls Include="$(OutputPath)Svg.Skia.dll" />
-      <PluginDlls Include="$(OutputPath)Svg.Model.dll" />
-      <PluginDlls Include="$(OutputPath)Svg.Custom.dll" />
-      <PluginDlls Include="$(OutputPath)ShimSkiaSharp.dll" />
+      <PluginDlls Include="$(OutputPath)*.dll" Exclude="$(OutputPath)AgentLilara.PluginSDK.dll" />
     </ItemGroup>
     <Copy SourceFiles="@(PluginDlls)"
           DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\"
