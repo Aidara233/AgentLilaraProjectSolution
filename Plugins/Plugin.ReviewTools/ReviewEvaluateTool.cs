@@ -6,9 +6,9 @@ namespace Plugin.ReviewTools;
 [ToolMeta(Group = "review")]
 public class ReviewEvaluateTool : ITool
 {
-    private readonly IReviewAccess _review;
+    private readonly IToolContext _ctx;
 
-    public ReviewEvaluateTool(IToolContext ctx) => _review = ctx.Require<IReviewAccess>();
+    public ReviewEvaluateTool(IToolContext ctx) => _ctx = ctx;
 
     public string Name => "review_evaluate";
     public string Description => "随时记录你对人物/频道的印象。可以多次评价同一目标同维度，最终取平均值应用。不用纠结，跟着感觉走。";
@@ -27,6 +27,7 @@ public class ReviewEvaluateTool : ITool
 
     public Task<ToolResult> ExecuteAsync(List<string> inputs, CancellationToken ct)
     {
+        var review = _ctx.Require<IReviewAccess>();
         if (inputs.Count < 4)
             return Task.FromResult(new ToolResult { Status = "failed", Error = "需要 target_type, target_id, dimension, rating 四个参数" });
 
@@ -46,10 +47,10 @@ public class ReviewEvaluateTool : ITool
         if (!ValidRatings.Contains(rating))
             return Task.FromResult(new ToolResult { Status = "failed", Error = "rating 必须为 ++/+/0/-/--" });
 
-        _review.AddEvaluation(targetType, targetId, dimension, rating);
+        review.AddEvaluation(targetType, targetId, dimension, rating);
 
-        if (targetType == "person") _review.TrackPerson(targetId);
-        else _review.TrackChannel(targetId);
+        if (targetType == "person") review.TrackPerson(targetId);
+        else review.TrackChannel(targetId);
 
         return Task.FromResult(new ToolResult { Status = "success", Data = $"已记录: {targetType}#{targetId} {dimension} {rating}" });
     }

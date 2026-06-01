@@ -7,12 +7,12 @@ namespace Plugin.ReviewTools;
 public class ReviewUpdatePersonTool : ITool
 {
     private readonly IPersonAccess _person;
-    private readonly IReviewAccess _review;
+    private readonly IToolContext _ctx;
 
     public ReviewUpdatePersonTool(IToolContext ctx)
     {
         _person = ctx.Require<IPersonAccess>();
-        _review = ctx.Require<IReviewAccess>();
+        _ctx = ctx;
     }
 
     public string Name => "review_update_person";
@@ -28,6 +28,7 @@ public class ReviewUpdatePersonTool : ITool
 
     public async Task<ToolResult> ExecuteAsync(List<string> inputs, CancellationToken ct)
     {
+        var review = _ctx.Require<IReviewAccess>();
         if (inputs.Count == 0 || !int.TryParse(inputs[0], out var personId))
             return new ToolResult { Status = "failed", Error = "person_id 必须为整数" };
 
@@ -49,9 +50,9 @@ public class ReviewUpdatePersonTool : ITool
 
         var summary = $"更新P#{personId}: {string.Join(", ", changes)}";
         var detail = System.Text.Json.JsonSerializer.Serialize(new { personId, name, aliases, fastMemory });
-        await _review.LogActionAsync("update_person", summary, detail);
+        await review.LogActionAsync("update_person", summary, detail);
 
-        _review.TrackPerson(personId);
+        review.TrackPerson(personId);
         return new ToolResult { Status = "success", Data = summary };
     }
 }

@@ -6,9 +6,9 @@ namespace Plugin.ReviewTools;
 [ToolMeta(Group = "review")]
 public class ReviewSearchMessagesTool : ITool
 {
-    private readonly IReviewAccess _review;
+    private readonly IToolContext _ctx;
 
-    public ReviewSearchMessagesTool(IToolContext ctx) => _review = ctx.Require<IReviewAccess>();
+    public ReviewSearchMessagesTool(IToolContext ctx) => _ctx = ctx;
 
     public string Name => "review_search_messages";
     public string Description => "按条件搜索消息，结果带消息ID（可用于 review_focus 跳转）。";
@@ -24,6 +24,7 @@ public class ReviewSearchMessagesTool : ITool
 
     public async Task<ToolResult> ExecuteAsync(List<string> inputs, CancellationToken ct)
     {
+        var review = _ctx.Require<IReviewAccess>();
         var query = inputs.Count > 0 ? inputs[0] : null;
         int? channelId = inputs.Count > 1 && int.TryParse(inputs[1], out var cid) ? cid : null;
         int? personId = inputs.Count > 2 && int.TryParse(inputs[2], out var pid) ? pid : null;
@@ -33,7 +34,7 @@ public class ReviewSearchMessagesTool : ITool
         if (string.IsNullOrWhiteSpace(query))
             return new ToolResult { Status = "failed", Error = "query 不能为空" };
 
-        var messages = await _review.SearchMessagesAsync(query, channelId, personId, timeStart, timeEnd, 30);
+        var messages = await review.SearchMessagesAsync(query, channelId, personId, timeStart, timeEnd, 30);
         if (messages.Count == 0)
             return new ToolResult { Status = "success", Data = "未找到匹配消息。" };
 

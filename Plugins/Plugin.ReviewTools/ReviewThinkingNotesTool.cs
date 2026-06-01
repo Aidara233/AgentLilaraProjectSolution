@@ -6,9 +6,9 @@ namespace Plugin.ReviewTools;
 [ToolMeta(Group = "review")]
 public class ReviewThinkingNotesTool : ITool
 {
-    private readonly IReviewAccess _review;
+    private readonly IToolContext _ctx;
 
-    public ReviewThinkingNotesTool(IToolContext ctx) => _review = ctx.Require<IReviewAccess>();
+    public ReviewThinkingNotesTool(IToolContext ctx) => _ctx = ctx;
 
     public string Name => "review_thinking_notes";
     public string Description => "思考草稿，跨轮保留，压缩不丢。browse 的原始内容可能会被压缩，但 notes 始终保留。养成边读边记的习惯。";
@@ -21,12 +21,13 @@ public class ReviewThinkingNotesTool : ITool
 
     public Task<ToolResult> ExecuteAsync(List<string> inputs, CancellationToken ct)
     {
+        var review = _ctx.Require<IReviewAccess>();
         var action = inputs.Count > 0 ? inputs[0] : "read";
 
         switch (action)
         {
             case "read":
-                var notes = _review.ThinkingNotes;
+                var notes = review.ThinkingNotes;
                 return Task.FromResult(new ToolResult
                 {
                     Status = "success",
@@ -38,15 +39,15 @@ public class ReviewThinkingNotesTool : ITool
                 if (string.IsNullOrWhiteSpace(content))
                     return Task.FromResult(new ToolResult { Status = "failed", Error = "append 需要 content 参数" });
 
-                if (!string.IsNullOrEmpty(_review.ThinkingNotes))
-                    _review.ThinkingNotes += "\n" + content;
+                if (!string.IsNullOrEmpty(review.ThinkingNotes))
+                    review.ThinkingNotes += "\n" + content;
                 else
-                    _review.ThinkingNotes = content;
+                    review.ThinkingNotes = content;
 
                 return Task.FromResult(new ToolResult { Status = "success", Data = "已追加到笔记。" });
 
             case "clear":
-                _review.ThinkingNotes = "";
+                review.ThinkingNotes = "";
                 return Task.FromResult(new ToolResult { Status = "success", Data = "笔记已清空。" });
 
             default:

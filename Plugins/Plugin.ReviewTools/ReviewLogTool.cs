@@ -6,9 +6,9 @@ namespace Plugin.ReviewTools;
 [ToolMeta(Group = "review")]
 public class ReviewLogTool : ITool
 {
-    private readonly IReviewAccess _review;
+    private readonly IToolContext _ctx;
 
-    public ReviewLogTool(IToolContext ctx) => _review = ctx.Require<IReviewAccess>();
+    public ReviewLogTool(IToolContext ctx) => _ctx = ctx;
 
     public string Name => "review_log";
     public string Description => "记录一次复盘审计日志。";
@@ -22,6 +22,7 @@ public class ReviewLogTool : ITool
 
     public async Task<ToolResult> ExecuteAsync(List<string> inputs, CancellationToken ct)
     {
+        var review = _ctx.Require<IReviewAccess>();
         if (inputs.Count < 2)
             return new ToolResult { Status = "failed", Error = "action 和 summary 不能为空" };
 
@@ -32,7 +33,7 @@ public class ReviewLogTool : ITool
         if (string.IsNullOrWhiteSpace(action) || string.IsNullOrWhiteSpace(summary))
             return new ToolResult { Status = "failed", Error = "action 和 summary 不能为空" };
 
-        await _review.LogActionAsync(action, summary, detail);
+        await review.LogActionAsync(action, summary, detail);
         return new ToolResult { Status = "success", Data = $"已记录: {action}" };
     }
 }

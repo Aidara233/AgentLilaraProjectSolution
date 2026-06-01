@@ -6,9 +6,9 @@ namespace Plugin.ReviewTools;
 [ToolMeta(Group = "review")]
 public class ReviewSaveProgressTool : ITool
 {
-    private readonly IReviewAccess _review;
+    private readonly IToolContext _ctx;
 
-    public ReviewSaveProgressTool(IToolContext ctx) => _review = ctx.Require<IReviewAccess>();
+    public ReviewSaveProgressTool(IToolContext ctx) => _ctx = ctx;
 
     public string Name => "review_save_progress";
     public string Description => "保存当前进度（游标、评价缓冲、笔记）。下次大睡时可从此处继续。";
@@ -17,7 +17,8 @@ public class ReviewSaveProgressTool : ITool
 
     public Task<ToolResult> ExecuteAsync(List<string> inputs, CancellationToken ct)
     {
-        _review.SaveProgress();
+        var review = _ctx.Require<IReviewAccess>();
+        review.SaveProgress();
         return Task.FromResult(new ToolResult { Status = "success", Data = "进度已保存。下次大睡时将从当前位置继续。" });
     }
 }

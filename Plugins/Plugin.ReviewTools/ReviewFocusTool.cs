@@ -6,9 +6,9 @@ namespace Plugin.ReviewTools;
 [ToolMeta(Group = "review")]
 public class ReviewFocusTool : ITool
 {
-    private readonly IReviewAccess _review;
+    private readonly IToolContext _ctx;
 
-    public ReviewFocusTool(IToolContext ctx) => _review = ctx.Require<IReviewAccess>();
+    public ReviewFocusTool(IToolContext ctx) => _ctx = ctx;
 
     public string Name => "review_focus";
     public string Description => "移动阅读游标。使用 offset 时建议偏大（如 -30 ~ -50），多读几条无关消息的代价远小于错过关键上下文。";
@@ -22,6 +22,7 @@ public class ReviewFocusTool : ITool
 
     public Task<ToolResult> ExecuteAsync(List<string> inputs, CancellationToken ct)
     {
+        var review = _ctx.Require<IReviewAccess>();
         int? messageId = inputs.Count > 0 && int.TryParse(inputs[0], out var mid) ? mid : null;
         int offset = inputs.Count > 1 && int.TryParse(inputs[1], out var off) ? off : 0;
         int? channelId = inputs.Count > 2 && int.TryParse(inputs[2], out var cid) ? cid : null;
@@ -31,18 +32,18 @@ public class ReviewFocusTool : ITool
 
         if (messageId != null)
         {
-            _review.MoveCursor(messageId.Value + offset, channelId ?? _review.CursorChannelId);
-            if (channelId != null) _review.TrackChannel(channelId.Value);
+            review.MoveCursor(messageId.Value + offset, channelId ?? review.CursorChannelId);
+            if (channelId != null) review.TrackChannel(channelId.Value);
         }
         else
         {
-            _review.MoveCursor(null, channelId);
-            _review.TrackChannel(channelId!.Value);
+            review.MoveCursor(null, channelId);
+            review.TrackChannel(channelId!.Value);
         }
 
-        var pos = _review.CursorMessageId != null
-            ? $"频道#{_review.CursorChannelId} 消息#{_review.CursorMessageId}"
-            : $"频道#{_review.CursorChannelId} 最新位置";
+        var pos = review.CursorMessageId != null
+            ? $"频道#{review.CursorChannelId} 消息#{review.CursorMessageId}"
+            : $"频道#{review.CursorChannelId} 最新位置";
         return Task.FromResult(new ToolResult { Status = "success", Data = $"游标已移动到: {pos}" });
     }
 }
