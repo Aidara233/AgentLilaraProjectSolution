@@ -14,17 +14,19 @@ namespace Plugin.GitTools.Tools;
 public class GitCloneTool : GitToolBase
 {
     private readonly RepoRegistry _repos;
+    private readonly string _cloneProxy;
 
-    public GitCloneTool(string workspaceDir, GitRunner runner, RepoRegistry repos) : base(workspaceDir, runner)
+    public GitCloneTool(string workspaceDir, GitRunner runner, RepoRegistry repos, string cloneProxy) : base(workspaceDir, runner)
     {
         _repos = repos;
+        _cloneProxy = string.IsNullOrWhiteSpace(cloneProxy) ? "g.in0.re" : cloneProxy;
     }
 
     public override string Name => "git_clone";
-    public override string Description => "克隆 git 仓库到 Workspace 目录。支持自动从 URL 提取仓库名。";
+    public override string Description => "克隆 git 仓库到 Workspace 目录。支持代理加速（g.in0.re）、SSH（git@）和短格式（author/repo）。";
     public override IReadOnlyList<ToolParameter> Parameters =>
     [
-        new("url", "仓库 URL（https:// 或 git@ 格式）", 0),
+        new("url", "仓库地址：author/repo、github.com/author/repo、g.in0.re/github.com/author/repo，或 git@github.com:author/repo.git", 0),
         new("path", "（可选）目标路径（相对于 Workspace），默认从 URL 自动提取仓库名", 1, isRequired: false),
     ];
     public override TimeSpan Timeout => TimeSpan.FromSeconds(120);
@@ -50,18 +52,20 @@ public class GitCloneTool : GitToolBase
         if (Directory.Exists(fullPath) && IsGitRepo(fullPath))
             return Fail($"目录已是 git 仓库: {path}");
 
-        var result = await Runner.RunAsync(WorkspaceDir, $"clone {url} {path}", 120, ct);
+        var cloneUrl = NormalizeCloneUrl(url);
+
+        var result = await Runner.RunAsync(WorkspaceDir, $"clone {cloneUrl} {path}", 120, ct);
         var output = (result.Output + "\n" + result.Error).Trim();
 
         if (!result.Success)
             return Fail($"git clone 失败: {output}");
 
-        var (owner, repoName) = ParseGitHubUrl(url);
+        var (owner, repoName) = ParseGitHubUrl(cloneUrl);
         var entry = new RepoEntry
         {
             Name = path,
             RelativePath = path,
-            RemoteUrl = url,
+            RemoteUrl = cloneUrl,
             GitHubOwner = owner,
             GitHubRepo = repoName,
             RegisteredAt = DateTime.Now
@@ -70,6 +74,37 @@ public class GitCloneTool : GitToolBase
 
         var githubInfo = owner != null ? $"\nGitHub: {owner}/{repoName}" : "";
         return Ok($"[{path}] 克隆成功{githubInfo}\n{output}");
+    }
+
+    private string NormalizeCloneUrl(string url)
+    {
+        // SSH: passthrough
+        if (url.StartsWith("git@"))
+            return url;
+
+        // Already has protocol: passthrough
+        if (url.StartsWith("http://") || url.StartsWith("https://"))
+            return url;
+
+        // Strip trailing .git for processing
+        var hasGitSuffix = url.EndsWith(".git");
+        var clean = hasGitSuffix ? url[..^4] : url;
+        clean = clean.TrimEnd('/');
+
+        // g.in0.re/github.com/author/repo → https://g.in0.re/github.com/author/repo.git
+        if (clean.Contains("/github.com/"))
+            return $"https://{clean}.git";
+
+        // github.com/author/repo → https://{proxy}/github.com/author/repo.git
+        if (clean.StartsWith("github.com/"))
+            return $"https://{_cloneProxy}/{clean}.git";
+
+        // author/repo → https://{proxy}/github.com/author/repo.git
+        if (clean.Count(c => c == '/') == 1 && !clean.Contains("://"))
+            return $"https://{_cloneProxy}/github.com/{clean}.git";
+
+        // Fallback: assume full hostname, add https
+        return $"https://{clean}.git";
     }
 
     private static string ExtractRepoName(string url)
@@ -85,7 +120,7 @@ public class GitCloneTool : GitToolBase
 
     private static (string? owner, string? repo) ParseGitHubUrl(string url)
     {
-        var match = Regex.Match(url, @"github\.com[:/]([^/]+)/([^/]+?)(\.git)?$");
+        var match = Regex.Match(url, @"github\.com[:/]([^/]+)/([^/]+?)(\.git)?");
         if (match.Success)
             return (match.Groups[1].Value, match.Groups[2].Value);
         return (null, null);

@@ -91,7 +91,7 @@ public class GitComponent : LoopComponentBase
         _pushTool = new GitPushTool(workspace, runner);
         _pullTool = new GitPullTool(workspace, runner);
         _branchTool = new GitBranchTool(workspace, runner);
-        _cloneTool = new GitCloneTool(workspace, runner, repos);
+        _cloneTool = new GitCloneTool(workspace, runner, repos, global.Config.CloneProxy);
         _initTool = new GitInitTool(workspace, runner, repos);
         _listReposTool = new GitListReposTool(workspace, runner, repos);
         _prTool = new GitHubPrTool(workspace, runner, gh, repos);

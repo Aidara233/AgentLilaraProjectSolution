@@ -10,6 +10,7 @@ public class GitHubConfig
     public string WebhookSecret { get; set; } = "";
     public int WebhookPort { get; set; } = 23456;
     public string WebhookBaseUrl { get; set; } = "";
+    public string CloneProxy { get; set; } = "g.in0.re";
 
     public static GitHubConfig Load(string directory)
     {
