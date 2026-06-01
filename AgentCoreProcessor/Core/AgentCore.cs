@@ -93,8 +93,8 @@ namespace AgentCoreProcessor.Core
                 }
                 if (expressDefs.Count > 0 && UseNativeTools)
                 {
-                    var (text, calls, thinking) = await GenerateExpressWithToolsAsync(expressDefs);
-                    return ModelOutput.FromExpressWithTools(text, calls.Count > 0 ? calls : null, thinking);
+                    var (text, calls, thinking, usage) = await GenerateExpressWithToolsAsync(expressDefs);
+                    return ModelOutput.FromExpressWithTools(text, calls.Count > 0 ? calls : null, thinking, usage);
                 }
                 else
                 {
@@ -104,8 +104,8 @@ namespace AgentCoreProcessor.Core
             }
             else
             {
-                var (calls, thinking) = await GenerateToolCallsWithThinkingAsync();
-                return ModelOutput.FromTools(calls, thinking);
+                var (calls, thinking, usage) = await GenerateToolCallsWithThinkingAsync();
+                return ModelOutput.FromTools(calls, thinking, usage);
             }
         }
 
@@ -122,7 +122,7 @@ namespace AgentCoreProcessor.Core
         /// <summary>
         /// 工具调用解析（Working 模式）。UseNativeTools 时使用原生 tool_use，否则解析文本 JSON。
         /// </summary>
-        public async Task<(List<ToolCall> Calls, string? Thinking)> GenerateToolCallsWithThinkingAsync()
+        public async Task<(List<ToolCall> Calls, string? Thinking, Usage? Usage)> GenerateToolCallsWithThinkingAsync()
         {
             if (UseNativeTools)
                 return await GenerateWithNativeToolsAsync();
@@ -163,10 +163,10 @@ namespace AgentCoreProcessor.Core
                 }
             });
             var thinking = thinkingParts.Count > 0 ? string.Join("\n", thinkingParts) : null;
-            return (calls, thinking);
+            return (calls, thinking, null);
         }
 
-        private async Task<(List<ToolCall> Calls, string? Thinking)> GenerateWithNativeToolsAsync()
+        private async Task<(List<ToolCall> Calls, string? Thinking, Usage? Usage)> GenerateWithNativeToolsAsync()
         {
             // 只取非组件工具（核心 + MCP + 纯插件），按引擎类型过滤
             var toolDefs = ToolRegistry.NonComponentToolNames
@@ -183,16 +183,18 @@ namespace AgentCoreProcessor.Core
             MergeTools(toolDefs, AdditionalTools);
 
             NativeToolCallHandler handler = new(toolDefs);
-            await GenerateWithToolsAsync(toolDefs, handler.OnEvent);
-            return handler.GetResult();
+            var usage = await GenerateWithToolsAsync(toolDefs, handler.OnEvent);
+            var (calls, thinking) = handler.GetResult();
+            return (calls, thinking, usage);
         }
 
-        private async Task<(string Text, List<ToolCall> Calls, string? Thinking)> GenerateExpressWithToolsAsync(
+        private async Task<(string Text, List<ToolCall> Calls, string? Thinking, Usage? Usage)> GenerateExpressWithToolsAsync(
             List<ToolDefinition> expressDefs)
         {
             ExpressToolCallHandler handler = new(expressDefs);
-            await GenerateWithToolsAsync(expressDefs, handler.OnEvent);
-            return handler.GetResult();
+            var usage = await GenerateWithToolsAsync(expressDefs, handler.OnEvent);
+            var (text, calls, thinking) = handler.GetResult();
+            return (text, calls, thinking, usage);
         }
 
         /// <summary>
@@ -200,7 +202,7 @@ namespace AgentCoreProcessor.Core
         /// </summary>
         public async Task<List<ToolCall>> GenerateToolCallsAsync()
         {
-            var (calls, _) = await GenerateToolCallsWithThinkingAsync();
+            var (calls, _, _) = await GenerateToolCallsWithThinkingAsync();
             return calls;
         }
 
@@ -212,8 +214,8 @@ namespace AgentCoreProcessor.Core
             processor ??= new Processor(currentMode, usePersona: UsePersona);
             processor.Client.ClearConversationHistory();
             processor.Client.SetConversationHistory(messages);
-            var (calls, thinking) = await GenerateToolCallsWithThinkingAsync();
-            return ModelOutput.FromTools(calls, thinking);
+            var (calls, thinking, usage) = await GenerateToolCallsWithThinkingAsync();
+            return ModelOutput.FromTools(calls, thinking, usage);
         }
 
         /// <summary>

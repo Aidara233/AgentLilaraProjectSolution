@@ -96,6 +96,13 @@ namespace AgentCoreProcessor.Engine
 
         public async Task RunAsync()
         {
+            if (!_cfg.Enabled)
+            {
+                Signal.Event(LogGroup.Engine, "Review跳过（已禁用）", new { reason = "config.Enabled=false" });
+                IsAlive = false;
+                return;
+            }
+
             var parentCtx = SignalContext.Current;
             var lifeCtx = Signal.Continue(
                 parentCtx?.SignalId ?? Signal.NewId(), parentCtx?.CurrentSpanId,
@@ -239,6 +246,12 @@ namespace AgentCoreProcessor.Engine
         }
 
         // ---- IAgentHost ----
+
+        public Task OnTokensUsedAsync(Usage usage)
+        {
+            TokensUsed += usage.TotalTokens;
+            return Task.CompletedTask;
+        }
 
         public async Task<List<Message>?> BuildStartInjectAsync()
         {

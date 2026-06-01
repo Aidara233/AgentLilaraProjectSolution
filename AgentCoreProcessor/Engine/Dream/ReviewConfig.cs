@@ -19,6 +19,9 @@ namespace AgentCoreProcessor.Engine
 
         // ---- 预算 ----
 
+        /// <summary>禁用开关。false 时 ReviewEngine.RunAsync 立即退出。</summary>
+        public bool Enabled { get; set; } = true;
+
         public int TokenBudget { get; set; } = 50000;
         public int ReserveBudget { get; set; } = 15000;
         public int CompressionThreshold { get; set; } = 30000;

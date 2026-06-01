@@ -177,6 +177,10 @@ namespace AgentCoreProcessor.Engine
                     }
                 }
 
+                // 上报 token 消耗
+                if (output.Usage != null)
+                    await _host.OnTokensUsedAsync(output.Usage);
+
                 // 追加 assistant 到历史
                 _history.Add(FormatAssistant(output));
 

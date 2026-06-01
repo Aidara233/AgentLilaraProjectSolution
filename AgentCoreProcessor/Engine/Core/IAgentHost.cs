@@ -20,5 +20,8 @@ namespace AgentCoreProcessor.Engine
         /// 之后的消息为对话内容（需持久化）。默认 0 表示全部为对话。
         /// </summary>
         int FrameworkMessageCount => 0;
+
+        /// <summary>Agent 每轮模型调用完成后回调，上报 token 消耗。</summary>
+        Task OnTokensUsedAsync(Models.Usage usage) => Task.CompletedTask;
     }
 }
