@@ -65,6 +65,7 @@
     private HashSet<string> _collapsedGroups = new();
     private bool _initialized;
     private bool _dataFetched;
+    private JsonNode? _lastData;
 
     protected override void OnParametersSet()
     {
@@ -79,10 +80,11 @@
                 _initialized = true;
             }
         }
-        else if (!_dataFetched)
+        else if (!_dataFetched || !ReferenceEquals(Data, _lastData))
         {
-            // 仅首次加载时从服务端数据填充，后续重渲染不覆盖用户编辑
+            // 首次加载或数据源切换（如选择了不同记录）时重新填充
             _dataFetched = true;
+            _lastData = Data;
             _values = new Dictionary<string, string>();
             if (Data is JsonObject obj)
             {
