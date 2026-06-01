@@ -395,6 +395,7 @@ internal class MemoryProvider : IWebUIProvider
                             new() { Value = "4", Label = "4 - 紧急" },
                         }},
                         new() { Field = "fastMemory", Label = "速记", Type = FormFieldType.TextArea, Placeholder = "一句话概括" },
+                        new() { Field = "accounts", Label = "绑定账号", Type = FormFieldType.TextArea, Readonly = true, Placeholder = "无绑定账号" },
                     },
                     ShowReset = false
                 },
@@ -1060,6 +1061,10 @@ internal class PeopleEditSource : IDataSource
         if (person == null)
             return new DataResult { Data = new JsonObject() };
 
+        var users = await _engine.Session.GetUsersByPersonIdAsync(_selectedId);
+        var accountsStr = users.Count == 0 ? "" : string.Join("\n",
+            users.Select(u => $"{u.Platform}: {u.PlatformId}" + (string.IsNullOrEmpty(u.DisplayName) ? "" : $" ({u.DisplayName})")));
+
         return new DataResult
         {
             Data = new JsonObject
@@ -1071,6 +1076,7 @@ internal class PeopleEditSource : IDataSource
                 ["trustProgress"] = person.TrustProgress,
                 ["alertLevel"] = person.AlertLevel.ToString(),
                 ["fastMemory"] = person.FastMemory ?? "",
+                ["accounts"] = accountsStr,
             }
         };
     }

@@ -102,6 +102,7 @@ public class FormField
     public bool Required { get; init; }
     public List<SelectOption>? Options { get; init; }
     public string? Group { get; init; }
+    public bool Readonly { get; init; }
 }
 
 public enum FormFieldType { Text, Number, TextArea, Select, Toggle, Radio, Password, Json }

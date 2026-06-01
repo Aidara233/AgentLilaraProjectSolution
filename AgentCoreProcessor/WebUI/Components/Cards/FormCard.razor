@@ -119,7 +119,15 @@
         if (field.Required) { __builder.AddContent(5, " *"); }
         __builder.CloseElement();
 
-        switch (field.Type)
+        if (field.Readonly)
+        {
+            __builder.OpenElement(6, "div");
+            __builder.AddAttribute(7, "class", "form-control form-control-sm bg-body-tertiary text-secondary");
+            __builder.AddAttribute(8, "style", "min-height: 2rem; white-space: pre-wrap;");
+            __builder.AddContent(9, _values.TryGetValue(field.Field, out var rv) ? rv : "");
+            __builder.CloseElement();
+        }
+        else switch (field.Type)
         {
             case FormFieldType.Toggle:
                 __builder.OpenElement(6, "div");
