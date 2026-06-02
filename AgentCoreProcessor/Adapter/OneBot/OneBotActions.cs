@@ -350,17 +350,17 @@ namespace AgentCoreProcessor.Adapter
             return null;
         }
 
-        /// <summary>构造私聊文件下载 URL。NapCat 通过 HTTP GET /get_file 直接返回文件内容。</summary>
-        public Task<string?> GetChatFileUrlAsync(string fileId)
+        /// <summary>
+        /// 获取私聊文件信息。NapCat 的 get_file 返回本地路径而非 HTTP URL，
+        /// 需要从文件系统直接读取。
+        /// </summary>
+        public async Task<JObject?> GetChatFileInfoAsync(string fileId)
         {
-            var baseUri = new Uri(adapter.Config.HttpUrl);
-            var ub = new UriBuilder(baseUri) { Path = "/get_file" };
-            var query = $"file_id={Uri.EscapeDataString(fileId)}";
-            var token = !string.IsNullOrEmpty(adapter.Config.HttpToken) ? adapter.Config.HttpToken : adapter.Config.Token;
-            if (!string.IsNullOrEmpty(token))
-                query += $"&access_token={Uri.EscapeDataString(token)}";
-            ub.Query = query;
-            return Task.FromResult<string?>(ub.Uri.AbsoluteUri);
+            var resp = await adapter.CallApiAsync("get_file",
+                new JObject { ["file_id"] = fileId });
+            if (resp?["retcode"]?.Value<int>() == 0)
+                return resp["data"] as JObject;
+            return null;
         }
 
         private async Task<string?> SendFileAsync(string channelId, MessageAttachment att)

@@ -9,17 +9,15 @@ public class DownloadChatFileTool : ITool
     private readonly IAdapterAccess? _adapterAccess;
     private readonly string _adapterId = "";
     private readonly string _workspaceDir = "";
-    private readonly HttpClient _http;
 
-    public DownloadChatFileTool() { _http = new HttpClient(); }
+    public DownloadChatFileTool() { }
 
     public DownloadChatFileTool(IAdapterAccess adapterAccess,
-        string adapterId, string workspaceDir, HttpClient http)
+        string adapterId, string workspaceDir)
     {
         _adapterAccess = adapterAccess;
         _adapterId = adapterId;
         _workspaceDir = workspaceDir;
-        _http = http;
     }
 
     public string Name => "download_chat_file";
@@ -47,47 +45,29 @@ public class DownloadChatFileTool : ITool
         if (string.IsNullOrEmpty(fileId))
             return new ToolResult { Status = "failed", Error = "file_id 不能为空" };
 
-        // 通过 NapCat get_file API 获取下载 URL
-        var url = await _adapterAccess.ExecuteActionAsync(_adapterId, "get_chat_file_url",
+        // 通过 NapCat get_file API 获取文件路径（NapCat 返回的是本地路径）
+        var filePath = await _adapterAccess.ExecuteActionAsync(_adapterId, "get_chat_file_url",
             $"{{\"file_id\":\"{fileId}\"}}");
-        if (string.IsNullOrEmpty(url))
-            return new ToolResult { Status = "failed", Error = "获取下载链接失败，请确认 file_id 正确且文件未过期" };
+        if (string.IsNullOrEmpty(filePath))
+            return new ToolResult { Status = "failed", Error = "获取文件信息失败，请确认 file_id 正确且文件未过期" };
 
-        // 后台下载
-        var saveName = fileName ?? fileId[..Math.Min(fileId.Length, 16)];
+        // 后台复制（文件已在 NapCat 本地，直接复制即可）
+        var saveName = fileName ?? Path.GetFileName(filePath);
+        if (string.IsNullOrEmpty(saveName)) saveName = fileId[..Math.Min(fileId.Length, 16)];
         var safeName = string.Join("_", saveName.Split(Path.GetInvalidFileNameChars()));
         var destDir = Path.Combine(_workspaceDir, "Downloads");
         Directory.CreateDirectory(destDir);
         var destPath = Path.Combine(destDir, safeName);
 
-        var http = _http;
-        _ = Task.Run(async () =>
+        _ = Task.Run(() =>
         {
             try
             {
-                using var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-                resp.EnsureSuccessStatusCode();
-
-                var logPath = Path.Combine(_workspaceDir, "debug_download.log");
-                var headers = $"status={resp.StatusCode} content-type={resp.Content.Headers.ContentType} content-length={resp.Content.Headers.ContentLength}\n";
-                File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [download_chat_file] url={url}\n{headers}");
-
-                var cd = resp.Content.Headers.ContentDisposition;
-                if (cd?.FileName != null)
-                {
-                    var realName = cd.FileName.Trim('"');
-                    var realSafe = string.Join("_", realName.Split(Path.GetInvalidFileNameChars()));
-                    destPath = Path.Combine(destDir, realSafe);
-                }
-
-                await using var stream = await resp.Content.ReadAsStreamAsync();
-                await using var fileStream = new FileStream(destPath, FileMode.Create,
-                    FileAccess.Write, FileShare.None, 8192, useAsync: true);
-                await stream.CopyToAsync(fileStream);
+                File.Copy(filePath, destPath, overwrite: true);
             }
             catch
             {
-                // 下载失败，静默忽略（工具返回值已反映提交状态）
+                // 下载失败，静默忽略
             }
         }, CancellationToken.None);
 
