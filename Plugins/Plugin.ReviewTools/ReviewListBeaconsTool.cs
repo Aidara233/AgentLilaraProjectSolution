@@ -27,7 +27,7 @@ public class ReviewListBeaconsTool : ITool
             if (b.MessageId != null) location += $" 消息#{b.MessageId}";
             if (b.PersonId != null) location += $" 人物P#{b.PersonId}";
             var source = b.Source == "framework" ? " [自动]" : "";
-            return $"- [{b.CreatedAt}]{source} {location}: {b.Content}";
+            return $"- [ID:{b.Id}] [{b.CreatedAt}]{source} {location}: {b.Content}";
         });
 
         return new ToolResult { Status = "success", Data = string.Join("\n", lines) };
