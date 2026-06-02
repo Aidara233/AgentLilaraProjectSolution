@@ -253,12 +253,32 @@ public class PrintStoreInfoTool : ITool
         sb.AppendLine($"up_url: {upUrl}");
 
         var prices = data?["price"]?.AsArray();
+        var pageSizes = data?["page_size"]?.AsArray();
+        if (pageSizes != null)
+        {
+            sb.AppendLine($"可用纸张: {string.Join(", ", pageSizes.Select(p => p!.GetValue<string>()))}");
+        }
+
         if (prices != null)
         {
-            sb.AppendLine($"价格条目数: {prices.Count}");
-            var sample = prices.Take(3).Select(p =>
-                $"  {p!["page_size_type"]}: ¥{p["price"]}/{p["start_count"]}张起");
-            foreach (var s in sample) sb.AppendLine(s);
+            // 按纸型分组汇总
+            var bySize = prices.GroupBy(p => p!["page_size_type"]?.GetValue<string>() ?? "?")
+                .Select(g => new { Size = g.Key, MinPrice = g.Min(p => p!["price"]?.GetValue<decimal>() ?? 0) });
+            sb.AppendLine($"价格({prices.Count}条): {string.Join(", ", bySize.Select(x => $"{x.Size} ¥{x.MinPrice}/页起"))}");
+        }
+
+        var scales = data?["scale_list"]?.AsObject();
+        if (scales != null && scales.Count > 0)
+        {
+            var scaleNames = scales.Select(kv => $"{kv.Key}({kv.Value!["name"]})");
+            sb.AppendLine($"缩放选项: {string.Join(", ", scaleNames)}");
+        }
+
+        var bindings = data?["print_store_bind"]?.AsArray();
+        if (bindings != null && bindings.Count > 0)
+        {
+            var bindingNames = bindings.Select(b => b!["name"]?.GetValue<string>());
+            sb.AppendLine($"装订选项: {string.Join(", ", bindingNames)}");
         }
 
         return new ToolResult { Status = "success", Data = sb.ToString().TrimEnd() };
