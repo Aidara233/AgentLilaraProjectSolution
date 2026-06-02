@@ -64,6 +64,7 @@ public class DownloadChatFileTool : ITool
         Directory.CreateDirectory(destDir);
         var destPath = Path.Combine(destDir, safeName);
 
+        var isBase64 = url.StartsWith("base64:", StringComparison.Ordinal);
         var http = _http;
         var channelAccess = _channelAccess;
         var channelId = _channelId;
@@ -71,21 +72,30 @@ public class DownloadChatFileTool : ITool
         {
             try
             {
-                using var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-                resp.EnsureSuccessStatusCode();
-
-                var cd = resp.Content.Headers.ContentDisposition;
-                if (cd?.FileName != null)
+                if (isBase64)
                 {
-                    var realName = cd.FileName.Trim('"');
-                    var realSafe = string.Join("_", realName.Split(Path.GetInvalidFileNameChars()));
-                    destPath = Path.Combine(destDir, realSafe);
+                    var b64 = url["base64:".Length..];
+                    var bytes = Convert.FromBase64String(b64);
+                    await File.WriteAllBytesAsync(destPath, bytes);
                 }
+                else
+                {
+                    using var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+                    resp.EnsureSuccessStatusCode();
 
-                await using var stream = await resp.Content.ReadAsStreamAsync();
-                await using var fileStream = new FileStream(destPath, FileMode.Create,
-                    FileAccess.Write, FileShare.None, 8192, useAsync: true);
-                await stream.CopyToAsync(fileStream);
+                    var cd = resp.Content.Headers.ContentDisposition;
+                    if (cd?.FileName != null)
+                    {
+                        var realName = cd.FileName.Trim('"');
+                        var realSafe = string.Join("_", realName.Split(Path.GetInvalidFileNameChars()));
+                        destPath = Path.Combine(destDir, realSafe);
+                    }
+
+                    await using var stream = await resp.Content.ReadAsStreamAsync();
+                    await using var fileStream = new FileStream(destPath, FileMode.Create,
+                        FileAccess.Write, FileShare.None, 8192, useAsync: true);
+                    await stream.CopyToAsync(fileStream);
+                }
             }
             catch (Exception ex)
             {

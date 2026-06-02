@@ -353,11 +353,18 @@ namespace AgentCoreProcessor.Adapter
         public async Task<string?> GetChatFileUrlAsync(string fileId)
         {
             var resp = await adapter.CallApiAsync("get_file",
-                new JObject { ["file_id"] = fileId });
+                new JObject { ["file_id"] = fileId, ["type"] = "base64" });
             var debugPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "debug_get_file.log");
-            File.AppendAllText(debugPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [get_file] request file_id={fileId}\nresponse={resp}\n");
+            File.AppendAllText(debugPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [get_file base64] request file_id={fileId}\nresponse={resp}\n");
             if (resp?["retcode"]?.Value<int>() == 0)
-                return resp["data"]?["url"]?.ToString();
+            {
+                var data = resp["data"] as JObject;
+                if (data == null) return null;
+                // 优先 base64 内容，否则用 url
+                var b64 = data["base64"]?.ToString();
+                if (!string.IsNullOrEmpty(b64)) return "base64:" + b64;
+                return data["url"]?.ToString();
+            }
             return null;
         }
 
