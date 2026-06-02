@@ -169,6 +169,12 @@ namespace AgentCoreProcessor.Adapter
                         });
                         break;
                     case "file":
+                        Signal.Debug(LogGroup.Adapter, "收到文件消息段", new
+                        {
+                            messageType,
+                            rawSegData = segData.ToString(),
+                            keys = ((JObject)segData).Properties().Select(p => p.Name).ToList()
+                        });
                         var fName = segData["name"]?.ToString() ?? segData["file"]?.ToString() ?? "未知文件";
                         textBuilder.Append($"[文件: {fName}]");
                         attachments ??= new List<MessageAttachment>();
