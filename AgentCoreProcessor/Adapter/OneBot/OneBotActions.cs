@@ -352,20 +352,18 @@ namespace AgentCoreProcessor.Adapter
 
         public async Task<string?> GetChatFileUrlAsync(string fileId)
         {
-            var resp = await adapter.CallApiAsync("get_file",
-                new JObject { ["file_id"] = fileId, ["type"] = "base64" });
+            // 尝试通过 HTTP API 直接构建文件下载 URL
+            // NapCat HTTP 端可能有 file 下载端点
+            var httpBase = adapter.Config.HttpUrl.TrimEnd('/');
+            var token = !string.IsNullOrEmpty(adapter.Config.HttpToken) ? adapter.Config.HttpToken : adapter.Config.Token;
+            var downloadUrl = !string.IsNullOrEmpty(token)
+                ? $"{httpBase}/get_file?file_id={Uri.EscapeDataString(fileId)}&access_token={Uri.EscapeDataString(token)}"
+                : $"{httpBase}/get_file?file_id={Uri.EscapeDataString(fileId)}";
+
             var debugPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "debug_get_file.log");
-            File.AppendAllText(debugPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [get_file base64] request file_id={fileId}\nresponse={resp}\n");
-            if (resp?["retcode"]?.Value<int>() == 0)
-            {
-                var data = resp["data"] as JObject;
-                if (data == null) return null;
-                // 优先 base64 内容，否则用 url
-                var b64 = data["base64"]?.ToString();
-                if (!string.IsNullOrEmpty(b64)) return "base64:" + b64;
-                return data["url"]?.ToString();
-            }
-            return null;
+            File.AppendAllText(debugPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [get_file url] constructed={downloadUrl}\n");
+
+            return downloadUrl;
         }
 
         private async Task<string?> SendFileAsync(string channelId, MessageAttachment att)
