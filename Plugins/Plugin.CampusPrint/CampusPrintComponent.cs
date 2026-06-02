@@ -140,6 +140,9 @@ public class CampusPrintComponent : GlobalComponentBase
     {
         return GetCode(resp) == -6;
     }
+
+    /// <summary>剥离模型经常额外包裹的引号</summary>
+    internal static string Clean(string s) => s.Trim().Trim('"', '\'', '`', '“', '”', '‘', '’');
 }
 
 // =============================================================================
@@ -171,8 +174,8 @@ public class PrintSetTokenTool : ITool
 
     public Task<ToolResult> ExecuteAsync(List<string> inputs, CancellationToken ct)
     {
-        var token = inputs[0].Trim().Trim('"', '\'', '`');
-        var appkey = inputs[1].Trim().Trim('"', '\'', '`');
+        var token = CampusPrintComponent.Clean(inputs[0]);
+        var appkey = CampusPrintComponent.Clean(inputs[1]);
         if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(appkey))
             return Task.FromResult(new ToolResult { Status = "failed", Error = "token 和 appkey 都不能为空" });
 
@@ -273,7 +276,7 @@ public class PrintFileUploadTool : ITool
 
     public async Task<ToolResult> ExecuteAsync(List<string> inputs, CancellationToken ct)
     {
-        var filePath = inputs[0].Trim();
+        var filePath = CampusPrintComponent.Clean(inputs[0]);
         if (!File.Exists(filePath))
             return new ToolResult { Status = "failed", Error = $"文件不存在: {filePath}" };
 
@@ -341,14 +344,15 @@ public class PrintFileAddTool : ITool
         var fields = new Dictionary<string, object?>
         {
             ["file_index"] = "0s",
-            ["file_path"] = inputs[0].Trim(),
-            ["file_name"] = inputs[1].Trim(),
-            ["file_format"] = inputs[2].Trim().ToLowerInvariant(),
+            ["file_path"] = CampusPrintComponent.Clean(inputs[0]),
+            ["file_name"] = CampusPrintComponent.Clean(inputs[1]),
+            ["file_format"] = CampusPrintComponent.Clean(inputs[2]).ToLowerInvariant(),
             ["domain_id"] = _comp.Config.DomainId
         };
 
         // 初始打印参数（可选）
-            fields["is_color"] = inputs[3].Trim() == "1" ? 1 : 0;
+        if (inputs.Count > 3 && !string.IsNullOrWhiteSpace(inputs[3]))
+            fields["is_color"] = CampusPrintComponent.Clean(inputs[3]) == "1" ? 1 : 0;
         if (inputs.Count > 4 && int.TryParse(inputs[4], out var cnt) && cnt > 0)
             fields["print_count"] = cnt;
 
@@ -410,8 +414,8 @@ public class PrintFileUpdateTool : ITool
 
     public async Task<ToolResult> ExecuteAsync(List<string> inputs, CancellationToken ct)
     {
-        var fileIdStr = inputs[0].Trim();
-        var settingsJson = inputs[1].Trim();
+        var fileIdStr = CampusPrintComponent.Clean(inputs[0]);
+        var settingsJson = CampusPrintComponent.Clean(inputs[1]);
 
         if (!int.TryParse(fileIdStr, out var fileId))
             return new ToolResult { Status = "failed", Error = $"无效的 file_id: {fileIdStr}" };
@@ -539,7 +543,7 @@ public class PrintFileDelTool : ITool
 
     public async Task<ToolResult> ExecuteAsync(List<string> inputs, CancellationToken ct)
     {
-        if (!int.TryParse(inputs[0].Trim(), out var fileId))
+        if (!int.TryParse(CampusPrintComponent.Clean(inputs[0]), out var fileId))
             return new ToolResult { Status = "failed", Error = $"无效的 file_id: {inputs[0]}" };
 
         _comp.EnsureClient();
@@ -581,7 +585,7 @@ public class PrintPdfStatusTool : ITool
 
     public async Task<ToolResult> ExecuteAsync(List<string> inputs, CancellationToken ct)
     {
-        if (!int.TryParse(inputs[0].Trim(), out var fileId))
+        if (!int.TryParse(CampusPrintComponent.Clean(inputs[0]), out var fileId))
             return new ToolResult { Status = "failed", Error = $"无效的 file_id: {inputs[0]}" };
 
         _comp.EnsureClient();
