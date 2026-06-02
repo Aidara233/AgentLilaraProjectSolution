@@ -383,12 +383,10 @@ internal class DreamStatusSource : IDataSource
         var data = new JsonObject
         {
             ["state"] = "做梦中",
-            ["level"] = snap.PendingLevel.ToString(),
             ["progress"] = $"{progressPct}|{snap.FragmentsCompleted}/{snap.FragmentsTotal}",
             ["running"] = $"阶段: {running}",
             ["todo"] = "—",
-            ["input_desc"] = snap.CurrentInputDescription ?? "—",
-            ["force_flag"] = snap.ForceFlag ? "是" : "否"
+            ["input_desc"] = snap.CurrentInputDescription ?? "—"
         };
         return Task.FromResult(new DataResult { Data = data });
     }
@@ -494,7 +492,6 @@ internal class DreamStatsSource : IDataSource
         var data = new JsonObject
         {
             ["total_sessions"] = $"{sessionCount} 次",
-            ["last_daydream"] = snap?.LastDaydreamTime?.ToString("HH:mm") ?? "—",
             ["baseline"] = $"{stats.GetBaselineAvg():F0} 条/天",
             ["red_days"] = stats.ConsecutiveRedDays > 0 ? $"{stats.ConsecutiveRedDays} 天" : "0",
             ["today_temp_peak"] = today != null ? $"{today.TempPeak} 条" : "—",
@@ -960,14 +957,6 @@ internal class SleepEvalSource : IDataSource
 
         var totalScore = factorIdle + factorMemory + factorHints + factorTime;
 
-        // 睡眠请求状态
-        var sysEngine = _engine.GetSystemEngine();
-        var sysSnapshot = sysEngine?.GetSnapshot();
-        var hasPending = sysSnapshot?.HasPendingSleepRequest ?? false;
-        var pendingStr = hasPending
-            ? $"是 (分数:{sysSnapshot!.SleepScore:F0}, {(DateTime.Now - sysSnapshot.SleepRequestTime!.Value).TotalMinutes:F0}分钟前)"
-            : "无";
-
         var data = new JsonObject
         {
             ["total_score"] = $"{(int)totalScore}|{(int)totalScore}/100",
@@ -976,39 +965,14 @@ internal class SleepEvalSource : IDataSource
             ["factor_memory"] = $"{factorMemory:F0} 分 ({undreamedCount}条未处理)",
             ["factor_hints"] = $"{factorHints:F0} 分 ({unprocessedHints.Count}条)",
             ["factor_time"] = $"{factorTime:F0} 分",
-            ["in_window"] = config.IsInDeepSleepWindow() ? "是" : "否",
-            ["pending_request"] = pendingStr,
-            ["_disabled_actions"] = hasPending ? null : new JsonArray("approve", "deny")
+            ["pending_request"] = "—",
         };
         return new DataResult { Data = data };
     }
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
     {
-        return action switch
-        {
-            "approve" => ApproveRequest(),
-            "deny" => DenyRequest(),
-            _ => Task.FromResult(new ActionResult { Success = true }),
-        };
-    }
-
-    private Task<ActionResult> ApproveRequest()
-    {
-        var snapshot = _engine.GetSystemEngine()?.GetSnapshot();
-        if (snapshot?.HasPendingSleepRequest != true)
-            return Task.FromResult(new ActionResult { Success = false, Message = "没有待审批的睡眠请求" });
-        _engine.EventBus.PublishSignal("sleep-approve", snapshot.SleepRequestId!);
-        return Task.FromResult(new ActionResult { Success = true, Message = "已批准深睡请求" });
-    }
-
-    private Task<ActionResult> DenyRequest()
-    {
-        var snapshot = _engine.GetSystemEngine()?.GetSnapshot();
-        if (snapshot?.HasPendingSleepRequest != true)
-            return Task.FromResult(new ActionResult { Success = false, Message = "没有待审批的睡眠请求" });
-        _engine.EventBus.PublishSignal("sleep-deny", snapshot.SleepRequestId!);
-        return Task.FromResult(new ActionResult { Success = true, Message = "已拒绝深睡请求" });
+        return Task.FromResult(new ActionResult { Success = true });
     }
 }
 
@@ -1027,11 +991,6 @@ internal class SleepConfigSource : IDataSource
 
         var data = new JsonObject
         {
-            ["daydream_cooldown"] = $"{config.DaydreamCooldown}s",
-            ["nap_idle"] = $"{config.NapIdleThreshold}s ({config.NapIdleThreshold / 60}分钟)",
-            ["nap_cooldown"] = $"{config.NapCooldown}s ({config.NapCooldown / 60}分钟)",
-            ["deep_idle"] = $"{config.DeepSleepIdleThreshold}s ({config.DeepSleepIdleThreshold / 60}分钟)",
-            ["deep_window"] = $"{config.DeepSleepTimeStart} ~ {config.DeepSleepTimeEnd}",
             ["deep_budget"] = $"{config.MainTokenBudget:#,0} tokens (主) + {config.ReserveTokenBudget:#,0} tokens (增援)",
             ["deep_max_minutes"] = $"{config.DeepSleepMaxMinutes} 分钟",
             ["patrol_config"] = $"大睡{config.MaxPatrolSteps}步 / 小睡{config.NapPatrolSteps}步 / 走神{config.DaydreamPatrolSteps}步",

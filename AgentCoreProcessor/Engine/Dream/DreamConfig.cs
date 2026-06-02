@@ -5,178 +5,42 @@ using Newtonsoft.Json;
 namespace AgentCoreProcessor.Engine
 {
     /// <summary>
-    /// 做梦调度配置。支持运行时修改和持久化。
+    /// 梦境配置：巡逻步数 + 秩序参数 + 预算。
     /// </summary>
     internal class DreamConfig
     {
-        /// <summary>走神空闲阈值（秒）。仅当系统空闲超过此时间才可能触发走神。</summary>
-        public int DaydreamIdleThreshold { get; set; } = 300;
+        // ---- 巡逻步数 ----
 
-        /// <summary>走神冷却期（秒）</summary>
-        public int DaydreamCooldown { get; set; } = 120;
-
-        /// <summary>走神是否启用</summary>
-        public bool DaydreamEnabled { get; set; } = false;
-
-        /// <summary>走神巡逻步数</summary>
         public int DaydreamPatrolSteps { get; set; } = 3;
-
-        /// <summary>小睡空闲阈值（秒）</summary>
-        public int NapIdleThreshold { get; set; } = 600;
-
-        /// <summary>小睡冷却期（秒），完成一次小睡后多久才能再次触发</summary>
-        public int NapCooldown { get; set; } = 600;
-
-        /// <summary>大睡空闲阈值（秒）</summary>
-        public int DeepSleepIdleThreshold { get; set; } = 1800;
-
-        /// <summary>大睡时间段开始（HH:mm）</summary>
-        public string DeepSleepTimeStart { get; set; } = "02:00";
-
-        /// <summary>大睡时间段结束（HH:mm）</summary>
-        public string DeepSleepTimeEnd { get; set; } = "06:00";
-
-        /// <summary>大睡时间段峰值（HH:mm），非对称评分的最高点</summary>
-        public string DeepSleepTimePeak { get; set; } = "00:00";
-
-        /// <summary>管理员许可超时自动许可（秒）</summary>
-        public int PermissionTimeout { get; set; } = 3600;
-
-        /// <summary>调度循环检查间隔（秒）</summary>
-        public int ScheduleInterval { get; set; } = 30;
-
-        /// <summary>小睡最大片段数</summary>
-        public int MaxFragmentsPerNap { get; set; } = 12;
-
-        /// <summary>大睡最大片段数</summary>
-        public int MaxFragmentsPerDeepSleep { get; set; } = 120;
-
-        // ---- 大睡分级配置 ----
-
-        /// <summary>黄色评分阈值，总分达到此值触发许可请求</summary>
-        public float YellowThreshold { get; set; } = 5.0f;
-
-        /// <summary>持久评分偏置（Agent 体质：正=嗜睡，负=夜猫子）</summary>
-        public float ScoreBase { get; set; } = 0.0f;
-
-        /// <summary>红色条件：临时记忆超过基线均值的倍率</summary>
-        public float RedTempMultiplier { get; set; } = 3.0f;
-
-        /// <summary>红色条件：距上次大睡最大小时数</summary>
-        public float RedMaxSleepGapHours { get; set; } = 48.0f;
-
-        // ---- 预算配置 ----
-
-        /// <summary>主 token 预算</summary>
-        public int MainTokenBudget { get; set; } = 100000;
-
-        /// <summary>增援 token 预算</summary>
-        public int ReserveTokenBudget { get; set; } = 30000;
-
-        /// <summary>大睡硬性时间上限（分钟）</summary>
-        public int DeepSleepMaxMinutes { get; set; } = 120;
-
-        /// <summary>BFS 变更传播停止阈值</summary>
-        public float ChangePropagationEpsilon { get; set; } = 0.01f;
-
-        // ---- 秩序阶段配置 ----
-
-        /// <summary>embedding 去重搜 top-K</summary>
-        public int EmbeddingTopK { get; set; } = 10;
-
-        /// <summary>秩序阶段 LLM 关系分类最低 cos 阈值</summary>
-        public float OrderClassifyMinCos { get; set; } = 0.7f;
-
-        /// <summary>秩序阶段 LLM support 高于此值自动合并（保留更详细的，删简略的）</summary>
-        public float OrderMergeMinSupport { get; set; } = 0.9f;
-
-        // ---- 巡逻配置 ----
-
-        /// <summary>大睡巡逻最大步数</summary>
+        public int NapPatrolSteps { get; set; } = 15;
         public int MaxPatrolSteps { get; set; } = 100;
 
-        /// <summary>小睡巡逻步数</summary>
-        public int NapPatrolSteps { get; set; } = 15;
+        // ---- 预算 ----
 
-        /// <summary>冷启动候选池大小</summary>
+        public int MainTokenBudget { get; set; } = 100000;
+        public int ReserveTokenBudget { get; set; } = 30000;
+        public int DeepSleepMaxMinutes { get; set; } = 120;
+
+        // ---- 传播 ----
+
+        public float ChangePropagationEpsilon { get; set; } = 0.01f;
+
+        // ---- 秩序阶段 ----
+
+        public int EmbeddingTopK { get; set; } = 10;
+        public float OrderClassifyMinCos { get; set; } = 0.7f;
+        public float OrderMergeMinSupport { get; set; } = 0.9f;
+
+        // ---- 巡逻 ----
+
         public int ColdStartPoolSize { get; set; } = 20;
-
-        /// <summary>三角闭合 LLM 最低 cos 阈值</summary>
         public float TriangleClassifyMinCos { get; set; } = 0.7f;
-
-        /// <summary>LLM 三角缓冲攒批触发阈值</summary>
         public int TriangleBufferSize { get; set; } = 10;
-
-        /// <summary>每轮关系分类最大候选数</summary>
         public int RelationBatchMaxTargets { get; set; } = 8;
-
-        /// <summary>衰减到此值以下标记过期删除</summary>
         public float DecayThreshold { get; set; } = 0.05f;
 
-        /// <summary>判断当前时间是否在大睡时间段内。</summary>
-        public bool IsInDeepSleepWindow()
-        {
-            if (!TimeSpan.TryParse(DeepSleepTimeStart, out var start) ||
-                !TimeSpan.TryParse(DeepSleepTimeEnd, out var end))
-                return false;
+        // ---- IO ----
 
-            var now = DateTime.Now.TimeOfDay;
-            // 支持跨午夜（如 23:00 - 06:00）
-            return start < end
-                ? now >= start && now <= end
-                : now >= start || now <= end;
-        }
-
-        /// <summary>
-        /// 计算当前时间在大睡窗口中的非对称评分。
-        /// 窗口外返回 0，从 Start 到 Peak 线性上升至 maxScore，从 Peak 到 End 线性下降至 0。
-        /// </summary>
-        public float CalcTimeWindowScore(float maxScore)
-        {
-            if (!TimeSpan.TryParse(DeepSleepTimeStart, out var start) ||
-                !TimeSpan.TryParse(DeepSleepTimeEnd, out var end) ||
-                !TimeSpan.TryParse(DeepSleepTimePeak, out var peak))
-                return 0f;
-
-            var now = DateTime.Now.TimeOfDay;
-
-            // 归一化到以 start 为零点的线性空间，消除跨午夜问题
-            var totalWindow = Normalize(end, start);
-            var peakNorm = Normalize(peak, start);
-            var nowNorm = Normalize(now, start);
-
-            if (nowNorm > totalWindow)
-                return 0f; // 窗口外
-
-            if (peakNorm <= TimeSpan.Zero)
-                peakNorm = totalWindow; // peak == start 时整个窗口都是下降段
-
-            if (nowNorm <= peakNorm)
-            {
-                // 上升段
-                return peakNorm > TimeSpan.Zero
-                    ? (float)(nowNorm / peakNorm) * maxScore
-                    : maxScore;
-            }
-            else
-            {
-                // 下降段
-                var falling = totalWindow - peakNorm;
-                return falling > TimeSpan.Zero
-                    ? (float)((totalWindow - nowNorm) / falling) * maxScore
-                    : 0f;
-            }
-        }
-
-        /// <summary>将时间归一化到以 origin 为零点的 24h 空间。</summary>
-        private static TimeSpan Normalize(TimeSpan time, TimeSpan origin)
-        {
-            var diff = time - origin;
-            if (diff < TimeSpan.Zero) diff += TimeSpan.FromHours(24);
-            return diff;
-        }
-
-        /// <summary>从 JSON 文件加载配置。文件不存在时返回默认配置。</summary>
         public static DreamConfig Load(string path)
         {
             if (!File.Exists(path))
@@ -186,7 +50,6 @@ namespace AgentCoreProcessor.Engine
             return JsonConvert.DeserializeObject<DreamConfig>(json) ?? new DreamConfig();
         }
 
-        /// <summary>保存配置到 JSON 文件。</summary>
         public void Save(string path)
         {
             var dir = Path.GetDirectoryName(path);

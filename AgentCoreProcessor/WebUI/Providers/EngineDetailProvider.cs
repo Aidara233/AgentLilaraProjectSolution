@@ -295,7 +295,7 @@ internal class DreamDetailStatusSource : IDataSource
             ["backoff"] = "—",
             ["extra"] = snap.HasActiveDream
                 ? $"片段 {snap.FragmentsCompleted}/{snap.FragmentsTotal} | 当前: {snap.CurrentFragment ?? "—"}"
-                : $"上次走神: {snap.LastDaydreamTime?.ToString("HH:mm") ?? "—"}"
+                : "—"
         };
         return Task.FromResult(new DataResult { Data = data });
     }

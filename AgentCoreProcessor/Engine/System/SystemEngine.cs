@@ -83,19 +83,6 @@ namespace AgentCoreProcessor.Engine
         private int totalErrorCount = 0;
         private int _totalCycles = 0;
 
-        // 睡觉评估和许可管理
-        private class SleepRequest
-        {
-            public DateTime RequestTime { get; set; }
-            public float Score { get; set; }
-            public SleepRequestStatus Status { get; set; }
-            public string? RequestId { get; set; }
-        }
-
-        private enum SleepRequestStatus { Pending, Approved, Denied }
-        private SleepRequest? pendingSleepRequest = null;
-        private DateTime lastSleepCheck = DateTime.MinValue;
-
         // 跨循环请求队列（新委托系统）
         private readonly ConcurrentQueue<CrossRequest> _pendingCrossRequests = new();
         internal IAgentMessaging? _messaging;
@@ -316,13 +303,6 @@ namespace AgentCoreProcessor.Engine
         private async Task ExecuteSystemCycleAsync(CancellationToken ct)
         {
             _totalCycles++;
-
-            // 定期自检（每 5 分钟）
-            if ((DateTime.Now - lastSleepCheck).TotalMinutes >= 5)
-            {
-                await PerformHealthCheckAsync();
-                lastSleepCheck = DateTime.Now;
-            }
 
             // ═══ 收集待处理事件 ═══
             var crossRequests = DrainCrossRequests();
@@ -595,20 +575,6 @@ namespace AgentCoreProcessor.Engine
             {
                 switch (signal.SignalName)
                 {
-                    case "sleep-approve" when pendingSleepRequest != null:
-                        if (pendingSleepRequest.RequestId == (string?)signal.Payload)
-                        {
-                            pendingSleepRequest.Status = SleepRequestStatus.Approved;
-                            _ = StartDreamEngineAsync();
-                            pendingSleepRequest = null;
-                        }
-                        break;
-                    case "sleep-deny" when pendingSleepRequest != null:
-                        if (pendingSleepRequest.RequestId == (string?)signal.Payload)
-                        {
-                            pendingSleepRequest = null;
-                        }
-                        break;
                     case "task-submitted":
                         gate.Signal();
                         break;
@@ -844,11 +810,6 @@ namespace AgentCoreProcessor.Engine
                 IsAlive = IsAlive,
                 TaskQueueDepth = 0,
                 ActiveSubAgentCount = agentInfos.Count(a => a.IsAlive),
-                HasPendingSleepRequest = pendingSleepRequest != null,
-                SleepRequestId = pendingSleepRequest?.RequestId,
-                SleepScore = pendingSleepRequest?.Score,
-                SleepRequestTime = pendingSleepRequest?.RequestTime,
-                LastHealthCheck = lastSleepCheck,
                 SubAgents = agentInfos,
                 PinboardEntries = new(ReadPinboardEntries()),
                 ThinkingNotes = new(ReadSystemThinkingNotes()),
@@ -859,161 +820,6 @@ namespace AgentCoreProcessor.Engine
                 LastErrorTime = lastErrorTime,
                 LastErrorMessage = lastErrorMessage
             };
-        }
-
-        // ---- Phase 8: 睡觉评估和许可管理 ----
-
-        /// <summary>定期健康检查（每 5 分钟）。</summary>
-        private async Task PerformHealthCheckAsync()
-        {
-            // 如果已有待处理的睡觉请求，检查超时
-            if (pendingSleepRequest != null)
-            {
-                var elapsed = (DateTime.Now - pendingSleepRequest.RequestTime).TotalMinutes;
-                if (elapsed > 10 && pendingSleepRequest.Status == SleepRequestStatus.Pending)
-                {
-                    Signal.Event(LogGroup.Engine, "睡觉请求超时自动批准",
-                        new { requestId = pendingSleepRequest.RequestId, elapsedMinutes = elapsed });
-                    pendingSleepRequest.Status = SleepRequestStatus.Approved;
-                    await StartDreamEngineAsync();
-                    pendingSleepRequest = null;
-                }
-                return;
-            }
-
-            // 评估睡觉需求
-            var score = await EvaluateSleepNeedAsync();
-            Signal.Event(LogGroup.Engine, "睡觉评估", new { score, threshold = 60f, triggered = score >= 60f });
-            if (score >= 60f)
-            {
-                await RequestSleepPermissionAsync(score);
-            }
-        }
-
-        /// <summary>评估睡觉需求（4 因子评分）。</summary>
-        private async Task<float> EvaluateSleepNeedAsync()
-        {
-            float score = 0f;
-
-            // 因子1：空闲时长（最高 40 分）
-            if (ctx.IsIdle)
-            {
-                var idleMinutes = ctx.IdleDuration.TotalMinutes;
-                score += Math.Min(40f, (float)(idleMinutes / 30f * 40f));
-            }
-
-            // 因子2：记忆积压（最高 30 分）
-            // 简化：使用最近 100 条记忆中未做梦的数量估算
-            var recentMemories = await ctx.Memories.GetRecentAsync(100);
-            var undreamedCount = recentMemories.Count(m => m.LastDreamTime == null);
-            score += Math.Min(30f, undreamedCount / 50f * 30f);
-
-            // 因子3：复盘标记（最高 20 分）
-            var unprocessedHints = await ctx.ReviewHints.GetUnprocessedAsync();
-            var hintCount = unprocessedHints.Count;
-            score += Math.Min(20f, hintCount / 10f * 20f);
-
-            // 因子4：上次睡觉时间（最高 10 分）
-            var lastSleep = await GetLastSleepTimeAsync();
-            if (lastSleep.HasValue)
-            {
-                var hoursSince = (DateTime.Now - lastSleep.Value).TotalHours;
-                score += Math.Min(10f, (float)(hoursSince / 24f * 10f));
-            }
-
-            return score;
-        }
-
-        /// <summary>获取上次睡觉时间（从 DreamStats 读取）。</summary>
-        private async Task<DateTime?> GetLastSleepTimeAsync()
-        {
-            var statsPath = Path.Combine(PathConfig.StoragePath, "Dream", "DreamStats.json");
-            if (!File.Exists(statsPath)) return null;
-
-            try
-            {
-                var json = await File.ReadAllTextAsync(statsPath);
-                // 简化：直接解析 JSON，不依赖 Dream 命名空间
-                dynamic? stats = Newtonsoft.Json.JsonConvert.DeserializeObject(json);
-                if (stats == null) return null;
-
-                // 从 DailyRecords 找最近一次 Processed > 0 的日期
-                var records = stats.DailyRecords as Newtonsoft.Json.Linq.JArray;
-                if (records == null) return null;
-
-                foreach (var record in records.OrderByDescending(r => (string?)r["Date"]))
-                {
-                    var processed = (int?)record["Processed"];
-                    var dateStr = (string?)record["Date"];
-                    if (processed > 0 && dateStr != null)
-                    {
-                        return DateTime.Parse(dateStr);
-                    }
-                }
-
-                return null;
-            }
-            catch (Exception ex)
-            {
-                Signal.Warn(LogGroup.Engine, "读取DreamStats失败", new { error = ex.Message });
-                return null;
-            }
-        }
-
-        /// <summary>请求睡觉许可（发送到管理员频道）。</summary>
-        private async Task RequestSleepPermissionAsync(float score)
-        {
-            // 查找管理员频道
-            var adminChannels = await FindAdminChannelsAsync();
-            if (adminChannels.Count == 0)
-            {
-                // 没有管理员，自动批准（兜底）
-                await StartDreamEngineAsync();
-                return;
-            }
-
-            // 生成请求 ID
-            var requestId = Guid.NewGuid().ToString("N").Substring(0, 8);
-
-            // 构建请求消息
-            var recentMemories = await ctx.Memories.GetRecentAsync(100);
-            var undreamedCount = recentMemories.Count(m => m.LastDreamTime == null);
-            var unprocessedHints = await ctx.ReviewHints.GetUnprocessedAsync();
-            var hintCount = unprocessedHints.Count;
-
-            var message = $"[系统内部·睡觉请求] 请转告管理员：我想睡觉整理记忆了（评分{score:F1}/100，" +
-                          $"空闲{ctx.IdleDuration.TotalMinutes:F0}分钟，{undreamedCount}条待处理记忆）。" +
-                          $"管理员可以用 /sleep approve {requestId} 批准，/sleep deny {requestId} 拒绝。";
-
-            // 通知所有管理员频道
-            foreach (var channelId in adminChannels)
-            {
-                _messaging?.SubmitFireAndForget(LoopId.ForChannel(channelId),
-                    "系统通知", message);
-            }
-
-            // 记录请求状态
-            pendingSleepRequest = new SleepRequest
-            {
-                RequestTime = DateTime.Now,
-                Score = score,
-                Status = SleepRequestStatus.Pending,
-                RequestId = requestId
-            };
-
-        }
-
-        /// <summary>查找管理员最近活跃的频道。</summary>
-        private async Task<List<int>> FindAdminChannelsAsync()
-        {
-            var allUsers = await ctx.Session.GetAllUsersAsync();
-            var admins = allUsers.Where(u => u.PermissionLevel == Database.PermissionLevel.Admin).ToList();
-
-            if (admins.Count == 0) return new List<int>();
-
-            // 简化：返回所有频道（管理员可能在任何频道）
-            var allChannels = await ctx.Session.GetAllChannelsAsync();
-            return allChannels.Select(c => c.Id).ToList();
         }
 
         /// <summary>启动 DreamEngine（通过 EventBus 发布信号）。</summary>
@@ -1060,8 +866,6 @@ namespace AgentCoreProcessor.Engine
     {
         "task-submitted",
         "force-sleep",
-        "sleep-approve",
-        "sleep-deny",
         "delegation-result"
     };
 

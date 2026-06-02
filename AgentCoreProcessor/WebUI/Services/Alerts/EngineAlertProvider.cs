@@ -38,21 +38,6 @@ namespace AgentCoreProcessor.WebUI.Services.Alerts
                     };
                 }
 
-                // 睡觉请求待审批
-                if (snapshot.SystemEngine.HasPendingSleepRequest)
-                {
-                    var elapsed = snapshot.SystemEngine.SleepRequestTime.HasValue
-                        ? (DateTime.Now - snapshot.SystemEngine.SleepRequestTime.Value).TotalMinutes
-                        : 0;
-                    yield return new AlertItem
-                    {
-                        Level = AlertLevel.Warning,
-                        Source = "睡觉",
-                        Message = $"睡觉请求待审批 ({elapsed:F0} 分钟前)",
-                        LinkHref = "/p/dream/sleep"
-                    };
-                }
-
                 // 任务队列积压
                 if (snapshot.SystemEngine.TaskQueueDepth > 5)
                 {

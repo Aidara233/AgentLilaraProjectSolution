@@ -12,8 +12,6 @@ using Newtonsoft.Json.Linq;
 
 namespace AgentCoreProcessor.Engine
 {
-    internal enum SleepLevel { Daydream, Nap, DeepSleep }
-
     /// <summary>
     /// 做梦引擎。每次睡觉创建，完成后销毁。
     /// 两阶段：秩序（temp入库）+ 巡逻（主库维护）。
@@ -24,7 +22,6 @@ namespace AgentCoreProcessor.Engine
         public bool IsAlive { get; private set; } = true;
 
         private readonly ISystemContext ctx;
-        private readonly SleepLevel level;
         private readonly DreamEngineSpawnCheck spawnCheck;
 
         private readonly RelationClassificationCore relationClassificationCore = new();
@@ -57,11 +54,10 @@ namespace AgentCoreProcessor.Engine
         private string? currentOutputRaw;
         private int currentSessionId;
 
-        public DreamEngine(ISystemContext ctx, SleepLevel level,
+        public DreamEngine(ISystemContext ctx,
             DreamEngineSpawnCheck spawnCheck)
         {
             this.ctx = ctx;
-            this.level = level;
             this.spawnCheck = spawnCheck;
         }
 
@@ -75,41 +71,26 @@ namespace AgentCoreProcessor.Engine
             var lifeCtx = Signal.Continue(
                 parentCtx?.SignalId ?? Signal.NewId(), parentCtx?.CurrentSpanId,
                 "dream:main", LogGroup.Engine, "Dream引擎",
-                new { engineType = EngineType, level = level.ToString() });
+                new { engineType = EngineType });
 
             await CleanupExpiredMemoriesAsync();
 
             var session = await ctx.DreamLogs.CreateSessionAsync(new DreamSession
             {
-                Level = level.ToString(),
+                Level = "Dream",
                 StartTime = DateTime.Now,
             });
             currentSessionId = session.Id;
 
-            ctx.CurrentSleepState = level switch
-            {
-                SleepLevel.Daydream => SleepState.Daydream,
-                SleepLevel.Nap => SleepState.Nap,
-                SleepLevel.DeepSleep => SleepState.DeepSleep,
-                _ => SleepState.None
-            };
+            ctx.CurrentSleepState = SleepState.DeepSleep;
             var startTime = DateTime.Now;
 
             var cfg = spawnCheck.GetConfig();
-            int patrolBudget = level switch
-            {
-                SleepLevel.Daydream => cfg.DaydreamPatrolSteps,
-                SleepLevel.Nap => cfg.NapPatrolSteps,
-                SleepLevel.DeepSleep => cfg.MaxPatrolSteps,
-                _ => 3
-            };
+            int patrolBudget = cfg.MaxPatrolSteps;
 
             // ---- 秩序阶段 ----
-            if (level == SleepLevel.Nap || level == SleepLevel.DeepSleep)
-            {
-                await RunOrderPhaseAsync(cfg);
-                if (shouldWake) goto finish;
-            }
+            await RunOrderPhaseAsync(cfg);
+            if (shouldWake) goto finish;
 
             // ---- 巡逻 ----
             await RunPatrolAsync(patrolBudget, cfg);
@@ -118,8 +99,7 @@ namespace AgentCoreProcessor.Engine
             if (shouldWake)
                 Signal.Event(LogGroup.Engine, "做梦被唤醒", new { steps = StepsCompleted });
 
-            int processed = level == SleepLevel.DeepSleep ? StepsCompleted : 0;
-            spawnCheck.OnDreamCompleted(level, processed);
+            spawnCheck.OnDreamCompleted(StepsCompleted);
 
             await PersistSessionAsync(startTime, StepsCompleted);
 
@@ -704,20 +684,10 @@ namespace AgentCoreProcessor.Engine
             if (e is not MessageEvent msgEvent) return;
             var msg = msgEvent.Message;
 
-            switch (level)
-            {
-                case SleepLevel.Daydream:
-                    if (msg.IsMentioned) shouldWake = true;
-                    break;
-                case SleepLevel.Nap:
-                    if (msg.IsMentioned && ContainsWakeKeyword(msg.Content))
-                        shouldWake = true;
-                    else if (msg.IsMentioned)
-                        _ = ForceSleepTalkAsync(msg.Content);
-                    break;
-                case SleepLevel.DeepSleep:
-                    break;
-            }
+            if (msg.IsMentioned && ContainsWakeKeyword(msg.Content))
+                shouldWake = true;
+            else if (msg.IsMentioned)
+                _ = ForceSleepTalkAsync(msg.Content);
         }
 
         internal void ForceWake(string reason) => shouldWake = true;
@@ -761,41 +731,6 @@ namespace AgentCoreProcessor.Engine
             catch (Exception ex)
             {
                 Signal.Warn(LogGroup.Engine, "梦话发送失败", new { error = ex.GetType().Name, message = ex.Message });
-            }
-        }
-
-        private async Task MaybeSleepTalkAsync(string? fragmentSummary)
-        {
-            if (ctx.MuteMode) return;
-            if (string.IsNullOrEmpty(fragmentSummary)) return;
-            var chance = level switch
-            {
-                SleepLevel.DeepSleep => 0.25,
-                SleepLevel.Nap => 0.15,
-                _ => 0.0
-            };
-            if (Random.Shared.NextDouble() >= chance) return;
-
-            try
-            {
-                var channels = await ctx.Session.GetAllChannelsAsync();
-                if (channels.Count == 0) return;
-                var targetChannel = channels[Random.Shared.Next(channels.Count)];
-                var parts = targetChannel.Name.Split(':', 2);
-                if (parts.Length != 2) return;
-                var talk = await sleepTalkCore.GenerateAsync(fragmentSummary);
-                if (string.IsNullOrWhiteSpace(talk)) return;
-                if (talk.Length > 50) talk = talk[..50];
-                var sentId = await ctx.Adapters.SendMessageAsync(parts[0], new OutgoingMessage
-                {
-                    ChannelId = parts[1],
-                    Content = talk
-                });
-                await ctx.Session.SaveBotMessageAsync(targetChannel.Id, talk, sentId);
-            }
-            catch (Exception ex)
-            {
-                Signal.Warn(LogGroup.Engine, "梦话发送失败(概率)", new { error = ex.GetType().Name, message = ex.Message });
             }
         }
 

@@ -11,8 +11,8 @@ using Newtonsoft.Json;
 namespace AgentCoreProcessor.Engine
 {
     /// <summary>
-    /// DreamEngine 的创建条件检查。
-    /// Phase 8: 简化为信号驱动 + 小睡/走神。大睡决策由 SystemEngine 负责。
+    /// DreamEngine 的创建条件检查。仅响应 force-sleep / force-wake 信号。
+    /// 定期触发已移除，由外部（WebUI/命令）显式触发。
     /// </summary>
     internal class DreamEngineSpawnCheck : IEngineSpawnCheck
     {
@@ -21,19 +21,10 @@ namespace AgentCoreProcessor.Engine
         private static string DreamConfigPath =>
             Path.Combine(PathConfig.StoragePath, "Dream", "DreamConfig.json");
 
-        // ---- 跨周期状态 ----
         private DreamConfig cfg = DreamConfig.Load(
             Path.Combine(PathConfig.StoragePath, "Dream", "DreamConfig.json"));
 
         private volatile bool forceFlag = false;
-        private volatile SleepLevel forcedLevel = SleepLevel.DeepSleep;
-        private DateTime? lastDaydreamTime;
-        private DateTime? lastNapTime;
-
-        // ShouldSpawn 决定的睡眠级别，供 Create 读取
-        private SleepLevel pendingLevel;
-        private int pendingMaxFragments;
-
 
         public Task OnEventAsync(EngineEvent e, ISystemContext ctx)
         {
@@ -43,12 +34,6 @@ namespace AgentCoreProcessor.Engine
                 {
                     case "force-sleep":
                         forceFlag = true;
-                        forcedLevel = (signal.Payload as string) switch
-                        {
-                            "nap" => SleepLevel.Nap,
-                            "daydream" => SleepLevel.Daydream,
-                            _ => SleepLevel.DeepSleep
-                        };
                         break;
                     case "force-wake":
                         activeDreamEngine?.ForceWake(signal.Payload as string ?? "signal");
@@ -75,44 +60,10 @@ namespace AgentCoreProcessor.Engine
 
         public Task<bool> ShouldSpawnAsync(EngineEvent e, ISystemContext ctx)
         {
-            // ① 强制睡觉（来自 SystemEngine 或 WebUI）
             if (forceFlag)
             {
                 forceFlag = false;
-                pendingLevel = forcedLevel;
-                pendingMaxFragments = forcedLevel switch
-                {
-                    SleepLevel.Daydream => 1,
-                    SleepLevel.Nap => cfg.MaxFragmentsPerNap,
-                    _ => cfg.MaxFragmentsPerDeepSleep
-                };
                 return Task.FromResult(!ctx.HasActiveEngine("Dream"));
-            }
-
-            // 只在 TickEvent 时评估小睡/走神
-            if (e is not TimerEvent timer || timer.TimerName != "tick")
-                return Task.FromResult(false);
-
-            if (!ctx.IsIdle || ctx.HasActiveEngine("Dream")) return Task.FromResult(false);
-
-            // ② 小睡（空闲时间足够长 + 冷却期已过）
-            if (ctx.IdleDuration.TotalSeconds > cfg.NapIdleThreshold
-                && (lastNapTime == null || (DateTime.Now - lastNapTime.Value).TotalSeconds > cfg.NapCooldown))
-            {
-                pendingLevel = SleepLevel.Nap;
-                pendingMaxFragments = cfg.MaxFragmentsPerNap;
-                return Task.FromResult(true);
-            }
-
-            // ③ 走神（需启用 + 空闲足够长 + 冷却期已过）
-            if (cfg.DaydreamEnabled
-                && ctx.IdleDuration.TotalSeconds > cfg.DaydreamIdleThreshold
-                && (lastDaydreamTime == null ||
-                (DateTime.Now - lastDaydreamTime.Value).TotalSeconds > cfg.DaydreamCooldown))
-            {
-                pendingLevel = SleepLevel.Daydream;
-                pendingMaxFragments = 1;
-                return Task.FromResult(true);
             }
 
             return Task.FromResult(false);
@@ -120,7 +71,7 @@ namespace AgentCoreProcessor.Engine
 
         public ISubEngine Create(ISystemContext ctx)
         {
-            var engine = new DreamEngine(ctx, pendingLevel, this);
+            var engine = new DreamEngine(ctx, this);
             activeDreamEngine = engine;
             return engine;
         }
@@ -137,9 +88,6 @@ namespace AgentCoreProcessor.Engine
             var lastRec = active?.LastCompletedRecord;
             return new()
             {
-                ForceFlag = forceFlag,
-                LastDaydreamTime = lastDaydreamTime,
-                PendingLevel = pendingLevel,
                 HasActiveDream = hasActiveDream,
                 CurrentFragment = active?.CurrentPhase,
                 FragmentsCompleted = active?.StepsCompleted ?? 0,
@@ -161,22 +109,9 @@ namespace AgentCoreProcessor.Engine
             };
         }
 
-        // ---- 供 DreamEngine 实例回调 ----
-
-        internal void OnDreamCompleted(SleepLevel level, int processed)
+        internal void OnDreamCompleted(int processed)
         {
             activeDreamEngine = null;
-            if (level == SleepLevel.Daydream)
-            {
-                lastDaydreamTime = DateTime.Now;
-            }
-            else if (level == SleepLevel.Nap)
-            {
-                lastNapTime = DateTime.Now;
-            }
-            else if (level == SleepLevel.DeepSleep)
-            {
-            }
         }
     }
 }
