@@ -483,11 +483,13 @@ namespace AgentCoreProcessor.Adapter
                         var url = await actions.GetGroupFileUrlAsync(urlGroupId, fileId, busid);
                         return new ActionResult { Success = url != null, Result = url };
 
-                    case "get_chat_file_url":
-                        if (!parameters.TryGetValue("file_id", out var cfid) || string.IsNullOrEmpty(cfid))
+                    case "download_chat_file":
+                        if (!parameters.TryGetValue("file_id", out var dfid) || string.IsNullOrEmpty(dfid))
                             return new ActionResult { Success = false, Error = "缺少 file_id 参数" };
-                        var chatFileUrl = await actions.GetChatFileUrlAsync(cfid);
-                        return new ActionResult { Success = chatFileUrl != null, Result = chatFileUrl };
+                        if (!parameters.TryGetValue("dest_path", out var destPath) || string.IsNullOrEmpty(destPath))
+                            return new ActionResult { Success = false, Error = "缺少 dest_path 参数" };
+                        await actions.DownloadChatFileAsync(dfid, destPath);
+                        return new ActionResult { Success = true };
 
                     default:
                         // 透传：走 HTTP REST API（go-cqhttp 扩展端点只能 HTTP）
