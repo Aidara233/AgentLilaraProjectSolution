@@ -354,44 +354,37 @@ namespace AgentCoreProcessor.Adapter
         }
 
         /// <summary>
-        /// 下载聊天文件：WS get_file 获取本地路径 → POST /download_file_stream (file://) → 流式保存。
+        /// 下载聊天文件：HTTP /get_private_file_url → 直链下载。
         /// </summary>
         public async Task DownloadChatFileAsync(string fileId, string destPath)
         {
-            // 1. WS get_file → 获取本地路径
-            var metaResp = await adapter.CallApiAsync("get_file",
-                new JObject { ["file_id"] = fileId });
-            if (metaResp?["retcode"]?.Value<int>() != 0)
-                throw new InvalidOperationException("get_file 失败");
-            var localPath = metaResp["data"]?["file"]?.ToString()
-                ?? metaResp["data"]?["url"]?.ToString();
-            if (string.IsNullOrEmpty(localPath))
-                throw new InvalidOperationException("未获取到文件路径");
-
-            // 2. 本地文件直接复制
-            if (File.Exists(localPath))
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
-                File.Copy(localPath, destPath, overwrite: true);
-                return;
-            }
-
-            // 3. 尝试通过 /download_file_stream + file:// URL
+            // 1. HTTP /get_private_file_url → 获取直链
             var baseUrl = adapter.Config.HttpUrl.TrimEnd('/');
-            var url = $"{baseUrl}/download_file_stream";
             var token = !string.IsNullOrEmpty(adapter.Config.HttpToken) ? adapter.Config.HttpToken : adapter.Config.Token;
+            var url = $"{baseUrl}/get_private_file_url";
             if (!string.IsNullOrEmpty(token))
                 url += $"?access_token={Uri.EscapeDataString(token)}";
 
-            var body = new JObject { ["file"] = "file://" + localPath };
-            var content = new StringContent(body.ToString(Formatting.None),
-                Encoding.UTF8, "application/json");
-
+            var body = new JObject { ["file_id"] = fileId };
+            var content = new StringContent(body.ToString(Formatting.None), Encoding.UTF8, "application/json");
             using var resp = await adapter.HttpClient.PostAsync(url, content);
             resp.EnsureSuccessStatusCode();
 
+            var respText = await resp.Content.ReadAsStringAsync();
+            var json = JObject.Parse(respText);
+            if (json["retcode"]?.Value<int>() != 0)
+                throw new InvalidOperationException($"get_private_file_url 失败: {json["message"]?.ToString() ?? respText}");
+
+            var downloadUrl = json["data"]?["url"]?.ToString();
+            if (string.IsNullOrEmpty(downloadUrl))
+                throw new InvalidOperationException("未获取到下载链接");
+
+            // 2. HTTP 下载
+            using var httpResp = await adapter.HttpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead);
+            httpResp.EnsureSuccessStatusCode();
+
             Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
-            await using var stream = await resp.Content.ReadAsStreamAsync();
+            await using var stream = await httpResp.Content.ReadAsStreamAsync();
             await using var fileStream = new FileStream(destPath, FileMode.Create,
                 FileAccess.Write, FileShare.None, 8192, useAsync: true);
             await stream.CopyToAsync(fileStream);
