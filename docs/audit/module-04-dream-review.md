@@ -1,6 +1,6 @@
 # 模块4审计报告：做梦+复盘 (Dream & Review)
 
-审计时间：2026-05-26
+审计时间：2026-05-26 | 更新：2026-06-02
 文件数：12 | 总行数：~3,100（DreamEngine 1234行 + ReviewEngine 692行）
 
 ---
@@ -23,10 +23,11 @@ Nap 有 `NapIdleThreshold`（默认 600s）限制最短空闲时长，而 Daydre
 **4. ExecuteFragmentAsync 不检查 shouldWake（除 Consolidation）** (`DreamEngine.cs:538-577`)
 `ExecuteWeightAsync`、`ExecuteLinkAsync`、`ExecuteCombineAsync`、`ExecuteDedupAsync` 均不检查 `shouldWake`。仅 `ExecuteConsolidationAsync` 在批次间检查（line 590, 604）。如果某片段执行时间较长（大模型调用），唤醒信号会被延迟到该片段完成后才响应。被唤醒后等待运行中片段的逻辑（line 279-290）是正确的，但唤醒延迟不可控。
 
-**5. ReviewProgress.Findings / NextSteps 永远保存空列表** (`ReviewEngine.cs:320-335`)
-`SaveProgress()` 每次将 `Findings` 和 `NextSteps` 序列化为 `new List<string>()`。这两个字段在 `ReviewProgress` 中定义并在 `BuildResumeContent()` 中恢复展示，但新版 ReviewEngine 从未写入它们。属于旧模式（ReviewModeSelector）的残留字段，当前 ReviewEngine 使用 `ThinkingNotes` 替代。读恢复时会展示空的"已有发现"和"待完成步骤"区块。
+**5. ReviewProgress.Findings / NextSteps 永远保存空列表** (`ReviewEngine.cs:320-335`) ✅ 已修复 2026-06-02
+Findings/NextSteps 字段已删除。ReviewProgress 只保留游标、评价缓冲、笔记、token 预算。
 
-**6. TryCompressHistory 中 `notice = null!` 的误用** (`ReviewEngine.cs:454`)
+**6. TryCompressHistory 中 `notice = null!` 的误用** (`ReviewEngine.cs:454`) ✅ 已修复 2026-06-02
+改为 `bool noticeReplaced = false` 清晰标记替换状态。
 ```csharp
 history[i] = notice;
 notice = null!;  // 仅为了阻止后续 Insert，语义不清晰
@@ -41,7 +42,8 @@ notice = null!;  // 仅为了阻止后续 Insert，语义不清晰
 **8. DreamEngine.RunAsync Phase1→Phase2 逻辑内联在主循环中** (`DreamEngine.cs:248-271`)
 信任评估 + ReviewEngine 启动的逻辑嵌入主循环的片段完成回调位置（~25行）。这段代码只在大睡且临时记忆首次清空时执行一次，但嵌在主循环内使 RunAsync 的方法职责混杂（调度循环 + 信任评估 + Review 启动）。
 
-**9. ReviewEngine 不自动保存进度（崩溃丢失）** (`ReviewEngine.cs:109-179`)
+**9. ReviewEngine 不自动保存进度（崩溃丢失）** (`ReviewEngine.cs:109-179`) ✅ 已修复 2026-06-02
+finally 块中自动调用 SaveProgress()，确保评价缓冲和笔记不丢失。
 `SaveProgress()` 仅在模型调用 `review_save_progress` 工具时触发。如果 ReviewEngine 异常退出（模型 500、进程被杀、token 预算意外耗尽），`EvaluationBuffer` 中的评价、`ThinkingNotes`、游标位置全部丢失。应在 `finally` 块中自动保存，或在每次 action 后自动快照。
 
 ### 🟢 ISSUE — 轻度
