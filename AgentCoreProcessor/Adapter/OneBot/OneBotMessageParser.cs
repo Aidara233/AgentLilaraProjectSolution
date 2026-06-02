@@ -169,12 +169,9 @@ namespace AgentCoreProcessor.Adapter
                         });
                         break;
                     case "file":
-                        Signal.Debug(LogGroup.Adapter, "收到文件消息段", new
-                        {
-                            messageType,
-                            rawSegData = segData.ToString(),
-                            keys = ((JObject)segData).Properties().Select(p => p.Name).ToList()
-                        });
+                        var debugJson = segData.ToString(Newtonsoft.Json.Formatting.None);
+                        var debugPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "debug_file_segment.log");
+                        File.AppendAllText(debugPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [file segment] type={messageType} data={debugJson}\n");
                         var fName = segData["name"]?.ToString() ?? segData["file"]?.ToString() ?? "未知文件";
                         textBuilder.Append($"[文件: {fName}]");
                         attachments ??= new List<MessageAttachment>();

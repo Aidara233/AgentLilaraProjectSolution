@@ -1619,19 +1619,16 @@ namespace AgentCoreProcessor.Engine
                             var rawFileAtts = nms.Message.Attachments
                                 .Where(a => a.Type == AttachmentType.File)
                                 .ToList();
-                            Signal.Debug(LogGroup.Engine, "文件附件处理", new
+                            var debugAtts = rawFileAtts.Select(a => new
                             {
-                                totalFileAtts = rawFileAtts.Count,
-                                details = rawFileAtts.Select(a => new
-                                {
-                                    a.FileName,
-                                    a.FileSize,
-                                    hasSourceUrl = !string.IsNullOrEmpty(a.SourceUrl),
-                                    hasFileId = !string.IsNullOrEmpty(a.FileId),
-                                    a.FileId,
-                                    sourceUrlPrefix = a.SourceUrl?.Length > 50 ? a.SourceUrl[..50] : a.SourceUrl
-                                }).ToList()
-                            });
+                                a.FileName, a.FileSize,
+                                hasSourceUrl = !string.IsNullOrEmpty(a.SourceUrl),
+                                hasFileId = !string.IsNullOrEmpty(a.FileId),
+                                fileIdLen = a.FileId?.Length ?? 0,
+                                sourceUrlPrefix = a.SourceUrl?.Length > 50 ? a.SourceUrl[..50] : a.SourceUrl
+                            }).ToList();
+                            var debugPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "debug_file_segment.log");
+                            File.AppendAllText(debugPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [channel atts] count={rawFileAtts.Count} details={Newtonsoft.Json.JsonConvert.SerializeObject(debugAtts)}\n");
                             var fileAtts = rawFileAtts
                                 .Where(a => !string.IsNullOrEmpty(a.SourceUrl) || !string.IsNullOrEmpty(a.FileId))
                                 .ToList();
