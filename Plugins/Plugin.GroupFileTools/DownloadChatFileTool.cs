@@ -7,21 +7,17 @@ namespace Plugin.GroupFileTools;
 public class DownloadChatFileTool : ITool
 {
     private readonly IAdapterAccess? _adapterAccess;
-    private readonly IChannelAccess? _channelAccess;
     private readonly string _adapterId = "";
-    private readonly int _channelId;
     private readonly string _workspaceDir = "";
     private readonly HttpClient _http;
 
     public DownloadChatFileTool() { _http = new HttpClient(); }
 
-    public DownloadChatFileTool(IAdapterAccess adapterAccess, IChannelAccess channelAccess,
-        string adapterId, int channelId, string workspaceDir, HttpClient http)
+    public DownloadChatFileTool(IAdapterAccess adapterAccess,
+        string adapterId, string workspaceDir, HttpClient http)
     {
         _adapterAccess = adapterAccess;
-        _channelAccess = channelAccess;
         _adapterId = adapterId;
-        _channelId = channelId;
         _workspaceDir = workspaceDir;
         _http = http;
     }
@@ -65,8 +61,6 @@ public class DownloadChatFileTool : ITool
         var destPath = Path.Combine(destDir, safeName);
 
         var http = _http;
-        var channelAccess = _channelAccess;
-        var channelId = _channelId;
         _ = Task.Run(async () =>
         {
             try
@@ -87,27 +81,9 @@ public class DownloadChatFileTool : ITool
                     FileAccess.Write, FileShare.None, 8192, useAsync: true);
                 await stream.CopyToAsync(fileStream);
             }
-            catch (Exception ex)
+            catch
             {
-                if (channelAccess != null)
-                    await channelAccess.SendMessageAsync(channelId, $"[下载失败] {saveName}: {ex.Message}");
-                return;
-            }
-
-            if (channelAccess != null)
-            {
-                var resultName = Path.GetFileName(destPath);
-                var sizeStr = "";
-                try
-                {
-                    var fi = new FileInfo(destPath);
-                    if (fi.Exists && fi.Length >= 1_000_000)
-                        sizeStr = $" ({fi.Length / 1_000_000.0:F1}MB)";
-                    else if (fi.Exists)
-                        sizeStr = $" ({fi.Length / 1_000.0:F1}KB)";
-                }
-                catch { }
-                await channelAccess.SendMessageAsync(channelId, $"[下载完成] {resultName}{sizeStr}");
+                // 下载失败，静默忽略（工具返回值已反映提交状态）
             }
         }, CancellationToken.None);
 

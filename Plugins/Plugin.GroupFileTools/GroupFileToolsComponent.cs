@@ -56,9 +56,9 @@ public class GroupFileToolsComponent : LoopComponentBase
         http.DefaultRequestHeaders.UserAgent.ParseAdd("AgentLilara/1.0");
 
         _listFiles = new ListGroupFilesTool(adapterAccess, adapterId);
-        _downloadFile = new DownloadGroupFileTool(adapterAccess, channelAccess,
-            adapterId, channelId, workspaceDir, http);
-        _downloadChatFile = new DownloadChatFileTool(adapterAccess, channelAccess,
-            adapterId, channelId, workspaceDir, http);
+        _downloadFile = new DownloadGroupFileTool(adapterAccess,
+            adapterId, workspaceDir, http);
+        _downloadChatFile = new DownloadChatFileTool(adapterAccess,
+            adapterId, workspaceDir, http);
     }
 }
