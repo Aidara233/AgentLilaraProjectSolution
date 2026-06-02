@@ -142,7 +142,21 @@ public class CampusPrintComponent : GlobalComponentBase
     }
 
     /// <summary>剥离模型经常额外包裹的引号</summary>
-    internal static string Clean(string s) => s.Trim().Trim('"', '\'', '`', '“', '”', '‘', '’');
+    internal static string Clean(string s) => s.Trim().Trim('"', '\'', '`');
+
+    /// <summary>规范化路径：Git Bash /e/... → E:\...，/ → \</summary>
+    internal static string NormalizePath(string path)
+    {
+        var p = Clean(path);
+        // Git Bash: /e/foo → E:\foo, /c/Users → C:\Users
+        if (p.Length >= 3 && p[0] == '/' && p[2] == '/' && char.IsLetter(p[1]))
+            p = $"{char.ToUpper(p[1])}:{p[2..]}";
+        p = p.Replace('/', '\\');
+        // 去多余反斜杠
+        while (p.Contains("\\\\"))
+            p = p.Replace("\\\\", "\\");
+        return p;
+    }
 }
 
 // =============================================================================
@@ -276,9 +290,9 @@ public class PrintFileUploadTool : ITool
 
     public async Task<ToolResult> ExecuteAsync(List<string> inputs, CancellationToken ct)
     {
-        var filePath = CampusPrintComponent.Clean(inputs[0]);
+        var filePath = CampusPrintComponent.NormalizePath(inputs[0]);
         if (!File.Exists(filePath))
-            return new ToolResult { Status = "failed", Error = $"文件不存在: {filePath}" };
+            return new ToolResult { Status = "failed", Error = $"文件不存在。原始输入: \"{inputs[0]}\" → 解析为: \"{filePath}\"" };
 
         _comp.EnsureClient();
         var client = _comp.Client!;
