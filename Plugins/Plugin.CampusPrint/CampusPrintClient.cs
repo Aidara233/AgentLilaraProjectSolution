@@ -125,7 +125,6 @@ public class CampusPrintClient
         }
 
         var req = new HttpRequestMessage(HttpMethod.Get, url);
-        req.Headers.Add("token", _config.Token);
         var resp = await _http.SendAsync(req);
         var body = await resp.Content.ReadAsStringAsync();
         try { return JsonNode.Parse(body); }
@@ -146,7 +145,6 @@ public class CampusPrintClient
         {
             Content = content
         };
-        req.Headers.Add("token", _config.Token);
 
         var resp = await _http.SendAsync(req);
         var body = await resp.Content.ReadAsStringAsync();
@@ -267,7 +265,6 @@ public class CampusPrintClient
         {
             Content = new FormUrlEncodedContent(formData!)
         };
-        req.Headers.Add("token", _config.Token);
         req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/x-www-form-urlencoded");
 
         var resp = await _http.SendAsync(req);
@@ -327,7 +324,6 @@ public class CampusPrintClient
             {
                 Content = mpContent
             };
-            req.Headers.Add("token", _config.Token);
 
             var resp = await _http.SendAsync(req);
             var body = await resp.Content.ReadAsStringAsync();
