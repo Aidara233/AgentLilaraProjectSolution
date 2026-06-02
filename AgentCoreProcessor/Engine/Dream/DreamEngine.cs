@@ -28,7 +28,6 @@ namespace AgentCoreProcessor.Engine
         private readonly DreamEngineSpawnCheck spawnCheck;
 
         private readonly RelationClassificationCore relationClassificationCore = new();
-        private readonly WeightCore weightCore = new();
         private readonly SleepTalkCore sleepTalkCore = new();
 
         private volatile bool shouldWake = false;
@@ -58,7 +57,7 @@ namespace AgentCoreProcessor.Engine
         private string? currentOutputRaw;
         private int currentSessionId;
 
-        public DreamEngine(ISystemContext ctx, SleepLevel level, int maxFragments,
+        public DreamEngine(ISystemContext ctx, SleepLevel level,
             DreamEngineSpawnCheck spawnCheck)
         {
             this.ctx = ctx;

@@ -120,7 +120,7 @@ namespace AgentCoreProcessor.Engine
 
         public ISubEngine Create(ISystemContext ctx)
         {
-            var engine = new DreamEngine(ctx, pendingLevel, pendingMaxFragments, this);
+            var engine = new DreamEngine(ctx, pendingLevel, this);
             activeDreamEngine = engine;
             return engine;
         }
