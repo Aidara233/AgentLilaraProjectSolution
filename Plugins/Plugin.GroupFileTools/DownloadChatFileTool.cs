@@ -9,19 +9,15 @@ public class DownloadChatFileTool : ITool
     private readonly IAdapterAccess? _adapterAccess;
     private readonly string _adapterId = "";
     private readonly string _workspaceDir = "";
-    private readonly string _privateUserId = "";
-    private readonly HttpClient _http;
 
-    public DownloadChatFileTool() { _http = new HttpClient(); }
+    public DownloadChatFileTool() { }
 
     public DownloadChatFileTool(IAdapterAccess adapterAccess,
-        string adapterId, string workspaceDir, string privateUserId, HttpClient http)
+        string adapterId, string workspaceDir)
     {
         _adapterAccess = adapterAccess;
         _adapterId = adapterId;
         _workspaceDir = workspaceDir;
-        _privateUserId = privateUserId;
-        _http = http;
     }
 
     public string Name => "download_chat_file";
@@ -35,7 +31,7 @@ public class DownloadChatFileTool : ITool
         new("file_name", "期望的文件名（可选）", 1, isRequired: false)
     ];
 
-    public TimeSpan Timeout => TimeSpan.FromSeconds(15);
+    public TimeSpan Timeout => TimeSpan.FromSeconds(30);
 
     public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
     {
@@ -48,47 +44,25 @@ public class DownloadChatFileTool : ITool
         if (string.IsNullOrEmpty(fileId))
             return new ToolResult { Status = "failed", Error = "file_id 不能为空" };
 
-        // NapCat HTTP /get_private_file_url → 获取下载 URL
-        var puidParam = !string.IsNullOrEmpty(_privateUserId)
-            ? $",\"private_user_id\":\"{_privateUserId}\""
-            : "";
-        var url = await _adapterAccess.ExecuteActionAsync(_adapterId, "get_chat_file_url",
-            $"{{\"file_id\":\"{fileId}\"{puidParam}}}");
-        if (string.IsNullOrEmpty(url))
-            return new ToolResult { Status = "failed", Error = "获取下载链接失败，请确认 file_id 正确且文件未过期" };
-
         var saveName = fileName ?? fileId[..Math.Min(fileId.Length, 16)];
         var safeName = string.Join("_", saveName.Split(Path.GetInvalidFileNameChars()));
         var destDir = Path.Combine(_workspaceDir, "Downloads");
         Directory.CreateDirectory(destDir);
         var destPath = Path.Combine(destDir, safeName);
 
-        var http = _http;
+        var adapterAccess = _adapterAccess;
+        var adapterId = _adapterId;
         _ = Task.Run(async () =>
         {
             try
             {
-                using var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-                resp.EnsureSuccessStatusCode();
-
-                var cd = resp.Content.Headers.ContentDisposition;
-                if (cd?.FileName != null)
-                {
-                    var realName = cd.FileName.Trim('"');
-                    var realSafe = string.Join("_", realName.Split(Path.GetInvalidFileNameChars()));
-                    destPath = Path.Combine(destDir, realSafe);
-                }
-
-                await using var stream = await resp.Content.ReadAsStreamAsync();
-                await using var fileStream = new FileStream(destPath, FileMode.Create,
-                    FileAccess.Write, FileShare.None, 8192, useAsync: true);
-                await stream.CopyToAsync(fileStream);
+                var result = await adapterAccess.ExecuteActionAsync(adapterId, "download_chat_file",
+                    $"{{\"file_id\":\"{fileId}\",\"dest_path\":\"{destPath.Replace("\\", "\\\\")}\"}}");
+                if (result == null)
+                    throw new InvalidOperationException("下载失败");
             }
-            catch
-            {
-                // 下载失败，静默忽略
-            }
-        }, CancellationToken.None);
+            catch { }
+        }, ct);
 
         return new ToolResult { Status = "success", Data = $"[下载已提交] {saveName}" };
     }

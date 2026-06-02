@@ -354,32 +354,40 @@ namespace AgentCoreProcessor.Adapter
         }
 
         /// <summary>
-        /// 通过 NapCat HTTP /get_private_file_url 获取私聊文件下载 URL。
+        /// 下载聊天文件。先通过 WS get_file 获取本地路径，
+        /// 再 POST /download_file_stream 将本地文件流式传输出来。
         /// </summary>
-        public async Task<string?> GetChatFileUrlAsync(string fileId, string? privateUserId = null)
+        public async Task DownloadChatFileAsync(string fileId, string destPath)
         {
-            var param = new JObject { ["file_id"] = fileId };
-            if (!string.IsNullOrEmpty(privateUserId))
-                param["user_id"] = privateUserId;
+            // 1. WebSocket get_file → 获取本地路径
+            var metaResp = await adapter.CallApiAsync("get_file",
+                new JObject { ["file_id"] = fileId });
+            if (metaResp?["retcode"]?.Value<int>() != 0)
+                throw new InvalidOperationException("get_file API 失败");
+            var localPath = metaResp["data"]?["file"]?.ToString()
+                ?? metaResp["data"]?["url"]?.ToString();
+            if (string.IsNullOrEmpty(localPath))
+                throw new InvalidOperationException("get_file 未返回文件路径");
 
-            // 使用 HTTP API（非 WebSocket），/get_private_file_url 是 NapCat 的 HTTP 扩展端点
+            // 2. HTTP POST /download_file_stream → 流式传输
             var baseUrl = adapter.Config.HttpUrl.TrimEnd('/');
-            var url = $"{baseUrl}/get_private_file_url";
+            var url = $"{baseUrl}/download_file_stream";
             var token = !string.IsNullOrEmpty(adapter.Config.HttpToken) ? adapter.Config.HttpToken : adapter.Config.Token;
             if (!string.IsNullOrEmpty(token))
                 url += $"?access_token={Uri.EscapeDataString(token)}";
 
-            var content = new StringContent(param.ToString(Formatting.None),
+            var body = new JObject { ["file"] = localPath };
+            var content = new StringContent(body.ToString(Formatting.None),
                 Encoding.UTF8, "application/json");
 
             using var resp = await adapter.HttpClient.PostAsync(url, content);
-            var body = await resp.Content.ReadAsStringAsync();
-            var dbgPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "debug_get_private.log");
-            File.AppendAllText(dbgPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [POST /get_private_file_url] req={param.ToString(Formatting.None)} status={resp.StatusCode} resp={body}\n");
-            var json = JObject.Parse(body);
-            if (json["retcode"]?.Value<int>() == 0)
-                return json["data"]?["url"]?.ToString();
-            return null;
+            resp.EnsureSuccessStatusCode();
+
+            Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+            await using var stream = await resp.Content.ReadAsStreamAsync();
+            await using var fileStream = new FileStream(destPath, FileMode.Create,
+                FileAccess.Write, FileShare.None, 8192, useAsync: true);
+            await stream.CopyToAsync(fileStream);
         }
 
         private async Task<string?> SendFileAsync(string channelId, MessageAttachment att)
