@@ -1616,21 +1616,10 @@ namespace AgentCoreProcessor.Engine
                             }
 
                             // 文件附件：追加 URL/FileId 和元数据，模型可用 download_file 或 download_chat_file 下载
-                            var rawFileAtts = nms.Message.Attachments
-                                .Where(a => a.Type == AttachmentType.File)
-                                .ToList();
-                            var debugAtts = rawFileAtts.Select(a => new
-                            {
-                                a.FileName, a.FileSize,
-                                hasSourceUrl = !string.IsNullOrEmpty(a.SourceUrl),
-                                hasFileId = !string.IsNullOrEmpty(a.FileId),
-                                fileIdLen = a.FileId?.Length ?? 0,
-                                sourceUrlPrefix = a.SourceUrl?.Length > 50 ? a.SourceUrl[..50] : a.SourceUrl
-                            }).ToList();
-                            var debugPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "debug_file_segment.log");
-                            File.AppendAllText(debugPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [channel atts] count={rawFileAtts.Count} details={Newtonsoft.Json.JsonConvert.SerializeObject(debugAtts)}\n");
-                            var fileAtts = rawFileAtts
-                                .Where(a => !string.IsNullOrEmpty(a.SourceUrl) || !string.IsNullOrEmpty(a.FileId))
+                            // 文件附件：追加 URL/FileId 和元数据，模型可用 download_file 或 download_chat_file 下载
+                            var fileAtts = nms.Message.Attachments
+                                .Where(a => a.Type == AttachmentType.File &&
+                                    (!string.IsNullOrEmpty(a.SourceUrl) || !string.IsNullOrEmpty(a.FileId)))
                                 .ToList();
                             if (fileAtts.Count > 0)
                             {

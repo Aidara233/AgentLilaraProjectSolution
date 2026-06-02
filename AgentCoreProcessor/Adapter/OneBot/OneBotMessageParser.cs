@@ -169,10 +169,10 @@ namespace AgentCoreProcessor.Adapter
                         });
                         break;
                     case "file":
-                        var debugJson = segData.ToString(Newtonsoft.Json.Formatting.None);
-                        var debugPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "debug_file_segment.log");
-                        File.AppendAllText(debugPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [file segment] type={messageType} data={debugJson}\n");
                         var fName = segData["name"]?.ToString() ?? segData["file"]?.ToString() ?? "未知文件";
+                        // NapCat: file_size 可能是字符串，兼容两种格式
+                        var fileSize = segData["size"]?.Value<long>()
+                            ?? (long.TryParse(segData["file_size"]?.ToString(), out var fs) ? fs : (long?)null);
                         textBuilder.Append($"[文件: {fName}]");
                         attachments ??= new List<MessageAttachment>();
                         attachments.Add(new MessageAttachment
@@ -180,8 +180,8 @@ namespace AgentCoreProcessor.Adapter
                             Type = AttachmentType.File,
                             SourceUrl = segData["url"]?.ToString(),
                             FileName = fName,
-                            FileSize = segData["size"]?.Value<long>(),
-                            FileId = segData["file"]?.ToString()
+                            FileSize = fileSize,
+                            FileId = segData["file_id"]?.ToString()
                         });
                         break;
                 }
