@@ -9,11 +9,12 @@ public class GroupFileToolsComponent : LoopComponentBase
 {
     private ListGroupFilesTool? _listFiles;
     private DownloadGroupFileTool? _downloadFile;
+    private DownloadChatFileTool? _downloadChatFile;
 
     public override ComponentMeta Meta => new()
     {
         Name = "group-file-tools",
-        Description = "群文件管理（list_group_files, download_group_file），群聊私聊均可用",
+        Description = "文件下载管理（list_group_files, download_group_file, download_chat_file），群聊私聊均可用",
         DefaultEnabled = true,
         PromptPriority = 60
     };
@@ -24,6 +25,7 @@ public class GroupFileToolsComponent : LoopComponentBase
         {
             if (_listFiles != null) yield return _listFiles;
             if (_downloadFile != null) yield return _downloadFile;
+            if (_downloadChatFile != null) yield return _downloadChatFile;
         }
     }
 
@@ -55,6 +57,8 @@ public class GroupFileToolsComponent : LoopComponentBase
 
         _listFiles = new ListGroupFilesTool(adapterAccess, adapterId);
         _downloadFile = new DownloadGroupFileTool(adapterAccess, channelAccess,
+            adapterId, channelId, workspaceDir, http);
+        _downloadChatFile = new DownloadChatFileTool(adapterAccess, channelAccess,
             adapterId, channelId, workspaceDir, http);
     }
 }

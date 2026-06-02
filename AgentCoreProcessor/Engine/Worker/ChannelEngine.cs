@@ -1615,9 +1615,10 @@ namespace AgentCoreProcessor.Engine
                                 if (parts.Count > 1) nmsMsg.ContentParts = parts;
                             }
 
-                            // 文件附件：追加 URL 和元数据，模型可用 download_file 下载
+                            // 文件附件：追加 URL/FileId 和元数据，模型可用 download_file 或 download_chat_file 下载
                             var fileAtts = nms.Message.Attachments
-                                .Where(a => a.Type == AttachmentType.File && !string.IsNullOrEmpty(a.SourceUrl))
+                                .Where(a => a.Type == AttachmentType.File &&
+                                    (!string.IsNullOrEmpty(a.SourceUrl) || !string.IsNullOrEmpty(a.FileId)))
                                 .ToList();
                             if (fileAtts.Count > 0)
                             {
@@ -1633,7 +1634,10 @@ namespace AgentCoreProcessor.Engine
                                                 ? $"{(fa.FileSize.Value / 1_000.0):F1}KB"
                                                 : $"{fa.FileSize.Value}B"
                                         : "未知大小";
-                                    fileLines.AppendLine($"- {fa.FileName ?? "未知文件"} ({sizeStr}) url={fa.SourceUrl}");
+                                    var urlOrId = !string.IsNullOrEmpty(fa.SourceUrl)
+                                        ? $"url={fa.SourceUrl}"
+                                        : $"file_id={fa.FileId}";
+                                    fileLines.AppendLine($"- {fa.FileName ?? "未知文件"} ({sizeStr}) {urlOrId}");
                                 }
                                 nmsMsg.Content += fileLines.ToString();
                             }

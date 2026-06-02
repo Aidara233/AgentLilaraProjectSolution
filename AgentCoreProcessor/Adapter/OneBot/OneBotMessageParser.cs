@@ -177,7 +177,8 @@ namespace AgentCoreProcessor.Adapter
                             Type = AttachmentType.File,
                             SourceUrl = segData["url"]?.ToString(),
                             FileName = fName,
-                            FileSize = segData["size"]?.Value<long>()
+                            FileSize = segData["size"]?.Value<long>(),
+                            FileId = segData["file"]?.ToString()
                         });
                         break;
                 }

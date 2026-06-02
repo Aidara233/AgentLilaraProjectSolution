@@ -34,6 +34,9 @@ namespace AgentCoreProcessor.Adapter
         /// <summary>文件大小（字节）</summary>
         public long? FileSize { get; set; }
 
+        /// <summary>OneBot file segment 的 file 字段（base64 file_id），用于 get_file API</summary>
+        public string? FileId { get; set; }
+
         /// <summary>在消息文本中的占位符索引（图片专用，从 0 开始）</summary>
         public int SegmentIndex { get; set; }
     }

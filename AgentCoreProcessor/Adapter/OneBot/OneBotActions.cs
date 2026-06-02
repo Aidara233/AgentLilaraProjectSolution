@@ -350,6 +350,15 @@ namespace AgentCoreProcessor.Adapter
             return null;
         }
 
+        public async Task<string?> GetChatFileUrlAsync(string fileId)
+        {
+            var resp = await adapter.CallApiAsync("get_file",
+                new JObject { ["file_id"] = fileId });
+            if (resp?["retcode"]?.Value<int>() == 0)
+                return resp["data"]?["url"]?.ToString();
+            return null;
+        }
+
         private async Task<string?> SendFileAsync(string channelId, MessageAttachment att)
         {
             var filePath = att.LocalPath ?? att.SourceUrl;
