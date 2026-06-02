@@ -171,8 +171,8 @@ public class PrintSetTokenTool : ITool
 
     public Task<ToolResult> ExecuteAsync(List<string> inputs, CancellationToken ct)
     {
-        var token = inputs[0].Trim();
-        var appkey = inputs[1].Trim();
+        var token = inputs[0].Trim().Trim('"', '\'', '`');
+        var appkey = inputs[1].Trim().Trim('"', '\'', '`');
         if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(appkey))
             return Task.FromResult(new ToolResult { Status = "failed", Error = "token 和 appkey 都不能为空" });
 

@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
@@ -30,14 +31,22 @@ public class CampusPrintClient
     public CampusPrintClient(CampusPrintConfig config)
     {
         _config = config;
-        _http = new HttpClient();
+        var handler = new SocketsHttpHandler
+        {
+            UseProxy = false,
+            AutomaticDecompression = DecompressionMethods.All,
+            AllowAutoRedirect = true,
+            MaxConnectionsPerServer = 5
+        };
+        _http = new HttpClient(handler);
+        _http.DefaultRequestVersion = HttpVersion.Version11;
+        _http.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionExact;
+        _http.DefaultRequestHeaders.ExpectContinue = false;
         _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
         _http.DefaultRequestHeaders.AcceptLanguage.Add(new StringWithQualityHeaderValue("zh-CN", 0.9));
-        _http.DefaultRequestHeaders.Referrer = new Uri("https://servicewechat.com/wx7613a90097b68222/258/page-frame.html");
         _http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13) XWEB/8555");
         _http.DefaultRequestHeaders.Add("xweb_xhr", "1");
-        _http.DefaultRequestHeaders.Add("token", config.Token);
         _http.Timeout = TimeSpan.FromSeconds(60);
     }
 
@@ -125,6 +134,7 @@ public class CampusPrintClient
         }
 
         var req = new HttpRequestMessage(HttpMethod.Get, url);
+        req.Headers.TryAddWithoutValidation("token", _config.Token);
         var resp = await _http.SendAsync(req);
         var body = await resp.Content.ReadAsStringAsync();
         try { return JsonNode.Parse(body); }
@@ -145,6 +155,7 @@ public class CampusPrintClient
         {
             Content = content
         };
+        req.Headers.TryAddWithoutValidation("token", _config.Token);
 
         var resp = await _http.SendAsync(req);
         var body = await resp.Content.ReadAsStringAsync();
