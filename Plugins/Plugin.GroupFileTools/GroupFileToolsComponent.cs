@@ -59,6 +59,6 @@ public class GroupFileToolsComponent : LoopComponentBase
         _downloadFile = new DownloadGroupFileTool(adapterAccess,
             adapterId, workspaceDir, http);
         _downloadChatFile = new DownloadChatFileTool(adapterAccess,
-            adapterId, workspaceDir);
+            adapterId, workspaceDir, http);
     }
 }

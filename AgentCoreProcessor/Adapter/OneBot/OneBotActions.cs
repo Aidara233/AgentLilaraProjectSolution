@@ -354,40 +354,30 @@ namespace AgentCoreProcessor.Adapter
         }
 
         /// <summary>
-        /// 下载聊天文件。先通过 WS get_file 获取本地路径，
-        /// 再 POST /download_file_stream 将本地文件流式传输出来。
+        /// 下载聊天文件。通过 HTTP POST /get_file (参数名 file) 获取下载 URL，
+        /// 再用 HTTP GET 下载。与 WS get_file (参数名 file_id) 可能返回不同结果。
         /// </summary>
-        public async Task DownloadChatFileAsync(string fileId, string destPath)
+        public async Task<string?> GetChatFileUrlAsync(string fileId)
         {
-            // 1. WebSocket get_file → 获取本地路径
-            var metaResp = await adapter.CallApiAsync("get_file",
-                new JObject { ["file_id"] = fileId });
-            if (metaResp?["retcode"]?.Value<int>() != 0)
-                throw new InvalidOperationException("get_file API 失败");
-            var localPath = metaResp["data"]?["file"]?.ToString()
-                ?? metaResp["data"]?["url"]?.ToString();
-            if (string.IsNullOrEmpty(localPath))
-                throw new InvalidOperationException("get_file 未返回文件路径");
-
-            // 2. HTTP POST /download_file_stream → 流式传输
             var baseUrl = adapter.Config.HttpUrl.TrimEnd('/');
-            var url = $"{baseUrl}/download_file_stream";
+            var url = $"{baseUrl}/get_file";
             var token = !string.IsNullOrEmpty(adapter.Config.HttpToken) ? adapter.Config.HttpToken : adapter.Config.Token;
             if (!string.IsNullOrEmpty(token))
                 url += $"?access_token={Uri.EscapeDataString(token)}";
 
-            var body = new JObject { ["file"] = localPath };
+            var body = new JObject { ["file"] = fileId };
             var content = new StringContent(body.ToString(Formatting.None),
                 Encoding.UTF8, "application/json");
 
             using var resp = await adapter.HttpClient.PostAsync(url, content);
-            resp.EnsureSuccessStatusCode();
+            var rawBody = await resp.Content.ReadAsStringAsync();
+            var dbgPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "debug_get_file_http.log");
+            File.AppendAllText(dbgPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [POST /get_file] req={body.ToString(Formatting.None)} status={resp.StatusCode} resp={rawBody}\n");
 
-            Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
-            await using var stream = await resp.Content.ReadAsStreamAsync();
-            await using var fileStream = new FileStream(destPath, FileMode.Create,
-                FileAccess.Write, FileShare.None, 8192, useAsync: true);
-            await stream.CopyToAsync(fileStream);
+            var json = JObject.Parse(rawBody);
+            if (json["retcode"]?.Value<int>() == 0)
+                return json["data"]?["url"]?.ToString();
+            return null;
         }
 
         private async Task<string?> SendFileAsync(string channelId, MessageAttachment att)
