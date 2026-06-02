@@ -173,7 +173,11 @@ namespace AgentCoreProcessor.Adapter
                         // NapCat: file_size 可能是字符串，兼容两种格式
                         var fileSize = segData["size"]?.Value<long>()
                             ?? (long.TryParse(segData["file_size"]?.ToString(), out var fs) ? fs : (long?)null);
-                        textBuilder.Append($"[文件: {fName}]");
+                        var fileId = segData["file_id"]?.ToString();
+                        if (!string.IsNullOrEmpty(fileId))
+                            textBuilder.Append($"[文件: {fName} file_id={fileId}]");
+                        else
+                            textBuilder.Append($"[文件: {fName}]");
                         attachments ??= new List<MessageAttachment>();
                         attachments.Add(new MessageAttachment
                         {
@@ -181,7 +185,7 @@ namespace AgentCoreProcessor.Adapter
                             SourceUrl = segData["url"]?.ToString(),
                             FileName = fName,
                             FileSize = fileSize,
-                            FileId = segData["file_id"]?.ToString()
+                            FileId = fileId
                         });
                         break;
                 }
