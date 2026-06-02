@@ -198,6 +198,15 @@ public class CampusPrintClient
         });
     }
 
+    /// POST /prints/file_del — 批量删除（逗号分隔的 ID 字符串）
+    public async Task<JsonNode?> FileClear(string ids)
+    {
+        return await ApiPost("/prints/file_del", new()
+        {
+            ["id"] = ids
+        });
+    }
+
     /// POST /prints/file_save_pass — 加密文件解锁
     public async Task<JsonNode?> FileSavePass(Dictionary<string, object?> fields)
     {

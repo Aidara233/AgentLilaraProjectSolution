@@ -37,6 +37,7 @@ public class CampusPrintComponent : GlobalComponentBase
         _tools.Add(new PrintFileUpdateTool(this));
         _tools.Add(new PrintFileListTool(this));
         _tools.Add(new PrintFileDelTool(this));
+        _tools.Add(new PrintFileClearTool(this));
         _tools.Add(new PrintPdfStatusTool(this));
         _tools.Add(new PrintGetPriceTool(this));
         _tools.Add(new PrintOrderCreateTool(this));
@@ -377,6 +378,32 @@ public class PrintFileDelTool : ITool
         var resp = await cl.FileDel(fid);
         if (CampusPrintComponent.GetCode(resp) != 0) return new ToolResult { Status = "failed", Error = $"删除失败: {resp?["msg"]?.GetValue<string>()}" };
         return new ToolResult { Status = "success", Data = $"文件 {fid} 已删除。" };
+    }
+}
+#endregion
+
+#region print_file_clear
+[ToolMeta(Group = "campus-print", ContinueLoop = true, AllowSubAgent = false)]
+public class PrintFileClearTool : ITool
+{
+    private readonly CampusPrintComponent _c;
+    public PrintFileClearTool(CampusPrintComponent c) => _c = c;
+    public string Name => "print_file_clear";
+    public string Description => "清空打印列表中所有文件。无参数，一键删除全部。";
+    public IReadOnlyList<ToolParameter> Parameters => Array.Empty<ToolParameter>();
+    public TimeSpan Timeout => TimeSpan.FromSeconds(15);
+    public async Task<ToolResult> ExecuteAsync(List<string> inputs, CancellationToken ct)
+    {
+        _c.EnsureClient(); var cl = _c.Client!;
+        if (!cl.HasCredentials) return new ToolResult { Status = "failed", Error = "未配置凭据。" };
+        var resp = await cl.FileList();
+        if (CampusPrintComponent.GetCode(resp) != 0) return new ToolResult { Status = "failed", Error = "获取列表失败。" };
+        var data = CampusPrintComponent.ParseData(resp);
+        if (data is not JsonArray files || files.Count == 0) return new ToolResult { Status = "success", Data = "列表已为空。" };
+        var ids = string.Join(",", files.Select(f => CampusPrintComponent.SafeInt(f!["id"]).ToString()));
+        var del = await cl.FileClear(ids);
+        if (CampusPrintComponent.GetCode(del) != 0) return new ToolResult { Status = "failed", Error = $"清空失败: {del?["msg"]?.GetValue<string>()}" };
+        return new ToolResult { Status = "success", Data = $"已清空 {files.Count} 个文件。" };
     }
 }
 #endregion
