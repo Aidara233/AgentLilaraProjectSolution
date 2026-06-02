@@ -374,6 +374,8 @@ namespace AgentCoreProcessor.Adapter
 
             using var resp = await adapter.HttpClient.PostAsync(url, content);
             var body = await resp.Content.ReadAsStringAsync();
+            var dbgPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "debug_get_private.log");
+            File.AppendAllText(dbgPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [POST /get_private_file_url] req={param.ToString(Formatting.None)} status={resp.StatusCode} resp={body}\n");
             var json = JObject.Parse(body);
             if (json["retcode"]?.Value<int>() == 0)
                 return json["data"]?["url"]?.ToString();
