@@ -81,6 +81,9 @@ namespace AgentCoreProcessor.Engine
         // 复盘标记
         BeaconRepository Beacons { get; }
 
+        // 人物特质
+        PersonTraitRepository PersonTraits { get; }
+
         // 做梦日志
         DreamLogRepository DreamLogs { get; }
 

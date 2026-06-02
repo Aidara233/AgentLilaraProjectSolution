@@ -173,6 +173,9 @@ namespace AgentCoreProcessor.Engine
             }
             finally
             {
+                // 保存进度（防止崩溃丢失评价缓冲和笔记）
+                SaveProgress();
+
                 // 确保 session 落库（即使异常退出也不留僵尸记录）
                 if (session != null)
                 {
@@ -351,8 +354,6 @@ namespace AgentCoreProcessor.Engine
                 CursorChannelId = CursorChannelId,
                 EvaluationBuffer = EvaluationBuffer.ToList(),
                 ThinkingNotes = ThinkingNotes,
-                Findings = new List<string>(),
-                NextSteps = new List<string>(),
                 TokensUsed = TokensUsed,
                 ReserveUsed = _reviewControl?.ReserveGranted ?? false,
                 SavedAt = DateTime.Now
@@ -365,6 +366,109 @@ namespace AgentCoreProcessor.Engine
         {
             if (File.Exists(ReviewProgressPath))
                 File.Delete(ReviewProgressPath);
+        }
+
+        // ---- 信任升级 ----
+
+        /// <summary>获取下一级的目标信任等级。
+        /// Only Stranger→Understanding→Familiarity→Trust; AbsoluteTrust is admin-only.</summary>
+        private static TrustLevel? GetNextTrustLevel(TrustLevel current) => current switch
+        {
+            TrustLevel.Stranger => TrustLevel.Understanding,
+            TrustLevel.Understanding => TrustLevel.Familiarity,
+            TrustLevel.Familiarity => TrustLevel.Trust,
+            _ => null
+        };
+
+        internal async Task<AgentLilara.PluginSDK.Services.TrustCriteriaDto> GetTrustCriteriaAsync(int personId)
+        {
+            var person = await _ctx.Session.GetPersonByIdAsync(personId);
+            if (person == null)
+                throw new InvalidOperationException($"人物 P#{personId} 不存在");
+
+            var nextLevel = GetNextTrustLevel(person.TrustLevel);
+            var dto = new AgentLilara.PluginSDK.Services.TrustCriteriaDto
+            {
+                CurrentLevel = person.TrustLevel.ToString(),
+                NextLevel = nextLevel?.ToString() ?? "",
+                NextLevelLabel = nextLevel?.ToString() ?? "（已是最高）"
+            };
+
+            if (nextLevel == null) return dto;
+
+            // 收集硬指标数据
+            dto.MessageCount = await _ctx.Session.GetMessageCountByPersonAsync(personId);
+            var memories = await _ctx.Memories.GetByPersonAsync(personId);
+            dto.MemoryCount = memories.Count;
+            dto.DaysSinceCreation = (int)(DateTime.Now - person.CreatedAt).TotalDays;
+
+            var sessions = await _ctx.ReviewLogs.GetRecentSessionsAsync(200);
+            dto.ReviewCount = sessions.Count(s =>
+            {
+                try
+                {
+                    var arr = System.Text.Json.JsonSerializer.Deserialize<int[]>(s.PersonsEncountered);
+                    return arr != null && arr.Contains(personId);
+                }
+                catch { return false; }
+            });
+
+            var scores = await _ctx.EvaluationScores.GetByTargetAsync("person", personId);
+            foreach (var s in scores)
+                dto.DimensionValues[s.Dimension] = s.Value;
+
+            // 检查硬指标
+            var met = nextLevel switch
+            {
+                TrustLevel.Understanding => dto.MessageCount >= _cfg.StrangerMinMessages
+                    && dto.MemoryCount >= _cfg.UnderstandingMinMemories
+                    && dto.DaysSinceCreation >= _cfg.UnderstandingMinDays
+                    && dto.DimensionValues.Values.Any(v => v >= _cfg.UnderstandingAnyDimension),
+                TrustLevel.Familiarity => dto.MemoryCount >= _cfg.UnderstandingMinMemories
+                    && dto.DaysSinceCreation >= _cfg.FamiliarityMinDays
+                    && dto.DimensionValues.Values.Count(v => v >= _cfg.FamiliarityMajorityDimension)
+                        >= dto.DimensionValues.Count / 2 + (dto.DimensionValues.Count % 2 > 0 ? 1 : 0), // 多数维度
+                TrustLevel.Trust => dto.DaysSinceCreation >= _cfg.TrustMinDays
+                    && dto.ReviewCount >= _cfg.TrustMinReviewCount
+                    && dto.DimensionValues.Count >= 4
+                    && dto.DimensionValues.Values.All(v => v >= _cfg.TrustAllDimensions),
+                _ => false
+            };
+
+            dto.HardCriteriaMet = met;
+            dto.HardCriteriaDetail = met ? "硬指标达标，待模型软确认" : "硬指标未达标";
+            return dto;
+        }
+
+        internal async Task<bool> PromoteTrustAsync(int personId)
+        {
+            var person = await _ctx.Session.GetPersonByIdAsync(personId);
+            if (person == null) return false;
+
+            var nextLevel = GetNextTrustLevel(person.TrustLevel);
+            if (nextLevel == null) return false;
+
+            // 验证硬指标
+            var criteria = await GetTrustCriteriaAsync(personId);
+            if (!criteria.HardCriteriaMet) return false;
+
+            person.TrustLevel = nextLevel.Value;
+            await _ctx.Session.UpdatePersonAsync(person);
+            return true;
+        }
+
+        internal async Task<bool> DemoteTrustAsync(int personId, string reason)
+        {
+            var person = await _ctx.Session.GetPersonByIdAsync(personId);
+            if (person == null) return false;
+
+            if (person.TrustLevel <= TrustLevel.Unknown) return false;
+
+            person.TrustLevel = (TrustLevel)((int)person.TrustLevel - 1);
+            await _ctx.Session.UpdatePersonAsync(person);
+
+            await LogActionAsync("demote_trust", $"P#{personId} 降级至 {person.TrustLevel}: {reason}");
+            return true;
         }
 
         // ---- 压缩 ----
@@ -473,16 +577,17 @@ namespace AgentCoreProcessor.Engine
                 };
 
                 // 移除旧的压缩提示
+                bool noticeReplaced = false;
                 for (int i = conversationStart; i < compressEnd && i < history.Count; i++)
                 {
                     if (history[i].Role == "user" && history[i].Content?.StartsWith("[系统] 早期阅读内容已压缩") == true)
                     {
                         history[i] = notice;
-                        notice = null!;
+                        noticeReplaced = true;
                         break;
                     }
                 }
-                if (notice != null)
+                if (!noticeReplaced)
                     history.Insert(conversationStart, notice);
 
                 _compressionApplied = true;
@@ -581,17 +686,138 @@ namespace AgentCoreProcessor.Engine
                 return BuildResumeContent();
             }
 
-            // 有信标 → 列出所有未处理信标
-            var beacons = await _ctx.Beacons.GetUnprocessedAsync("review");
-            if (beacons.Count > 0)
+            // 强制模式（手动触发指定）
+            if (!string.IsNullOrEmpty(_forcedSeedMode))
             {
-                _seedType = "beacon";
-                return BuildBeaconSeed(beacons);
+                if (_forcedSeedMode == "beacon")
+                {
+                    var beacons = await _ctx.Beacons.GetUnprocessedAsync("review");
+                    if (beacons.Count > 0)
+                    {
+                        _seedType = "beacon";
+                        return BuildBeaconSeed(beacons);
+                    }
+                    // 无信标时 fallback 到随机
+                }
+                else if (_forcedSeedMode == "candidate")
+                {
+                    var forcedCandidates = await BuildCandidateListAsync();
+                    if (forcedCandidates.Count > 0)
+                    {
+                        _seedType = "candidate";
+                        return BuildCandidateSeed(forcedCandidates);
+                    }
+                    // 无候选人时 fallback 到随机
+                }
             }
 
-            // 无信标 → 随机选一个活跃频道
+            // 优先级 1: 候选人
+            var candidates = await BuildCandidateListAsync();
+            if (candidates.Count > 0)
+            {
+                _seedType = "candidate";
+                return BuildCandidateSeed(candidates);
+            }
+
+            // 优先级 2: 信标
+            var unprocessedBeacons = await _ctx.Beacons.GetUnprocessedAsync("review");
+            if (unprocessedBeacons.Count > 0)
+            {
+                _seedType = "beacon";
+                return BuildBeaconSeed(unprocessedBeacons);
+            }
+
+            // 优先级 3: 随机
             _seedType = "random";
             return await BuildRandomSeedAsync();
+        }
+
+        /// <summary>手动触发时强制指定种子模式（beacon / candidate）。</summary>
+        private string? _forcedSeedMode;
+
+        internal void ForceSeedMode(string mode)
+        {
+            _forcedSeedMode = mode;
+        }
+
+        /// <summary>查所有 Stranger+ 级别的人物，筛选硬指标达标者。</summary>
+        private async Task<List<(Person Person, TrustCriteriaDto Criteria)>> BuildCandidateListAsync()
+        {
+            var persons = await _ctx.Session.GetAllPersonsAsync();
+            var candidates = new List<(Person, TrustCriteriaDto)>();
+            foreach (var p in persons)
+            {
+                if (p.TrustLevel < TrustLevel.Stranger) continue;
+                var criteria = await GetTrustCriteriaAsync(p.Id);
+                if (criteria.HardCriteriaMet)
+                    candidates.Add((p, criteria));
+            }
+            return candidates;
+        }
+
+        private string BuildCandidateSeed(List<(Person Person, TrustCriteriaDto Criteria)> candidates)
+        {
+            var lines = new List<string>
+            {
+                "## 信任升级候选人",
+                $"发现 {candidates.Count} 位候选人硬指标达标，等待你的探索确认。",
+                "对每位候选人：浏览其消息和记忆 → 按检查单验证 → 决定升级或降分。",
+                ""
+            };
+
+            foreach (var (person, criteria) in candidates)
+            {
+                lines.Add($"### P#{person.Id} {person.Name} (当前: {criteria.CurrentLevel} → 目标: {criteria.NextLevelLabel})");
+                lines.Add($"- 消息数: {criteria.MessageCount}");
+                lines.Add($"- 记忆数: {criteria.MemoryCount}");
+                lines.Add($"- 相识天数: {criteria.DaysSinceCreation}");
+                lines.Add($"- Review 次数: {criteria.ReviewCount}");
+                if (criteria.DimensionValues.Count > 0)
+                    lines.Add($"- 维度分数: {string.Join(", ", criteria.DimensionValues.Select(kv => $"{kv.Key}={kv.Value:F1}"))}");
+                lines.Add("");
+            }
+
+            // 附加对应级别的软指标检查单
+            var levelChecklists = new Dictionary<string, string>
+            {
+                ["Understanding"] = "Stranger→Understanding 软指标:\n"
+                    + "- 能说出此人身份/名字\n"
+                    + "- 知道 ≥1 个偏好或特点\n"
+                    + "- 有 ≥1 条非表面记忆\n"
+                    + "- 无活跃 Alert",
+                ["Familiarity"] = "Understanding→Familiarity 软指标:\n"
+                    + "- 以上全部\n"
+                    + "- 2+ 场景中的具体角色\n"
+                    + "- ≥2 维度正面评价\n"
+                    + "- ≥3 条信息互相印证",
+                ["Trust"] = "Familiarity→Trust 软指标:\n"
+                    + "- 以上全部\n"
+                    + "- 4 维度全正面\n"
+                    + "- 无近期评价大跌\n"
+                    + "- ≥2 实例支撑的行为预判"
+            };
+
+            var relevantChecklists = candidates
+                .Select(c => c.Criteria.NextLevelLabel)
+                .Distinct()
+                .Where(l => levelChecklists.ContainsKey(l))
+                .Select(l => levelChecklists[l])
+                .ToList();
+
+            if (relevantChecklists.Count > 0)
+            {
+                lines.Add("## 软指标检查单");
+                foreach (var checklist in relevantChecklists)
+                {
+                    lines.Add("");
+                    lines.Add(checklist);
+                }
+            }
+
+            lines.Add("");
+            lines.Add("如果确认值得升级，使用 promote_trust 工具。如果不够格，用 review_evaluate 降低相关维度分数使其不再达到硬标准，这是正常的——不是每个人都需要立即升级。");
+
+            return string.Join("\n", lines);
         }
 
         private string BuildResumeContent()
@@ -604,22 +830,6 @@ namespace AgentCoreProcessor.Engine
                 lines.Add("");
                 lines.Add("### 思考笔记");
                 lines.Add(_progress.ThinkingNotes);
-            }
-
-            if (_progress.Findings.Count > 0)
-            {
-                lines.Add("");
-                lines.Add("### 已有发现");
-                foreach (var f in _progress.Findings)
-                    lines.Add($"- {f}");
-            }
-
-            if (_progress.NextSteps.Count > 0)
-            {
-                lines.Add("");
-                lines.Add("### 待完成步骤");
-                foreach (var s in _progress.NextSteps)
-                    lines.Add($"- {s}");
             }
 
             if (CursorChannelId != null)
@@ -696,19 +906,38 @@ namespace AgentCoreProcessor.Engine
         private string BuildSystemPrompt()
         {
             return """
-你是 Lilara 的复盘模块。系统当前处于深度睡眠，你在离线状态下自由探索和整理。
+你是 Lilara 的复盘模块。你在离线状态下自由探索和整理，从系统注入的起始内容出发，跟着好奇心走。
 
 ## 工作方式
-你的任务没有固定目标。从下方的起始内容出发，跟着好奇心走：
 - 用 review_browse 顺序阅读消息流
 - 用 review_focus 跳转到感兴趣的位置
 - 用 review_search_messages / memory_search 拉取特定条件的消息或记忆
 - 发现有价值的东西就行动（写记忆、更新人物、评价、修正矛盾）
 
+## 人物信任评估
+当你遇到值得关注的人物时，按信任升级流程处理：
+
+### 升级流程
+1. 用 review_get_person 查看此人当前的信任等级、维度分数和 FastMemory
+2. 用 get_person_traits 查看此人的结构化特质
+3. 浏览此人的消息和记忆，形成独立判断
+4. 如果认为此人符合升级标准 → 调用 promote_trust 升级，然后用 update_person_trait 记录升级依据
+5. 如果认为不够格 → 用 review_evaluate 降低相关维度分数，使其不满足硬指标
+
+### 降级保护
+- 降级必须经过你的探索确认，不能仅因分数变化就自动降级
+- 只有当探索后确认此人确实不再符合当前等级标准时，才用 demote_trust 降级
+
+## 人物特质管理
+- 用 get_person_traits 查看已记录的特质
+- 用 update_person_trait 添加/修正特质（preference/habit/style/relationship/expertise）
+- 每个特质需要标注置信度：单条消息来源=0.5，多次印证可逐步提高到 0.8-0.9
+- 置信度 < 0.3 的特质不应作为推理依据
+
 ## 习惯
 - 边读边记：看到重要信息先写 review_thinking_notes，browse 的原文可能会被压缩
 - 先查再写：写记忆前搜索确认无重复，更新人物前先查看现状
-- 随手评价：看到某人的表现就记录印象，可以多次评价同一目标，最终取平均
+- 随手评价：看到某人的表现就记录印象（review_evaluate），维度: reliability/respect/value/stability
 - 批量操作：你可以一次调用多个工具，不需要一个一个来
 
 ## 预算

@@ -56,7 +56,9 @@ internal class DreamProvider : IWebUIProvider
                     },
                     Actions = new()
                     {
-                        new() { Id = "force-sleep", Label = "手动触发维护", Icon = "bi-moon" }
+                        new() { Id = "force-sleep", Label = "手动触发维护", Icon = "bi-moon" },
+                        new() { Id = "force-review-beacon", Label = "信标触发 Review", Icon = "bi-flag" },
+                        new() { Id = "force-review-candidate", Label = "候选人触发 Review", Icon = "bi-person-check" }
                     }
                 },
                 Layout = new CardLayout { PreferredCols = 6, GridColumnStart = 1 }
@@ -93,6 +95,7 @@ internal class DreamProvider : IWebUIProvider
                         new() { Field = "RelationBatchMaxTargets", Label = "LLM 分类批大小", Type = FormFieldType.Number },
                         new() { Field = "DecayThreshold", Label = "衰减删除阈值", Type = FormFieldType.Number },
                         new() { Field = "ColdStartPoolSize", Label = "冷启动池大小", Type = FormFieldType.Number },
+                        new() { Field = "ReviewIntervalHours", Label = "Review 间隔(小时)", Type = FormFieldType.Number },
                     }
                 },
                 Layout = new CardLayout { PreferredCols = 6, GridColumnStart = 1 }
@@ -206,6 +209,16 @@ internal class DreamStatusSource : IDataSource
             _engine.EventBus.PublishSignal("force-sleep", "deepsleep");
             return Task.FromResult(new ActionResult { Success = true, Message = "已发送维护触发信号" });
         }
+        if (action == "force-review-beacon")
+        {
+            _engine.EventBus.PublishSignal("force-review:beacon", "");
+            return Task.FromResult(new ActionResult { Success = true, Message = "已触发信标 Review" });
+        }
+        if (action == "force-review-candidate")
+        {
+            _engine.EventBus.PublishSignal("force-review:candidate", "");
+            return Task.FromResult(new ActionResult { Success = true, Message = "已触发候选人 Review" });
+        }
         return Task.FromResult(new ActionResult { Success = true });
     }
 }
@@ -235,6 +248,7 @@ internal class DreamConfigSource : IDataSource
             ["RelationBatchMaxTargets"] = config.RelationBatchMaxTargets,
             ["DecayThreshold"] = config.DecayThreshold,
             ["ColdStartPoolSize"] = config.ColdStartPoolSize,
+            ["ReviewIntervalHours"] = config.ReviewIntervalHours,
         };
         return Task.FromResult(new DataResult { Data = data });
     }
@@ -262,6 +276,7 @@ internal class DreamConfigSource : IDataSource
                     case "RelationBatchMaxTargets": if (int.TryParse(v, out var rb)) config.RelationBatchMaxTargets = rb; break;
                     case "DecayThreshold": if (float.TryParse(v, out var dt)) config.DecayThreshold = dt; break;
                     case "ColdStartPoolSize": if (int.TryParse(v, out var cp)) config.ColdStartPoolSize = cp; break;
+                    case "ReviewIntervalHours": if (int.TryParse(v, out var ri)) config.ReviewIntervalHours = ri; break;
                 }
             }
 

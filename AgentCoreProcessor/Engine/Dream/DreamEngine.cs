@@ -54,6 +54,10 @@ namespace AgentCoreProcessor.Engine
         private string? currentOutputRaw;
         private int currentSessionId;
 
+        // Review 触发
+        private DateTime _lastReviewStart = DateTime.MinValue;
+        private string? _pendingReviewMode; // "beacon" / "candidate" / null
+
         public DreamEngine(ISystemContext ctx,
             DreamEngineSpawnCheck spawnCheck)
         {
@@ -132,6 +136,9 @@ namespace AgentCoreProcessor.Engine
                 await PersistSessionAsync(startTime, StepsCompleted);
 
                 if (shouldWake) break;
+
+                // ---- Review 触发 ----
+                await TryStartReviewAsync(cfg);
 
                 // 休息 30 秒再下一轮
                 await Task.Delay(30_000);
@@ -715,17 +722,75 @@ namespace AgentCoreProcessor.Engine
 
         public void OnEvent(EngineEvent e)
         {
-            if (e is not MessageEvent msgEvent) return;
-            var msg = msgEvent.Message;
-
-            if (msg.IsMentioned && ContainsWakeKeyword(msg.Content))
-                shouldWake = true;
-            else if (msg.IsMentioned)
-                _ = ForceSleepTalkAsync(msg.Content);
+            if (e is MessageEvent msgEvent)
+            {
+                var msg = msgEvent.Message;
+                if (msg.IsMentioned && ContainsWakeKeyword(msg.Content))
+                    shouldWake = true;
+                else if (msg.IsMentioned)
+                    _ = ForceSleepTalkAsync(msg.Content);
+            }
+            else if (e is SignalEvent signal)
+            {
+                switch (signal.SignalName)
+                {
+                    case "force-review:beacon":
+                        _pendingReviewMode = "beacon";
+                        break;
+                    case "force-review:candidate":
+                        _pendingReviewMode = "candidate";
+                        break;
+                }
+            }
         }
 
         internal void ForceWake(string reason) => shouldWake = true;
         public void RequestStop() => shouldWake = true;
+
+        /// <summary>检查 Review 触发条件，满足则启动。</summary>
+        private async Task TryStartReviewAsync(DreamConfig cfg)
+        {
+            var shouldStart = false;
+            string? mode = null;
+
+            if (_pendingReviewMode != null)
+            {
+                // 手动触发
+                shouldStart = true;
+                mode = _pendingReviewMode;
+                _pendingReviewMode = null;
+            }
+            else if (cfg.ReviewIntervalHours > 0
+                && (DateTime.Now - _lastReviewStart).TotalHours >= cfg.ReviewIntervalHours
+                && ctx.IsIdle)
+            {
+                // 自动触发
+                shouldStart = true;
+                mode = null; // 自然优先级
+            }
+
+            if (!shouldStart) return;
+
+            if (ctx.HasActiveEngine("Review"))
+            {
+                Signal.Event(LogGroup.Engine, "Review跳过", new { reason = "已有活跃Review引擎" });
+                return;
+            }
+
+            try
+            {
+                var reviewEngine = new ReviewEngine(ctx);
+                if (mode != null)
+                    reviewEngine.ForceSeedMode(mode);
+                _lastReviewStart = DateTime.Now;
+                ctx.StartEngine(reviewEngine);
+                Signal.Event(LogGroup.Engine, "Review已启动", new { mode = mode ?? "auto" });
+            }
+            catch (Exception ex)
+            {
+                Signal.Error(LogGroup.Engine, "启动Review失败", new { error = ex.Message });
+            }
+        }
 
         private static readonly string[] WakeKeywords =
             ["起床", "醒醒", "wake", "起来", "叫醒", "别睡了", "醒来"];

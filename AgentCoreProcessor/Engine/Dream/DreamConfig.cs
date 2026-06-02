@@ -31,6 +31,11 @@ namespace AgentCoreProcessor.Engine
         public int RelationBatchMaxTargets { get; set; } = 8;
         public float DecayThreshold { get; set; } = 0.05f;
 
+        // ---- Review 触发 ----
+
+        /// <summary>距上次 Review 完成的最小间隔（小时）。0 表示禁用自动触发。</summary>
+        public int ReviewIntervalHours { get; set; } = 4;
+
         // ---- IO ----
 
         public static DreamConfig Load(string path)

@@ -62,6 +62,7 @@ namespace AgentCoreProcessor.Engine
         public MemoryLinkRepository MemoryLinks { get; private set; } = null!;
         public PersonaMemoryRepository PersonaMemories { get; private set; } = null!;
         public BeaconRepository Beacons { get; private set; } = null!;
+        public PersonTraitRepository PersonTraits { get; private set; } = null!;
         public DreamLogRepository DreamLogs { get; private set; } = null!;
         public ReviewLogRepository ReviewLogs { get; private set; } = null!;
         public EvaluationScoreRepository EvaluationScores { get; private set; } = null!;
@@ -404,6 +405,7 @@ namespace AgentCoreProcessor.Engine
             MemoryLinks = new MemoryLinkRepository(db);
             PersonaMemories = new PersonaMemoryRepository(db);
             Beacons = new BeaconRepository(db);
+            PersonTraits = new PersonTraitRepository(db);
             DreamLogs = new DreamLogRepository(db);
             ReviewLogs = new ReviewLogRepository(db);
             EvaluationScores = new EvaluationScoreRepository(db);

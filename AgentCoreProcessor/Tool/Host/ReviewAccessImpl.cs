@@ -121,6 +121,39 @@ namespace AgentCoreProcessor.Tool.Host
         public void TrackChannel(int channelId) => _engine.ChannelsVisited.Add(channelId);
         public void TrackPerson(int personId) => _engine.PersonsEncountered.Add(personId);
 
+        public async Task<List<PersonTraitDto>> GetPersonTraitsAsync(int personId, string? category = null)
+        {
+            var traits = category != null
+                ? await _ctx.PersonTraits.GetByCategoryAsync(personId, category)
+                : await _ctx.PersonTraits.GetByPersonAsync(personId);
+            return traits.Select(t => new PersonTraitDto
+            {
+                Id = t.Id,
+                PersonId = t.PersonId,
+                Category = t.Category,
+                Key = t.Key,
+                Value = t.Value,
+                Confidence = t.Confidence,
+                SourceHint = t.SourceHint,
+                UpdatedAt = t.UpdatedAt.ToString("yyyy-MM-dd HH:mm")
+            }).ToList();
+        }
+
+        public async Task UpsertPersonTraitAsync(int personId, string category, string key,
+            string value, float confidence, string? sourceHint = null)
+        {
+            await _ctx.PersonTraits.UpsertAsync(personId, category, key, value, confidence, sourceHint ?? "");
+        }
+
+        public Task<TrustCriteriaDto> GetTrustCriteriaAsync(int personId)
+            => _engine.GetTrustCriteriaAsync(personId);
+
+        public Task<bool> PromoteTrustAsync(int personId)
+            => _engine.PromoteTrustAsync(personId);
+
+        public Task<bool> DemoteTrustAsync(int personId, string reason)
+            => _engine.DemoteTrustAsync(personId, reason);
+
         private async Task<List<ReviewMessageDto>> ToDtoListAsync(List<UserMessage> messages)
         {
             // 批量解析 PersonId

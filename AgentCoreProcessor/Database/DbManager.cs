@@ -73,6 +73,7 @@ namespace AgentCoreProcessor.Database
             // migration: 2026-06-02 临时记忆热度模型
             try { await db.ExecuteAsync("ALTER TABLE TempMemories ADD COLUMN Heat REAL NOT NULL DEFAULT 0.3"); }
             catch (Exception ex) when (ex.Message.Contains("duplicate column")) { }
+            await db.CreateTableAsync<PersonTrait>();
             await db.CreateTableAsync<EvaluationScore>();
             await db.CreateTableAsync<ReviewSession>();
             await db.CreateTableAsync<ReviewAction>();

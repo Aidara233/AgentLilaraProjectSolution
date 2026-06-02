@@ -36,6 +36,15 @@ namespace AgentLilara.PluginSDK.Services
         // 访问追踪
         void TrackChannel(int channelId);
         void TrackPerson(int personId);
+
+        // 人物特质
+        Task<List<PersonTraitDto>> GetPersonTraitsAsync(int personId, string? category = null);
+        Task UpsertPersonTraitAsync(int personId, string category, string key, string value, float confidence, string? sourceHint = null);
+
+        // 信任操作
+        Task<TrustCriteriaDto> GetTrustCriteriaAsync(int personId);
+        Task<bool> PromoteTrustAsync(int personId);
+        Task<bool> DemoteTrustAsync(int personId, string reason);
     }
 
     public class ReviewMessageDto
@@ -64,5 +73,31 @@ namespace AgentLilara.PluginSDK.Services
     {
         public string Dimension { get; set; } = "";
         public float Value { get; set; }
+    }
+
+    public class PersonTraitDto
+    {
+        public int Id { get; set; }
+        public int PersonId { get; set; }
+        public string Category { get; set; } = "";
+        public string Key { get; set; } = "";
+        public string Value { get; set; } = "";
+        public float Confidence { get; set; }
+        public string SourceHint { get; set; } = "";
+        public string UpdatedAt { get; set; } = "";
+    }
+
+    public class TrustCriteriaDto
+    {
+        public string CurrentLevel { get; set; } = "";
+        public string NextLevel { get; set; } = "";
+        public string NextLevelLabel { get; set; } = "";
+        public int MessageCount { get; set; }
+        public int MemoryCount { get; set; }
+        public int DaysSinceCreation { get; set; }
+        public int ReviewCount { get; set; }
+        public Dictionary<string, float> DimensionValues { get; set; } = new();
+        public bool HardCriteriaMet { get; set; }
+        public string HardCriteriaDetail { get; set; } = "";
     }
 }

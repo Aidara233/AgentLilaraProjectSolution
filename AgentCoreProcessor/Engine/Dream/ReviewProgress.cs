@@ -16,8 +16,6 @@ namespace AgentCoreProcessor.Engine
         public List<EvaluationBufferEntry> EvaluationBuffer { get; set; } = new();
 
         public string ThinkingNotes { get; set; } = "";
-        public List<string> Findings { get; set; } = new();
-        public List<string> NextSteps { get; set; } = new();
 
         public int TokensUsed { get; set; }
         public bool ReserveUsed { get; set; }
