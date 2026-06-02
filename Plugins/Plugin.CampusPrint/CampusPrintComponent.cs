@@ -123,6 +123,19 @@ public class CampusPrintComponent : GlobalComponentBase
         return resp?["code"]?.GetValue<int>() ?? -999;
     }
 
+    /// <summary>服务端 price 字段可能是 string，安全解析为 decimal</summary>
+    internal static decimal? SafeDecimal(JsonNode? node)
+    {
+        if (node == null) return null;
+        if (node is JsonValue v)
+        {
+            if (v.TryGetValue(out decimal d)) return d;
+            if (v.TryGetValue(out int i)) return i;
+            if (v.TryGetValue(out string s) && decimal.TryParse(s, out var sd)) return sd;
+        }
+        return null;
+    }
+
     /// data 字段可能是 JSON 字符串（二次编码），也可能是对象或数组
     internal static JsonNode? ParseData(JsonNode? resp)
     {
@@ -261,23 +274,27 @@ public class PrintStoreInfoTool : ITool
 
         if (prices != null)
         {
-            // 按纸型分组汇总
+            // 按纸型分组汇总 — price 可能是 string，用 TryParse 安全处理
             var bySize = prices.GroupBy(p => p!["page_size_type"]?.GetValue<string>() ?? "?")
-                .Select(g => new { Size = g.Key, MinPrice = g.Min(p => p!["price"]?.GetValue<decimal>() ?? 0) });
-            sb.AppendLine($"价格({prices.Count}条): {string.Join(", ", bySize.Select(x => $"{x.Size} ¥{x.MinPrice}/页起"))}");
+                .Select(g =>
+                {
+                    var min = g.Min(p => decimal.TryParse(p!["price"]?.ToString(), out var v) ? v : 0m);
+                    return $"{g.Key} ¥{min}/页起";
+                });
+            sb.AppendLine($"价格({prices.Count}条): {string.Join(", ", bySize)}");
         }
 
         var scales = data?["scale_list"]?.AsObject();
         if (scales != null && scales.Count > 0)
         {
-            var scaleNames = scales.Select(kv => $"{kv.Key}({kv.Value!["name"]})");
+            var scaleNames = scales.Select(kv => $"{kv.Key}({kv.Value?["name"]?.GetValue<string>()})");
             sb.AppendLine($"缩放选项: {string.Join(", ", scaleNames)}");
         }
 
         var bindings = data?["print_store_bind"]?.AsArray();
         if (bindings != null && bindings.Count > 0)
         {
-            var bindingNames = bindings.Select(b => b!["name"]?.GetValue<string>());
+            var bindingNames = bindings.Select(b => b?["name"]?.GetValue<string>());
             sb.AppendLine($"装订选项: {string.Join(", ", bindingNames)}");
         }
 
@@ -741,11 +758,11 @@ public class PrintGetPriceTool : ITool
             return new ToolResult { Status = "failed", Error = $"计价失败: code={code}, msg={resp?["msg"]?.GetValue<string>()}" };
 
         var data = CampusPrintComponent.ParseData(resp);
-        var price = data?["price"]?.GetValue<decimal>() ?? 0;
+        var price = CampusPrintComponent.SafeDecimal(data?["price"]) ?? 0m;
         var countFile = data?["count_file"]?.GetValue<int>() ?? 0;
         var disc = data?["list"]?["disc"];
         var priceRaw = data?["price_raw"];
-        var priceReal = priceRaw?["price_real"]?.GetValue<decimal>() ?? 0;
+        var priceReal = CampusPrintComponent.SafeDecimal(priceRaw?["price_real"]) ?? 0m;
         var msg = data?["msg"]?.GetValue<string>() ?? "";
 
         var sb = new StringBuilder();
@@ -824,9 +841,9 @@ public class PrintOrderCreateTool : ITool
 
         if (getPriceVip == 1)
         {
-            var wepay = payPriceVip?["wepay"]?.GetValue<decimal>() ?? 0;
-            var vipPrice = payPriceVip?["vip"]?.GetValue<decimal>() ?? 0;
-            var balance = payPriceVip?["balance"]?.GetValue<decimal>() ?? 0;
+            var wepay = CampusPrintComponent.SafeDecimal(payPriceVip?["wepay"]) ?? 0m;
+            var vipPrice = CampusPrintComponent.SafeDecimal(payPriceVip?["vip"]) ?? 0m;
+            var balance = CampusPrintComponent.SafeDecimal(payPriceVip?["balance"]) ?? 0m;
             var sb = new StringBuilder();
             sb.AppendLine("[预检模式] 订单价格明细：");
             sb.AppendLine($"  应付: ¥{wepay}");
