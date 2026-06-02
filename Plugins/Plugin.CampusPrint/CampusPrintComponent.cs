@@ -387,6 +387,9 @@ public class PrintFileAddTool : ITool
     {
         try
         {
+            if (inputs.Count < 3)
+                return new ToolResult { Status = "failed", Error = "缺少参数。需要 3 个参数：\n1) file_path — 由 print_file_upload 返回的服务器路径（如 /weapp/xxx.docx）\n2) file_name — 文件名（如 手册.docx）\n3) file_format — 扩展名（如 docx）\n请先调用 print_file_upload 上传文件。" };
+
             _comp.EnsureClient();
             var client = _comp.Client!;
             if (!client.HasCredentials)
