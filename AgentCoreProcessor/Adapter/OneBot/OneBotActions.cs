@@ -350,20 +350,17 @@ namespace AgentCoreProcessor.Adapter
             return null;
         }
 
-        public async Task<string?> GetChatFileUrlAsync(string fileId)
+        /// <summary>构造私聊文件下载 URL。NapCat 通过 HTTP GET /get_file 直接返回文件内容。</summary>
+        public Task<string?> GetChatFileUrlAsync(string fileId)
         {
-            // 尝试通过 HTTP API 直接构建文件下载 URL
-            // NapCat HTTP 端可能有 file 下载端点
-            var httpBase = adapter.Config.HttpUrl.TrimEnd('/');
+            var baseUri = new Uri(adapter.Config.HttpUrl);
+            var ub = new UriBuilder(baseUri) { Path = "/get_file" };
+            var query = $"file_id={Uri.EscapeDataString(fileId)}";
             var token = !string.IsNullOrEmpty(adapter.Config.HttpToken) ? adapter.Config.HttpToken : adapter.Config.Token;
-            var downloadUrl = !string.IsNullOrEmpty(token)
-                ? $"{httpBase}/get_file?file_id={Uri.EscapeDataString(fileId)}&access_token={Uri.EscapeDataString(token)}"
-                : $"{httpBase}/get_file?file_id={Uri.EscapeDataString(fileId)}";
-
-            var debugPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "debug_get_file.log");
-            File.AppendAllText(debugPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [get_file url] constructed={downloadUrl}\n");
-
-            return downloadUrl;
+            if (!string.IsNullOrEmpty(token))
+                query += $"&access_token={Uri.EscapeDataString(token)}";
+            ub.Query = query;
+            return Task.FromResult<string?>(ub.Uri.AbsoluteUri);
         }
 
         private async Task<string?> SendFileAsync(string channelId, MessageAttachment att)
