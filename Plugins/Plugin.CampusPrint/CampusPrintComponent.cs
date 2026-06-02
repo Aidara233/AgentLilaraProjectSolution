@@ -366,7 +366,7 @@ public class PrintFileUpdateTool : ITool
         // 合并用户设置
         CampusPrintComponent.MergeSettings(fields, jo);
 
-        var resp = await cl.FileAdd(fields);
+        var resp = await cl.FileSave(fields);
         if (CampusPrintComponent.IsTokenExpired(resp)) return new ToolResult { Status = "failed", Error = "Token 过期。" };
         var code = CampusPrintComponent.GetCode(resp);
         if (code != 0) return new ToolResult { Status = "failed", Error = $"修改失败: code={code} msg={resp?["msg"]?.GetValue<string>()}" };

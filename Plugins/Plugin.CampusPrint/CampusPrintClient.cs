@@ -189,6 +189,12 @@ public class CampusPrintClient
         return await ApiPost("/prints/file_add", fields);
     }
 
+    /// POST /prints/file_save — 保存文件设置（原生设置面板用的就是这个）
+    public async Task<JsonNode?> FileSave(Dictionary<string, object?> fields)
+    {
+        return await ApiPost("/prints/file_save", fields);
+    }
+
     /// POST /prints/file_del — 删除文件
     public async Task<JsonNode?> FileDel(int fileId)
     {
