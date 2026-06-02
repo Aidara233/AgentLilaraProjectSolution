@@ -89,7 +89,7 @@ public class CampusPrintComponent : GlobalComponentBase
         if (node is not JsonValue v) return null;
         if (v.TryGetValue(out decimal d)) return d;
         if (v.TryGetValue(out int i)) return i;
-        if (v.TryGetValue(out string s) && decimal.TryParse(s, out var sd)) return sd;
+        if (v.TryGetValue(out string? s) && decimal.TryParse(s, out var sd)) return sd;
         return null;
     }
 
@@ -97,7 +97,7 @@ public class CampusPrintComponent : GlobalComponentBase
     {
         if (node is not JsonValue v) return fallback;
         if (v.TryGetValue(out int i)) return i;
-        if (v.TryGetValue(out string s) && int.TryParse(s, out var si)) return si;
+        if (v.TryGetValue(out string? s) && int.TryParse(s, out var si)) return si;
         return fallback;
     }
 
@@ -363,7 +363,7 @@ public class PrintFileUpdateTool : ITool
             fields[k] = v switch
             {
                 JsonValue jv when jv.TryGetValue(out int n) => n,
-                JsonValue jv when jv.TryGetValue(out string s) => s,
+                JsonValue jv when jv.TryGetValue(out string? s) => s,
                 JsonValue jv => jv.ToString(),
                 _ => v
             };
