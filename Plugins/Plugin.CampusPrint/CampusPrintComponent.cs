@@ -318,10 +318,36 @@ public class PrintFileUpdateTool : ITool
         if (!int.TryParse(fidStr, out var fid)) return new ToolResult { Status = "failed", Error = $"无效 file_id: {fidStr}" };
         JsonNode? st; try { st = JsonNode.Parse(sjson); } catch { return new ToolResult { Status = "failed", Error = $"JSON 解析失败: {sjson}" }; }
         if (st is not JsonObject jo) return new ToolResult { Status = "failed", Error = "settings_json 须为 JSON 对象" };
+
         _c.EnsureClient(); var cl = _c.Client!;
         if (!cl.HasCredentials) return new ToolResult { Status = "failed", Error = "未配置凭据。" };
-        var fields = new Dictionary<string, object?> { ["id"] = fid };
-        foreach (var (k, v) in jo) { if (v is JsonValue jv) { if (jv.TryGetValue(out int n)) fields[k] = n; else if (jv.TryGetValue(out string? s) && s != null) fields[k] = CampusPrintComponent.Clean(s); else fields[k] = v.ToString(); } }
+
+        // 先从服务器拉取当前文件完整数据
+        var lr = await cl.FileList();
+        if (CampusPrintComponent.GetCode(lr) != 0) return new ToolResult { Status = "failed", Error = "获取文件列表失败。" };
+        var ld = CampusPrintComponent.ParseData(lr);
+        if (ld is not JsonArray arr) return new ToolResult { Status = "failed", Error = "列表数据异常。" };
+        var cur = arr.FirstOrDefault(f => CampusPrintComponent.SafeInt(f!["id"]) == fid);
+        if (cur == null) return new ToolResult { Status = "failed", Error = $"未找到 file_id={fid}。先用 print_file_list 确认。" };
+
+        // 合并所有现有字段 + 用户修改，模拟 JS Object.assign
+        var fields = new Dictionary<string, object?>();
+        foreach (var prop in (IDictionary<string, JsonNode?>)cur.AsObject())
+        {
+            if (prop.Value is JsonValue jv)
+            {
+                if (jv.TryGetValue(out int n)) fields[prop.Key] = n;
+                else if (jv.TryGetValue(out string? s) && s != null) fields[prop.Key] = s;
+            }
+        }
+        // 覆盖用户改动
+        foreach (var (k, v) in jo)
+        {
+            if (v is JsonValue jv) { if (jv.TryGetValue(out int n)) fields[k] = n; else if (jv.TryGetValue(out string? s2) && s2 != null) fields[k] = CampusPrintComponent.Clean(s2); else fields[k] = v.ToString(); }
+        }
+        // 确保 domain_id
+        fields["domain_id"] = _c.Config.DomainId;
+
         var resp = await cl.FileAdd(fields);
         if (CampusPrintComponent.IsTokenExpired(resp)) return new ToolResult { Status = "failed", Error = "Token 过期。" };
         var code = CampusPrintComponent.GetCode(resp);
