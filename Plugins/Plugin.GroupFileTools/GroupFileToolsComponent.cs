@@ -13,7 +13,7 @@ public class GroupFileToolsComponent : LoopComponentBase
     public override ComponentMeta Meta => new()
     {
         Name = "group-file-tools",
-        Description = "群文件管理（list_group_files, download_group_file）",
+        Description = "群文件管理（list_group_files, download_group_file），群聊私聊均可用",
         DefaultEnabled = true,
         PromptPriority = 60
     };

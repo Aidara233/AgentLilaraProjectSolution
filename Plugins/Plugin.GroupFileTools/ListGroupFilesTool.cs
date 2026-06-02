@@ -18,7 +18,8 @@ public class ListGroupFilesTool : ITool
     }
 
     public string Name => "list_group_files";
-    public string Description => "查询群文件。拿到 file_id+busid 后用 download_group_file 下载。"
+    public string Description => "查询群文件（群聊私聊均可用，提供 group_id 即可）。"
+        + "拿到 file_id+busid 后用 download_group_file 下载。"
         + "folder_id 默认根目录。keyword 模糊匹配文件名和上传者。ext 按扩展名过滤（如 .c .pdf）。"
         + "sort_by: time/size/name，默认 time。limit 默认10。";
 

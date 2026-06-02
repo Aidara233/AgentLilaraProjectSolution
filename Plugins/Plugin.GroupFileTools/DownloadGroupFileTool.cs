@@ -27,8 +27,9 @@ public class DownloadGroupFileTool : ITool
     }
 
     public string Name => "download_group_file";
-    public string Description => "一步下载群文件到本地。先从 list_group_files 获取 file_id 和 busid，"
-        + "然后调用此工具直接下载。参数: group_id(群号), file_id(文件ID), busid(业务ID，默认102), "
+    public string Description => "下载群文件到本地（群聊私聊均可用，提供 group_id 即可）。"
+        + "先从 list_group_files 获取 file_id 和 busid，然后调用此工具直接下载。"
+        + "参数: group_id(群号), file_id(文件ID), busid(业务ID，默认102), "
         + "file_name(期望的文件名，可选)。文件较大时会后台下载并完成后通知。";
 
     public IReadOnlyList<ToolParameter> Parameters =>
