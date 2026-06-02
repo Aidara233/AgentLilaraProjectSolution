@@ -34,7 +34,7 @@ public class CampusPrintClient
         _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
         _http.DefaultRequestHeaders.AcceptLanguage.Add(new StringWithQualityHeaderValue("zh-CN", 0.9));
         _http.DefaultRequestHeaders.Referrer = new Uri("https://servicewechat.com/wx7613a90097b68222/258/page-frame.html");
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd(
+        _http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090a13) XWEB/8555");
         _http.DefaultRequestHeaders.Add("xweb_xhr", "1");
         _http.DefaultRequestHeaders.Add("token", config.Token);
