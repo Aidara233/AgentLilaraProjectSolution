@@ -348,14 +348,29 @@ public class PrintFileUpdateTool : ITool
         _c.EnsureClient(); var cl = _c.Client!;
         if (!cl.HasCredentials) return new ToolResult { Status = "failed", Error = "未配置凭据。" };
 
-        // 只发 id + domain_id + 改动的设置字段，不加 file_index/file_path 避免创建新文件
-        var fields = new Dictionary<string, object?> { ["id"] = fid, ["domain_id"] = _c.Config.DomainId };
+        // 从服务器拉取当前文件，提取身份字段
+        var lr = await cl.FileList();
+        if (CampusPrintComponent.GetCode(lr) != 0) return new ToolResult { Status = "failed", Error = "获取文件列表失败。" };
+        var ld = CampusPrintComponent.ParseData(lr);
+        if (ld is not JsonArray arr) return new ToolResult { Status = "failed", Error = "列表数据异常。" };
+        var cur = arr.FirstOrDefault(f => CampusPrintComponent.SafeInt(f!["id"]) == fid);
+        if (cur == null) return new ToolResult { Status = "failed", Error = $"未找到 file_id={fid}。用 print_file_list 确认。" };
+
+        // 关键身份字段 + 设置，匹配服务端更新逻辑
+        var fields = new Dictionary<string, object?> { ["domain_id"] = _c.Config.DomainId };
+        foreach (var key in new[] { "id", "file_index", "file_path", "file_name", "file_format" })
+        {
+            var v = cur[key];
+            if (v != null) fields[key] = v.GetValue<object>();
+        }
+        // 合并用户设置
         CampusPrintComponent.MergeSettings(fields, jo);
+
         var resp = await cl.FileAdd(fields);
         if (CampusPrintComponent.IsTokenExpired(resp)) return new ToolResult { Status = "failed", Error = "Token 过期。" };
         var code = CampusPrintComponent.GetCode(resp);
         if (code != 0) return new ToolResult { Status = "failed", Error = $"修改失败: code={code} msg={resp?["msg"]?.GetValue<string>()}" };
-        return new ToolResult { Status = "success", Data = $"已更新 file_id={fid}。改动: {string.Join(",", jo.Select(kv => kv.Key))}。下一步: print_get_price 验证设置是否生效。" };
+        return new ToolResult { Status = "success", Data = $"已更新 file_id={fid}。改动: {string.Join(",", jo.Select(kv => kv.Key))}。\n发送了: id,file_index,file_path,file_name,file_format,domain_id + {string.Join(",", jo.Select(kv => kv.Key))}\n下一步: print_get_price 验证。" };
     }
 }
 #endregion
