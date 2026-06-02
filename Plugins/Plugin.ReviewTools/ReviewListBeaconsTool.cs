@@ -6,9 +6,9 @@ namespace Plugin.ReviewTools;
 [ToolMeta(Group = "review")]
 public class ReviewListBeaconsTool : ITool
 {
-    private readonly IToolContext _ctx;
+    private readonly IBeaconAccess _beacon;
 
-    public ReviewListBeaconsTool(IToolContext ctx) => _ctx = ctx;
+    public ReviewListBeaconsTool(IBeaconAccess beacon) => _beacon = beacon;
 
     public string Name => "review_list_beacons";
     public string Description => "获取未处理信标列表。处理完初始种子后可主动拉取更多。";
@@ -17,8 +17,7 @@ public class ReviewListBeaconsTool : ITool
 
     public async Task<ToolResult> ExecuteAsync(List<string> inputs, CancellationToken ct)
     {
-        var review = _ctx.Require<IReviewAccess>();
-        var beacons = await review.GetUnprocessedBeaconsAsync();
+        var beacons = await _beacon.GetUnprocessedAsync("review");
         if (beacons.Count == 0)
             return new ToolResult { Status = "success", Data = "没有未处理的信标。" };
 

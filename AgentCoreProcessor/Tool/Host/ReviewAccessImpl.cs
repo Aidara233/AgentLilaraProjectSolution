@@ -95,21 +95,6 @@ namespace AgentCoreProcessor.Tool.Host
             };
         }
 
-        public async Task<List<ReviewBeaconDto>> GetUnprocessedBeaconsAsync()
-        {
-            var hints = await _ctx.ReviewHints.GetUnprocessedAsync();
-            return hints.Select(h => new ReviewBeaconDto
-            {
-                Id = h.Id,
-                MessageId = h.MessageId,
-                ChannelId = h.ChannelId,
-                PersonId = h.PersonId,
-                Content = h.Content,
-                Source = h.Source,
-                CreatedAt = h.CreatedAt.ToString("MM-dd HH:mm")
-            }).ToList();
-        }
-
         public void AddEvaluation(string targetType, int targetId, string dimension, string rating)
         {
             _engine.EvaluationBuffer.Add(new Engine.EvaluationBufferEntry

@@ -79,7 +79,7 @@ namespace AgentCoreProcessor.Engine
         EventBus EventBus { get; }
 
         // 复盘标记
-        ReviewHintRepository ReviewHints { get; }
+        BeaconRepository Beacons { get; }
 
         // 做梦日志
         DreamLogRepository DreamLogs { get; }

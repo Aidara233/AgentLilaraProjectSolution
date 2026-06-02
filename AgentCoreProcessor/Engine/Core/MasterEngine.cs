@@ -61,7 +61,7 @@ namespace AgentCoreProcessor.Engine
         public TempMemoryRepository TempMemories { get; private set; } = null!;
         public MemoryLinkRepository MemoryLinks { get; private set; } = null!;
         public PersonaMemoryRepository PersonaMemories { get; private set; } = null!;
-        public ReviewHintRepository ReviewHints { get; private set; } = null!;
+        public BeaconRepository Beacons { get; private set; } = null!;
         public DreamLogRepository DreamLogs { get; private set; } = null!;
         public ReviewLogRepository ReviewLogs { get; private set; } = null!;
         public EvaluationScoreRepository EvaluationScores { get; private set; } = null!;
@@ -403,7 +403,7 @@ namespace AgentCoreProcessor.Engine
             TempMemories = new TempMemoryRepository(db);
             MemoryLinks = new MemoryLinkRepository(db);
             PersonaMemories = new PersonaMemoryRepository(db);
-            ReviewHints = new ReviewHintRepository(db);
+            Beacons = new BeaconRepository(db);
             DreamLogs = new DreamLogRepository(db);
             ReviewLogs = new ReviewLogRepository(db);
             EvaluationScores = new EvaluationScoreRepository(db);
@@ -621,7 +621,7 @@ namespace AgentCoreProcessor.Engine
             _toolContext.Register<AgentLilara.PluginSDK.Services.IChannelAccess>(
                 new Tool.Host.ChannelAccessImpl(this));
             _toolContext.Register<AgentLilara.PluginSDK.Services.IBeaconAccess>(
-                new Tool.Host.BeaconAccessImpl(ReviewHints));
+                new Tool.Host.BeaconAccessImpl(Beacons));
             _toolContext.Register<AgentLilara.PluginSDK.Services.IAdapterAccess>(
                 new Tool.Host.AdapterAccessImpl(adapterManager));
             var dicePool = new Tool.Host.DicePoolImpl();
@@ -637,7 +637,7 @@ namespace AgentCoreProcessor.Engine
             componentServices.Register<AgentLilara.PluginSDK.IToolContext>(_toolContext);
             componentServices.Register<AgentLilara.PluginSDK.Services.IMemoryAccess>(memoryAccess);
             componentServices.Register<AgentLilara.PluginSDK.Services.IBeaconAccess>(
-                new Tool.Host.BeaconAccessImpl(ReviewHints));
+                new Tool.Host.BeaconAccessImpl(Beacons));
             componentServices.Register<AgentLilara.PluginSDK.Services.IChannelAccess>(
                 new Tool.Host.ChannelAccessImpl(this));
             componentServices.Register<AgentLilara.PluginSDK.Services.IAdapterAccess>(

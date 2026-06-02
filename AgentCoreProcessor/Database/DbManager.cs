@@ -41,7 +41,7 @@ namespace AgentCoreProcessor.Database
             await db.CreateTableAsync<TempMemoryEntry>();
             await db.CreateTableAsync<MemoryLink>();
             await db.CreateTableAsync<PersonaMemoryEntry>();
-            await db.CreateTableAsync<ReviewHint>();
+            await db.CreateTableAsync<Beacon>();
             await db.CreateTableAsync<ImageRecord>();
             await db.CreateTableAsync<DreamSession>();
             await db.CreateTableAsync<DreamFragment>();

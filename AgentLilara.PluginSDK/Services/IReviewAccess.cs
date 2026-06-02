@@ -20,9 +20,6 @@ namespace AgentLilara.PluginSDK.Services
         // 人物
         Task<ReviewPersonDto?> GetPersonAsync(int personId);
 
-        // 信标
-        Task<List<ReviewBeaconDto>> GetUnprocessedBeaconsAsync();
-
         // 评价缓冲
         void AddEvaluation(string targetType, int targetId, string dimension, string rating);
 
@@ -67,16 +64,5 @@ namespace AgentLilara.PluginSDK.Services
     {
         public string Dimension { get; set; } = "";
         public float Value { get; set; }
-    }
-
-    public class ReviewBeaconDto
-    {
-        public int Id { get; set; }
-        public int? MessageId { get; set; }
-        public int? ChannelId { get; set; }
-        public int? PersonId { get; set; }
-        public string Content { get; set; } = "";
-        public string Source { get; set; } = "";
-        public string CreatedAt { get; set; } = "";
     }
 }

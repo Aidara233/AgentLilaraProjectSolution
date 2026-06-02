@@ -29,7 +29,7 @@ public class ReviewToolsComponent : GlobalComponentBase
         _tools.Add(new ReviewBrowseTool(toolCtx));
         _tools.Add(new ReviewSearchMessagesTool(toolCtx));
         _tools.Add(new ReviewGetPersonTool(toolCtx));
-        _tools.Add(new ReviewListBeaconsTool(toolCtx));
+        _tools.Add(new ReviewListBeaconsTool(context.GetService<IBeaconAccess>()!));
 
         // 行动组
         _tools.Add(new ReviewUpdatePersonTool(toolCtx));

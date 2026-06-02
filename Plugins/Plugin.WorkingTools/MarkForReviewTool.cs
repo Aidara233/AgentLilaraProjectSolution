@@ -32,7 +32,8 @@ public class MarkForReviewTool : ITool
         int? channelId = inputs.Count > 1 && int.TryParse(inputs[1], out var cid) ? cid : null;
         int? personId = inputs.Count > 2 && int.TryParse(inputs[2], out var pid) ? pid : null;
 
-        await _beacon.CreateAsync(reason, channelId: channelId, personId: personId);
+        await _beacon.CreateAsync(reason, source: "model", consumer: "review",
+            channelId: channelId, personId: personId);
 
         return new ToolResult { Status = "success", Data = "已标记为复盘信标。" };
     }

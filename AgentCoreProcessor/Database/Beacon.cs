@@ -3,12 +3,8 @@ using SQLite;
 
 namespace AgentCoreProcessor.Database
 {
-    /// <summary>
-    /// 复盘标记。ChannelEngine 工作时记录"值得复盘关注"的内容，
-    /// ReviewEngine 启动时消费这些标记作为方向参考。
-    /// </summary>
-    [Table("ReviewHints")]
-    internal class ReviewHint
+    [Table("Beacons")]
+    internal class Beacon
     {
         [PrimaryKey, AutoIncrement]
         public int Id { get; set; }
@@ -21,11 +17,16 @@ namespace AgentCoreProcessor.Database
         public int? PersonId { get; set; }
         public int? ChannelId { get; set; }
 
-        /// <summary>model = 工作端标记, framework = 自动生成</summary>
+        /// <summary>创建来源：model / framework / engine:xxx</summary>
         public string Source { get; set; } = "model";
+
+        /// <summary>消费者标识：review / memory_consolidation / trust_eval 等</summary>
+        public string Consumer { get; set; } = "review";
 
         public bool IsProcessed { get; set; } = false;
 
         public DateTime CreatedAt { get; set; } = DateTime.Now;
+
+        public DateTime? ProcessedAt { get; set; }
     }
 }

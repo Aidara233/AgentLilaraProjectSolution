@@ -157,9 +157,9 @@ namespace AgentCoreProcessor.Engine
                 // 标记信标为已处理
                 if (_reviewControl?.IsCompleted == true)
                 {
-                    var hints = await _ctx.ReviewHints.GetUnprocessedAsync();
-                    foreach (var h in hints)
-                        await _ctx.ReviewHints.MarkProcessedAsync(h.Id);
+                    var beacons = await _ctx.Beacons.GetUnprocessedAsync("review");
+                    foreach (var b in beacons)
+                        await _ctx.Beacons.MarkProcessedAsync(b.Id);
                 }
 
                 // 记录评价数和信号ID（供 finally 写回 session）
@@ -582,11 +582,11 @@ namespace AgentCoreProcessor.Engine
             }
 
             // 有信标 → 列出所有未处理信标
-            var hints = await _ctx.ReviewHints.GetUnprocessedAsync();
-            if (hints.Count > 0)
+            var beacons = await _ctx.Beacons.GetUnprocessedAsync("review");
+            if (beacons.Count > 0)
             {
                 _seedType = "beacon";
-                return BuildBeaconSeed(hints);
+                return BuildBeaconSeed(beacons);
             }
 
             // 无信标 → 随机选一个活跃频道
@@ -628,19 +628,19 @@ namespace AgentCoreProcessor.Engine
             return string.Join("\n", lines);
         }
 
-        private string BuildBeaconSeed(List<ReviewHint> hints)
+        private string BuildBeaconSeed(List<Beacon> beacons)
         {
             var lines = new List<string> { "## 待处理信标" };
             lines.Add("以下是工作期间标记的需要关注的内容，选择你感兴趣的开始探索：");
             lines.Add("");
 
-            foreach (var hint in hints)
+            foreach (var beacon in beacons)
             {
-                var location = hint.ChannelId != null ? $"频道#{hint.ChannelId}" : "";
-                if (hint.MessageId != null) location += $" 消息#{hint.MessageId}";
-                if (hint.PersonId != null) location += $" 人物P#{hint.PersonId}";
-                var source = hint.Source == "framework" ? " [自动]" : "";
-                lines.Add($"- [{hint.CreatedAt:MM-dd HH:mm}]{source} {location}: {hint.Content}");
+                var location = beacon.ChannelId != null ? $"频道#{beacon.ChannelId}" : "";
+                if (beacon.MessageId != null) location += $" 消息#{beacon.MessageId}";
+                if (beacon.PersonId != null) location += $" 人物P#{beacon.PersonId}";
+                var source = beacon.Source == "framework" ? " [自动]" : "";
+                lines.Add($"- [{beacon.CreatedAt:MM-dd HH:mm}]{source} {location}: {beacon.Content}");
             }
 
             return string.Join("\n", lines);
