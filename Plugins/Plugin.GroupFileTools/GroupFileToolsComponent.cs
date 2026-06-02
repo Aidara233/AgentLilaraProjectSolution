@@ -58,7 +58,10 @@ public class GroupFileToolsComponent : LoopComponentBase
         _listFiles = new ListGroupFilesTool(adapterAccess, adapterId);
         _downloadFile = new DownloadGroupFileTool(adapterAccess,
             adapterId, workspaceDir, http);
+
+        // 私聊 user_id（channel name = private_xxxxx）
+        var privateUserId = detail.Name.StartsWith("private_") ? detail.Name["private_".Length..] : "";
         _downloadChatFile = new DownloadChatFileTool(adapterAccess,
-            adapterId, workspaceDir);
+            adapterId, workspaceDir, privateUserId, http);
     }
 }

@@ -9,27 +9,30 @@ public class DownloadChatFileTool : ITool
     private readonly IAdapterAccess? _adapterAccess;
     private readonly string _adapterId = "";
     private readonly string _workspaceDir = "";
+    private readonly string _privateUserId = "";
+    private readonly HttpClient _http;
 
-    public DownloadChatFileTool() { }
+    public DownloadChatFileTool() { _http = new HttpClient(); }
 
     public DownloadChatFileTool(IAdapterAccess adapterAccess,
-        string adapterId, string workspaceDir)
+        string adapterId, string workspaceDir, string privateUserId, HttpClient http)
     {
         _adapterAccess = adapterAccess;
         _adapterId = adapterId;
         _workspaceDir = workspaceDir;
+        _privateUserId = privateUserId;
+        _http = http;
     }
 
     public string Name => "download_chat_file";
     public string Description => "下载私聊/群聊中直接发送的文件。"
         + "先从消息里的 [消息附件-文件] 获取 file_id，然后调用此工具下载。"
-        + "参数: file_id(必填，来自消息附件的file_id), file_name(可选，期望的文件名)。"
-        + "文件较大时会后台下载并完成后通知。";
+        + "参数: file_id(必填，来自消息附件的file_id), file_name(可选，期望的文件名)。";
 
     public IReadOnlyList<ToolParameter> Parameters =>
     [
         new("file_id", "文件ID（从消息附件的file_id获取）", 0),
-        new("file_name", "期望的文件名（可选，用于完成通知）", 1, isRequired: false)
+        new("file_name", "期望的文件名（可选）", 1, isRequired: false)
     ];
 
     public TimeSpan Timeout => TimeSpan.FromSeconds(15);
@@ -45,25 +48,41 @@ public class DownloadChatFileTool : ITool
         if (string.IsNullOrEmpty(fileId))
             return new ToolResult { Status = "failed", Error = "file_id 不能为空" };
 
-        // 通过 NapCat get_file API 获取文件路径（NapCat 返回的是本地路径）
-        var filePath = await _adapterAccess.ExecuteActionAsync(_adapterId, "get_chat_file_url",
-            $"{{\"file_id\":\"{fileId}\"}}");
-        if (string.IsNullOrEmpty(filePath))
-            return new ToolResult { Status = "failed", Error = "获取文件信息失败，请确认 file_id 正确且文件未过期" };
+        // NapCat HTTP /get_private_file_url → 获取下载 URL
+        var puidParam = !string.IsNullOrEmpty(_privateUserId)
+            ? $",\"private_user_id\":\"{_privateUserId}\""
+            : "";
+        var url = await _adapterAccess.ExecuteActionAsync(_adapterId, "get_chat_file_url",
+            $"{{\"file_id\":\"{fileId}\"{puidParam}}}");
+        if (string.IsNullOrEmpty(url))
+            return new ToolResult { Status = "failed", Error = "获取下载链接失败，请确认 file_id 正确且文件未过期" };
 
-        // 后台复制（文件已在 NapCat 本地，直接复制即可）
-        var saveName = fileName ?? Path.GetFileName(filePath);
-        if (string.IsNullOrEmpty(saveName)) saveName = fileId[..Math.Min(fileId.Length, 16)];
+        var saveName = fileName ?? fileId[..Math.Min(fileId.Length, 16)];
         var safeName = string.Join("_", saveName.Split(Path.GetInvalidFileNameChars()));
         var destDir = Path.Combine(_workspaceDir, "Downloads");
         Directory.CreateDirectory(destDir);
         var destPath = Path.Combine(destDir, safeName);
 
-        _ = Task.Run(() =>
+        var http = _http;
+        _ = Task.Run(async () =>
         {
             try
             {
-                File.Copy(filePath, destPath, overwrite: true);
+                using var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+                resp.EnsureSuccessStatusCode();
+
+                var cd = resp.Content.Headers.ContentDisposition;
+                if (cd?.FileName != null)
+                {
+                    var realName = cd.FileName.Trim('"');
+                    var realSafe = string.Join("_", realName.Split(Path.GetInvalidFileNameChars()));
+                    destPath = Path.Combine(destDir, realSafe);
+                }
+
+                await using var stream = await resp.Content.ReadAsStreamAsync();
+                await using var fileStream = new FileStream(destPath, FileMode.Create,
+                    FileAccess.Write, FileShare.None, 8192, useAsync: true);
+                await stream.CopyToAsync(fileStream);
             }
             catch
             {

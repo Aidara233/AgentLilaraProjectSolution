@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net.Http;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Logging;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace AgentCoreProcessor.Adapter
@@ -351,15 +354,29 @@ namespace AgentCoreProcessor.Adapter
         }
 
         /// <summary>
-        /// 获取私聊文件信息。NapCat 的 get_file 返回本地路径而非 HTTP URL，
-        /// 需要从文件系统直接读取。
+        /// 通过 NapCat HTTP /get_private_file_url 获取私聊文件下载 URL。
         /// </summary>
-        public async Task<JObject?> GetChatFileInfoAsync(string fileId)
+        public async Task<string?> GetChatFileUrlAsync(string fileId, string? privateUserId = null)
         {
-            var resp = await adapter.CallApiAsync("get_file",
-                new JObject { ["file_id"] = fileId });
-            if (resp?["retcode"]?.Value<int>() == 0)
-                return resp["data"] as JObject;
+            var param = new JObject { ["file_id"] = fileId };
+            if (!string.IsNullOrEmpty(privateUserId))
+                param["user_id"] = privateUserId;
+
+            // 使用 HTTP API（非 WebSocket），/get_private_file_url 是 NapCat 的 HTTP 扩展端点
+            var baseUrl = adapter.Config.HttpUrl.TrimEnd('/');
+            var url = $"{baseUrl}/get_private_file_url";
+            var token = !string.IsNullOrEmpty(adapter.Config.HttpToken) ? adapter.Config.HttpToken : adapter.Config.Token;
+            if (!string.IsNullOrEmpty(token))
+                url += $"?access_token={Uri.EscapeDataString(token)}";
+
+            var content = new StringContent(param.ToString(Formatting.None),
+                Encoding.UTF8, "application/json");
+
+            using var resp = await adapter.HttpClient.PostAsync(url, content);
+            var body = await resp.Content.ReadAsStringAsync();
+            var json = JObject.Parse(body);
+            if (json["retcode"]?.Value<int>() == 0)
+                return json["data"]?["url"]?.ToString();
             return null;
         }
 

@@ -486,12 +486,9 @@ namespace AgentCoreProcessor.Adapter
                     case "get_chat_file_url":
                         if (!parameters.TryGetValue("file_id", out var cfid) || string.IsNullOrEmpty(cfid))
                             return new ActionResult { Success = false, Error = "缺少 file_id 参数" };
-                        var chatFileInfo = await actions.GetChatFileInfoAsync(cfid);
-                        if (chatFileInfo == null)
-                            return new ActionResult { Success = false, Error = "获取文件信息失败" };
-                        // NapCat 返回本地路径，非 HTTP URL
-                        var localPath = chatFileInfo["file"]?.ToString();
-                        return new ActionResult { Success = localPath != null, Result = localPath };
+                        parameters.TryGetValue("private_user_id", out var puid);
+                        var chatFileUrl = await actions.GetChatFileUrlAsync(cfid, puid);
+                        return new ActionResult { Success = chatFileUrl != null, Result = chatFileUrl };
 
                     default:
                         // 透传：走 HTTP REST API（go-cqhttp 扩展端点只能 HTTP）
