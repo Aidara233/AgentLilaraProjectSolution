@@ -277,14 +277,8 @@ internal class DreamProvider : IWebUIProvider
                         new() { Field = "factor_memory", Label = "记忆积压 (30)" },
                         new() { Field = "factor_hints", Label = "复盘标记 (20)" },
                         new() { Field = "factor_time", Label = "距上次 (10)" },
-                        new() { Field = "in_window", Label = "深睡窗口", Type = StatusFieldType.Badge },
-                        new() { Field = "pending_request", Label = "待审批", Type = StatusFieldType.Badge }
+                        new() { Field = "pending_request", Label = "状态", Type = StatusFieldType.Badge }
                     },
-                    Actions = new()
-                    {
-                        new() { Id = "approve", Label = "批准深睡", Icon = "bi-check-lg" },
-                        new() { Id = "deny", Label = "拒绝", Icon = "bi-x-lg", Danger = true },
-                    }
                 },
                 Layout = new CardLayout { PreferredCols = 6 }
             },

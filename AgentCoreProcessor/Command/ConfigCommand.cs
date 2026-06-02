@@ -29,7 +29,6 @@ namespace AgentCoreProcessor.Command
             ["express"] = Path.Combine(PathConfig.CoreConfigPath, "ExpressCore.json"),
             ["working"] = Path.Combine(PathConfig.CoreConfigPath, "WorkingCore.json"),
             ["extraction"] = Path.Combine(PathConfig.CoreConfigPath, "MemoryExtractionCore.json"),
-            ["weight"] = Path.Combine(PathConfig.CoreConfigPath, "WeightCore.json"),
             ["review"] = Path.Combine(PathConfig.CoreConfigPath, "ReviewCore.json"),
             ["dream"] = Path.Combine(PathConfig.StoragePath, "Dream", "DreamConfig.json"),
             ["impulse"] = Path.Combine(PathConfig.StoragePath, "Engine", "ImpulseConfig.json"),
