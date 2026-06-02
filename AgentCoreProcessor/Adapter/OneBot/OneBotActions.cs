@@ -354,6 +354,8 @@ namespace AgentCoreProcessor.Adapter
         {
             var resp = await adapter.CallApiAsync("get_file",
                 new JObject { ["file_id"] = fileId });
+            var debugPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "debug_get_file.log");
+            File.AppendAllText(debugPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [get_file] request file_id={fileId}\nresponse={resp}\n");
             if (resp?["retcode"]?.Value<int>() == 0)
                 return resp["data"]?["url"]?.ToString();
             return null;
