@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using AgentLilara.PluginSDK;
 
 namespace Plugin.CampusPrint;
@@ -109,7 +110,13 @@ public class CampusPrintComponent : GlobalComponentBase
     }
 
     internal static bool IsTokenExpired(JsonNode? resp) => GetCode(resp) == -6;
-    internal static string Clean(string s) => s.Trim().Trim('"', '\'', '`');
+    internal static string Clean(string s)
+    {
+        var t = s.Trim().Trim('"', '\'', '`');
+        // 解码 JSON 字符串转义（如 \\u0022 → "）
+        try { t = Regex.Unescape(t); } catch { }
+        return t;
+    }
 
     /// 将 JSON 对象的键值合并到 fields 字典，自动识别 int/string
     internal static void MergeSettings(Dictionary<string, object?> fields, JsonObject settings)
@@ -341,34 +348,14 @@ public class PrintFileUpdateTool : ITool
         _c.EnsureClient(); var cl = _c.Client!;
         if (!cl.HasCredentials) return new ToolResult { Status = "failed", Error = "未配置凭据。" };
 
-        // 先从服务器拉取当前文件完整数据
-        var lr = await cl.FileList();
-        if (CampusPrintComponent.GetCode(lr) != 0) return new ToolResult { Status = "failed", Error = "获取文件列表失败。" };
-        var ld = CampusPrintComponent.ParseData(lr);
-        if (ld is not JsonArray arr) return new ToolResult { Status = "failed", Error = "列表数据异常。" };
-        var cur = arr.FirstOrDefault(f => CampusPrintComponent.SafeInt(f!["id"]) == fid);
-        if (cur == null) return new ToolResult { Status = "failed", Error = $"未找到 file_id={fid}。先用 print_file_list 确认。" };
-
-        // 合并所有现有字段 + 用户修改，模拟 JS Object.assign
-        var fields = new Dictionary<string, object?>();
-        foreach (var prop in (IDictionary<string, JsonNode?>)cur.AsObject())
-        {
-            if (prop.Value is JsonValue jv)
-            {
-                if (jv.TryGetValue(out int n)) fields[prop.Key] = n;
-                else if (jv.TryGetValue(out string? s) && s != null) fields[prop.Key] = s;
-            }
-        }
-        // 覆盖用户改动
+        // 只发 id + domain_id + 改动的设置字段，不加 file_index/file_path 避免创建新文件
+        var fields = new Dictionary<string, object?> { ["id"] = fid, ["domain_id"] = _c.Config.DomainId };
         CampusPrintComponent.MergeSettings(fields, jo);
-        // 确保 domain_id
-        fields["domain_id"] = _c.Config.DomainId;
-
         var resp = await cl.FileAdd(fields);
         if (CampusPrintComponent.IsTokenExpired(resp)) return new ToolResult { Status = "failed", Error = "Token 过期。" };
         var code = CampusPrintComponent.GetCode(resp);
         if (code != 0) return new ToolResult { Status = "failed", Error = $"修改失败: code={code} msg={resp?["msg"]?.GetValue<string>()}" };
-        return new ToolResult { Status = "success", Data = $"已更新 file_id={fid}。改动: {string.Join(",", jo.Select(kv => kv.Key))}。下一步: print_get_price。" };
+        return new ToolResult { Status = "success", Data = $"已更新 file_id={fid}。改动: {string.Join(",", jo.Select(kv => kv.Key))}。下一步: print_get_price 验证设置是否生效。" };
     }
 }
 #endregion
