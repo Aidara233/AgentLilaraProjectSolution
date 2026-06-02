@@ -376,12 +376,12 @@ ReviewEngine (由DreamEngine孵化，不注册SpawnCheck):
 整合: TempMemory → 秩序阶段(embedding去重+LLM关系分类) → Memory
 	关联建立: 实时(外部写入异步LLM) + 秩序(temp入库LLM) + 巡逻(三角闭合LLM)
 	过期清理: 每次做梦RunAsync入口执行 + 巡逻衰减清理
-标记: ReviewHint表 (工作时标记 → 复盘时消费)
+标记: Beacon表 (工作时标记 → 复盘时消费，按 Consumer 字段多消费者路由)
 双轴模型: Importance(0.0-1.0，半衰期衰减) + Certainty(0.0-1.0，仅证据可改变) + RecallCount/LastRecalledAt(命中追踪)
 关联边: Relevance(关联性) + Support(-1~+1，负值=矛盾)，矛盾边不删节点只降确定性
 ```
 
-12张表: Person / User / Channel / UserMessage / MemoryEntry / TempMemoryEntry / MemoryLink / PersonaMemoryEntry / ReviewHint / ImageRecord / EvaluationScore / (Topics 保留但不再使用)
+12张表: Person / User / Channel / UserMessage / MemoryEntry / TempMemoryEntry / MemoryLink / PersonaMemoryEntry / Beacon / ImageRecord / EvaluationScore / (Topics 保留但不再使用)
 日志库(logs.db): events / token_usage
 复盘库(主库): ReviewSessions / ReviewActions
 

@@ -501,10 +501,22 @@ List<SubAgentInfo> List();
 
 ### IBeaconAccess
 
-复盘信标接口。频道循环通过此接口标记需要复盘关注的内容。
+信标访问接口。任何人都能创建信标，消费者按 `Consumer` 字段过滤属于自己的信标。
 
 ```csharp
-Task CreateAsync(string reason, int? channelId = null, int? personId = null, int? messageId = null);
+Task<int> CreateAsync(string content, string source, string consumer,
+    int? channelId = null, int? personId = null, int? messageId = null);
+Task<List<BeaconDto>> GetUnprocessedAsync(string consumer);
+Task MarkProcessedAsync(int id);
+```
+
+关联 DTO：
+
+```csharp
+class BeaconDto {
+    int Id; int? MessageId; int? ChannelId; int? PersonId;
+    string Content; string Source; string Consumer; string CreatedAt;
+}
 ```
 
 ### IToolHistoryAccess
@@ -543,9 +555,6 @@ Task<List<ReviewMessageDto>> SearchMessagesAsync(
 
 // 人物
 Task<ReviewPersonDto?> GetPersonAsync(int personId);
-
-// 信标
-Task<List<ReviewBeaconDto>> GetUnprocessedBeaconsAsync();
 
 // 评价缓冲
 void AddEvaluation(string targetType, int targetId, string dimension, string rating);
