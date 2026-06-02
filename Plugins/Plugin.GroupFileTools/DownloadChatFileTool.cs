@@ -68,6 +68,10 @@ public class DownloadChatFileTool : ITool
                 using var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
                 resp.EnsureSuccessStatusCode();
 
+                var logPath = Path.Combine(_workspaceDir, "debug_download.log");
+                var headers = $"status={resp.StatusCode} content-type={resp.Content.Headers.ContentType} content-length={resp.Content.Headers.ContentLength}\n";
+                File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [download_chat_file] url={url}\n{headers}");
+
                 var cd = resp.Content.Headers.ContentDisposition;
                 if (cd?.FileName != null)
                 {
