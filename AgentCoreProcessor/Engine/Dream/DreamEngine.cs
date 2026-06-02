@@ -131,7 +131,7 @@ namespace AgentCoreProcessor.Engine
         }
 
         // ============================================================
-        // 秩序阶段
+        // 秩序阶段 — 分批流水线
         // ============================================================
 
         private async Task RunOrderPhaseAsync(DreamConfig cfg)
@@ -139,154 +139,223 @@ namespace AgentCoreProcessor.Engine
             var temps = await ctx.TempMemories.GetAllAsync();
             if (temps.Count == 0)
             {
-                Signal.Event(LogGroup.Engine, "秩序阶段", new { reason = "无临时记忆，跳过" });
+                Signal.Event(LogGroup.Engine, "dream:order", new { reason = "无临时记忆，跳过" });
                 return;
             }
 
             CurrentPhase = "order";
-            CurrentInputDescription = $"秩序阶段: {temps.Count} 条临时记忆";
-            Signal.Event(LogGroup.Engine, "秩序阶段开始", new { tempCount = temps.Count });
 
-            // 1. 为每条 temp 嵌出向量并搜索主库候选
-            var orderEntries = new List<(TempMemoryEntry Temp, List<MemoryEntry> Candidates, List<float> CosScores)>();
-            foreach (var temp in temps)
+            using var orderSpan = Signal.Open(LogGroup.Engine, "dream:order",
+                new { tempCount = temps.Count });
+
+            // 按置信度排序：高置信度先进库，后续 temp 可查重
+            var sorted = temps
+                .OrderByDescending(t => TempConfidenceToFloat(t.Confidence))
+                .ThenBy(t => t.CreatedAt)
+                .ToList();
+
+            // 预加载主库 embedding 到内存（跨批次累积，保证跨批次不重复）
+            var allMemories = await ctx.Memories.GetRecentAsync(int.MaxValue);
+            var embCache = allMemories
+                .Where(m => m.Embedding != null)
+                .Select(m => (Entry: m, Emb: VectorUtil.BytesToFloats(m.Embedding!)))
+                .ToList();
+            Signal.Event(LogGroup.Engine, "dream:order:cache",
+                new { cached = embCache.Count });
+
+            int inserted = 0, skipped = 0, merged = 0, linked = 0, conflicted = 0, cleaned = 0;
+            const int BATCH = 32;
+
+            // 本地向量搜索（替代 FindSimilarAsync，避免 SQLite 往返）
+            List<(MemoryEntry Entry, float Cos)> FindCandidates(float[] targetEmb)
             {
-                if (shouldWake) return;
-
-                float[] emb;
-                try { emb = await ctx.Embedding.GetEmbeddingAsync(temp.Content); }
-                catch { continue; }
-
-                var candidates = await ctx.Memories.FindSimilarAsync(
-                    VectorUtil.FloatsToBytes(emb), cfg.EmbeddingTopK, 0.7f);
-                if (candidates.Count == 0)
+                var results = new List<(MemoryEntry Entry, float Cos)>();
+                foreach (var (entry, emb) in embCache)
                 {
-                    orderEntries.Add((temp, new List<MemoryEntry>(), new List<float>()));
-                    continue;
+                    var cos = VectorUtil.CosineSimilarity(targetEmb, emb);
+                    if (cos > 0.7f)
+                        results.Add((entry, cos));
                 }
-
-                var cosScores = new List<float>();
-                foreach (var c in candidates)
-                {
-                    if (c.Embedding != null)
-                    {
-                        var cEmb = VectorUtil.BytesToFloats(c.Embedding);
-                        cosScores.Add(VectorUtil.CosineSimilarity(emb, cEmb));
-                    }
-                    else
-                    {
-                        cosScores.Add(0.7f); // 保守估计
-                    }
-                }
-                orderEntries.Add((temp, candidates, cosScores));
+                results.Sort((a, b) => b.Cos.CompareTo(a.Cos));
+                return results;
             }
 
-            // 2. 关系分类（分批 LLM，每轮一个中心 + N 个候选）
-            var relationResults = new Dictionary<int, List<(int CandidateId, float Support)>>();
-            foreach (var entry in orderEntries)
+            for (int batchStart = 0; batchStart < sorted.Count; batchStart += BATCH)
             {
-                if (shouldWake) return;
-                if (entry.Candidates.Count == 0) continue;
+                var batch = sorted.Skip(batchStart).Take(BATCH).ToList();
 
-                var meaningful = entry.Candidates
-                    .Select((c, i) => (Candidate: c, Cos: entry.CosScores[i]))
-                    .Where(x => x.Cos >= cfg.OrderClassifyMinCos)
-                    .ToList();
-                if (meaningful.Count == 0) continue;
-
-                // 构建临时 MemoryEntry 作为中心节点
-                var center = TempToMemoryEntry(entry.Temp);
-
-                // 分批：每次最多 RelationBatchMaxTargets 个候选
-                for (int i = 0; i < meaningful.Count; i += cfg.RelationBatchMaxTargets)
+                // 并行 embed
+                var batchEmbMap = new Dictionary<int, float[]>();
+                var tasks = batch.Select(async t =>
                 {
-                    var batchTargets = meaningful.Skip(i).Take(cfg.RelationBatchMaxTargets)
-                        .Select(x => x.Candidate).ToList();
-                    var batchCos = meaningful.Skip(i).Take(cfg.RelationBatchMaxTargets)
-                        .Select(x => x.Cos).ToList();
+                    try { batchEmbMap[t.Id] = await ctx.Embedding.GetEmbeddingAsync(t.Content); }
+                    catch { /* 嵌入失败，跳过 */ }
+                });
+                await Task.WhenAll(tasks);
 
-                    var result = await ClassifyRelationsAsync(center, batchTargets, batchCos);
-                    if (result == null) continue;
-
-                    foreach (var (targetIdx, support) in result)
+                // 批内清洗：高置信度优先，cos ≥ 0.95 → 保留内容更详细的
+                for (int i = 0; i < batch.Count; i++)
+                {
+                    if (!batchEmbMap.ContainsKey(batch[i].Id)) continue;
+                    for (int j = i + 1; j < batch.Count; j++)
                     {
-                        if (targetIdx < 0 || targetIdx >= batchTargets.Count) continue;
-                        var candidateId = batchTargets[targetIdx].Id;
-                        if (!relationResults.ContainsKey(center.Id))
-                            relationResults[center.Id] = new();
-                        relationResults[center.Id].Add((candidateId, support));
+                        if (!batchEmbMap.ContainsKey(batch[j].Id)) continue;
+                        var cos = VectorUtil.CosineSimilarity(batchEmbMap[batch[i].Id], batchEmbMap[batch[j].Id]);
+                        if (cos >= 0.95f)
+                        {
+                            if (batch[i].Content.Length >= batch[j].Content.Length)
+                            {
+                                batchEmbMap.Remove(batch[j].Id);
+                                await ctx.TempMemories.DeleteAsync(batch[j]);
+                            }
+                            else
+                            {
+                                batchEmbMap.Remove(batch[i].Id);
+                                await ctx.TempMemories.DeleteAsync(batch[i]);
+                                break;
+                            }
+                            cleaned++;
+                        }
                     }
                 }
-            }
 
-            // 3. 入库 + 建边
-            int inserted = 0, linked = 0, conflicted = 0;
-            foreach (var entry in orderEntries)
-            {
-                if (shouldWake) return;
-
-                var temp = entry.Temp;
-                float[]? emb = null;
-                try { emb = await ctx.Embedding.GetEmbeddingAsync(temp.Content); }
-                catch { /* embedding 失败不阻塞入库 */ }
-
-                var insertedMem = await ctx.Memories.CreateAsync(
-                    temp.Content,
-                    emb != null ? VectorUtil.FloatsToBytes(emb) : null,
-                    temp.PersonId,
-                    temp.ChannelId,
-                    certainty: TempConfidenceToFloat(temp.Confidence),
-                    type: temp.Type ?? MemoryType.Fact,
-                    subject: temp.Subject);
-                inserted++;
-
-                // 应用关系分类结果
-                if (relationResults.TryGetValue(temp.Id, out var relations))
+                // 逐条入库（embCache 已包含主库 + 前序批次所有入库 → 跨批不重复）
+                foreach (var temp in batch)
                 {
-                    foreach (var (candidateId, support) in relations)
-                    {
-                        if (Math.Abs(support) < 0.1f) continue;
+                    if (shouldWake) goto finish;
+                    if (!batchEmbMap.TryGetValue(temp.Id, out var emb)) continue;
 
+                    var embBytes = VectorUtil.FloatsToBytes(emb);
+                    var candidates = FindCandidates(emb);
+
+                    var meaningful = candidates
+                        .Where(c => c.Cos >= cfg.OrderClassifyMinCos)
+                        .Select(c => (c.Entry, c.Cos))
+                        .ToList();
+
+                    // 高度重复 → 跳过
+                    var nearDup = meaningful.FirstOrDefault(x => x.Cos >= 0.95f);
+                    if (nearDup.Entry != null)
+                    {
+                        skipped++;
+                        Signal.Event(LogGroup.Engine, "dream:order:skip_dup",
+                            new { tempId = temp.Id, dupOf = nearDup.Entry.Id, cos = nearDup.Cos.ToString("F3") });
+                        await ctx.TempMemories.DeleteAsync(temp);
+                        continue;
+                    }
+
+                    // 关系分类
+                    var relations = new List<(int TargetId, float Support)>();
+                    if (meaningful.Count > 0)
+                    {
+                        var center = TempToMemoryEntry(temp);
+                        for (int i = 0; i < meaningful.Count; i += cfg.RelationBatchMaxTargets)
+                        {
+                            var sub = meaningful.Skip(i).Take(cfg.RelationBatchMaxTargets).ToList();
+                            var result = await ClassifyRelationsAsync(
+                                center,
+                                sub.Select(x => x.Entry).ToList(),
+                                sub.Select(x => x.Cos).ToList());
+                            if (result == null) continue;
+
+                            foreach (var (targetIdx, support) in result)
+                            {
+                                if (targetIdx < 0 || targetIdx >= sub.Count) continue;
+                                if (Math.Abs(support) < 0.1f) continue;
+                                relations.Add((sub[targetIdx].Entry.Id, support));
+                            }
+                        }
+                    }
+
+                    // 合并检查（support ≥ merge 阈值）
+                    var merges = relations.Where(r => r.Support >= cfg.OrderMergeMinSupport).ToList();
+                    bool tempIsMerged = false;
+                    foreach (var (targetId, support) in merges)
+                    {
+                        var candidate = meaningful.First(m => m.Entry.Id == targetId).Entry;
+                        if (temp.Content.Length > candidate.Content.Length)
+                        {
+                            var mergedMem = await ctx.Memories.CreateAsync(
+                                temp.Content, embBytes,
+                                temp.PersonId, temp.ChannelId,
+                                certainty: Math.Max(TempConfidenceToFloat(temp.Confidence), candidate.Certainty),
+                                type: temp.Type ?? MemoryType.Fact,
+                                subject: temp.Subject);
+                            inserted++;
+                            await RedirectLinksAsync(candidate.Id, mergedMem.Id);
+                            await ctx.Memories.DeleteAsync(candidate);
+                            embCache.RemoveAll(e => e.Entry.Id == candidate.Id);
+                            embCache.Add((mergedMem, emb));
+                            merged++;
+                            Signal.Event(LogGroup.Engine, "dream:order:merge",
+                                new { tempId = temp.Id, replacedId = candidate.Id, survivorId = mergedMem.Id, support = support.ToString("F2") });
+                        }
+                        else
+                        {
+                            skipped++;
+                            Signal.Event(LogGroup.Engine, "dream:order:merge_skip",
+                                new { tempId = temp.Id, existingId = candidate.Id, support = support.ToString("F2") });
+                        }
+                        relations.RemoveAll(r => r.TargetId == targetId);
+                        tempIsMerged = true;
+                        break;
+                    }
+                    if (tempIsMerged)
+                    {
+                        await ctx.TempMemories.DeleteAsync(temp);
+                        continue;
+                    }
+
+                    // 入库
+                    var insertedMem = await ctx.Memories.CreateAsync(
+                        temp.Content, embBytes,
+                        temp.PersonId, temp.ChannelId,
+                        certainty: TempConfidenceToFloat(temp.Confidence),
+                        type: temp.Type ?? MemoryType.Fact,
+                        subject: temp.Subject);
+                    inserted++;
+                    embCache.Add((insertedMem, emb));
+
+                    Signal.Event(LogGroup.Engine, "dream:order:insert",
+                        new { memId = insertedMem.Id, candidates = meaningful.Count, links = relations.Count,
+                            content = temp.Content[..Math.Min(40, temp.Content.Length)] });
+
+                    // 建边
+                    foreach (var (targetId, support) in relations)
+                    {
                         await ctx.MemoryLinks.CreateOrUpdateAsync(
-                            insertedMem.Id, candidateId,
-                            Math.Abs(support), // Relevance = |support|
-                            "semantic",
-                            Math.Clamp(support, -1f, 1f)); // Support = support
+                            insertedMem.Id, targetId,
+                            Math.Abs(support), "semantic",
+                            Math.Clamp(support, -1f, 1f));
                         linked++;
+                        if (support < 0) conflicted++;
 
-                        if (support < 0)
-                            conflicted++;
+                        Signal.Event(LogGroup.Engine, support < 0 ? "dream:order:conflict" : "dream:order:link",
+                            new { source = insertedMem.Id, target = targetId, support = support.ToString("F2") });
 
                         currentDetails.Add(new FragmentDetailRecord
                         {
                             Action = support < 0 ? "conflict_link" : "order_link",
                             MemoryId = insertedMem.Id,
-                            Note = $"→#{candidateId}, support={support:F2}"
+                            Note = $"→#{targetId}, support={support:F2}"
                         });
                     }
-                }
 
-                // Weight 评估（批量评估新记忆的 importance + certainty）
-                // 这里按单条评估，因为在秩序阶段是一次性处理
+                    await ctx.TempMemories.DeleteAsync(temp);
+                }
             }
 
-            // 4. 清理 temp 表
-            foreach (var t in temps)
-                await ctx.TempMemories.DeleteAsync(t);
-
-            // 5. ChangePropagation — 扩散新节点带来的变更
+        finish:
+            // ChangePropagation
             if (inserted > 0)
             {
                 var seeds = new List<ChangePropagation.NodeChange>();
-                // 每条新插入的记忆都是变更源
-                // (此处 delta 由后续巡逻补正，秩序阶段先传播 insert 事件)
                 await ChangePropagation.PropagateAsync(
                     seeds, cfg.ChangePropagationEpsilon,
                     ctx.Memories, ctx.MemoryLinks);
             }
 
-            Signal.Event(LogGroup.Engine, "秩序阶段完成",
-                new { inserted, linked, conflicted, tempCount = temps.Count });
+            orderSpan.SetCloseDetail(new { inserted, skipped, merged, linked, conflicted, cleaned });
         }
 
         // ============================================================
@@ -300,12 +369,14 @@ namespace AgentCoreProcessor.Engine
 
             patrol = new PatrolState { StepsBudget = maxSteps };
 
-            Signal.Event(LogGroup.Engine, "巡逻开始", new { stepsBudget = maxSteps });
+            using var patrolSpan = Signal.Open(LogGroup.Engine, "dream:patrol",
+                new { budget = maxSteps });
 
             MemoryEntry? current = await SelectColdStartNode();
             if (current == null)
             {
-                Signal.Event(LogGroup.Engine, "巡逻", new { reason = "无可巡逻节点" });
+                Signal.Event(LogGroup.Engine, "dream:patrol", new { reason = "无可巡逻节点" });
+                patrolSpan.SetCloseDetail(new { steps = 0, reason = "no_nodes" });
                 return;
             }
 
@@ -341,9 +412,7 @@ namespace AgentCoreProcessor.Engine
 
                 if (next == null)
                 {
-                    // 死胡同，重新冷启动
                     next = await SelectColdStartNode();
-                    // 都走过一轮 → 选最久未访问的继续
                     if (next == null)
                     {
                         var allRecent = await ctx.Memories.GetRecentAsync(1000);
@@ -351,17 +420,22 @@ namespace AgentCoreProcessor.Engine
                             .OrderBy(m => m.LastDreamTime ?? DateTime.MinValue)
                             .FirstOrDefault();
                     }
+                    Signal.Event(LogGroup.Engine, "dream:patrol:cold_restart",
+                        new { nextId = next?.Id, steps = patrol.StepsTaken });
                     if (next == null) break;
                 }
 
                 current = next;
             }
 
-            // 巡逻结束：清空三角缓冲
             await FlushTriangleBuffer(cfg);
 
-            Signal.Event(LogGroup.Engine, "巡逻完成",
-                new { stepsTaken = patrol.StepsTaken, visitedCount = patrol.Visited.Count });
+            patrolSpan.SetCloseDetail(new
+            {
+                stepsTaken = patrol.StepsTaken,
+                visitedCount = patrol.Visited.Count,
+                bufferRemaining = patrol.TriangleBuffer.Sum(kv => kv.Value.Count)
+            });
         }
 
         private async Task<MemoryEntry?> SelectColdStartNode()
@@ -370,7 +444,6 @@ namespace AgentCoreProcessor.Engine
             var recent = await ctx.Memories.GetRecentAsync(1000);
             if (recent.Count == 0) return null;
 
-            // 按 LastDreamTime 排序，从未被巡逻过的放前面
             var ordered = recent
                 .OrderBy(m => m.LastDreamTime ?? DateTime.MinValue)
                 .Take(poolSize)
@@ -378,14 +451,13 @@ namespace AgentCoreProcessor.Engine
 
             if (ordered.Count == 0) return null;
 
-            // 冷度加权随机
             var now = DateTime.Now;
             var weights = ordered.Select(m =>
             {
                 var last = m.LastDreamTime ?? DateTime.MinValue;
                 double days = (now - last).TotalDays;
                 if (days <= 0) days = 0.1;
-                return (float)Math.Min(days, 30.0); // 封顶 30 天
+                return (float)Math.Min(days, 30.0);
             }).ToList();
 
             float totalWeight = weights.Sum();
@@ -425,7 +497,6 @@ namespace AgentCoreProcessor.Engine
                     (l.SourceId == neighbors[j].Id && l.TargetId == neighbors[i].Id));
                 if (alreadyLinked) continue;
 
-                    // embedding 验证
                     float cos = 0f;
                     if (neighbors[i].Embedding != null && neighbors[j].Embedding != null)
                     {
@@ -436,7 +507,6 @@ namespace AgentCoreProcessor.Engine
 
                     if (cos >= cfg.TriangleClassifyMinCos)
                     {
-                        // 加入 LLM 缓冲：中心是 neighbor[i]，目标是 neighbor[j]
                         if (!patrol!.TriangleBuffer.ContainsKey(neighbors[i].Id))
                             patrol.TriangleBuffer[neighbors[i].Id] = new();
                         patrol.TriangleBuffer[neighbors[i].Id].Add((neighbors[j].Id, cos));
@@ -481,7 +551,6 @@ namespace AgentCoreProcessor.Engine
                     Note = node.Content.Length > 50 ? node.Content[..50] : node.Content
                 });
 
-                // 删除触发传播
                 var seeds = new List<ChangePropagation.NodeChange>
                 {
                     new() { NodeId = node.Id, DeltaImportance = -node.Importance, DeltaCertainty = -node.Certainty }
@@ -506,7 +575,9 @@ namespace AgentCoreProcessor.Engine
             LastCompletedRecord = rec;
             await PersistFragmentAsync(rec, patrol!.StepsTaken);
 
-            // 三角缓冲攒够就清
+            Signal.Event(LogGroup.Engine, "dream:patrol:step",
+                new { step = patrol!.StepsTaken + 1, nodeId = node.Id, oldImp = oldImportance.ToString("F3"), newImp = decayedImportance.ToString("F3"), details = currentDetails.Select(d => d.Action).Distinct().ToList() });
+
             int buffered = patrol!.TriangleBuffer.Sum(kv => kv.Value.Count);
             if (buffered >= cfg.TriangleBufferSize)
                 await FlushTriangleBuffer(cfg);
@@ -526,7 +597,6 @@ namespace AgentCoreProcessor.Engine
                 var center = await ctx.Memories.GetByIdAsync(centerId);
                 if (center == null) continue;
 
-                // 去重：按 targetId 去重
                 var unique = pairs
                     .GroupBy(p => p.TargetId)
                     .Select(g => g.First())
@@ -544,7 +614,6 @@ namespace AgentCoreProcessor.Engine
                     }
                 }
 
-                // 分批
                 for (int i = 0; i < targets.Count; i += cfg.RelationBatchMaxTargets)
                 {
                     var batchTargets = targets.Skip(i).Take(cfg.RelationBatchMaxTargets).ToList();
@@ -571,7 +640,7 @@ namespace AgentCoreProcessor.Engine
         }
 
         // ============================================================
-        // LLM 关系分类（分批，每轮一个中心 + N 个候选）
+        // LLM 关系分类
         // ============================================================
 
         private async Task<List<(int TargetIndex, float Support)>?> ClassifyRelationsAsync(
@@ -602,7 +671,7 @@ namespace AgentCoreProcessor.Engine
         }
 
         // ============================================================
-        // 辅助：Temp → 临时 MemoryEntry（用于关系分类的 prompt 注入）
+        // 辅助
         // ============================================================
 
         private static MemoryEntry TempToMemoryEntry(TempMemoryEntry t)
@@ -620,7 +689,6 @@ namespace AgentCoreProcessor.Engine
             };
         }
 
-        /// <summary>临时记忆 Confidence 字符串 → Certainty 浮点桥接</summary>
         private static float TempConfidenceToFloat(string? confidence) => confidence switch
         {
             "high" => 1.0f,

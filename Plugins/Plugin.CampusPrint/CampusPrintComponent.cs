@@ -50,7 +50,7 @@ public class CampusPrintComponent : GlobalComponentBase
         if (!_config.HasCredentials)
             return "[校园打印] 未配置凭据。请用户从小程序提取 cache_token/cache_appkey，用 print_set_token 设置。";
 
-        return $"[校园打印] 已配置 store_id={_config.StoreId} | 流程:\n  1.upload(自动注册) 2.pdf_status 3.update(改设置) 4.price 5.order\n  upload已自动注册文件(file_id>0)，勿再调add。用print_store_info查纸张价格。参数均string。";
+        return $"[校园打印] 已配置 store_id={_config.StoreId} | 流程:\n  1.upload(自动注册) 2.pdf_status 3.update(改设置) 4.price 5.order\n  upload已自动注册(file_id>0)，勿再调add。update只改已知字段: page_size is_color page_way print_count scale_type print_page。用print_store_info查纸张价格。";
     }
 
     internal CampusPrintConfig Config => _config;
@@ -335,7 +335,7 @@ public class PrintFileUpdateTool : ITool
     private readonly CampusPrintComponent _c;
     public PrintFileUpdateTool(CampusPrintComponent c) => _c = c;
     public string Name => "print_file_update";
-    public string Description => "修改已有文件的打印设置（步骤3可选）。参数均为 string。例: {\"is_color\":\"1\",\"page_size\":\"B5\"}";
+    public string Description => "修改已有文件的打印设置（步骤3可选）。参数均为 string。常用字段: page_size(A4/B5) is_color(空=黑白,1=彩色) page_way(1单面/2双面长边/3双面短边) print_count(份数) scale_type print_page(如\"1-5\")";
     public IReadOnlyList<ToolParameter> Parameters => [new("file_id", "文件 ID（string）", 0), new("settings_json", "要修改的字段，JSON对象格式（string）", 1)];
     public TimeSpan Timeout => TimeSpan.FromSeconds(15);
     public async Task<ToolResult> ExecuteAsync(List<string> inputs, CancellationToken ct)
@@ -356,14 +356,18 @@ public class PrintFileUpdateTool : ITool
         var cur = arr.FirstOrDefault(f => CampusPrintComponent.SafeInt(f!["id"]) == fid);
         if (cur == null) return new ToolResult { Status = "failed", Error = $"未找到 file_id={fid}。用 print_file_list 确认。" };
 
-        // 关键身份字段 + 设置，匹配服务端更新逻辑
-        var fields = new Dictionary<string, object?> { ["domain_id"] = _c.Config.DomainId };
-        foreach (var key in new[] { "id", "file_index", "file_path", "file_name", "file_format" })
+        // 全量复制文件对象所有字段，再用用户设置覆盖
+        var fields = new Dictionary<string, object?>();
+        foreach (var (k, v) in cur.AsObject())
         {
-            var v = cur[key];
-            if (v != null) fields[key] = v.GetValue<object>();
+            fields[k] = v switch
+            {
+                JsonValue jv when jv.TryGetValue(out int n) => n,
+                JsonValue jv when jv.TryGetValue(out string s) => s,
+                JsonValue jv => jv.ToString(),
+                _ => v
+            };
         }
-        // 合并用户设置
         CampusPrintComponent.MergeSettings(fields, jo);
 
         var resp = await cl.FileSave(fields);

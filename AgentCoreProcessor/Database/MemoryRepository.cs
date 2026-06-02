@@ -195,14 +195,17 @@ namespace AgentCoreProcessor.Database
             var targetVec = VectorUtil.BytesToFloats(targetEmbedding);
             var all = await db.GetAllAsync<MemoryEntry>();
 
-            return all
+            var query = all
                 .Where(m => m.Id != excludeId && m.Embedding != null)
                 .Select(m => (entry: m, sim: VectorUtil.CosineSimilarity(targetVec, VectorUtil.BytesToFloats(m.Embedding!))))
                 .Where(x => x.sim > threshold)
-                .OrderByDescending(x => x.sim)
-                .Take(topK)
-                .Select(x => x.entry)
-                .ToList();
+                .OrderByDescending(x => x.sim);
+
+            IEnumerable<(MemoryEntry entry, float sim)> filtered = query;
+            if (topK > 0)
+                filtered = query.Take(topK);
+
+            return filtered.Select(x => x.entry).ToList();
         }
     }
 }

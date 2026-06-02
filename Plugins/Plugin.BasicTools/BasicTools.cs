@@ -26,11 +26,11 @@ namespace Plugin.BasicTools
 
         public string Name => "speak";
         public string Description => "逐条发送消息到当前频道。content 为一个字符串，"
-            + "多条消息用 \\n---\\n（换行+三个短横+换行）分隔，每条单独发送。"
+            + "多条消息用 \\n---\\n（换行+三个短横+换行）分隔，每条单独发送，建议常用分条功能以发送多条消息。"
             + "支持图文混排（<img work=\"rel/path\"/> 引用 Workspace 图片，"
             + "<img hash=\"xxx\"/> 引用图库图片）。可用标签：<at user=\"名字\"/> @提及、<reply id=\"消息ID\"/> 回复消息";
         public IReadOnlyList<ToolParameter> Parameters =>
-            [new("content", "要发送的消息，多条用 \\n---\\n 分隔（可含 <img/> <at/> <reply/> 标签）", 0)];
+            [new("content", "要发送的消息，多条用 \\n---\\n 分隔，每条单独发送，建议常用分条功能以发送多条消息。（可含 <img/> <at/> <reply/> 标签）", 0)];
         public TimeSpan Timeout => TimeSpan.FromSeconds(30);
 
         public JsonNode GetInputSchema()
@@ -43,7 +43,7 @@ namespace Plugin.BasicTools
                     ["content"] = new JsonObject
                     {
                         ["type"] = "string",
-                        ["description"] = "要发送的消息，多条用 \\n---\\n（换行+三个短横+换行）分隔（可含 <img/> <at/> <reply/> 标签）"
+                        ["description"] = "要发送的消息，多条用 \\n---\\n（换行+三个短横+换行）分隔，每条单独发送，建议常用分条功能以发送多条消息。（可含 <img/> <at/> <reply/> 标签）"
                     }
                 },
                 ["required"] = new JsonArray { "content" }

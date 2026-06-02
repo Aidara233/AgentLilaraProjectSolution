@@ -87,6 +87,9 @@ namespace AgentCoreProcessor.Engine
         /// <summary>秩序阶段 LLM 关系分类最低 cos 阈值</summary>
         public float OrderClassifyMinCos { get; set; } = 0.7f;
 
+        /// <summary>秩序阶段 LLM support 高于此值自动合并（保留更详细的，删简略的）</summary>
+        public float OrderMergeMinSupport { get; set; } = 0.9f;
+
         // ---- 巡逻配置 ----
 
         /// <summary>大睡巡逻最大步数</summary>
