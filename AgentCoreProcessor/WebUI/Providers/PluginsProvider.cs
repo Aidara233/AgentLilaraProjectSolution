@@ -809,13 +809,14 @@ internal class ComponentPermTogglesSource : IDataSource
 
         var config = ComponentConfig.Load();
         var reg = ComponentRegistry.Get(_selectedComponent);
+        var defaultEnabled = reg?.DefaultEnabled ?? true;
         var data = new JsonObject
         {
             ["componentName"] = _selectedComponent,
-            ["channel"] = config.IsEnabled(_selectedComponent, "channel", true, reg?.ChannelApplicability ?? Applicability.Enabled) ? "启用" : "禁用",
-            ["system"] = config.IsEnabled(_selectedComponent, "system", true, reg?.SystemApplicability ?? Applicability.Enabled) ? "启用" : "禁用",
-            ["subAgent"] = config.IsEnabled(_selectedComponent, "sub-agent", true, reg?.SubAgentApplicability ?? Applicability.Enabled) ? "启用" : "禁用",
-            ["review"] = config.IsEnabled(_selectedComponent, "review", true, reg?.ReviewApplicability ?? Applicability.Enabled) ? "启用" : "禁用",
+            ["channel"] = config.IsEnabled(_selectedComponent, "channel", defaultEnabled, reg?.ChannelApplicability ?? Applicability.Enabled) ? "启用" : "禁用",
+            ["system"] = config.IsEnabled(_selectedComponent, "system", defaultEnabled, reg?.SystemApplicability ?? Applicability.Enabled) ? "启用" : "禁用",
+            ["subAgent"] = config.IsEnabled(_selectedComponent, "sub-agent", defaultEnabled, reg?.SubAgentApplicability ?? Applicability.Enabled) ? "启用" : "禁用",
+            ["review"] = config.IsEnabled(_selectedComponent, "review", defaultEnabled, reg?.ReviewApplicability ?? Applicability.Enabled) ? "启用" : "禁用",
         };
         return Task.FromResult(new DataResult { Data = data });
     }
@@ -839,6 +840,7 @@ internal class ComponentPermTogglesSource : IDataSource
 
         var config = ComponentConfig.Load();
         var reg = ComponentRegistry.Get(_selectedComponent);
+        var defaultEnabled = reg?.DefaultEnabled ?? true;
         var applicability = engineType switch
         {
             "channel" => reg?.ChannelApplicability ?? Applicability.Enabled,
@@ -847,7 +849,7 @@ internal class ComponentPermTogglesSource : IDataSource
             "review" => reg?.ReviewApplicability ?? Applicability.Enabled,
             _ => Applicability.Enabled
         };
-        var current = config.IsEnabled(_selectedComponent, engineType, true, applicability);
+        var current = config.IsEnabled(_selectedComponent, engineType, defaultEnabled, applicability);
         var target = !current;
 
         try

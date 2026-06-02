@@ -1,6 +1,7 @@
 // AgentCoreProcessor/Component/ComponentRegistry.cs
 using System.Collections.Concurrent;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using AgentLilara.PluginSDK;
 
 namespace AgentCoreProcessor.Component;
@@ -12,7 +13,8 @@ internal record ComponentRegistration(
     Applicability SystemApplicability,
     Applicability ReviewApplicability,
     Applicability SubAgentApplicability,
-    Assembly SourceAssembly);
+    Assembly SourceAssembly,
+    bool DefaultEnabled);
 
 internal static class ComponentRegistry
 {
@@ -25,6 +27,16 @@ internal static class ComponentRegistry
 
         var loopAttr = type.GetCustomAttribute<LoopApplicabilityAttribute>();
 
+        var defaultEnabled = true;
+        try
+        {
+            var blank = RuntimeHelpers.GetUninitializedObject(type);
+            var metaProp = type.GetProperty("Meta");
+            if (metaProp != null && metaProp.GetValue(blank) is ComponentMeta meta)
+                defaultEnabled = meta.DefaultEnabled;
+        }
+        catch { }
+
         var reg = new ComponentRegistration(
             Type: type,
             Scope: attr.Scope,
@@ -32,7 +44,8 @@ internal static class ComponentRegistry
             SystemApplicability: loopAttr?.System ?? Applicability.Enabled,
             ReviewApplicability: loopAttr?.Review ?? Applicability.Enabled,
             SubAgentApplicability: loopAttr?.SubAgent ?? Applicability.Enabled,
-            SourceAssembly: type.Assembly);
+            SourceAssembly: type.Assembly,
+            DefaultEnabled: defaultEnabled);
 
         return _registrations.TryAdd(attr.Name, reg);
     }
