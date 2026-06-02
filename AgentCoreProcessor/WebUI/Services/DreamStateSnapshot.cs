@@ -21,10 +21,6 @@ namespace AgentCoreProcessor.WebUI.Services
 
         // 活跃做梦时内存中所有已完成的片段
         public List<FragmentRecord>? CompletedFragments { get; init; }
-
-        // 预算
-        public int MainBudget { get; init; }
-        public int ReserveBudget { get; init; }
     }
 
     internal class FragmentDetailSnapshot

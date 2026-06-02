@@ -104,8 +104,6 @@ namespace AgentCoreProcessor.Engine
                     Note = d.Note
                 }).ToList(),
                 CompletedFragments = active?.CompletedFragments.ToList(),
-                MainBudget = cfg.MainTokenBudget,
-                ReserveBudget = cfg.ReserveTokenBudget,
             };
         }
 

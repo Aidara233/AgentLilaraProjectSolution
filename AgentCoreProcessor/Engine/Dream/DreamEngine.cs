@@ -65,7 +65,7 @@ namespace AgentCoreProcessor.Engine
         // 主循环
         // ============================================================
 
-        private static readonly SemaphoreSlim EmbedSemaphore = new(4);
+        private SemaphoreSlim? embedSemaphore;
         private const float TempHeatDecayRate = 0.90f; // 每分钟衰减 10%
 
         public async Task RunAsync()
@@ -78,6 +78,7 @@ namespace AgentCoreProcessor.Engine
 
             ctx.CurrentSleepState = SleepState.DeepSleep;
             var cfg = spawnCheck.GetConfig();
+            embedSemaphore = new SemaphoreSlim(cfg.EmbedParallelLimit);
 
             while (!shouldWake)
             {
@@ -195,10 +196,10 @@ namespace AgentCoreProcessor.Engine
                 var batchEmbMap = new Dictionary<int, float[]>();
                 var tasks = batch.Select(async t =>
                 {
-                    await EmbedSemaphore.WaitAsync();
+                    await embedSemaphore!.WaitAsync();
                     try { batchEmbMap[t.Id] = await ctx.Embedding.GetEmbeddingAsync(t.Content); }
                     catch { /* 嵌入失败，跳过 */ }
-                    finally { EmbedSemaphore.Release(); }
+                    finally { embedSemaphore.Release(); }
                 });
                 await Task.WhenAll(tasks);
 

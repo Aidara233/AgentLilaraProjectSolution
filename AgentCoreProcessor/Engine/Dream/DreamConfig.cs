@@ -5,21 +5,14 @@ using Newtonsoft.Json;
 namespace AgentCoreProcessor.Engine
 {
     /// <summary>
-    /// 梦境配置：巡逻步数 + 秩序参数 + 预算。
+    /// 梦境配置：秩序 + 巡逻 + 并行度。
     /// </summary>
     internal class DreamConfig
     {
-        // ---- 巡逻步数 ----
+        // ---- 并行 ----
 
-        public int DaydreamPatrolSteps { get; set; } = 3;
-        public int NapPatrolSteps { get; set; } = 15;
+        public int EmbedParallelLimit { get; set; } = 4;
         public int MaxPatrolSteps { get; set; } = 100;
-
-        // ---- 预算 ----
-
-        public int MainTokenBudget { get; set; } = 100000;
-        public int ReserveTokenBudget { get; set; } = 30000;
-        public int DeepSleepMaxMinutes { get; set; } = 120;
 
         // ---- 传播 ----
 
@@ -27,7 +20,6 @@ namespace AgentCoreProcessor.Engine
 
         // ---- 秩序阶段 ----
 
-        public int EmbeddingTopK { get; set; } = 10;
         public float OrderClassifyMinCos { get; set; } = 0.7f;
         public float OrderMergeMinSupport { get; set; } = 0.9f;
 

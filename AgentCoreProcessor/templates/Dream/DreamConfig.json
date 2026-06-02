@@ -1,12 +1,7 @@
 {
-  "DaydreamPatrolSteps": 3,
-  "NapPatrolSteps": 15,
+  "EmbedParallelLimit": 4,
   "MaxPatrolSteps": 100,
-  "MainTokenBudget": 100000,
-  "ReserveTokenBudget": 30000,
-  "DeepSleepMaxMinutes": 120,
   "ChangePropagationEpsilon": 0.01,
-  "EmbeddingTopK": 10,
   "OrderClassifyMinCos": 0.7,
   "OrderMergeMinSupport": 0.9,
   "ColdStartPoolSize": 20,
