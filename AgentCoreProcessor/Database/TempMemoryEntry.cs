@@ -39,5 +39,8 @@ namespace AgentCoreProcessor.Database
 
         /// <summary>创建时间</summary>
         public DateTime CreatedAt { get; set; } = DateTime.Now;
+
+        /// <summary>热度（0~∞）。被召回时滚雪球，衰减时下降。低于0.15触发入库。</summary>
+        public float Heat { get; set; } = 0.3f;
     }
 }

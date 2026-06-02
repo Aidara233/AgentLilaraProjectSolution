@@ -25,14 +25,18 @@ namespace AgentCoreProcessor.Memory
         private const float ImportanceWeight = 0.25f;
         private const float CertaintyWeight = 0.15f;
         private const float LinkWeight = 0.15f;
-        private const float TempBoost = 0.1f;
+        private const float HeatWeight = 0.10f;
         private const float TagMatchBoost = 0.1f;
         private const float KeywordBoost = 0.15f;
         private const float SubjectBoost = 0.2f;
         private const float MinRecallScore = 0.25f;
         private const float PersonaPenalty = 0.05f;
         private const float PersonaMinScore = 0.12f;
-        private const float RecallImportanceBoost = 0.05f; // 每次命中时重要性微调
+        // 目标逼近模型倍率
+        private const float TempHeatBoostRate = 0.10f;
+        private const float RecallImportanceRate = 0.05f;
+        private const float DuplicateImportanceRate = 0.20f;
+        private const float ImportanceDecayRate = 0.03f; // 每日衰减率
 
         public MemoryService(
             MemoryRepository memories,
@@ -92,17 +96,18 @@ namespace AgentCoreProcessor.Memory
 
             var scored = new List<ScoredMemory>();
 
-            // 1. 查临时库（全量 + 软加分）
+            // 1. 查临时库（全量 + 热度加权）
             var tempResults = await tempMemories.GetAllWithMatchScoreAsync(personId, channelId);
             foreach (var (t, matchCount) in tempResults)
             {
                 float sim = VectorUtil.ComputeSimilarity(queryVec, t.Embedding);
+                float heatScore = HeatWeight * MathF.Sqrt(t.Heat);
                 scored.Add(new ScoredMemory
                 {
                     Id = t.Id,
                     Content = t.Content,
                     Subject = t.Subject,
-                    Score = sim * SimilarityWeight + TempBoost + matchCount * TagMatchBoost,
+                    Score = sim * SimilarityWeight + heatScore + matchCount * TagMatchBoost,
                     IsTemp = true,
                     Certainty = t.Confidence == "high" ? 1.0f : 0.3f
                 });
@@ -210,15 +215,35 @@ namespace AgentCoreProcessor.Memory
                 .Take(topK)
                 .ToList();
 
-            // 6. 命中追踪：更新主库记忆的 RecallCount、LastRecalledAt、Importance 微调
+            // 6. 命中追踪：热度奖励 + 目标逼近重要度
+            var now = DateTime.Now;
             var mainEntryDict = mainEntries.ToDictionary(m => m.Id);
-            foreach (var s in result.Where(s => !s.IsTemp && !s.IsPersona))
+            var tempEntryDict = tempResults.ToDictionary(x => x.Entry.Id, x => x.Entry);
+
+            for (int rank = 0; rank < result.Count; rank++)
             {
-                if (mainEntryDict.TryGetValue(s.Id, out var entry))
+                var s = result[rank];
+                if (s.IsTemp && tempEntryDict.TryGetValue(s.Id, out var tempEntry))
+                {
+                    // 临时库热度：目标逼近 + 排名加权
+                    float rankBonus = TempHeatBoostRate / MathF.Sqrt(rank + 1);
+                    tempEntry.Heat += (1 - tempEntry.Heat) * rankBonus;
+                    await tempMemories.UpdateAsync(tempEntry);
+                }
+                else if (!s.IsTemp && !s.IsPersona && mainEntryDict.TryGetValue(s.Id, out var entry))
                 {
                     entry.RecallCount++;
-                    entry.LastRecalledAt = DateTime.Now;
-                    entry.Importance = Math.Clamp(entry.Importance + RecallImportanceBoost, 0f, 1f);
+
+                    // 懒补衰减
+                    if (entry.LastRecalledAt.HasValue)
+                    {
+                        var days = (float)(now - entry.LastRecalledAt.Value).TotalDays;
+                        entry.Importance *= MathF.Pow(1 - ImportanceDecayRate, days);
+                    }
+                    entry.LastRecalledAt = now;
+
+                    // 目标逼近奖励
+                    entry.Importance += (1 - entry.Importance) * RecallImportanceRate;
                     await memories.UpdateAsync(entry);
                 }
             }

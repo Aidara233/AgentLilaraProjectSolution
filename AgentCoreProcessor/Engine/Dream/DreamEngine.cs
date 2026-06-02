@@ -65,6 +65,9 @@ namespace AgentCoreProcessor.Engine
         // 主循环
         // ============================================================
 
+        private static readonly SemaphoreSlim EmbedSemaphore = new(4);
+        private const float TempHeatDecayRate = 0.90f; // 每分钟衰减 10%
+
         public async Task RunAsync()
         {
             var parentCtx = SignalContext.Current;
@@ -73,35 +76,67 @@ namespace AgentCoreProcessor.Engine
                 "dream:main", LogGroup.Engine, "Dream引擎",
                 new { engineType = EngineType });
 
-            await CleanupExpiredMemoriesAsync();
-
-            var session = await ctx.DreamLogs.CreateSessionAsync(new DreamSession
-            {
-                Level = "Dream",
-                StartTime = DateTime.Now,
-            });
-            currentSessionId = session.Id;
-
             ctx.CurrentSleepState = SleepState.DeepSleep;
-            var startTime = DateTime.Now;
-
             var cfg = spawnCheck.GetConfig();
-            int patrolBudget = cfg.MaxPatrolSteps;
 
-            // ---- 秩序阶段 ----
-            await RunOrderPhaseAsync(cfg);
-            if (shouldWake) goto finish;
+            while (!shouldWake)
+            {
+                await CleanupExpiredMemoriesAsync();
 
-            // ---- 巡逻 ----
-            await RunPatrolAsync(patrolBudget, cfg);
+                // ---- Heat 衰减 ----
+                var allTemps = await ctx.TempMemories.GetAllAsync();
+                if (allTemps.Count > 0)
+                {
+                    var now = DateTime.Now;
+                    foreach (var t in allTemps)
+                    {
+                        var minutes = (float)(now - t.CreatedAt).TotalMinutes;
+                        if (minutes > 0.1f)
+                        {
+                            t.Heat *= MathF.Pow(TempHeatDecayRate, minutes);
+                            await ctx.TempMemories.UpdateAsync(t);
+                        }
+                    }
+                }
 
-        finish:
-            if (shouldWake)
-                Signal.Event(LogGroup.Engine, "做梦被唤醒", new { steps = StepsCompleted });
+                // ---- 秩序阶段：只处理冷 temp ----
+                var coldTemps = allTemps
+                    .Where(t => t.Heat < 0.15f)
+                    .OrderByDescending(t => TempConfidenceToFloat(t.Confidence))
+                    .ThenBy(t => t.CreatedAt)
+                    .ToList();
+
+                if (coldTemps.Count > 0)
+                {
+                    await RunOrderPhaseAsync(cfg, coldTemps);
+                    if (shouldWake) break;
+                }
+                else
+                {
+                    Signal.Event(LogGroup.Engine, "维护循环", new { temps = allTemps.Count, coldTemps = 0 });
+                }
+
+                // ---- 巡逻 ----
+                // 新会话每轮创建
+                var session = await ctx.DreamLogs.CreateSessionAsync(new DreamSession
+                {
+                    Level = "Dream",
+                    StartTime = DateTime.Now,
+                });
+                currentSessionId = session.Id;
+                var startTime = DateTime.Now;
+
+                await RunPatrolAsync(cfg.MaxPatrolSteps, cfg);
+
+                await PersistSessionAsync(startTime, StepsCompleted);
+
+                if (shouldWake) break;
+
+                // 休息 30 秒再下一轮
+                await Task.Delay(30_000);
+            }
 
             spawnCheck.OnDreamCompleted(StepsCompleted);
-
-            await PersistSessionAsync(startTime, StepsCompleted);
 
             ctx.CurrentSleepState = SleepState.None;
             IsAlive = false;
@@ -113,12 +148,11 @@ namespace AgentCoreProcessor.Engine
         // 秩序阶段 — 分批流水线
         // ============================================================
 
-        private async Task RunOrderPhaseAsync(DreamConfig cfg)
+        private async Task RunOrderPhaseAsync(DreamConfig cfg, List<TempMemoryEntry> temps)
         {
-            var temps = await ctx.TempMemories.GetAllAsync();
             if (temps.Count == 0)
             {
-                Signal.Event(LogGroup.Engine, "dream:order", new { reason = "无临时记忆，跳过" });
+                Signal.Event(LogGroup.Engine, "dream:order", new { reason = "无冷临时记忆，跳过" });
                 return;
             }
 
@@ -126,12 +160,6 @@ namespace AgentCoreProcessor.Engine
 
             using var orderSpan = Signal.Open(LogGroup.Engine, "dream:order",
                 new { tempCount = temps.Count });
-
-            // 按置信度排序：高置信度先进库，后续 temp 可查重
-            var sorted = temps
-                .OrderByDescending(t => TempConfidenceToFloat(t.Confidence))
-                .ThenBy(t => t.CreatedAt)
-                .ToList();
 
             // 预加载主库 embedding 到内存（跨批次累积，保证跨批次不重复）
             var allMemories = await ctx.Memories.GetRecentAsync(int.MaxValue);
@@ -159,16 +187,18 @@ namespace AgentCoreProcessor.Engine
                 return results;
             }
 
-            for (int batchStart = 0; batchStart < sorted.Count; batchStart += BATCH)
+            for (int batchStart = 0; batchStart < temps.Count; batchStart += BATCH)
             {
-                var batch = sorted.Skip(batchStart).Take(BATCH).ToList();
+                var batch = temps.Skip(batchStart).Take(BATCH).ToList();
 
-                // 并行 embed
+                // 并行 embed（受 Semaphore 限流）
                 var batchEmbMap = new Dictionary<int, float[]>();
                 var tasks = batch.Select(async t =>
                 {
+                    await EmbedSemaphore.WaitAsync();
                     try { batchEmbMap[t.Id] = await ctx.Embedding.GetEmbeddingAsync(t.Content); }
                     catch { /* 嵌入失败，跳过 */ }
+                    finally { EmbedSemaphore.Release(); }
                 });
                 await Task.WhenAll(tasks);
 
@@ -272,6 +302,9 @@ namespace AgentCoreProcessor.Engine
                         else
                         {
                             skipped++;
+                            // temp 与主库重合：重要度大步逼近
+                            candidate.Importance += (1 - candidate.Importance) * 0.20f;
+                            await ctx.Memories.UpdateAsync(candidate);
                             Signal.Event(LogGroup.Engine, "dream:order:merge_skip",
                                 new { tempId = temp.Id, existingId = candidate.Id, support = support.ToString("F2") });
                         }
