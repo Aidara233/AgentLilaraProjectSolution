@@ -407,16 +407,16 @@ public class PrintFileAddTool : ITool
 
     public string Name => "print_file_add";
     public string Description => """
-        将已上传的文件添加到打印列表（步骤 2/5）。
-        只需提供三个基本信息：file_path（上传返回的）、文件名、文件格式。
-        如需设置纸张大小、单双面、份数等，添加后用 print_file_update 修改。
-        添加后服务器自动开始 PDF 转换，需用 print_pdf_status 轮询等待完成。
+        将上传完成的文件添加到打印列表（步骤 2/5）。
+        三个参数按顺序：(1)服务器路径 (2)文件名 (3)扩展名。
+        服务器路径从 print_file_upload 的返回值中复制，切勿填成本地路径。
+        后续可用 print_file_update 修改纸张、颜色、单双面、份数等设置。
         """;
     public IReadOnlyList<ToolParameter> Parameters =>
     [
-        new("file_path", "服务器端路径，由 print_file_upload 返回（如 /weapp/xxx.docx）", 0),
-        new("file_name", "文件名含扩展名（如 报告.docx）", 1),
-        new("file_format", "文件扩展名（如 docx、pdf、jpg）", 2)
+        new("server_path", "服务器端文件路径，严格复制 print_file_upload 返回的 file_path（以 /weapp/ 或 upload/ 开头）", 0),
+        new("file_name", "原始文件名含扩展名，如 实验报告.docx", 1),
+        new("file_format", "文件扩展名不含点，如 docx pdf jpg", 2)
     ];
     public TimeSpan Timeout => TimeSpan.FromSeconds(15);
 
@@ -442,6 +442,9 @@ public class PrintFileAddTool : ITool
             };
 
             var resp = await client.FileAdd(fields);
+            if (resp == null)
+                return new ToolResult { Status = "failed", Error = "服务器无响应。请确认 file_path 是上传返回的服务器路径（/weapp/... 或 upload/...），不是本地路径。" };
+
             if (CampusPrintComponent.IsTokenExpired(resp))
                 return new ToolResult { Status = "failed", Error = "Token 已过期（code=-6）。" };
 
