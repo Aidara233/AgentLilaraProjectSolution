@@ -36,7 +36,7 @@ public class CampusPrintComponent : GlobalComponentBase
 
         _tools.Add(new PrintSetTokenTool(this));
         _tools.Add(new PrintStoreInfoTool(this));
-        _tools.Add(new PrintFileUploadTool(this));
+        _tools.Add(new PrintFileUploadTool(this, context.Storage.WorkspaceDirectory));
         _tools.Add(new PrintFileAddTool(this));
         _tools.Add(new PrintFileUpdateTool(this));
         _tools.Add(new PrintFileListTool(this));
@@ -273,7 +273,13 @@ public class PrintStoreInfoTool : ITool
 public class PrintFileUploadTool : ITool
 {
     private readonly CampusPrintComponent _comp;
-    public PrintFileUploadTool(CampusPrintComponent comp) => _comp = comp;
+    private readonly string _workspaceDir;
+
+    public PrintFileUploadTool(CampusPrintComponent comp, string workspaceDir)
+    {
+        _comp = comp;
+        _workspaceDir = Path.GetFullPath(workspaceDir);
+    }
 
     public string Name => "print_file_upload";
     public string Description => """
@@ -281,18 +287,49 @@ public class PrintFileUploadTool : ITool
         支持所有常见格式：doc/docx/pdf/ppt/pptx/xls/xlsx/jpg/png/txt 等。
         大文件自动分块上传，已存在的文件（相同 MD5）秒传跳过。
         返回 file_path，这是下一步 print_file_add 的必需参数。
+        文件路径相对于共享工作目录（与 read_text / write_text 等工具相同），也支持绝对路径。
         """;
     public IReadOnlyList<ToolParameter> Parameters =>
     [
-        new("file_path", "要上传的本地文件完整路径", 0)
+        new("file_path", "要上传的文件名或相对路径（相对于工作目录），也支持绝对路径", 0)
     ];
     public TimeSpan Timeout => TimeSpan.FromSeconds(120);
 
     public async Task<ToolResult> ExecuteAsync(List<string> inputs, CancellationToken ct)
     {
-        var filePath = CampusPrintComponent.NormalizePath(inputs[0]);
-        if (!File.Exists(filePath))
-            return new ToolResult { Status = "failed", Error = $"文件不存在。原始输入: \"{inputs[0]}\" → 解析为: \"{filePath}\"" };
+        var raw = inputs[0];
+        var cleaned = CampusPrintComponent.Clean(raw);
+
+        // 尝试多种解析策略
+        string? resolved = null;
+        var attempts = new List<string>();
+
+        // 1) 原始输入（支持绝对路径如 E:\... 或 /e/...）
+        var norm = CampusPrintComponent.NormalizePath(cleaned);
+        attempts.Add(norm);
+        if (File.Exists(norm)) resolved = norm;
+
+        // 2) 相对于工作目录
+        if (resolved == null)
+        {
+            var rel = cleaned.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var workspaceRoot = _workspaceDir.EndsWith(Path.DirectorySeparatorChar)
+                ? _workspaceDir : _workspaceDir + Path.DirectorySeparatorChar;
+            var full = Path.GetFullPath(Path.Combine(_workspaceDir, rel));
+            attempts.Add(full);
+            if (full.StartsWith(workspaceRoot, StringComparison.OrdinalIgnoreCase) && File.Exists(full))
+                resolved = full;
+        }
+
+        if (resolved == null)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"文件不存在。输入: \"{raw}\"");
+            sb.AppendLine($"工作目录: {_workspaceDir}");
+            sb.AppendLine("尝试的路径:");
+            foreach (var a in attempts) sb.AppendLine($"  → {a}");
+            return new ToolResult { Status = "failed", Error = sb.ToString().TrimEnd() };
+        }
 
         _comp.EnsureClient();
         var client = _comp.Client!;
@@ -302,11 +339,11 @@ public class PrintFileUploadTool : ITool
         if (string.IsNullOrWhiteSpace(client.UpUrl))
             return new ToolResult { Status = "failed", Error = "未获取 up_url。请先调用 print_store_info。" };
 
-        var fname = Path.GetFileName(filePath);
-        var fsize = new FileInfo(filePath).Length;
-        var ext = Path.GetExtension(filePath).TrimStart('.').ToLowerInvariant();
+        var fname = Path.GetFileName(resolved);
+        var fsize = new FileInfo(resolved).Length;
+        var ext = Path.GetExtension(resolved).TrimStart('.').ToLowerInvariant();
 
-        var result = await client.UploadFile(filePath);
+        var result = await client.UploadFile(resolved);
         if (result == null)
             return new ToolResult { Status = "failed", Error = "上传失败，可能是 token 过期或网络问题。检查 print_store_info 是否正常。" };
 
