@@ -111,6 +111,20 @@ public class CampusPrintComponent : GlobalComponentBase
     internal static bool IsTokenExpired(JsonNode? resp) => GetCode(resp) == -6;
     internal static string Clean(string s) => s.Trim().Trim('"', '\'', '`');
 
+    /// 将 JSON 对象的键值合并到 fields 字典，自动识别 int/string
+    internal static void MergeSettings(Dictionary<string, object?> fields, JsonObject settings)
+    {
+        foreach (var (k, v) in settings)
+        {
+            if (v is JsonValue jv)
+            {
+                if (jv.TryGetValue(out int n)) fields[k] = n;
+                else if (jv.TryGetValue(out string? s) && s != null) fields[k] = Clean(s);
+                else fields[k] = v.ToString();
+            }
+        }
+    }
+
     internal static string NormalizePath(string path)
     {
         var p = Clean(path);
@@ -247,17 +261,13 @@ public class PrintFileAddTool : ITool
     private readonly CampusPrintComponent _c;
     public PrintFileAddTool(CampusPrintComponent c) => _c = c;
     public string Name => "print_file_add";
-    public string Description => "添加上传完成的文件到打印列表。注意：print_file_upload 通常已自动注册文件（返回 file_id>0），此时跳过此步直接用 print_file_update 改设置。仅在 file_id=0 时才需调用此工具。";
+    public string Description => "添加文件到打印列表。upload 已自动注册文件(file_id>0)时跳过此步。设置用 JSON 字符串，可选字段: is_color,print_count,page_size,page_way,scale_type。例: {\"page_size\":\"B5\",\"is_color\":\"1\"}";
     public IReadOnlyList<ToolParameter> Parameters =>
     [
         new("server_path",  "必填：上传返回的 file_path（string）", 0),
         new("file_name",    "必填：文件名含扩展名（string）", 1),
         new("file_format",  "必填：扩展名（string），如 docx/pdf/jpg", 2),
-        new("is_color",     "可选：0=黑白 1=彩色（string，默认\"0\"）", 3, isRequired: false),
-        new("print_count",  "可选：份数（string，默认\"1\"）", 4, isRequired: false),
-        new("page_size",    "可选：纸张（string，默认\"A4\"，用 print_store_info 查）", 5, isRequired: false),
-        new("page_way",     "可选：1=单面 2=双面长边 3=双面短边（string，默认\"1\"）", 6, isRequired: false),
-        new("scale_type",   "可选：缩放（string，默认\"1\"=不缩放）", 7, isRequired: false),
+        new("settings_json", "可选：JSON设置字符串。可含 is_color(0/1) print_count page_size page_way(1/2/3) scale_type。例: {\"page_size\":\"B5\",\"is_color\":\"1\"}", 3, isRequired: false),
     ];
     public TimeSpan Timeout => TimeSpan.FromSeconds(15);
 
@@ -274,11 +284,20 @@ public class PrintFileAddTool : ITool
                 ["file_name"] = CampusPrintComponent.Clean(inputs[1]), ["file_format"] = CampusPrintComponent.Clean(inputs[2]).ToLowerInvariant(),
                 ["domain_id"] = _c.Config.DomainId
             };
-            if (inputs.Count > 3 && int.TryParse(CampusPrintComponent.Clean(inputs[3]), out var ic) && (ic == 0 || ic == 1)) fields["is_color"] = ic;
-            if (inputs.Count > 4 && int.TryParse(CampusPrintComponent.Clean(inputs[4]), out var ip) && ip > 0) fields["print_count"] = ip;
-            if (inputs.Count > 5) { var s = CampusPrintComponent.Clean(inputs[5]); if (!string.IsNullOrWhiteSpace(s)) fields["page_size"] = s; }
-            if (inputs.Count > 6 && int.TryParse(CampusPrintComponent.Clean(inputs[6]), out var iw) && iw >= 1 && iw <= 3) fields["page_way"] = iw;
-            if (inputs.Count > 7 && int.TryParse(CampusPrintComponent.Clean(inputs[7]), out var isc) && isc >= 1) fields["scale_type"] = isc;
+            // 解析可选 JSON 设置
+            if (inputs.Count > 3)
+            {
+                var sj = CampusPrintComponent.Clean(inputs[3]);
+                if (!string.IsNullOrWhiteSpace(sj))
+                {
+                    try
+                    {
+                        var jo = JsonNode.Parse(sj);
+                        if (jo is JsonObject j) CampusPrintComponent.MergeSettings(fields, j);
+                    }
+                    catch { return new ToolResult { Status = "failed", Error = $"settings_json 解析失败: {sj}" }; }
+                }
+            }
 
             var resp = await cl.FileAdd(fields);
             if (resp == null) return new ToolResult { Status = "failed", Error = "服务器无响应，确认 server_path 是上传返回的路径而非本地文件名。" };
@@ -341,10 +360,7 @@ public class PrintFileUpdateTool : ITool
             }
         }
         // 覆盖用户改动
-        foreach (var (k, v) in jo)
-        {
-            if (v is JsonValue jv) { if (jv.TryGetValue(out int n)) fields[k] = n; else if (jv.TryGetValue(out string? s2) && s2 != null) fields[k] = CampusPrintComponent.Clean(s2); else fields[k] = v.ToString(); }
-        }
+        CampusPrintComponent.MergeSettings(fields, jo);
         // 确保 domain_id
         fields["domain_id"] = _c.Config.DomainId;
 
