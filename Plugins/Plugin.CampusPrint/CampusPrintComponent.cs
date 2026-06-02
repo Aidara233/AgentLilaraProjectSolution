@@ -371,59 +371,58 @@ public class PrintFileAddTool : ITool
     public string Name => "print_file_add";
     public string Description => """
         将已上传的文件添加到打印列表（步骤 2/5）。
-        需要 file_path（来自 print_file_upload 的返回值）、文件名和格式。
-        可选设置初始打印参数：is_color（0=黑白 1=彩色）、print_count（份数，默认1）、page_size（如 A4）。
-        添加后服务器会自动开始 PDF 转换，需用 print_pdf_status 轮询等待完成。
+        只需提供三个基本信息：file_path（上传返回的）、文件名、文件格式。
+        如需设置纸张大小、单双面、份数等，添加后用 print_file_update 修改。
+        添加后服务器自动开始 PDF 转换，需用 print_pdf_status 轮询等待完成。
         """;
     public IReadOnlyList<ToolParameter> Parameters =>
     [
-        new("file_path", "服务器端文件路径（print_file_upload 返回的 file_path）", 0),
-        new("file_name", "文件名（含扩展名，如 报告.docx）", 1),
-        new("file_format", "文件格式（扩展名，如 docx/pdf/jpg）", 2),
-        new("is_color", "可选：0=黑白 1=彩色，默认 0", 3, isRequired: false),
-        new("print_count", "可选：打印份数，默认 1", 4, isRequired: false)
+        new("file_path", "服务器端路径，由 print_file_upload 返回（如 /weapp/xxx.docx）", 0),
+        new("file_name", "文件名含扩展名（如 报告.docx）", 1),
+        new("file_format", "文件扩展名（如 docx、pdf、jpg）", 2)
     ];
     public TimeSpan Timeout => TimeSpan.FromSeconds(15);
 
     public async Task<ToolResult> ExecuteAsync(List<string> inputs, CancellationToken ct)
     {
-        _comp.EnsureClient();
-        var client = _comp.Client!;
-        if (!client.HasCredentials)
-            return new ToolResult { Status = "failed", Error = "未配置凭据。" };
-
-        var fields = new Dictionary<string, object?>
+        try
         {
-            ["file_index"] = "0s",
-            ["file_path"] = CampusPrintComponent.Clean(inputs[0]),
-            ["file_name"] = CampusPrintComponent.Clean(inputs[1]),
-            ["file_format"] = CampusPrintComponent.Clean(inputs[2]).ToLowerInvariant(),
-            ["domain_id"] = _comp.Config.DomainId
-        };
+            _comp.EnsureClient();
+            var client = _comp.Client!;
+            if (!client.HasCredentials)
+                return new ToolResult { Status = "failed", Error = "未配置凭据。" };
 
-        // 初始打印参数（可选）
-        if (inputs.Count > 3 && !string.IsNullOrWhiteSpace(inputs[3]))
-            fields["is_color"] = CampusPrintComponent.Clean(inputs[3]) == "1" ? 1 : 0;
-        if (inputs.Count > 4 && int.TryParse(inputs[4], out var cnt) && cnt > 0)
-            fields["print_count"] = cnt;
+            var fields = new Dictionary<string, object?>
+            {
+                ["file_index"] = "0s",
+                ["file_path"] = CampusPrintComponent.Clean(inputs[0]),
+                ["file_name"] = CampusPrintComponent.Clean(inputs[1]),
+                ["file_format"] = CampusPrintComponent.Clean(inputs[2]).ToLowerInvariant(),
+                ["domain_id"] = _comp.Config.DomainId
+            };
 
-        var resp = await client.FileAdd(fields);
-        if (CampusPrintComponent.IsTokenExpired(resp))
-            return new ToolResult { Status = "failed", Error = "Token 已过期（code=-6）。" };
+            var resp = await client.FileAdd(fields);
+            if (CampusPrintComponent.IsTokenExpired(resp))
+                return new ToolResult { Status = "failed", Error = "Token 已过期（code=-6）。" };
 
-        var code = CampusPrintComponent.GetCode(resp);
-        if (code != 0)
-            return new ToolResult { Status = "failed", Error = $"添加失败: code={code}, msg={resp?["msg"]?.GetValue<string>()}" };
+            var code = CampusPrintComponent.GetCode(resp);
+            if (code != 0)
+                return new ToolResult { Status = "failed", Error = $"添加失败: code={code}, msg={resp?["msg"]?.GetValue<string>()}" };
 
-        var data = CampusPrintComponent.ParseData(resp);
-        var fileId = data?["id"]?.GetValue<int>() ?? 0;
-        var status = data?["status"]?.GetValue<int>() ?? 0;
+            var data = CampusPrintComponent.ParseData(resp);
+            var fileId = data?["id"]?.GetValue<int>() ?? 0;
+            var status = data?["status"]?.GetValue<int>() ?? 0;
 
-        return new ToolResult
+            return new ToolResult
+            {
+                Status = "success",
+                Data = $"已添加到打印列表。file_id={fileId}, status={status}（0=等待, 1=转换中, 2=完成）\n下一步：调用 print_pdf_status 轮询等待 PDF 转换完成（status=2）。然后用 print_file_update 修改打印设置（如纸张大小、单双面、份数）。"
+            };
+        }
+        catch (Exception ex)
         {
-            Status = "success",
-            Data = $"已添加到打印列表。file_id={fileId}, status={status}（0=等待, 1=转换中, 2=完成）\n下一步：调用 print_pdf_status 轮询等待 PDF 转换完成（status=2）。"
-        };
+            return new ToolResult { Status = "failed", Error = $"添加失败: {ex.Message}" };
+        }
     }
 }
 
