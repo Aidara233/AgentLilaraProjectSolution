@@ -295,12 +295,16 @@ public class CampusPrintClient
             var file = json["data"]?["file"]?.AsArray();
             if (file != null && file.Count > 0)
             {
+                var f = file[0]!;
                 return new JsonObject
                 {
-                    ["file_path"] = file[0]!["file_path"]!.GetValue<string>(),
+                    ["file_path"] = f["file_path"]!.GetValue<string>(),
                     ["file_md5"] = fileMd5,
                     ["file_size"] = fsize,
-                    ["file_hash"] = file[0]!["file_hash"]?.GetValue<string>() ?? ""
+                    ["file_hash"] = f["file_hash"]?.GetValue<string>() ?? "",
+                    ["file_id"] = f["id"]?.GetValue<int>() ?? 0,
+                    ["file_name"] = f["file_name"]?.GetValue<string>() ?? fname,
+                    ["file_format"] = f["file_format"]?.GetValue<string>() ?? Path.GetExtension(fname).TrimStart('.')
                 };
             }
         }
@@ -354,12 +358,17 @@ public class CampusPrintClient
                 uploadPath = json["data"]?["file_path"]?.GetValue<string>() ?? "";
                 if (blockIdx >= totalBlocks)
                 {
-                    var result = new JsonObject
+                    var f = json["data"]?["file"]?.AsArray();
+                    var finfo = (f != null && f.Count > 0) ? f[0]! : null;
+                    return new JsonObject
                     {
                         ["file_path"] = uploadPath,
-                        ["file_size"] = fsize
+                        ["file_size"] = fsize,
+                        ["file_id"] = finfo?["id"]?.GetValue<int>() ?? 0,
+                        ["file_name"] = finfo?["file_name"]?.GetValue<string>() ?? fname,
+                        ["file_format"] = finfo?["file_format"]?.GetValue<string>() ?? Path.GetExtension(fname).TrimStart('.'),
+                        ["file_md5"] = finfo?["file_md5"]?.GetValue<string>() ?? ""
                     };
-                    return result;
                 }
             }
             else

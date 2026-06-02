@@ -49,7 +49,7 @@ public class CampusPrintComponent : GlobalComponentBase
         if (!_config.HasCredentials)
             return "[校园打印] 未配置凭据。请用户从小程序提取 cache_token/cache_appkey，用 print_set_token 设置。";
 
-        return $"[校园打印] 已配置 store_id={_config.StoreId} | 严格顺序:\n  1.upload 2.add(可设纸张/彩色/单双面) 3.wait PDF 4.price 5.order\n  参数均为 string 类型。用 print_store_info 查纸张和价格。";
+        return $"[校园打印] 已配置 store_id={_config.StoreId} | 流程:\n  1.upload(自动注册) 2.pdf_status 3.update(改设置) 4.price 5.order\n  upload已自动注册文件(file_id>0)，勿再调add。用print_store_info查纸张价格。参数均string。";
     }
 
     internal CampusPrintConfig Config => _config;
@@ -225,8 +225,17 @@ public class PrintFileUploadTool : ITool
         var fn = Path.GetFileName(resolved); var fz = new FileInfo(resolved).Length; var ex = Path.GetExtension(resolved).TrimStart('.').ToLowerInvariant();
         var result = await cl.UploadFile(resolved);
         if (result == null) return new ToolResult { Status = "failed", Error = "上传失败，检查 token 是否过期。" };
-        var fp = result["file_path"]?.GetValue<string>() ?? ""; var md = result["file_md5"]?.GetValue<string>() ?? "";
-        return new ToolResult { Status = "success", Data = $"上传成功!\nfile_path: {fp}\nfile_name: {fn}\nfile_md5: {md}\nfile_size: {fz}\nformat: {ex}\n下一步: print_file_add server_path=\"{fp}\" file_name=\"{fn}\" file_format=\"{ex}\"" };
+        var fp = result["file_path"]?.GetValue<string>() ?? "";
+        var md = result["file_md5"]?.GetValue<string>() ?? "";
+        var fid = CampusPrintComponent.SafeInt(result["file_id"]);
+        var ufn = result["file_name"]?.GetValue<string>() ?? fn;
+        var uex = result["file_format"]?.GetValue<string>() ?? ex;
+
+        var next = fid > 0
+            ? $"文件已自动注册，file_id={fid}。下一步: print_pdf_status {fid} 等待转换；如需改设置用 print_file_update {fid} '{{\"page_size\":\"B5\",\"is_color\":\"0\"}}'"
+            : $"下一步: print_file_add server_path=\"{fp}\" file_name=\"{ufn}\" file_format=\"{uex}\"";
+
+        return new ToolResult { Status = "success", Data = $"上传成功!\nfile_path: {fp}\nfile_id: {fid}\nfile_name: {ufn}\nfile_md5: {md}\nfile_size: {fz}\nformat: {uex}\n{next}" };
     }
 }
 #endregion
@@ -238,7 +247,7 @@ public class PrintFileAddTool : ITool
     private readonly CampusPrintComponent _c;
     public PrintFileAddTool(CampusPrintComponent c) => _c = c;
     public string Name => "print_file_add";
-    public string Description => "添加文件到打印列表（步骤2/5）。前3个必填，后5个可选。全部参数类型为 string。";
+    public string Description => "添加上传完成的文件到打印列表。注意：print_file_upload 通常已自动注册文件（返回 file_id>0），此时跳过此步直接用 print_file_update 改设置。仅在 file_id=0 时才需调用此工具。";
     public IReadOnlyList<ToolParameter> Parameters =>
     [
         new("server_path",  "必填：上传返回的 file_path（string）", 0),
