@@ -62,7 +62,6 @@ namespace AgentCoreProcessor.Engine
         // 增援自动激活追踪
         private bool _reserveAutoActivated;
         private bool _reserveExhaustedNotified;
-        private bool _completeNotified;
 
         private static readonly HashSet<string> ActionTools = new()
         {
@@ -155,27 +154,16 @@ namespace AgentCoreProcessor.Engine
 
                 await _agent.RunAsync(_cts.Token);
 
-                // 仅 complete 时应用评价缓冲
                 if (_reviewControl?.IsCompleted == true)
-                {
-                    var evalEngine = new EvaluationEngine(_ctx.EvaluationScores, _cfg);
-                    var evalCount = await evalEngine.ApplyAsync(EvaluationBuffer);
-                    session.EvaluationCount = evalCount;
-
-                    // 快照评价原始数据
-                    session.RawEvaluations = System.Text.Json.JsonSerializer.Serialize(
-                        EvaluationBuffer.Select(e => new { e.TargetType, e.TargetId, e.Dimension, e.Rating }).ToList());
-                    EvaluationBuffer.Clear();
-
-                    // 标记信标为已处理
-                    var beacons = await _ctx.Beacons.GetUnprocessedAsync("review");
-                    foreach (var b in beacons)
-                        await _ctx.Beacons.MarkProcessedAsync(b.Id);
-                }
+                    await ApplyAndClearBufferAsync(session);
 
                 session.SignalId = lifeCtx.SignalId;
             }
-            catch (OperationCanceledException) { }
+            catch (OperationCanceledException)
+            {
+                if (_reviewControl?.IsCompleted == true && session != null)
+                    await ApplyAndClearBufferAsync(session);
+            }
             catch (Exception ex)
             {
                 Signal.Error(LogGroup.Engine, "Review异常", new { error = ex.GetType().Name, message = ex.Message });
@@ -308,14 +296,7 @@ namespace AgentCoreProcessor.Engine
         {
             if (_reviewControl?.IsCompleted == true)
             {
-                if (!_completeNotified)
-                {
-                    _completeNotified = true;
-                    return Task.FromResult<List<Message>?>(new List<Message>
-                    {
-                        new Message { Role = "user", Content = "[系统] 复盘已完成，评价已提交。无需继续操作。" }
-                    });
-                }
+                _cts.Cancel();
                 return Task.FromResult<List<Message>?>(null);
             }
 
@@ -418,6 +399,21 @@ namespace AgentCoreProcessor.Engine
             _progress.EvaluationBuffer.Clear();
             _progress.ThinkingNotes = "";
             _progress.ResumeCount = 0;
+        }
+
+        private async Task ApplyAndClearBufferAsync(ReviewSession session)
+        {
+            var evalEngine = new EvaluationEngine(_ctx.EvaluationScores, _cfg);
+            var evalCount = await evalEngine.ApplyAsync(EvaluationBuffer);
+            session.EvaluationCount = evalCount;
+
+            session.RawEvaluations = System.Text.Json.JsonSerializer.Serialize(
+                EvaluationBuffer.Select(e => new { e.TargetType, e.TargetId, e.Dimension, e.Rating }).ToList());
+            EvaluationBuffer.Clear();
+
+            var beacons = await _ctx.Beacons.GetUnprocessedAsync("review");
+            foreach (var b in beacons)
+                await _ctx.Beacons.MarkProcessedAsync(b.Id);
         }
 
         // ---- 信任升级 ----
