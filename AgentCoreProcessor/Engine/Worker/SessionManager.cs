@@ -233,6 +233,12 @@ namespace AgentCoreProcessor.Engine
             DateTime? timeStart, DateTime? timeEnd, int limit)
             => messages.SearchAsync(channelIds, keyword, userIds, timeStart, timeEnd, limit);
 
+        public Task<int?> GetMessageRankAsync(int channelId, int messageId)
+            => messages.GetMessageRankAsync(channelId, messageId);
+
+        public Task<int?> GetMessageIdByRankAsync(int channelId, int rank)
+            => messages.GetMessageIdByRankAsync(channelId, rank);
+
         public Task<int> GetMessageCountByChannelAsync(int channelId)
             => messages.GetCountByChannelAsync(channelId);
 

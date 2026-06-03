@@ -17,6 +17,8 @@ namespace AgentLilara.PluginSDK.Services
         Task<List<ReviewMessageDto>> BrowseAsync(int count);
         Task<List<ReviewMessageDto>> SearchMessagesAsync(string? query, int? channelId, int? personId, string? timeStart, string? timeEnd, int limit);
         Task<ReviewMessageDto?> GetMessageByIdAsync(int messageId);
+        /// <summary>在指定频道内，以 baseMessageId 为基准，按条数偏移 offset，返回目标消息的 db_id。</summary>
+        Task<int?> GetMessageOffsetAsync(int channelId, int baseMessageId, int offset);
 
         // 人物
         Task<ReviewPersonDto?> GetPersonAsync(int personId);

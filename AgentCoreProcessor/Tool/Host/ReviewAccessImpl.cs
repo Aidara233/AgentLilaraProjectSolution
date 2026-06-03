@@ -161,6 +161,19 @@ namespace AgentCoreProcessor.Tool.Host
             return dtos.FirstOrDefault();
         }
 
+        public async Task<int?> GetMessageOffsetAsync(int channelId, int baseMessageId, int offset)
+        {
+            // 1. 查基准消息在频道内的排名（按 Id ASC）
+            var rankResult = await _ctx.Session.GetMessageRankAsync(channelId, baseMessageId);
+            if (!rankResult.HasValue) return null; // 基准消息不在该频道
+
+            int targetRank = rankResult.Value + offset;
+            if (targetRank < 1) targetRank = 1; // 越界 clamp 到第一条
+
+            // 2. 按排名取目标消息 db_id
+            return await _ctx.Session.GetMessageIdByRankAsync(channelId, targetRank);
+        }
+
         private async Task<List<ReviewMessageDto>> ToDtoListAsync(List<UserMessage> messages)
         {
             // 批量解析 PersonId

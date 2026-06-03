@@ -143,6 +143,24 @@ namespace AgentCoreProcessor.Database
             return result.Count > 0 ? result[0].Value : 0;
         }
 
+        /// <summary>获取某消息在指定频道内的排名（按 Id ASC，1-based）。</summary>
+        public async Task<int?> GetMessageRankAsync(int channelId, int messageId)
+        {
+            var result = await db.QueryAsync<CountResult>(
+                "SELECT COUNT(*) AS Value FROM UserMessages WHERE ChannelId = ? AND Id <= ?",
+                channelId, messageId);
+            return result.Count > 0 ? result[0].Value : null;
+        }
+
+        /// <summary>按排名（1-based，按 Id ASC）获取频道内某条消息的 db_id。</summary>
+        public async Task<int?> GetMessageIdByRankAsync(int channelId, int rank)
+        {
+            var results = await db.QueryAsync<IdResult>(
+                "SELECT Id FROM UserMessages WHERE ChannelId = ? ORDER BY Id ASC LIMIT 1 OFFSET ?",
+                channelId, rank - 1);
+            return results.Count > 0 ? results[0].Id : null;
+        }
+
         /// <summary>
         /// 通用消息搜索。所有条件均为可选，至少提供一个有效条件。
         /// 结果按 Time DESC 排序，limit 最大 100。
@@ -200,4 +218,5 @@ namespace AgentCoreProcessor.Database
     }
 
     internal class CountResult { public int Value { get; set; } }
+    internal class IdResult { public int Id { get; set; } }
 }
