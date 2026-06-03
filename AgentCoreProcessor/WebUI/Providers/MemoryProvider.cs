@@ -387,7 +387,10 @@ internal class MemoryProvider : IWebUIProvider
                             new() { Value = "4", Label = "信任 (4)" },
                             new() { Value = "5", Label = "绝对信任 (5)" },
                         }},
-                        new() { Field = "trustProgress", Label = "好感度", Type = FormFieldType.Number, Placeholder = "可负" },
+                        new() { Field = "reliability", Label = "可靠度", Type = FormFieldType.Number },
+                        new() { Field = "respect", Label = "尊重度", Type = FormFieldType.Number },
+                        new() { Field = "value", Label = "价值", Type = FormFieldType.Number },
+                        new() { Field = "stability", Label = "稳定度", Type = FormFieldType.Number },
                         new() { Field = "alertLevel", Label = "警报等级", Type = FormFieldType.Select, Options = new()
                         {
                             new() { Value = "0", Label = "0 - 无" },
@@ -1047,7 +1050,6 @@ internal class PeopleListSource : IDataSource
                 ["id"] = p.Id,
                 ["name"] = string.IsNullOrEmpty(p.Name) ? $"(无名称 #{p.Id})" : p.Name,
                 ["trustLevel"] = p.TrustLevel.ToString(),
-                ["trustProgress"] = p.TrustProgress,
                 ["reliability"] = dims["reliability"],
                 ["respect"] = dims["respect"],
                 ["value"] = dims["value"],
@@ -1071,7 +1073,7 @@ internal class PeopleEditSource : IDataSource
     public bool SupportsPush => false;
     public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
 
-    public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+        public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
         if (query?.Extra is JsonObject extra)
             _selectedId = (int?)extra["id"] ?? _selectedId;
@@ -1098,12 +1100,11 @@ internal class PeopleEditSource : IDataSource
                 ["id"] = person.Id,
                 ["name"] = person.Name ?? "",
                 ["aliases"] = person.Aliases ?? "",
-                ["reliability"] = dims.TryGetValue("reliability", out var r) ? r : "—",
-                ["respect"] = dims.TryGetValue("respect", out var rs) ? rs : "—",
-                ["value"] = dims.TryGetValue("value", out var v) ? v : "—",
-                ["stability"] = dims.TryGetValue("stability", out var s) ? s : "—",
+                ["reliability"] = dims.TryGetValue("reliability", out var r) ? r : "0",
+                ["respect"] = dims.TryGetValue("respect", out var rs) ? rs : "0",
+                ["value"] = dims.TryGetValue("value", out var v) ? v : "0",
+                ["stability"] = dims.TryGetValue("stability", out var s) ? s : "0",
                 ["trustLevel"] = ((int)person.TrustLevel).ToString(),
-                ["trustProgress"] = person.TrustProgress,
                 ["alertLevel"] = person.AlertLevel.ToString(),
                 ["fastMemory"] = person.FastMemory ?? "",
                 ["accounts"] = accountsStr,
@@ -1126,14 +1127,29 @@ internal class PeopleEditSource : IDataSource
             person.Aliases = aliasesNode?.ToString() ?? "";
         if (obj.TryGetPropertyValue("trustLevel", out var tlNode) && int.TryParse(tlNode?.ToString(), out var tlVal) && Enum.IsDefined(typeof(TrustLevel), tlVal))
             person.TrustLevel = (TrustLevel)tlVal;
-        if (obj.TryGetPropertyValue("trustProgress", out var tpNode) && float.TryParse(tpNode?.ToString(), out var tpVal))
-            person.TrustProgress = tpVal;
         if (obj.TryGetPropertyValue("alertLevel", out var alNode) && int.TryParse(alNode?.ToString(), out var alVal) && alVal >= 0 && alVal <= 4)
             person.AlertLevel = alVal;
         if (obj.TryGetPropertyValue("fastMemory", out var fmNode))
             person.FastMemory = fmNode?.ToString() ?? "";
 
         await _engine.Session.UpdatePersonAsync(person);
+
+        // 保存维度评分（直接写入 EvaluationScore）
+        foreach (var dim in new[] { "reliability", "respect", "value", "stability" })
+        {
+            if (obj.TryGetPropertyValue(dim, out var dimNode) && float.TryParse(dimNode?.ToString(), out var dimVal))
+            {
+                await _engine.EvaluationScores.UpsertAsync(new EvaluationScore
+                {
+                    TargetType = "person",
+                    TargetId = _selectedId,
+                    Dimension = dim,
+                    Value = Math.Clamp(dimVal, -50f, 50f),
+                    LastEvaluatedAt = DateTime.Now
+                });
+            }
+        }
+
         return new ActionResult { Success = true, Message = "已保存" };
     }
 }
