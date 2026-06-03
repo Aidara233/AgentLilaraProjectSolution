@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine;
 using AgentLilara.PluginSDK.WebUI;
@@ -26,6 +28,7 @@ internal class ReviewProvider : IWebUIProvider
     public IReadOnlyList<PageDefinition> Pages => new List<PageDefinition>
     {
         BuildStatusPage(),
+        BuildConfigPage(),
         BuildHistoryPage(),
         BuildSessionPage(),
         BuildContextPage(),
@@ -81,6 +84,51 @@ internal class ReviewProvider : IWebUIProvider
         {
             new() { Id = "review-status", Source = new ReviewStatusSource(_engine) },
             new() { Id = "review-recent-sessions", Source = new ReviewRecentSessionsSource(_engine) }
+        }
+    };
+
+    // ======== 配置页 /p/review/config ========
+
+    private PageDefinition BuildConfigPage() => new()
+    {
+        Route = "review/config",
+        Meta = new PageMeta { Title = "配置", Icon = "bi-sliders", Group = "复盘引擎", Order = 59 },
+        Cards = new List<CardDefinition>
+        {
+            new()
+            {
+                Id = "review-config", Type = CardType.Form, DataSourceId = "review-config", Title = "复盘参数",
+                Schema = new FormSchema
+                {
+                    ShowSubmit = true,
+                    Fields = new()
+                    {
+                        new() { Field = "Enabled", Label = "启用复盘", Type = FormFieldType.Toggle },
+                        new() { Field = "TokenBudget", Label = "Token 预算", Type = FormFieldType.Number },
+                        new() { Field = "ReserveBudget", Label = "备用预算", Type = FormFieldType.Number },
+                        new() { Field = "CompressionThreshold", Label = "压缩阈值", Type = FormFieldType.Number },
+                        new() { Field = "MaxNavigationRounds", Label = "空转轮次上限", Type = FormFieldType.Number },
+                        new() { Field = "EvaluationRate", Label = "评价应用率", Type = FormFieldType.Number },
+                        new() { Field = "PersonFloor", Label = "人物维度下限", Type = FormFieldType.Number },
+                        new() { Field = "PersonCeiling", Label = "人物维度上限", Type = FormFieldType.Number },
+                        new() { Field = "PersonBaseline", Label = "人物维度基线", Type = FormFieldType.Number },
+                        new() { Field = "StrangerMinMessages", Label = "Stranger 最低消息数", Type = FormFieldType.Number },
+                        new() { Field = "UnderstandingMinMemories", Label = "Understanding 最低记忆数", Type = FormFieldType.Number },
+                        new() { Field = "UnderstandingMinDays", Label = "Understanding 最低天数", Type = FormFieldType.Number },
+                        new() { Field = "UnderstandingAnyDimension", Label = "Understanding 任一维度最低分", Type = FormFieldType.Number },
+                        new() { Field = "FamiliarityMinDays", Label = "Familiarity 最低天数", Type = FormFieldType.Number },
+                        new() { Field = "FamiliarityMajorityDimension", Label = "Familiarity 多数维度最低分", Type = FormFieldType.Number },
+                        new() { Field = "TrustMinDays", Label = "Trust 最低天数", Type = FormFieldType.Number },
+                        new() { Field = "TrustMinReviewCount", Label = "Trust 最低 Review 次数", Type = FormFieldType.Number },
+                        new() { Field = "TrustAllDimensions", Label = "Trust 全部维度最低分", Type = FormFieldType.Number },
+                    }
+                },
+                Layout = new CardLayout { PreferredCols = 6, GridColumnStart = 1 }
+            }
+        },
+        DataSources = new List<DataSourceDefinition>
+        {
+            new() { Id = "review-config", Source = new ReviewConfigSource() }
         }
     };
 
@@ -878,4 +926,85 @@ internal class ReviewActionDetailSource : IDataSource
         ["summary"] = "—",
         ["detail"] = "—"
     };
+}
+
+/// <summary>
+/// Review 配置读写
+/// </summary>
+internal class ReviewConfigSource : IDataSource
+{
+    private static string ConfigPath => Path.Combine(PathConfig.StoragePath, "Dream", "ReviewConfig.json");
+    public bool SupportsPush => false;
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        var cfg = ReviewConfig.Load(ConfigPath);
+        var data = new JsonObject
+        {
+            ["Enabled"] = cfg.Enabled,
+            ["TokenBudget"] = cfg.TokenBudget,
+            ["ReserveBudget"] = cfg.ReserveBudget,
+            ["CompressionThreshold"] = cfg.CompressionThreshold,
+            ["MaxNavigationRounds"] = cfg.MaxNavigationRounds,
+            ["EvaluationRate"] = cfg.EvaluationRate,
+            ["PersonFloor"] = cfg.PersonFloor,
+            ["PersonCeiling"] = cfg.PersonCeiling,
+            ["PersonBaseline"] = cfg.PersonBaseline,
+            ["StrangerMinMessages"] = cfg.StrangerMinMessages,
+            ["UnderstandingMinMemories"] = cfg.UnderstandingMinMemories,
+            ["UnderstandingMinDays"] = cfg.UnderstandingMinDays,
+            ["UnderstandingAnyDimension"] = cfg.UnderstandingAnyDimension,
+            ["FamiliarityMinDays"] = cfg.FamiliarityMinDays,
+            ["FamiliarityMajorityDimension"] = cfg.FamiliarityMajorityDimension,
+            ["TrustMinDays"] = cfg.TrustMinDays,
+            ["TrustMinReviewCount"] = cfg.TrustMinReviewCount,
+            ["TrustAllDimensions"] = cfg.TrustAllDimensions,
+        };
+        return Task.FromResult(new DataResult { Data = data });
+    }
+
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+    {
+        if (action != "save" || data is not JsonObject payload)
+            return Task.FromResult(new ActionResult { Success = false, Message = "无效请求" });
+
+        try
+        {
+            var cfg = ReviewConfig.Load(ConfigPath);
+
+            foreach (var (key, value) in payload)
+            {
+                var v = value?.ToString() ?? "";
+                switch (key)
+                {
+                    case "Enabled": if (bool.TryParse(v, out var en)) cfg.Enabled = en; break;
+                    case "TokenBudget": if (int.TryParse(v, out var tb)) cfg.TokenBudget = tb; break;
+                    case "ReserveBudget": if (int.TryParse(v, out var rb)) cfg.ReserveBudget = rb; break;
+                    case "CompressionThreshold": if (int.TryParse(v, out var ct2)) cfg.CompressionThreshold = ct2; break;
+                    case "MaxNavigationRounds": if (int.TryParse(v, out var mn)) cfg.MaxNavigationRounds = mn; break;
+                    case "EvaluationRate": if (float.TryParse(v, out var er)) cfg.EvaluationRate = er; break;
+                    case "PersonFloor": if (float.TryParse(v, out var pf)) cfg.PersonFloor = pf; break;
+                    case "PersonCeiling": if (float.TryParse(v, out var pc)) cfg.PersonCeiling = pc; break;
+                    case "PersonBaseline": if (float.TryParse(v, out var pb)) cfg.PersonBaseline = pb; break;
+                    case "StrangerMinMessages": if (int.TryParse(v, out var sm)) cfg.StrangerMinMessages = sm; break;
+                    case "UnderstandingMinMemories": if (int.TryParse(v, out var um)) cfg.UnderstandingMinMemories = um; break;
+                    case "UnderstandingMinDays": if (int.TryParse(v, out var ud)) cfg.UnderstandingMinDays = ud; break;
+                    case "UnderstandingAnyDimension": if (float.TryParse(v, out var ua)) cfg.UnderstandingAnyDimension = ua; break;
+                    case "FamiliarityMinDays": if (int.TryParse(v, out var fd)) cfg.FamiliarityMinDays = fd; break;
+                    case "FamiliarityMajorityDimension": if (float.TryParse(v, out var fm)) cfg.FamiliarityMajorityDimension = fm; break;
+                    case "TrustMinDays": if (int.TryParse(v, out var td)) cfg.TrustMinDays = td; break;
+                    case "TrustMinReviewCount": if (int.TryParse(v, out var tr)) cfg.TrustMinReviewCount = tr; break;
+                    case "TrustAllDimensions": if (float.TryParse(v, out var ta)) cfg.TrustAllDimensions = ta; break;
+                }
+            }
+
+            cfg.Save(ConfigPath);
+            return Task.FromResult(new ActionResult { Success = true, Message = "Review 配置已保存" });
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult(new ActionResult { Success = false, Message = $"保存失败: {ex.Message}" });
+        }
+    }
 }
