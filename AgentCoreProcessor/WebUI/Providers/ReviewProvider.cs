@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -56,8 +57,32 @@ internal class ReviewProvider : IWebUIProvider
                         new() { Field = "cursor", Label = "游标" },
                         new() { Field = "eval_buffer", Label = "评价缓冲" },
                         new() { Field = "scope", Label = "涉及范围" },
-                        new() { Field = "thinking_notes", Label = "思考笔记" }
+                        new() { Field = "thinking_notes", Label = "思考笔记" },
+                        new() { Field = "resume_info", Label = "未完成进度" }
+                    },
+                    Actions = new()
+                    {
+                        new() { Id = "review-new-beacon", Label = "发起信标复盘", Icon = "bi-flag" },
+                        new() { Id = "review-new-candidate", Label = "发起候选人复盘", Icon = "bi-person-check" },
+                        new() { Id = "review-resume", Label = "继续上次", Icon = "bi-arrow-repeat" },
+                        new() { Id = "review-discard-progress", Label = "丢弃进度", Icon = "bi-trash" }
                     }
+                },
+                Layout = new CardLayout { PreferredCols = 6 }
+            },
+            new()
+            {
+                Id = "review-eval-buffer", Type = CardType.Table, DataSourceId = "review-eval-buffer", Title = "评价缓冲",
+                Schema = new TableSchema
+                {
+                    Columns = new()
+                    {
+                        new() { Field = "target", Header = "目标", Width = "120px" },
+                        new() { Field = "dimension", Header = "维度", Width = "100px" },
+                        new() { Field = "ratings", Header = "评分", Width = "80px" },
+                        new() { Field = "count", Header = "次数", Width = "60px" }
+                    },
+                    DefaultPageSize = 50
                 },
                 Layout = new CardLayout { PreferredCols = 6 }
             },
@@ -83,6 +108,7 @@ internal class ReviewProvider : IWebUIProvider
         DataSources = new List<DataSourceDefinition>
         {
             new() { Id = "review-status", Source = new ReviewStatusSource(_engine) },
+            new() { Id = "review-eval-buffer", Source = new ReviewEvalBufferSource(_engine) },
             new() { Id = "review-recent-sessions", Source = new ReviewRecentSessionsSource(_engine) }
         }
     };
@@ -221,13 +247,29 @@ internal class ReviewProvider : IWebUIProvider
                     DefaultPageSize = 50
                 },
                 Layout = new CardLayout { PreferredCols = 12 }
+            },
+            new()
+            {
+                Id = "session-raw-evals", Type = CardType.Table, DataSourceId = "session-raw-evals", Title = "原始评价记录",
+                Schema = new TableSchema
+                {
+                    Columns = new()
+                    {
+                        new() { Field = "target", Header = "目标", Width = "120px" },
+                        new() { Field = "dimension", Header = "维度", Width = "100px" },
+                        new() { Field = "rating", Header = "评分", Width = "60px" }
+                    },
+                    DefaultPageSize = 50
+                },
+                Layout = new CardLayout { PreferredCols = 6 }
             }
         },
         DataSources = new List<DataSourceDefinition>
         {
             new() { Id = "session-stats", Source = new ReviewSessionStatsSource(_engine) },
             new() { Id = "session-thinking-notes", Source = new ReviewThinkingNotesSource(_engine) },
-            new() { Id = "session-actions", Source = new ReviewActionsSource(_engine) }
+            new() { Id = "session-actions", Source = new ReviewActionsSource(_engine) },
+            new() { Id = "session-raw-evals", Source = new ReviewRawEvaluationsSource(_engine) }
         }
     };
 
@@ -304,13 +346,16 @@ internal class ReviewProvider : IWebUIProvider
 // ======== 数据源 ========
 
 /// <summary>
-/// 复盘引擎状态
+/// 复盘引擎状态（含 resume 支持和操作按钮）
 /// </summary>
 internal class ReviewStatusSource : IDataSource
 {
     private readonly MasterEngine _engine;
     public ReviewStatusSource(MasterEngine engine) => _engine = engine;
     public bool SupportsPush => true;
+
+    private static string ProgressPath =>
+        Path.Combine(PathConfig.StoragePath, "Dream", "ReviewProgress.json");
 
     public IDisposable? Subscribe(Action<JsonNode?> callback)
     {
@@ -323,17 +368,31 @@ internal class ReviewStatusSource : IDataSource
         var review = _engine.GetActiveEnginesSnapshot().OfType<ReviewEngine>().FirstOrDefault();
         if (review == null)
         {
+            var progress = ReviewProgress.Load(ProgressPath);
+            var hasProgress = progress.SavedAt != null;
+            var resumeInfo = "无未完成的复盘";
+
+            if (hasProgress)
+            {
+                var bufferCnt = progress.EvaluationBuffer.Count;
+                resumeInfo = $"上次保存于 {progress.SavedAt:MM-dd HH:mm} | {bufferCnt} 条待应用";
+                if (progress.ResumeCount > 0)
+                    resumeInfo += $" | 已恢复 {progress.ResumeCount} 次";
+            }
+
             return Task.FromResult(new DataResult
             {
                 Data = new JsonObject
                 {
-                    ["state"] = "空闲",
+                    ["state"] = hasProgress ? "未完成" : "空闲",
                     ["seed"] = "—",
                     ["tokens"] = "—",
                     ["cursor"] = "—",
                     ["eval_buffer"] = "—",
                     ["scope"] = "—",
-                    ["thinking_notes"] = "—"
+                    ["thinking_notes"] = "—",
+                    ["resume_info"] = resumeInfo,
+                    ["_has_progress"] = hasProgress ? "1" : "0"
                 }
             });
         }
@@ -351,9 +410,83 @@ internal class ReviewStatusSource : IDataSource
             ["cursor"] = $"ch{review.CursorChannelId} msg{review.CursorMessageId}",
             ["eval_buffer"] = bufferCount > 0 ? $"{bufferCount} 条待应用" : "空",
             ["scope"] = $"{channelCount}频道 {personCount}人",
-            ["thinking_notes"] = string.IsNullOrEmpty(review.ThinkingNotes) ? "—" : $"{review.ThinkingNotes.Length} 字符"
+            ["thinking_notes"] = string.IsNullOrEmpty(review.ThinkingNotes) ? "—" : $"{review.ThinkingNotes.Length} 字符",
+            ["resume_info"] = "运行中"
         };
         return Task.FromResult(new DataResult { Data = data });
+    }
+
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+    {
+        switch (action)
+        {
+            case "review-new-beacon":
+                _engine.EventBus.PublishSignal("force-review:beacon", "");
+                return Task.FromResult(new ActionResult { Success = true, Message = "已触发信标复盘" });
+            case "review-new-candidate":
+                _engine.EventBus.PublishSignal("force-review:candidate", "");
+                return Task.FromResult(new ActionResult { Success = true, Message = "已触发候选人复盘" });
+            case "review-resume":
+                _engine.EventBus.PublishSignal("force-review:resume", "");
+                return Task.FromResult(new ActionResult { Success = true, Message = "已触发继续复盘" });
+            case "review-discard-progress":
+                if (File.Exists(ProgressPath))
+                    File.Delete(ProgressPath);
+                return Task.FromResult(new ActionResult { Success = true, Message = "已丢弃旧进度" });
+        }
+        return Task.FromResult(new ActionResult { Success = true });
+    }
+}
+
+/// <summary>
+/// 评价缓冲表（空闲时从文件读取，活跃时从引擎读取）
+/// </summary>
+internal class ReviewEvalBufferSource : IDataSource
+{
+    private readonly MasterEngine _engine;
+    public ReviewEvalBufferSource(MasterEngine engine) => _engine = engine;
+    public bool SupportsPush => true;
+
+    private static string ProgressPath =>
+        Path.Combine(PathConfig.StoragePath, "Dream", "ReviewProgress.json");
+
+    public IDisposable? Subscribe(Action<JsonNode?> callback)
+    {
+        var timer = new System.Threading.Timer(_ => callback(null), null, 5000, 5000);
+        return new TimerDisposable(timer);
+    }
+
+    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        List<EvaluationBufferEntry> buffer;
+        var review = _engine.GetActiveEnginesSnapshot().OfType<ReviewEngine>().FirstOrDefault();
+
+        if (review != null)
+        {
+            buffer = review.EvaluationBuffer.ToList();
+        }
+        else
+        {
+            var progress = ReviewProgress.Load(ProgressPath);
+            buffer = progress.EvaluationBuffer;
+        }
+
+        var groups = buffer
+            .GroupBy(e => new { e.TargetType, e.TargetId, e.Dimension })
+            .Select(g => new JsonObject
+            {
+                ["target"] = $"{g.Key.TargetType}#{g.Key.TargetId}",
+                ["dimension"] = g.Key.Dimension,
+                ["ratings"] = string.Join(",", g.Select(e => e.Rating)),
+                ["count"] = g.Count().ToString()
+            })
+            .ToList();
+
+        var arr = new JsonArray();
+        foreach (var obj in groups)
+            arr.Add(obj);
+
+        return Task.FromResult(new DataResult { Data = arr, TotalCount = arr.Count });
     }
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
@@ -1007,4 +1140,93 @@ internal class ReviewConfigSource : IDataSource
             return Task.FromResult(new ActionResult { Success = false, Message = $"保存失败: {ex.Message}" });
         }
     }
+}
+
+/// <summary>
+/// 会话的原始评价记录（优先从 RawEvaluations 快照读取，回退到 ReviewActions 解析）
+/// </summary>
+internal class ReviewRawEvaluationsSource : IDataSource
+{
+    private readonly MasterEngine _engine;
+    public ReviewRawEvaluationsSource(MasterEngine engine) => _engine = engine;
+    public bool SupportsPush => false;
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        var route = query?.RouteParams?.GetValueOrDefault("id");
+        var isActive = route == null || route == "0";
+
+        if (isActive)
+        {
+            var review = _engine.GetActiveEnginesSnapshot().OfType<ReviewEngine>().FirstOrDefault();
+            if (review == null)
+                return new DataResult { Data = new JsonArray(), TotalCount = 0 };
+
+            var buffer = review.EvaluationBuffer;
+            var arr = new JsonArray();
+            foreach (var e in buffer)
+            {
+                arr.Add(new JsonObject
+                {
+                    ["target"] = $"{e.TargetType}#{e.TargetId}",
+                    ["dimension"] = e.Dimension,
+                    ["rating"] = e.Rating
+                });
+            }
+            return new DataResult { Data = arr, TotalCount = arr.Count };
+        }
+
+        if (!int.TryParse(route, out var sessionId))
+            return new DataResult { Data = new JsonArray(), TotalCount = 0 };
+
+        var sessions = await _engine.ReviewLogs.GetRecentSessionsAsync(500);
+        var session = sessions.FirstOrDefault(s => s.Id == sessionId);
+        if (session == null)
+            return new DataResult { Data = new JsonArray(), TotalCount = 0 };
+
+        var arr2 = new JsonArray();
+
+        // 优先从 RawEvaluations 快照读取
+        if (!string.IsNullOrEmpty(session.RawEvaluations))
+        {
+            try
+            {
+                var parsed = System.Text.Json.JsonSerializer.Deserialize<List<JsonElement>>(session.RawEvaluations);
+                if (parsed != null)
+                {
+                    foreach (var item in parsed)
+                    {
+                        arr2.Add(new JsonObject
+                        {
+                            ["target"] = item.TryGetProperty("TargetType", out var tt) && item.TryGetProperty("TargetId", out var ti)
+                                ? $"{tt.GetString()}#{ti.GetInt32()}" : "?",
+                            ["dimension"] = item.TryGetProperty("Dimension", out var d) ? d.GetString() ?? "" : "",
+                            ["rating"] = item.TryGetProperty("Rating", out var r) ? r.GetString() ?? "" : ""
+                        });
+                    }
+                    return new DataResult { Data = arr2, TotalCount = arr2.Count };
+                }
+            }
+            catch { }
+        }
+
+        // 回退：从 ReviewActions 解析 review_evaluate 记录（历史数据兼容）
+        var actions = await _engine.ReviewLogs.GetActionsBySessionAsync(sessionId);
+        foreach (var a in actions)
+        {
+            if (a.ActionType != "review_evaluate") continue;
+            arr2.Add(new JsonObject
+            {
+                ["target"] = "（历史记录）",
+                ["dimension"] = "—",
+                ["rating"] = a.Summary
+            });
+        }
+
+        return new DataResult { Data = arr2, TotalCount = arr2.Count };
+    }
+
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+        => Task.FromResult(new ActionResult { Success = true });
 }

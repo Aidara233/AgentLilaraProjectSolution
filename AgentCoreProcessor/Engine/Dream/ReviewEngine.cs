@@ -59,11 +59,15 @@ namespace AgentCoreProcessor.Engine
         internal HashSet<int> ChannelsVisited { get; } = new();
         internal HashSet<int> PersonsEncountered { get; } = new();
 
+        // 增援自动激活追踪
+        private bool _reserveAutoActivated;
+        private bool _reserveExhaustedNotified;
+
         private static readonly HashSet<string> ActionTools = new()
         {
             "review_thinking_notes", "review_update_person",
             "review_evaluate", "review_save_progress",
-            "review_complete", "review_request_reinforcement",
+            "review_complete",
             "review_log",
             "memory_store", "memory_link_create", "memory_link_delete"
         };
@@ -90,6 +94,7 @@ namespace AgentCoreProcessor.Engine
                 EvaluationBuffer.AddRange(_progress.EvaluationBuffer);
                 ThinkingNotes = _progress.ThinkingNotes;
                 _seedType = "resume";
+                _progress.ResumeCount++;
             }
         }
 
@@ -149,20 +154,24 @@ namespace AgentCoreProcessor.Engine
 
                 await _agent.RunAsync(_cts.Token);
 
-                // 应用评价缓冲
-                var evalEngine = new EvaluationEngine(_ctx.EvaluationScores, _cfg);
-                var evalCount = await evalEngine.ApplyAsync(EvaluationBuffer);
-
-                // 标记信标为已处理
+                // 仅 complete 时应用评价缓冲
                 if (_reviewControl?.IsCompleted == true)
                 {
+                    var evalEngine = new EvaluationEngine(_ctx.EvaluationScores, _cfg);
+                    var evalCount = await evalEngine.ApplyAsync(EvaluationBuffer);
+                    session.EvaluationCount = evalCount;
+
+                    // 快照评价原始数据
+                    session.RawEvaluations = System.Text.Json.JsonSerializer.Serialize(
+                        EvaluationBuffer.Select(e => new { e.TargetType, e.TargetId, e.Dimension, e.Rating }).ToList());
+                    EvaluationBuffer.Clear();
+
+                    // 标记信标为已处理
                     var beacons = await _ctx.Beacons.GetUnprocessedAsync("review");
                     foreach (var b in beacons)
                         await _ctx.Beacons.MarkProcessedAsync(b.Id);
                 }
 
-                // 记录评价数和信号ID（供 finally 写回 session）
-                session.EvaluationCount = evalCount;
                 session.SignalId = lifeCtx.SignalId;
             }
             catch (OperationCanceledException) { }
@@ -179,8 +188,7 @@ namespace AgentCoreProcessor.Engine
                 if (session != null)
                 {
                     session.EndTime = DateTime.Now;
-                    session.StopReason = _reviewControl?.IsCompleted == true ? "completed"
-                        : TokensUsed >= _cfg.TokenBudget ? "budget" : "interrupted";
+                    session.StopReason = _reviewControl?.IsCompleted == true ? "completed" : "interrupted";
                     session.TokensUsed = TokensUsed;
                     session.RoundsExecuted = _agent?.TotalRounds ?? 0;
                     session.ChannelsVisited = System.Text.Json.JsonSerializer.Serialize(ChannelsVisited.ToList());
@@ -292,7 +300,6 @@ namespace AgentCoreProcessor.Engine
             if (!string.IsNullOrEmpty(seedContent))
                 msgs.Add(new Message { Role = "user", Content = seedContent });
 
-            // 预算状态由 BuildRoundInjectAsync 负责注入（避免首轮重复）
             return msgs;
         }
 
@@ -301,12 +308,24 @@ namespace AgentCoreProcessor.Engine
             if (_reviewControl?.IsCompleted == true)
                 return Task.FromResult<List<Message>?>(null);
 
-            // 预算超限检查
-            var budget = _cfg.TokenBudget + (_reviewControl?.ReserveGranted == true ? _cfg.ReserveBudget : 0);
-            if (TokensUsed >= budget)
+            // 增援耗尽 → 强制完成
+            var mainBudget = _cfg.TokenBudget;
+            var totalBudget = mainBudget + _cfg.ReserveBudget;
+            if (_reserveAutoActivated && TokensUsed >= totalBudget && !_reserveExhaustedNotified)
             {
-                _cts.Cancel();
-                return Task.FromResult<List<Message>?>(null);
+                _reserveExhaustedNotified = true;
+                _reviewControl?.MarkComplete();
+                var exhaustMsg = new Message { Role = "user", Content = "[系统] 增援预算已耗尽，评价已自动提交。复盘结束。" };
+                return Task.FromResult<List<Message>?>(new List<Message> { exhaustMsg });
+            }
+
+            // 主预算耗尽 → 自动激活增援
+            if (!_reserveAutoActivated && TokensUsed >= mainBudget)
+            {
+                _reserveAutoActivated = true;
+                _reviewControl?.RequestReinforcement();
+                var reinforceMsg = new Message { Role = "user", Content = $"[系统] 主预算已用尽，已自动激活增援预算 {_cfg.ReserveBudget} tokens。请尽快收尾。" };
+                return Task.FromResult<List<Message>?>(new List<Message> { reinforceMsg });
             }
 
             // 压缩检查
@@ -315,18 +334,15 @@ namespace AgentCoreProcessor.Engine
 
             var msgs = new List<Message>();
 
-            // 预算状态
-            msgs.Add(new Message { Role = "user", Content = BuildBudgetStatus() });
-
             // 唤醒通知
             if (_reviewControl is { WakeNotified: true })
-                msgs.Add(new Message { Role = "user", Content = "[通知] 系统已醒来。备用预算不可用，但你可以继续完成当前工作。" });
+                msgs.Add(new Message { Role = "user", Content = "[通知] 系统已醒来。请尽快完成当前工作。" });
 
             // 空转提醒
             if (_consecutiveNavRounds >= _cfg.MaxNavigationRounds)
                 msgs.Add(new Message { Role = "user", Content = "[提示] 你已经浏览了一段时间没有记录。如果有想法可以先写入 thinking_notes。" });
 
-            return Task.FromResult<List<Message>?>(msgs);
+            return Task.FromResult<List<Message>?>(msgs.Count > 0 ? msgs : null);
         }
 
         /// <summary>工具执行后由 Agent 回调，用于空转检测。</summary>
@@ -355,9 +371,20 @@ namespace AgentCoreProcessor.Engine
             await _ctx.ReviewLogs.CreateActionAsync(action);
         }
 
-        /// <summary>保存当前进度到 JSON。</summary>
+        /// <summary>保存当前进度到 JSON。仅在缓冲非空时保存。</summary>
         internal void SaveProgress()
         {
+            if (EvaluationBuffer.Count == 0)
+            {
+                if (File.Exists(ReviewProgressPath))
+                    File.Delete(ReviewProgressPath);
+                _progress.SavedAt = null;
+                _progress.EvaluationBuffer.Clear();
+                _progress.ThinkingNotes = "";
+                _progress.ResumeCount = 0;
+                return;
+            }
+
             var progress = new ReviewProgress
             {
                 CursorMessageId = CursorMessageId,
@@ -365,6 +392,7 @@ namespace AgentCoreProcessor.Engine
                 EvaluationBuffer = EvaluationBuffer.ToList(),
                 ThinkingNotes = ThinkingNotes,
                 ReserveUsed = _reviewControl?.ReserveGranted ?? false,
+                ResumeCount = _progress.ResumeCount,
                 SavedAt = DateTime.Now
             };
             progress.Save(ReviewProgressPath);
@@ -375,6 +403,10 @@ namespace AgentCoreProcessor.Engine
         {
             if (File.Exists(ReviewProgressPath))
                 File.Delete(ReviewProgressPath);
+            _progress.SavedAt = null;
+            _progress.EvaluationBuffer.Clear();
+            _progress.ThinkingNotes = "";
+            _progress.ResumeCount = 0;
         }
 
         // ---- 信任升级 ----
@@ -834,6 +866,22 @@ namespace AgentCoreProcessor.Engine
             var lines = new List<string> { "## 恢复上次进度" };
             lines.Add($"上次保存时间: {_progress.SavedAt:yyyy-MM-dd HH:mm}");
 
+            if (_progress.ResumeCount > 1)
+                lines.Add($"这是第 {_progress.ResumeCount} 次恢复，请尽快形成结论并 complete。");
+
+            if (_progress.EvaluationBuffer.Count > 0)
+            {
+                var evalGroups = _progress.EvaluationBuffer
+                    .GroupBy(e => $"{e.TargetType}#{e.TargetId} {e.Dimension}")
+                    .Select(g => $"  {g.Key}: {string.Join(",", g.Select(e => e.Rating))}");
+                lines.Add("");
+                lines.Add("### 待应用评价（共 " + _progress.EvaluationBuffer.Count + " 条，仅 review_complete 时生效）");
+                foreach (var entry in evalGroups.Take(20))
+                    lines.Add(entry);
+                if (evalGroups.Count() > 20)
+                    lines.Add($"  ... 还有 {evalGroups.Count() - 20} 组");
+            }
+
             if (!string.IsNullOrEmpty(_progress.ThinkingNotes))
             {
                 lines.Add("");
@@ -900,17 +948,6 @@ namespace AgentCoreProcessor.Engine
             return string.Join("\n", lines);
         }
 
-        private string BuildBudgetStatus()
-        {
-            var totalBudget = _cfg.TokenBudget + (_reviewControl?.ReserveGranted == true ? _cfg.ReserveBudget : 0);
-            var reserveStatus = _reviewControl?.ReserveGranted == true
-                ? $"已激活 (+{_cfg.ReserveBudget})"
-                : _reviewControl?.WakeNotified == true
-                    ? "不可用"
-                    : "可申请";
-
-            return $"[预算] 已用: ~{TokensUsed} / 上限: {totalBudget} | 备用预算: {reserveStatus}";
-        }
 
         private string BuildSystemPrompt()
         {
@@ -938,8 +975,8 @@ namespace AgentCoreProcessor.Engine
 - 批量操作：你可以一次调用多个工具，不需要一个一个来
 
 ## 预算
-你有有限的 token 预算。当剩余预算不多时，用 review_save_progress 保存进度后 review_complete。
-如果工作进行到一半确实需要更多资源，可以申请一次备用预算。
+你有有限的 token 预算。预算用尽时系统会自动激活增援，增援耗尽时会强制完成。
+如果觉得工作已可以收尾，直接调用 review_complete 完成。
 """;
         }
     }

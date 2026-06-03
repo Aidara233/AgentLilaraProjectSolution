@@ -77,6 +77,10 @@ namespace AgentCoreProcessor.Database
             await db.CreateTableAsync<EvaluationScore>();
             await db.CreateTableAsync<ReviewSession>();
             await db.CreateTableAsync<ReviewAction>();
+
+            // migration: 2026-06-03 添加 RawEvaluations 快照列
+            try { await db.ExecuteAsync("ALTER TABLE ReviewSessions ADD COLUMN RawEvaluations TEXT"); }
+            catch (Exception ex) when (ex.Message.Contains("duplicate column")) { }
         }
 
         /// <summary>

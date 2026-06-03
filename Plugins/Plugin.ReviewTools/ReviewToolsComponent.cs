@@ -39,7 +39,6 @@ public class ReviewToolsComponent : GlobalComponentBase
         // 元工具组
         _tools.Add(new ReviewThinkingNotesTool(toolCtx));
         _tools.Add(new ReviewSaveProgressTool(toolCtx));
-        _tools.Add(new ReviewRequestReinforcementTool(toolCtx));
         _tools.Add(new ReviewLogTool(toolCtx));
         _tools.Add(new ReviewCompleteTool(toolCtx));
 

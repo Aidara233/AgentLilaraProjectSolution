@@ -30,6 +30,9 @@ namespace AgentCoreProcessor.Database
 
         public string? ThinkingNotes { get; set; }
         public int EvaluationCount { get; set; }
+
+        /// <summary>快照：complete 时的原始评价记录 JSON</summary>
+        public string? RawEvaluations { get; set; }
     }
 
     [Table("ReviewActions")]

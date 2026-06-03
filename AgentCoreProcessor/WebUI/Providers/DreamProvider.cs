@@ -56,9 +56,7 @@ internal class DreamProvider : IWebUIProvider
                     },
                     Actions = new()
                     {
-                        new() { Id = "force-sleep", Label = "手动触发维护", Icon = "bi-moon" },
-                        new() { Id = "force-review-beacon", Label = "信标触发 Review", Icon = "bi-flag" },
-                        new() { Id = "force-review-candidate", Label = "候选人触发 Review", Icon = "bi-person-check" }
+                        new() { Id = "force-sleep", Label = "手动触发维护", Icon = "bi-moon" }
                     }
                 },
                 Layout = new CardLayout { PreferredCols = 6, GridColumnStart = 1 }
@@ -208,16 +206,6 @@ internal class DreamStatusSource : IDataSource
         {
             _engine.EventBus.PublishSignal("force-sleep", "deepsleep");
             return Task.FromResult(new ActionResult { Success = true, Message = "已发送维护触发信号" });
-        }
-        if (action == "force-review-beacon")
-        {
-            _engine.EventBus.PublishSignal("force-review:beacon", "");
-            return Task.FromResult(new ActionResult { Success = true, Message = "已触发信标 Review" });
-        }
-        if (action == "force-review-candidate")
-        {
-            _engine.EventBus.PublishSignal("force-review:candidate", "");
-            return Task.FromResult(new ActionResult { Success = true, Message = "已触发候选人 Review" });
         }
         return Task.FromResult(new ActionResult { Success = true });
     }

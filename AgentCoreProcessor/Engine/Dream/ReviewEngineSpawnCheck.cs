@@ -1,4 +1,7 @@
+using System;
+using System.IO;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Logging;
 
 namespace AgentCoreProcessor.Engine
@@ -12,6 +15,10 @@ namespace AgentCoreProcessor.Engine
         public string EngineType => "Review";
 
         private string? _forcedMode;
+        private bool _clearProgressBeforeSpawn;
+
+        private static string ProgressPath =>
+            Path.Combine(PathConfig.StoragePath, "Dream", "ReviewProgress.json");
 
         public Task OnEventAsync(EngineEvent e, ISystemContext ctx)
         {
@@ -21,9 +28,15 @@ namespace AgentCoreProcessor.Engine
                 {
                     case "force-review:beacon":
                         _forcedMode = "beacon";
+                        _clearProgressBeforeSpawn = true;
                         break;
                     case "force-review:candidate":
                         _forcedMode = "candidate";
+                        _clearProgressBeforeSpawn = true;
+                        break;
+                    case "force-review:resume":
+                        _forcedMode = null;
+                        _clearProgressBeforeSpawn = false;
                         break;
                 }
             }
@@ -32,13 +45,15 @@ namespace AgentCoreProcessor.Engine
 
         public Task<bool> ShouldSpawnAsync(EngineEvent e, ISystemContext ctx)
         {
-            if (_forcedMode == null)
+            if (_forcedMode == null && !_clearProgressBeforeSpawn
+                && !(e is SignalEvent signal && signal.SignalName == "force-review:resume"))
                 return Task.FromResult(false);
 
             if (ctx.HasActiveEngine("Review"))
             {
                 Signal.Event(LogGroup.Engine, "Review跳过", new { reason = "已有活跃Review引擎" });
                 _forcedMode = null;
+                _clearProgressBeforeSpawn = false;
                 return Task.FromResult(false);
             }
 
@@ -48,10 +63,21 @@ namespace AgentCoreProcessor.Engine
         public ISubEngine Create(ISystemContext ctx)
         {
             var mode = _forcedMode;
+            var clearProgress = _clearProgressBeforeSpawn;
             _forcedMode = null;
+            _clearProgressBeforeSpawn = false;
+
+            if (clearProgress && File.Exists(ProgressPath))
+            {
+                File.Delete(ProgressPath);
+                Signal.Event(LogGroup.Engine, "Review.SpawnCheck清除旧进度", new { });
+            }
+
             var engine = new ReviewEngine(ctx);
-            engine.ForceSeedMode(mode!);
-            Signal.Event(LogGroup.Engine, "Review.SpawnCheck创建", new { mode });
+            if (mode != null)
+                engine.ForceSeedMode(mode);
+
+            Signal.Event(LogGroup.Engine, "Review.SpawnCheck创建", new { mode = mode ?? "resume" });
             return engine;
         }
     }

@@ -20,6 +20,9 @@ namespace AgentCoreProcessor.Engine
         public int TokensUsed { get; set; } // 已废弃，不再持久化（每次启动是新预算）
         public bool ReserveUsed { get; set; }
 
+        /// <summary>跨 session 恢复次数，用于渐进催收。</summary>
+        public int ResumeCount { get; set; }
+
         public DateTime? SavedAt { get; set; }
 
         public static ReviewProgress Load(string path)
