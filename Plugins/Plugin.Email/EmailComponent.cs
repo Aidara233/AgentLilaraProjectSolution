@@ -8,7 +8,6 @@ public class EmailComponent : GlobalComponentBase
 {
     private EmailConnectionManager _connMgr = null!;
     private readonly List<ITool> _tools = new();
-    private CancellationTokenSource? _shutdownCts;
     private string _workspaceDir = "";
 
     public override ComponentMeta Meta => new()
@@ -27,12 +26,6 @@ public class EmailComponent : GlobalComponentBase
         _connMgr = new EmailConnectionManager(config);
         _workspaceDir = context.Storage.WorkspaceDirectory;
 
-        if (_connMgr.Configured)
-        {
-            _shutdownCts = new CancellationTokenSource();
-            _connMgr.StartImapKeepAlive(_shutdownCts.Token);
-        }
-
         _tools.Add(new SendEmailTool(_connMgr, context.Storage));
         _tools.Add(new CheckUnreadTool(_connMgr));
         _tools.Add(new CheckEmailTool(_connMgr));
@@ -46,19 +39,15 @@ public class EmailComponent : GlobalComponentBase
         return Task.CompletedTask;
     }
 
-    public override async Task OnShutdownAsync(ShutdownReason reason)
+    public override Task OnShutdownAsync(ShutdownReason reason)
     {
-        _shutdownCts?.Cancel();
-        if (_connMgr != null)
-            await _connMgr.StopAsync();
-        _shutdownCts?.Dispose();
-        _shutdownCts = null;
+        return Task.CompletedTask;
     }
 
     public override string? BuildPromptSection(LoopInfo caller)
     {
-        if (_connMgr?.ImapConnected == true)
-            return $"[邮件] 已连接 {_connMgr.SmtpUsername}。邮件附件下载/发送使用工作目录相对路径。";
+        if (_connMgr?.Configured == true)
+            return $"[邮件] 已配置 {_connMgr.SmtpUsername}。邮件附件下载/发送使用工作目录相对路径。";
         return null;
     }
 }
