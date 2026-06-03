@@ -138,6 +138,7 @@ namespace AgentCoreProcessor.Engine
             ("System",  () => new SystemEngineSpawnCheck()),
             ("Channel",  () => new ChannelEngineSpawnCheck()),
             ("Dream",   () => new DreamEngineSpawnCheck()),
+            ("Review",  () => new ReviewEngineSpawnCheck()),
             ("Vision",  () => new Vision.VisionEngineSpawnCheck()),
         ];
 

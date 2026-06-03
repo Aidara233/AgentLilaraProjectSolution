@@ -54,9 +54,8 @@ namespace AgentCoreProcessor.Engine
         private string? currentOutputRaw;
         private int currentSessionId;
 
-        // Review 触发
+        // Review 自动触发
         private DateTime _lastReviewStart = DateTime.MinValue;
-        private string? _pendingReviewMode; // "beacon" / "candidate" / null
 
         public DreamEngine(ISystemContext ctx,
             DreamEngineSpawnCheck spawnCheck)
@@ -730,46 +729,19 @@ namespace AgentCoreProcessor.Engine
                 else if (msg.IsMentioned)
                     _ = ForceSleepTalkAsync(msg.Content);
             }
-            else if (e is SignalEvent signal)
-            {
-                switch (signal.SignalName)
-                {
-                    case "force-review:beacon":
-                        _pendingReviewMode = "beacon";
-                        break;
-                    case "force-review:candidate":
-                        _pendingReviewMode = "candidate";
-                        break;
-                }
-            }
+            // Note: force-review 信号由 ReviewEngineSpawnCheck 直接处理
         }
 
         internal void ForceWake(string reason) => shouldWake = true;
         public void RequestStop() => shouldWake = true;
 
-        /// <summary>检查 Review 触发条件，满足则启动。</summary>
+        /// <summary>自动触发 Review（间隔 + 系统空闲）。手动触发由 ReviewEngineSpawnCheck 处理。</summary>
         private Task TryStartReviewAsync(DreamConfig cfg)
         {
-            var shouldStart = false;
-            string? mode = null;
-
-            if (_pendingReviewMode != null)
-            {
-                // 手动触发
-                shouldStart = true;
-                mode = _pendingReviewMode;
-                _pendingReviewMode = null;
-            }
-            else if (cfg.ReviewIntervalHours > 0
-                && (DateTime.Now - _lastReviewStart).TotalHours >= cfg.ReviewIntervalHours
-                && ctx.IsIdle)
-            {
-                // 自动触发
-                shouldStart = true;
-                mode = null; // 自然优先级
-            }
-
-            if (!shouldStart) return Task.CompletedTask;
+            if (cfg.ReviewIntervalHours <= 0
+                || (DateTime.Now - _lastReviewStart).TotalHours < cfg.ReviewIntervalHours
+                || !ctx.IsIdle)
+                return Task.CompletedTask;
 
             if (ctx.HasActiveEngine("Review"))
             {
@@ -780,11 +752,9 @@ namespace AgentCoreProcessor.Engine
             try
             {
                 var reviewEngine = new ReviewEngine(ctx);
-                if (mode != null)
-                    reviewEngine.ForceSeedMode(mode);
                 _lastReviewStart = DateTime.Now;
                 ctx.StartEngine(reviewEngine);
-                Signal.Event(LogGroup.Engine, "Review已启动", new { mode = mode ?? "auto" });
+                Signal.Event(LogGroup.Engine, "Review已启动", new { mode = "auto" });
             }
             catch (Exception ex)
             {
