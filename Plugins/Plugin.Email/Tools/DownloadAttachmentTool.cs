@@ -68,11 +68,13 @@ public class DownloadAttachmentTool : ITool
                 await using var fs = File.Create(fullPath);
                 if (attachment is MimePart mimePart)
                 {
-                    await mimePart.Content.DecodeToAsync(fs, ct);
+                    if (mimePart.Content != null)
+                        await mimePart.Content.DecodeToAsync(fs, ct);
                 }
                 else if (attachment is MessagePart messagePart)
                 {
-                    await messagePart.Message.WriteToAsync(fs, ct);
+                    if (messagePart.Message != null)
+                        await messagePart.Message.WriteToAsync(fs, ct);
                 }
 
                 return new ToolResult { Status = "success", Data = $"附件 {attachmentName} 已保存到工作目录: {destPath}" };

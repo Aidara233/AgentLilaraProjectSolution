@@ -66,7 +66,7 @@ public class ReadEmailTool : ITool
                         var name = att.ContentDisposition?.FileName ?? att.ContentType.Name ?? "unknown";
                         long size = 0;
                         if (att is MimePart mp)
-                            size = mp.Content.Stream?.Length ?? 0;
+                            size = mp.Content?.Stream?.Length ?? 0;
                         sb.AppendLine($"  - {name} ({FormatSize(size)})");
                     }
                 }
@@ -85,7 +85,8 @@ public class ReadEmailTool : ITool
                     foreach (var img in inlineImages)
                     {
                         using var ms = new MemoryStream();
-                        await img.Content.DecodeToAsync(ms, ct);
+                        if (img.Content != null)
+                            await img.Content.DecodeToAsync(ms, ct);
                         toolResult.Attachments.Add(new ContentAttachment
                         {
                             Type = "image",
