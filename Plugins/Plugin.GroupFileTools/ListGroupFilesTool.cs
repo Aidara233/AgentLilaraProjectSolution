@@ -3,7 +3,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.GroupFileTools;
 
-[ToolMeta(Group = null, ContinueLoop = true, ExpressAvailable = true)]
+[ToolMeta(Group = null, ContinueLoop = true)]
 public class ListGroupFilesTool : ITool
 {
     private readonly IAdapterAccess? _adapterAccess;

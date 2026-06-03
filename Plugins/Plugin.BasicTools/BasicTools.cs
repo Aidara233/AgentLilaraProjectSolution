@@ -145,7 +145,7 @@ namespace Plugin.BasicTools
         }
     }
 
-    [ToolMeta(Group = null, ContinueLoop = false, ExpressAvailable = true, OutputOnly = true)]
+    [ToolMeta(Group = null, ContinueLoop = false, OutputOnly = true)]
     public class SendFileTool : ITool
     {
         private readonly IChannelAccess? _channelAccess;
@@ -201,7 +201,7 @@ namespace Plugin.BasicTools
         }
     }
 
-    [ToolMeta(Group = null, ContinueLoop = false, ExpressAvailable = true, OutputOnly = true)]
+    [ToolMeta(Group = null, ContinueLoop = false, OutputOnly = true)]
     public class SendMediaTool : ITool
     {
         private readonly IChannelAccess? _channelAccess;

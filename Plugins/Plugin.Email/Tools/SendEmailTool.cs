@@ -4,7 +4,7 @@ using AgentLilara.PluginSDK;
 
 namespace Plugin.Email.Tools;
 
-[ToolMeta(Group = "email", ContinueLoop = true, ExpressAvailable = true)]
+[ToolMeta(Group = "email", ContinueLoop = true)]
 public class SendEmailTool : ITool
 {
     private readonly EmailConnectionManager _connMgr;
@@ -23,7 +23,7 @@ public class SendEmailTool : ITool
         new("to", "收件人地址（可逗号分隔多个）", 0),
         new("subject", "邮件主题", 1),
         new("body", "邮件正文", 2),
-        new("attachments", "可选，附件相对路径（逗号分隔，如 报告.pdf,图/photo.png）", 3, isRequired: false)
+        new("attachments", "可选，附件相对路径（逗号分隔，如 报告.pdf, images/photo.png）", 3, isRequired: false)
     ];
     public TimeSpan Timeout => TimeSpan.FromSeconds(30);
 

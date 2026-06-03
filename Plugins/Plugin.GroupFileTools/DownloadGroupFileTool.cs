@@ -3,7 +3,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.GroupFileTools;
 
-[ToolMeta(Group = null, ContinueLoop = true, ExpressAvailable = true, OutputOnly = true)]
+[ToolMeta(Group = null, ContinueLoop = true, OutputOnly = true)]
 public class DownloadGroupFileTool : ITool
 {
     private readonly IAdapterAccess? _adapterAccess;
