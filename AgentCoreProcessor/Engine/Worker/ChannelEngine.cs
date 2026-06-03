@@ -329,6 +329,7 @@ namespace AgentCoreProcessor.Engine
                 ParticipantInfo.From(sc.User, sc.Person, msg),
                 (_, _) => ParticipantInfo.From(sc.User, sc.Person, msg));
             impulseTracker.Accumulate(msg, recentParticipants.Count, msg.IsSystemEvent);
+            loopControlModule.OnNewMessage();
             _lastSessionContext = sc;
 
             // 禁言状态追踪
@@ -572,12 +573,10 @@ namespace AgentCoreProcessor.Engine
                     // 游标已被 BuildRoundInjectAsync 推进、无新消息且无跨循环请求/通知时，跳回等待
                     if (tickMsgs.Count == 0 && _pendingCrossRequests.IsEmpty && !hasPendingNotifications)
                     {
-                        loopControlModule.OnNewMessage();
                         continue;
                     }
 
                     // 重置 Working 轮次状态
-                    loopControlModule.OnNewMessage();
                     isInWorkingSession = false;
                     agent = null;
                     fixedPrefix = null;
@@ -821,7 +820,7 @@ namespace AgentCoreProcessor.Engine
             }
             else if (agent.StopReason == AgentStopReason.MaxRounds)
             {
-                loopControlModule.AdvanceRound(hadSpeakThisRound);
+                loopControlModule.AdvanceRound();
                 if (!loopControlModule.IsMaxRoundsReached)
                     gate.Signal();
                 else
@@ -1100,6 +1099,8 @@ namespace AgentCoreProcessor.Engine
             agent.OnRoundCompleted = () =>
             {
                 PersistCurrentContext();
+                loopControlModule.TrackSilentRound(hadSpeakThisRound);
+                hadSpeakThisRound = false;
                 return Task.CompletedTask;
             };
 
@@ -1805,6 +1806,18 @@ namespace AgentCoreProcessor.Engine
                     if (compressionTierModule.CurrentTier == CompressionTier.L1)
                         compressionTierModule.MarkL1Injected();
                 }
+            }
+
+            // 达到静默轮次上限时提示模型发言
+            if (isWorkingMode && loopControlModule.IsMaxSilentReached)
+            {
+                msgs.Add(new Message { Role = "user", Content = "你沉默太久了，需要向用户报告你当前的工作进度。" });
+            }
+
+            // 最后一轮提示模型总结并请求确认
+            if (isWorkingMode && agent != null && agent.TotalRounds >= agentConfig.MaxRounds)
+            {
+                msgs.Add(new Message { Role = "user", Content = "这是本轮 Working 会话的最后一轮。请总结当前进展和结果，并告知用户如需继续可发送新消息。" });
             }
 
             // 连续多轮无实际工作时，提醒可切换回 Express（Working 模型更强，深思也可能是合理的）

@@ -24,10 +24,15 @@ namespace AgentCoreProcessor.Engine.Modules
 
         public override void Attach(ILoopBus bus) { }
 
-        /// <summary>轮次推进。hadSpeak=true 时重置静默计数。</summary>
-        public void AdvanceRound(bool hadSpeak)
+        /// <summary>跨 Agent 会话推进总轮次。</summary>
+        public void AdvanceRound()
         {
             TotalRounds++;
+        }
+
+        /// <summary>Agent 会话内每轮推进静默计数。</summary>
+        public void TrackSilentRound(bool hadSpeak)
+        {
             if (hadSpeak)
                 SilentRounds = 0;
             else
