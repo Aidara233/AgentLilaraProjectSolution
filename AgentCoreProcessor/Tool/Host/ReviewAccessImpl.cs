@@ -50,26 +50,36 @@ namespace AgentCoreProcessor.Tool.Host
             string? query, int? channelId, int? personId,
             string? timeStart, string? timeEnd, int limit)
         {
+            List<ReviewMessageDto> results;
+
             // 搜索指定频道（或所有频道）
             if (channelId != null)
             {
                 var messages = await _ctx.Session.SearchMessagesByChannelAsync(
                     channelId.Value, query, 0, limit);
-                return await ToDtoListAsync(messages);
+                results = await ToDtoListAsync(messages);
+            }
+            else
+            {
+                // 跨频道搜索：遍历所有频道取结果
+                var channels = await _ctx.Session.GetAllChannelsAsync();
+                var all = new List<ReviewMessageDto>();
+                foreach (var ch in channels)
+                {
+                    if (all.Count >= limit) break;
+                    var msgs = await _ctx.Session.SearchMessagesByChannelAsync(
+                        ch.Id, query, 0, limit - all.Count);
+                    var dtos = await ToDtoListAsync(msgs);
+                    all.AddRange(dtos);
+                }
+                results = all.Take(limit).ToList();
             }
 
-            // 跨频道搜索：遍历所有频道取结果
-            var channels = await _ctx.Session.GetAllChannelsAsync();
-            var results = new List<ReviewMessageDto>();
-            foreach (var ch in channels)
-            {
-                if (results.Count >= limit) break;
-                var msgs = await _ctx.Session.SearchMessagesByChannelAsync(
-                    ch.Id, query, 0, limit - results.Count);
-                var dtos = await ToDtoListAsync(msgs);
-                results.AddRange(dtos);
-            }
-            return results.Take(limit).ToList();
+            // 按 person_id 过滤（内存过滤，需在解析 PersonId 之后）
+            if (personId != null)
+                results = results.Where(m => m.PersonId == personId).ToList();
+
+            return results;
         }
 
         public async Task<ReviewPersonDto?> GetPersonAsync(int personId)
@@ -148,11 +158,13 @@ namespace AgentCoreProcessor.Tool.Host
         public Task<TrustCriteriaDto> GetTrustCriteriaAsync(int personId)
             => _engine.GetTrustCriteriaAsync(personId);
 
-        public Task<bool> PromoteTrustAsync(int personId)
-            => _engine.PromoteTrustAsync(personId);
-
-        public Task<bool> DemoteTrustAsync(int personId, string reason)
-            => _engine.DemoteTrustAsync(personId, reason);
+        public async Task<ReviewMessageDto?> GetMessageByIdAsync(int messageId)
+        {
+            var msg = await _ctx.Session.GetMessageByIdAsync(messageId);
+            if (msg == null) return null;
+            var dtos = await ToDtoListAsync(new List<UserMessage> { msg });
+            return dtos.FirstOrDefault();
+        }
 
         private async Task<List<ReviewMessageDto>> ToDtoListAsync(List<UserMessage> messages)
         {
@@ -172,6 +184,7 @@ namespace AgentCoreProcessor.Tool.Host
                 {
                     Id = m.Id,
                     PlatformMessageId = m.PlatformMessageId,
+                    ChannelId = m.ChannelId,
                     Time = m.Time.ToString("MM-dd HH:mm"),
                     SenderName = m.IsFromBot ? "Lilara"
                         : !string.IsNullOrEmpty(m.SenderName) ? m.SenderName

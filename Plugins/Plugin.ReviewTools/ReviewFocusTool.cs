@@ -20,7 +20,7 @@ public class ReviewFocusTool : ITool
     ];
     public TimeSpan Timeout => TimeSpan.FromSeconds(10);
 
-    public Task<ToolResult> ExecuteAsync(List<string> inputs, CancellationToken ct)
+    public async Task<ToolResult> ExecuteAsync(List<string> inputs, CancellationToken ct)
     {
         var review = _ctx.Require<IReviewAccess>();
         int? messageId = inputs.Count > 0 && int.TryParse(inputs[0], out var mid) ? mid : null;
@@ -28,10 +28,19 @@ public class ReviewFocusTool : ITool
         int? channelId = inputs.Count > 2 && int.TryParse(inputs[2], out var cid) ? cid : null;
 
         if (messageId == null && channelId == null)
-            return Task.FromResult(new ToolResult { Status = "failed", Error = "需要提供 message_id 或 channel_id" });
+            return new ToolResult { Status = "failed", Error = "需要提供 message_id 或 channel_id" };
 
         if (messageId != null)
         {
+            // 若未提供 channel_id 且游标无频道，按 message_id 推导
+            if (channelId == null && review.CursorChannelId == null)
+            {
+                var msg = await review.GetMessageByIdAsync(messageId.Value);
+                if (msg == null)
+                    return new ToolResult { Status = "failed", Error = $"消息 #{messageId} 不存在，无法推导频道" };
+                channelId = msg.ChannelId;
+            }
+
             review.MoveCursor(messageId.Value + offset, channelId ?? review.CursorChannelId);
             if (channelId != null) review.TrackChannel(channelId.Value);
         }
@@ -44,6 +53,6 @@ public class ReviewFocusTool : ITool
         var pos = review.CursorMessageId != null
             ? $"频道#{review.CursorChannelId} 消息#{review.CursorMessageId}"
             : $"频道#{review.CursorChannelId} 最新位置";
-        return Task.FromResult(new ToolResult { Status = "success", Data = $"游标已移动到: {pos}" });
+        return new ToolResult { Status = "success", Data = $"游标已移动到: {pos}" };
     }
 }

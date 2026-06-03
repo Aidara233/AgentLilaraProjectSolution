@@ -16,6 +16,7 @@ namespace AgentLilara.PluginSDK.Services
         // 消息读取
         Task<List<ReviewMessageDto>> BrowseAsync(int count);
         Task<List<ReviewMessageDto>> SearchMessagesAsync(string? query, int? channelId, int? personId, string? timeStart, string? timeEnd, int limit);
+        Task<ReviewMessageDto?> GetMessageByIdAsync(int messageId);
 
         // 人物
         Task<ReviewPersonDto?> GetPersonAsync(int personId);
@@ -43,14 +44,13 @@ namespace AgentLilara.PluginSDK.Services
 
         // 信任操作
         Task<TrustCriteriaDto> GetTrustCriteriaAsync(int personId);
-        Task<bool> PromoteTrustAsync(int personId);
-        Task<bool> DemoteTrustAsync(int personId, string reason);
     }
 
     public class ReviewMessageDto
     {
         public int Id { get; set; }
         public string? PlatformMessageId { get; set; }
+        public int? ChannelId { get; set; }
         public string Time { get; set; } = "";
         public string SenderName { get; set; } = "";
         public int? PersonId { get; set; }

@@ -38,7 +38,11 @@ public class ReviewSearchMessagesTool : ITool
         if (messages.Count == 0)
             return new ToolResult { Status = "success", Data = "未找到匹配消息。" };
 
-        var lines = messages.Select(m => $"[ID:{m.PlatformMessageId ?? m.Id.ToString()}] [{m.Time}] {m.SenderName}: {m.Content}");
+        var lines = messages.Select(m =>
+        {
+            var sender = m.PersonId != null ? $"{m.SenderName}(P#{m.PersonId})" : m.SenderName;
+            return $"[ID:{m.Id}] [{m.Time}] {sender}: {m.Content}";
+        });
         return new ToolResult { Status = "success", Data = string.Join("\n", lines) };
     }
 }

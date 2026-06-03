@@ -761,7 +761,7 @@ namespace AgentCoreProcessor.Engine
             {
                 "## 信任升级候选人",
                 $"发现 {candidates.Count} 位候选人硬指标达标，等待你的探索确认。",
-                "对每位候选人：浏览其消息和记忆 → 按检查单验证 → 决定升级或降分。",
+                "对每位候选人：浏览其消息和记忆 → 按检查单验证 → 用 review_evaluate 记录评价。",
                 ""
             };
 
@@ -815,7 +815,7 @@ namespace AgentCoreProcessor.Engine
             }
 
             lines.Add("");
-            lines.Add("如果确认值得升级，使用 promote_trust 工具。如果不够格，用 review_evaluate 降低相关维度分数使其不再达到硬标准，这是正常的——不是每个人都需要立即升级。");
+            lines.Add("你不需要手动升级或降级信任等级。请通过 review_evaluate 记录你的评价（reliability/respect/value/stability），系统会在复盘完成时自动处理。如果觉得某人明显不达标，用 review_evaluate 降低相关维度分数即可。");
 
             return string.Join("\n", lines);
         }
@@ -915,24 +915,12 @@ namespace AgentCoreProcessor.Engine
 - 发现有价值的东西就行动（写记忆、更新人物、评价、修正矛盾）
 
 ## 人物信任评估
-当你遇到值得关注的人物时，按信任升级流程处理：
-
-### 升级流程
+当你遇到值得关注的人物时：
 1. 用 review_get_person 查看此人当前的信任等级、维度分数和 FastMemory
-2. 用 get_person_traits 查看此人的结构化特质
-3. 浏览此人的消息和记忆，形成独立判断
-4. 如果认为此人符合升级标准 → 调用 promote_trust 升级，然后用 update_person_trait 记录升级依据
-5. 如果认为不够格 → 用 review_evaluate 降低相关维度分数，使其不满足硬指标
+2. 浏览此人的消息和记忆，形成独立判断
+3. 用 review_evaluate 记录你的评价（维度: reliability/respect/value/stability）
 
-### 降级保护
-- 降级必须经过你的探索确认，不能仅因分数变化就自动降级
-- 只有当探索后确认此人确实不再符合当前等级标准时，才用 demote_trust 降级
-
-## 人物特质管理
-- 用 get_person_traits 查看已记录的特质
-- 用 update_person_trait 添加/修正特质（preference/habit/style/relationship/expertise）
-- 每个特质需要标注置信度：单条消息来源=0.5，多次印证可逐步提高到 0.8-0.9
-- 置信度 < 0.3 的特质不应作为推理依据
+注意：你不需要手动升级或降级信任等级。评价会在复盘完成时由系统自动处理。
 
 ## 习惯
 - 边读边记：看到重要信息先写 review_thinking_notes，browse 的原文可能会被压缩
