@@ -10,23 +10,27 @@ public class DownloadGroupFileTool : ITool
     private readonly string _adapterId = "";
     private readonly string _workspaceDir = "";
     private readonly HttpClient _http;
+    private readonly GroupFileDownloadStore? _store;
+    private readonly string _loopId = "";
 
     public DownloadGroupFileTool() { _http = new HttpClient(); }
 
     public DownloadGroupFileTool(IAdapterAccess adapterAccess,
-        string adapterId, string workspaceDir, HttpClient http)
+        string adapterId, string workspaceDir, HttpClient http,
+        GroupFileDownloadStore store, string loopId)
     {
         _adapterAccess = adapterAccess;
         _adapterId = adapterId;
         _workspaceDir = workspaceDir;
         _http = http;
+        _store = store;
+        _loopId = loopId;
     }
 
     public string Name => "download_group_file";
     public string Description => "下载群文件到本地（群聊私聊均可用，提供 group_id 即可）。"
         + "先从 list_group_files 获取 file_id 和 busid，然后调用此工具直接下载。"
-        + "参数: group_id(群号), file_id(文件ID), busid(业务ID，默认102), "
-        + "file_name(期望的文件名，可选)。文件较大时会后台下载并完成后通知。";
+        + "下载在后台执行，完成后自动通知。参数: group_id(群号), file_id(文件ID), busid(业务ID，默认102), file_name(期望的文件名，可选)。";
 
     public IReadOnlyList<ToolParameter> Parameters =>
     [
@@ -57,14 +61,19 @@ public class DownloadGroupFileTool : ITool
         if (string.IsNullOrEmpty(url))
             return new ToolResult { Status = "failed", Error = "获取下载链接失败，请确认 file_id 和 busid 正确" };
 
-        // 后台下载
         var saveName = fileName ?? $"{fileId}";
         var safeName = string.Join("_", saveName.Split(Path.GetInvalidFileNameChars()));
         var destDir = Path.Combine(_workspaceDir, "Downloads");
         Directory.CreateDirectory(destDir);
         var destPath = Path.Combine(destDir, safeName);
 
+        // 注册下载任务
+        var store = _store;
+        var task = store?.Register(_loopId, saveName, destPath);
+        var taskId = task?.Id ?? "";
+
         var http = _http;
+        var loopId = _loopId;
         _ = Task.Run(async () =>
         {
             try
@@ -78,16 +87,20 @@ public class DownloadGroupFileTool : ITool
                     var realName = cd.FileName.Trim('"');
                     var realSafe = string.Join("_", realName.Split(Path.GetInvalidFileNameChars()));
                     destPath = Path.Combine(destDir, realSafe);
+                    if (task != null) task.SavePath = destPath;
                 }
 
                 await using var stream = await resp.Content.ReadAsStreamAsync();
                 await using var fileStream = new FileStream(destPath, FileMode.Create,
                     FileAccess.Write, FileShare.None, 8192, useAsync: true);
                 await stream.CopyToAsync(fileStream);
+
+                var size = new FileInfo(destPath).Length;
+                store?.MarkCompleted(taskId, size);
             }
-            catch
+            catch (Exception ex)
             {
-                // 下载失败，静默忽略
+                store?.MarkFailed(taskId, ex.Message);
             }
         }, CancellationToken.None);
 

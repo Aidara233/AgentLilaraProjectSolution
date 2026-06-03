@@ -9,21 +9,26 @@ public class DownloadChatFileTool : ITool
     private readonly IAdapterAccess? _adapterAccess;
     private readonly string _adapterId = "";
     private readonly string _workspaceDir = "";
+    private readonly GroupFileDownloadStore? _store;
+    private readonly string _loopId = "";
 
     public DownloadChatFileTool() { }
 
     public DownloadChatFileTool(IAdapterAccess adapterAccess,
-        string adapterId, string workspaceDir)
+        string adapterId, string workspaceDir,
+        GroupFileDownloadStore store, string loopId)
     {
         _adapterAccess = adapterAccess;
         _adapterId = adapterId;
         _workspaceDir = workspaceDir;
+        _store = store;
+        _loopId = loopId;
     }
 
     public string Name => "download_chat_file";
     public string Description => "下载私聊/群聊中直接发送的文件。"
         + "先从消息里获取 file_id，然后调用此工具下载。"
-        + "参数: file_id(必填), file_name(可选)。";
+        + "下载在后台执行，完成后自动通知。参数: file_id(必填), file_name(可选)。";
 
     public IReadOnlyList<ToolParameter> Parameters =>
     [
@@ -50,6 +55,11 @@ public class DownloadChatFileTool : ITool
         Directory.CreateDirectory(destDir);
         var destPath = Path.Combine(destDir, safeName);
 
+        // 注册下载任务
+        var store = _store;
+        var task = store?.Register(_loopId, saveName, destPath);
+        var taskId = task?.Id ?? "";
+
         var adapterAccess = _adapterAccess;
         var adapterId = _adapterId;
         _ = Task.Run(async () =>
@@ -58,8 +68,22 @@ public class DownloadChatFileTool : ITool
             {
                 await adapterAccess.ExecuteActionAsync(adapterId, "download_chat_file",
                     $"{{\"file_id\":\"{fileId}\",\"dest_path\":\"{destPath.Replace("\\", "\\\\")}\"}}");
+
+                // 检查文件是否下载成功
+                if (File.Exists(destPath))
+                {
+                    var size = new FileInfo(destPath).Length;
+                    store?.MarkCompleted(taskId, size);
+                }
+                else
+                {
+                    store?.MarkFailed(taskId, "文件下载失败：目标文件未生成");
+                }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                store?.MarkFailed(taskId, ex.Message);
+            }
         }, ct);
 
         return Task.FromResult(new ToolResult { Status = "success", Data = $"[下载已提交] {saveName}" });
