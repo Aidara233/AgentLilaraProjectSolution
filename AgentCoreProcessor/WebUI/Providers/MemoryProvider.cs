@@ -351,6 +351,10 @@ internal class MemoryProvider : IWebUIProvider
                         new() { Field = "id", Header = "ID", Width = "60px" },
                         new() { Field = "name", Header = "名称" },
                         new() { Field = "trustLevel", Header = "信任", Width = "90px", Format = ColumnFormat.Badge },
+                        new() { Field = "reliability", Header = "可靠", Width = "60px" },
+                        new() { Field = "respect", Header = "尊重", Width = "60px" },
+                        new() { Field = "value", Header = "价值", Width = "60px" },
+                        new() { Field = "stability", Header = "稳定", Width = "60px" },
                         new() { Field = "alertLevel", Header = "警报", Width = "60px", Format = ColumnFormat.Badge },
                         new() { Field = "fastMemory", Header = "速记" },
                     },
@@ -368,6 +372,10 @@ internal class MemoryProvider : IWebUIProvider
                     {
                         new() { Field = "name", Label = "名称", Type = FormFieldType.Text },
                         new() { Field = "aliases", Label = "别称", Type = FormFieldType.Text, Placeholder = "逗号分隔" },
+                        new() { Field = "reliability", Label = "可靠度", Type = FormFieldType.Text, Readonly = true },
+                        new() { Field = "respect", Label = "尊重度", Type = FormFieldType.Text, Readonly = true },
+                        new() { Field = "value", Label = "价值", Type = FormFieldType.Text, Readonly = true },
+                        new() { Field = "stability", Label = "稳定性", Type = FormFieldType.Text, Readonly = true },
                         new() { Field = "trustLevel", Label = "信任等级", Type = FormFieldType.Select, Options = new()
                         {
                             new() { Value = "-2", Label = "敌对 (-2)" },
@@ -1015,16 +1023,35 @@ internal class PeopleListSource : IDataSource
                 (p.FastMemory?.Contains(kw, StringComparison.OrdinalIgnoreCase) ?? false));
         }
 
+        // 批量获取所有人物的维度评分
+        var allScores = await _engine.EvaluationScores.GetAllByTypeAsync("person");
+        var scoreMap = allScores.GroupBy(s => s.TargetId)
+            .ToDictionary(g => g.Key, g => g.ToDictionary(s => s.Dimension, s => s.Value));
+
         var list = filtered.OrderBy(p => p.Id).ToList();
         var arr = new JsonArray();
         foreach (var p in list)
         {
+            var dims = scoreMap.TryGetValue(p.Id, out var map)
+                ? new Dictionary<string, string>
+                {
+                    ["reliability"] = map.TryGetValue("reliability", out var r) ? r.ToString("F1") : "—",
+                    ["respect"] = map.TryGetValue("respect", out var rs) ? rs.ToString("F1") : "—",
+                    ["value"] = map.TryGetValue("value", out var v) ? v.ToString("F1") : "—",
+                    ["stability"] = map.TryGetValue("stability", out var s) ? s.ToString("F1") : "—",
+                }
+                : new Dictionary<string, string> { ["reliability"] = "—", ["respect"] = "—", ["value"] = "—", ["stability"] = "—" };
+
             arr.Add(new JsonObject
             {
                 ["id"] = p.Id,
                 ["name"] = string.IsNullOrEmpty(p.Name) ? $"(无名称 #{p.Id})" : p.Name,
                 ["trustLevel"] = p.TrustLevel.ToString(),
                 ["trustProgress"] = p.TrustProgress,
+                ["reliability"] = dims["reliability"],
+                ["respect"] = dims["respect"],
+                ["value"] = dims["value"],
+                ["stability"] = dims["stability"],
                 ["alertLevel"] = p.AlertLevel.ToString(),
                 ["fastMemory"] = string.IsNullOrEmpty(p.FastMemory) ? "—" : (p.FastMemory.Length > 60 ? p.FastMemory[..60] + "..." : p.FastMemory),
             });
@@ -1060,6 +1087,10 @@ internal class PeopleEditSource : IDataSource
         var accountsStr = users.Count == 0 ? "" : string.Join("\n",
             users.Select(u => $"{u.Platform}: {u.PlatformId}" + (string.IsNullOrEmpty(u.DisplayName) ? "" : $" ({u.DisplayName})")));
 
+        // 查询维度评分
+        var scores = await _engine.EvaluationScores.GetByTargetAsync("person", _selectedId);
+        var dims = scores.ToDictionary(s => s.Dimension, s => s.Value.ToString("F1"));
+
         return new DataResult
         {
             Data = new JsonObject
@@ -1067,6 +1098,10 @@ internal class PeopleEditSource : IDataSource
                 ["id"] = person.Id,
                 ["name"] = person.Name ?? "",
                 ["aliases"] = person.Aliases ?? "",
+                ["reliability"] = dims.TryGetValue("reliability", out var r) ? r : "—",
+                ["respect"] = dims.TryGetValue("respect", out var rs) ? rs : "—",
+                ["value"] = dims.TryGetValue("value", out var v) ? v : "—",
+                ["stability"] = dims.TryGetValue("stability", out var s) ? s : "—",
                 ["trustLevel"] = ((int)person.TrustLevel).ToString(),
                 ["trustProgress"] = person.TrustProgress,
                 ["alertLevel"] = person.AlertLevel.ToString(),
