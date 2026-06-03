@@ -267,7 +267,18 @@ namespace AgentCoreProcessor.Engine
 
         public Task OnTokensUsedAsync(Usage usage)
         {
-            TokensUsed += usage.TotalTokens;
+            // 只计算实际产生费用的 token：缓存命中部分几乎不计费
+            int effectiveTokens = usage.TotalTokens;
+
+            // DeepSeek: 减去 prompt 缓存命中部分
+            if (usage.PromptCacheHitTokens.HasValue && usage.PromptCacheHitTokens.Value > 0)
+                effectiveTokens -= usage.PromptCacheHitTokens.Value;
+
+            // Claude: 减去 cache_read 部分（低价收费，不计入预算）
+            if (usage.CacheReadInputTokens > 0)
+                effectiveTokens -= usage.CacheReadInputTokens;
+
+            TokensUsed += Math.Max(0, effectiveTokens);
             return Task.CompletedTask;
         }
 
