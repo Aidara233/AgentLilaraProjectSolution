@@ -748,7 +748,7 @@ namespace AgentCoreProcessor.Engine
         public void RequestStop() => shouldWake = true;
 
         /// <summary>检查 Review 触发条件，满足则启动。</summary>
-        private async Task TryStartReviewAsync(DreamConfig cfg)
+        private Task TryStartReviewAsync(DreamConfig cfg)
         {
             var shouldStart = false;
             string? mode = null;
@@ -769,12 +769,12 @@ namespace AgentCoreProcessor.Engine
                 mode = null; // 自然优先级
             }
 
-            if (!shouldStart) return;
+            if (!shouldStart) return Task.CompletedTask;
 
             if (ctx.HasActiveEngine("Review"))
             {
                 Signal.Event(LogGroup.Engine, "Review跳过", new { reason = "已有活跃Review引擎" });
-                return;
+                return Task.CompletedTask;
             }
 
             try
@@ -790,6 +790,8 @@ namespace AgentCoreProcessor.Engine
             {
                 Signal.Error(LogGroup.Engine, "启动Review失败", new { error = ex.Message });
             }
+
+            return Task.CompletedTask;
         }
 
         private static readonly string[] WakeKeywords =

@@ -33,16 +33,16 @@ public class DownloadChatFileTool : ITool
 
     public TimeSpan Timeout => TimeSpan.FromSeconds(30);
 
-    public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
+    public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
     {
         if (_adapterAccess == null)
-            return new ToolResult { Status = "failed", Error = "适配器服务不可用" };
+            return Task.FromResult(new ToolResult { Status = "failed", Error = "适配器服务不可用" });
 
         var fileId = resolvedInputs.Count > 0 ? resolvedInputs[0].Trim() : "";
         var fileName = resolvedInputs.Count > 1 ? resolvedInputs[1]?.Trim() : null;
 
         if (string.IsNullOrEmpty(fileId))
-            return new ToolResult { Status = "failed", Error = "file_id 不能为空" };
+            return Task.FromResult(new ToolResult { Status = "failed", Error = "file_id 不能为空" });
 
         var saveName = fileName ?? fileId[..Math.Min(fileId.Length, 16)];
         var safeName = string.Join("_", saveName.Split(Path.GetInvalidFileNameChars()));
@@ -62,6 +62,6 @@ public class DownloadChatFileTool : ITool
             catch { }
         }, ct);
 
-        return new ToolResult { Status = "success", Data = $"[下载已提交] {saveName}" };
+        return Task.FromResult(new ToolResult { Status = "success", Data = $"[下载已提交] {saveName}" });
     }
 }

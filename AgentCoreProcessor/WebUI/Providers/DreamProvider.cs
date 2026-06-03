@@ -253,10 +253,10 @@ internal class DreamConfigSource : IDataSource
         return Task.FromResult(new DataResult { Data = data });
     }
 
-    public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
     {
         if (action != "save" || data is not JsonObject payload)
-            return new ActionResult { Success = false, Message = "无效请求" };
+            return Task.FromResult(new ActionResult { Success = false, Message = "无效请求" });
 
         try
         {
@@ -283,11 +283,11 @@ internal class DreamConfigSource : IDataSource
             config.Save(ConfigPath);
             _engine.EventBus.PublishSignal("dream-config",
                 System.Text.Json.JsonSerializer.Serialize(config));
-            return new ActionResult { Success = true, Message = "配置已保存" };
+            return Task.FromResult(new ActionResult { Success = true, Message = "配置已保存" });
         }
         catch (Exception ex)
         {
-            return new ActionResult { Success = false, Message = $"保存失败: {ex.Message}" };
+            return Task.FromResult(new ActionResult { Success = false, Message = $"保存失败: {ex.Message}" });
         }
     }
 }
