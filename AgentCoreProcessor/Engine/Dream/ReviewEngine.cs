@@ -409,11 +409,55 @@ namespace AgentCoreProcessor.Engine
 
             session.RawEvaluations = System.Text.Json.JsonSerializer.Serialize(
                 EvaluationBuffer.Select(e => new { e.TargetType, e.TargetId, e.Dimension, e.Rating }).ToList());
+
+            // 信任升降级检查（必须在 Clear 前，需要 personId 列表）
+            var personIds = EvaluationBuffer
+                .Where(e => e.TargetType == "person")
+                .Select(e => e.TargetId).Distinct().ToList();
             EvaluationBuffer.Clear();
+
+            foreach (var pid in personIds)
+                await CheckAndApplyTrustChangeAsync(pid);
 
             var beacons = await _ctx.Beacons.GetUnprocessedAsync("review");
             foreach (var b in beacons)
                 await _ctx.Beacons.MarkProcessedAsync(b.Id);
+        }
+
+        private async Task CheckAndApplyTrustChangeAsync(int personId)
+        {
+            var person = await _ctx.Session.GetPersonByIdAsync(personId);
+            if (person == null) return;
+
+            // 检查升级
+            var criteria = await GetTrustCriteriaAsync(personId);
+            if (criteria.HardCriteriaMet && criteria.NextLevel != null)
+            {
+                if (await PromoteTrustAsync(personId))
+                {
+                    await LogActionAsync("promote_trust", $"P#{personId} {criteria.CurrentLevel}→{criteria.NextLevelLabel}");
+                    person = await _ctx.Session.GetPersonByIdAsync(personId); // 刷新
+                    if (person == null) return;
+                }
+            }
+
+            // 检查降级：当前等级维度门槛未满足
+            var scores = await _ctx.EvaluationScores.GetByTargetAsync("person", personId);
+            var dims = scores.ToDictionary(s => s.Dimension, s => s.Value);
+            var shouldDemote = person.TrustLevel switch
+            {
+                TrustLevel.Trust => dims.Count < 4 || dims.Values.Any(v => v < _cfg.TrustAllDimensions),
+                TrustLevel.Familiarity => dims.Values.Count(v => v >= _cfg.FamiliarityMajorityDimension) < 3,
+                TrustLevel.Understanding => !dims.Values.Any(v => v >= _cfg.UnderstandingAnyDimension),
+                _ => false
+            };
+
+            if (shouldDemote)
+            {
+                var detail = $"维度分数跌破当前等级门槛 ({string.Join(", ", dims.Select(kv => $"{kv.Key}={kv.Value:F1}"))})";
+                if (await DemoteTrustAsync(personId, detail))
+                    await LogActionAsync("demote_trust", $"P#{personId} 降级: {detail}");
+            }
         }
 
         // ---- 信任升级 ----
