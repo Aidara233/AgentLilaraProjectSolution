@@ -50,36 +50,31 @@ namespace AgentCoreProcessor.Tool.Host
             string? query, int? channelId, int? personId,
             string? timeStart, string? timeEnd, int limit)
         {
-            List<ReviewMessageDto> results;
-
-            // 搜索指定频道（或所有频道）
-            if (channelId != null)
-            {
-                var messages = await _ctx.Session.SearchMessagesByChannelAsync(
-                    channelId.Value, query, 0, limit);
-                results = await ToDtoListAsync(messages);
-            }
-            else
-            {
-                // 跨频道搜索：遍历所有频道取结果
-                var channels = await _ctx.Session.GetAllChannelsAsync();
-                var all = new List<ReviewMessageDto>();
-                foreach (var ch in channels)
-                {
-                    if (all.Count >= limit) break;
-                    var msgs = await _ctx.Session.SearchMessagesByChannelAsync(
-                        ch.Id, query, 0, limit - all.Count);
-                    var dtos = await ToDtoListAsync(msgs);
-                    all.AddRange(dtos);
-                }
-                results = all.Take(limit).ToList();
-            }
-
-            // 按 person_id 过滤（内存过滤，需在解析 PersonId 之后）
+            // 前置：按 person_id 解析 userIds
+            List<int>? userIds = null;
             if (personId != null)
-                results = results.Where(m => m.PersonId == personId).ToList();
+            {
+                var users = await _ctx.Session.GetUsersByPersonIdAsync(personId.Value);
+                userIds = users.Select(u => u.Id).ToList();
+                if (userIds.Count == 0)
+                    return new List<ReviewMessageDto>(); // 该人物无任何关联账号
+            }
 
-            return results;
+            // 前置：解析时间
+            DateTime? dtStart = null, dtEnd = null;
+            if (!string.IsNullOrEmpty(timeStart) && DateTime.TryParse(timeStart, out var ds))
+                dtStart = ds.Date; // 从当天 00:00 开始
+            if (!string.IsNullOrEmpty(timeEnd) && DateTime.TryParse(timeEnd, out var de))
+                dtEnd = de.Date.AddDays(1).AddTicks(-1); // 包含整天到 23:59:59.999...
+
+            // 频道列表
+            List<int>? channelIds = channelId != null ? new List<int> { channelId.Value } : null;
+
+            // 统一 SQL 搜索
+            var messages = await _ctx.Session.SearchMessagesAsync(
+                channelIds, query, userIds, dtStart, dtEnd, limit);
+
+            return await ToDtoListAsync(messages);
         }
 
         public async Task<ReviewPersonDto?> GetPersonAsync(int personId)

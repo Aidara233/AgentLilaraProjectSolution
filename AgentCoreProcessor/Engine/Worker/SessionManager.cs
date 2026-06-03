@@ -227,6 +227,12 @@ namespace AgentCoreProcessor.Engine
         public Task<List<UserMessage>> SearchMessagesByChannelAsync(int channelId, string? keyword, int offset, int limit)
             => messages.SearchByChannelAsync(channelId, keyword, offset, limit);
 
+        /// <summary>通用消息搜索（Review 工具用）。所有条件可选，结果按 Time DESC 排序。</summary>
+        public Task<List<UserMessage>> SearchMessagesAsync(
+            List<int>? channelIds, string? keyword, List<int>? userIds,
+            DateTime? timeStart, DateTime? timeEnd, int limit)
+            => messages.SearchAsync(channelIds, keyword, userIds, timeStart, timeEnd, limit);
+
         public Task<int> GetMessageCountByChannelAsync(int channelId)
             => messages.GetCountByChannelAsync(channelId);
 

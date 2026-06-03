@@ -142,6 +142,61 @@ namespace AgentCoreProcessor.Database
                 userIds.Cast<object>().ToArray());
             return result.Count > 0 ? result[0].Value : 0;
         }
+
+        /// <summary>
+        /// 通用消息搜索。所有条件均为可选，至少提供一个有效条件。
+        /// 结果按 Time DESC 排序，limit 最大 100。
+        /// </summary>
+        public Task<List<UserMessage>> SearchAsync(
+            List<int>? channelIds,
+            string? keyword,
+            List<int>? userIds,
+            DateTime? timeStart,
+            DateTime? timeEnd,
+            int limit = 20)
+        {
+            var sql = "SELECT * FROM UserMessages WHERE 1=1";
+            var args = new List<object>();
+
+            if (channelIds != null && channelIds.Count > 0)
+            {
+                var placeholders = string.Join(",", channelIds.Select(_ => "?"));
+                sql += $" AND ChannelId IN ({placeholders})";
+                args.AddRange(channelIds.Cast<object>());
+            }
+
+            if (userIds != null && userIds.Count > 0)
+            {
+                var placeholders = string.Join(",", userIds.Select(_ => "?"));
+                sql += $" AND UserId IN ({placeholders})";
+                args.AddRange(userIds.Cast<object>());
+            }
+
+            if (!string.IsNullOrEmpty(keyword))
+            {
+                sql += " AND (Content LIKE ? OR SenderName LIKE ?)";
+                args.Add($"%{keyword}%");
+                args.Add($"%{keyword}%");
+            }
+
+            if (timeStart != null)
+            {
+                sql += " AND Time >= ?";
+                args.Add(timeStart.Value);
+            }
+
+            if (timeEnd != null)
+            {
+                sql += " AND Time <= ?";
+                args.Add(timeEnd.Value);
+            }
+
+            limit = Math.Clamp(limit, 1, 100);
+            sql += " ORDER BY Time DESC LIMIT ?";
+            args.Add(limit);
+
+            return db.QueryAsync<UserMessage>(sql, args.ToArray());
+        }
     }
 
     internal class CountResult { public int Value { get; set; } }
