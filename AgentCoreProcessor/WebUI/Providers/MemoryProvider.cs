@@ -372,10 +372,10 @@ internal class MemoryProvider : IWebUIProvider
                     {
                         new() { Field = "name", Label = "名称", Type = FormFieldType.Text },
                         new() { Field = "aliases", Label = "别称", Type = FormFieldType.Text, Placeholder = "逗号分隔" },
-                        new() { Field = "reliability", Label = "可靠度", Type = FormFieldType.Text, Readonly = true },
-                        new() { Field = "respect", Label = "尊重度", Type = FormFieldType.Text, Readonly = true },
-                        new() { Field = "value", Label = "价值", Type = FormFieldType.Text, Readonly = true },
-                        new() { Field = "stability", Label = "稳定性", Type = FormFieldType.Text, Readonly = true },
+                        new() { Field = "reliability", Label = "可靠度", Type = FormFieldType.Number },
+                        new() { Field = "respect", Label = "尊重度", Type = FormFieldType.Number },
+                        new() { Field = "value", Label = "价值", Type = FormFieldType.Number },
+                        new() { Field = "stability", Label = "稳定度", Type = FormFieldType.Number },
                         new() { Field = "trustLevel", Label = "信任等级", Type = FormFieldType.Select, Options = new()
                         {
                             new() { Value = "-2", Label = "敌对 (-2)" },
