@@ -62,6 +62,7 @@ namespace AgentCoreProcessor.Engine
         // 增援自动激活追踪
         private bool _reserveAutoActivated;
         private bool _reserveExhaustedNotified;
+        private bool _completeNotified;
 
         private static readonly HashSet<string> ActionTools = new()
         {
@@ -306,7 +307,17 @@ namespace AgentCoreProcessor.Engine
         public Task<List<Message>?> BuildRoundInjectAsync()
         {
             if (_reviewControl?.IsCompleted == true)
+            {
+                if (!_completeNotified)
+                {
+                    _completeNotified = true;
+                    return Task.FromResult<List<Message>?>(new List<Message>
+                    {
+                        new Message { Role = "user", Content = "[系统] 复盘已完成，评价已提交。无需继续操作。" }
+                    });
+                }
                 return Task.FromResult<List<Message>?>(null);
+            }
 
             // 增援耗尽 → 强制完成
             var mainBudget = _cfg.TokenBudget;
