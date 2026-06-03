@@ -387,10 +387,6 @@ internal class MemoryProvider : IWebUIProvider
                             new() { Value = "4", Label = "信任 (4)" },
                             new() { Value = "5", Label = "绝对信任 (5)" },
                         }},
-                        new() { Field = "reliability", Label = "可靠度", Type = FormFieldType.Number },
-                        new() { Field = "respect", Label = "尊重度", Type = FormFieldType.Number },
-                        new() { Field = "value", Label = "价值", Type = FormFieldType.Number },
-                        new() { Field = "stability", Label = "稳定度", Type = FormFieldType.Number },
                         new() { Field = "alertLevel", Label = "警报等级", Type = FormFieldType.Select, Options = new()
                         {
                             new() { Value = "0", Label = "0 - 无" },
