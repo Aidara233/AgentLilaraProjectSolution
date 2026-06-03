@@ -82,14 +82,13 @@ namespace AgentCoreProcessor.Engine
             _core = new AgentCore("ReviewCore", usePersona: false);
             _core.CallerTag = "Review:explore";
 
-            // 恢复进度
+            // 恢复进度（不恢复 TokensUsed，每次启动都是新预算）
             if (_progress.SavedAt != null)
             {
                 CursorMessageId = _progress.CursorMessageId;
                 CursorChannelId = _progress.CursorChannelId;
                 EvaluationBuffer.AddRange(_progress.EvaluationBuffer);
                 ThinkingNotes = _progress.ThinkingNotes;
-                TokensUsed = _progress.TokensUsed;
                 _seedType = "resume";
             }
         }
@@ -365,7 +364,6 @@ namespace AgentCoreProcessor.Engine
                 CursorChannelId = CursorChannelId,
                 EvaluationBuffer = EvaluationBuffer.ToList(),
                 ThinkingNotes = ThinkingNotes,
-                TokensUsed = TokensUsed,
                 ReserveUsed = _reviewControl?.ReserveGranted ?? false,
                 SavedAt = DateTime.Now
             };

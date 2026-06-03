@@ -17,7 +17,7 @@ namespace AgentCoreProcessor.Engine
 
         public string ThinkingNotes { get; set; } = "";
 
-        public int TokensUsed { get; set; }
+        public int TokensUsed { get; set; } // 已废弃，不再持久化（每次启动是新预算）
         public bool ReserveUsed { get; set; }
 
         public DateTime? SavedAt { get; set; }
