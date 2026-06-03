@@ -143,12 +143,10 @@ namespace AgentCoreProcessor.Engine
                 _core.GlobalComponentTools = _ctx.GlobalComponentHost?.GetVisibleTools("review").ToList();
                 _agent = new Agent(this, _core, agentConfig, authorized);
 
-                // 全量记录工具调用到 ReviewActions
+                // 全量记录工具调用到 ReviewActions（摘要用参数，detail 存原始 JSON）
                 _agent.OnToolExecuted = (call, result, _) =>
                 {
-                    var summary = result.IsSuccess
-                        ? (result.Data?.Length > 120 ? result.Data[..120] + "…" : result.Data ?? "ok")
-                        : (result.Error ?? "error");
+                    var summary = BuildToolCallSummary(call.Tool, call.RawInputJson, result);
                     return LogActionAsync(call.Tool, summary, call.RawInputJson);
                 };
 
@@ -1100,6 +1098,92 @@ namespace AgentCoreProcessor.Engine
 你有有限的 token 预算。预算用尽时系统会自动激活增援，增援耗尽时会强制完成。
 如果觉得工作已可以收尾，直接调用 review_complete 完成。
 """;
+        }
+
+        /// <summary>从工具调用 JSON 中提取参数生成可读摘要。</summary>
+        private static string BuildToolCallSummary(string toolName, string? rawInputJson, ToolResult result)
+        {
+            if (string.IsNullOrEmpty(rawInputJson))
+                return result.IsSuccess ? (result.Data ?? "ok") : (result.Error ?? "error");
+
+            try
+            {
+                var obj = Newtonsoft.Json.Linq.JObject.Parse(rawInputJson);
+                var parts = new List<string>();
+
+                switch (toolName)
+                {
+                    case "review_evaluate":
+                        parts.Add($"{obj["target_type"]}#{obj["target_id"]}");
+                        parts.Add($"{obj["dimension"]}={obj["rating"]}");
+                        break;
+
+                    case "review_browse":
+                        parts.Add($"browse {obj["count"] ?? "20"}条");
+                        break;
+
+                    case "review_focus":
+                        parts.Add($"focus msg#{obj["message_id"]}");
+                        if (obj["offset"] != null) parts.Add($"offset={obj["offset"]}");
+                        break;
+
+                    case "review_search_messages":
+                        if (obj["query"] != null) parts.Add($"q=\"{obj["query"]}\"");
+                        if (obj["channel_id"] != null) parts.Add($"ch#{obj["channel_id"]}");
+                        if (obj["person_id"] != null) parts.Add($"P#{obj["person_id"]}");
+                        break;
+
+                    case "review_get_person":
+                        parts.Add($"get P#{obj["person_id"]}");
+                        break;
+
+                    case "review_update_person":
+                        parts.Add($"update P#{obj["person_id"]}");
+                        if (obj["name"] != null) parts.Add($"name=\"{obj["name"]}\"");
+                        if (obj["aliases"] != null) parts.Add($"aliases=\"{obj["aliases"]}\"");
+                        if (obj["fast_memory"] != null) parts.Add($"memo=\"{obj["fast_memory"]}\"");
+                        break;
+
+                    case "review_thinking_notes":
+                        parts.Add($"notes [{obj["action"]}]");
+                        break;
+
+                    case "review_complete":
+                        parts.Add("complete");
+                        break;
+
+                    case "review_save_progress":
+                        parts.Add("save_progress");
+                        break;
+
+                    case "memory_store":
+                        if (obj["content"] != null)
+                        {
+                            var content = obj["content"]!.ToString();
+                            parts.Add($"store=\"{content[..Math.Min(30, content.Length)]}{(content.Length > 30 ? "…" : "")}\"");
+                        }
+                        break;
+
+                    case "memory_search":
+                        parts.Add($"search=\"{obj["query"]}\"");
+                        break;
+
+                    default:
+                        // 通用：列出所有非空字段
+                        foreach (var prop in obj.Properties().Where(p => p.Value.Type != Newtonsoft.Json.Linq.JTokenType.Null))
+                            parts.Add($"{prop.Name}={prop.Value}");
+                        break;
+                }
+
+                if (!result.IsSuccess)
+                    parts.Add($"❌ {result.Error}");
+
+                return parts.Count > 0 ? string.Join(" ", parts) : (result.Data ?? "ok");
+            }
+            catch
+            {
+                return result.IsSuccess ? (result.Data ?? "ok") : (result.Error ?? "error");
+            }
         }
     }
 }
