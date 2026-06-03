@@ -832,41 +832,103 @@ namespace AgentCoreProcessor.Engine
             _forcedSeedMode = mode;
         }
 
-        /// <summary>查所有 Stranger+ 级别的人物，筛选硬指标达标者。</summary>
-        private async Task<List<(Person Person, TrustCriteriaDto Criteria)>> BuildCandidateListAsync()
+        private sealed class CandidateInfo
+        {
+            public Person Person { get; set; } = null!;
+            public bool IsPromote { get; set; }
+            public TrustCriteriaDto? Criteria { get; set; }
+            public string Reason { get; set; } = "";
+        }
+
+        /// <summary>查所有 Stranger+ 级别的人物，筛选硬指标达标者（升级候选）
+        /// 和维度跌破当前门槛者（降级候选）。</summary>
+        private async Task<List<CandidateInfo>> BuildCandidateListAsync()
         {
             var persons = await _ctx.Session.GetAllPersonsAsync();
-            var candidates = new List<(Person, TrustCriteriaDto)>();
+            var candidates = new List<CandidateInfo>();
             foreach (var p in persons)
             {
                 if (p.TrustLevel < TrustLevel.Stranger) continue;
+
+                // 升级候选
                 var criteria = await GetTrustCriteriaAsync(p.Id);
                 if (criteria.HardCriteriaMet)
-                    candidates.Add((p, criteria));
+                {
+                    candidates.Add(new CandidateInfo
+                    {
+                        Person = p,
+                        IsPromote = true,
+                        Criteria = criteria,
+                        Reason = "硬指标达标"
+                    });
+                    continue; // 升级和降级互斥：优先展示升级
+                }
+
+                // 降级候选：维度跌破当前等级门槛
+                var scores = await _ctx.EvaluationScores.GetByTargetAsync("person", p.Id);
+                var dims = scores.ToDictionary(s => s.Dimension, s => s.Value);
+                var shouldDemote = p.TrustLevel switch
+                {
+                    TrustLevel.Trust => dims.Count < 4 || dims.Values.Any(v => v < _cfg.TrustAllDimensions),
+                    TrustLevel.Familiarity => dims.Values.Count(v => v >= _cfg.FamiliarityMajorityDimension) < 3,
+                    TrustLevel.Understanding => !dims.Values.Any(v => v >= _cfg.UnderstandingAnyDimension),
+                    _ => false
+                };
+
+                if (shouldDemote)
+                {
+                    var detail = dims.Count > 0
+                        ? $"维度分数跌破门槛 ({string.Join(", ", dims.Select(kv => $"{kv.Key}={kv.Value:F1}"))})"
+                        : "无维度分数";
+                    candidates.Add(new CandidateInfo
+                    {
+                        Person = p,
+                        IsPromote = false,
+                        Reason = detail
+                    });
+                }
             }
             return candidates;
         }
 
-        private string BuildCandidateSeed(List<(Person Person, TrustCriteriaDto Criteria)> candidates)
+        private string BuildCandidateSeed(List<CandidateInfo> candidates)
         {
+            var promote = candidates.Where(c => c.IsPromote).ToList();
+            var demote = candidates.Where(c => !c.IsPromote).ToList();
+
             var lines = new List<string>
             {
-                "## 信任升级候选人",
-                $"发现 {candidates.Count} 位候选人硬指标达标，等待你的探索确认。",
-                "对每位候选人：浏览其消息和记忆 → 按检查单验证 → 用 review_evaluate 记录评价。",
+                "## 信任变更候选人",
+                $"发现 {promote.Count} 位升级候选人，{demote.Count} 位降级风险人物。",
                 ""
             };
 
-            foreach (var (person, criteria) in candidates)
+            if (promote.Count > 0)
             {
-                lines.Add($"### P#{person.Id} {person.Name} (当前: {criteria.CurrentLevel} → 目标: {criteria.NextLevelLabel})");
-                lines.Add($"- 消息数: {criteria.MessageCount}");
-                lines.Add($"- 记忆数: {criteria.MemoryCount}");
-                lines.Add($"- 相识天数: {criteria.DaysSinceCreation}");
-                lines.Add($"- Review 次数: {criteria.ReviewCount}");
-                if (criteria.DimensionValues.Count > 0)
-                    lines.Add($"- 维度分数: {string.Join(", ", criteria.DimensionValues.Select(kv => $"{kv.Key}={kv.Value:F1}"))}");
-                lines.Add("");
+                lines.Add("### 升级候选人（硬指标已达标）");
+                foreach (var info in promote)
+                {
+                    var c = info.Criteria!;
+                    lines.Add($"#### P#{info.Person.Id} {info.Person.Name} (当前: {c.CurrentLevel} → 目标: {c.NextLevelLabel})");
+                    lines.Add($"- 消息数: {c.MessageCount}");
+                    lines.Add($"- 记忆数: {c.MemoryCount}");
+                    lines.Add($"- 相识天数: {c.DaysSinceCreation}");
+                    lines.Add($"- Review 次数: {c.ReviewCount}");
+                    if (c.DimensionValues.Count > 0)
+                        lines.Add($"- 维度分数: {string.Join(", ", c.DimensionValues.Select(kv => $"{kv.Key}={kv.Value:F1}"))}");
+                    lines.Add("");
+                }
+            }
+
+            if (demote.Count > 0)
+            {
+                lines.Add("### 降级风险人物（维度跌破当前门槛）");
+                foreach (var info in demote)
+                {
+                    lines.Add($"#### P#{info.Person.Id} {info.Person.Name} (当前: {info.Person.TrustLevel})");
+                    lines.Add($"- 风险原因: {info.Reason}");
+                    lines.Add("");
+                }
             }
 
             // 附加对应级别的软指标检查单
@@ -889,8 +951,8 @@ namespace AgentCoreProcessor.Engine
                     + "- ≥2 实例支撑的行为预判"
             };
 
-            var relevantChecklists = candidates
-                .Select(c => c.Criteria.NextLevelLabel)
+            var relevantChecklists = promote
+                .Select(c => c.Criteria!.NextLevelLabel)
                 .Distinct()
                 .Where(l => levelChecklists.ContainsKey(l))
                 .Select(l => levelChecklists[l])
