@@ -291,9 +291,6 @@ namespace AgentCoreProcessor
             // 日志清理服务
             builder.Services.AddSingleton(logCleanupService);
 
-            // 日志清理服务
-            builder.Services.AddSingleton(logCleanupService);
-
             // 注册服务
             builder.Services.AddSingleton(eventBus);
             builder.Services.AddSingleton(engine);
