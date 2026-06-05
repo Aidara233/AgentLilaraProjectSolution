@@ -26,11 +26,11 @@ namespace Plugin.BasicTools
 
         public string Name => "speak";
         public string Description => "逐条发送消息到当前频道。content 为一个字符串，"
-            + "多条消息用 \\n---\\n（换行+三个短横+换行）分隔，每条单独发送，建议常用分条功能以发送多条消息。"
+            + "多条消息单独空一行分隔，每条单独发送，建议常用分条功能以发送多条消息。"
             + "支持图文混排（<img work=\"rel/path\"/> 引用 Workspace 图片，"
             + "<img hash=\"xxx\"/> 引用图库图片）。可用标签：<at user=\"名字\"/> @提及、<reply id=\"消息ID\"/> 回复消息";
         public IReadOnlyList<ToolParameter> Parameters =>
-            [new("content", "要发送的消息，多条用 \\n---\\n 分隔，每条单独发送，建议常用分条功能以发送多条消息。（可含 <img/> <at/> <reply/> 标签）", 0)];
+            [new("content", "多条消息单独空一行分隔，每条单独发送，建议常用分条功能以发送多条消息。（可含 <img/> <at/> <reply/> 标签）", 0)];
         public TimeSpan Timeout => TimeSpan.FromSeconds(30);
 
         public JsonNode GetInputSchema()
@@ -43,7 +43,7 @@ namespace Plugin.BasicTools
                     ["content"] = new JsonObject
                     {
                         ["type"] = "string",
-                        ["description"] = "要发送的消息，多条用 \\n---\\n（换行+三个短横+换行）分隔，每条单独发送，建议常用分条功能以发送多条消息。（可含 <img/> <at/> <reply/> 标签）"
+                        ["description"] = "要发送的消息，多条消息单独空一行分隔，每条单独发送，建议常用分条功能以发送多条消息。（可含 <img/> <at/> <reply/> 标签）"
                     }
                 },
                 ["required"] = new JsonArray { "content" }
@@ -60,7 +60,7 @@ namespace Plugin.BasicTools
                 return new ToolResult { Status = "failed", Error = "消息内容不能为空" };
 
             if (_channelAccess == null)
-                return new ToolResult { Status = "success", Data = string.Join("\n---\n", messages) };
+                return new ToolResult { Status = "success", Data = string.Join("\n\n", messages) };
 
             var sentIds = new List<string>();
             for (int i = 0; i < messages.Count; i++)
@@ -88,8 +88,8 @@ namespace Plugin.BasicTools
             if (string.IsNullOrWhiteSpace(raw))
                 return [];
 
-            // 主路径：\n---\n 分隔符切分多条消息
-            var separator = "\n---\n";
+            // 主路径：\n\n 分隔符切分多条消息
+            var separator = "\n\n";
             if (raw.Contains(separator))
             {
                 var parts = raw.Split(separator, StringSplitOptions.None);
@@ -201,7 +201,7 @@ namespace Plugin.BasicTools
         }
     }
 
-    [ToolMeta(Group = null, ContinueLoop = false, OutputOnly = true)]
+    [ToolMeta(Group = null, ContinueLoop = false, OutputOnly = true, ExpressAvailable = true)]
     public class SendMediaTool : ITool
     {
         private readonly IChannelAccess? _channelAccess;

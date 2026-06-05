@@ -146,7 +146,7 @@ namespace Plugin.FileTools
         }
     }
 
-    [ToolMeta(Group = "file", ContinueLoop = true, CapabilitySummary = "列出目录内容")]
+    [ToolMeta(Group = "file", ContinueLoop = true, CapabilitySummary = "列出目录内容", ExpressAvailable = true)]
     public class ListDirTool : FileToolBase
     {
         public ListDirTool(string workspaceDir) : base(workspaceDir) { }
