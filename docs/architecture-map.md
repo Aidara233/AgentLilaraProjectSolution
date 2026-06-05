@@ -552,7 +552,6 @@ Storage/
 │     └── CommandConfig.json  指令前缀配置
 ├── MCP/
 │     └── McpServers.json     MCP Server 声明配置(传输/工具组/权限/覆盖)
-├── PersonaMemorySeed.txt     人设记忆种子（首次启动导入）
 ├── Database/lilara.db        SQLite数据库（WAL模式，并行读写友好）
 ├── Logs/                     framework日志 + Model调用日志
 └── WebUI/
