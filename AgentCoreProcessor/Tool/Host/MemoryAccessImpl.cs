@@ -50,7 +50,8 @@ namespace AgentCoreProcessor.Tool.Host
                 importance: request.Importance,
                 certainty: request.Certainty,
                 type: request.Type ?? Database.MemoryType.Fact,
-                subject: request.Subject);
+                subject: request.Subject,
+                embeddingModel: VectorUtil.EmbeddingModelTag);
             if (!request.IsPersistent || request.ExpiresAt != null)
             {
                 entry.IsPersistent = request.IsPersistent;
@@ -218,6 +219,7 @@ namespace AgentCoreProcessor.Tool.Host
             entry.Content = newContent;
             var vec = await embedding.GetEmbeddingAsync(newContent);
             entry.Embedding = VectorUtil.FloatsToBytes(vec);
+            entry.EmbeddingModel = VectorUtil.EmbeddingModelTag;
             await memories.UpdateAsync(entry);
         }
 
@@ -313,7 +315,8 @@ namespace AgentCoreProcessor.Tool.Host
                 personId: request.PersonId,
                 channelId: request.ChannelId,
                 type: request.Type ?? Database.MemoryType.Fact,
-                subject: request.Subject);
+                subject: request.Subject,
+                embeddingModel: VectorUtil.EmbeddingModelTag);
             return entry.Id;
         }
 

@@ -42,5 +42,8 @@ namespace AgentCoreProcessor.Database
 
         /// <summary>热度（0~∞）。被召回时滚雪球，衰减时下降。低于0.15触发入库。</summary>
         public float Heat { get; set; } = 0.3f;
+
+        /// <summary>生成该 embedding 的模型名称</summary>
+        public string? EmbeddingModel { get; set; }
     }
 }

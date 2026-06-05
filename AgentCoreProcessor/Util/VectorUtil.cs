@@ -1,4 +1,4 @@
-using System;
+using System.Numerics;
 
 namespace AgentCoreProcessor.Util
 {
@@ -7,17 +7,43 @@ namespace AgentCoreProcessor.Util
     /// </summary>
     internal static class VectorUtil
     {
-        /// <summary>余弦相似度。</summary>
+        public const string EmbeddingModelTag = "bge-large-zh-v1.5";
+
+        /// <summary>余弦相似度（SIMD 加速）。</summary>
         public static float CosineSimilarity(float[] a, float[] b)
         {
             if (a.Length != b.Length) return 0f;
             float dot = 0f, normA = 0f, normB = 0f;
-            for (int i = 0; i < a.Length; i++)
+            int i = 0;
+
+            if (Vector.IsHardwareAccelerated && a.Length >= Vector<float>.Count)
+            {
+                var dotVec = Vector<float>.Zero;
+                var normAVec = Vector<float>.Zero;
+                var normBVec = Vector<float>.Zero;
+                int simdEnd = a.Length - a.Length % Vector<float>.Count;
+
+                for (; i < simdEnd; i += Vector<float>.Count)
+                {
+                    var va = new Vector<float>(a, i);
+                    var vb = new Vector<float>(b, i);
+                    dotVec += va * vb;
+                    normAVec += va * va;
+                    normBVec += vb * vb;
+                }
+
+                dot = Vector.Dot(dotVec, Vector<float>.One);
+                normA = Vector.Dot(normAVec, Vector<float>.One);
+                normB = Vector.Dot(normBVec, Vector<float>.One);
+            }
+
+            for (; i < a.Length; i++)
             {
                 dot += a[i] * b[i];
                 normA += a[i] * a[i];
                 normB += b[i] * b[i];
             }
+
             var denom = MathF.Sqrt(normA) * MathF.Sqrt(normB);
             return denom == 0f ? 0f : dot / denom;
         }

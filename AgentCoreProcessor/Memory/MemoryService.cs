@@ -1,7 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+using System.Collections.Concurrent;
 using AgentCoreProcessor.Client;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Database;
@@ -19,6 +16,9 @@ namespace AgentCoreProcessor.Memory
         private readonly MemoryLinkRepository memoryLinks;
         private readonly PersonaMemoryRepository? personaMemories;
         private readonly IEmbeddingProvider embedding;
+
+        // embedding 缓存：key = "m:{id}" / "t:{id}" / "p:{id}"，避免重复反序列化 BLOB
+        private readonly ConcurrentDictionary<string, float[]> _embeddingCache = new();
 
         // 综合排序权重
         private const float SimilarityWeight = 0.45f;
@@ -52,6 +52,25 @@ namespace AgentCoreProcessor.Memory
             this.personaMemories = personaMemories;
         }
 
+        // ---- 缓存辅助 ----
+
+        private string MainKey(int id) => $"m:{id}";
+        private string TempKey(int id) => $"t:{id}";
+        private string PersonaKey(int id) => $"p:{id}";
+
+        private float[]? GetCachedVector(string key, byte[]? bytes)
+        {
+            if (bytes == null || bytes.Length == 0) return null;
+            return _embeddingCache.GetOrAdd(key, _ => VectorUtil.BytesToFloats(bytes));
+        }
+
+        private float ComputeSimilarity(float[]? queryVec, byte[]? entryBytes, string cacheKey)
+        {
+            if (queryVec == null) return 0f;
+            var entryVec = GetCachedVector(cacheKey, entryBytes);
+            return entryVec == null ? 0f : VectorUtil.CosineSimilarity(queryVec, entryVec);
+        }
+
         /// <summary>
         /// 写入临时记忆库。框架自动填标签，写入时生成 embedding。
         /// </summary>
@@ -62,18 +81,25 @@ namespace AgentCoreProcessor.Memory
             string type = MemoryType.Fact, string? subject = null)
         {
             byte[]? embeddingBytes = null;
+            float[]? vec = null;
             try
             {
-                var vec = await embedding.GetEmbeddingAsync(content);
-                embeddingBytes = SiliconFlowEmbeddingProvider.FloatsToBytes(vec);
+                vec = await embedding.GetEmbeddingAsync(content);
+                embeddingBytes = VectorUtil.FloatsToBytes(vec);
             }
             catch (Exception)
             {
                 // embedding 生成失败不阻塞写入，后续做梦时可补
             }
 
-            return await tempMemories.CreateAsync(
-                content, embeddingBytes, personId, channelId, sourceMessageId, confidence, type, subject);
+            var entry = await tempMemories.CreateAsync(
+                content, embeddingBytes, personId, channelId, sourceMessageId, confidence, type, subject,
+                embeddingModel: VectorUtil.EmbeddingModelTag);
+
+            if (vec != null)
+                _embeddingCache[TempKey(entry.Id)] = vec;
+
+            return entry;
         }
 
         /// <summary>
@@ -100,7 +126,7 @@ namespace AgentCoreProcessor.Memory
             var tempResults = await tempMemories.GetAllWithMatchScoreAsync(personId, channelId);
             foreach (var (t, matchCount) in tempResults)
             {
-                float sim = VectorUtil.ComputeSimilarity(queryVec, t.Embedding);
+                float sim = ComputeSimilarity(queryVec, t.Embedding, TempKey(t.Id));
                 float heatScore = HeatWeight * MathF.Sqrt(t.Heat);
                 scored.Add(new ScoredMemory
                 {
@@ -119,7 +145,7 @@ namespace AgentCoreProcessor.Memory
             {
                 x.Entry,
                 x.MatchCount,
-                Similarity = VectorUtil.ComputeSimilarity(queryVec, x.Entry.Embedding)
+                Similarity = ComputeSimilarity(queryVec, x.Entry.Embedding, MainKey(x.Entry.Id))
             })
             .OrderByDescending(x => x.Similarity * SimilarityWeight
                 + x.Entry.Importance * ImportanceWeight
@@ -143,9 +169,6 @@ namespace AgentCoreProcessor.Memory
                     Certainty = x.Entry.Certainty
                 });
             }
-
-            // mainEntries 兼容引用（关联扩展和 LastAccessedAt 更新用）
-            var mainEntries = mainResults.Select(x => x.Entry).ToList();
 
             // 3. 关联扩展
             if (includeLinks && mainScored.Count > 0)
@@ -172,7 +195,7 @@ namespace AgentCoreProcessor.Memory
                     var linkedEntries = await memories.GetByIdsAsync(linkedIds.ToList());
                     foreach (var entry in linkedEntries)
                     {
-                        float sim = VectorUtil.ComputeSimilarity(queryVec, entry.Embedding);
+                        float sim = ComputeSimilarity(queryVec, entry.Embedding, MainKey(entry.Id));
                         float linkStr = linkStrengths.GetValueOrDefault(entry.Id, 0f);
                         scored.Add(new ScoredMemory
                         {
@@ -192,7 +215,7 @@ namespace AgentCoreProcessor.Memory
                 var personaAll = await personaMemories.GetAllAsync();
                 foreach (var p in personaAll)
                 {
-                    float sim = VectorUtil.ComputeSimilarity(queryVec, p.Embedding);
+                    float sim = ComputeSimilarity(queryVec, p.Embedding, PersonaKey(p.Id));
                     float personaScore = sim * SimilarityWeight - PersonaPenalty;
                     if (personaScore >= PersonaMinScore)
                     {
@@ -215,38 +238,40 @@ namespace AgentCoreProcessor.Memory
                 .Take(topK)
                 .ToList();
 
-            // 6. 命中追踪：热度奖励 + 目标逼近重要度
+            // 6. 命中追踪：热度奖励 + 目标逼近重要度（批量写）
             var now = DateTime.Now;
-            var mainEntryDict = mainEntries.ToDictionary(m => m.Id);
             var tempEntryDict = tempResults.ToDictionary(x => x.Entry.Id, x => x.Entry);
+            var mainEntryDict = mainResults.ToDictionary(x => x.Entry.Id, x => x.Entry);
+
+            var tempUpdates = new List<(int Id, float Heat)>();
+            var mainUpdates = new List<(int Id, float Importance, int IncrementRecall)>();
 
             for (int rank = 0; rank < result.Count; rank++)
             {
                 var s = result[rank];
                 if (s.IsTemp && tempEntryDict.TryGetValue(s.Id, out var tempEntry))
                 {
-                    // 临时库热度：目标逼近 + 排名加权
                     float rankBonus = TempHeatBoostRate / MathF.Sqrt(rank + 1);
                     tempEntry.Heat += (1 - tempEntry.Heat) * rankBonus;
-                    await tempMemories.UpdateAsync(tempEntry);
+                    tempUpdates.Add((tempEntry.Id, tempEntry.Heat));
                 }
                 else if (!s.IsTemp && !s.IsPersona && mainEntryDict.TryGetValue(s.Id, out var entry))
                 {
-                    entry.RecallCount++;
-
-                    // 懒补衰减
                     if (entry.LastRecalledAt.HasValue)
                     {
                         var days = (float)(now - entry.LastRecalledAt.Value).TotalDays;
                         entry.Importance *= MathF.Pow(1 - ImportanceDecayRate, days);
                     }
-                    entry.LastRecalledAt = now;
-
-                    // 目标逼近奖励
                     entry.Importance += (1 - entry.Importance) * RecallImportanceRate;
-                    await memories.UpdateAsync(entry);
+                    entry.LastRecalledAt = now;
+                    mainUpdates.Add((entry.Id, entry.Importance, 1));
                 }
             }
+
+            if (tempUpdates.Count > 0)
+                await tempMemories.BatchUpdateHeatAsync(tempUpdates);
+            if (mainUpdates.Count > 0)
+                await memories.BatchUpdateRecallMetadataAsync(mainUpdates);
 
             return result;
         }
@@ -256,7 +281,10 @@ namespace AgentCoreProcessor.Memory
         {
             var memory = await memories.GetByIdAsync(memoryId);
             if (memory != null)
+            {
                 await memories.DeleteAsync(memory);
+                _embeddingCache.TryRemove(MainKey(memoryId), out _);
+            }
         }
 
         /// <summary>
@@ -278,7 +306,7 @@ namespace AgentCoreProcessor.Memory
 
             foreach (var m in personMemories)
             {
-                float sim = VectorUtil.ComputeSimilarity(queryVec, m.Embedding);
+                float sim = ComputeSimilarity(queryVec, m.Embedding, MainKey(m.Id));
                 if (sim > bestSim)
                 {
                     bestSim = sim;
@@ -293,7 +321,7 @@ namespace AgentCoreProcessor.Memory
 
             foreach (var (t, _) in tempAll)
             {
-                float sim = VectorUtil.ComputeSimilarity(queryVec, t.Embedding);
+                float sim = ComputeSimilarity(queryVec, t.Embedding, TempKey(t.Id));
                 if (sim > bestTempSim)
                 {
                     bestTempSim = sim;
@@ -326,8 +354,8 @@ namespace AgentCoreProcessor.Memory
                 }
                 else if (sentiment == "negative")
                 {
-                    // 临时记忆被否定，直接删除
                     await tempMemories.DeleteAsync(bestTempMatch);
+                    _embeddingCache.TryRemove(TempKey(bestTempMatch.Id), out _);
                 }
             }
         }

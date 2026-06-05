@@ -18,7 +18,8 @@ namespace AgentCoreProcessor.Database
             string content, byte[]? embedding,
             int? personId = null, int? channelId = null,
             int? sourceMessageId = null, string confidence = "high",
-            string type = MemoryType.Fact, string? subject = null)
+            string type = MemoryType.Fact, string? subject = null,
+            string? embeddingModel = null)
         {
             var entry = new TempMemoryEntry
             {
@@ -30,7 +31,8 @@ namespace AgentCoreProcessor.Database
                 Confidence = confidence,
                 Type = type,
                 Subject = subject,
-                CreatedAt = DateTime.Now
+                CreatedAt = DateTime.Now,
+                EmbeddingModel = embeddingModel
             };
             await db.InsertAsync(entry);
             return entry;
@@ -100,6 +102,34 @@ namespace AgentCoreProcessor.Database
             var placeholders = string.Join(",", ids.Select(_ => "?"));
             return await db.QueryAsync<TempMemoryEntry>(
                 $"SELECT * FROM TempMemories WHERE Id IN ({placeholders})", ids.Cast<object>().ToArray());
+        }
+
+        /// <summary>批量更新热度。</summary>
+        public async Task BatchUpdateHeatAsync(List<(int Id, float Heat)> updates)
+        {
+            if (updates.Count == 0) return;
+            foreach (var (id, heat) in updates)
+            {
+                await db.ExecuteAsync(
+                    "UPDATE TempMemories SET Heat = ? WHERE Id = ?",
+                    heat, id);
+            }
+        }
+
+        /// <summary>获取全部临时记忆的 Id 和 Content（用于重建 embedding）。</summary>
+        public Task<List<StubEntry>> GetAllStubsAsync()
+            => db.QueryAsync<StubEntry>("SELECT Id, Content FROM TempMemories");
+
+        /// <summary>批量更新 embedding 和模型标记。</summary>
+        public async Task BatchUpdateEmbeddingsAsync(List<(int Id, byte[] Embedding, string Model)> updates)
+        {
+            if (updates.Count == 0) return;
+            foreach (var (id, embedding, model) in updates)
+            {
+                await db.ExecuteAsync(
+                    "UPDATE TempMemories SET Embedding = ?, EmbeddingModel = ? WHERE Id = ?",
+                    embedding, model, id);
+            }
         }
     }
 }

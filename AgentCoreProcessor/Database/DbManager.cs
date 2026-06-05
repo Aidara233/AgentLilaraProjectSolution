@@ -81,6 +81,14 @@ namespace AgentCoreProcessor.Database
             // migration: 2026-06-03 添加 RawEvaluations 快照列
             try { await db.ExecuteAsync("ALTER TABLE ReviewSessions ADD COLUMN RawEvaluations TEXT"); }
             catch (Exception ex) when (ex.Message.Contains("duplicate column")) { }
+
+            // migration: 2026-06-05 向量模型版本标记
+            try { await db.ExecuteAsync("ALTER TABLE Memories ADD COLUMN EmbeddingModel TEXT"); }
+            catch (Exception ex) when (ex.Message.Contains("duplicate column")) { }
+            try { await db.ExecuteAsync("ALTER TABLE TempMemories ADD COLUMN EmbeddingModel TEXT"); }
+            catch (Exception ex) when (ex.Message.Contains("duplicate column")) { }
+            try { await db.ExecuteAsync("ALTER TABLE PersonaMemories ADD COLUMN EmbeddingModel TEXT"); }
+            catch (Exception ex) when (ex.Message.Contains("duplicate column")) { }
         }
 
         /// <summary>

@@ -36,6 +36,15 @@ namespace AgentCoreProcessor.Database
                 : db.QueryAsync<CoreTokenSummary>(sql);
         }
 
+        public Task DeleteByFileNamesAsync(List<string> fileNames)
+        {
+            if (fileNames.Count == 0) return Task.CompletedTask;
+            var placeholders = string.Join(",", fileNames.Select(_ => "?"));
+            return db.ExecuteAsync(
+                $"DELETE FROM ModelCallLogs WHERE LogFileName IN ({placeholders})",
+                fileNames.Cast<object>().ToArray());
+        }
+
         public Task<List<ModelTokenSummary>> GetByModelAsync(DateTime? since = null)
         {
             var sql = since.HasValue

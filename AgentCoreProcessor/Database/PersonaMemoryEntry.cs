@@ -24,5 +24,8 @@ namespace AgentCoreProcessor.Database
 
         /// <summary>创建时间</summary>
         public DateTime CreatedAt { get; set; } = DateTime.Now;
+
+        /// <summary>生成该 embedding 的模型名称</summary>
+        public string? EmbeddingModel { get; set; }
     }
 }

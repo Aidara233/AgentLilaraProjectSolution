@@ -82,5 +82,8 @@ namespace AgentCoreProcessor.Database
 
         /// <summary>是否被更新的矛盾记忆取代（保留在库中，不主动 recall）</summary>
         public bool IsSuperseded { get; set; } = false;
+
+        /// <summary>生成该 embedding 的模型名称（用于重建时识别旧向量）</summary>
+        public string? EmbeddingModel { get; set; }
     }
 }

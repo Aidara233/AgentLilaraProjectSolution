@@ -28,6 +28,7 @@ namespace AgentCoreProcessor.Database
 
             foreach (var m in all)
             {
+                if (m.IsSuperseded) continue;
                 if (!m.IsPersistent && m.ExpiresAt != null && m.ExpiresAt < now)
                     continue;
 
@@ -71,7 +72,8 @@ namespace AgentCoreProcessor.Database
             string content, byte[]? embedding,
             int? personId = null, int? channelId = null,
             int? sourceMessageId = null, float importance = 0.5f, float certainty = 1.0f,
-            string type = MemoryType.Fact, string? subject = null)
+            string type = MemoryType.Fact, string? subject = null,
+            string? embeddingModel = null)
         {
             var memory = new MemoryEntry
             {
@@ -86,7 +88,8 @@ namespace AgentCoreProcessor.Database
                 SourceMessageId = sourceMessageId,
                 IsPersistent = true,
                 CreatedAt = DateTime.Now,
-                LastAccessedAt = DateTime.Now
+                LastAccessedAt = DateTime.Now,
+                EmbeddingModel = embeddingModel
             };
             await db.InsertAsync(memory);
             return memory;
@@ -116,6 +119,35 @@ namespace AgentCoreProcessor.Database
             if (ids.Count == 0) return;
             var placeholders = string.Join(",", ids.Select(_ => "?"));
             await db.ExecuteAsync($"DELETE FROM Memories WHERE Id IN ({placeholders})", ids.Cast<object>().ToArray());
+        }
+
+        /// <summary>批量更新召回元数据（Importance + RecallCount + LastRecalledAt）。</summary>
+        public async Task BatchUpdateRecallMetadataAsync(List<(int Id, float Importance, int IncrementRecall)> updates)
+        {
+            if (updates.Count == 0) return;
+            var now = DateTime.Now;
+            foreach (var (id, importance, recallInc) in updates)
+            {
+                await db.ExecuteAsync(
+                    "UPDATE Memories SET Importance = ?, RecallCount = RecallCount + ?, LastRecalledAt = ? WHERE Id = ?",
+                    importance, recallInc, now, id);
+            }
+        }
+
+        /// <summary>获取全部记忆的 Id 和 Content（用于重建 embedding）。</summary>
+        public Task<List<StubEntry>> GetAllStubsAsync()
+            => db.QueryAsync<StubEntry>(
+                "SELECT Id, Content FROM Memories WHERE IsSuperseded = 0");
+
+        /// <summary>批量更新 embedding 和模型标记（原始 SQL，不覆盖其他列）。</summary>
+        public async Task BatchUpdateEmbeddingsAsync(List<(int Id, byte[] Embedding, string Model)> updates)
+        {
+            foreach (var (id, embedding, model) in updates)
+            {
+                await db.ExecuteAsync(
+                    "UPDATE Memories SET Embedding = ?, EmbeddingModel = ? WHERE Id = ?",
+                    embedding, model, id);
+            }
         }
 
         public Task<MemoryEntry?> GetByIdAsync(int id) => db.GetByIdAsync<MemoryEntry>(id);
@@ -149,7 +181,8 @@ namespace AgentCoreProcessor.Database
             string content, byte[]? embedding,
             string sourceMemoryIds, string sourceHash,
             int? personId = null, int? channelId = null,
-            float importance = 0.5f, float certainty = 0.7f)
+            float importance = 0.5f, float certainty = 0.7f,
+            string? embeddingModel = null)
         {
             var memory = new MemoryEntry
             {
@@ -165,7 +198,8 @@ namespace AgentCoreProcessor.Database
                 IsPersistent = true,
                 LastDreamTime = DateTime.Now,
                 CreatedAt = DateTime.Now,
-                LastAccessedAt = DateTime.Now
+                LastAccessedAt = DateTime.Now,
+                EmbeddingModel = embeddingModel
             };
             await db.InsertAsync(memory);
             return memory;
@@ -207,5 +241,11 @@ namespace AgentCoreProcessor.Database
 
             return filtered.Select(x => x.entry).ToList();
         }
+    }
+
+    internal class StubEntry
+    {
+        public int Id { get; set; }
+        public string Content { get; set; } = "";
     }
 }
