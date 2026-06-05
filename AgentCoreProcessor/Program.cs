@@ -107,6 +107,8 @@ namespace AgentCoreProcessor
                 return 1;
             }
 
+            var logCleanupService = new Logging.LogCleanupService(engine.ModelCallLogs);
+
             // --test-send [channelId] [message]：连接适配器并发送一条测试消息
             if (testSend)
             {
@@ -286,6 +288,12 @@ namespace AgentCoreProcessor
             builder.WebHost.UseUrls($"http://0.0.0.0:{webConfig.Port}");
             builder.Logging.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Warning);
 
+            // 日志清理服务
+            builder.Services.AddSingleton(logCleanupService);
+
+            // 日志清理服务
+            builder.Services.AddSingleton(logCleanupService);
+
             // 注册服务
             builder.Services.AddSingleton(eventBus);
             builder.Services.AddSingleton(engine);
@@ -328,6 +336,8 @@ namespace AgentCoreProcessor
                 });
 
             var app = builder.Build();
+
+            logCleanupService.Start();
 
             app.UseStaticFiles();
 
