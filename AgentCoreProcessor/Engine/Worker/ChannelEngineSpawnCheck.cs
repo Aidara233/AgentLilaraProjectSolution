@@ -40,6 +40,9 @@ namespace AgentCoreProcessor.Engine
             // SessionManager：用户映射、频道、消息入库（无论是否睡眠都要入库）
             var sessionContext = await ctx.Session.OnMessageAsync(message);
 
+            // 自产消息（bot 自身行为触发的 notice 回执）：已入库但不触发引擎孵化
+            if (message.IsSelfTriggered) return false;
+
             // 权限检查
             switch (sessionContext.User.PermissionLevel)
             {

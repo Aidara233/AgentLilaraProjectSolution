@@ -310,6 +310,7 @@ namespace AgentCoreProcessor.Adapter
             string content;
             bool isMentioned = false;
             string? systemEventSubType = null;
+            bool isSelfTriggered = false;
 
             switch (noticeType)
             {
@@ -325,6 +326,7 @@ namespace AgentCoreProcessor.Adapter
                     {
                         content = $"【系统】{GetUserLabel(data, userId)} 戳了 {targetId}";
                     }
+                    if (userId == selfId) isSelfTriggered = true;
                     break;
 
                 case "group_ban":
@@ -337,7 +339,6 @@ namespace AgentCoreProcessor.Adapter
                         content = duration > 0
                             ? $"【系统】你被 {operatorId} 禁言了 {duration} 秒"
                             : $"【系统】你被 {operatorId} 解除了禁言";
-                        // 被禁言时不唤醒（发了也白发），解禁时可以唤醒
                         isMentioned = duration <= 0;
                     }
                     else
@@ -346,12 +347,14 @@ namespace AgentCoreProcessor.Adapter
                             ? $"【系统】{banUserId} 被 {operatorId} 禁言了 {duration} 秒"
                             : $"【系统】{banUserId} 被 {operatorId} 解除了禁言";
                     }
+                    if (operatorId == selfId) isSelfTriggered = true;
                     break;
 
                 case "group_recall":
                     systemEventSubType = "recall";
                     var recallOperator = data["operator_id"]?.Value<long>() ?? 0;
                     content = $"【系统】{recallOperator} 撤回了一条消息";
+                    if (recallOperator == selfId) isSelfTriggered = true;
                     break;
 
                 case "group_upload":
@@ -359,6 +362,7 @@ namespace AgentCoreProcessor.Adapter
                     var file = data["file"] as JObject;
                     var fileName = file?["name"]?.ToString() ?? "未知文件";
                     content = $"【系统】{GetUserLabel(data, userId)} 上传了文件: {fileName}";
+                    if (userId == selfId) isSelfTriggered = true;
                     break;
 
                 default:
@@ -375,6 +379,7 @@ namespace AgentCoreProcessor.Adapter
                 IsMentioned = isMentioned,
                 IsSystemEvent = true,
                 SystemEventSubType = systemEventSubType,
+                IsSelfTriggered = isSelfTriggered,
                 Time = DateTime.Now
             };
         }

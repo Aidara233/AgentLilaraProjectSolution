@@ -3,6 +3,7 @@ namespace AgentCoreProcessor.Engine
     internal class AgentConfig
     {
         public int MaxRounds { get; set; } = 20;
+        public int ExpressMaxRounds { get; set; } = 8;
         public int[] BackoffSeconds { get; set; } = { 10, 30, 60, 120, 300 };
         public int ModelCallMaxAttempts { get; set; } = 3;
         public int[] ModelCallRetryDelaySeconds { get; set; } = { 5, 15 };

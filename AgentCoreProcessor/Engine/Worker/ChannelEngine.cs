@@ -204,6 +204,7 @@ namespace AgentCoreProcessor.Engine
             agentConfig = new AgentConfig
             {
                 MaxRounds = 20,
+                ExpressMaxRounds = 8,
                 CompressL1Tokens = 30000,
                 CompressL2Tokens = 50000,
                 CompressL3Tokens = 70000,
@@ -257,6 +258,7 @@ namespace AgentCoreProcessor.Engine
             agentConfig = new AgentConfig
             {
                 MaxRounds = 20,
+                ExpressMaxRounds = 8,
                 CompressL1Tokens = 30000,
                 CompressL2Tokens = 50000,
                 CompressL3Tokens = 70000,
@@ -306,6 +308,8 @@ namespace AgentCoreProcessor.Engine
         /// <summary>由 SpawnCheck 调用，通知新消息到达。不存消息本身（已在 DB），只做冲动值+参与者+触发判断。</summary>
         public void EnqueueMessage(IncomingMessage msg, SessionContext sc, string? traceParentSpanId = null)
         {
+            if (msg.IsSelfTriggered) return;
+
             lock (bufferLock)
             {
                 lastBufferTime = DateTime.Now;
@@ -832,15 +836,13 @@ namespace AgentCoreProcessor.Engine
             }
         }
 
-        /// <summary>Express 模式：单次 Core 调用，不走 Agent。</summary>
+        /// <summary>Express 微循环：多轮模型调用（最多 ExpressMaxRounds 轮），工具结果回注供下一轮参考。</summary>
         private async Task ExecuteExpressCycleAsync()
         {
             _roundImageHashes.Clear();
-            // Express 每轮重构上下文，重置图片去重追踪
             _seenImageHashes.Clear();
             _startInjectMaxId = 0;
 
-            // Build messages for single-shot call
             var messages = new List<Message>();
 
             var startInject = await ((IAgentHost)this).BuildStartInjectAsync();
@@ -849,94 +851,107 @@ namespace AgentCoreProcessor.Engine
             var roundInject = await ((IAgentHost)this).BuildRoundInjectAsync();
             if (roundInject != null) messages.AddRange(roundInject);
 
-            // Express 总量封顶：新旧消息总共 HistoryMaxMessages 条，优先保留新消息
             if (messages.Count > HistoryMaxMessages)
             {
                 var excess = messages.Count - HistoryMaxMessages;
-                // 从框架消息之后开始裁剪（保留框架 + 最新消息）
                 var maxRemovable = messages.Count - _frameworkMessageCount;
                 if (excess > maxRemovable) excess = maxRemovable;
                 if (excess > 0)
                     messages.RemoveRange(_frameworkMessageCount, excess);
             }
 
-            // Call model (with retry)
             agentCore.EngineType = "channel";
             agentCore.AdditionalTools = componentHost!.GetVisibleTools().ToList();
             agentCore.GlobalComponentTools = ctx.GlobalComponentHost?.GetVisibleTools("channel").ToList();
 
-            // 跨周期退避：连续 Express 失败时累积延迟
             if (_consecutiveExpressFailures > 0 && _consecutiveExpressFailures <= agentConfig.BackoffSeconds.Length)
             {
                 var backoff = agentConfig.BackoffSeconds[_consecutiveExpressFailures - 1];
                 await Task.Delay(TimeSpan.FromSeconds(backoff));
             }
 
-            ModelOutput output;
-            using (var modelSpan = Signal.Open(LogGroup.Model, $"Express模型调用 ch:{channelId}",
-                new
-                {
-                    mode = "Express", channelId,
-                    messageCount = messages.Count,
-                    messages = messages.Select(m => m.ContentParts != null
-                        ? (object)new { m.Role, parts = m.ContentParts.Select(p => new { p.Type, p.Text, p.ToolName, p.ToolInput, p.ToolUseId, p.IsError }) }
-                        : new { m.Role, content = m.Content })
-                }))
+            bool escalated = false;
+            for (int round = 0; round < agentConfig.ExpressMaxRounds; round++)
             {
-                output = default!;
-                Exception? lastEx = null;
-                bool success = false;
-                for (int attempt = 0; attempt < agentConfig.ModelCallMaxAttempts; attempt++)
-                {
-                    try
+                ModelOutput output;
+                var spanLabel = round == 0
+                    ? $"Express模型调用 ch:{channelId}"
+                    : $"Express模型调用 ch:{channelId} R{round + 1}";
+                using (var modelSpan = Signal.Open(LogGroup.Model, spanLabel,
+                    new
                     {
-                        if (attempt > 0)
+                        mode = "Express", channelId, round = round + 1,
+                        messageCount = messages.Count,
+                        messages = messages.Select(m => m.ContentParts != null
+                            ? (object)new { m.Role, parts = m.ContentParts.Select(p => new { p.Type, p.Text, p.ToolName, p.ToolInput, p.ToolUseId, p.IsError }) }
+                            : new { m.Role, content = m.Content })
+                    }))
+                {
+                    output = default!;
+                    Exception? lastEx = null;
+                    bool success = false;
+                    for (int attempt = 0; attempt < agentConfig.ModelCallMaxAttempts; attempt++)
+                    {
+                        try
                         {
-                            var retryDelay = agentConfig.ModelCallRetryDelaySeconds[
-                                Math.Min(attempt - 1, agentConfig.ModelCallRetryDelaySeconds.Length - 1)];
-                            Signal.Warn(LogGroup.Model, $"Express模型重试 ch:{channelId} #{attempt + 1}",
-                                new { channelId, attempt = attempt + 1, delaySeconds = retryDelay, lastError = lastEx?.Message });
-                            await Task.Delay(TimeSpan.FromSeconds(retryDelay));
+                            if (attempt > 0)
+                            {
+                                var retryDelay = agentConfig.ModelCallRetryDelaySeconds[
+                                    Math.Min(attempt - 1, agentConfig.ModelCallRetryDelaySeconds.Length - 1)];
+                                Signal.Warn(LogGroup.Model, $"Express模型重试 ch:{channelId} R{round + 1} #{attempt + 1}",
+                                    new { channelId, round = round + 1, attempt = attempt + 1, delaySeconds = retryDelay, lastError = lastEx?.Message });
+                                await Task.Delay(TimeSpan.FromSeconds(retryDelay));
+                            }
+                            output = await agentCore.InvokeAsync(messages, EngineMode.Express);
+                            success = true;
+                            _consecutiveExpressFailures = 0;
+                            modelSpan.SetCloseDetail(new
+                            {
+                                responseText = output.Text,
+                                thinking = output.Thinking,
+                                toolCalls = output.ToolCalls?.Select(tc => new { tc.Tool, tc.Inputs, tc.ToolUseId }),
+                                attempts = attempt + 1
+                            });
+                            break;
                         }
-                        output = await agentCore.InvokeAsync(messages, EngineMode.Express);
-                        success = true;
-                        _consecutiveExpressFailures = 0;
-                        modelSpan.SetCloseDetail(new
-                        {
-                            responseText = output.Text,
-                            thinking = output.Thinking,
-                            toolCalls = output.ToolCalls?.Select(tc => new { tc.Tool, tc.Inputs, tc.ToolUseId }),
-                            attempts = attempt + 1
-                        });
-                        break;
+                        catch (OperationCanceledException) { throw; }
+                        catch (Exception ex) { lastEx = ex; }
                     }
-                    catch (OperationCanceledException) { throw; }
-                    catch (Exception ex) { lastEx = ex; }
-                }
-                if (!success)
-                {
-                    _consecutiveExpressFailures++;
-                    modelSpan.SetCloseDetail(new { error = lastEx!.GetType().Name, message = lastEx.Message, attempts = agentConfig.ModelCallMaxAttempts });
-                    throw lastEx;
-                }
-            }
-
-            // Fire-and-forget tools (speak/send_media/escalate etc.)
-            if (output.HasToolCalls && output.ToolCalls != null)
-            {
-                using var expressToolSpan = Signal.Open(LogGroup.Tool, $"Express工具: {string.Join(", ", output.ToolCalls.Select(c => c.Tool))}",
-                    new { calls = output.ToolCalls.Select(c => new { c.Tool, c.Inputs }) });
-                var executor = new ToolExecutor(componentHost.TryGetTool, null);
-                var expressResults = await executor.ExecuteAsync(output.ToolCalls);
-                expressToolSpan.SetCloseDetail(new
-                {
-                    results = output.ToolCalls.Zip(expressResults, (c, r) => new
+                    if (!success)
                     {
-                        tool = c.Tool, status = r.Status, data = r.Data, error = r.Error
-                    })
-                });
+                        _consecutiveExpressFailures++;
+                        modelSpan.SetCloseDetail(new { error = lastEx!.GetType().Name, message = lastEx.Message, attempts = agentConfig.ModelCallMaxAttempts });
+                        throw lastEx;
+                    }
+                }
 
-                // 发布事件让订阅者处理 speak/send_media 等副作用
+                messages.Add(FormatAssistantExpress(output));
+
+                if (!output.HasToolCalls || output.ToolCalls == null || output.ToolCalls.Count == 0)
+                {
+                    if (output.IsText)
+                    {
+                        Signal.Event(LogGroup.Engine, "Express文本已丢弃",
+                            new { channelId, text = output.Text, reason = "模型未使用工具调用直接输出文本" });
+                    }
+                    break;
+                }
+
+                List<ToolResult> expressResults;
+                using (var expressToolSpan = Signal.Open(LogGroup.Tool, $"Express工具 R{round + 1}: {string.Join(", ", output.ToolCalls.Select(c => c.Tool))}",
+                    new { round = round + 1, calls = output.ToolCalls.Select(c => new { c.Tool, c.Inputs }) }))
+                {
+                    var executor = new ToolExecutor(componentHost.TryGetTool, null);
+                    expressResults = await executor.ExecuteAsync(output.ToolCalls);
+                    expressToolSpan.SetCloseDetail(new
+                    {
+                        results = output.ToolCalls.Zip(expressResults, (c, r) => new
+                        {
+                            tool = c.Tool, status = r.Status, data = r.Data, error = r.Error
+                        })
+                    });
+                }
+
                 for (int i = 0; i < output.ToolCalls.Count; i++)
                 {
                     var call = output.ToolCalls[i];
@@ -945,7 +960,8 @@ namespace AgentCoreProcessor.Engine
                     bus.Publish(new ToolExecutedEvent(call, result, toolDef));
                 }
 
-                // Check for escalate
+                messages.Add(FormatResultsExpress(output.ToolCalls, expressResults));
+
                 foreach (var call in output.ToolCalls)
                 {
                     if (call.Tool == "escalate")
@@ -954,19 +970,21 @@ namespace AgentCoreProcessor.Engine
                         _signalBuffer.Enqueue(new ModeSwitchSignal("working", reason));
                         isWorkingMode = true;
                         isInWorkingSession = true;
-                        // 直接暂存 reason（BuildStartInjectAsync 在信号清空前就运行）
                         _escalateReason = reason;
-                        // 持久化新模式状态（游标保留，后续 Working 从此开始堆叠）
                         persistence?.SaveContext(null, "working", new List<List<Message>>(),
                             _lastConsumedMessageId, reason);
                         Signal.Event(LogGroup.Engine, "模式切换",
                             new { channelId, from = "Express", to = "Working", reason = reason ?? "工具调用" });
                         gate.Signal();
+                        escalated = true;
                         break;
                     }
                 }
+                if (escalated) break;
 
-                // Check for refine_image in Express
+                if (output.ToolCalls.Any(c => c.Tool == "wait"))
+                    break;
+
                 for (int i = 0; i < output.ToolCalls.Count; i++)
                 {
                     var call = output.ToolCalls[i];
@@ -988,15 +1006,7 @@ namespace AgentCoreProcessor.Engine
                     }
                 }
             }
-            else if (output.IsText)
-            {
-                // Express 模式只能通过工具调用发言（speak/send_media 等），
-                // 模型直接输出的文本被丢弃，防止绕过工具系统
-                Signal.Event(LogGroup.Engine, "Express文本已丢弃",
-                    new { channelId, text = output.Text, reason = "模型未使用工具调用直接输出文本" });
-            }
 
-            // Post-processing
             impulseTracker.ApplyPostResponseUpdate();
             if (_lastSessionContext != null)
             {
@@ -1004,14 +1014,50 @@ namespace AgentCoreProcessor.Engine
                 await IncrementDailyProgressAsync(_lastSessionContext.Person);
             }
 
-            // 推进游标到 StartInject 已消费的最大 ID
             if (_startInjectMaxId > _lastConsumedMessageId)
                 _lastConsumedMessageId = _startInjectMaxId;
 
-            // Express 模式持久化游标（防止冷超时重启后消息锚点丢失）
-            if (_lastConsumedMessageId > 0)
+            if (!escalated && _lastConsumedMessageId > 0)
                 persistence?.SaveContext(contextSummary, "express", new List<List<Message>>(),
                     _lastConsumedMessageId, _escalateReason);
+        }
+
+        private static Message FormatAssistantExpress(ModelOutput output)
+        {
+            if (output.HasToolCalls && output.ToolCalls != null)
+            {
+                var parts = new List<ContentPart>();
+                if (!string.IsNullOrEmpty(output.Thinking))
+                    parts.Add(ContentPart.FromText(output.Thinking));
+                foreach (var c in output.ToolCalls)
+                {
+                    if (c.ToolUseId != null)
+                        parts.Add(ContentPart.FromToolUse(c.ToolUseId, c.Tool, c.RawInputJson ?? "{}"));
+                }
+                return new Message
+                {
+                    Role = "assistant",
+                    Content = !string.IsNullOrEmpty(output.Thinking) ? output.Thinking : "[tool calls]",
+                    ContentParts = parts
+                };
+            }
+            return new Message { Role = "assistant", Content = output.Text ?? output.Thinking ?? "" };
+        }
+
+        private static Message FormatResultsExpress(List<ToolCall> calls, List<ToolResult> results)
+        {
+            var parts = new List<ContentPart>();
+            for (int i = 0; i < calls.Count && i < results.Count; i++)
+            {
+                if (calls[i].ToolUseId != null)
+                {
+                    var data = results[i].IsSuccess
+                        ? (results[i].Data ?? "成功")
+                        : $"失败: {results[i].Error ?? results[i].Status}";
+                    parts.Add(ContentPart.FromToolResult(calls[i].ToolUseId!, data, !results[i].IsSuccess));
+                }
+            }
+            return new Message { Role = "user", Content = "[tool results]", ContentParts = parts };
         }
 
         // ═══════════════════════════════════════════════════════════

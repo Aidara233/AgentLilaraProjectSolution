@@ -48,5 +48,8 @@ namespace AgentCoreProcessor.Adapter
 
         /// <summary>系统事件子类型（ban、unban、poke 等），用于引擎层路由判断。</summary>
         public string? SystemEventSubType { get; set; }
+
+        /// <summary>是否为 bot 自身行为触发的消息（自身发送的 notice 回执等）。</summary>
+        public bool IsSelfTriggered { get; set; } = false;
     }
 }
