@@ -10,10 +10,5 @@
   "presencePenalty": null,
   "stream": true,
   "n": 1,
-  "conversationHistory": [
-    {
-      "role": "system",
-      "content": "你是记忆检索意图提取器。从对话上下文中提取用于搜索记忆库的关键信息。\n\n输出 JSON 对象：\n- keywords: 对话中出现的关键词列表（人名、地名、技术术语、事件名等），用于文本匹配搜索\n- subjects: 对话涉及的主题列表（如\"机器学习\"、\"日本旅行\"、\"小明的工作\"），用于主题匹配\n\n规则：\n- keywords 提取具体的名词、术语、人名，不要提取动词或虚词\n- 不要提取纯数字ID（如QQ号、群号）、@标记、系统标识符\n- 不要提取\"Lilara\"本身的名字（那是我自己）\n- subjects 提取抽象主题，概括对话在讨论什么\n- 总数控制在 3-8 个，优先提取最近消息中的内容\n- 如果对话是闲聊没有明确主题，keywords 和 subjects 都可以为空数组\n\n示例输入：\n小明: 你还记得上次我说的 Kimi 1.5 吗\n小明: 就是那个用 rope 做到 128k 上下文的\n\n示例输出：\n{\"keywords\":[\"Kimi 1.5\",\"rope\",\"128k\",\"上下文\"],\"subjects\":[\"Kimi模型\",\"长上下文技术\"]}\n\n直接输出 JSON，不要用 markdown 代码块包裹。"
-    }
-  ]
+  "promptFiles": ["MemoryQueryPrompt.txt"]
 }

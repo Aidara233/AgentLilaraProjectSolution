@@ -1,5 +1,6 @@
-using System.Text;
+using System.Collections.Generic;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Config;
 
 namespace AgentCoreProcessor.Core
 {
@@ -18,11 +19,22 @@ namespace AgentCoreProcessor.Core
         public async Task<string> GenerateAsync(string fragmentSummary, string? recentContext = null)
         {
             ResetProcessor();
-            var sb = new StringBuilder();
-            sb.Append($"正在梦到：{fragmentSummary}");
-            if (!string.IsNullOrEmpty(recentContext))
-                sb.Append($"\n最近的对话片段：{recentContext}");
-            return await GenerateOnceAsync(sb.ToString());
+            var template = LoadPromptTemplate();
+            var vars = new Dictionary<string, string>
+            {
+                ["FRAGMENT"] = fragmentSummary,
+                ["RECENT_CONTEXT"] = recentContext ?? ""
+            };
+            var prompt = PromptLoader.ApplyVariables(template, vars);
+            return await GenerateOnceAsync(prompt);
+        }
+
+        private static string LoadPromptTemplate()
+        {
+            var coreDir = PathConfig.CoreConfigPath;
+            var templatesDir = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "templates"));
+            return PromptLoader.Load("SleepTalkPrompt.txt", coreDir, templatesDir)
+                   ?? "你正在睡觉做梦。正在梦到：{{FRAGMENT}}\n最近的对话片段：{{RECENT_CONTEXT}}";
         }
     }
 }

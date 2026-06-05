@@ -14,8 +14,11 @@ namespace AgentCoreProcessor.Core
     {
         private static string DefaultCfgPath => PathConfig.CoreConfigPath;
 
-        /// <summary>Persona.txt 缓存：key=目录路径, value=(文件写入时间, 内容)</summary>
+        /// <summary>Persona.txt 缓存：key=文件路径, value=(文件写入时间, 内容)</summary>
         private static readonly Dictionary<string, (DateTime LastWrite, string Content)> _personaCache = new();
+
+        /// <summary>当前 Processor 加载的基础提示词（promptFile + persona），供 AgentCore 注入。</summary>
+        public string? BasePrompt { get; private set; }
 
         private string cfgDirectoryPath;
 
@@ -40,7 +43,7 @@ namespace AgentCoreProcessor.Core
                 cfgName = value;
                 var cfg = ApiClientCfg.FromJson(File.ReadAllText(Path.Combine(cfgDirectoryPath, cfgName) + ".json"));
                 client = ModelClientFactory.Create(cfg);
-                if (UsePersona) InjectPersona();
+                LoadBasePrompt();
             }
         }
 
@@ -51,7 +54,6 @@ namespace AgentCoreProcessor.Core
             this.cfgDirectoryPath = cfgDirectoryPath ?? DefaultCfgPath;
             UsePersona = usePersona;
             CfgName = cfgName;
-            if (usePersona) InjectPersona();
         }
 
         public async Task ProcessAsync(Action<ApiResponse> onDelta, CancellationToken ct = default,
@@ -80,13 +82,44 @@ namespace AgentCoreProcessor.Core
         }
 
         /// <summary>
-        /// 检查 Persona.txt 是否存在，存在则注入到 PresetMessages 的第一条 system 消息前。
-        /// 内容缓存：仅在文件修改后重新读取。
+        /// 从 promptFiles 加载系统提示词文件，按顺序拼接。可选 prepend Persona.txt。
+        /// 结果存入 BasePrompt，供 AgentCore 注入到对话开头。
         /// </summary>
-        private void InjectPersona()
+        private void LoadBasePrompt()
+        {
+            var cfg = client.Config;
+            if (cfg.PromptFiles == null || cfg.PromptFiles.Count == 0) return;
+
+            var templatesDir = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "templates"));
+            var parts = new List<string>();
+            foreach (var file in cfg.PromptFiles)
+            {
+                var content = PromptLoader.Load(file, cfgDirectoryPath, templatesDir);
+                if (!string.IsNullOrEmpty(content))
+                    parts.Add(content);
+            }
+
+            if (parts.Count == 0) return;
+            var promptContent = string.Join("\n\n", parts);
+
+            if (UsePersona)
+            {
+                var personaContent = LoadPersonaContent();
+                if (!string.IsNullOrEmpty(personaContent))
+                    promptContent = personaContent + "\n\n" + promptContent;
+            }
+
+            BasePrompt = promptContent;
+            client.AddSystemMessage(promptContent);
+        }
+
+        /// <summary>
+        /// 加载 Persona.txt（带缓存，基于文件修改时间）。
+        /// </summary>
+        private string? LoadPersonaContent()
         {
             var personaPath = Path.Combine(cfgDirectoryPath, "Persona.txt");
-            if (!File.Exists(personaPath)) return;
+            if (!File.Exists(personaPath)) return null;
 
             var lastWrite = File.GetLastWriteTime(personaPath);
             if (!_personaCache.TryGetValue(personaPath, out var cached) || cached.LastWrite != lastWrite)
@@ -94,19 +127,7 @@ namespace AgentCoreProcessor.Core
                 var content = File.ReadAllText(personaPath).Trim();
                 _personaCache[personaPath] = (lastWrite, content);
             }
-            var persona = _personaCache[personaPath].Content;
-            if (string.IsNullOrEmpty(persona)) return;
-
-            var presets = client.Config.PresetMessages;
-            var systemMsg = presets.Find(m => m.Role == "system");
-            if (systemMsg != null)
-            {
-                systemMsg.Content = persona + "\n\n" + systemMsg.Content;
-            }
-            else
-            {
-                presets.Insert(0, new Message { Role = "system", Content = persona });
-            }
+            return _personaCache[personaPath].Content;
         }
     }
 }

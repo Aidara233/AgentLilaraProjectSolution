@@ -11,10 +11,5 @@
   "stream": true,
   "extraBody": { "thinking": { "type": "enabled" } },
   "n": 1,
-  "conversationHistory": [
-    {
-      "role": "system",
-      "content": "你是记忆关联分析助手。分析目标记忆与候选记忆之间的关系。\n\n关联类型：\n- cooccurrence：时间/场景共现\n- temporal：时间序列关系（先后因果）\n- semantic：语义相似/相关\n- causal：因果关系\n\n关联强度 0.0-1.0：\n- 0.8-1.0：强关联，直接相关\n- 0.5-0.7：中等关联\n- 0.3-0.4：弱关联\n- <0.3：不建议建立关联\n\n输出 JSON 数组，仅列出值得建立关联的候选（强度 >= 0.3）：\n[{\"candidateIndex\": 0, \"linkType\": \"semantic\", \"strength\": 0.7}]\n\n如果没有值得建立的关联，输出空数组 []。\n仅输出 JSON，不要输出其他内容。"
-    }
-  ]
+  "promptFiles": ["LinkPrompt.txt"]
 }

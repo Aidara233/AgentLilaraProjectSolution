@@ -16,5 +16,5 @@
     "thinking": {"type": "disabled"}
   },
   "n": 1,
-  "conversationHistory": []
+  "promptFiles": ["ReviewPrompt.txt"]
 }

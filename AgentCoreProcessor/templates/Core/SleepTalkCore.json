@@ -7,10 +7,5 @@
   "maxTokens": 100,
   "stream": true,
   "n": 1,
-  "conversationHistory": [
-    {
-      "role": "system",
-      "content": "你正在睡觉做梦。用户会告诉你正在梦到什么，你需要说一句梦话。\n\n要求：\n- 一句话，最多 30 字\n- 像真正的梦话：片段化、朦胧、可能语无伦次\n- 和你正在梦到的内容有隐约关联，但不要直白复述\n- 可以是喃喃自语、半句话、感叹、或模糊的意象\n- 不要用引号包裹，直接输出梦话内容"
-    }
-  ]
+  "promptFiles": ["SleepTalkPrompt.txt"]
 }

@@ -88,7 +88,11 @@ namespace AgentCoreProcessor.Client
         [JsonProperty("disableImageMessages")]
         public bool DisableImageMessages { get; set; } = false;
 
-        // 预设消息模板（从配置文件加载，system prompt + few-shot 示例）
+        // 提示词文件列表（相对于 Storage/Core/Prompts/），按顺序拼接
+        [JsonProperty("promptFiles")]
+        public List<string> PromptFiles { get; set; } = new List<string>();
+
+        // 预设消息模板（内部使用，由 Processor 从 promptFile 加载填充）
         [JsonProperty("conversationHistory")]
         public List<Message> PresetMessages { get; set; } = new List<Message>();
 

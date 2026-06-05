@@ -78,10 +78,7 @@ namespace AgentCoreProcessor.Client
 
         public List<Message> GetConversationHistory()
         {
-            var merged = new List<Message>(apiClientCfg.PresetMessages.Count + _conversationHistory.Count);
-            merged.AddRange(apiClientCfg.PresetMessages);
-            merged.AddRange(_conversationHistory);
-            return merged;
+            return new List<Message>(_conversationHistory);
         }
 
         public IModelClient SetConversationHistory(List<Message> history)
@@ -99,7 +96,7 @@ namespace AgentCoreProcessor.Client
         }
 
         public int GetHistoryCount()
-            => apiClientCfg.PresetMessages.Count + _conversationHistory.Count;
+            => _conversationHistory.Count;
 
         // ── 子类实现 ──
 

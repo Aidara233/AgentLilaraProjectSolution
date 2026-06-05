@@ -220,11 +220,16 @@ namespace AgentCoreProcessor.Core
 
         /// <summary>
         /// 设置对话历史（供 ChannelEngine 在每轮准备阶段调用）。
+        /// 自动 prepend Processor 加载的基础提示词（promptFile + Persona）。
         /// </summary>
         public void SetConversationHistory(List<Message> messages)
         {
+            var final = new List<Message>();
+            if (!string.IsNullOrEmpty(processor.BasePrompt))
+                final.Add(new Message { Role = "system", Content = processor.BasePrompt });
+            final.AddRange(messages);
             processor.Client.ClearConversationHistory();
-            processor.Client.SetConversationHistory(messages);
+            processor.Client.SetConversationHistory(final);
         }
 
         private static void MergeTools(List<ToolDefinition> defs, List<ITool>? tools)
