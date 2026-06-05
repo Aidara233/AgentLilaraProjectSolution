@@ -415,22 +415,45 @@ namespace AgentCoreProcessor.Engine
             ModelCallLogs = new ModelCallLogRepository(db);
             CoreBase.CallLogRepo = ModelCallLogs;
 
-            // Embedding（独立配置，不跟随 Base.json）
+            // Embedding（独立配置，支持 siliconflow / onnx）
             var embConfigPath = Path.Combine(PathConfig.CoreConfigPath, "EmbeddingProvider.json");
             if (File.Exists(embConfigPath))
             {
-                var embJson = JObject.Parse(File.ReadAllText(embConfigPath));
-                var embEnabled = embJson["enabled"]?.Value<bool>() ?? true;
-                if (embEnabled)
+                var embCfg = JsonConvert.DeserializeObject<Client.EmbeddingProviderConfig>(
+                    File.ReadAllText(embConfigPath));
+                if (embCfg != null)
                 {
-                    var embKey = embJson["apiKey"]?.ToString() ?? "";
-                    var embEndpoint = embJson["endpoint"]?.ToString() ?? "https://api.siliconflow.cn/v1/embeddings";
-                    var embModel = embJson["model"]?.ToString() ?? "BAAI/bge-large-zh-v1.5";
-                    embeddingProvider = new SiliconFlowEmbeddingProvider(apiKey: embKey, endpoint: embEndpoint, model: embModel);
-                }
-                else
-                {
-                    Signal.Event(LogGroup.Engine, "Embedding提供者已禁用");
+                    if (embCfg.Provider == "onnx"
+                        && File.Exists(Path.Combine(PathConfig.StoragePath, embCfg.OnnxModelPath))
+                        && File.Exists(Path.Combine(PathConfig.StoragePath, embCfg.TokenizerVocabPath)))
+                    {
+                        try
+                        {
+                            var onnxModelPath = Path.Combine(PathConfig.StoragePath, embCfg.OnnxModelPath);
+                            var vocabPath = Path.Combine(PathConfig.StoragePath, embCfg.TokenizerVocabPath);
+                            embeddingProvider = new Client.OnnxEmbeddingProvider(new Client.EmbeddingProviderConfig
+                            {
+                                Provider = "onnx",
+                                OnnxModelPath = onnxModelPath,
+                                TokenizerVocabPath = vocabPath,
+                                MaxLength = embCfg.MaxLength,
+                                ExecutionProvider = embCfg.ExecutionProvider
+                            });
+                            Signal.Event(LogGroup.Engine, "ONNX Embedding 提供者已就绪");
+                        }
+                        catch (Exception ex)
+                        {
+                            Signal.Error(LogGroup.Engine, "ONNX Embedding 初始化失败，降级到 SiliconFlow",
+                                new { error = ex.Message });
+                            embeddingProvider = new SiliconFlowEmbeddingProvider(
+                                apiKey: embCfg.ApiKey, endpoint: embCfg.Endpoint, model: embCfg.Model);
+                        }
+                    }
+                    else
+                    {
+                        embeddingProvider = new SiliconFlowEmbeddingProvider(
+                            apiKey: embCfg.ApiKey, endpoint: embCfg.Endpoint, model: embCfg.Model);
+                    }
                 }
             }
             else
@@ -496,7 +519,21 @@ namespace AgentCoreProcessor.Engine
 
                             UmiOcrProvider? umiProvider;
                             if (umiAutoStart && !string.IsNullOrEmpty(umiExePath))
-                                umiProvider = await UmiOcrProvider.CreateWithAutoStartAsync(umiExePath, umiHost, umiPort);
+                            {
+                                // 后台异步启动，不阻塞主路径
+                                _ = UmiOcrProvider.CreateWithAutoStartAsync(umiExePath, umiHost, umiPort)
+                                    .ContinueWith(t =>
+                                    {
+                                        if (!t.IsFaulted && t.Result != null)
+                                        {
+                                            var fp = ocrProvider as FallbackOcrProvider;
+                                            fp?.InsertFirst(t.Result);
+                                            Signal.Event(LogGroup.Engine, "Umi-OCR后台启动完成",
+                                                new { host = umiHost, port = umiPort });
+                                        }
+                                    });
+                                umiProvider = null;
+                            }
                             else
                             {
                                 umiProvider = new UmiOcrProvider(umiHost, umiPort);
@@ -573,9 +610,6 @@ namespace AgentCoreProcessor.Engine
             SignalFilters = new SignalFilterManager(
                 Path.Combine(PathConfig.StoragePath, "Engine", "SignalFilter.json"));
 
-            // 人设记忆种子加载（表空时从文件导入）
-            await LoadPersonaMemorySeedAsync();
-
             // 创建 DelegationBus + CrossRequestRegistry（委托系统）
             var systemLoopPath = Path.Combine(PathConfig.StoragePath, "SystemLoop");
             Directory.CreateDirectory(systemLoopPath);
@@ -631,35 +665,57 @@ namespace AgentCoreProcessor.Engine
             _toolContext.Register<AgentLilara.PluginSDK.Services.IDiceRegistry>(dicePool);
             _toolContext.Register<AgentLilara.PluginSDK.Services.IDiceService>(dicePool);
             _pluginLoader = new Tool.Host.PluginLoader(_toolContext, ProviderRegistry);
-            _pluginLoader.LoadAll();
-            Signal.Event(LogGroup.Plugin, "插件加载完成", new { count = Tool.ToolRegistry.All.Count });
 
-            // Component 系统初始化（PluginLoader 已填充 ComponentRegistry）
-            componentServices.Register<AgentLilara.PluginSDK.Services.ISubAgentAccess>(
-                new Component.SubAgentAccessAdapter(this));
-            componentServices.Register<AgentLilara.PluginSDK.IToolContext>(_toolContext);
-            componentServices.Register<AgentLilara.PluginSDK.Services.IMemoryAccess>(memoryAccess);
-            componentServices.Register<AgentLilara.PluginSDK.Services.IBeaconAccess>(
-                new Tool.Host.BeaconAccessImpl(Beacons));
-            componentServices.Register<AgentLilara.PluginSDK.Services.IChannelAccess>(
-                new Tool.Host.ChannelAccessImpl(this));
-            componentServices.Register<AgentLilara.PluginSDK.Services.IAdapterAccess>(
-                new Tool.Host.AdapterAccessImpl(adapterManager));
-            componentServices.Register<AgentLilara.PluginSDK.Services.IDiceRegistry>(dicePool);
-            componentServices.Register<AgentLilara.PluginSDK.Services.IDiceService>(dicePool);
-            if (_signalLogger != null)
-                componentServices.Register<ISignalLogger>(_signalLogger);
+            // === Phase 2: 并行初始化（插件链 + MCP） ===
 
-            // 图片访问服务（桥接 ImageStorage/Vision/OCR 到插件层）
-            var imageAccess = new Component.ImageAccessImpl(
-                Config.PathConfig.WorkspacePath, ocrProvider);
-            _toolContext.Register<AgentLilara.PluginSDK.Services.IImageAccess>(imageAccess);
-            componentServices.Register<AgentLilara.PluginSDK.Services.IImageAccess>(imageAccess);
+            var pluginChainTask = Task.Run(async () =>
+            {
+                _pluginLoader.LoadAll();
+                Signal.Event(LogGroup.Plugin, "插件加载完成", new { count = Tool.ToolRegistry.All.Count });
 
-            globalComponentHost = new GlobalComponentHost(
-                _moduleBus, componentServices,
-                loopId => WakeLoop(loopId));
-            await globalComponentHost.InitAsync();
+                // Component 服务注册（依赖 PluginLoader 填充 ComponentRegistry）
+                componentServices.Register<AgentLilara.PluginSDK.Services.ISubAgentAccess>(
+                    new Component.SubAgentAccessAdapter(this));
+                componentServices.Register<AgentLilara.PluginSDK.IToolContext>(_toolContext);
+                componentServices.Register<AgentLilara.PluginSDK.Services.IMemoryAccess>(memoryAccess);
+                componentServices.Register<AgentLilara.PluginSDK.Services.IBeaconAccess>(
+                    new Tool.Host.BeaconAccessImpl(Beacons));
+                componentServices.Register<AgentLilara.PluginSDK.Services.IChannelAccess>(
+                    new Tool.Host.ChannelAccessImpl(this));
+                componentServices.Register<AgentLilara.PluginSDK.Services.IAdapterAccess>(
+                    new Tool.Host.AdapterAccessImpl(adapterManager));
+                componentServices.Register<AgentLilara.PluginSDK.Services.IDiceRegistry>(dicePool);
+                componentServices.Register<AgentLilara.PluginSDK.Services.IDiceService>(dicePool);
+                if (_signalLogger != null)
+                    componentServices.Register<ISignalLogger>(_signalLogger);
+
+                var imageAccess = new Component.ImageAccessImpl(
+                    Config.PathConfig.WorkspacePath, ocrProvider);
+                _toolContext.Register<AgentLilara.PluginSDK.Services.IImageAccess>(imageAccess);
+                componentServices.Register<AgentLilara.PluginSDK.Services.IImageAccess>(imageAccess);
+
+                globalComponentHost = new GlobalComponentHost(
+                    _moduleBus, componentServices,
+                    loopId => WakeLoop(loopId));
+                await globalComponentHost.InitAsync();
+            });
+
+            Task mcpInitTask;
+            try
+            {
+                var mcpConfigPath = Path.Combine(PathConfig.StoragePath, "MCP", "McpServers.json");
+                mcpManager = new McpServerManager(mcpConfigPath);
+                mcpInitTask = mcpManager.InitAsync();
+            }
+            catch (Exception ex)
+            {
+                Signal.Warn(LogGroup.Engine, "MCP管理器初始化失败", new { error = ex.Message });
+                mcpInitTask = Task.CompletedTask;
+            }
+
+            await Task.WhenAll(pluginChainTask, mcpInitTask);
+
+            // === Phase 3: 最终注册 ===
 
             // 注册所有 SpawnCheck
             foreach (var (_, factory) in SpawnCheckFactory)
@@ -684,18 +740,6 @@ namespace AgentCoreProcessor.Engine
                         systemEngine = sysEngine;
                     }
                 }
-            }
-
-            // MCP Server 初始化
-            try
-            {
-                var mcpConfigPath = Path.Combine(PathConfig.StoragePath, "MCP", "McpServers.json");
-                mcpManager = new McpServerManager(mcpConfigPath);
-                await mcpManager.InitAsync();
-            }
-            catch (Exception ex)
-            {
-                Signal.Warn(LogGroup.Engine, "MCP管理器初始化失败", new { error = ex.Message });
             }
 
             Signal.Event(LogGroup.Engine, "引擎就绪");
@@ -821,46 +865,6 @@ namespace AgentCoreProcessor.Engine
         public int GetAliveCount()
         {
             lock (engineLock) { return activeEngines.Count(e => e.IsAlive); }
-        }
-
-        /// <summary>人设记忆种子加载：表空时从 Storage/PersonaMemorySeed.txt 导入。</summary>
-        private async Task LoadPersonaMemorySeedAsync()
-        {
-            try
-            {
-                var count = await PersonaMemories.GetCountAsync();
-                if (count > 0) return; // 已有数据，跳过
-
-                var seedPath = Path.Combine(PathConfig.StoragePath, "PersonaMemorySeed.txt");
-                if (!File.Exists(seedPath)) return;
-
-                var lines = File.ReadAllLines(seedPath)
-                    .Select(l => l.Trim())
-                    .Where(l => !string.IsNullOrEmpty(l))
-                    .ToList();
-
-                if (lines.Count == 0) return;
-
-                int loaded = 0;
-                foreach (var line in lines)
-                {
-                    byte[]? embBytes = null;
-                    try
-                    {
-                        var vec = await embeddingProvider!.GetEmbeddingAsync(line);
-                        embBytes = SiliconFlowEmbeddingProvider.FloatsToBytes(vec);
-                    }
-                    catch (Exception ex) { Signal.Warn(LogGroup.Engine, "Persona嵌入失败", new { line, error = ex.Message }); }
-
-                    await PersonaMemories.CreateAsync(line, embBytes);
-                    loaded++;
-                }
-
-            }
-            catch (Exception ex)
-            {
-                Signal.Warn(LogGroup.Engine, "人设记忆种子加载失败", new { error = ex.Message });
-            }
         }
 
         /// <summary>唤醒指定 loopId 的循环（供 GlobalComponentHost / 委托系统使用）。</summary>

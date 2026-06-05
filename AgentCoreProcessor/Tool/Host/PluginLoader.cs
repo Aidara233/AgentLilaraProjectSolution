@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -11,6 +12,7 @@ using AgentCoreProcessor.Component;
 using AgentCoreProcessor.Engine;
 using AgentLilara.PluginSDK;
 using AgentLilara.PluginSDK.Services;
+using Parallel = System.Threading.Tasks.Parallel;
 
 namespace AgentCoreProcessor.Tool.Host
 {
@@ -40,7 +42,7 @@ namespace AgentCoreProcessor.Tool.Host
             _providerRegistry = providerRegistry;
         }
 
-        /// <summary>扫描并加载所有插件。启动时调用。</summary>
+        /// <summary>扫描并加载所有插件。启动时调用。先并行加载全部（当前无跨插件依赖），失败的再串行重试。</summary>
         public void LoadAll()
         {
             if (!Directory.Exists(PluginDir))
@@ -56,9 +58,32 @@ namespace AgentCoreProcessor.Tool.Host
                 return;
             }
 
-            foreach (var dllPath in dlls)
+            // 先并行加载所有 DLL（当前无跨插件依赖，并行安全）
+            var failures = new ConcurrentBag<string>();
+            Parallel.ForEach(dlls, dll =>
+            {
+                if (!LoadPluginSafe(dll))
+                    failures.Add(dll);
+            });
+
+            // 失败的重试串行加载（可能依赖其他插件）
+            foreach (var dll in failures)
+            {
+                LoadPlugin(dll);
+            }
+        }
+
+        /// <summary>加载插件并捕获异常（返回 false 表示加载失败）。</summary>
+        private bool LoadPluginSafe(string dllPath)
+        {
+            try
             {
                 LoadPlugin(dllPath);
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 

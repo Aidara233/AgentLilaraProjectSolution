@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Logging;
@@ -42,26 +43,33 @@ namespace AgentCoreProcessor.MCP
             }
 
             int totalTools = 0;
-            foreach (var entry in enabled)
+            var connectTasks = enabled.Select(async entry =>
             {
                 try
                 {
                     var conn = new McpServerConnection(entry);
                     await conn.ConnectAsync();
-                    _connections.Add(conn);
 
+                    lock (_connections)
+                    {
+                        _connections.Add(conn);
+                    }
+
+                    int added = 0;
                     foreach (var tool in conn.Tools)
                     {
                         if (ToolRegistry.Register(tool, isNonComponent: true))
-                            totalTools++;
+                            added++;
                     }
+                    Interlocked.Add(ref totalTools, added);
                 }
                 catch (Exception ex)
                 {
                     Signal.Error(LogGroup.Adapter, "MCP服务器连接失败", new { server = entry.Name, error = ex.Message });
                 }
-            }
+            });
 
+            await Task.WhenAll(connectTasks);
         }
 
         private async Task DisconnectAllAsync()

@@ -47,6 +47,12 @@ namespace AgentCoreProcessor.Client
             return new OcrResult { HasText = false, Text = null };
         }
 
+        /// <summary>在链首插入一个提供者（用于后台初始化完成的提供者加入）。</summary>
+        public void InsertFirst(IOcrProvider provider)
+        {
+            _providers.Insert(0, provider);
+        }
+
         public void Dispose()
         {
             foreach (var p in _providers)
