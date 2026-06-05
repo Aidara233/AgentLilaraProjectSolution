@@ -4,9 +4,11 @@ using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Client;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Logging;
+using AgentCoreProcessor.Util;
 using AgentLilara.PluginSDK;
 using AgentLilara.PluginSDK.WebUI;
 
@@ -54,7 +56,30 @@ internal class MemoryProvider : IWebUIProvider
                         new() { Field = "type_dist", Label = "类型分布", IsMultiline = true }
                     }
                 },
-                Layout = new CardLayout { PreferredCols = 12 }
+                Layout = new CardLayout { PreferredCols = 6 }
+            },
+            new()
+            {
+                Id = "embedding-rebuild", Type = CardType.Action, DataSourceId = "embedding-rebuild", Title = "向量模型重建",
+                Schema = new ActionCardSchema
+                {
+                    ActionId = "rebuild",
+                    ActionLabel = "重建全部 Embedding",
+                    Description = "使用当前 provider 重新计算全部记忆（主库+临时库+人设）的向量。切换 embedding 模型后必须执行此操作。",
+                    SubmitLabel = "开始重建",
+                    Params = new()
+                    {
+                        new() { Name = "batchSize", Label = "批大小", Type = "select", Required = true,
+                            Options = new()
+                            {
+                                new() { Value = "64", Label = "激进 (batch=64, 最快)" },
+                                new() { Value = "32", Label = "均衡 (batch=32, 默认)" },
+                                new() { Value = "16", Label = "温和 (batch=16, 留余量)" }
+                            }
+                        }
+                    }
+                },
+                Layout = new CardLayout { PreferredCols = 6 }
             },
             new()
             {
@@ -96,7 +121,8 @@ internal class MemoryProvider : IWebUIProvider
         DataSources = new List<DataSourceDefinition>
         {
             new() { Id = "main-stats", Source = new MainMemoryStatsSource(_engine) },
-            new() { Id = "main-table", Source = new MainMemorySource(_engine) }
+            new() { Id = "main-table", Source = new MainMemorySource(_engine) },
+            new() { Id = "embedding-rebuild", Source = new EmbeddingRebuildSource(_engine) }
         }
     };
 
@@ -884,11 +910,12 @@ internal class PersonaFormSource : IDataSource
             try
             {
                 var vec = await _engine.Embedding.GetEmbeddingAsync(content);
-                emb = Client.SiliconFlowEmbeddingProvider.FloatsToBytes(vec);
+                emb = VectorUtil.FloatsToBytes(vec);
             }
             catch { Signal.Warn(LogGroup.Memory, "人设记忆embedding失败", new { content_length = content.Length }); }
 
-            await _engine.PersonaMemories.CreateAsync(content, emb, category);
+            await _engine.PersonaMemories.CreateAsync(content, emb, category,
+                embeddingModel: VectorUtil.EmbeddingModelTag);
             return new ActionResult { Success = true, Message = "人设记忆已添加" };
         }
         return new ActionResult { Success = false, Message = $"未知操作: {action}" };
@@ -1166,4 +1193,80 @@ internal class MemoryGraphRedirectSource : IDataSource
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
         => Task.FromResult(new ActionResult { Success = false });
+}
+
+// ================ 向量重建数据源 ================
+
+internal class EmbeddingRebuildSource : IDataSource
+{
+    private readonly MasterEngine _engine;
+    public EmbeddingRebuildSource(MasterEngine engine) => _engine = engine;
+    public bool SupportsPush => false;
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    private const string EmbeddingModelTag = "bge-large-zh-v1.5";
+
+    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+        => Task.FromResult(new DataResult { Data = new JsonObject() });
+
+    public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+    {
+        var actionId = data?["actionId"]?.ToString() ?? action;
+        if (actionId != "rebuild")
+            return new ActionResult { Success = false, Message = "未知操作" };
+
+        var batchSizeStr = data?["batchSize"]?.ToString() ?? "32";
+        if (!int.TryParse(batchSizeStr, out var batchSize) || batchSize < 1)
+            batchSize = 32;
+
+        try
+        {
+            // 收集所有待重建条目
+            var memStubs = await _engine.Memories.GetAllStubsAsync();
+            var tempStubs = await _engine.TempMemories.GetAllStubsAsync();
+            var personaStubs = await _engine.PersonaMemories.GetAllStubsAsync();
+
+            int total = memStubs.Count + tempStubs.Count + personaStubs.Count;
+            if (total == 0)
+                return new ActionResult { Success = true, Message = "没有需要重建的记忆" };
+
+            int processed = 0;
+
+            processed += await RebuildTableAsync(memStubs, batchSize,
+                (updates) => _engine.Memories.BatchUpdateEmbeddingsAsync(updates));
+            processed += await RebuildTableAsync(tempStubs, batchSize,
+                (updates) => _engine.TempMemories.BatchUpdateEmbeddingsAsync(updates));
+            processed += await RebuildTableAsync(personaStubs, batchSize,
+                (updates) => _engine.PersonaMemories.BatchUpdateEmbeddingsAsync(updates));
+
+            return new ActionResult { Success = true, Message = $"重建完成，共处理 {processed} 条记忆" };
+        }
+        catch (Exception ex)
+        {
+            Signal.Error(LogGroup.Memory, "Embedding 重建失败", new { error = ex.Message });
+            return new ActionResult { Success = false, Message = $"重建失败: {ex.Message}" };
+        }
+    }
+
+    private async Task<int> RebuildTableAsync(
+        List<StubEntry> stubs, int batchSize,
+        Func<List<(int Id, byte[] Embedding, string Model)>, Task> updateFunc)
+    {
+        int processed = 0;
+        for (int i = 0; i < stubs.Count; i += batchSize)
+        {
+            var batch = stubs.Skip(i).Take(batchSize).ToList();
+            var texts = batch.Select(s => s.Content).ToList();
+            var embeddings = await _engine.Embedding.GetEmbeddingsAsync(texts);
+
+            var updates = new List<(int Id, byte[] Embedding, string Model)>(batch.Count);
+            for (int j = 0; j < batch.Count; j++)
+            {
+                updates.Add((batch[j].Id, VectorUtil.FloatsToBytes(embeddings[j]), EmbeddingModelTag));
+            }
+            await updateFunc(updates);
+            processed += batch.Count;
+        }
+        return processed;
+    }
 }
