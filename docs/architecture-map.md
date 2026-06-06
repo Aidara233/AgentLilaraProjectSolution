@@ -179,7 +179,7 @@ ChannelEngine (频道循环，常驻，一个活跃频道一个):
 
   Express 模式 (直接调 Core，不走 Agent):
     ExecuteExpressCycleAsync: 构建上下文 → AgentCore.InvokeAsync → 发文本 + 静默执行 Express 工具
-    Express 工具 (fire-and-forget): ToolMetaAttribute.ExpressAvailable=true
+    Express 工具 (fire-and-forget): 由 ModeConfig.json Express 模式 tools 字段控制
     核心 Express 工具: escalate(切Working)
     非 native 提供商 fallback: 仍解析 [ESCALATE] 文本标记
 
@@ -393,7 +393,7 @@ AgentLilara.PluginSDK (共享契约，独立类库):
   IToolContext: GetService<T>() / Storage
   IPluginStorage: GlobalDirectory / InstanceDirectory
   IPromptContributor: SectionKey / Priority / BuildSection()
-  ToolMetaAttribute: Group / ContinueLoop / AllowSubAgent / CapabilitySummary / Permission / Scope / ExpressAvailable / OutputOnly
+  ToolMetaAttribute: Group / ContinueLoop / AllowSubAgent / CapabilitySummary / Permission / Scope / OutputOnly
   ToolParameter: Name / Description / Index / IsRequired（控制 JSON Schema required 数组）
   EngineMode: Express / Working（SDK 枚举，供 ILoopControl 使用）
   Services/: IMemoryAccess（完整数据访问：语义搜索/向量操作/批量读取/临时库/关联图）
@@ -405,7 +405,7 @@ AgentLilara.PluginSDK (共享契约，独立类库):
 
 主程序 Tool/ (宿主层):
   Core/CoreTools.cs          — 核心工具（continue_loop + wait + escalate），不可卸载
-  Core/EscalateTool.cs       — Express→Working 模式切换工具（ExpressAvailable=true）
+  Core/EscalateTool.cs       — Express→Working 模式切换工具
   Host/PluginLoader          — 扫描 {BaseDirectory}/Plugins/*.dll，AssemblyLoadContext 隔离加载
   Host/ToolContextImpl       — IToolContext 实现（ConcurrentDictionary 服务容器）
   Host/MemoryAccessImpl      — IMemoryAccess 桥接（Repository + EmbeddingProvider）
