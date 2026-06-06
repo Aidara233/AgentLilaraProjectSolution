@@ -24,7 +24,12 @@ namespace AgentCoreProcessor.Engine
         {
             // 先消费 pending 信号（来自上次 WaitAsync 返回后到本次 WaitAsync 之间的 Signal）
             if (Interlocked.CompareExchange(ref _signalPending, 0, 1) == 1)
+            {
+                // 提前返回也必须替换 TCS，防止旧的已完成 TCS 在下一次 WaitAsync 中被误消费
+                var old = Interlocked.Exchange(ref _tcs,
+                    new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
                 return true;
+            }
 
             var current = _tcs;
             var triggered = current.Task == await Task.WhenAny(current.Task, Task.Delay(timeout, ct));
