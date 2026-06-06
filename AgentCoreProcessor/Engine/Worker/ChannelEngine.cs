@@ -132,6 +132,10 @@ namespace AgentCoreProcessor.Engine
         // Express/Working 自适应切换
         private bool isWorkingMode = false;
 
+        // 模式配置驱动（Phase 2）：当前模式 ID 和定义
+        private string _currentModeId = "express";
+        private ModeDefinition? _currentModeDef;
+
         // 统一游标：两种模式共用的最后消费消息 DB Id
         private int _lastConsumedMessageId;
         // escalate 理由暂存（Express→Working 时注入一次）
@@ -195,7 +199,10 @@ namespace AgentCoreProcessor.Engine
                 _lastConsumedMessageId = savedCursor;
                 _escalateReason = savedReason;
                 if (savedMode == "working")
+                {
                     isWorkingMode = true;
+                    _currentModeId = savedMode;
+                }
                 if (!string.IsNullOrEmpty(savedSummary) && string.IsNullOrEmpty(contextSummary))
                     contextSummary = savedSummary;
             }
@@ -250,7 +257,10 @@ namespace AgentCoreProcessor.Engine
                 _lastConsumedMessageId = savedCursor;
                 _escalateReason = savedReason;
                 if (savedMode == "working")
+                {
                     isWorkingMode = true;
+                    _currentModeId = savedMode;
+                }
                 if (!string.IsNullOrEmpty(savedSummary) && string.IsNullOrEmpty(contextSummary))
                     contextSummary = savedSummary;
             }
@@ -701,6 +711,12 @@ namespace AgentCoreProcessor.Engine
         private async Task ExecuteWorkingCycleAsync()
         {
             _roundImageHashes.Clear();
+
+            // 动态轮次上限（Phase 2e）：从模式配置读取
+            _currentModeDef ??= ModeConfigLoader.GetMode(_currentModeId);
+            if (_currentModeDef != null)
+                agentConfig.MaxRounds = _currentModeDef.MaxRounds;
+
             EnsureAgent();
 
             // Lazy register compress tool
@@ -758,6 +774,8 @@ namespace AgentCoreProcessor.Engine
                     Signal.Event(LogGroup.Engine, "自动回退",
                         new { channelId, from = "Working", to = "Express", pendingCount = checkMsgs.Count });
                     isWorkingMode = false;
+                    _currentModeId = "express";
+                    _currentModeDef = null;
                     persistence?.SaveContext(null, "express", new List<List<Message>>(),
                         _lastConsumedMessageId, null);
                     EndWorkingSession();
@@ -804,6 +822,8 @@ namespace AgentCoreProcessor.Engine
                 Signal.Event(LogGroup.Engine, "模式切换",
                     new { channelId, from = "Working", to = "Express", reason = reason ?? "工具调用" });
                 isWorkingMode = false;
+                _currentModeId = "express";
+                _currentModeDef = null;
 
                 // 清空 Working 上下文但保留游标
                 persistence?.SaveContext(null, "express", new List<List<Message>>(),
@@ -812,6 +832,40 @@ namespace AgentCoreProcessor.Engine
                 EndWorkingSession();
 
                 // 不主动唤醒：让 Express 等待真正的消息到来，避免连续两次空转 Express
+            }
+            else if (agent.LastRoundCalls?.Any(c => c.Tool == "switch_mode") == true)
+            {
+                // Working 子模式横向切换：保留上下文，只改工具列表
+                var switchCall = agent.LastRoundCalls.First(c => c.Tool == "switch_mode");
+                var data = switchCall.Inputs.Count > 0 ? switchCall.Inputs[0] : "";
+                var parts = data.Split('|', 2);
+                var targetId = parts[0].Trim();
+                var reason = parts.Length > 1 ? parts[1].Trim() : null;
+
+                var targetDef = ModeConfigLoader.GetMode(targetId);
+                if (targetDef != null && targetDef.MetaType == "Working")
+                {
+                    var oldModeId = _currentModeId;
+                    _currentModeId = targetId;
+                    _currentModeDef = targetDef;
+                    agentConfig.MaxRounds = targetDef.MaxRounds;
+
+                    // 注入模式切换提示
+                    agent!.AddToHistory(new Message { Role = "user",
+                        Content = $"[模式切换] {oldModeId} → {targetId}。" +
+                                  (!string.IsNullOrEmpty(reason) ? $" 原因：{reason}" : "") });
+
+                    // 持久化当前上下文（含模式切换消息）
+                    PersistCurrentContext();
+
+                    Signal.Event(LogGroup.Engine, "子模式切换",
+                        new { channelId, from = oldModeId, to = targetId, reason = reason ?? "工具调用" });
+
+                    // 强制重建 agent（下一轮用新模式工具列表），但保留历史轮次和上下文
+                    agent = null;
+                    isInWorkingSession = false;
+                    gate.Signal();
+                }
             }
             else if (agent.StopReason == AgentStopReason.MaxRounds)
             {
@@ -862,7 +916,10 @@ namespace AgentCoreProcessor.Engine
             }
 
             bool escalated = false;
-            for (int round = 0; round < agentConfig.ExpressMaxRounds; round++)
+            // 动态轮次上限（Phase 2e）：从模式配置读取
+            _currentModeDef ??= ModeConfigLoader.GetMode("express");
+            var maxRounds = _currentModeDef?.MaxRounds ?? agentConfig.ExpressMaxRounds;
+            for (int round = 0; round < maxRounds; round++)
             {
                 ModelOutput output;
                 var spanLabel = round == 0
@@ -958,14 +1015,18 @@ namespace AgentCoreProcessor.Engine
                     if (call.Tool == "escalate")
                     {
                         var reason = call.Inputs.Count > 0 ? call.Inputs[0] : null;
-                        _signalBuffer.Enqueue(new ModeSwitchSignal("working", reason));
+                        var targetModeId = ModeConfigLoader.GetEscalateTarget();
+                        var targetDef = ModeConfigLoader.GetMode(targetModeId);
+                        _signalBuffer.Enqueue(new ModeSwitchSignal(targetModeId, reason));
                         isWorkingMode = true;
+                        _currentModeId = targetModeId;
+                        _currentModeDef = targetDef;
                         isInWorkingSession = true;
                         _escalateReason = reason;
-                        persistence?.SaveContext(null, "working", new List<List<Message>>(),
+                        persistence?.SaveContext(null, targetModeId, new List<List<Message>>(),
                             _lastConsumedMessageId, reason);
                         Signal.Event(LogGroup.Engine, "模式切换",
-                            new { channelId, from = "Express", to = "Working", reason = reason ?? "工具调用" });
+                            new { channelId, from = "Express", to = targetModeId, reason = reason ?? "工具调用" });
                         gate.Signal();
                         escalated = true;
                         break;
@@ -1009,7 +1070,7 @@ namespace AgentCoreProcessor.Engine
                 _lastConsumedMessageId = _startInjectMaxId;
 
             if (!escalated && _lastConsumedMessageId > 0)
-                persistence?.SaveContext(contextSummary, "express", new List<List<Message>>(),
+                persistence?.SaveContext(contextSummary, _currentModeId, new List<List<Message>>(),
                     _lastConsumedMessageId, _escalateReason);
         }
 
@@ -1505,7 +1566,8 @@ namespace AgentCoreProcessor.Engine
             // 6. escalate 理由（仅一次，解释为何进入 Working 模式）
             if (isWorkingMode && !string.IsNullOrEmpty(_escalateReason))
             {
-                msgs.Add(new Message { Role = "user", Content = $"[模式切换] 已从 Express 切换至 Working 模式。切换原因：{_escalateReason}" });
+                var modeLabel = _currentModeDef?.DisplayName ?? _currentModeId;
+                msgs.Add(new Message { Role = "user", Content = $"[模式切换] 已从 Express 切换至 {modeLabel} 模式。切换原因：{_escalateReason}" });
                 _escalateReason = null;
             }
 
@@ -1715,15 +1777,18 @@ namespace AgentCoreProcessor.Engine
                             agent.AddToHistory(msg);
                         break;
                     case ModeSwitchSignal mss:
-                        isWorkingMode = mss.NewMode == "working";
+                        isWorkingMode = mss.NewMode != "express";
+                        _currentModeId = mss.NewMode;
+                        _currentModeDef = ModeConfigLoader.GetMode(mss.NewMode);
                         if (!string.IsNullOrEmpty(mss.Reason))
                         {
-                            if (mss.NewMode == "working")
+                            if (mss.NewMode != "express")
                             {
                                 // Express→Working：暂存理由供 BuildStartInjectAsync 注入
                                 if (string.IsNullOrEmpty(_escalateReason))
                                     _escalateReason = mss.Reason;
-                                msgs.Add(new Message { Role = "user", Content = $"[系统] 切换到 Working 模式：{mss.Reason}" });
+                                var modeName = _currentModeDef?.DisplayName ?? mss.NewMode;
+                                msgs.Add(new Message { Role = "user", Content = $"[系统] 切换到 {modeName} 模式：{mss.Reason}" });
                             }
                             else
                             {
@@ -1939,7 +2004,7 @@ namespace AgentCoreProcessor.Engine
             if (currentRound.Count > 0)
                 rounds.Add(currentRound);
 
-            persistence.SaveContext(contextSummary, isWorkingMode ? "working" : "express", rounds,
+            persistence.SaveContext(contextSummary, _currentModeId, rounds,
                 _lastConsumedMessageId, _escalateReason);
         }
 
