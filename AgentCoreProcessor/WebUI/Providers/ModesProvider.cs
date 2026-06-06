@@ -224,6 +224,8 @@ internal class ModesListSource : IDataSource
 
 internal class ModesEditSource : IDataSource
 {
+    private string? _lastModeId;
+
     public bool SupportsPush => false;
     public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
 
@@ -232,6 +234,11 @@ internal class ModesEditSource : IDataSource
         string? modeId = null;
         if (query?.Extra is JsonObject extra)
             modeId = extra["id"]?.ToString();
+
+        // 缓存最后选中的模式，防止操作后丢失选中状态
+        modeId ??= _lastModeId;
+        if (!string.IsNullOrEmpty(modeId))
+            _lastModeId = modeId;
 
         if (string.IsNullOrEmpty(modeId))
             return Task.FromResult(new DataResult { Data = new JsonObject { ["_empty"] = true } });
@@ -300,6 +307,8 @@ internal class ModesEditSource : IDataSource
 
 internal class ModesToolsSource : IDataSource
 {
+    private string? _lastModeId;
+
     public bool SupportsPush => false;
     public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
 
@@ -309,9 +318,16 @@ internal class ModesToolsSource : IDataSource
         if (query?.Extra is JsonObject extra)
             modeId = extra["id"]?.ToString();
 
+        // 缓存最后选中的模式，防止操作后丢失选中状态
+        modeId ??= _lastModeId;
+        if (!string.IsNullOrEmpty(modeId))
+            _lastModeId = modeId;
+
         if (string.IsNullOrEmpty(modeId))
             return Task.FromResult(new DataResult { Data = new JsonArray() });
 
+        var mode = ModeConfigLoader.GetMode(modeId);
+        var defaultLabel = mode?.ToolDefaults == "enabled" ? "默认(启用)" : "默认(禁用)";
         var allTools = ToolRegistry.All;
         var rows = new JsonArray();
         foreach (var (name, tool) in allTools)
@@ -325,9 +341,9 @@ internal class ModesToolsSource : IDataSource
                 ["state"] = state,
                 ["stateLabel"] = state switch
                 {
-                    "enabled" => "已启用",
-                    "disabled" => "已禁用",
-                    _ => "默认",
+                    "enabled" => "[启用]",
+                    "disabled" => "[禁用]",
+                    _ => defaultLabel,
                 },
                 ["group"] = meta?.Group ?? "-",
             });

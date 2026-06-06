@@ -4,28 +4,15 @@
     {
       "id": "express",
       "displayName": "轻量对话",
-      "description": "快速对话，fire-and-forget。日常聊天、简单查询、提醒设置。需要复杂操作时用 escalate 切换。",
+      "description": "快速对话，fire-and-forget。日常聊天。需要复杂操作时用 escalate 切换。",
       "metaType": "Express",
       "maxRounds": 8,
       "toolDefaults": "disabled",
       "tools": {
         "speak": "enabled",
-        "send_media": "enabled",
-        "send_file": "enabled",
-        "adapter_action": "enabled",
         "wait": "enabled",
-        "escalate": "enabled",
-        "memory_get": "enabled",
-        "memory_search": "enabled",
-        "read_text": "enabled",
-        "list_dir": "enabled",
-        "file_info": "enabled",
-        "web_search": "enabled",
-        "get_image_text": "enabled",
-        "schedule_task": "enabled",
-        "list_tasks": "enabled",
-        "cancel_task": "enabled",
-        "dismiss_notification": "enabled"
+        "poke": "enabled",
+        "escalate": "enabled"
       }
     },
     {
