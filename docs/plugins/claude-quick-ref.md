@@ -10,7 +10,7 @@
 | 查接口/枚举/服务签名 | [api-reference.md](api-reference.md) — 完整 API 参考 |
 | 理解加载流程/工具解析 | [README.md](README.md) — 运行时机制 |
 | **搞清路径配置** | **[path-config.md](path-config.md)** — Storage vs BaseDirectory、插件数据路径、常见坑 |
-| **学习实现模式** | **[patterns.md](patterns.md)** — Static Accessor Bridge、异步通知 Drain、Global Timer、文件沙箱 |
+| **学习实现模式** | **[patterns.md](patterns.md)** — Static Accessor Bridge、异步通知 Drain、Global Timer + Gate 契约、SpawnCheck 并发安全、文件沙箱 |
 | 看现有插件有哪些工具 | 下方"插件清单" |
 
 ## 插件清单（速查版）

@@ -208,17 +208,17 @@ private async Task TimerLoop(CancellationToken ct)
 ```
 
 ```csharp
-// === Loop 组件：只管自己的 JSON ===
+// === Loop 组件：只管自己的 JSON，发现到期后自己抬闸 ===
 public override Task OnBeforeInvokeAsync()
 {
-    CheckDueTasks();  // 检查自己 JSON 中的到期任务
+    CheckDueTasks();  // 检查自己 JSON 中的到期任务，如有到期则调用 _ctx.WakeLoop()
     return Task.CompletedTask;
 }
 
 public override string? BuildPromptSection()
 {
-    var text = Interlocked.Exchange(ref _pendingNotification, null);
-    return text;  // 注入到期任务通知
+    // 只读不消费：通知持久化注入直到模型显式调用 dismiss_notification
+    return _pendingNotification;
 }
 ```
 
@@ -226,13 +226,118 @@ public override string? BuildPromptSection()
 
 - **目录扫描代替中心化注册表**：每个 Loop 的 JSON 文件就是唯一真相源，增删任务不需要通知 Timer
 - Timer 通过 `WakeLoop(loopId)` 精确唤醒目标循环，不是广播
-- Loop 组件在 `OnBeforeInvokeAsync` 中做到期检查（防御性：即使 Timer 漏了也能补）
+- **Loop 组件自己抬闸**：`CheckDueTasks`/`RecoverOverdueTasks` 发现到期任务后，调用 `_ctx.WakeLoop()` 抬闸。任务通知通过 `BuildPromptSection` 注入 prompt，但**不消费**——由模型显式调用 `dismiss_notification` 工具清除
 - `RecoverOverdueTasks` 启动时扫描，错过的任务立即触发
 - **参考实现**：`Plugin.ScheduledTasks/ScheduledTasksTimerComponent.cs`（Global）+ `ScheduledTasksComponent.cs`（Loop）
 
+### Gate 开闸契约
+
+全局定时器扫描到的 LoopId 可能对应一个**不活跃**的频道（频道引擎已冷超时退出或从未创建）。此时 `WakeLoop(loopId)` 会触发 `ColdStartChannelAsync` 冷启动引擎。**冷启动不应该无条件抬闸**——应该等组件初始化后发现确实有内容再抬。
+
+```
+正确的流程：
+  Timer 到期 → WakeLoop("channel:3") → 引擎不存在 → ColdStartChannelAsync → StartEngine
+  → ScheduledTasksComponent.OnInitAsync → RecoverOverdueTasks 发现到期任务 → _ctx.WakeLoop()
+  → Gate 打开 → 循环执行 → 通知注入 prompt
+
+错误的流程（已修复）：
+  Timer 到期 → WakeLoop → ColdStartChannelAsync → StartEngine → 等 200ms → 无条件 SignalGate()
+  → Gate 打开 → Guard 检查"有事吗？" → 没有消息 → continue → 通知丢失
+```
+
+**核心原则**：Gate 是纯被动闸机——抬就通、落就堵，不含任何判断逻辑。每个抬闸者在抬闸前自己确认"有事"。不设事后 Guard 兜底，违反契约的抬闸者是 bug 而非 Guard 该覆盖的边界情况。
+
+抬闸者及其确认方式：
+
+| 抬闸者 | 确认方式 |
+|--------|----------|
+| 缓冲定时器 (`FlushBuffer`) | 有缓冲消息 |
+| 组件 (`_ctx.WakeLoop()`) | 有待注入通知 |
+| 跨循环请求 | 有请求/通知 |
+| Signal 事件 | 有信号 |
+
+```csharp
+// === Loop 组件：发现到期任务后自己抬闸 ===
+private void CheckDueTasks()
+{
+    var (_, due) = _store.LoadAndFindDue(DateTime.Now);
+    if (due.Count == 0) return;
+    // ... 处理到期任务，构建通知 ...
+    _pendingNotification = BuildNotification(due);
+    _ctx.WakeLoop();  // 有内容，抬闸
+}
+
+// === BuildPromptSection：只读不消费 ===
+public override string? BuildPromptSection()
+{
+    return _pendingNotification;  // 不消费，由 dismiss_notification 工具清除
+}
+```
+
 ---
 
-## 4. FileToolBase 沙箱模式
+## 4. SpawnCheck 并发安全
+
+### 问题
+
+`IEngineSpawnCheck` 接口将"判断是否创建引擎"（`ShouldSpawnAsync`）和"创建引擎"（`Create`）拆成两个方法。`ChannelEngineSpawnCheck` 曾用实例字段 `pendingContext`/`pendingMessage` 在两个方法间传参。但 `MasterEngine` 的事件处理是 fire-and-forget（`_ = HandleEventAsync(e)`），两个并发事件会**同时调用同一 SpawnCheck 实例**，覆盖对方的 pending 数据，导致 `NullReferenceException`。
+
+### 方案
+
+锁保护检查-预留-创建序列，用 `HashSet<int>` 防止重复创建同一频道。
+
+```csharp
+private readonly object _spawnLock = new();
+private readonly HashSet<int> _pendingSpawns = new();
+
+public async Task<bool> ShouldSpawnAsync(EngineEvent e, ISystemContext ctx)
+{
+    // ... 前置检查（权限、会话）...
+    var channelId = sessionContext.Channel.Id;
+
+    lock (_spawnLock)
+    {
+        // 已有活跃引擎 → 转发消息
+        if (activeChannels.TryGetValue(channelId, out var existing) && existing.IsAlive)
+        {
+            existing.EnqueueMessage(message, sessionContext, e.TraceParentSpanId);
+            return false;
+        }
+
+        // 已有并发流程正在创建 → 不重复创建
+        if (!_pendingSpawns.Add(channelId))
+            return false;
+
+        pendingContext = sessionContext;
+        pendingMessage = message;
+        return true;
+    }
+}
+
+public ISubEngine Create(ISystemContext ctx)
+{
+    var sc = pendingContext!;
+    var msg = pendingMessage!;
+    pendingContext = null;
+    pendingMessage = null;
+
+    var engine = new ChannelEngine(ctx, sc, msg);
+    activeChannels[sc.Channel.Id] = engine;
+    _pendingSpawns.Remove(sc.Channel.Id);  // 释放预留
+    return engine;
+}
+```
+
+### 要点
+
+- `_pendingSpawns` 的 `Add` 是原子预留——返回 false 表示已有并发流程在创建同一个频道
+- `OnEventAsync` 中清理死引擎时同步清理 `_pendingSpawns`，防止 stale 预留
+- `TryColdStart` 也受同样保护：锁内检查活跃引擎 + 预留频道
+- **适用场景**：任何使用 `IEngineSpawnCheck` 接口、在 `ShouldSpawnAsync`/`Create` 之间用字段传参的实现。建议新 SpawnCheck 避免共享字段，改用队列或本地变量
+
+---
+
+## 5. FileToolBase 沙箱模式
 
 ### 问题
 

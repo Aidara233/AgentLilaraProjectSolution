@@ -112,7 +112,7 @@ AgentLilaraProjectSolution/
 | [快速上手](quickstart.md) | 从零创建一个插件，含完整代码示例 |
 | [API 参考](api-reference.md) | 所有接口、属性、枚举、服务的完整说明 |
 | [路径配置](path-config.md) | Storage vs BaseDirectory、插件数据路径、常见坑 |
-| [实现模式](patterns.md) | Static Accessor Bridge、异步通知 Drain、Global Timer、文件沙箱等 |
+| [实现模式](patterns.md) | Static Accessor Bridge、异步通知 Drain、Global Timer + Gate 契约、SpawnCheck 并发安全、文件沙箱等 |
 | [Claude 速查](claude-quick-ref.md) | 给新 Claude 会话的快速上手指南 |
 
 ## 关键设计决策
