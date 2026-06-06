@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using AgentCoreProcessor.Config;
+using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Logging;
 using AgentLilara.PluginSDK;
 using Newtonsoft.Json;

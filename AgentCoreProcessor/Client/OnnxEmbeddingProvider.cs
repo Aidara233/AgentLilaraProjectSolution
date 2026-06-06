@@ -19,7 +19,6 @@ namespace AgentCoreProcessor.Client
             _tokenizer = new BertChineseTokenizer(config.TokenizerVocabPath);
 
             var options = new Microsoft.ML.OnnxRuntime.SessionOptions();
-            options.RegisterOrtExtensions();
             if (config.ExecutionProvider == "DirectML")
             {
                 try { options.AppendExecutionProvider_DML(); }
