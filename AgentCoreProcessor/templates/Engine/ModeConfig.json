@@ -142,9 +142,21 @@
     {
       "id": "manage",
       "displayName": "管理",
-      "description": "调度子agent、委派任务、汇总结果。拥有所有工具的完全权限。",
+      "description": "调度委托、管理远程设备、处理通知。可创建子agent和跨循环请求。",
       "metaType": "Working",
       "maxRounds": 20,
+      "toolDefaults": "enabled",
+      "tools": {
+        "switch_mode": "enabled",
+        "deescalate": "enabled"
+      }
+    },
+    {
+      "id": "fullpower",
+      "displayName": "完全权限",
+      "description": "不受限模式，所有工具可用。切换前必须征得用户明确同意。",
+      "metaType": "Working",
+      "maxRounds": 30,
       "toolDefaults": "enabled",
       "tools": {
         "switch_mode": "enabled",
