@@ -21,13 +21,25 @@ namespace AgentCoreProcessor.Engine
         /// <summary>活跃频道引擎表（ChannelId → ChannelEngine）。</summary>
         private readonly Dictionary<int, ChannelEngine> activeChannels = new();
 
+        /// <summary>保护 ShouldSpawn→Create 序列的并发安全。</summary>
+        private readonly object _spawnLock = new();
+        /// <summary>正在创建中的频道 ID 集合，防止并发重复创建。</summary>
+        private readonly HashSet<int> _pendingSpawns = new();
+
         // 频道循环不活跃时的跨循环请求暂存（待实现：DelegationBus 自动路由）
 
         public Task OnEventAsync(EngineEvent e, ISystemContext ctx)
         {
             // 清理已死亡的频道引擎
-            var dead = activeChannels.Where(kv => !kv.Value.IsAlive).Select(kv => kv.Key).ToList();
-            foreach (var key in dead) activeChannels.Remove(key);
+            lock (_spawnLock)
+            {
+                var dead = activeChannels.Where(kv => !kv.Value.IsAlive).Select(kv => kv.Key).ToList();
+                foreach (var key in dead)
+                {
+                    activeChannels.Remove(key);
+                    _pendingSpawns.Remove(key);
+                }
+            }
             return Task.CompletedTask;
         }
 
@@ -54,24 +66,30 @@ namespace AgentCoreProcessor.Engine
 
             var channelId = sessionContext.Channel.Id;
 
-            // 已有活跃的频道引擎 → 无条件转发
-            if (activeChannels.TryGetValue(channelId, out var existing) && existing.IsAlive)
-            {
-                existing.EnqueueMessage(message, sessionContext, e.TraceParentSpanId);
-                return false;
-            }
-
-            // 信任等级：首次出现自动升为 Stranger
+            // 信任等级：首次出现自动升为 Stranger（锁外执行，不参与竞态）
             if (sessionContext.Person.TrustLevel == TrustLevel.Unknown)
             {
                 sessionContext.Person.TrustLevel = TrustLevel.Stranger;
                 await ctx.Session.UpdatePersonAsync(sessionContext.Person);
             }
 
-            // 需要创建新的频道引擎
-            pendingContext = sessionContext;
-            pendingMessage = message;
-            return true;
+            lock (_spawnLock)
+            {
+                // 已有活跃的频道引擎 → 无条件转发
+                if (activeChannels.TryGetValue(channelId, out var existing) && existing.IsAlive)
+                {
+                    existing.EnqueueMessage(message, sessionContext, e.TraceParentSpanId);
+                    return false;
+                }
+
+                // 已有并发流程正在为此频道创建引擎 → 不重复创建
+                if (!_pendingSpawns.Add(channelId))
+                    return false;
+
+                pendingContext = sessionContext;
+                pendingMessage = message;
+                return true;
+            }
         }
 
         public ISubEngine Create(ISystemContext ctx)
@@ -83,6 +101,7 @@ namespace AgentCoreProcessor.Engine
 
             var engine = new ChannelEngine(ctx, sc, msg);
             activeChannels[sc.Channel.Id] = engine;
+            _pendingSpawns.Remove(sc.Channel.Id);
             return engine;
         }
 
@@ -91,11 +110,18 @@ namespace AgentCoreProcessor.Engine
         /// <summary>冷启动频道引擎（无消息触发）。返回 null 表示引擎已活跃。</summary>
         internal ChannelEngine? TryColdStart(Database.Channel channel, ISystemContext ctx)
         {
-            if (activeChannels.TryGetValue(channel.Id, out var existing) && existing.IsAlive)
-                return null;
+            lock (_spawnLock)
+            {
+                if (activeChannels.TryGetValue(channel.Id, out var existing) && existing.IsAlive)
+                    return null;
+
+                if (!_pendingSpawns.Add(channel.Id))
+                    return null;
+            }
 
             var engine = new ChannelEngine(ctx, channel);
             activeChannels[channel.Id] = engine;
+            _pendingSpawns.Remove(channel.Id);
             return engine;
         }
 
