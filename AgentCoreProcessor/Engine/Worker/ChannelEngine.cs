@@ -845,11 +845,14 @@ namespace AgentCoreProcessor.Engine
             else if (agent.LastRoundCalls?.Any(c => c.Tool == "switch_mode") == true)
             {
                 // Working 子模式横向切换：保留上下文，只改工具列表
+                // 数据格式：target|reason|asked_user_message|user_confirm_message_id
                 var switchCall = agent.LastRoundCalls.First(c => c.Tool == "switch_mode");
                 var data = switchCall.Inputs.Count > 0 ? switchCall.Inputs[0] : "";
-                var parts = data.Split('|', 2);
+                var parts = data.Split('|', 4);
                 var targetId = parts[0].Trim();
                 var reason = parts.Length > 1 ? parts[1].Trim() : null;
+                var askedMsg = parts.Length > 2 ? parts[2].Trim() : null;
+                var confirmMsgId = parts.Length > 3 ? parts[3].Trim() : null;
 
                 var targetDef = ModeConfigLoader.GetMode(targetId);
                 if (targetDef != null && targetDef.MetaType == "Working")
@@ -860,15 +863,19 @@ namespace AgentCoreProcessor.Engine
                     agentConfig.MaxRounds = targetDef.MaxRounds;
 
                     // 注入模式切换提示
+                    var confirmInfo = !string.IsNullOrEmpty(confirmMsgId)
+                        ? $" 确认消息ID：{confirmMsgId}" : "";
                     agent!.AddToHistory(new Message { Role = "user",
                         Content = $"[模式切换] {oldModeId} → {targetId}。" +
-                                  (!string.IsNullOrEmpty(reason) ? $" 原因：{reason}" : "") });
+                                  (!string.IsNullOrEmpty(reason) ? $" 原因：{reason}。" : "") +
+                                  confirmInfo });
 
                     // 持久化当前上下文（含模式切换消息）
                     PersistCurrentContext();
 
                     Signal.Event(LogGroup.Engine, "子模式切换",
-                        new { channelId, from = oldModeId, to = targetId, reason = reason ?? "工具调用" });
+                        new { channelId, from = oldModeId, to = targetId, reason = reason ?? "",
+                            askedUserMessage = askedMsg ?? "", confirmMessageId = confirmMsgId ?? "" });
 
                     // 强制重建 agent（下一轮用新模式工具列表），但保留历史轮次和上下文
                     agent = null;
@@ -1149,6 +1156,38 @@ namespace AgentCoreProcessor.Engine
                     sb.AppendLine($"\n身份信息：你的QQ号是 {botId}。");
                 sb.AppendLine(FormatChannelContext());
                 sb.AppendLine("\n[图片说明] 正文中的 [IMG:N] 标记表示该位置有图片，下方紧随对应的 [IMG:N] + 实际图片。[图中文字] 后跟随OCR提取的文字。文字较长时会被截断，可使用 get_image_text 工具传入图片hash查看全文。相同图片不会重复出现。");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine(BuildModeRules());
+
+            return sb.ToString();
+        }
+
+        private string BuildModeRules()
+        {
+            var modeId = _currentModeId ?? "express";
+            var def = ModeConfigLoader.GetMode(modeId);
+            var name = def?.DisplayName ?? "Express";
+            var desc = def?.Description ?? "轻量对话";
+
+            var sb = new StringBuilder();
+            sb.AppendLine($"[当前模式] {name} ({modeId})");
+            sb.AppendLine(desc);
+
+            if (def?.MetaType == "Working")
+            {
+                sb.AppendLine();
+                sb.AppendLine("[模式规则]");
+                sb.AppendLine("- 用 switch_mode 切换工作子模式前，必须先用 speak 征求用户同意并等待确认回复");
+                sb.AppendLine("  - 用户直接要求切换时 asked_user_message 留空，user_confirm_message_id 填用户消息的 platform_id");
+                sb.AppendLine("  - 你主动询问时 asked_user_message 填你的问话内容，user_confirm_message_id 填用户确认回复的 platform_id");
+                sb.AppendLine("- deescalate 可随时退回 Express，无需确认");
+                sb.AppendLine("- 不得为绕过本模式的工具限制而切换模式");
+            }
+            else
+            {
+                sb.AppendLine("[模式规则] 需要复杂操作时用 escalate 切换到工作模式。");
             }
 
             return sb.ToString();
