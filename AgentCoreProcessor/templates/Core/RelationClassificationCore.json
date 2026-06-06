@@ -1,0 +1,15 @@
+{
+  "apiKey": "{{LIGHT_API_KEY}}",
+  "apiEndpoint": "{{LIGHT_ENDPOINT}}",
+  "model": "{{LIGHT_MODEL}}",
+  "provider": "{{LIGHT_PROVIDER}}",
+  "temperature": 0.0,
+  "maxTokens": null,
+  "topP": null,
+  "frequencyPenalty": null,
+  "presencePenalty": null,
+  "stream": true,
+  "extraBody": { "thinking": { "type": "enabled" } },
+  "n": 1,
+  "promptFiles": ["RelationClassificationPrompt.txt"]
+}
