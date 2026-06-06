@@ -96,7 +96,6 @@ internal class ModesProvider : IWebUIProvider
                         ShowSubmit = true,
                         ShowReset = true,
                     },
-                    InjectEvent = "mode-selected",
                     Layout = new CardLayout { PreferredCols = 9 },
                 },
                 new()
@@ -124,7 +123,6 @@ internal class ModesProvider : IWebUIProvider
                             new() { Id = "tool-default", Label = "使用默认" },
                         },
                     },
-                    InjectEvent = "mode-selected",
                     Layout = new CardLayout { PreferredCols = 9 },
                 },
             },
@@ -367,8 +365,8 @@ internal class ModesToolsSource : IDataSource
         if (data is not JsonObject obj)
             return Task.FromResult(new ActionResult { Success = false, Message = "无效请求" });
 
-        // modeId comes from InjectEvent (mode-selected payload merges 'id' into row action data)
-        var modeId = obj["id"]?.ToString();
+        // modeId comes from payload or cached last selection
+        var modeId = obj["id"]?.ToString() ?? _lastModeId;
         var toolName = obj["name"]?.ToString();
 
         if (string.IsNullOrEmpty(modeId) || string.IsNullOrEmpty(toolName))
