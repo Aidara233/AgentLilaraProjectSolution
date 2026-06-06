@@ -261,7 +261,7 @@ internal class ModesEditSource : IDataSource
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
     {
-        if (action != "submit" || data is not JsonObject payload)
+        if (action != "save" || data is not JsonObject payload)
             return Task.FromResult(new ActionResult { Success = false, Message = "无效请求" });
 
         var modeId = payload["id"]?.ToString();
