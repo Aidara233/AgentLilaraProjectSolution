@@ -19,6 +19,7 @@ public class ScheduledTasksComponent : LoopComponentBase
     private ScheduleTaskTool? _scheduleTool;
     private CancelTaskTool? _cancelTool;
     private ListTasksTool? _listTool;
+    private DismissNotificationTool? _dismissTool;
 
     private const string LogGroup = "scheduled-tasks";
 
@@ -37,6 +38,7 @@ public class ScheduledTasksComponent : LoopComponentBase
             if (_scheduleTool != null) yield return _scheduleTool;
             if (_cancelTool != null) yield return _cancelTool;
             if (_listTool != null) yield return _listTool;
+            if (_dismissTool != null) yield return _dismissTool;
         }
     }
 
@@ -51,6 +53,7 @@ public class ScheduledTasksComponent : LoopComponentBase
         _scheduleTool = new ScheduleTaskTool(_store);
         _cancelTool = new CancelTaskTool(_store);
         _listTool = new ListTasksTool(_store);
+        _dismissTool = new DismissNotificationTool(() => { _pendingNotification = null; });
 
         _store.OnTasksChanged = ScheduledTasksNotifier.NotifyChanged;
 
@@ -73,8 +76,7 @@ public class ScheduledTasksComponent : LoopComponentBase
     public override string? BuildPromptSection()
     {
         if (_store == null) return null;
-        CheckDueTasksSync();
-        var text = Interlocked.Exchange(ref _pendingNotification, null);
+        var text = _pendingNotification;
         if (text != null)
             _log?.Event(LogGroup, "notification-injected", new { length = text.Length });
         return text;
@@ -127,8 +129,9 @@ public class ScheduledTasksComponent : LoopComponentBase
             var lines = new List<string> { "[定时任务通知]" };
             foreach (var desc in notifications)
                 lines.Add($"- {desc}（已触发）");
-            lines.Add("请处理以上定时任务。");
+            lines.Add("请处理以上定时任务。处理完后应调用 dismiss_notification 清除通知。");
             _pendingNotification = string.Join("\n", lines);
+            _ctx.WakeLoop();
         }
     }
 
@@ -170,8 +173,9 @@ public class ScheduledTasksComponent : LoopComponentBase
             var lines = new List<string> { "[定时任务通知]" };
             foreach (var desc in notifications)
                 lines.Add($"- {desc}（已触发）");
-            lines.Add("请处理以上定时任务。");
+            lines.Add("请处理以上定时任务。处理完后应调用 dismiss_notification 清除通知。");
             _pendingNotification = string.Join("\n", lines);
+            _ctx.WakeLoop();
         }
     }
 }

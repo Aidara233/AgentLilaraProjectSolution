@@ -913,9 +913,6 @@ namespace AgentCoreProcessor.Engine
 
                 StartEngine(engine);
                 Signal.Event(LogGroup.Engine, "频道引擎冷启动", new { channelId, channelName = channel.Name });
-
-                await Task.Delay(200);
-                engine.SignalGate();
             }
             catch (Exception ex)
             {

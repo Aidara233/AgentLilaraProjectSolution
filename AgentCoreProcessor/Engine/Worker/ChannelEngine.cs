@@ -526,6 +526,10 @@ namespace AgentCoreProcessor.Engine
                     _bufferedMessageCount = 0;
                     _bufferTriggered = false;
                 }
+                // 取消旧缓冲定时器，防止处理期间旧定时器触发幽灵循环。
+                // 处理期间到达的消息会通过 EnqueueMessage 创建新定时器，不受影响。
+                _bufferTimerCts?.Cancel();
+                _bufferTimerCts = null;
 
                 // 消费触发本轮响应的冲动值，防止处理期间到达的消息看到旧高峰值而误触发
                 if (hasNewMessages)
@@ -574,23 +578,10 @@ namespace AgentCoreProcessor.Engine
                     }
                     processedMessageCount += tickMsgs.Count;
 
-                    // 游标已被 BuildRoundInjectAsync 推进、无新消息且无跨循环请求/通知时，跳回等待
-                    if (tickMsgs.Count == 0 && _pendingCrossRequests.IsEmpty && !hasPendingNotifications)
-                    {
-                        continue;
-                    }
-
                     // 重置 Working 轮次状态
                     isInWorkingSession = false;
                     agent = null;
                     fixedPrefix = null;
-                }
-
-                // 守卫：无新消息且无跨循环请求/通知/信号缓冲时，不执行空循环
-                // （防止 Working 期间已消费的消息通过延迟 buffer timer 重复激活）
-                if (!hasNewMessages && _pendingCrossRequests.IsEmpty && !hasPendingNotifications && _signalBuffer.IsEmpty)
-                {
-                    continue;
                 }
 
                 // ③ 循环会话
