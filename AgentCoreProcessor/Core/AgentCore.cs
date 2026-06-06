@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Models;
+using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Tool;
 using AgentCoreProcessor.Tool.Host;
 using AgentLilara.PluginSDK;
@@ -69,7 +70,7 @@ namespace AgentCoreProcessor.Core
                     foreach (var t in GlobalComponentTools)
                     {
                         if (ToolRegistry.IsDisabled(t.Name)) continue;
-                        if (!IsExpressAvailable(t)) continue;
+                        if (!ModeConfigLoader.IsToolEnabled("express", t.Name)) continue;
                         if (expressDefs.Any(d => d.Name == t.Name)) continue;
                         expressDefs.Add(ToDefinition(t));
                     }
@@ -80,7 +81,7 @@ namespace AgentCoreProcessor.Core
                     foreach (var t in AdditionalTools)
                     {
                         if (ToolRegistry.IsDisabled(t.Name)) continue;
-                        if (!IsExpressAvailable(t)) continue;
+                        if (!ModeConfigLoader.IsToolEnabled("express", t.Name)) continue;
                         if (expressDefs.Any(d => d.Name == t.Name)) continue;
                         expressDefs.Add(ToDefinition(t));
                     }
@@ -235,13 +236,6 @@ namespace AgentCoreProcessor.Core
                 if (defs.Any(d => d.Name == t.Name)) continue;
                 defs.Add(ToDefinition(t));
             }
-        }
-
-        private static bool IsExpressAvailable(ITool t)
-        {
-            var meta = ToolRegistry.GetMeta(t.Name)
-                ?? Attribute.GetCustomAttribute(t.GetType(), typeof(ToolMetaAttribute)) as ToolMetaAttribute;
-            return meta?.ExpressAvailable == true;
         }
 
         private static ToolDefinition ToDefinition(ITool t) => new()

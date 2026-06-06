@@ -158,7 +158,7 @@ namespace AgentCoreProcessor.Tool
         {
             return _tools.Values
                 .Where(t => !IsDisabled(t.Name)
-                            && (GetMeta(t.Name)?.ExpressAvailable ?? false)
+                            && ModeConfigLoader.IsToolEnabled(modeId, t.Name)
                             && IsApplicableToEngine(t.Name, engineType))
                 .Select(t => new ToolDefinition
                 {
