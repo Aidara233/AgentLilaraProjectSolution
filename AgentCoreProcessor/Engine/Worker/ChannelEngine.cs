@@ -1006,7 +1006,7 @@ namespace AgentCoreProcessor.Engine
                 using (var expressToolSpan = Signal.Open(LogGroup.Tool, $"Express工具 R{round + 1}: {string.Join(", ", output.ToolCalls.Select(c => c.Tool))}",
                     new { round = round + 1, calls = output.ToolCalls.Select(c => new { c.Tool, c.Inputs }) }))
                 {
-                    var executor = new ToolExecutor(componentHost.TryGetTool, null);
+                    var executor = new ToolExecutor(componentHost.TryGetTool);
                     expressResults = await executor.ExecuteAsync(output.ToolCalls);
                     expressToolSpan.SetCloseDetail(new
                     {
@@ -1148,8 +1148,7 @@ namespace AgentCoreProcessor.Engine
             }
             else
             {
-                var workingTools = componentHost!.GetAllVisibleToolNames();
-                sb.AppendLine(ToolRegistry.GenerateDescriptions(authorizedTools: workingTools,
+                sb.AppendLine(ToolRegistry.GenerateDescriptions(
                     additionalTools: componentHost!.GetAllVisibleTools().ToList()));
                 var botId = ctx.Adapters.GetBotPlatformId("qq");
                 if (!string.IsNullOrEmpty(botId))
@@ -1220,8 +1219,7 @@ namespace AgentCoreProcessor.Engine
 
             fixedPrefix = BuildFixedPrefix();
 
-            var authorized = componentHost!.GetAllVisibleToolNames();
-            agent = new Agent(this, agentCore, agentConfig, authorized, componentHost!.TryGetTool);
+            agent = new Agent(this, agentCore, agentConfig, componentHost!.TryGetTool);
             agent.OnToolExecuted = async (call, result, toolDef) =>
             {
                 bus.Publish(new ToolExecutedEvent(call, result, toolDef));

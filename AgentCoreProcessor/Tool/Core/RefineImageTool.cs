@@ -6,7 +6,7 @@ using AgentLilara.PluginSDK;
 
 namespace AgentCoreProcessor.Tool.Core
 {
-    [ToolMeta(ContinueLoop = true, EngineTypes = new[] { "channel" }, ExpressAvailable = true)]
+    [ToolMeta(ContinueLoop = true, EngineTypes = new[] { "channel" })]
     internal class RefineImageTool : ITool
     {
         public string Name => "refine_image";

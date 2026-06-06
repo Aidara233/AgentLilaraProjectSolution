@@ -30,7 +30,6 @@ namespace AgentCoreProcessor.Engine
         private readonly AgentCore agentCore = new();
         private readonly Channel<string> instructionQueue = Channel.CreateUnbounded<string>();
         private readonly List<Message> conversationHistory = new();
-        private readonly HashSet<string>? toolWhitelist;
         internal string? DelegationId { get; }
         private CancellationTokenSource? stopCts;
         private Task? backgroundTask;
@@ -41,11 +40,10 @@ namespace AgentCoreProcessor.Engine
         /// <summary>完成后回调。参数：this。由 SystemEngine 设置。</summary>
         internal Action<TaskSession>? OnCompleted { get; set; }
 
-        public TaskSession(ISystemContext ctx, string? delegationId = null, HashSet<string>? toolWhitelist = null)
+        public TaskSession(ISystemContext ctx, string? delegationId = null)
         {
             this.ctx = ctx;
             this.DelegationId = delegationId;
-            this.toolWhitelist = toolWhitelist;
             this.SessionId = $"task:{Guid.NewGuid().ToString("N")[..8]}";
             agentCore.CallerTag = $"SubAgent:{SessionId}";
         }
@@ -136,7 +134,7 @@ namespace AgentCoreProcessor.Engine
                         return;
                     }
 
-                    var executor = new ToolExecutor(authorizedTools: toolWhitelist);
+                    var executor = new ToolExecutor();
                     var results = await executor.ExecuteAsync(output.ToolCalls);
 
                     if (_taskDoneSignaled)
@@ -196,7 +194,7 @@ namespace AgentCoreProcessor.Engine
             // 工具描述（仅非原生模式需要文本描述，原生模式通过 API tools 参数传递）
             if (!agentCore.UseNativeTools)
             {
-                var toolDescs = ToolRegistry.GenerateDescriptions(authorizedTools: toolWhitelist);
+                var toolDescs = ToolRegistry.GenerateDescriptions();
                 if (!string.IsNullOrEmpty(toolDescs))
                     messages.Add(new Message { Role = "user", Content = toolDescs });
             }

@@ -3,7 +3,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.WorkingTools;
 
-[ToolMeta(Group = "working", ExpressAvailable = false)]
+[ToolMeta(Group = "working")]
 public class MarkForReviewTool : ITool
 {
     private readonly IBeaconAccess _beacon;

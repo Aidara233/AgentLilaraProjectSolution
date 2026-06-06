@@ -8,7 +8,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.BasicTools
 {
-    [ToolMeta(Group = null, ContinueLoop = false, ExpressAvailable = true, OutputOnly = true)]
+    [ToolMeta(Group = null, ContinueLoop = false, OutputOnly = true)]
     public class SpeakTool : ITool
     {
         private static readonly Random _rng = new();
@@ -201,7 +201,7 @@ namespace Plugin.BasicTools
         }
     }
 
-    [ToolMeta(Group = null, ContinueLoop = false, OutputOnly = true, ExpressAvailable = true)]
+    [ToolMeta(Group = null, ContinueLoop = false, OutputOnly = true)]
     public class SendMediaTool : ITool
     {
         private readonly IChannelAccess? _channelAccess;

@@ -14,17 +14,14 @@ namespace AgentCoreProcessor.Tool
     internal class ToolExecutor
     {
         private readonly Func<string, ITool?> toolResolver;
-        private readonly HashSet<string>? authorizedTools;
 
         /// <summary>每个工具执行完毕后触发的回调。</summary>
         public Func<ToolCall, ToolResult, Task>? OnToolExecuted { get; set; }
 
         public ToolExecutor(
-            Func<string, ITool?>? toolResolver = null,
-            HashSet<string>? authorizedTools = null)
+            Func<string, ITool?>? toolResolver = null)
         {
             this.toolResolver = toolResolver ?? ToolRegistry.Get;
-            this.authorizedTools = authorizedTools;
         }
 
         public async Task<List<ToolResult>> ExecuteAsync(List<ToolCall> calls)

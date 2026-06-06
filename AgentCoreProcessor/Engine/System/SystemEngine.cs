@@ -148,8 +148,7 @@ namespace AgentCoreProcessor.Engine
             compressionTierModule.SetSummary(compressionModule.GetSummary());
 
             // ── Agent ──
-            var authorized = ctx.GlobalComponentHost?.GetToolWhitelist("system") ?? new HashSet<string>();
-            agent = new Agent(this, agentCore, agentConfig, authorized);
+            agent = new Agent(this, agentCore, agentConfig);
 
             // ── 恢复持久化上下文 ──
             RestoreContext();
@@ -656,8 +655,7 @@ namespace AgentCoreProcessor.Engine
         public IAgentSession CreateSubAgent(string instruction)
         {
             CleanupDeadSubAgents();
-            var pool = ctx.GlobalComponentHost?.GetToolWhitelist("sub-agent") ?? new HashSet<string>();
-            var session = new TaskSession(ctx, toolWhitelist: pool);
+            var session = new TaskSession(ctx);
 
             session.OnCompleted = s =>
             {
@@ -683,8 +681,7 @@ namespace AgentCoreProcessor.Engine
         public IAgentSession CreateSubAgentForDelegation(string instruction, string? delegationId)
         {
             CleanupDeadSubAgents();
-            var pool = ctx.GlobalComponentHost?.GetToolWhitelist("sub-agent") ?? new HashSet<string>();
-            var session = new TaskSession(ctx, delegationId, toolWhitelist: pool);
+            var session = new TaskSession(ctx, delegationId);
 
             // 设置完成回调（迁移至新委托系统）
             session.OnCompleted = s =>

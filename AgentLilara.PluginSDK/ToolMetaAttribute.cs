@@ -20,9 +20,6 @@ namespace AgentLilara.PluginSDK
         /// <summary>能力摘要（一句话），注入 Express prompt。null 表示不暴露。</summary>
         public string? CapabilitySummary { get; set; }
 
-        /// <summary>是否在 Express 模式下可用（fire-and-forget，结果不回注）。</summary>
-        public bool ExpressAvailable { get; set; }
-
         /// <summary>纯输出工具（如 speak/send_media），用于引擎追踪本轮是否发过言。</summary>
         public bool OutputOnly { get; set; }
 

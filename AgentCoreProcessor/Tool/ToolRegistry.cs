@@ -89,7 +89,6 @@ namespace AgentCoreProcessor.Tool
 
         public static string GenerateDescriptions(
             Func<ITool, bool>? filter = null,
-            HashSet<string>? authorizedTools = null,
             IEnumerable<ITool>? additionalTools = null)
         {
             var source = filter != null ? _tools.Values.Where(filter).ToList() : _tools.Values.ToList();

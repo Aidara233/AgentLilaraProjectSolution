@@ -23,7 +23,6 @@ namespace AgentCoreProcessor.Engine
         private readonly IAgentHost _host;
         private readonly AgentCore _core;
         private readonly AgentConfig _config;
-        private readonly HashSet<string> _authorizedTools;
         private Func<string, ITool?> _toolResolver;
         private readonly List<Message> _history = new();
         private int _consecutiveFailures;
@@ -52,13 +51,12 @@ namespace AgentCoreProcessor.Engine
         /// <summary>对话内容在 history 中的起始偏移（跳过框架注入部分）。</summary>
         public int ConversationOffset { get; set; }
 
-        public Agent(IAgentHost host, AgentCore core, AgentConfig config, HashSet<string> authorizedTools,
+        public Agent(IAgentHost host, AgentCore core, AgentConfig config,
             Func<string, ITool?>? toolResolver = null)
         {
             _host = host;
             _core = core;
             _config = config;
-            _authorizedTools = authorizedTools ?? new HashSet<string>();
             _toolResolver = toolResolver ?? ToolRegistry.Get;
         }
 
@@ -203,7 +201,7 @@ namespace AgentCoreProcessor.Engine
                         calls = output.ToolCalls.Select(c => new { c.Tool, c.Inputs, c.ToolUseId })
                     }))
                 {
-                    var executor = new ToolExecutor(_toolResolver, _authorizedTools);
+                    var executor = new ToolExecutor(_toolResolver);
                     if (OnToolExecuted != null)
                     {
                         executor.OnToolExecuted = async (call, result) =>

@@ -678,7 +678,6 @@ internal class AllToolsSource : IDataSource
                 ["description"] = tool.Description.Length > 80 ? tool.Description[..80] + "..." : tool.Description,
                 ["source"] = sourceMap.TryGetValue(tool.Name, out var s) ? s : "核心",
                 ["group"] = meta?.Group ?? "—",
-                ["express"] = meta?.ExpressAvailable == true ? "是" : "—",
                 ["disabled"] = isDisabled ? $"已禁用: {reason}" : "启用",
             });
         }

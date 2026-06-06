@@ -7,7 +7,7 @@ using AgentLilara.PluginSDK;
 
 namespace Plugin.ScheduledTasks;
 
-[ToolMeta(Group = null, ContinueLoop = true, ExpressAvailable = true, CapabilitySummary = "列出所有活跃的定时任务")]
+[ToolMeta(Group = null, ContinueLoop = true, CapabilitySummary = "列出所有活跃的定时任务")]
 public class ListTasksTool : ITool
 {
     private readonly ScheduledTaskStore _store;

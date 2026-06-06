@@ -67,7 +67,7 @@ namespace AgentCoreProcessor.Core
             if (mode == Engine.EngineMode.Express)
             {
                 var expressDefs = ToolRegistry.GetExpressToolDefinitions(EngineType);
-                // 合并全局组件中 ExpressAvailable 的工具
+                // 合并全局组件工具
                 if (GlobalComponentTools != null)
                 {
                     foreach (var t in GlobalComponentTools)
@@ -78,7 +78,7 @@ namespace AgentCoreProcessor.Core
                         expressDefs.Add(ToDefinition(t));
                     }
                 }
-                // 合并 loop 组件中 ExpressAvailable 的工具
+                // 合并 loop 组件工具
                 if (AdditionalTools != null)
                 {
                     foreach (var t in AdditionalTools)

@@ -3,7 +3,7 @@ using AgentLilara.PluginSDK;
 
 namespace Plugin.WebSearch;
 
-[ToolMeta(Group = null, ContinueLoop = true, ExpressAvailable = true, OutputOnly = false)]
+[ToolMeta(Group = null, ContinueLoop = true, OutputOnly = false)]
 public class WebSearchTool : ITool
 {
     private readonly ISearchBackend? _backend;

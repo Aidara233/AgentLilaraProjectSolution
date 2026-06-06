@@ -6,7 +6,7 @@ using AgentLilara.PluginSDK;
 
 namespace Plugin.ScheduledTasks;
 
-[ToolMeta(Group = null, ContinueLoop = true, ExpressAvailable = false, CapabilitySummary = "确认已处理定时任务通知")]
+[ToolMeta(Group = null, ContinueLoop = true, CapabilitySummary = "确认已处理定时任务通知")]
 public class DismissNotificationTool : ITool
 {
     private readonly Action _clearNotification;

@@ -6,7 +6,7 @@ using AgentLilara.PluginSDK;
 
 namespace Plugin.ScheduledTasks;
 
-[ToolMeta(Group = null, ContinueLoop = true, ExpressAvailable = true, CapabilitySummary = "取消定时任务")]
+[ToolMeta(Group = null, ContinueLoop = true, CapabilitySummary = "取消定时任务")]
 public class CancelTaskTool : ITool
 {
     private readonly ScheduledTaskStore _store;

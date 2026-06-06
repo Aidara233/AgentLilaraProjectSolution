@@ -6,7 +6,7 @@ using AgentLilara.PluginSDK;
 
 namespace Plugin.ScheduledTasks;
 
-[ToolMeta(Group = null, ContinueLoop = true, ExpressAvailable = true, CapabilitySummary = "定时任务：在指定时间触发提醒")]
+[ToolMeta(Group = null, ContinueLoop = true, CapabilitySummary = "定时任务：在指定时间触发提醒")]
 public class ScheduleTaskTool : ITool
 {
     private readonly ScheduledTaskStore _store;
