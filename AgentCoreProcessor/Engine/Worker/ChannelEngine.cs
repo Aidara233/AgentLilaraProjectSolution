@@ -201,6 +201,10 @@ namespace AgentCoreProcessor.Engine
                 if (savedMode == "working")
                 {
                     isWorkingMode = true;
+                    _currentModeId = ModeConfigLoader.GetEscalateTarget();
+                }
+                else if (!string.IsNullOrEmpty(savedMode))
+                {
                     _currentModeId = savedMode;
                 }
                 if (!string.IsNullOrEmpty(savedSummary) && string.IsNullOrEmpty(contextSummary))
@@ -259,6 +263,10 @@ namespace AgentCoreProcessor.Engine
                 if (savedMode == "working")
                 {
                     isWorkingMode = true;
+                    _currentModeId = ModeConfigLoader.GetEscalateTarget();
+                }
+                else if (!string.IsNullOrEmpty(savedMode))
+                {
                     _currentModeId = savedMode;
                 }
                 if (!string.IsNullOrEmpty(savedSummary) && string.IsNullOrEmpty(contextSummary))
@@ -761,6 +769,7 @@ namespace AgentCoreProcessor.Engine
             }
 
             agentCore.EngineType = "channel";
+            agentCore.CurrentModeId = _currentModeId;
             agentCore.AdditionalTools = componentHost!.GetVisibleTools().ToList();
             agentCore.GlobalComponentTools = ctx.GlobalComponentHost?.GetVisibleTools("channel").ToList();
 
@@ -906,6 +915,7 @@ namespace AgentCoreProcessor.Engine
             }
 
             agentCore.EngineType = "channel";
+            agentCore.CurrentModeId = _currentModeId;
             agentCore.AdditionalTools = componentHost!.GetVisibleTools().ToList();
             agentCore.GlobalComponentTools = ctx.GlobalComponentHost?.GetVisibleTools("channel").ToList();
 

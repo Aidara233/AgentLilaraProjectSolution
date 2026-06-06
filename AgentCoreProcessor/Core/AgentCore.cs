@@ -30,6 +30,9 @@ namespace AgentCoreProcessor.Core
         /// <summary>当前引擎类型（如 "channel"、"system"、"review"、"sub-agent"），用于工具过滤。</summary>
         public string? EngineType { get; set; }
 
+        /// <summary>当前模式 ID（如 "express"、"plan"、"build"）。null 时跳过模式过滤（子 agent 等场景）。</summary>
+        public string? CurrentModeId { get; set; }
+
         public AgentCore() : base("WorkingCore")
         {
         }
@@ -163,11 +166,12 @@ namespace AgentCoreProcessor.Core
 
         private async Task<(List<ToolCall> Calls, string? Thinking, Usage? Usage)> GenerateWithNativeToolsAsync()
         {
-            // 只取非组件工具（核心 + MCP + 纯插件），按引擎类型过滤
+            // 只取非组件工具（核心 + MCP + 纯插件），按引擎类型和模式过滤
             var toolDefs = ToolRegistry.NonComponentToolNames
                 .Select(ToolRegistry.Get)
                 .Where(t => t != null && !ToolRegistry.IsDisabled(t.Name)
-                            && ToolRegistry.IsApplicableToEngine(t.Name, EngineType))
+                            && ToolRegistry.IsApplicableToEngine(t.Name, EngineType)
+                            && (CurrentModeId == null || ModeConfigLoader.IsToolEnabled(CurrentModeId, t.Name)))
                 .Select(ToDefinition!)
                 .ToList();
 
@@ -227,12 +231,13 @@ namespace AgentCoreProcessor.Core
             processor.Client.SetConversationHistory(final);
         }
 
-        private static void MergeTools(List<ToolDefinition> defs, List<ITool>? tools)
+        private void MergeTools(List<ToolDefinition> defs, List<ITool>? tools)
         {
             if (tools == null) return;
             foreach (var t in tools)
             {
                 if (ToolRegistry.IsDisabled(t.Name)) continue;
+                if (CurrentModeId != null && !ModeConfigLoader.IsToolEnabled(CurrentModeId, t.Name)) continue;
                 if (defs.Any(d => d.Name == t.Name)) continue;
                 defs.Add(ToDefinition(t));
             }
