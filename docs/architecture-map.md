@@ -530,7 +530,7 @@ CommandSpawnCheck 拦截 → CommandRegistry 路由
 ```
 Storage/
 ├── Core/*.json          各Core的LLM配置+系统提示词
-├── Core/Persona.txt     共享人设（自动注入 UsePersona=true 的 Core）
+├── Core/Prompts/       各Core的系统提示词文件（.txt），通过 promptFiles 数组加载
 ├── Core/VisionProvider.json  视觉模型配置(apiKey/endpoint/model)
 ├── Core/OcrProvider.json     OCR模型配置(apiKey/endpoint/model)
 ├── Dream/

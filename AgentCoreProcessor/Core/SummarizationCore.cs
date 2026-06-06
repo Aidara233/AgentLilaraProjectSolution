@@ -8,12 +8,9 @@ namespace AgentCoreProcessor.Core
 {
     /// <summary>
     /// 摘要 Core。用于压缩系统循环上下文。
-    /// UsePersona=false，纯工具性。
     /// </summary>
     internal class SummarizationCore : CoreBase
     {
-        protected override bool UsePersona => false;
-
         public SummarizationCore() : base("SummarizationCore")
         {
             ApplyExtraMessages();

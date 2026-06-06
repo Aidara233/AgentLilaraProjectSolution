@@ -12,8 +12,7 @@
 
 ### 关键设计
 
-- **唯一设置 `UsePersona = true` 的记忆核心**：需要角色一致性来生成符合人设的呓语
-- `UsePersona = true` 意味着 `Processor` 构造时会从 `Storage/Core/Persona.txt` 注入角色设定
+- 通过配置的 `promptFiles` 中加入 `Persona.txt` 来加载角色设定，保持角色一致性
 - 与其它记忆核心不同，它显式指定了配置文件名 `"SleepTalkCore"`（而非依赖 `CoreName` 自动匹配）
 
 ### GenerateAsync

@@ -16,7 +16,7 @@ namespace AgentCoreProcessor.Command
         public string Description => "人设管理 (查看/追加 Persona.txt)";
         public PermissionLevel RequiredPermission => PermissionLevel.Admin;
 
-        private static string PersonaPath => Path.Combine(PathConfig.CoreConfigPath, "Persona.txt");
+        private static string PersonaPath => Path.Combine(PathConfig.CoreConfigPath, "Prompts", "Persona.txt");
 
         public Task<CommandResult> ExecuteAsync(string args, CommandContext context)
         {

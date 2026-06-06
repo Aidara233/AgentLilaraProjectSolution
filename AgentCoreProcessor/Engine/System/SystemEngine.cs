@@ -93,7 +93,7 @@ namespace AgentCoreProcessor.Engine
         public SystemEngine(ISystemContext ctx)
         {
             this.ctx = ctx;
-            this.agentCore = new AgentCore("SystemCore", usePersona: false);
+            this.agentCore = new AgentCore("SystemCore");
             agentCore.CallerTag = "System";
             useNativeTools = agentCore.UseNativeTools;
             _signalWhitelist = LoadSignalWhitelist();

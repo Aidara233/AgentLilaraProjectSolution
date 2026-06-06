@@ -83,7 +83,7 @@ namespace AgentCoreProcessor.Engine
             _ctx = ctx;
             _cfg = ReviewConfig.Load(ReviewConfigPath);
             _progress = ReviewProgress.Load(ReviewProgressPath);
-            _core = new AgentCore("ReviewCore", usePersona: false);
+            _core = new AgentCore("ReviewCore");
             _core.CallerTag = "Review:explore";
 
             // 恢复进度（不恢复 TokensUsed，每次启动都是新预算）

@@ -16,7 +16,6 @@ namespace AgentCoreProcessor.Core
     {
         private string currentMode = "WorkingCore";
         private readonly bool fixedMode;
-        private readonly bool noPersona;
 
         /// <summary>当前是否使用原生工具调用。</summary>
         internal bool UseNativeTools => processor?.Client?.Config?.UseNativeTools == true;
@@ -30,19 +29,14 @@ namespace AgentCoreProcessor.Core
         /// <summary>当前引擎类型（如 "channel"、"system"、"review"、"sub-agent"），用于工具过滤。</summary>
         public string? EngineType { get; set; }
 
-        protected override bool UsePersona => !noPersona;
-
         public AgentCore() : base("WorkingCore")
         {
         }
 
-        public AgentCore(string cfgName, bool usePersona = true) : base(cfgName)
+        public AgentCore(string cfgName) : base(cfgName)
         {
             currentMode = cfgName;
             fixedMode = true;
-            noPersona = !usePersona;
-            if (!usePersona)
-                processor = new Processor(cfgName, usePersona: false);
         }
 
         /// <summary>切换模式配置（Express/Working 用不同 LLM 配置）。固定模式时不切换。</summary>
@@ -62,7 +56,7 @@ namespace AgentCoreProcessor.Core
         {
             SwitchMode(mode);
             if (processor == null || processor.CfgName != currentMode)
-                processor = new Processor(currentMode, usePersona: UsePersona);
+                processor = new Processor(currentMode);
             ApplyExtraMessages();
             SetConversationHistory(messages);
 
@@ -211,7 +205,7 @@ namespace AgentCoreProcessor.Core
         /// </summary>
         public async Task<ModelOutput> InvokeWithHistoryAsync(List<Message> messages)
         {
-            processor ??= new Processor(currentMode, usePersona: UsePersona);
+            processor ??= new Processor(currentMode);
             processor.Client.ClearConversationHistory();
             processor.Client.SetConversationHistory(messages);
             var (calls, thinking, usage) = await GenerateToolCallsWithThinkingAsync();
@@ -220,7 +214,7 @@ namespace AgentCoreProcessor.Core
 
         /// <summary>
         /// 设置对话历史（供 ChannelEngine 在每轮准备阶段调用）。
-        /// 自动 prepend Processor 加载的基础提示词（promptFile + Persona）。
+        /// 自动 prepend Processor 加载的基础提示词。
         /// </summary>
         public void SetConversationHistory(List<Message> messages)
         {

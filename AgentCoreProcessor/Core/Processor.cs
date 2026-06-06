@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,10 +15,7 @@ namespace AgentCoreProcessor.Core
     {
         private static string DefaultCfgPath => PathConfig.CoreConfigPath;
 
-        /// <summary>Persona.txt 缓存：key=文件路径, value=(文件写入时间, 内容)</summary>
-        private static readonly Dictionary<string, (DateTime LastWrite, string Content)> _personaCache = new();
-
-        /// <summary>当前 Processor 加载的基础提示词（promptFile + persona），供 AgentCore 注入。</summary>
+        /// <summary>当前 Processor 加载的基础提示词（promptFiles），供 AgentCore 注入。</summary>
         public string? BasePrompt { get; private set; }
 
         private string cfgDirectoryPath;
@@ -47,12 +45,9 @@ namespace AgentCoreProcessor.Core
             }
         }
 
-        public bool UsePersona { get; }
-
-        public Processor(string cfgName = "Base", string? cfgDirectoryPath = null, bool usePersona = true)
+        public Processor(string cfgName = "Base", string? cfgDirectoryPath = null)
         {
             this.cfgDirectoryPath = cfgDirectoryPath ?? DefaultCfgPath;
-            UsePersona = usePersona;
             CfgName = cfgName;
         }
 
@@ -82,7 +77,7 @@ namespace AgentCoreProcessor.Core
         }
 
         /// <summary>
-        /// 从 promptFiles 加载系统提示词文件，按顺序拼接。可选 prepend Persona.txt。
+        /// 从 promptFiles 加载系统提示词文件，按顺序拼接。
         /// 结果存入 BasePrompt，供 AgentCore 注入到对话开头。
         /// </summary>
         private void LoadBasePrompt()
@@ -102,32 +97,8 @@ namespace AgentCoreProcessor.Core
             if (parts.Count == 0) return;
             var promptContent = string.Join("\n\n", parts);
 
-            if (UsePersona)
-            {
-                var personaContent = LoadPersonaContent();
-                if (!string.IsNullOrEmpty(personaContent))
-                    promptContent = personaContent + "\n\n" + promptContent;
-            }
-
             BasePrompt = promptContent;
             client.AddSystemMessage(promptContent);
-        }
-
-        /// <summary>
-        /// 加载 Persona.txt（带缓存，基于文件修改时间）。
-        /// </summary>
-        private string? LoadPersonaContent()
-        {
-            var personaPath = Path.Combine(cfgDirectoryPath, "Persona.txt");
-            if (!File.Exists(personaPath)) return null;
-
-            var lastWrite = File.GetLastWriteTime(personaPath);
-            if (!_personaCache.TryGetValue(personaPath, out var cached) || cached.LastWrite != lastWrite)
-            {
-                var content = File.ReadAllText(personaPath).Trim();
-                _personaCache[personaPath] = (lastWrite, content);
-            }
-            return _personaCache[personaPath].Content;
         }
     }
 }

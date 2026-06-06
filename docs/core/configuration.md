@@ -106,12 +106,7 @@ Storage/Core/{CoreName}.json
 
 ## Persona 注入
 
-若 Core 的 `UsePersona = true` 且 `Storage/Core/Persona.txt` 文件存在，`Processor` 构造时会自动将 Persona 文本注入到配置的 `conversationHistory` 的第一条 system 消息之前。
-
-控制逻辑：
-- `CoreBase` 默认 `UsePersona = true`（虚属性）
-- 子类通过 `override bool UsePersona => false` 跳过
-- `AgentCore` 通过 `usePersona` 构造参数条件化控制
+Persona.txt 作为普通 prompt 文件处理。需要 Persona 的 Core 在 `promptFiles` 数组首项加入 `"Persona.txt"`，由 `PromptLoader` 统一按序加载。不需要 Persona 的 Core（工具性核心如 SummarizationCore、MemoryExtractionCore 等）不在 `promptFiles` 中包含即可。
 
 ---
 

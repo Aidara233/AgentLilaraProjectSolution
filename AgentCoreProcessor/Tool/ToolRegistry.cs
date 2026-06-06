@@ -151,6 +151,11 @@ namespace AgentCoreProcessor.Tool
 
         public static List<ToolDefinition> GetExpressToolDefinitions(string? engineType = null)
         {
+            return GetToolDefinitionsForMode("express", engineType);
+        }
+
+        public static List<ToolDefinition> GetToolDefinitionsForMode(string modeId, string? engineType = null)
+        {
             return _tools.Values
                 .Where(t => !IsDisabled(t.Name)
                             && (GetMeta(t.Name)?.ExpressAvailable ?? false)

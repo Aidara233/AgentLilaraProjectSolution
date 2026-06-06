@@ -40,8 +40,6 @@ namespace AgentCoreProcessor.Core
     /// </summary>
     internal class MemoryExtractionCore : CoreBase
     {
-        protected override bool UsePersona => false;
-
         /// <summary>
         /// 从对话历史中提取事实和反馈。
         /// </summary>

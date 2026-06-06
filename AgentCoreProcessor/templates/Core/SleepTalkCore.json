@@ -7,5 +7,5 @@
   "maxTokens": 100,
   "stream": true,
   "n": 1,
-  "promptFiles": ["SleepTalkPrompt.txt"]
+  "promptFiles": ["Persona.txt", "SleepTalkPrompt.txt"]
 }

@@ -11,8 +11,6 @@ namespace AgentCoreProcessor.Core
     /// </summary>
     internal class RelationClassificationCore : CoreBase
     {
-        protected override bool UsePersona => false;
-
         /// <summary>
         /// 分类中心节点与一批候选的语义关系。
         /// </summary>

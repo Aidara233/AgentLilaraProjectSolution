@@ -79,7 +79,7 @@ CoreBase(string cfgName)  // 指定配置文件名（不含 .json 后缀）
 2. 文件不存在 → 回退到 `"Base"`
 3. 读取 JSON → `ApiClientCfg.FromJson()` 反序列化
 4. `ModelClientFactory.Create(cfg)` 创建客户端
-5. 若 `UsePersona` 为 true，从同目录加载 `Persona.txt` 注入到 PresetMessages
+5. `LoadBasePrompt()` 根据配置的 `promptFiles` 数组加载 .txt 提示词文件到 system prompt
 
 ### ProcessAsync
 
