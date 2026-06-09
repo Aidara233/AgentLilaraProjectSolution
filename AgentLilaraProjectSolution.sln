@@ -57,6 +57,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Plugin.SvgTools", "Plugins\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Plugin.CampusPrint", "Plugins\Plugin.CampusPrint\Plugin.CampusPrint.csproj", "{28CC373A-7C4F-4D5B-9BD3-D69D75BCAAC0}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Plugin.Currency", "Plugins\Plugin.Currency\Plugin.Currency.csproj", "{53044C9E-B48C-42D1-8DD5-CF9201AEF7A4}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -379,6 +381,18 @@ Global
 		{28CC373A-7C4F-4D5B-9BD3-D69D75BCAAC0}.Release|x64.Build.0 = Release|Any CPU
 		{28CC373A-7C4F-4D5B-9BD3-D69D75BCAAC0}.Release|x86.ActiveCfg = Release|Any CPU
 		{28CC373A-7C4F-4D5B-9BD3-D69D75BCAAC0}.Release|x86.Build.0 = Release|Any CPU
+		{53044C9E-B48C-42D1-8DD5-CF9201AEF7A4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{53044C9E-B48C-42D1-8DD5-CF9201AEF7A4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{53044C9E-B48C-42D1-8DD5-CF9201AEF7A4}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{53044C9E-B48C-42D1-8DD5-CF9201AEF7A4}.Debug|x64.Build.0 = Debug|Any CPU
+		{53044C9E-B48C-42D1-8DD5-CF9201AEF7A4}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{53044C9E-B48C-42D1-8DD5-CF9201AEF7A4}.Debug|x86.Build.0 = Debug|Any CPU
+		{53044C9E-B48C-42D1-8DD5-CF9201AEF7A4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{53044C9E-B48C-42D1-8DD5-CF9201AEF7A4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{53044C9E-B48C-42D1-8DD5-CF9201AEF7A4}.Release|x64.ActiveCfg = Release|Any CPU
+		{53044C9E-B48C-42D1-8DD5-CF9201AEF7A4}.Release|x64.Build.0 = Release|Any CPU
+		{53044C9E-B48C-42D1-8DD5-CF9201AEF7A4}.Release|x86.ActiveCfg = Release|Any CPU
+		{53044C9E-B48C-42D1-8DD5-CF9201AEF7A4}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -408,6 +422,7 @@ Global
 		{50CFA424-80AE-4DAB-87FA-E369A7D7F919} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
 		{FB93FE2F-4DCD-453F-A0E9-D4E2DECE88BD} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
 		{28CC373A-7C4F-4D5B-9BD3-D69D75BCAAC0} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
+		{53044C9E-B48C-42D1-8DD5-CF9201AEF7A4} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {8CEA9C9A-F71A-47CA-9F61-06EB3E4ED44F}

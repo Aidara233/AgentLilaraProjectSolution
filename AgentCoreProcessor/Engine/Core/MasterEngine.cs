@@ -695,6 +695,11 @@ namespace AgentCoreProcessor.Engine
                 _toolContext.Register<AgentLilara.PluginSDK.Services.IImageAccess>(imageAccess);
                 componentServices.Register<AgentLilara.PluginSDK.Services.IImageAccess>(imageAccess);
 
+                var currencyService = new Tool.Host.CurrencyServiceImpl(
+                    Path.Combine(PathConfig.StoragePath, "PluginData", "currency"));
+                _toolContext.Register<AgentLilara.PluginSDK.Services.ICurrencyService>(currencyService);
+                componentServices.Register<AgentLilara.PluginSDK.Services.ICurrencyService>(currencyService);
+
                 globalComponentHost = new GlobalComponentHost(
                     _moduleBus, componentServices,
                     loopId => WakeLoop(loopId));
