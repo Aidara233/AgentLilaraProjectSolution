@@ -12,7 +12,7 @@ public class CurrencyComponent : GlobalComponentBase
     public override ComponentMeta Meta => new()
     {
         Name = "currency",
-        Description = "虚拟货币系统：余额查询、发放、消费、转账与交易记录",
+        Description = "虚拟货币系统：余额查询、商品浏览/购买、消费扣款、交易记录",
         DefaultEnabled = true,
         PromptPriority = 100
     };
@@ -22,20 +22,20 @@ public class CurrencyComponent : GlobalComponentBase
     public override Task OnInitAsync(IGlobalComponentContext context, InitReason reason)
     {
         _currencyService = context.GetService<ICurrencyService>();
+        var productRegistry = context.GetService<IProductRegistry>();
+
         _tools.Add(new BalanceQueryTool(_currencyService));
-        _tools.Add(new GrantCurrencyTool(_currencyService));
+        _tools.Add(new ShopTool(productRegistry, _currencyService));
+        _tools.Add(new BuyTool(productRegistry, _currencyService));
         _tools.Add(new SpendCurrencyTool(_currencyService));
-        _tools.Add(new TransferCurrencyTool(_currencyService));
         _tools.Add(new TransactionHistoryTool(_currencyService));
+
         return Task.CompletedTask;
     }
 
     public override string? BuildPromptSection(LoopInfo caller)
     {
         if (_currencyService == null) return null;
-        var accounts = _currencyService.GetAllAccounts();
-        if (accounts.Count == 0) return null;
-        var lines = accounts.Select(a => $"- {a.PersonId}: {a.Balance:F1} 币");
-        return "当前货币账户：\n" + string.Join('\n', lines);
+        return $"当前余额: {_currencyService.Balance:F1} 币。使用 currency_shop 查看可购商品，currency_buy <id> 购买，currency_spend <金额> <用途> 通用消费。";
     }
 }

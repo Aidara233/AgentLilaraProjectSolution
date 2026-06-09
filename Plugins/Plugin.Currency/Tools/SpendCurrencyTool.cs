@@ -3,19 +3,17 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.Currency;
 
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "货币消费：bot 使用货币申请资源")]
+[ToolMeta(ContinueLoop = true, CapabilitySummary = "货币消费：bot 使用货币申请或消耗资源")]
 public class SpendCurrencyTool : ITool
 {
     private readonly ICurrencyService? _currency;
 
     public string Name => "currency_spend";
-    public string Description => "使用虚拟货币消费（申请资源）。余额不足时会失败。";
+    public string Description => "使用虚拟货币消费。余额不足时会失败。供 bot 自身或其他工具调用。";
     public IReadOnlyList<ToolParameter> Parameters =>
     [
-        new("person_id", "消费的用户 ID", 0),
-        new("amount", "消费金额（正数）", 1),
-        new("purpose", "消费用途说明", 2),
-        new("resource_type", "资源类型（如 api_call / compute / storage 等）", 3)
+        new("amount", "消费金额（正数）", 0),
+        new("purpose", "消费用途说明", 1)
     ];
     public TimeSpan Timeout => TimeSpan.FromSeconds(10);
 
@@ -25,17 +23,14 @@ public class SpendCurrencyTool : ITool
     {
         if (_currency == null) return Task.FromResult(Fail("货币服务不可用"));
 
-        var personId = inputs[0].Trim();
-        if (!decimal.TryParse(inputs[1], out var amount) || amount <= 0)
+        if (!decimal.TryParse(inputs[0], out var amount) || amount <= 0)
             return Task.FromResult(Fail("金额必须是大于 0 的数字"));
-        var purpose = inputs[2].Trim();
-        var resourceType = inputs[3].Trim();
+        var purpose = inputs[1].Trim();
 
         try
         {
-            var tx = _currency.Spend(personId, amount, purpose, resourceType);
-            var balance = _currency.GetBalance(personId);
-            return Task.FromResult(Ok($"消费成功！{personId} 消费 {amount:F1} 币（{resourceType}: {purpose}），剩余余额: {balance:F1} 币，交易ID：{tx.Id}"));
+            var tx = _currency.Spend(amount, purpose);
+            return Task.FromResult(Ok($"消费成功！扣除 {amount:F1} 币（{purpose}），剩余余额: {_currency.Balance:F1} 币，交易ID：{tx.Id}"));
         }
         catch (Exception ex)
         {

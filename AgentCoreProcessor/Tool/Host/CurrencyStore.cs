@@ -1,14 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Text.Json;
 using AgentLilara.PluginSDK.Services;
 
 namespace AgentCoreProcessor.Tool.Host;
 
 /// <summary>
-/// 货币数据 JSON 持久化存储。线程安全，使用原子写入。
+/// 货币数据 JSON 持久化存储。线程安全，原子写入。
 /// </summary>
 internal class CurrencyStore
 {
@@ -32,7 +31,8 @@ internal class CurrencyStore
                 var json = File.ReadAllText(_filePath);
                 var data = JsonSerializer.Deserialize<CurrencyStoreData>(json,
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new CurrencyStoreData();
-                NormalizeDateTimes(data);
+                foreach (var tx in data.Transactions)
+                    tx.Timestamp = DateTime.SpecifyKind(tx.Timestamp, DateTimeKind.Local);
                 return data;
             }
             catch
@@ -52,19 +52,6 @@ internal class CurrencyStore
             File.WriteAllText(tmp, JsonSerializer.Serialize(data,
                 new JsonSerializerOptions { WriteIndented = true }));
             File.Move(tmp, _filePath, overwrite: true);
-        }
-    }
-
-    private static void NormalizeDateTimes(CurrencyStoreData data)
-    {
-        foreach (var account in data.Accounts.Values)
-        {
-            account.CreatedAt = DateTime.SpecifyKind(account.CreatedAt, DateTimeKind.Local);
-            account.UpdatedAt = DateTime.SpecifyKind(account.UpdatedAt, DateTimeKind.Local);
-        }
-        foreach (var tx in data.Transactions)
-        {
-            tx.Timestamp = DateTime.SpecifyKind(tx.Timestamp, DateTimeKind.Local);
         }
     }
 }

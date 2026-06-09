@@ -700,6 +700,10 @@ namespace AgentCoreProcessor.Engine
                 _toolContext.Register<AgentLilara.PluginSDK.Services.ICurrencyService>(currencyService);
                 componentServices.Register<AgentLilara.PluginSDK.Services.ICurrencyService>(currencyService);
 
+                var productRegistry = new Tool.Host.ProductRegistryImpl();
+                _toolContext.Register<AgentLilara.PluginSDK.Services.IProductRegistry>(productRegistry);
+                componentServices.Register<AgentLilara.PluginSDK.Services.IProductRegistry>(productRegistry);
+
                 globalComponentHost = new GlobalComponentHost(
                     _moduleBus, componentServices,
                     loopId => WakeLoop(loopId));
