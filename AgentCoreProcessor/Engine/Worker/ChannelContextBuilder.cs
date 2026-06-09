@@ -843,7 +843,7 @@ namespace AgentCoreProcessor.Engine
             if (componentHost != null)
             {
                 var groups = ToolListFormatter.CollectGroups(componentHost, ctx.GlobalComponentHost);
-                var overview = ToolListFormatter.BuildToolOverviewSection(groups);
+                var overview = ToolListFormatter.BuildToolOverviewSection(groups, _currentModeId);
                 if (!string.IsNullOrEmpty(overview))
                     msgs.Add(new Message { Role = "user", Content = overview });
 
