@@ -95,6 +95,7 @@ namespace AgentCoreProcessor
             providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.LogTraceProvider(), builtIn: true);
             providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.PluginsProvider(engine), builtIn: true);
             providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.LogsProvider(engine), builtIn: true);
+            providerRegistry.Register(new AgentCoreProcessor.WebUI.Providers.CurrencyProvider(engine), builtIn: true);
 
             // 初始化数据库（建表 + Repository）+ 订阅事件总线
             try
