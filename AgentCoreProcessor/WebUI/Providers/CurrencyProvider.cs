@@ -12,7 +12,7 @@ namespace AgentCoreProcessor.WebUI.Providers;
 
 internal class CurrencyProvider : IWebUIProvider
 {
-    private readonly ICurrencyService _currency;
+    private readonly MasterEngine _engine;
 
     public string Id => "currency";
     public string DisplayName => "货币管理";
@@ -20,7 +20,7 @@ internal class CurrencyProvider : IWebUIProvider
 
     public CurrencyProvider(MasterEngine engine)
     {
-        _currency = (ICurrencyService)engine.ComponentServices.GetService(typeof(ICurrencyService))!;
+        _engine = engine;
 
         Pages = new List<PageDefinition>
         {
@@ -43,9 +43,9 @@ internal class CurrencyProvider : IWebUIProvider
                 },
                 DataSources = new List<DataSourceDefinition>
                 {
-                    new() { Id = "currency-status", Source = new CurrencyStatusSource(_currency) },
-                    new() { Id = "currency-grant", Source = new CurrencyGrantSource(_currency) },
-                    new() { Id = "currency-transactions", Source = new CurrencyTransactionsSource(_currency) },
+                    new() { Id = "currency-status", Source = new CurrencyStatusSource(_engine) },
+                    new() { Id = "currency-grant", Source = new CurrencyGrantSource(_engine) },
+                    new() { Id = "currency-transactions", Source = new CurrencyTransactionsSource(_engine) },
                 },
             },
         };
@@ -136,27 +136,39 @@ internal class CurrencyProvider : IWebUIProvider
     }
 }
 
+// ---- Helpers ----
+
+internal static class CurrencySourceHelper
+{
+    public static ICurrencyService? GetCurrency(MasterEngine engine)
+        => engine.ComponentServices.GetService(typeof(ICurrencyService)) as ICurrencyService;
+
+    public static ICurrencyService RequireCurrency(MasterEngine engine)
+        => GetCurrency(engine) ?? throw new InvalidOperationException("货币服务未就绪");
+}
+
 // ---- Data Sources ----
 
 internal class CurrencyStatusSource : IDataSource
 {
-    private readonly ICurrencyService _currency;
+    private readonly MasterEngine _engine;
 
-    public CurrencyStatusSource(ICurrencyService currency) { _currency = currency; }
+    public CurrencyStatusSource(MasterEngine engine) { _engine = engine; }
 
     public bool SupportsPush => false;
     public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
 
     public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
-        var transactions = _currency.GetTransactions(1000);
+        var currency = CurrencySourceHelper.RequireCurrency(_engine);
+        var transactions = currency.GetTransactions(1000);
         var totalGranted = transactions.Where(t => t.Type == "grant").Sum(t => t.Amount);
         var totalSpent = transactions.Where(t => t.Type == "spend").Sum(t => t.Amount);
         var lastTx = transactions.FirstOrDefault();
 
         var data = new JsonObject
         {
-            ["balance"] = $"{_currency.Balance:F1} 币",
+            ["balance"] = $"{currency.Balance:F1} 币",
             ["totalGranted"] = $"{totalGranted:F1} 币",
             ["totalSpent"] = $"{totalSpent:F1} 币",
             ["lastUpdated"] = lastTx?.Timestamp.ToString("yyyy-MM-dd HH:mm:ss") ?? "无",
@@ -171,9 +183,9 @@ internal class CurrencyStatusSource : IDataSource
 
 internal class CurrencyGrantSource : IDataSource
 {
-    private readonly ICurrencyService _currency;
+    private readonly MasterEngine _engine;
 
-    public CurrencyGrantSource(ICurrencyService currency) { _currency = currency; }
+    public CurrencyGrantSource(MasterEngine engine) { _engine = engine; }
 
     public bool SupportsPush => false;
     public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
@@ -200,8 +212,9 @@ internal class CurrencyGrantSource : IDataSource
 
         try
         {
-            _currency.Grant(amount, reason);
-            return Task.FromResult(new ActionResult { Success = true, Message = $"拨款成功！发放 {amount:F1} 币，当前余额 {_currency.Balance:F1} 币" });
+            var currency = CurrencySourceHelper.RequireCurrency(_engine);
+            currency.Grant(amount, reason);
+            return Task.FromResult(new ActionResult { Success = true, Message = $"拨款成功！发放 {amount:F1} 币，当前余额 {currency.Balance:F1} 币" });
         }
         catch (Exception ex)
         {
@@ -212,17 +225,18 @@ internal class CurrencyGrantSource : IDataSource
 
 internal class CurrencyTransactionsSource : IDataSource
 {
-    private readonly ICurrencyService _currency;
+    private readonly MasterEngine _engine;
 
-    public CurrencyTransactionsSource(ICurrencyService currency) { _currency = currency; }
+    public CurrencyTransactionsSource(MasterEngine engine) { _engine = engine; }
 
     public bool SupportsPush => false;
     public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
 
     public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
+        var currency = CurrencySourceHelper.RequireCurrency(_engine);
         var limit = query?.PageSize > 0 ? query.PageSize.Value : 500;
-        var transactions = _currency.GetTransactions(limit);
+        var transactions = currency.GetTransactions(limit);
         var rows = new JsonArray();
 
         foreach (var t in transactions)
