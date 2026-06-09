@@ -36,9 +36,10 @@ public class BasicToolsComponent : LoopComponentBase
     {
         var channelAccess = context.GetService<IChannelAccess>();
         var channelId = ParseChannelId(context.LoopId);
+        var speakGuard = context.GetService<ISpeakGuard>();
 
         _speak = channelAccess != null
-            ? new SpeakTool(channelAccess, channelId)
+            ? new SpeakTool(channelAccess, channelId, speakGuard)
             : new SpeakTool();
         _sendMedia = channelAccess != null
             ? new SendMediaTool(channelAccess, channelId)

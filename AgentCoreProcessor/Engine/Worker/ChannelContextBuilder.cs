@@ -801,6 +801,16 @@ namespace AgentCoreProcessor.Engine
                 msgs.Add(new Message { Role = "user", Content = "你已连续多轮没有执行实际工作（仅发言/等待）。如果工作已完成，可用 deescalate 切换回轻量模式；如果需要继续深思或等待结果则不必。" });
             }
 
+            // 连续 speak 警告（防止话唠）
+            if (_consecutiveSpeakRounds >= 2)
+            {
+                msgs.Add(new Message { Role = "user", Content = "你已连续两轮只说话不做实际工作，本轮 speak 工具将被阻断。请先使用其他工具完成需要的工作。" });
+            }
+            else if (_consecutiveSpeakRounds >= 1)
+            {
+                msgs.Add(new Message { Role = "user", Content = "你上一轮调用了 speak，本轮如需继续发言请先执行其他工作。" });
+            }
+
             // 滞后描述补注：本轮图片的描述可能在后续轮次才就绪
             foreach (var hash in _roundImageHashes)
             {
@@ -893,6 +903,8 @@ namespace AgentCoreProcessor.Engine
                 hadSpeak = hadSpeakThisRound
             });
             isInWorkingSession = false;
+            _consecutiveSpeakRounds = 0;
+            if (_speakGuard != null) _speakGuard.ConsecutiveSpeakRounds = 0;
             // 清除 agent 确保下次 Working 会话从干净状态开始（防止 BuildStartInjectAsync 重复注入）
             agent = null;
         }

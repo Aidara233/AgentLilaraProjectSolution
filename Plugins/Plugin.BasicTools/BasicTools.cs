@@ -18,13 +18,15 @@ namespace Plugin.BasicTools
 
         private readonly IChannelAccess? _channelAccess;
         private readonly int _channelId;
+        private readonly ISpeakGuard? _speakGuard;
 
         public SpeakTool() { }
 
-        public SpeakTool(IChannelAccess channelAccess, int channelId)
+        public SpeakTool(IChannelAccess channelAccess, int channelId, ISpeakGuard? speakGuard = null)
         {
             _channelAccess = channelAccess;
             _channelId = channelId;
+            _speakGuard = speakGuard;
         }
 
         public string Name => "speak";
@@ -57,6 +59,10 @@ namespace Plugin.BasicTools
         {
             if (resolvedInputs.Count < 1 || string.IsNullOrWhiteSpace(resolvedInputs[0]))
                 return new ToolResult { Status = "failed", Error = "消息内容不能为空" };
+
+            // 防话唠阻断：连续多轮只说话不做实际工作时阻止 speak 调用
+            if (_speakGuard?.IsBlocked == true)
+                return new ToolResult { Status = "failed", Error = "消息发送失败：你已连续两轮只说话不做实际工作，本轮 speak 被阻断" };
 
             var messages = ParseArrayInput(resolvedInputs[0]);
             if (messages.Count == 0)

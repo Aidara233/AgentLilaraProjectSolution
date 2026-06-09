@@ -146,6 +146,8 @@ namespace AgentCoreProcessor.Engine
         private bool isInWorkingSession = false;
         private bool hadSpeakThisRound;
         private bool hadWorkThisRound; // 本轮是否执行了非输出工具（speak/send_media/wait/deescalate 以外）
+        private int _consecutiveSpeakRounds;
+        private SpeakGuard? _speakGuard;
 
         // 错误追踪
         private DateTime? lastErrorTime = null;
@@ -458,10 +460,15 @@ namespace AgentCoreProcessor.Engine
             delegationNotificationModule.SetMessaging(_messaging);
             _signalFilter = ctx.SignalFilters.GetConfig("channel");
             delegationNotificationModule.SetFilterConfig(_signalFilter);
+            _speakGuard = new SpeakGuard();
             componentHost = new ComponentHost(
                 myLoopId, "channel", _moduleBus, ctx.ComponentServices,
                 () => gate.Signal(),
-                new Dictionary<Type, object> { [typeof(IAgentMessaging)] = _messaging });
+                new Dictionary<Type, object>
+                {
+                    [typeof(IAgentMessaging)] = _messaging,
+                    [typeof(ISpeakGuard)] = _speakGuard
+                });
             componentHost.GlobalHost = ctx.GlobalComponentHost;
             await componentHost.InitAsync();
 
@@ -660,6 +667,8 @@ namespace AgentCoreProcessor.Engine
             foreach (var m in modules) m.Reset();
             hadSpeakThisRound = false;
             hadWorkThisRound = false;
+            _consecutiveSpeakRounds = 0;
+            if (_speakGuard != null) _speakGuard.ConsecutiveSpeakRounds = 0;
 
             lifeCtx.Close(new { engineType = EngineType, channelId, reason = "cold_timeout" });
         }

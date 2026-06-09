@@ -233,7 +233,18 @@ namespace AgentCoreProcessor.Engine
             {
                 PersistCurrentContext();
                 loopControlModule.TrackSilentRound(hadSpeakThisRound);
+
+                // 追踪连续 speak-only 轮次（仅有 speak，无实际工作）
+                if (hadSpeakThisRound && !hadWorkThisRound)
+                    _consecutiveSpeakRounds++;
+                else
+                    _consecutiveSpeakRounds = 0;
+
+                if (_speakGuard != null)
+                    _speakGuard.ConsecutiveSpeakRounds = _consecutiveSpeakRounds;
+
                 hadSpeakThisRound = false;
+                hadWorkThisRound = false;
                 return Task.CompletedTask;
             };
 
