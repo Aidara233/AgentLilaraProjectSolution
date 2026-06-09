@@ -63,7 +63,6 @@ namespace AgentCoreProcessor.Engine
                         agent.ConversationOffset = agent.History.Count;
                         foreach (var m in retained) agent.AddToHistory(m);
                         PersistCurrentContext();
-                        gate.Signal();
                     }), isNonComponent: true);
             }
 

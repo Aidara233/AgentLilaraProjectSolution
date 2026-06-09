@@ -742,6 +742,12 @@ namespace AgentCoreProcessor.Engine
                     var maxNewId = allNewMsgs.Max(m => m.Id);
                     if (maxNewId > _lastConsumedMessageId)
                         _lastConsumedMessageId = maxNewId;
+
+                    // 同步扣减缓冲计数：已消费的消息不应再触发外层循环
+                    lock (bufferLock)
+                    {
+                        _bufferedMessageCount = Math.Max(0, _bufferedMessageCount - allNewMsgs.Count);
+                    }
                 }
             }
 
