@@ -185,14 +185,24 @@ namespace AgentCoreProcessor.Engine
                 var (savedSummary, savedMode, _, savedCursor, savedReason) = persistence.LoadContext();
                 _lastConsumedMessageId = savedCursor;
                 _escalateReason = savedReason;
-                if (savedMode == "working")
+                if (!string.IsNullOrEmpty(savedMode))
                 {
-                    isWorkingMode = true;
-                    _currentModeId = ModeConfigLoader.GetEscalateTarget();
-                }
-                else if (!string.IsNullOrEmpty(savedMode))
-                {
-                    _currentModeId = savedMode;
+                    var modeDef = ModeConfigLoader.GetMode(savedMode);
+                    if (modeDef != null && string.Equals(modeDef.MetaType, "Working", StringComparison.OrdinalIgnoreCase))
+                    {
+                        isWorkingMode = true;
+                        _currentModeId = savedMode;
+                    }
+                    else if (savedMode == "working")
+                    {
+                        // 兼容旧持久化格式（savedMode 为字面量 "working"）
+                        isWorkingMode = true;
+                        _currentModeId = ModeConfigLoader.GetEscalateTarget();
+                    }
+                    else
+                    {
+                        _currentModeId = savedMode;
+                    }
                 }
                 if (!string.IsNullOrEmpty(savedSummary) && string.IsNullOrEmpty(contextSummary))
                     contextSummary = savedSummary;
@@ -247,14 +257,24 @@ namespace AgentCoreProcessor.Engine
                 var (savedSummary, savedMode, _, savedCursor, savedReason) = persistence.LoadContext();
                 _lastConsumedMessageId = savedCursor;
                 _escalateReason = savedReason;
-                if (savedMode == "working")
+                if (!string.IsNullOrEmpty(savedMode))
                 {
-                    isWorkingMode = true;
-                    _currentModeId = ModeConfigLoader.GetEscalateTarget();
-                }
-                else if (!string.IsNullOrEmpty(savedMode))
-                {
-                    _currentModeId = savedMode;
+                    var modeDef = ModeConfigLoader.GetMode(savedMode);
+                    if (modeDef != null && string.Equals(modeDef.MetaType, "Working", StringComparison.OrdinalIgnoreCase))
+                    {
+                        isWorkingMode = true;
+                        _currentModeId = savedMode;
+                    }
+                    else if (savedMode == "working")
+                    {
+                        // 兼容旧持久化格式（savedMode 为字面量 "working"）
+                        isWorkingMode = true;
+                        _currentModeId = ModeConfigLoader.GetEscalateTarget();
+                    }
+                    else
+                    {
+                        _currentModeId = savedMode;
+                    }
                 }
                 if (!string.IsNullOrEmpty(savedSummary) && string.IsNullOrEmpty(contextSummary))
                     contextSummary = savedSummary;
