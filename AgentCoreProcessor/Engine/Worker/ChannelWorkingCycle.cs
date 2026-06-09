@@ -140,11 +140,11 @@ namespace AgentCoreProcessor.Engine
 
                 // 不主动唤醒：让 Express 等待真正的消息到来，避免连续两次空转 Express
             }
-            else if (agent.LastRoundCalls?.Any(c => c.Tool == "switch_mode") == true)
+            else if (agent.StopReason == AgentStopReason.ModeSwitched)
             {
                 // Working 子模式横向切换：保留上下文，只改工具列表
                 // 数据格式：target|reason|asked_user_message|user_confirm_message_id
-                var switchCall = agent.LastRoundCalls.First(c => c.Tool == "switch_mode");
+                var switchCall = agent.LastRoundCalls!.First(c => c.Tool == "switch_mode");
                 var data = switchCall.Inputs.Count > 0 ? switchCall.Inputs[0] : "";
                 var parts = data.Split('|', 4);
                 var targetId = parts[0].Trim();

@@ -253,6 +253,13 @@ namespace AgentCoreProcessor.Engine
                     StopReason = AgentStopReason.Deescalated;
                     return;
                 }
+
+                // switch_mode 工具 → 切换子模式并中断循环（防止后续轮覆盖 LastRoundCalls）
+                if (output.ToolCalls.Any(c => c.Tool == "switch_mode"))
+                {
+                    StopReason = AgentStopReason.ModeSwitched;
+                    return;
+                }
             }
 
             StopReason = AgentStopReason.MaxRounds;
@@ -418,6 +425,7 @@ namespace AgentCoreProcessor.Engine
         MaxRounds,
         WaitRequested,
         Deescalated,
+        ModeSwitched,
         ForceStopped,
         Cancelled,
         Error
