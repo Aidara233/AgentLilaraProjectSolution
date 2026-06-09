@@ -116,6 +116,29 @@ internal class ModesProvider : IWebUIProvider
                         },
                         Searchable = true,
                         Paginated = false,
+                        Filters = new List<FilterDef>
+                        {
+                            new()
+                            {
+                                Field = "state",
+                                Label = "状态",
+                                AllowEmpty = true,
+                                Options = new List<SelectOption>
+                                {
+                                    new() { Value = "", Label = "全部" },
+                                    new() { Value = "enabled", Label = "启用" },
+                                    new() { Value = "disabled", Label = "禁用" },
+                                    new() { Value = "default", Label = "默认" },
+                                },
+                            },
+                            new()
+                            {
+                                Field = "group",
+                                Label = "插件",
+                                AllowEmpty = true,
+                                Options = GetGroupFilterOptions(),
+                            },
+                        },
                         RowActions = new List<RowAction>
                         {
                             new() { Id = "tool-enable", Label = "启用" },
@@ -133,6 +156,17 @@ internal class ModesProvider : IWebUIProvider
                 new() { Id = "modes-tools", Source = new ModesToolsSource() },
             },
         };
+    }
+
+    private static List<SelectOption> GetGroupFilterOptions()
+    {
+        var groups = ToolRegistry.All.Values
+            .Select(t => ToolRegistry.GetMeta(t.Name)?.Group ?? "-")
+            .Distinct()
+            .OrderBy(g => g)
+            .Select(g => new SelectOption { Value = g, Label = g })
+            .ToList();
+        return groups;
     }
 }
 

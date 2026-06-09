@@ -144,6 +144,13 @@
                         (r[col.Field]?.ToString() ?? "").ToLowerInvariant().Contains(lower)));
             }
 
+            // 客户端筛选器
+            foreach (var (field, value) in _filters)
+            {
+                if (!string.IsNullOrEmpty(value))
+                    items = items.Where(r => (r[field]?.ToString() ?? "") == value);
+            }
+
             // 客户端排序
             if (!string.IsNullOrEmpty(_sortBy))
             {

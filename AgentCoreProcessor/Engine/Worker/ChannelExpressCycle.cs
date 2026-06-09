@@ -135,10 +135,13 @@ namespace AgentCoreProcessor.Engine
                     });
                 }
 
+                var inlineWaitRequested = false;
                 for (int i = 0; i < output.ToolCalls.Count; i++)
                 {
                     var call = output.ToolCalls[i];
                     var result = expressResults[i];
+                    if (result.RequestWait)
+                        inlineWaitRequested = true;
                     var toolDef = componentHost.TryGetTool(call.Tool);
                     bus.Publish(new ToolExecutedEvent(call, result, toolDef));
                 }
@@ -168,6 +171,9 @@ namespace AgentCoreProcessor.Engine
                     }
                 }
                 if (escalated) break;
+
+                if (inlineWaitRequested)
+                    break;
 
                 if (output.ToolCalls.Any(c => c.Tool == "wait"))
                     break;

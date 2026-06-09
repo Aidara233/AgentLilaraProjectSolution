@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentLilara.PluginSDK;
@@ -12,6 +13,8 @@ namespace Plugin.BasicTools
     public class SpeakTool : ITool
     {
         private static readonly Random _rng = new();
+        private static readonly Regex _inlineWaitRegex = new(
+            @"\[wait(?::([^\]]*))?\]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         private readonly IChannelAccess? _channelAccess;
         private readonly int _channelId;
@@ -59,28 +62,63 @@ namespace Plugin.BasicTools
             if (messages.Count == 0)
                 return new ToolResult { Status = "failed", Error = "消息内容不能为空" };
 
+            // 检测内联 [wait] / [wait:reason] 占位符，剥离后设 RequestWait
+            var shouldWait = false;
+            string? waitReason = null;
+            var filteredMessages = new List<string>(messages.Count);
+            foreach (var msg in messages)
+            {
+                var match = _inlineWaitRegex.Match(msg);
+                if (match.Success)
+                {
+                    shouldWait = true;
+                    if (waitReason == null && match.Groups[1].Success)
+                        waitReason = match.Groups[1].Value.Trim();
+                    var cleaned = _inlineWaitRegex.Replace(msg, "").Trim();
+                    if (!string.IsNullOrWhiteSpace(cleaned))
+                        filteredMessages.Add(cleaned);
+                }
+                else
+                {
+                    filteredMessages.Add(msg);
+                }
+            }
+
             if (_channelAccess == null)
-                return new ToolResult { Status = "success", Data = string.Join("\n\n", messages) };
+            {
+                var result = new ToolResult
+                {
+                    Status = "success",
+                    Data = string.Join("\n\n", filteredMessages)
+                };
+                if (shouldWait) { result.RequestWait = true; result.WaitReason = waitReason; }
+                return result;
+            }
+
+            if (filteredMessages.Count == 0 && !shouldWait)
+                return new ToolResult { Status = "failed", Error = "消息内容不能为空" };
 
             var sentIds = new List<string>();
-            for (int i = 0; i < messages.Count; i++)
+            for (int i = 0; i < filteredMessages.Count; i++)
             {
                 ct.ThrowIfCancellationRequested();
 
-                var sentId = await _channelAccess.SendMessageAsync(_channelId, messages[i]);
+                var sentId = await _channelAccess.SendMessageAsync(_channelId, filteredMessages[i]);
                 if (sentId != null)
                     sentIds.Add(sentId);
 
-                if (i < messages.Count - 1)
+                if (i < filteredMessages.Count - 1)
                 {
                     var delayMs = _rng.Next(1000, 2001);
                     await Task.Delay(delayMs, ct);
                 }
             }
 
-            return sentIds.Count > 0
+            var toolResult = sentIds.Count > 0
                 ? new ToolResult { Status = "success", Data = string.Join(",", sentIds) }
                 : new ToolResult { Status = "failed", Error = "消息发送失败" };
+            if (shouldWait) { toolResult.RequestWait = true; toolResult.WaitReason = waitReason; }
+            return toolResult;
         }
 
         private static List<string> ParseArrayInput(string raw)

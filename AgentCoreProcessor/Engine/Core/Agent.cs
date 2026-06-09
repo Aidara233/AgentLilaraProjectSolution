@@ -233,6 +233,13 @@ namespace AgentCoreProcessor.Engine
                 if (OnRoundCompleted != null)
                     await OnRoundCompleted();
 
+                // 内联 wait（工具结果中的 RequestWait 标记，如 speak 含 [wait] 占位符）
+                if (results.Any(r => r.RequestWait))
+                {
+                    StopReason = AgentStopReason.WaitRequested;
+                    return;
+                }
+
                 // wait 工具 → 停止
                 if (output.ToolCalls.Any(c => c.Tool == "wait"))
                 {

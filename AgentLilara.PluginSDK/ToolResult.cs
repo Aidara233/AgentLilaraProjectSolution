@@ -23,6 +23,14 @@ namespace AgentLilara.PluginSDK
 
         [JsonIgnore]
         public bool IsSuccess => Status == "success";
+
+        /// <summary>工具请求引擎在执行后进入等待状态（如 speak 中的 [wait] 占位符）。</summary>
+        [JsonIgnore]
+        public bool RequestWait { get; set; }
+
+        /// <summary>等待原因。</summary>
+        [JsonIgnore]
+        public string? WaitReason { get; set; }
     }
 
     /// <summary>
