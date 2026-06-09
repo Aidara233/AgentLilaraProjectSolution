@@ -8,8 +8,7 @@
         <div class="table-card-toolbar mb-2 d-flex gap-2 flex-wrap align-items-center">
             @if (Schema.Searchable)
             {
-                <input class="form-control form-control-sm" style="max-width:200px" placeholder="搜索..." @bind="_search" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
-                <button class="btn btn-sm btn-outline-secondary" @onclick="ApplySearch">搜索</button>
+                <input class="form-control form-control-sm" style="max-width:200px" placeholder="搜索..." @bind="_search" @bind:event="oninput" @onkeyup="OnSearchInput" />
             }
             @if (Schema.Filters != null)
             {
@@ -39,7 +38,7 @@
                     {
                         <th style="@(col.Width != null ? $"width:{col.Width}" : "")"
                             class="@(col.Sortable ? "sortable-col" : "")"
-                            @onclick="() => col.Sortable ? ToggleSort(col.Field) : Task.CompletedTask">
+                            @onclick="() => { if (col.Sortable) ToggleSort(col.Field); }">
                             @col.Header
                             @if (_sortBy == col.Field)
                             {
@@ -54,10 +53,10 @@
                 </tr>
             </thead>
             <tbody>
-                @if (_rows != null)
+                @if (DisplayRows != null)
                 {
                     var rowIndex = 0;
-                    @foreach (var row in _rows)
+                    @foreach (var row in DisplayRows)
                     {
                         var link = row["_link"]?.ToString();
                         var idx = rowIndex;
@@ -96,12 +95,18 @@
     @if (Schema.Paginated)
     {
         <div class="table-card-pagination d-flex align-items-center justify-content-between mt-2 px-1">
-            <span class="text-muted small">共 @(TotalCount ?? 0) 条</span>
+            <span class="text-muted small">共 @LocalTotalCount 条</span>
             <div class="d-flex gap-1">
                 <button class="btn btn-sm btn-outline-secondary" disabled="@(_page <= 1)" @onclick="PrevPage">上一页</button>
                 <span class="btn btn-sm disabled">@_page / @TotalPages</span>
                 <button class="btn btn-sm btn-outline-secondary" disabled="@(_page >= TotalPages)" @onclick="NextPage">下一页</button>
             </div>
+        </div>
+    }
+    else if (LocalTotalCount > 0)
+    {
+        <div class="table-card-pagination d-flex align-items-center mt-2 px-1">
+            <span class="text-muted small">共 @LocalTotalCount 条</span>
         </div>
     }
 </div>
@@ -123,8 +128,49 @@
     private int _selectedIndex = -1;
     private Dictionary<string, string> _filters = new();
 
-    private int TotalPages => _pageSize > 0 && TotalCount.HasValue
-        ? Math.Max(1, (int)Math.Ceiling((double)TotalCount.Value / _pageSize))
+    private List<JsonNode>? FilteredRows
+    {
+        get
+        {
+            if (_rows == null) return null;
+            var items = _rows.AsEnumerable();
+
+            // 客户端搜索
+            if (!string.IsNullOrWhiteSpace(_search))
+            {
+                var lower = _search.ToLowerInvariant();
+                items = items.Where(r =>
+                    Schema.Columns.Any(col =>
+                        (r[col.Field]?.ToString() ?? "").ToLowerInvariant().Contains(lower)));
+            }
+
+            // 客户端排序
+            if (!string.IsNullOrEmpty(_sortBy))
+            {
+                items = _sortDesc
+                    ? items.OrderByDescending(r => r[_sortBy]?.ToString() ?? "")
+                    : items.OrderBy(r => r[_sortBy]?.ToString() ?? "");
+            }
+
+            return items.ToList();
+        }
+    }
+
+    private int LocalTotalCount => FilteredRows?.Count ?? 0;
+
+    private List<JsonNode>? DisplayRows
+    {
+        get
+        {
+            var filtered = FilteredRows;
+            if (filtered == null) return null;
+            if (!Schema.Paginated) return filtered;
+            return filtered.Skip((_page - 1) * _pageSize).Take(_pageSize).ToList();
+        }
+    }
+
+    private int TotalPages => Schema.Paginated && _pageSize > 0
+        ? Math.Max(1, (int)Math.Ceiling(LocalTotalCount / (double)_pageSize))
         : 1;
 
     protected override void OnParametersSet()
@@ -178,33 +224,32 @@
         }
     };
 
-    private async Task ToggleSort(string field)
+    private void ToggleSort(string field)
     {
         if (_sortBy == field) _sortDesc = !_sortDesc;
         else { _sortBy = field; _sortDesc = false; }
         _page = 1;
-        await EmitQuery();
     }
 
-    private async Task OnSearchKeyUp(KeyboardEventArgs e)
-    {
-        if (e.Key == "Enter") await ApplySearch();
-    }
-
-    private async Task ApplySearch()
+    private void OnSearchInput(KeyboardEventArgs e)
     {
         _page = 1;
-        await EmitQuery();
     }
 
-    private async Task ApplyFilter()
+    private void ApplyFilter()
     {
         _page = 1;
-        await EmitQuery();
     }
 
-    private async Task PrevPage() { if (_page > 1) { _page--; await EmitQuery(); } }
-    private async Task NextPage() { if (_page < TotalPages) { _page++; await EmitQuery(); } }
+    private async Task PrevPage()
+    {
+        if (_page > 1) { _page--; await EmitQuery(); }
+    }
+
+    private async Task NextPage()
+    {
+        if (_page < TotalPages) { _page++; await EmitQuery(); }
+    }
 
     private async Task EmitQuery()
     {
