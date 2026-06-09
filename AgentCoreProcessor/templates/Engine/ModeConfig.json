@@ -4,9 +4,9 @@
     {
       "id": "express",
       "displayName": "轻量对话",
-      "description": "快速对话，fire-and-forget。日常聊天。需要复杂操作时用 escalate 切换。",
+      "description": "快速对话，fire-and-forget。日常聊天，简洁回复。需要复杂操作时用 escalate 切换。",
       "metaType": "Express",
-      "maxRounds": 8,
+      "maxRounds": 3,
       "toolDefaults": "disabled",
       "tools": {
         "speak": "enabled",

@@ -127,6 +127,9 @@ namespace AgentCoreProcessor.Engine
         // Express/Working 自适应切换
         private bool isWorkingMode = false;
 
+        // 本轮触发是否因 @提及（用于 impulse 额外扣减）
+        private bool _triggerHadMention;
+
         // 模式配置驱动（Phase 2）：当前模式 ID 和定义
         private string _currentModeId = "express";
         private ModeDefinition? _currentModeDef;
@@ -386,6 +389,7 @@ namespace AgentCoreProcessor.Engine
                 if (shouldRespond)
                 {
                     lock (bufferLock) { _bufferTriggered = true; }
+                    _triggerHadMention = msg.IsMentioned && !msg.IsSystemEvent;
                     Signal.Event(LogGroup.Engine, "冲动值决策", new
                     {
                         channelId,
@@ -518,7 +522,10 @@ namespace AgentCoreProcessor.Engine
 
                 // 消费触发本轮响应的冲动值，防止处理期间到达的消息看到旧高峰值而误触发
                 if (hasNewMessages)
-                    impulseTracker.ApplyPostResponseUpdate();
+                {
+                    impulseTracker.ApplyPostResponseUpdate(_triggerHadMention);
+                    _triggerHadMention = false;
+                }
 
                 if (hasNewMessages)
                 {

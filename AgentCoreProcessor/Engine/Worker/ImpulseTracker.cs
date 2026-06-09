@@ -82,8 +82,10 @@ namespace AgentCoreProcessor.Engine
 
         }
 
-        public void ApplyPostResponseUpdate()
+        public void ApplyPostResponseUpdate(bool wasMentionResponse = false)
         {
+            if (wasMentionResponse && config.MentionPostResponseDeduction > 0)
+                impulse = Math.Max(0f, impulse - config.MentionPostResponseDeduction);
             impulse = Math.Min(impulse, config.PostResponseCap);
         }
 

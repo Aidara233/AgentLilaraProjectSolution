@@ -23,6 +23,9 @@ namespace AgentCoreProcessor.Engine
         public float PostResponseCap { get; set; } = 20f;
         public float PostResponseCooldownSeconds { get; set; } = 3f;
 
+        /// <summary>被@触发回复后额外扣减的冲动值，防止连续@连续触发。</summary>
+        public float MentionPostResponseDeduction { get; set; } = 30f;
+
         // --- 闸门 ---
         public float BufferWindowSeconds { get; set; } = 3f;
         public float BufferMaxDelaySeconds { get; set; } = 10f;

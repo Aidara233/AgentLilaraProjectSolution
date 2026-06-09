@@ -8,7 +8,8 @@
   "decayHalfLifeSeconds": 100.0,
   "threshold": 100.0,
   "postResponseCap": 20.0,
-  "postResponseCooldownSeconds": 3.0,
+  "postResponseCooldownSeconds": 8.0,
+  "mentionPostResponseDeduction": 30.0,
   "bufferWindowSeconds": 2.5,
   "coldTimeoutSeconds": 600.0
 }

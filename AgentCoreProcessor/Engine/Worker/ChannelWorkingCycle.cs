@@ -184,10 +184,7 @@ namespace AgentCoreProcessor.Engine
             else if (agent.StopReason == AgentStopReason.MaxRounds)
             {
                 loopControlModule.AdvanceRound();
-                if (!loopControlModule.IsMaxRoundsReached)
-                    gate.Signal();
-                else
-                    EndWorkingSession();
+                EndWorkingSession();
             }
             else
             {
