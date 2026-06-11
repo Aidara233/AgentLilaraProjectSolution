@@ -58,6 +58,18 @@ namespace AgentCoreProcessor.Core
             }
         }
 
+        /// <summary>从 JsonNode 提取原始字符串值。JsonNode.ToString() 对 string 类型返回带双引号的 JSON 表示，
+        /// 直接用会让 shell 命令带多余引号，导致 "ls /" 被当成一个命令名而不是命令+参数。</summary>
+        private static string RawString(JsonNode? node)
+        {
+            if (node is JsonValue jv)
+            {
+                try { return jv.GetValue<string>() ?? ""; }
+                catch { }
+            }
+            return node?.ToString() ?? "";
+        }
+
         private void FinalizeCurrentCall()
         {
             if (currentToolName == null) return;
@@ -82,7 +94,7 @@ namespace AgentCoreProcessor.Core
                             foreach (var (key, _) in properties)
                             {
                                 if (args.TryGetPropertyValue(key, out var val))
-                                    call.Inputs.Add(val?.ToString() ?? "");
+                                    call.Inputs.Add(RawString(val));
                                 else
                                     call.Inputs.Add("");
                             }
@@ -91,7 +103,7 @@ namespace AgentCoreProcessor.Core
                         {
                             // 无 schema 信息时，按属性顺序填入
                             foreach (var (_, val) in args)
-                                call.Inputs.Add(val?.ToJsonString() ?? "");
+                                call.Inputs.Add(RawString(val));
                         }
                     }
                 }
