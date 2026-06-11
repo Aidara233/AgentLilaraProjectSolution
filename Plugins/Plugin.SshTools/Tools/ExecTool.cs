@@ -40,6 +40,7 @@ public class ExecTool : ITool
         var command = resolvedInputs.Count > 0 ? resolvedInputs[0] : "";
         var timeoutStr = resolvedInputs.Count > 1 ? resolvedInputs[1].Trim() : "";
 
+        command = SanitizeShellInput(command);
         if (string.IsNullOrEmpty(command))
             return Task.FromResult(Fail("command 不能为空"));
 
@@ -200,6 +201,21 @@ public class ExecTool : ITool
         var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(content));
         using var cmd = client.CreateCommand($"echo {EscapeShellArg(encoded)} | base64 -d > {escapedPath}");
         cmd.Execute();
+    }
+
+    /// <summary>清洗 shell 输入：Unicode 空白 → 普通空格，防止模型生成 non-breaking space 等导致命令被当成单个 token</summary>
+    private static string SanitizeShellInput(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return s;
+        // char.IsWhiteSpace 覆盖 U+00A0, U+2000-U+200A, U+3000 等
+        return string.Create(s.Length, s, (buf, src) =>
+        {
+            for (int i = 0; i < src.Length; i++)
+            {
+                var c = src[i];
+                buf[i] = char.IsWhiteSpace(c) && c != ' ' ? ' ' : c;
+            }
+        });
     }
 
     private static string EscapeShellArg(string s) => "'" + s.Replace("'", "'\\''") + "'";
