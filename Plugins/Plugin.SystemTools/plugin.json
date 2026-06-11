@@ -1,0 +1,9 @@
+{
+  "id": "system-ops",
+  "name": "系统管理工具",
+  "version": "1.0.0",
+  "entry": "Plugin.SystemTools.dll",
+  "description": "子 Agent 管理（create_sub_agent / stop_sub_agent）",
+  "components": ["system-ops"],
+  "author": "Agent Lilara"
+}

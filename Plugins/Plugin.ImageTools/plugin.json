@@ -1,0 +1,9 @@
+{
+  "id": "image-tools",
+  "name": "图片处理工具",
+  "version": "1.0.0",
+  "entry": "Plugin.ImageTools.dll",
+  "description": "图片处理工具",
+  "components": ["image-tools"],
+  "author": "Agent Lilara"
+}

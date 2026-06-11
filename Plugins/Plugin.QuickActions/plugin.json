@@ -1,0 +1,9 @@
+{
+  "id": "quick-actions",
+  "name": "快捷操作",
+  "version": "1.0.0",
+  "entry": "Plugin.QuickActions.dll",
+  "description": "快捷操作工具",
+  "components": ["quick-actions"],
+  "author": "Agent Lilara"
+}

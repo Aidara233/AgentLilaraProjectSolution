@@ -1,0 +1,9 @@
+{
+  "id": "external-dice",
+  "name": "外部骰子",
+  "version": "1.0.0",
+  "entry": "Plugin.ExternalDice.dll",
+  "description": "外部骰子服务集成",
+  "components": ["external-dice"],
+  "author": "Agent Lilara"
+}

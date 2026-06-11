@@ -1,0 +1,9 @@
+{
+  "id": "skill-tools",
+  "name": "技能工具",
+  "version": "1.0.0",
+  "entry": "Plugin.SkillTools.dll",
+  "description": "技能工具（casual-chat/code-review/system-maintenance）",
+  "components": ["skill-tools"],
+  "author": "Agent Lilara"
+}

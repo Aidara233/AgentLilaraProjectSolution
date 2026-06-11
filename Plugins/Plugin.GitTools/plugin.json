@@ -1,0 +1,9 @@
+{
+  "id": "git-tools",
+  "name": "Git 工具",
+  "version": "1.0.0",
+  "entry": "Plugin.GitTools.dll",
+  "description": "Git 仓库操作工具",
+  "components": ["git-tools", "git-tools-global"],
+  "author": "Agent Lilara"
+}

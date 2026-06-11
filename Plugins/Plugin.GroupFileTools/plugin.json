@@ -1,0 +1,9 @@
+{
+  "id": "group-file-tools",
+  "name": "分组文件工具",
+  "version": "1.0.0",
+  "entry": "Plugin.GroupFileTools.dll",
+  "description": "分组文件操作工具",
+  "components": ["group-file-tools", "group-file-tools-global"],
+  "author": "Agent Lilara"
+}

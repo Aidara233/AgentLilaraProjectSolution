@@ -18,16 +18,21 @@
     </ProjectReference>
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="plugin.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
   <Target Name="CopyToHostPlugins" AfterTargets="Build"
           Condition=" '$(SolutionDir)' != '' And '$(SolutionDir)' != '*Undefined*' ">
     <ItemGroup>
-      <PluginDlls Include="$(OutputPath)Plugin.Email.dll" />
-      <PluginDlls Include="$(OutputPath)MailKit.dll" />
-      <PluginDlls Include="$(OutputPath)MimeKit.dll" />
-      <PluginDlls Include="$(OutputPath)BouncyCastle.Cryptography.dll" />
+      <_PluginOut Include="$(OutputPath)*.dll" Exclude="$(OutputPath)AgentLilara.PluginSDK.dll" />
+      <_PluginOut Include="$(OutputPath)*.deps.json" />
+      <_PluginOut Include="$(OutputPath)plugin.json" />
     </ItemGroup>
-    <Copy SourceFiles="@(PluginDlls)"
-          DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\"
+    <Copy SourceFiles="@(_PluginOut)"
+          DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\$(MSBuildProjectName)\"
           SkipUnchangedFiles="true" />
   </Target>
 

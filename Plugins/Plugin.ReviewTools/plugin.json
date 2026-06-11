@@ -1,0 +1,9 @@
+{
+  "id": "review-tools",
+  "name": "复盘工具",
+  "version": "1.0.0",
+  "entry": "Plugin.ReviewTools.dll",
+  "description": "复盘引擎专用工具集（15 个 review_* 工具）",
+  "components": ["review-tools"],
+  "author": "Agent Lilara"
+}

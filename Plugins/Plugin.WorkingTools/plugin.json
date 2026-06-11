@@ -1,0 +1,9 @@
+{
+  "id": "working-tools",
+  "name": "工作模式工具",
+  "version": "1.0.0",
+  "entry": "Plugin.WorkingTools.dll",
+  "description": "工作模式工具（便签板/思考笔记/retain_list/mark_for_review）",
+  "components": ["working-tools"],
+  "author": "Agent Lilara"
+}

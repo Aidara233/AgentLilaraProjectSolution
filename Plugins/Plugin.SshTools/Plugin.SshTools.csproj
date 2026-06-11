@@ -18,17 +18,21 @@
     <PackageReference Include="SSH.NET" Version="2025.1.0" />
   </ItemGroup>
 
-  <Target Name="CopyToHostPlugins" AfterTargets="Build">
+  <ItemGroup>
+    <None Update="plugin.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <Target Name="CopyToHostPlugins" AfterTargets="Build" Condition=" '$(SolutionDir)' != '' And '$(SolutionDir)' != '*Undefined*' ">
     <ItemGroup>
-      <_PlugSshLibs Include="$(OutputPath)Plugin.SshTools.dll" />
-      <_PlugSshLibs Include="$(OutputPath)Renci.SshNet.dll" />
-      <_PlugSshLibs Include="$(OutputPath)BouncyCastle.Cryptography.dll" />
-      <_PlugSshLibs Include="$(OutputPath)Microsoft.Extensions.DependencyInjection.Abstractions.dll" />
-      <_PlugSshLibs Include="$(OutputPath)Microsoft.Extensions.Logging.Abstractions.dll" />
+      <_PluginOut Include="$(OutputPath)*.dll" Exclude="$(OutputPath)AgentLilara.PluginSDK.dll" />
+      <_PluginOut Include="$(OutputPath)*.deps.json" />
+      <_PluginOut Include="$(OutputPath)plugin.json" />
     </ItemGroup>
-    <Copy SourceFiles="@(_PlugSshLibs)"
-          DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\"
-          Condition="'$(SolutionDir)' != '' and '$(SolutionDir)' != '*Undefined*'" />
+    <Copy SourceFiles="@(_PluginOut)"
+          DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\$(MSBuildProjectName)\"
+          SkipUnchangedFiles="true" />
   </Target>
 
 </Project>

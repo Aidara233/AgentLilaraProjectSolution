@@ -1,0 +1,9 @@
+{
+  "id": "file-ops",
+  "name": "文件操作工具",
+  "version": "1.0.0",
+  "entry": "Plugin.FileOps.dll",
+  "description": "文件高级操作（压缩/搜索/信息/哈希/比较）",
+  "components": ["file-ops"],
+  "author": "Agent Lilara"
+}

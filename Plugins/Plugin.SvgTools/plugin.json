@@ -1,0 +1,9 @@
+{
+  "id": "svg-tools",
+  "name": "SVG 渲染工具",
+  "version": "1.0.0",
+  "entry": "Plugin.SvgTools.dll",
+  "description": "SVG 渲染工具",
+  "components": ["svg-tools"],
+  "author": "Agent Lilara"
+}

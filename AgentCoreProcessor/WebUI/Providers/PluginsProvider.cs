@@ -101,7 +101,10 @@ internal class PluginsProvider : IWebUIProvider
                 {
                     Fields = new()
                     {
-                        new() { Field = "fileName", Label = "文件名" },
+                        new() { Field = "fileName", Label = "插件名" },
+                        new() { Field = "version", Label = "版本" },
+                        new() { Field = "description", Label = "描述" },
+                        new() { Field = "author", Label = "作者" },
                         new() { Field = "filePath", Label = "路径" },
                         new() { Field = "toolCount", Label = "贡献工具" },
                         new() { Field = "componentCount", Label = "贡献组件" },
@@ -284,8 +287,7 @@ internal class PluginsProvider : IWebUIProvider
         var options = new List<SelectOption> { new() { Value = "__core__", Label = "核心工具" } };
         foreach (var plugin in _engine.PluginLoader.LoadedPlugins)
         {
-            var name = Path.GetFileNameWithoutExtension(plugin.FileName);
-            options.Add(new SelectOption { Value = name, Label = name });
+            options.Add(new SelectOption { Value = plugin.PluginId, Label = plugin.Manifest?.Name ?? plugin.PluginId });
         }
         return options;
     }
@@ -326,17 +328,16 @@ internal class PluginListSource : IDataSource
         var arr = new JsonArray();
         foreach (var plugin in plugins)
         {
-            var name = Path.GetFileNameWithoutExtension(plugin.FileName);
             arr.Add(new JsonObject
             {
-                ["id"] = name,
-                ["fileName"] = plugin.FileName,
+                ["id"] = plugin.PluginId,
+                ["fileName"] = plugin.Manifest?.Name ?? plugin.PluginId,
                 ["toolCount"] = plugin.ToolNames.Count,
                 ["componentCount"] = plugin.ComponentNames.Count,
                 ["providerCount"] = plugin.ProviderIds.Count,
                 ["injectCount"] = plugin.InjectProviderNames.Count,
                 ["lifecycleCount"] = plugin.LifecycleNames.Count,
-                ["_link"] = $"/p/plugins/{name}",
+                ["_link"] = $"/p/plugins/{plugin.PluginId}",
             });
         }
         return Task.FromResult(new DataResult { Data = arr, TotalCount = arr.Count });
@@ -433,8 +434,11 @@ internal class PluginInfoSource : IDataSource
         {
             Data = new JsonObject
             {
-                ["fileName"] = plugin.FileName,
+                ["fileName"] = plugin.Manifest?.Name ?? plugin.PluginId,
                 ["filePath"] = plugin.FilePath,
+                ["version"] = plugin.Manifest?.Version ?? "",
+                ["description"] = plugin.Manifest?.Description ?? "",
+                ["author"] = plugin.Manifest?.Author ?? "",
                 ["toolCount"] = plugin.ToolNames.Count.ToString(),
                 ["componentCount"] = plugin.ComponentNames.Count.ToString(),
                 ["providerCount"] = string.Join(", ", plugin.ProviderIds),
@@ -448,7 +452,8 @@ internal class PluginInfoSource : IDataSource
     private PluginEntry? FindPlugin(string name)
     {
         return _engine.PluginLoader.LoadedPlugins
-            .FirstOrDefault(p => Path.GetFileNameWithoutExtension(p.FileName) == name);
+            .FirstOrDefault(p => p.PluginId == name
+                             || Path.GetFileNameWithoutExtension(p.FileName).Equals(name, StringComparison.OrdinalIgnoreCase));
     }
 }
 
@@ -708,7 +713,7 @@ internal class AllToolsSource : IDataSource
         var map = new Dictionary<string, string>();
         foreach (var plugin in _engine.PluginLoader.LoadedPlugins)
         {
-            var pluginName = Path.GetFileNameWithoutExtension(plugin.FileName);
+            var pluginName = plugin.PluginId;
 
             // 直接注册的工具
             foreach (var tn in plugin.ToolNames)

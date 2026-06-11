@@ -1,0 +1,9 @@
+{
+  "id": "basic-tools",
+  "name": "基础工具",
+  "version": "1.0.0",
+  "entry": "Plugin.BasicTools.dll",
+  "description": "基础对话工具（speak/send_media）",
+  "components": ["basic-tools"],
+  "author": "Agent Lilara"
+}

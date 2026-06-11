@@ -13,10 +13,21 @@
     </ProjectReference>
   </ItemGroup>
 
-  <Target Name="CopyToHostPlugins" AfterTargets="Build">
-    <Copy SourceFiles="$(OutputPath)Plugin.WebSearch.dll"
-          DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\"
-          Condition="'$(SolutionDir)' != '' and '$(SolutionDir)' != '*Undefined*'" />
+  <ItemGroup>
+    <None Update="plugin.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <Target Name="CopyToHostPlugins" AfterTargets="Build" Condition=" '$(SolutionDir)' != '' And '$(SolutionDir)' != '*Undefined*' ">
+    <ItemGroup>
+      <_PluginOut Include="$(OutputPath)*.dll" Exclude="$(OutputPath)AgentLilara.PluginSDK.dll" />
+      <_PluginOut Include="$(OutputPath)*.deps.json" />
+      <_PluginOut Include="$(OutputPath)plugin.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_PluginOut)"
+          DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\$(MSBuildProjectName)\"
+          SkipUnchangedFiles="true" />
   </Target>
 
 </Project>

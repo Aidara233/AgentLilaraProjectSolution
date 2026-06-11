@@ -1,0 +1,9 @@
+{
+  "id": "file-tools",
+  "name": "文件基础工具",
+  "version": "1.0.0",
+  "entry": "Plugin.FileTools.dll",
+  "description": "文件基础操作（读/写/列表/移动/删除/复制）",
+  "components": ["file-tools"],
+  "author": "Agent Lilara"
+}

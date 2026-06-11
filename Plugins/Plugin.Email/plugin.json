@@ -1,0 +1,9 @@
+{
+  "id": "email",
+  "name": "邮件工具",
+  "version": "1.0.0",
+  "entry": "Plugin.Email.dll",
+  "description": "邮件收发工具（SMTP/IMAP，单账户）",
+  "components": ["email"],
+  "author": "Agent Lilara"
+}

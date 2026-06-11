@@ -14,6 +14,7 @@ using AgentCoreProcessor.MCP;
 using AgentCoreProcessor.Memory;
 using AgentCoreProcessor.Engine.Modules;
 using AgentCoreProcessor.Logging;
+using AgentCoreProcessor.Tool.Host;
 using AgentLilara.PluginSDK;
 using AgentLilara.PluginSDK.Logging;
 using Newtonsoft.Json;
@@ -267,8 +268,7 @@ namespace AgentCoreProcessor.Engine
             // 先移除相关 Global 组件实例（关闭 + 从列表中移除）
             if (GlobalComponentHost != null)
             {
-                var plugin = PluginLoader.LoadedPlugins
-                    .FirstOrDefault(p => Path.GetFileNameWithoutExtension(p.FileName).Equals(pluginName, StringComparison.OrdinalIgnoreCase));
+                var plugin = FindPluginByName(pluginName);
                 if (plugin != null)
                 {
                     foreach (var compName in plugin.ComponentNames)
@@ -288,8 +288,7 @@ namespace AgentCoreProcessor.Engine
             if (GlobalComponentHost != null)
             {
                 var config = ComponentConfig.Load();
-                var plugin = PluginLoader.LoadedPlugins
-                    .FirstOrDefault(p => Path.GetFileNameWithoutExtension(p.FileName).Equals(pluginName, StringComparison.OrdinalIgnoreCase));
+                var plugin = FindPluginByName(pluginName);
                 if (plugin != null)
                 {
                     foreach (var compName in plugin.ComponentNames)
@@ -311,6 +310,13 @@ namespace AgentCoreProcessor.Engine
             }
 
             Signal.Event(LogGroup.Plugin, "插件已重载", new { plugin = pluginName });
+        }
+
+        private PluginEntry? FindPluginByName(string name)
+        {
+            return PluginLoader.LoadedPlugins
+                .FirstOrDefault(p => p.PluginId.Equals(name, StringComparison.OrdinalIgnoreCase)
+                                 || Path.GetFileNameWithoutExtension(p.FileName).Equals(name, StringComparison.OrdinalIgnoreCase));
         }
 
         // ---- 初始化 ----

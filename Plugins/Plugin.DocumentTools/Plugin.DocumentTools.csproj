@@ -16,23 +16,20 @@
     <PackageReference Include="DocumentFormat.OpenXml" Version="3.1.1" />
     <PackageReference Include="PdfPig" Version="0.1.9" />
   </ItemGroup>
+  <ItemGroup>
+    <None Update="plugin.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
   <Target Name="CopyToHostPlugins" AfterTargets="Build" Condition=" '$(SolutionDir)' != '' And '$(SolutionDir)' != '*Undefined*' ">
     <ItemGroup>
-      <PluginDlls Include="$(OutputPath)Plugin.DocumentTools.dll" />
-      <PluginDlls Include="$(OutputPath)FileToolKit.Shared.dll" />
-      <PluginDlls Include="$(OutputPath)DocumentFormat.OpenXml.dll" />
-      <PluginDlls Include="$(OutputPath)DocumentFormat.OpenXml.Framework.dll" />
-      <PluginDlls Include="$(OutputPath)System.IO.Packaging.dll" />
-      <PluginDlls Include="$(OutputPath)UglyToad.PdfPig.dll" />
-      <PluginDlls Include="$(OutputPath)UglyToad.PdfPig.Core.dll" />
-      <PluginDlls Include="$(OutputPath)UglyToad.PdfPig.Fonts.dll" />
-      <PluginDlls Include="$(OutputPath)UglyToad.PdfPig.Package.dll" />
-      <PluginDlls Include="$(OutputPath)UglyToad.PdfPig.Tokenization.dll" />
-      <PluginDlls Include="$(OutputPath)UglyToad.PdfPig.Tokens.dll" />
-      <PluginDlls Include="$(OutputPath)UglyToad.PdfPig.DocumentLayoutAnalysis.dll" />
+      <_PluginOut Include="$(OutputPath)*.dll" Exclude="$(OutputPath)AgentLilara.PluginSDK.dll" />
+      <_PluginOut Include="$(OutputPath)*.deps.json" />
+      <_PluginOut Include="$(OutputPath)plugin.json" />
     </ItemGroup>
-    <Copy SourceFiles="@(PluginDlls)"
-          DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\"
+    <Copy SourceFiles="@(_PluginOut)"
+          DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\$(MSBuildProjectName)\"
           SkipUnchangedFiles="true" />
   </Target>
 </Project>

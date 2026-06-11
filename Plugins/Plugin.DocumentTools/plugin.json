@@ -1,0 +1,9 @@
+{
+  "id": "document-tools",
+  "name": "文档处理工具",
+  "version": "1.0.0",
+  "entry": "Plugin.DocumentTools.dll",
+  "description": "文档读写（PDF/OpenXML 格式）",
+  "components": ["document-tools"],
+  "author": "Agent Lilara"
+}

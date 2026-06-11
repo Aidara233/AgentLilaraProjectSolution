@@ -1,0 +1,9 @@
+{
+  "id": "scheduled-tasks",
+  "name": "定时任务",
+  "version": "1.0.0",
+  "entry": "Plugin.ScheduledTasks.dll",
+  "description": "定时任务调度器",
+  "components": ["scheduled-tasks", "scheduled-tasks-timer"],
+  "author": "Agent Lilara"
+}

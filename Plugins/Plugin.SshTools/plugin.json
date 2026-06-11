@@ -1,0 +1,9 @@
+{
+  "id": "ssh-tools",
+  "name": "SSH 工具",
+  "version": "1.0.0",
+  "entry": "Plugin.SshTools.dll",
+  "description": "SSH 远程连接与操作工具",
+  "components": ["ssh-tools", "ssh-tools-global"],
+  "author": "Agent Lilara"
+}

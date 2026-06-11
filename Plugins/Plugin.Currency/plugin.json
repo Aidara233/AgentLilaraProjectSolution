@@ -1,0 +1,9 @@
+{
+  "id": "currency",
+  "name": "货币工具",
+  "version": "1.0.0",
+  "entry": "Plugin.Currency.dll",
+  "description": "货币转换工具",
+  "components": ["currency"],
+  "author": "Agent Lilara"
+}

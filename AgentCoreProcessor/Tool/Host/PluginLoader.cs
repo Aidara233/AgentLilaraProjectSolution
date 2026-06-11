@@ -12,15 +12,11 @@ using AgentCoreProcessor.Component;
 using AgentCoreProcessor.Engine;
 using AgentLilara.PluginSDK;
 using AgentLilara.PluginSDK.Services;
+using Newtonsoft.Json;
 using Parallel = System.Threading.Tasks.Parallel;
 
 namespace AgentCoreProcessor.Tool.Host
 {
-    /// <summary>
-    /// 插件加载器。扫描 Storage/Plugins/ 目录下的 DLL，
-    /// 加载实现 ITool 的类并注册到 ToolRegistry。
-    /// 支持运行时重载（卸载旧 context + 重新加载）。
-    /// </summary>
     internal class PluginLoader
     {
         private static string PluginDir => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Plugins");
@@ -42,7 +38,7 @@ namespace AgentCoreProcessor.Tool.Host
             _providerRegistry = providerRegistry;
         }
 
-        /// <summary>扫描并加载所有插件。启动时调用。先并行加载全部（当前无跨插件依赖），失败的再串行重试。</summary>
+        /// <summary>扫描子目录中的 plugin.json 并加载插件。并行扫描，失败串行重试。</summary>
         public void LoadAll()
         {
             if (!Directory.Exists(PluginDir))
@@ -51,56 +47,69 @@ namespace AgentCoreProcessor.Tool.Host
                 return;
             }
 
-            var dlls = Directory.GetFiles(PluginDir, "*.dll", SearchOption.AllDirectories)
-                .Where(IsManagedAssembly)
-                .ToArray();
-            if (dlls.Length == 0)
+            var dirs = Directory.GetDirectories(PluginDir);
+            if (dirs.Length == 0)
             {
                 Signal.Debug(LogGroup.Plugin, "插件目录为空，跳过加载", new { dir = PluginDir });
                 return;
             }
 
-            // 先并行加载所有 DLL（当前无跨插件依赖，并行安全）
             var failures = new ConcurrentBag<string>();
-            Parallel.ForEach(dlls, dll =>
+            Parallel.ForEach(dirs, dir =>
             {
-                if (!LoadPluginSafe(dll))
-                    failures.Add(dll);
+                if (!LoadPluginFromDir(dir))
+                    failures.Add(dir);
             });
 
-            // 失败的重试串行加载（可能依赖其他插件）
-            foreach (var dll in failures)
-            {
-                LoadPlugin(dll);
-            }
+            foreach (var dir in failures)
+                LoadPluginFromDir(dir);
         }
 
-        /// <summary>加载插件并捕获异常（返回 false 表示加载失败）。</summary>
-        private bool LoadPluginSafe(string dllPath)
+        /// <summary>从子目录加载插件。读取 plugin.json → 加载 entry DLL。</summary>
+        private bool LoadPluginFromDir(string dirPath)
         {
+            var manifestPath = Path.Combine(dirPath, "plugin.json");
+            if (!File.Exists(manifestPath))
+                return false;
+
             try
             {
-                LoadPlugin(dllPath);
+                var manifest = JsonConvert.DeserializeObject<PluginManifest>(File.ReadAllText(manifestPath));
+                if (manifest?.Entry == null)
+                {
+                    Signal.Warn(LogGroup.Plugin, "plugin.json 缺少 entry 字段", new { dir = Path.GetFileName(dirPath) });
+                    return false;
+                }
+
+                var entryPath = Path.Combine(dirPath, manifest.Entry);
+                if (!File.Exists(entryPath))
+                {
+                    Signal.Warn(LogGroup.Plugin, "入口 DLL 不存在", new { dir = Path.GetFileName(dirPath), entry = manifest.Entry });
+                    return false;
+                }
+
+                LoadPlugin(entryPath, manifest);
                 return true;
             }
-            catch
+            catch (Exception ex)
             {
+                Signal.Error(LogGroup.Plugin, "插件加载失败", new { dir = Path.GetFileName(dirPath), error = ex.Message });
                 return false;
             }
         }
 
-        /// <summary>重载所有插件。运行时调用。</summary>
         public void ReloadAll()
         {
             UnloadAll();
             LoadAll();
         }
 
-        /// <summary>卸载并重新加载单个插件（按文件名匹配）。</summary>
+        /// <summary>按插件 Id 重新加载单个插件。</summary>
         public void ReloadSingle(string pluginName)
         {
             var entries = loadedPlugins
-                .Where(p => Path.GetFileNameWithoutExtension(p.FileName).Equals(pluginName, StringComparison.OrdinalIgnoreCase))
+                .Where(p => p.PluginId.Equals(pluginName, StringComparison.OrdinalIgnoreCase)
+                         || Path.GetFileNameWithoutExtension(p.FileName).Equals(pluginName, StringComparison.OrdinalIgnoreCase))
                 .ToList();
             if (entries.Count == 0)
                 throw new InvalidOperationException($"未找到插件: {pluginName}");
@@ -120,15 +129,11 @@ namespace AgentCoreProcessor.Tool.Host
                 _lifecycleTypes.RemoveAll(t => entry.LifecycleNames.Contains(t.Name));
             }
 
-            // 重新扫描同名 DLL
-            var dlls = Directory.GetFiles(PluginDir, "*.dll", SearchOption.AllDirectories)
-                .Where(d => IsManagedAssembly(d) && Path.GetFileNameWithoutExtension(d).Equals(pluginName, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-            foreach (var dll in dlls)
-                LoadPlugin(dll);
+            // 从原目录重新加载（取最后一条的目录路径）
+            var srcDir = Path.GetDirectoryName(entries.Last().FilePath)!;
+            LoadPluginFromDir(srcDir);
         }
 
-        /// <summary>卸载所有插件。</summary>
         public void UnloadAll()
         {
             foreach (var entry in loadedPlugins)
@@ -147,9 +152,10 @@ namespace AgentCoreProcessor.Tool.Host
             _lifecycleTypes.Clear();
         }
 
-        private void LoadPlugin(string dllPath)
+        private void LoadPlugin(string dllPath, PluginManifest manifest)
         {
             var fileName = Path.GetFileName(dllPath);
+            var dirName = Path.GetFileName(Path.GetDirectoryName(dllPath))!;
 
             if (!IsManagedAssembly(dllPath))
             {
@@ -178,16 +184,17 @@ namespace AgentCoreProcessor.Tool.Host
 
                 var entry = new PluginEntry
                 {
+                    PluginId = manifest.Id,
                     FilePath = dllPath,
-                    FileName = fileName,
+                    FileName = dirName,
                     LoadContext = loadContext,
+                    Manifest = manifest,
                     ToolNames = new List<string>(),
                     ComponentNames = new List<string>(),
                     InjectProviderNames = new List<string>(),
                     LifecycleNames = new List<string>()
                 };
 
-                // 如果 DLL 有 Component，工具由 Component 管理，PluginLoader 不独立注册
                 if (componentTypes.Count == 0)
                 {
                     foreach (var type in toolTypes)
@@ -196,13 +203,9 @@ namespace AgentCoreProcessor.Tool.Host
                         if (tool == null) continue;
 
                         if (ToolRegistry.Register(tool, isNonComponent: true))
-                        {
                             entry.ToolNames.Add(tool.Name);
-                        }
                         else
-                        {
                             Signal.Warn(LogGroup.Plugin, "插件工具注册失败（名称冲突）", new { tool = tool.Name, dll = fileName });
-                        }
                     }
                 }
 
@@ -223,9 +226,7 @@ namespace AgentCoreProcessor.Tool.Host
                         var provider = (AgentLilara.PluginSDK.WebUI.IWebUIProvider)Activator.CreateInstance(type)!;
                         var attr = type.GetCustomAttribute<AgentLilara.PluginSDK.WebUI.WebUIProviderAttribute>();
                         if (_providerRegistry?.Register(provider, attr?.BuiltIn ?? false) == true)
-                        {
                             entry.ProviderIds.Add(provider.Id);
-                        }
                     }
                     catch (Exception ex)
                     {
@@ -244,6 +245,7 @@ namespace AgentCoreProcessor.Tool.Host
                     loadedPlugins.Add(entry);
                     Signal.Debug(LogGroup.Plugin, "插件已加载", new
                     {
+                        id = manifest.Id,
                         dll = fileName,
                         tools = entry.ToolNames.Count,
                         components = entry.ComponentNames.Count,
@@ -306,12 +308,10 @@ namespace AgentCoreProcessor.Tool.Host
         {
             try
             {
-                // 优先找 IToolContext 构造函数
                 var ctorWithContext = type.GetConstructor(new[] { typeof(IToolContext) });
                 if (ctorWithContext != null)
                     return (AgentLilara.PluginSDK.ITool)ctorWithContext.Invoke(new object[] { toolContext });
 
-                // 无参构造函数
                 var ctorDefault = type.GetConstructor(Type.EmptyTypes);
                 if (ctorDefault != null)
                     return (AgentLilara.PluginSDK.ITool)ctorDefault.Invoke(null);
@@ -374,9 +374,6 @@ namespace AgentCoreProcessor.Tool.Host
         public Engine.IEngineLifecycle? InstantiateLifecycle(Type type, IServiceProvider engineServices)
             => InstantiateWithInjection(type, engineServices) as Engine.IEngineLifecycle;
 
-        /// <summary>
-        /// 检查 PE 文件是否有 .NET CLR 头，用于区分托管程序集和原生 DLL。
-        /// </summary>
         private static bool IsManagedAssembly(string dllPath)
         {
             try
@@ -411,10 +408,36 @@ namespace AgentCoreProcessor.Tool.Host
         }
     }
 
+    internal class PluginManifest
+    {
+        [JsonProperty("id")]
+        public string Id { get; set; } = "";
+
+        [JsonProperty("name")]
+        public string Name { get; set; } = "";
+
+        [JsonProperty("version")]
+        public string Version { get; set; } = "1.0.0";
+
+        [JsonProperty("entry")]
+        public string Entry { get; set; } = "";
+
+        [JsonProperty("description")]
+        public string Description { get; set; } = "";
+
+        [JsonProperty("components")]
+        public List<string> Components { get; set; } = new();
+
+        [JsonProperty("author")]
+        public string Author { get; set; } = "";
+    }
+
     internal class PluginEntry
     {
+        public string PluginId { get; set; } = "";
         public string FilePath { get; set; } = "";
         public string FileName { get; set; } = "";
+        public PluginManifest Manifest { get; set; } = null!;
         public AssemblyLoadContext LoadContext { get; set; } = null!;
         public List<string> ToolNames { get; set; } = new();
         public List<string> ComponentNames { get; set; } = new();
@@ -423,26 +446,32 @@ namespace AgentCoreProcessor.Tool.Host
         public List<string> LifecycleNames { get; set; } = new();
     }
 
-    /// <summary>
-    /// 插件专用 AssemblyLoadContext，支持卸载。
-    /// </summary>
     internal class PluginLoadContext : AssemblyLoadContext
     {
         private readonly AssemblyDependencyResolver resolver;
+        private readonly string _pluginDir;
 
         public PluginLoadContext(string pluginPath) : base(isCollectible: true)
         {
             resolver = new AssemblyDependencyResolver(pluginPath);
+            _pluginDir = Path.GetDirectoryName(pluginPath)!;
         }
 
         protected override Assembly? Load(AssemblyName assemblyName)
         {
-            // 契约类型从主程序加载，不从插件 DLL 重复加载
             if (assemblyName.Name == "AgentCoreProcessor" || assemblyName.Name == "AgentLilara.PluginSDK")
                 return null;
 
             var path = resolver.ResolveAssemblyToPath(assemblyName);
-            return path != null ? LoadFromAssemblyPath(path) : null;
+            if (path != null)
+                return LoadFromAssemblyPath(path);
+
+            // 回退：在插件目录中直接探测同名 DLL
+            var probe = Path.Combine(_pluginDir, $"{assemblyName.Name}.dll");
+            if (File.Exists(probe))
+                return LoadFromAssemblyPath(probe);
+
+            return null;
         }
     }
 }

@@ -1,0 +1,9 @@
+{
+  "id": "memory-tools",
+  "name": "记忆工具",
+  "version": "1.0.0",
+  "entry": "Plugin.MemoryTools.dll",
+  "description": "记忆读写工具（依赖 IMemoryAccess 服务）",
+  "components": ["memory-tools"],
+  "author": "Agent Lilara"
+}

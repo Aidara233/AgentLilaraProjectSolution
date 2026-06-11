@@ -1,0 +1,9 @@
+{
+  "id": "dice-pool",
+  "name": "骰子系统",
+  "version": "1.0.0",
+  "entry": "Plugin.DicePool.dll",
+  "description": "骰子投掷与检定系统",
+  "components": ["dice-pool"],
+  "author": "Agent Lilara"
+}

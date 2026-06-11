@@ -1,0 +1,9 @@
+{
+  "id": "campus-print",
+  "name": "校园打印",
+  "version": "1.0.0",
+  "entry": "Plugin.CampusPrint.dll",
+  "description": "校园打印服务",
+  "components": ["campus-print"],
+  "author": "Agent Lilara"
+}

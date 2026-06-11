@@ -27,7 +27,7 @@ AgentLilaraProjectSolution/
 │     ├── Util/        VectorUtil 向量操作
 │     ├── WebUI/       Blazor Server 管理面板（嵌入式，同进程）
 │     └── Program.cs   入口（WebApplication 宿主，默认启动 Web 服务器 + 适配器）
-└── Plugins/
+└── Plugins/                    源码项目（每个含 plugin.json + CopyToHostPlugins 目标）
       ├── Plugin.BasicTools/      speak + send_media
       ├── Plugin.WorkingTools/    pinboard + thinking_notes + retain_list + mark_for_review
       ├── Plugin.MemoryTools/     memory（记忆读写，依赖 IMemoryAccess）
@@ -48,6 +48,23 @@ AgentLilaraProjectSolution/
       ├── Plugin.DocumentTools/   文档处理
       ├── Plugin.QuickActions/    快捷操作
       └── FileToolKit.Shared/     FileToolBase 抽象基类（路径解析/沙箱）
+
+运行时输出结构（`{BaseDir}/Plugins/`）：
+```
+Plugins/
+  Plugin.Email/                   ← 子目录 = 一个插件
+    plugin.json                   ← 清单（id/entry/version/components 等）
+    Plugin.Email.dll              ← 入口程序集
+    Plugin.Email.deps.json        ← 依赖映射（AssemblyDependencyResolver）
+    MailKit.dll                   ← NuGet 依赖
+    ...
+  Plugin.BasicTools/
+    plugin.json
+    Plugin.BasicTools.dll
+    Plugin.BasicTools.deps.json
+  ...
+```
+PluginLoader 扫描子目录 → 读 `plugin.json` → 加载 `entry` DLL。无需文件名白名单，依赖 DLL 不被单独扫描，消除竞态条件。
 ```
 
 ## 引擎生态
@@ -447,7 +464,11 @@ ToolCall: 原生 tool_use (Claude API) 为主路径
 
 插件加载:
   目录: {程序目录}/Plugins/（跟程序走，不跟 Storage 走）
-  每个 DLL 用独立 AssemblyLoadContext（支持卸载）
+  结构: 每个插件独立子目录，内含 plugin.json 清单（id/entry/version/components）
+  扫描: PluginLoader 扫子目录 → 读 plugin.json → 加载 entry DLL
+  隔离: 每个入口 DLL 用独立 AssemblyLoadContext（支持卸载）
+  依赖解析: deps.json（AssemblyDependencyResolver）+ 目录回退（插件目录下直接探测）
+  安全: 依赖 DLL 不在独立 ALC 中加载，消除竞态条件
   多类型发现: ITool / IInjectProvider / IWebUIProvider / ILoopComponent / IGlobalComponent
   构造注入: EventBus / ModuleBus / Gate / IMemoryAccess / IServiceProvider
   延迟实例化: IInjectProvider/Component 由引擎创建（非全局单例），ITool 是全局单例

@@ -13,9 +13,21 @@
     </ProjectReference>
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="plugin.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
   <Target Name="CopyToHostPlugins" AfterTargets="Build" Condition=" '$(SolutionDir)' != '' And '$(SolutionDir)' != '*Undefined*' ">
-    <Copy SourceFiles="$(OutputPath)Plugin.GitTools.dll"
-          DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\" />
+    <ItemGroup>
+      <_PluginOut Include="$(OutputPath)*.dll" Exclude="$(OutputPath)AgentLilara.PluginSDK.dll" />
+      <_PluginOut Include="$(OutputPath)*.deps.json" />
+      <_PluginOut Include="$(OutputPath)plugin.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_PluginOut)"
+          DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\$(MSBuildProjectName)\"
+          SkipUnchangedFiles="true" />
   </Target>
 
 </Project>

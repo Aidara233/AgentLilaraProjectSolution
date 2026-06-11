@@ -1,0 +1,9 @@
+{
+  "id": "web-search",
+  "name": "网页搜索",
+  "version": "1.0.0",
+  "entry": "Plugin.WebSearch.dll",
+  "description": "网页搜索工具",
+  "components": ["web-search", "web-search-global"],
+  "author": "Agent Lilara"
+}

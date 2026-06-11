@@ -1,0 +1,9 @@
+{
+  "id": "cross-loop",
+  "name": "跨循环通信工具",
+  "version": "1.0.0",
+  "entry": "Plugin.CrossLoopTools.dll",
+  "description": "跨循环委托与通信（send_request/evaluate_request/complete_request 等）",
+  "components": ["cross-loop"],
+  "author": "Agent Lilara"
+}
