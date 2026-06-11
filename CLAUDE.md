@@ -14,8 +14,8 @@
 - 上下文持久化：SystemContext.json WAL 模式
 - 上下文压缩：CompressionTierModule 三层压缩（L1提示/L2提醒/L3硬保底），模型可调 compress 工具主动压缩
 - 关注列表：系统循环下发规则，频道循环语义匹配
-- 睡觉系统：SystemEngine 定期评估大睡需求（需管理员许可），DreamEngineSpawnCheck 自动处理小睡/走神
-- 睡眠打断分级：走神被@醒、小睡需@+关键词叫醒（仅@触发梦话）、大睡仅管理员/任务可唤醒
+- 睡觉系统：DreamEngine 常驻循环（秩序+巡逻），由 force-sleep 信号触发启动，小睡/大睡通过信号展开
+- 睡眠打断分级：走神被@醒、小睡需@+关键词叫醒（仅@触发梦话）、大睡仅 force-wake 信号可唤醒
 - 睡眠期消息拦截：ChannelEngineSpawnCheck 按 CurrentSleepState 拦截，消息入库但不响应，醒来后自动补提取记忆
 - Prompt Caching：Claude 系 Core 启用 promptCaching，中转站已验证兼容
 - Token 统计：ModelCallLog 数据库表记录每次调用（含 usage + caller tag）。WebUI 已有 LogsProvider（`/p/logs/tokens` 和 `/p/logs/model`）提供可视化。

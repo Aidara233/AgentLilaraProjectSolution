@@ -8,5 +8,6 @@
   "TriangleClassifyMinCos": 0.7,
   "TriangleBufferSize": 10,
   "RelationBatchMaxTargets": 8,
-  "DecayThreshold": 0.05
+  "DecayThreshold": 0.05,
+  "ReviewIntervalHours": 4
 }
