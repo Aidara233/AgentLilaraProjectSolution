@@ -22,7 +22,7 @@ namespace AgentCoreProcessor.Engine
         {
             _roundImageHashes.Clear();
 
-            _currentModeDef ??= ModeConfigLoader.GetMode(_currentModeId);
+            _currentModeDef = ModeConfigLoader.GetMode(_currentModeId);
             if (_currentModeDef != null)
                 agentConfig.MaxRounds = _currentModeDef.MaxRounds;
 
