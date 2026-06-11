@@ -100,6 +100,8 @@ namespace AgentCoreProcessor.Engine
         /// <summary>静音模式：内部处理照常，但不产生对外输出。</summary>
         public bool MuteMode { get; set; } = false;
         public SleepState CurrentSleepState { get; set; } = SleepState.None;
+        public string? CurrentDreamPhase { get; set; }
+        public DateTime? DreamStartTime { get; set; }
         public McpServerManager? McpManager => mcpManager;
         public CrossRequestRegistry CrossRequests { get; private set; } = null!;
         public DelegationBus DelegationBus { get; private set; } = null!;

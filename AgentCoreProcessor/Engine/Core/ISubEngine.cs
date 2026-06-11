@@ -119,6 +119,12 @@ namespace AgentCoreProcessor.Engine
         /// <summary>当前睡眠状态（None=清醒）。DreamEngine 启动/结束时设置。</summary>
         SleepState CurrentSleepState { get; set; }
 
+        /// <summary>当前做梦阶段描述。DreamEngine 每次循环更新，供梦话生成使用。</summary>
+        string? CurrentDreamPhase { get; set; }
+
+        /// <summary>做梦开始时间。DreamEngine 启动时设置，结束时置 null。</summary>
+        DateTime? DreamStartTime { get; set; }
+
         /// <summary>MCP Server 管理器（可能为 null，如果 MCP 未初始化）。</summary>
         McpServerManager? McpManager { get; }
 

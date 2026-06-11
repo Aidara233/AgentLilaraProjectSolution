@@ -130,6 +130,11 @@ namespace AgentCoreProcessor.Engine
         // 本轮触发是否因 @提及（用于 impulse 额外扣减）
         private bool _triggerHadMention;
 
+        // 梦话系统
+        private readonly SleepTalkCore sleepTalkCore = new();
+        private bool _sleepTalkMode;
+        private bool _justWokenUp;
+
         // 模式配置驱动（Phase 2）：当前模式 ID 和定义
         private string _currentModeId = "express";
         private ModeDefinition? _currentModeDef;
@@ -382,6 +387,35 @@ namespace AgentCoreProcessor.Engine
             {
                 // 禁言期间不唤醒，消息照常 buffer
             }
+            else if (ctx.CurrentSleepState != SleepState.None)
+            {
+                // 睡觉状态：消息 buffer 但不触发思维，除非是 @提及
+                if (msg.IsMentioned && !msg.IsSelfTriggered)
+                {
+                    var isWakeKeyword = SleepUtils.ContainsWakeKeyword(msg.Content);
+                    var isLongMessage = SleepUtils.EstimateTokens(msg.Content) >= 15;
+                    if (isWakeKeyword || isLongMessage)
+                    {
+                        // 叫醒 → 走正常流程，第一轮注入起床气
+                        _justWokenUp = true;
+                        lock (bufferLock) { _bufferTriggered = true; }
+                        _triggerHadMention = true;
+                        Signal.Event(LogGroup.Engine, "睡眠叫醒",
+                            new { channelId, reason = isWakeKeyword ? "关键词" : "长消息吵醒", content = msg.Content[..Math.Min(30, msg.Content.Length)] });
+                        ScheduleBufferSignal();
+                    }
+                    else
+                    {
+                        // @提及 → 梦话
+                        lock (bufferLock) { _bufferTriggered = true; }
+                        _triggerHadMention = true;
+                        _sleepTalkMode = true;
+                        Signal.Event(LogGroup.Engine, "睡眠梦话触发",
+                            new { channelId, content = msg.Content[..Math.Min(30, msg.Content.Length)] });
+                        ScheduleBufferSignal();
+                    }
+                }
+            }
             else
             {
                 // 前置滤波：检查是否该响应
@@ -601,7 +635,13 @@ namespace AgentCoreProcessor.Engine
                     using var roundSpan = Signal.Open(LogGroup.Engine, $"处理轮次 #{_totalGateCycles} [{(isWorkingMode ? "Working" : "Express")}]",
                         new { channelId, mode = isWorkingMode ? "working" : "express" });
 
-                    if (isWorkingMode)
+                    if (_sleepTalkMode)
+                    {
+                        _sleepTalkMode = false;
+                        hadWorkThisRound = true;
+                        await GenerateAndSendSleepTalkAsync();
+                    }
+                    else if (isWorkingMode)
                     {
                         await ExecuteWorkingCycleAsync();
                     }
@@ -1056,6 +1096,72 @@ namespace AgentCoreProcessor.Engine
             var type = channelName.StartsWith("group") ? "群聊" : "私聊";
             parts.Add($"频道类型：{type}");
             return string.Join("\n", parts);
+        }
+
+        private async Task GenerateAndSendSleepTalkAsync()
+        {
+            try
+            {
+                var fragments = await CollectSleepTalkFragmentsAsync();
+                var talk = await sleepTalkCore.GenerateAsync(fragments);
+                if (string.IsNullOrWhiteSpace(talk)) return;
+                if (talk.Length > 50) talk = talk[..50];
+
+                var adapter = ctx.Adapters.ResolveByChannelId(channelName);
+                if (adapter != null)
+                {
+                    await adapter.SendMessageAsync(new OutgoingMessage
+                    {
+                        ChannelId = channelName,
+                        Content = talk
+                    });
+                    hadSpeakThisRound = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Signal.Warn(LogGroup.Engine, "梦话发送失败", new { error = ex.GetType().Name, message = ex.Message });
+            }
+        }
+
+        private async Task<List<string>> CollectSleepTalkFragmentsAsync()
+        {
+            var fragments = new List<string>();
+
+            // 当前梦境阶段
+            var phase = ctx.CurrentDreamPhase;
+            if (!string.IsNullOrEmpty(phase))
+                fragments.Add($"梦到了：{phase}");
+
+            // 其他频道的随机消息（排除本频道）
+            try
+            {
+                var allChannels = await ctx.Session.GetAllChannelsAsync();
+                var otherChannels = allChannels.Where(c => c.Id != channelId).ToList();
+                if (otherChannels.Count > 0)
+                {
+                    var rng = new Random();
+                    for (int i = 0; i < 3; i++)
+                    {
+                        var randomChannel = otherChannels[rng.Next(otherChannels.Count)];
+                        var recent = await ctx.Session.GetContextByChannelAsync(randomChannel.Id, limit: 3);
+                        if (recent.Count > 0)
+                        {
+                            var randomMsg = recent[rng.Next(recent.Count)];
+                            if (!string.IsNullOrEmpty(randomMsg.Content))
+                            {
+                                var snippet = randomMsg.Content.Length > 20
+                                    ? randomMsg.Content[..20] + "..."
+                                    : randomMsg.Content;
+                                fragments.Add(snippet);
+                            }
+                        }
+                    }
+                }
+            }
+            catch { /* 非关键路径 */ }
+
+            return fragments;
         }
     }
 }

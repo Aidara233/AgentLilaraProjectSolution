@@ -356,6 +356,13 @@ namespace AgentCoreProcessor.Engine
             if (fixedPrefix == null) fixedPrefix = BuildFixedPrefix();
             msgs.Add(new Message { Role = "user", Content = fixedPrefix });
 
+            // 1.5 叫醒提示（仅第一轮注入，注入后立即消费）
+            if (_justWokenUp)
+            {
+                _justWokenUp = false;
+                msgs.Add(new Message { Role = "user", Content = "[系统] 你刚被吵醒，还没完全清醒，语气带着起床气和迷糊。" });
+            }
+
             // 2. 上下文摘要（压缩后的历史）
             if (!string.IsNullOrEmpty(contextSummary))
                 msgs.Add(new Message { Role = "user", Content = $"[上下文摘要]\n{contextSummary}" });

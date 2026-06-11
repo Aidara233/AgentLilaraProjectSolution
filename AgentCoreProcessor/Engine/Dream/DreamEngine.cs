@@ -25,7 +25,6 @@ namespace AgentCoreProcessor.Engine
         private readonly DreamEngineSpawnCheck spawnCheck;
 
         private readonly RelationClassificationCore relationClassificationCore = new();
-        private readonly SleepTalkCore sleepTalkCore = new();
 
         private volatile bool shouldWake = false;
 
@@ -80,6 +79,7 @@ namespace AgentCoreProcessor.Engine
                 new { engineType = EngineType });
 
             ctx.CurrentSleepState = SleepState.DeepSleep;
+            ctx.DreamStartTime = DateTime.Now;
             var cfg = spawnCheck.GetConfig();
             embedSemaphore = new SemaphoreSlim(cfg.EmbedParallelLimit);
 
@@ -146,6 +146,8 @@ namespace AgentCoreProcessor.Engine
             spawnCheck.OnDreamCompleted(StepsCompleted);
 
             ctx.CurrentSleepState = SleepState.None;
+            ctx.DreamStartTime = null;
+            ctx.CurrentDreamPhase = null;
             IsAlive = false;
 
             lifeCtx.Close(new { engineType = EngineType, reason = "completed", steps = StepsCompleted, phase = CurrentPhase ?? "none" });
@@ -164,6 +166,7 @@ namespace AgentCoreProcessor.Engine
             }
 
             CurrentPhase = "order";
+            ctx.CurrentDreamPhase = $"整理记忆中，{temps.Count}条待处理";
 
             using var orderSpan = Signal.Open(LogGroup.Engine, "dream:order",
                 new { tempCount = temps.Count });
@@ -384,6 +387,7 @@ namespace AgentCoreProcessor.Engine
         private async Task RunPatrolAsync(int maxSteps, DreamConfig cfg)
         {
             CurrentPhase = "patrol";
+            ctx.CurrentDreamPhase = $"巡逻记忆中，已走{StepsCompleted}/{maxSteps}步";
             StepsTotal = maxSteps;
 
             patrol = new PatrolState { StepsBudget = maxSteps };
@@ -724,10 +728,8 @@ namespace AgentCoreProcessor.Engine
             if (e is MessageEvent msgEvent)
             {
                 var msg = msgEvent.Message;
-                if (msg.IsMentioned && ContainsWakeKeyword(msg.Content))
+                if (msg.IsMentioned && SleepUtils.ContainsWakeKeyword(msg.Content))
                     shouldWake = true;
-                else if (msg.IsMentioned)
-                    _ = ForceSleepTalkAsync(msg.Content);
             }
             // Note: force-review 信号由 ReviewEngineSpawnCheck 直接处理
         }
@@ -762,47 +764,6 @@ namespace AgentCoreProcessor.Engine
             }
 
             return Task.CompletedTask;
-        }
-
-        private static readonly string[] WakeKeywords =
-            ["起床", "醒醒", "wake", "起来", "叫醒", "别睡了", "醒来"];
-
-        private static bool ContainsWakeKeyword(string content)
-        {
-            var lower = content.ToLowerInvariant();
-            return WakeKeywords.Any(k => lower.Contains(k));
-        }
-
-        // ============================================================
-        // 梦话
-        // ============================================================
-
-        private async Task ForceSleepTalkAsync(string triggerContent)
-        {
-            try
-            {
-                var talk = await sleepTalkCore.GenerateAsync(
-                    CurrentPhase ?? "模糊的梦境",
-                    triggerContent.Length > 50 ? triggerContent[..50] : triggerContent);
-                if (string.IsNullOrWhiteSpace(talk)) return;
-                if (talk.Length > 50) talk = talk[..50];
-
-                var channels = await ctx.Session.GetAllChannelsAsync();
-                if (channels.Count == 0) return;
-                var targetChannel = channels[Random.Shared.Next(channels.Count)];
-                var parts = targetChannel.Name.Split(':', 2);
-                if (parts.Length != 2) return;
-                var sentId = await ctx.Adapters.SendMessageAsync(parts[0], new OutgoingMessage
-                {
-                    ChannelId = parts[1],
-                    Content = talk
-                });
-                await ctx.Session.SaveBotMessageAsync(targetChannel.Id, talk, sentId);
-            }
-            catch (Exception ex)
-            {
-                Signal.Warn(LogGroup.Engine, "梦话发送失败", new { error = ex.GetType().Name, message = ex.Message });
-            }
         }
 
         // ============================================================
