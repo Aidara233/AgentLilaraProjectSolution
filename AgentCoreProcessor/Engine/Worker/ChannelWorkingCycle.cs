@@ -55,14 +55,11 @@ namespace AgentCoreProcessor.Engine
                     agent!.History,
                     (summary, retained) =>
                     {
-                        contextSummary = summary;
-                        agent.ClearHistory();
-                        agent.AddToHistory(new Message { Role = "user", Content = fixedPrefix! });
-                        if (!string.IsNullOrEmpty(summary))
-                            agent.AddToHistory(new Message { Role = "user", Content = $"[上下文摘要]\n{summary}" });
-                        agent.ConversationOffset = agent.History.Count;
-                        foreach (var m in retained) agent.AddToHistory(m);
-                        PersistCurrentContext();
+                        // 暂存压缩结果，等 Agent.RunAsync 返回后再应用，
+                        // 避免在工具回调中 ClearHistory 导致当前这轮的 tool_use 丢失
+                        _pendingCompressionSummary = string.IsNullOrEmpty(summary) ? null : summary;
+                        _pendingCompressionRetained = retained;
+                        _pendingCompressionApply = true;
                     }), isNonComponent: true);
             }
 
@@ -228,6 +225,28 @@ namespace AgentCoreProcessor.Engine
             };
             agent.OnRoundCompleted = () =>
             {
+                // 延迟应用 compress 工具的压缩效果：
+                // compress 工具的回调仅暂存摘要和保留列表，等本轮 tool_result 已加入历史后再执行，
+                // 避免 tool_use/tool_result 配对断裂导致 Claude API 报 400
+                if (_pendingCompressionApply)
+                {
+                    _pendingCompressionApply = false;
+                    if (agent != null)
+                    {
+                        contextSummary = _pendingCompressionSummary;
+                        agent.ClearHistory();
+                        agent.AddToHistory(new Message { Role = "user", Content = fixedPrefix! });
+                        if (!string.IsNullOrEmpty(contextSummary))
+                            agent.AddToHistory(new Message { Role = "user", Content = $"[上下文摘要]\n{contextSummary}" });
+                        agent.ConversationOffset = agent.History.Count;
+                        if (_pendingCompressionRetained != null)
+                            foreach (var m in _pendingCompressionRetained)
+                                agent.AddToHistory(m);
+                        _pendingCompressionSummary = null;
+                        _pendingCompressionRetained = null;
+                    }
+                }
+
                 PersistCurrentContext();
                 loopControlModule.TrackSilentRound(hadSpeakThisRound);
 

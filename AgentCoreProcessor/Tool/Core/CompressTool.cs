@@ -31,7 +31,12 @@ namespace AgentCoreProcessor.Tool.Core
 
         public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
-            await _compression.CompressAsync(new List<Message>(_history), _onComplete);
+            var historyClone = new List<Message>(_history);
+            // 排除当前轮的 assistant 消息（即 compress 工具自身的 tool_use），
+            // 避免压缩产物中包含孤儿 tool_use（对应的 tool_result 将在回调后被 Agent 循环追加）
+            if (historyClone.Count > 0 && historyClone[^1].Role == "assistant")
+                historyClone.RemoveAt(historyClone.Count - 1);
+            await _compression.CompressAsync(historyClone, _onComplete);
             return new ToolResult { Status = "success", Data = "压缩完成。" };
         }
     }

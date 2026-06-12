@@ -144,6 +144,12 @@ namespace AgentCoreProcessor.Engine
         // escalate 理由暂存（Express→Working 时注入一次）
         private string? _escalateReason;
 
+        // 延迟压缩：compress 工具回调中暂存结果，Agent.RunAsync 返回后再应用，
+        // 避免工具回调中的 ClearHistory 导致 tool_use 丢失、tool_result 变成孤儿
+        private string? _pendingCompressionSummary;
+        private List<Message>? _pendingCompressionRetained;
+        private bool _pendingCompressionApply;
+
         // ── 统一循环 Phase 2：信号缓冲 + 双源注入 ──
         private readonly ConcurrentQueue<ChannelSignal> _signalBuffer = new();
         private readonly List<IInjectProvider> _injectProviders = new();
