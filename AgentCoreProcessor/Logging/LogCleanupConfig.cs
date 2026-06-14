@@ -8,7 +8,7 @@ internal class LogCleanupConfig
     public int SignalLogMaxMB { get; set; } = 300;
     public int ModelLogMaxMB { get; set; } = 500;
     public int CheckIntervalMinutes { get; set; } = 60;
-    public int TokenUsageRetainDays { get; set; } = 365;
+    public int TokenUsageRetainDays { get; set; } = 30;
 
     public static LogCleanupConfig Load(string path)
     {

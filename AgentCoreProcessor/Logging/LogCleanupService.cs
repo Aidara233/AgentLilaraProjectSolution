@@ -18,7 +18,9 @@ internal class LogCleanupService : IDisposable
     private readonly string _configPath;
     private LogCleanupConfig _config;
     private Timer? _timer;
+    private const int VacuumIntervalCycles = 6;
     private int _running;
+    private int _vacuumCycleCount;
 
     public LogCleanupService(ModelCallLogRepository modelCallLogRepo)
     {
@@ -97,6 +99,19 @@ internal class LogCleanupService : IDisposable
         }
 
         CleanupTokenUsage(conn);
+
+        // 周期性 VACUUM 回收磁盘空间（每 N 次清理执行一次）
+        if (Interlocked.Increment(ref _vacuumCycleCount) >= VacuumIntervalCycles)
+        {
+            Interlocked.Exchange(ref _vacuumCycleCount, 0);
+            try
+            {
+                using var vacCmd = conn.CreateCommand();
+                vacCmd.CommandText = "VACUUM";
+                vacCmd.ExecuteNonQuery();
+            }
+            catch { /* VACUUM 失败不影响主清理流程 */ }
+        }
     }
 
     private void CleanupTokenUsage(SqliteConnection conn)

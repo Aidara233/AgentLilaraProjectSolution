@@ -19,6 +19,8 @@ namespace AgentCoreProcessor.Memory
 
         // embedding 缓存：key = "m:{id}" / "t:{id}" / "p:{id}"，避免重复反序列化 BLOB
         private readonly ConcurrentDictionary<string, float[]> _embeddingCache = new();
+        private const int MaxCacheSize = 500;
+        private volatile int _cacheTrimGuard;
 
         // 综合排序权重
         private const float SimilarityWeight = 0.45f;
@@ -61,7 +63,30 @@ namespace AgentCoreProcessor.Memory
         private float[]? GetCachedVector(string key, byte[]? bytes)
         {
             if (bytes == null || bytes.Length == 0) return null;
-            return _embeddingCache.GetOrAdd(key, _ => VectorUtil.BytesToFloats(bytes));
+            var vec = _embeddingCache.GetOrAdd(key, _ => VectorUtil.BytesToFloats(bytes));
+            TrimCacheIfNeeded();
+            return vec;
+        }
+
+        private void TrimCacheIfNeeded()
+        {
+            if (_embeddingCache.Count <= MaxCacheSize) return;
+            if (Interlocked.CompareExchange(ref _cacheTrimGuard, 1, 0) != 0) return;
+            try
+            {
+                var count = _embeddingCache.Count;
+                if (count <= MaxCacheSize) return;
+                var keys = _embeddingCache.Keys.ToArray();
+                var removeCount = count - MaxCacheSize * 3 / 4;
+                if (removeCount <= 0) return;
+                var toRemove = keys.OrderBy(_ => Random.Shared.Next()).Take(removeCount);
+                foreach (var k in toRemove)
+                    _embeddingCache.TryRemove(k, out _);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _cacheTrimGuard, 0);
+            }
         }
 
         private float ComputeSimilarity(float[]? queryVec, byte[]? entryBytes, string cacheKey)
@@ -97,7 +122,10 @@ namespace AgentCoreProcessor.Memory
                 embeddingModel: VectorUtil.EmbeddingModelTag);
 
             if (vec != null)
+            {
                 _embeddingCache[TempKey(entry.Id)] = vec;
+                TrimCacheIfNeeded();
+            }
 
             return entry;
         }
