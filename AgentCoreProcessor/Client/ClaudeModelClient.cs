@@ -531,14 +531,51 @@ namespace AgentCoreProcessor.Client
             if (!resp.IsSuccessStatusCode)
             {
                 var respBody = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+
+                // 敏感数据脱敏
+                var sanitizedRequest = RedactSensitiveData(body ?? "");
+                var sanitizedResponse = RedactSensitiveData(respBody);
+
                 var dump = $"[{ts}] #{seq} {(int)resp.StatusCode} {request.RequestUri}\n\n" +
-                           $"=== REQUEST ===\n{body}\n\n" +
-                           $"=== RESPONSE ===\n{respBody}\n";
+                           $"=== REQUEST (sanitized) ===\n{sanitizedRequest}\n\n" +
+                           $"=== RESPONSE (sanitized) ===\n{sanitizedResponse}\n";
                 var path = Path.Combine(DumpDir, $"{ts}_{seq}_FAIL.txt");
                 await File.WriteAllTextAsync(path, dump, ct).ConfigureAwait(false);
             }
 
             return resp;
+        }
+
+        /// <summary>
+        /// 脱敏敏感字段：api_key, token, authorization
+        /// </summary>
+        private static string RedactSensitiveData(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return text;
+
+            // 脱敏 JSON 中的 api_key 字段
+            text = System.Text.RegularExpressions.Regex.Replace(
+                text,
+                @"""api_key""\s*:\s*""[^""]+""",
+                @"""api_key"":""[REDACTED]""",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+            // 脱敏 Authorization header
+            text = System.Text.RegularExpressions.Regex.Replace(
+                text,
+                @"Authorization:\s*[^\r\n]+",
+                "Authorization: [REDACTED]",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+            // 脱敏 Bearer token
+            text = System.Text.RegularExpressions.Regex.Replace(
+                text,
+                @"Bearer\s+[A-Za-z0-9_\-\.]+",
+                "Bearer [REDACTED]",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+            return text;
         }
     }
 }

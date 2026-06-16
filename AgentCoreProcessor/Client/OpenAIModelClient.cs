@@ -604,7 +604,7 @@ namespace AgentCoreProcessor.Client
                     _lineBuffer.Append(last);
             }
 
-            private readonly Regex ReasoningRegex = new(
+            private static readonly Regex ReasoningRegex = new(
                 @"""reasoning_content""\s*:\s*""([^""\\]*(?:\\.[^""\\]*)*)""",
                 RegexOptions.Compiled);
 

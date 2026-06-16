@@ -16,10 +16,13 @@ namespace AgentCoreProcessor.WebUI.Services
 
         public bool ValidateCredentials(string username, string password)
         {
-            var hash = WebConfig.HashPassword(password);
-            return config.Admins.Any(a =>
-                a.Username.Equals(username, System.StringComparison.OrdinalIgnoreCase)
-                && a.PasswordHash == hash);
+            var admin = config.Admins.FirstOrDefault(a =>
+                a.Username.Equals(username, System.StringComparison.OrdinalIgnoreCase));
+
+            if (admin == null)
+                return false;
+
+            return WebConfig.VerifyPassword(password, admin.PasswordHash);
         }
 
         public ClaimsPrincipal CreatePrincipal(string username)

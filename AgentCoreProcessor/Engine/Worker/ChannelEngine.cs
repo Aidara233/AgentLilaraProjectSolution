@@ -125,18 +125,18 @@ namespace AgentCoreProcessor.Engine
         private int _startInjectMaxId;
 
         // Express/Working 自适应切换
-        private bool isWorkingMode = false;
+        private volatile bool isWorkingMode = false;
 
         // 本轮触发是否因 @提及（用于 impulse 额外扣减）
         private bool _triggerHadMention;
 
         // 梦话系统
         private readonly SleepTalkCore sleepTalkCore = new();
-        private bool _sleepTalkMode;
-        private bool _justWokenUp;
+        private volatile bool _sleepTalkMode;
+        private volatile bool _justWokenUp;
 
         // 模式配置驱动（Phase 2）：当前模式 ID 和定义
-        private string _currentModeId = "express";
+        private volatile string _currentModeId = "express";
         private ModeDefinition? _currentModeDef;
 
         // 统一游标：两种模式共用的最后消费消息 DB Id
@@ -738,7 +738,10 @@ namespace AgentCoreProcessor.Engine
                         EnqueueMessage(sysMsg, lastContext);
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Logging.Signal.Warn(Logging.LogGroup.Engine, $"ChannelEngine 处理委托结果失败", ex);
+                }
                 gate.Signal();
                 return;
             }

@@ -24,6 +24,9 @@ namespace AgentCoreProcessor.Core
 
         private string cfgName = "Base";
 
+        // 配置缓存，避免频繁读取文件
+        private readonly Dictionary<string, (ApiClientCfg Config, IModelClient Client)> cfgCache = new();
+
         public IModelClient Client => client;
 
         public string CfgName
@@ -38,9 +41,23 @@ namespace AgentCoreProcessor.Core
                     cfgName = "Base";
                     return;
                 }
+
+                // 如果已缓存，直接使用
+                if (cfgCache.TryGetValue(value, out var cached))
+                {
+                    cfgName = value;
+                    client = cached.Client;
+                    LoadBasePrompt();
+                    return;
+                }
+
                 cfgName = value;
                 var cfg = ApiClientCfg.FromJson(File.ReadAllText(Path.Combine(cfgDirectoryPath, cfgName) + ".json"));
                 client = ModelClientFactory.Create(cfg);
+
+                // 缓存配置和客户端
+                cfgCache[value] = (cfg, client);
+
                 LoadBasePrompt();
             }
         }
