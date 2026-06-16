@@ -1211,19 +1211,6 @@ internal class ReviewRawEvaluationsSource : IDataSource
             catch { }
         }
 
-        // 回退：从 ReviewActions 解析 review_evaluate 记录（历史数据兼容）
-        var actions = await _engine.ReviewLogs.GetActionsBySessionAsync(sessionId);
-        foreach (var a in actions)
-        {
-            if (a.ActionType != "review_evaluate") continue;
-            arr2.Add(new JsonObject
-            {
-                ["target"] = "（历史记录）",
-                ["dimension"] = "—",
-                ["rating"] = a.Summary
-            });
-        }
-
         return new DataResult { Data = arr2, TotalCount = arr2.Count };
     }
 

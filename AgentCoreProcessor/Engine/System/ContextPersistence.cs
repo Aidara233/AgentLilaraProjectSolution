@@ -69,7 +69,7 @@ namespace AgentCoreProcessor.Engine
         }
 
         /// <summary>
-        /// 加载完整上下文（summary + JSONL）。检测格式版本，旧格式清空重建。
+        /// 加载完整上下文（summary + JSONL）。
         /// </summary>
         public (string? Summary, List<List<Message>> Rounds) LoadContext()
         {
@@ -101,14 +101,6 @@ namespace AgentCoreProcessor.Engine
 
                         var wrapper = JsonConvert.DeserializeObject<dynamic>(line);
                         if (wrapper == null) continue;
-
-                        // 版本检测：旧格式（无 FormatVersion）需清空重建
-                        int? version = wrapper.FormatVersion;
-                        if (version == null || version < FormatVersion)
-                        {
-                            ClearContext();
-                            return (summary, new List<List<Message>>());
-                        }
 
                         var messages = new List<Message>();
                         if (wrapper.User != null)
@@ -168,21 +160,6 @@ namespace AgentCoreProcessor.Engine
             catch (Exception ex)
             {
                 Signal.Warn(LogGroup.Engine, "摘要保存+清理失败", new { error = ex.Message });
-            }
-        }
-
-        private void ClearContext()
-        {
-            try
-            {
-                if (File.Exists(contextPath))
-                    File.Delete(contextPath);
-                if (File.Exists(statePath))
-                    File.Delete(statePath);
-            }
-            catch (Exception ex)
-            {
-                Signal.Warn(LogGroup.Engine, "上下文清理失败", new { error = ex.Message });
             }
         }
     }

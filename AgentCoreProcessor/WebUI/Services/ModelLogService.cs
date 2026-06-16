@@ -173,23 +173,6 @@ namespace AgentCoreProcessor.WebUI.Services
                         });
                     }
                 }
-                // 旧格式: "input" 数组
-                else if (obj["input"] is JArray inputArr)
-                {
-                    foreach (var item in inputArr)
-                    {
-                        messages.Add(new ModelLogMessage
-                        {
-                            Role = item["role"]?.ToString() ?? "",
-                            Content = item["content"]?.ToString() ?? ""
-                        });
-                    }
-                }
-                // 旧格式兼容: dynamicInput
-                else if (obj["dynamicInput"]?.ToString() is string di && !string.IsNullOrEmpty(di))
-                {
-                    messages.Add(new ModelLogMessage { Role = "user", Content = di });
-                }
 
                 // 工具列表
                 List<string>? tools = null;

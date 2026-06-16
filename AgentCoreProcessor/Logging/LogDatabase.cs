@@ -24,10 +24,6 @@ public class LogDatabase : IDisposable
             """;
         cmd.ExecuteNonQuery();
 
-        MigrateParentIdToText();
-        MigrateCauseSpanId();
-        MigrateIsSignalOrigin();
-
         using var cmd2 = _conn.CreateCommand();
         cmd2.CommandText = """
             CREATE TABLE IF NOT EXISTS events (
@@ -103,121 +99,6 @@ public class LogDatabase : IDisposable
         insert.Parameters.AddWithValue("@ts", ts);
         insert.Parameters.AddWithValue("@detail", $"{{\"unclosed\":{unclosed}}}");
         insert.ExecuteNonQuery();
-    }
-
-    private void MigrateParentIdToText()
-    {
-        using var check = _conn.CreateCommand();
-        check.CommandText = "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='events'";
-        var exists = (long)check.ExecuteScalar()! > 0;
-        if (!exists) return;
-
-        bool needsDrop = false;
-        using (var typeCheck = _conn.CreateCommand())
-        {
-            typeCheck.CommandText = "PRAGMA table_info(events)";
-            using var reader = typeCheck.ExecuteReader();
-            while (reader.Read())
-            {
-                if (reader.GetString(1) == "parent_id")
-                {
-                    var colType = reader.GetString(2).ToUpperInvariant();
-                    if (colType == "INTEGER" || colType == "")
-                        needsDrop = true;
-                    break;
-                }
-            }
-        }
-
-        if (needsDrop)
-        {
-            using var drop = _conn.CreateCommand();
-            drop.CommandText = "DROP TABLE events";
-            drop.ExecuteNonQuery();
-        }
-    }
-
-    private void MigrateCauseSpanId()
-    {
-        // Check if column already exists
-        using var check = _conn.CreateCommand();
-        check.CommandText = "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='events'";
-        if ((long)check.ExecuteScalar()! == 0) return;
-
-        bool hasColumn = false;
-        using (var colCheck = _conn.CreateCommand())
-        {
-            colCheck.CommandText = "PRAGMA table_info(events)";
-            using var reader = colCheck.ExecuteReader();
-            while (reader.Read())
-            {
-                if (reader.GetString(1) == "cause_span_id")
-                {
-                    hasColumn = true;
-                    break;
-                }
-            }
-        }
-
-        if (!hasColumn)
-        {
-            using var add = _conn.CreateCommand();
-            add.CommandText = "ALTER TABLE events ADD COLUMN cause_span_id TEXT";
-            add.ExecuteNonQuery();
-        }
-
-        // Move cross-scope parent_id values to cause_span_id
-        using var migrate = _conn.CreateCommand();
-        migrate.CommandText = """
-            UPDATE events SET
-                cause_span_id = parent_id,
-                parent_id = NULL
-            WHERE parent_id IS NOT NULL
-              AND cause_span_id IS NULL
-              AND EXISTS (
-                  SELECT 1 FROM events e2
-                  WHERE e2.span_id = events.parent_id
-                    AND e2.scope != events.scope
-              )
-            """;
-        migrate.ExecuteNonQuery();
-    }
-
-    private void MigrateIsSignalOrigin()
-    {
-        using var check = _conn.CreateCommand();
-        check.CommandText = "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='events'";
-        if ((long)check.ExecuteScalar()! == 0) return;
-
-        bool hasColumn = false;
-        using (var colCheck = _conn.CreateCommand())
-        {
-            colCheck.CommandText = "PRAGMA table_info(events)";
-            using var reader = colCheck.ExecuteReader();
-            while (reader.Read())
-            {
-                if (reader.GetString(1) == "is_signal_origin")
-                {
-                    hasColumn = true;
-                    break;
-                }
-            }
-        }
-
-        if (!hasColumn)
-        {
-            using var add = _conn.CreateCommand();
-            add.CommandText = "ALTER TABLE events ADD COLUMN is_signal_origin INTEGER NOT NULL DEFAULT 0";
-            add.ExecuteNonQuery();
-        }
-
-        // Backfill: only Signal.Begin events (no parent, no cause) are true origins
-        using var backfill = _conn.CreateCommand();
-        backfill.CommandText = """
-            UPDATE events SET is_signal_origin = 1
-            WHERE type = 'open' AND parent_id IS NULL AND cause_span_id IS NULL
-            """;
-        backfill.ExecuteNonQuery();
     }
 
     public SqliteConnection Connection => _conn;

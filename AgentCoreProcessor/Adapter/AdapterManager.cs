@@ -34,9 +34,6 @@ namespace AgentCoreProcessor.Adapter
         {
             if (!Directory.Exists(configDirectory)) return;
 
-            // 旧配置迁移：如果存在 OneBotAdapter.json 且无 id 字段，转换为新格式
-            MigrateLegacyConfig();
-
             foreach (var file in Directory.GetFiles(configDirectory, "*.json"))
             {
                 try
@@ -54,35 +51,6 @@ namespace AgentCoreProcessor.Adapter
                 {
                     Signal.Error(LogGroup.Adapter, "适配器配置加载失败", new { file = Path.GetFileName(file), error = ex.Message });
                 }
-            }
-        }
-
-        private void MigrateLegacyConfig()
-        {
-            var legacyPath = Path.Combine(configDirectory, "OneBotAdapter.json");
-            if (!File.Exists(legacyPath)) return;
-
-            try
-            {
-                var json = File.ReadAllText(legacyPath);
-                var legacy = JsonConvert.DeserializeObject<Newtonsoft.Json.Linq.JObject>(json);
-                if (legacy == null || legacy.ContainsKey("id")) return;
-
-                var newConfig = new AdapterInstanceConfig
-                {
-                    Id = "qq-main",
-                    Type = "onebot",
-                    Enabled = true,
-                    Settings = legacy
-                };
-
-                var newPath = Path.Combine(configDirectory, "qq-main.json");
-                File.WriteAllText(newPath, JsonConvert.SerializeObject(newConfig, Formatting.Indented));
-                File.Delete(legacyPath);
-            }
-            catch (Exception ex)
-            {
-                Signal.Error(LogGroup.Adapter, "旧配置迁移失败", new { path = legacyPath, error = ex.Message });
             }
         }
 

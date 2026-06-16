@@ -209,12 +209,6 @@ namespace AgentCoreProcessor.Engine
                         isWorkingMode = true;
                         _currentModeId = savedMode;
                     }
-                    else if (savedMode == "working")
-                    {
-                        // 兼容旧持久化格式（savedMode 为字面量 "working"）
-                        isWorkingMode = true;
-                        _currentModeId = ModeConfigLoader.GetEscalateTarget();
-                    }
                     else
                     {
                         _currentModeId = savedMode;
@@ -280,12 +274,6 @@ namespace AgentCoreProcessor.Engine
                     {
                         isWorkingMode = true;
                         _currentModeId = savedMode;
-                    }
-                    else if (savedMode == "working")
-                    {
-                        // 兼容旧持久化格式（savedMode 为字面量 "working"）
-                        isWorkingMode = true;
-                        _currentModeId = ModeConfigLoader.GetEscalateTarget();
                     }
                     else
                     {

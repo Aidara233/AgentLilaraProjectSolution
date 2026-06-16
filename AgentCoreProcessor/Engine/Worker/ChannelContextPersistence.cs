@@ -105,25 +105,6 @@ namespace AgentCoreProcessor.Engine
                             if (msgs is { Count: > 0 }) rounds.Add(msgs);
                         }
                     }
-                    else
-                    {
-                        // V1 兼容：rounds 是 { User: [], Assistant: [] } 格式
-                        foreach (var round in wrapper.Rounds)
-                        {
-                            var msgs = new List<Message>();
-                            if (round.User != null)
-                            {
-                                var userMsgs = DeserializeMessages(round.User);
-                                if (userMsgs != null) msgs.AddRange(userMsgs);
-                            }
-                            if (round.Assistant != null)
-                            {
-                                var asstMsgs = DeserializeMessages(round.Assistant);
-                                if (asstMsgs != null) msgs.AddRange(asstMsgs);
-                            }
-                            if (msgs.Count > 0) rounds.Add(msgs);
-                        }
-                    }
                 }
                 return (summary, mode, rounds, cursor, reason);
             }

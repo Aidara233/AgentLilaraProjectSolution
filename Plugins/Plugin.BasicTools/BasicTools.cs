@@ -147,43 +147,6 @@ namespace Plugin.BasicTools
                 if (list.Count > 0) return list;
             }
 
-            // 兼容旧格式：JSON 字符串数组反序列化
-            try
-            {
-                var list = System.Text.Json.JsonSerializer.Deserialize<List<string>>(raw);
-                if (list != null)
-                {
-                    list.RemoveAll(string.IsNullOrWhiteSpace);
-                    if (list.Count > 0) return list;
-                }
-            }
-            catch { }
-
-            // 兼容路径：手动解析 JSON 数组或 {"content": [...]} 对象
-            try
-            {
-                var node = JsonNode.Parse(raw);
-                JsonArray? arr = null;
-                if (node is JsonArray a)
-                    arr = a;
-                else if (node is JsonObject obj && obj.TryGetPropertyValue("content", out var cv) && cv is JsonArray ca)
-                    arr = ca;
-
-                if (arr != null)
-                {
-                    var list = new List<string>();
-                    foreach (var item in arr)
-                    {
-                        if (item == null) continue;
-                        var s = item.GetValue<string>();
-                        if (!string.IsNullOrWhiteSpace(s))
-                            list.Add(s);
-                    }
-                    if (list.Count > 0) return list;
-                }
-            }
-            catch { }
-
             // 最终 fallback：单条字符串
             return [raw];
         }
