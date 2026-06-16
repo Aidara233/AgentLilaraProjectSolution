@@ -338,9 +338,10 @@ namespace AgentCoreProcessor.Adapter
                 pendingCalls.TryRemove(echo, out _);
                 return null;
             }
-            catch
+            catch (Exception ex)
             {
                 pendingCalls.TryRemove(echo, out _);
+                Logging.Signal.Warn(Logging.LogGroup.Adapter, $"OneBot API 调用失败: {action}", ex);
                 return null;
             }
         }
@@ -351,19 +352,29 @@ namespace AgentCoreProcessor.Adapter
             {
                 var baseUrl = config.HttpUrl.TrimEnd('/');
                 var httpToken = !string.IsNullOrEmpty(config.HttpToken) ? config.HttpToken : config.Token;
-                var url = !string.IsNullOrEmpty(httpToken)
-                    ? $"{baseUrl}/{action}?access_token={Uri.EscapeDataString(httpToken)}"
-                    : $"{baseUrl}/{action}";
+                var url = $"{baseUrl}/{action}";
 
                 var content = new StringContent((param ?? new JObject()).ToString(Formatting.None),
                     Encoding.UTF8, "application/json");
 
-                using var resp = await HttpClient.PostAsync(url, content);
+                var request = new HttpRequestMessage(HttpMethod.Post, url)
+                {
+                    Content = content
+                };
+
+                // 使用 Header 传递 token，而不是 URL 参数
+                if (!string.IsNullOrEmpty(httpToken))
+                {
+                    request.Headers.Add("Authorization", $"Bearer {httpToken}");
+                }
+
+                using var resp = await HttpClient.SendAsync(request);
                 var body = await resp.Content.ReadAsStringAsync();
                 return JObject.Parse(body);
             }
-            catch
+            catch (Exception ex)
             {
+                Logging.Signal.Warn(Logging.LogGroup.Adapter, $"OneBot HTTP API 调用失败: {action}", ex);
                 return null;
             }
         }

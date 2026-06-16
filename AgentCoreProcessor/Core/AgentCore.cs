@@ -152,7 +152,10 @@ namespace AgentCoreProcessor.Core
                         if (!call.Validate().Any())
                             calls.Add(call);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        Logging.Signal.Warn(Logging.LogGroup.Engine, $"解析工具调用失败: {json}", ex);
+                    }
                 }
                 else
                 {
