@@ -5,11 +5,22 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <PublishTrimmed>false</PublishTrimmed>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PublishSingleFile>false</PublishSingleFile>
+    <!-- 发布时不生成调试符号 -->
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <!-- 从发布输出中排除所有 .pdb 文件 -->
+    <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
   </PropertyGroup>
+
+  <!-- 保护主程序集不被裁剪，避免 Blazor 组件被误删 -->
+  <ItemGroup>
+    <TrimmerRootAssembly Include="AgentCoreProcessor" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Anthropic.SDK" Version="5.10.0" />
@@ -39,5 +50,16 @@
   <ItemGroup>
     <Content Remove="paths.json" />
   </ItemGroup>
+
+  <!-- 发布后清理所有 .pdb 文件 -->
+  <Target Name="RemovePdbFiles" AfterTargets="Publish">
+    <ItemGroup>
+      <PdbFiles Include="$(PublishDir)*.pdb" />
+      <PdbFilesRecursive Include="$(PublishDir)**\*.pdb" />
+    </ItemGroup>
+    <Delete Files="@(PdbFiles)" />
+    <Delete Files="@(PdbFilesRecursive)" />
+    <Message Text="已删除发布目录中的所有 .pdb 文件" Importance="high" />
+  </Target>
 
 </Project>
