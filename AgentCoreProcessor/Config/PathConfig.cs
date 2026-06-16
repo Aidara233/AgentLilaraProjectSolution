@@ -43,8 +43,9 @@ namespace AgentCoreProcessor.Config
             }
 
             var json = JObject.Parse(File.ReadAllText(configPath));
-            StoragePath = json["storagePath"]?.ToString()
-                ?? throw new InvalidOperationException("paths.json 中缺少 storagePath 字段");
+            StoragePath = json["storagePath"]?.ToString() ?? "";
+            if (string.IsNullOrEmpty(StoragePath))
+                StoragePath = Path.Combine(baseDir, "Storage");
 
             // 检查 Storage 是否已初始化，未初始化则重新部署
             if (!Directory.Exists(CoreConfigPath) || !File.Exists(Path.Combine(CoreConfigPath, "Base.json")))

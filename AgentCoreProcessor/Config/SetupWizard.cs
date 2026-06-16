@@ -87,10 +87,9 @@ namespace AgentCoreProcessor.Config
                 umiAutoStart = auto == "y" || auto == "yes";
                 if (umiAutoStart)
                 {
-                    var defaultExe = @"E:\Tool\Umi-OCR_Paddle_v2.1.4\Umi-OCR.exe";
-                    Console.Write($"   Umi-OCR.exe 路径 [{defaultExe}]: ");
+                    Console.Write("   Umi-OCR.exe 路径: ");
                     var path = Console.ReadLine()?.Trim();
-                    umiExePath = string.IsNullOrEmpty(path) ? defaultExe : path;
+                    umiExePath = path ?? "";
                 }
             }
             Console.WriteLine();
