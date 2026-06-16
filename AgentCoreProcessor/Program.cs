@@ -287,6 +287,7 @@ namespace AgentCoreProcessor
                 WebRootPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "WebUI", "wwwroot")
             });
 
+            builder.WebHost.UseStaticWebAssets();
             builder.WebHost.UseUrls($"http://0.0.0.0:{webConfig.Port}");
             builder.Logging.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Warning);
 
