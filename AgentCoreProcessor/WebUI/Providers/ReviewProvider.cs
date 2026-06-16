@@ -1143,7 +1143,7 @@ internal class ReviewConfigSource : IDataSource
 }
 
 /// <summary>
-/// 会话的原始评价记录（优先从 RawEvaluations 快照读取，回退到 ReviewActions 解析）
+/// 会话的原始评价记录（从 RawEvaluations 快照读取）
 /// </summary>
 internal class ReviewRawEvaluationsSource : IDataSource
 {
