@@ -17,5 +17,5 @@
     "thinking": {"type": "disabled"}
   },
   "n": 1,
-  "promptFiles": ["Persona.txt", "WorkingPrompt.txt"]
+  "promptFiles": ["identity.txt", "style.txt", "social.txt", "architecture_overview.txt", "tech_rules.txt", "working_workflow.txt"]
 }

@@ -1,4 +1,4 @@
-using System.Text.Json;
+using Newtonsoft.Json;
 
 namespace AgentCoreProcessor.Logging;
 
@@ -203,7 +203,7 @@ public class SignalContext : IDisposable
     {
         if (detail == null) return null;
         if (detail is string s) return s;
-        return JsonSerializer.Serialize(detail);
+        return JsonConvert.SerializeObject(detail);
     }
 }
 

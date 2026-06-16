@@ -16,7 +16,6 @@ namespace AgentCoreProcessor.Database
 
         public DbManager(string dbPath)
         {
-            // 用 Microsoft.Data.Sqlite 设置 WAL 模式（sqlite-net-pcl 的 Execute 对 PRAGMA 会误抛异常）
             Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
             using (var setupConn = new SqliteConnection($"Data Source={dbPath}"))
             {
@@ -31,77 +30,294 @@ namespace AgentCoreProcessor.Database
             db = new SQLiteAsyncConnection(dbPath);
         }
 
-        public async Task InitAsync()
+        /// <summary>
+        /// 绕过 sqlite-net-pcl 1.9.172 bug：CreateTable 创建新表后未重新查询 PRAGMA table_info，
+        /// 导致迁移代码试图 ALTER TABLE ADD COLUMN（含 PRIMARY KEY），SQLite 拒绝。
+        /// </summary>
+        private async Task SafeCreateTable(string sql)
         {
-            await db.CreateTableAsync<Person>();
-            await db.CreateTableAsync<User>();
-            await db.CreateTableAsync<Channel>();
-            await db.CreateTableAsync<UserMessage>();
-            await db.CreateTableAsync<MemoryEntry>();
-            await db.CreateTableAsync<TempMemoryEntry>();
-            await db.CreateTableAsync<MemoryLink>();
-            await db.CreateTableAsync<PersonaMemoryEntry>();
-            await db.CreateTableAsync<Beacon>();
-            await db.CreateTableAsync<ImageRecord>();
-            await db.CreateTableAsync<DreamSession>();
-            await db.CreateTableAsync<DreamFragment>();
-            await db.CreateTableAsync<DreamFragmentDetail>();
-            await db.CreateTableAsync<ModelCallLog>();
-            // migration: 2026-05-24 添加 IsError 列
-            try { await db.ExecuteAsync("ALTER TABLE ModelCallLogs ADD COLUMN IsError INTEGER NOT NULL DEFAULT 0"); }
-            catch (Exception ex) when (ex.Message.Contains("duplicate column")) { /* 列已存在，跳过 */ }
-
-            // migration: 2026-06-01 双轴记忆模型 (Confidence→Certainty, 命中追踪, 被取代标记)
-            try { await db.ExecuteAsync("ALTER TABLE Memories ADD COLUMN Certainty REAL NOT NULL DEFAULT 1.0"); }
-            catch (Exception ex) when (ex.Message.Contains("duplicate column")) { }
-            try { await db.ExecuteAsync("ALTER TABLE Memories ADD COLUMN RecallCount INTEGER NOT NULL DEFAULT 0"); }
-            catch (Exception ex) when (ex.Message.Contains("duplicate column")) { }
-            try { await db.ExecuteAsync("ALTER TABLE Memories ADD COLUMN LastRecalledAt TEXT"); }
-            catch (Exception ex) when (ex.Message.Contains("duplicate column")) { }
-            try { await db.ExecuteAsync("ALTER TABLE Memories ADD COLUMN IsSuperseded INTEGER NOT NULL DEFAULT 0"); }
-            catch (Exception ex) when (ex.Message.Contains("duplicate column")) { }
-            // 现有数据迁移：旧 Confidence 字符串 → Certainty 浮点
-            try { await db.ExecuteAsync("UPDATE Memories SET Certainty = 1.0 WHERE Confidence = 'high'"); }
-            catch { }
-            try { await db.ExecuteAsync("UPDATE Memories SET Certainty = 0.3 WHERE Confidence = 'low'"); }
-            catch { }
-
-            // migration: 2026-06-01 双边轴模型 (Strength→Relevance, 加 Support)
-            try { await db.ExecuteAsync("ALTER TABLE MemoryLinks ADD COLUMN Support REAL NOT NULL DEFAULT 1.0"); }
-            catch (Exception ex) when (ex.Message.Contains("duplicate column")) { }
-
-            // migration: 2026-06-02 临时记忆热度模型
-            try { await db.ExecuteAsync("ALTER TABLE TempMemories ADD COLUMN Heat REAL NOT NULL DEFAULT 0.3"); }
-            catch (Exception ex) when (ex.Message.Contains("duplicate column")) { }
-            await db.CreateTableAsync<PersonTrait>();
-            await db.CreateTableAsync<EvaluationScore>();
-            await db.CreateTableAsync<ReviewSession>();
-            await db.CreateTableAsync<ReviewAction>();
-
-            // migration: 2026-06-03 添加 RawEvaluations 快照列
-            try { await db.ExecuteAsync("ALTER TABLE ReviewSessions ADD COLUMN RawEvaluations TEXT"); }
-            catch (Exception ex) when (ex.Message.Contains("duplicate column")) { }
-
-            // migration: 2026-06-05 向量模型版本标记
-            try { await db.ExecuteAsync("ALTER TABLE Memories ADD COLUMN EmbeddingModel TEXT"); }
-            catch (Exception ex) when (ex.Message.Contains("duplicate column")) { }
-            try { await db.ExecuteAsync("ALTER TABLE TempMemories ADD COLUMN EmbeddingModel TEXT"); }
-            catch (Exception ex) when (ex.Message.Contains("duplicate column")) { }
-            try { await db.ExecuteAsync("ALTER TABLE PersonaMemories ADD COLUMN EmbeddingModel TEXT"); }
-            catch (Exception ex) when (ex.Message.Contains("duplicate column")) { }
+            try { await db.ExecuteAsync(sql); }
+            catch (Exception ex) { Console.Error.WriteLine($"[DB] SafeCreateTable FAILED: {ex.Message}"); throw; }
         }
 
-        /// <summary>
-        /// 重建记忆相关表（DROP + CREATE）。用于结构变更后清除不兼容数据。
-        /// </summary>
-        public async Task RebuildMemoryTablesAsync()
+        private const string T_PERSON = @"
+            CREATE TABLE IF NOT EXISTS Persons (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                Name TEXT NOT NULL,
+                Aliases TEXT,
+                TrustLevel INTEGER,
+                TrustProgress REAL,
+                FastMemory TEXT,
+                AlertLevel INTEGER,
+                LastAlertTime INTEGER,
+                CreatedAt INTEGER
+            )";
+
+        private const string T_USER = @"
+            CREATE TABLE IF NOT EXISTS Users (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                PersonId INTEGER,
+                Platform TEXT,
+                PlatformId TEXT,
+                PermissionLevel INTEGER,
+                DisplayName TEXT
+            )";
+
+        private const string T_CHANNEL = @"
+            CREATE TABLE IF NOT EXISTS Channels (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                Name TEXT NOT NULL,
+                Affinity REAL,
+                LastExtractedMessageId INTEGER
+            )";
+
+        private const string T_USERMSG = @"
+            CREATE TABLE IF NOT EXISTS UserMessages (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                UserId INTEGER,
+                ChannelId INTEGER,
+                Content TEXT,
+                SenderName TEXT,
+                Time INTEGER,
+                IsFromBot INTEGER,
+                PlatformMessageId TEXT,
+                ImageCount INTEGER,
+                ImageHashes TEXT,
+                ReplyToPlatformMessageId TEXT,
+                MentionedPlatformIds TEXT
+            )";
+
+        private const string T_MEMORY = @"
+            CREATE TABLE IF NOT EXISTS Memories (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                PersonId INTEGER,
+                ChannelId INTEGER,
+                Type TEXT,
+                Subject TEXT,
+                Content TEXT,
+                Embedding BLOB,
+                Importance REAL,
+                Confidence TEXT,
+                Feedback TEXT,
+                SourceMessageId INTEGER,
+                SourceMemoryIds TEXT,
+                IsDerived INTEGER,
+                SourceHash TEXT,
+                LastDreamTime INTEGER,
+                IsPersistent INTEGER,
+                ExpiresAt INTEGER,
+                CreatedAt INTEGER,
+                LastAccessedAt INTEGER,
+                Certainty REAL,
+                RecallCount INTEGER,
+                LastRecalledAt INTEGER,
+                IsSuperseded INTEGER,
+                EmbeddingModel TEXT
+            )";
+
+        private const string T_TEMPMEM = @"
+            CREATE TABLE IF NOT EXISTS TempMemories (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                PersonId INTEGER,
+                ChannelId INTEGER,
+                Type TEXT,
+                Subject TEXT,
+                Content TEXT,
+                Embedding BLOB,
+                SourceMessageId INTEGER,
+                Confidence TEXT,
+                CreatedAt INTEGER,
+                Heat REAL,
+                EmbeddingModel TEXT
+            )";
+
+        private const string T_MEMLINK = @"
+            CREATE TABLE IF NOT EXISTS MemoryLinks (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                SourceId INTEGER,
+                TargetId INTEGER,
+                Strength REAL,
+                LinkType TEXT,
+                CreatedAt INTEGER,
+                UpdatedAt INTEGER,
+                Support REAL
+            )";
+
+        private const string T_PERSONAMEM = @"
+            CREATE TABLE IF NOT EXISTS PersonaMemories (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                Content TEXT,
+                Embedding BLOB,
+                Category TEXT,
+                CreatedAt INTEGER,
+                EmbeddingModel TEXT
+            )";
+
+        private const string T_BEACON = @"
+            CREATE TABLE IF NOT EXISTS Beacons (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                Content TEXT,
+                MessageId INTEGER,
+                PersonId INTEGER,
+                ChannelId INTEGER,
+                Source TEXT,
+                Consumer TEXT,
+                IsProcessed INTEGER,
+                CreatedAt INTEGER,
+                ProcessedAt INTEGER
+            )";
+
+        private const string T_IMAGE = @"
+            CREATE TABLE IF NOT EXISTS ImageRecords (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                Hash TEXT,
+                LocalPath TEXT,
+                ThumbnailPath TEXT,
+                SourceUrl TEXT,
+                Category TEXT,
+                Description TEXT,
+                OcrText TEXT,
+                HasText INTEGER,
+                SeenCount INTEGER,
+                FileSize INTEGER,
+                CreatedAt INTEGER,
+                Phase INTEGER,
+                Classification TEXT,
+                FirstSeenMessageId INTEGER,
+                RefineFocus TEXT
+            )";
+
+        private const string T_DREAMSESSION = @"
+            CREATE TABLE IF NOT EXISTS DreamSessions (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                Level TEXT,
+                StartTime INTEGER,
+                EndTime INTEGER,
+                FragmentsExecuted INTEGER,
+                WasInterrupted INTEGER
+            )";
+
+        private const string T_DREAMFRAG = @"
+            CREATE TABLE IF NOT EXISTS DreamFragments (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                SessionId INTEGER,
+                Type TEXT,
+                SeqIndex INTEGER,
+                StartTime INTEGER,
+                DurationSeconds REAL,
+                Success INTEGER,
+                Summary TEXT,
+                InputMemoryIds TEXT,
+                OutputRaw TEXT
+            )";
+
+        private const string T_DREAMFRAGDETAIL = @"
+            CREATE TABLE IF NOT EXISTS DreamFragmentDetails (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                FragmentId INTEGER,
+                Action TEXT,
+                MemoryId INTEGER,
+                OldValue TEXT,
+                NewValue TEXT,
+                Note TEXT
+            )";
+
+        private const string T_MODELCALLLOG = @"
+            CREATE TABLE IF NOT EXISTS ModelCallLogs (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                Timestamp INTEGER,
+                CoreName TEXT,
+                Model TEXT,
+                Provider TEXT,
+                InputTokens INTEGER,
+                OutputTokens INTEGER,
+                CacheCreationTokens INTEGER,
+                CacheReadTokens INTEGER,
+                CacheHitTokens INTEGER,
+                LogFileName TEXT,
+                IsError INTEGER
+            )";
+
+        private const string T_PERSONTRAIT = @"
+            CREATE TABLE IF NOT EXISTS PersonTraits (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                PersonId INTEGER,
+                Category TEXT,
+                Key TEXT,
+                Value TEXT,
+                Confidence REAL,
+                SourceHint TEXT,
+                UpdatedAt INTEGER
+            )";
+
+        private const string T_EVALSCORE = @"
+            CREATE TABLE IF NOT EXISTS EvaluationScores (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                TargetType TEXT,
+                TargetId INTEGER,
+                Dimension TEXT,
+                Value REAL,
+                LastEvaluatedAt INTEGER
+            )";
+
+        private const string T_REVIEWSESSION = @"
+            CREATE TABLE IF NOT EXISTS ReviewSessions (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                SignalId TEXT,
+                StartTime INTEGER,
+                EndTime INTEGER,
+                SeedType TEXT,
+                StopReason TEXT,
+                TokensUsed INTEGER,
+                RoundsExecuted INTEGER,
+                ChannelsVisited TEXT,
+                PersonsEncountered TEXT,
+                ThinkingNotes TEXT,
+                EvaluationCount INTEGER,
+                RawEvaluations TEXT
+            )";
+
+        private const string T_REVIEWACTION = @"
+            CREATE TABLE IF NOT EXISTS ReviewActions (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                SessionId INTEGER,
+                SeqIndex INTEGER,
+                Time INTEGER,
+                ActionType TEXT,
+                Summary TEXT,
+                Detail TEXT
+            )";
+
+        public async Task InitAsync()
         {
-            await db.ExecuteAsync("DROP TABLE IF EXISTS TempMemories");
-            await db.ExecuteAsync("DROP TABLE IF EXISTS Memories");
-            await db.ExecuteAsync("DROP TABLE IF EXISTS MemoryLinks");
-            await db.CreateTableAsync<TempMemoryEntry>();
-            await db.CreateTableAsync<MemoryEntry>();
-            await db.CreateTableAsync<MemoryLink>();
+            await SafeCreateTable(T_PERSON);
+            await SafeCreateTable(T_USER);
+            await SafeCreateTable(T_CHANNEL);
+            await SafeCreateTable(T_USERMSG);
+            await SafeCreateTable(T_MEMORY);
+            await SafeCreateTable(T_TEMPMEM);
+            await SafeCreateTable(T_MEMLINK);
+            await SafeCreateTable(T_PERSONAMEM);
+            await SafeCreateTable(T_BEACON);
+            await SafeCreateTable(T_IMAGE);
+            await SafeCreateTable(T_DREAMSESSION);
+            await SafeCreateTable(T_DREAMFRAG);
+            await SafeCreateTable(T_DREAMFRAGDETAIL);
+            await SafeCreateTable(T_MODELCALLLOG);
+            await SafeCreateTable(T_PERSONTRAIT);
+            await SafeCreateTable(T_EVALSCORE);
+            await SafeCreateTable(T_REVIEWSESSION);
+            await SafeCreateTable(T_REVIEWACTION);
+
+            // 索引（sqlite-net [Indexed] 属性的等价物）
+            await db.ExecuteAsync("CREATE UNIQUE INDEX IF NOT EXISTS idx_ImageRecords_Hash ON ImageRecords(Hash)");
+            await db.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_DreamFragments_SessionId ON DreamFragments(SessionId)");
+            await db.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_DreamFragmentDetails_FragmentId ON DreamFragmentDetails(FragmentId)");
+            await db.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_ModelCallLogs_Timestamp ON ModelCallLogs(Timestamp)");
+            await db.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_ModelCallLogs_CoreName ON ModelCallLogs(CoreName)");
+            await db.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_PersonTraits_PersonId ON PersonTraits(PersonId)");
+            await db.ExecuteAsync("CREATE UNIQUE INDEX IF NOT EXISTS idx_EvaluationScores_Target ON EvaluationScores(TargetType, TargetId, Dimension)");
+            await db.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_ReviewActions_SessionId ON ReviewActions(SessionId)");
         }
 
         /// <summary>插入一条记录，返回受影响的行数。</summary>

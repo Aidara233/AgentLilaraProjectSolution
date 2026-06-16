@@ -24,13 +24,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="paths.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
     <None Update="templates\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <Content Include="WebUI\wwwroot\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" LinkBase="WebUI\wwwroot" />
+  </ItemGroup>
+
+  <!-- paths.json 不由构建拷贝，首次启动由 SetupWizard 生成 -->
+  <ItemGroup>
+    <Content Remove="paths.json" />
   </ItemGroup>
 
 </Project>
