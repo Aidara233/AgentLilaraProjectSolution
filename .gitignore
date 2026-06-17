@@ -368,3 +368,8 @@ web.config
 # Fody - auto-generated XML schema
 FodyWeavers.xsd.claude/
 .claude/
+
+# Playwright 浏览器二进制
+Storage/Plugins/Plugin.NetworkTools/Browsers/
+PlaywrightDemo/bin/
+PlaywrightDemo/obj/
