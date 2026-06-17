@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
@@ -204,13 +205,13 @@ namespace AgentCoreProcessor.Engine
             lock (engineLock) { return activeEngines.Where(e => e.IsAlive).ToList(); }
         }
 
-        /// <summary>收集所有组件工具（Global + 所有活跃 Loop），供 WebUI 查询。</summary>
+        /// <summary>收集所有组件工具（Global + 所有已注册的 Loop 组件），供 WebUI 查询。</summary>
         public List<ITool> GetAllComponentTools()
         {
             var tools = new List<ITool>();
             var toolNames = new HashSet<string>();
 
-            // 1. Global 组件工具
+            // 1. Global 组件工具（从实际运行的实例获取）
             if (GlobalComponentHost != null)
             {
                 foreach (var tool in GlobalComponentHost.GetAllTools())
@@ -220,7 +221,7 @@ namespace AgentCoreProcessor.Engine
                 }
             }
 
-            // 2. 所有活跃引擎的 Loop 组件工具（去重）
+            // 2. 活跃引擎的 Loop 组件工具
             foreach (var engine in GetActiveEnginesSnapshot())
             {
                 if (engine.ComponentHost != null)
@@ -232,6 +233,36 @@ namespace AgentCoreProcessor.Engine
                     }
                 }
             }
+
+            // 3. 未被活跃引擎覆盖的 Loop 组件（通过临时实例化获取工具列表）
+            // 这确保 WebUI 能看到所有可能的工具，即使对应的引擎尚未启动
+            var loopRegs = ComponentRegistry.GetAll()
+                .Where(r => r.Scope == ComponentScope.Loop);
+
+            foreach (var reg in loopRegs)
+            {
+                try
+                {
+                    // 跳过已经被活跃引擎覆盖的组件
+                    var attr = reg.Type.GetCustomAttribute<ComponentAttribute>();
+                    if (attr == null) continue;
+
+                    // 临时实例化组件以获取工具列表
+                    var instance = Activator.CreateInstance(reg.Type);
+                    if (instance is not ILoopComponent component) continue;
+
+                    foreach (var tool in component.Tools)
+                    {
+                        if (toolNames.Add(tool.Name))
+                            tools.Add(tool);
+                    }
+                }
+                catch
+                {
+                    // 实例化失败，跳过
+                }
+            }
+
             return tools;
         }
 
