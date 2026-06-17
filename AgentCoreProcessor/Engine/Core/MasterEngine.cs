@@ -208,12 +208,29 @@ namespace AgentCoreProcessor.Engine
         public List<ITool> GetAllComponentTools()
         {
             var tools = new List<ITool>();
+            var toolNames = new HashSet<string>();
+
+            // 1. Global 组件工具
             if (GlobalComponentHost != null)
-                tools.AddRange(GlobalComponentHost.GetAllTools());
+            {
+                foreach (var tool in GlobalComponentHost.GetAllTools())
+                {
+                    if (toolNames.Add(tool.Name))
+                        tools.Add(tool);
+                }
+            }
+
+            // 2. 所有活跃引擎的 Loop 组件工具（去重）
             foreach (var engine in GetActiveEnginesSnapshot())
             {
                 if (engine.ComponentHost != null)
-                    tools.AddRange(engine.ComponentHost.GetVisibleTools());
+                {
+                    foreach (var tool in engine.ComponentHost.GetVisibleTools())
+                    {
+                        if (toolNames.Add(tool.Name))
+                            tools.Add(tool);
+                    }
+                }
             }
             return tools;
         }
