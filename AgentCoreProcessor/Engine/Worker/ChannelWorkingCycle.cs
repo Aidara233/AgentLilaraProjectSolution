@@ -52,7 +52,7 @@ namespace AgentCoreProcessor.Engine
                     });
                 ToolRegistry.Register(new CompressTool(
                     compressionTierModule,
-                    agent!.History,
+                    () => agent?.History ?? new List<Message>(),
                     (summary, retained) =>
                     {
                         // 暂存压缩结果，等 Agent.RunAsync 返回后再应用，

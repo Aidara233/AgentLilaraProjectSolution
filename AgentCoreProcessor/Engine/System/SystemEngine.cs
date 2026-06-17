@@ -331,7 +331,7 @@ namespace AgentCoreProcessor.Engine
                 {
                     ToolRegistry.Register(new Tool.Core.CompressTool(
                         compressionTierModule,
-                        agent.History,
+                        () => agent.History,
                         (summary, retained) =>
                         {
                             compressionModule.SetSummary(summary);

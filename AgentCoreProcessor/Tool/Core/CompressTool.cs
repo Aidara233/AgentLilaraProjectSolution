@@ -13,7 +13,7 @@ namespace AgentCoreProcessor.Tool.Core
     internal class CompressTool : ITool
     {
         private readonly CompressionTierModule _compression;
-        private readonly List<Message> _history;
+        private readonly Func<List<Message>> _getHistory;
         private readonly Action<string, List<Message>> _onComplete;
 
         public string Name => "compress";
@@ -21,17 +21,17 @@ namespace AgentCoreProcessor.Tool.Core
         public IReadOnlyList<ToolParameter> Parameters { get; } = new List<ToolParameter>();
         public TimeSpan Timeout => TimeSpan.FromSeconds(60);
 
-        public CompressTool(CompressionTierModule compression, List<Message> history,
+        public CompressTool(CompressionTierModule compression, Func<List<Message>> getHistory,
             Action<string, List<Message>> onComplete)
         {
             _compression = compression;
-            _history = history;
+            _getHistory = getHistory;
             _onComplete = onComplete;
         }
 
         public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
-            var historyClone = new List<Message>(_history);
+            var historyClone = new List<Message>(_getHistory());
             // 排除当前轮的 assistant 消息（即 compress 工具自身的 tool_use），
             // 避免压缩产物中包含孤儿 tool_use（对应的 tool_result 将在回调后被 Agent 循环追加）
             if (historyClone.Count > 0 && historyClone[^1].Role == "assistant")
