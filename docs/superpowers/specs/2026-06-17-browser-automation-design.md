@@ -28,7 +28,87 @@
 **版本锁定**:
 - NuGet 包: `Microsoft.Playwright` 1.41.0
 - 浏览器: `chromium-1097` (Chromium 121.0.6167.57)
-- 安装路径: `D:\Playwright-browsers`
+- 存储位置: `Storage/Plugins/Plugin.NetworkTools/Browsers/`（使用 `IPluginStorage.GlobalDirectory`）
+
+## 浏览器分发策略
+
+### 开发环境
+
+浏览器不纳入 Git，开发者首次运行时需手动安装：
+```bash
+cd PlaywrightDemo
+powershell.exe -ExecutionPolicy Bypass -File install-browser.ps1
+```
+
+安装完成后，将 `D:\Playwright-browsers\` 内容复制到：
+```
+Storage/Plugins/Plugin.NetworkTools/Browsers/
+```
+
+### 生产环境（Release）
+
+发布时使用 `publish-with-browsers.ps1` 脚本自动打包浏览器到插件存储区：
+```powershell
+# 编译插件
+dotnet build Plugins/Plugin.NetworkTools -c Release
+
+# 复制浏览器到 Storage 插件目录
+$storageBase = "Storage/Plugins/Plugin.NetworkTools/Browsers"
+New-Item -ItemType Directory -Force -Path $storageBase
+Copy-Item -Recurse "D:\Playwright-browsers\chromium-1097" "$storageBase\chromium-1097"
+Copy-Item -Recurse "D:\Playwright-browsers\ffmpeg-1009" "$storageBase\ffmpeg-1009"
+
+Write-Host "浏览器已打包到 Storage（~120MB）"
+```
+
+### 路径解析逻辑
+
+`BrowserComponent` 初始化时按优先级查找浏览器：
+
+```csharp
+private string ResolveBrowserPath()
+{
+    // 1. 优先使用插件存储区（生产环境）
+    var storageDir = Path.Combine(_pluginStorage.GlobalDirectory, "Browsers");
+    if (Directory.Exists(Path.Combine(storageDir, "chromium-1097")))
+    {
+        Console.WriteLine($"[Browser] 使用插件存储区浏览器: {storageDir}");
+        return storageDir;
+    }
+    
+    // 2. 降级到配置文件路径（开发环境）
+    if (Directory.Exists(Path.Combine(_config.FallbackBrowserPath, "chromium-1097")))
+    {
+        Console.WriteLine($"[Browser] 使用配置路径浏览器: {_config.FallbackBrowserPath}");
+        return _config.FallbackBrowserPath;
+    }
+    
+    throw new InvalidOperationException(
+        "未找到 Chromium 浏览器。请确认:\n" +
+        $"1. 插件存储区: {storageDir}\n" +
+        $"2. 配置路径: {_config.FallbackBrowserPath}\n" +
+        "请运行 PlaywrightDemo/install-browser.ps1 安装浏览器。"
+    );
+}
+```
+
+### .gitignore 配置
+
+```
+# 排除浏览器二进制（开发环境）
+Storage/Plugins/Plugin.NetworkTools/Browsers/
+PlaywrightDemo/bin/
+PlaywrightDemo/obj/
+D:/Playwright-browsers/
+```
+
+### 优势
+
+- **存储区隔离**：浏览器在 `Storage/` 下，与代码分离，不污染插件目录
+- **易于管理**：用户可以直接删除 `Storage/Plugins/Plugin.NetworkTools/` 清理浏览器
+- **发布友好**：Release 包含浏览器，开箱即用
+- **开发轻量**：Git 不包含 120MB 浏览器文件
+- **路径稳定**：`IPluginStorage.GlobalDirectory` 保证路径一致性
 
 ## 架构设计
 
@@ -324,7 +404,7 @@ Task CleanupIdleSessionsAsync()  // 定时清理
 
 ```json
 {
-  "BrowserPath": "D:\\Playwright-browsers",
+  "FallbackBrowserPath": "D:\\Playwright-browsers",
   "DefaultTimeout": 30000,
   "ViewportWidth": 1920,
   "ViewportHeight": 1080,
@@ -340,7 +420,7 @@ Task CleanupIdleSessionsAsync()  // 定时清理
 ```
 
 **字段说明**:
-- `BrowserPath`: 浏览器二进制存放目录
+- `FallbackBrowserPath`: 降级浏览器路径（开发环境，生产优先用插件存储区）
 - `DefaultTimeout`: 默认操作超时（毫秒）
 - `ViewportWidth/Height`: 视口大小
 - `UserAgent`: 自定义 UA
@@ -422,7 +502,7 @@ Task CleanupIdleSessionsAsync()  // 定时清理
 
 3. **配置文件**：
    - 复制 `templates/Network/BrowserConfig.json` 到 `Storage/Network/`
-   - 确认 `BrowserPath` 指向正确路径
+   - 确认 `FallbackBrowserPath` 指向正确路径（开发环境降级用）
 
 4. **编译插件**：
    ```bash
@@ -454,9 +534,9 @@ Executable doesn't exist at D:\Playwright-browsers\chromium-1097\chrome-win\chro
 ```
 
 **排查**:
-1. 检查 `BrowserConfig.json` 中的 `BrowserPath`
-2. 确认 `D:\Playwright-browsers\chromium-1097` 目录存在
-3. 重新运行 `install-browser.ps1`
+1. 检查 `BrowserConfig.json` 中的 `FallbackBrowserPath`
+2. 确认 `Storage/Plugins/Plugin.NetworkTools/Browsers/chromium-1097` 目录存在
+3. 重新运行 `install-browser.ps1` 或复制浏览器到插件存储区
 
 ### 问题 2: 超时
 
