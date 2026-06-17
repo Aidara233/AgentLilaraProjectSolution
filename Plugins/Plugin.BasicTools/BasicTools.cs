@@ -208,6 +208,41 @@ namespace Plugin.BasicTools
         }
     }
 
+    [ToolMeta(Group = null, ContinueLoop = true, OutputOnly = false)]
+    public class ThinkingTool : ITool
+    {
+        public string Name => "thinking";
+        public string Description => "记录你的内部思考过程，不会发送消息。适合用于推理、分析、草稿等场景。";
+        public IReadOnlyList<ToolParameter> Parameters =>
+            [new("content", "思考内容", 0)];
+        public TimeSpan Timeout => TimeSpan.FromSeconds(5);
+
+        public JsonNode GetInputSchema()
+        {
+            return new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["content"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "思考内容"
+                    }
+                },
+                ["required"] = new JsonArray { "content" }
+            };
+        }
+
+        public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
+        {
+            if (resolvedInputs.Count < 1 || string.IsNullOrWhiteSpace(resolvedInputs[0]))
+                return Task.FromResult(new ToolResult { Status = "failed", Error = "思考内容不能为空" });
+
+            return Task.FromResult(new ToolResult { Status = "success" });
+        }
+    }
+
     [ToolMeta(Group = null, ContinueLoop = false, OutputOnly = true)]
     public class SendMediaTool : ITool
     {

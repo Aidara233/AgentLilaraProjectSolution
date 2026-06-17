@@ -107,13 +107,15 @@ public class BrowserSessionManager
                     if (session.CurrentPage != null)
                         await session.CurrentPage.CloseAsync();
                     await session.Context.CloseAsync();
-                    _sessions.Remove(loopId);
                     Console.WriteLine($"[BrowserSession] 清理空闲会话: {loopId}");
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"[BrowserSession] 清理会话失败 {loopId}: {ex.Message}");
-                    _sessions.Remove(loopId); // 即使失败也移除，避免重复尝试
+                }
+                finally
+                {
+                    _sessions.Remove(loopId);  // 统一在 finally 中移除
                 }
             }
         }

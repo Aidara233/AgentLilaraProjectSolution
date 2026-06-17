@@ -63,6 +63,11 @@ public class BrowserScreenshotTool : ITool
             if (!normalizedPath.StartsWith(normalizedWorkspace, StringComparison.OrdinalIgnoreCase))
                 return Fail($"路径必须在 Workspace 目录内: {workspaceDir}");
 
+            // 扩展名验证
+            var ext = Path.GetExtension(savePath).ToLower();
+            if (ext != ".png" && ext != ".jpg" && ext != ".jpeg")
+                return Fail("文件扩展名必须为 .png/.jpg/.jpeg");
+
             // 创建父目录
             var parentDir = Path.GetDirectoryName(fullPath);
             if (!string.IsNullOrEmpty(parentDir) && !Directory.Exists(parentDir))

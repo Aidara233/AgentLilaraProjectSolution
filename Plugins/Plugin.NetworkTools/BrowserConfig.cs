@@ -8,7 +8,7 @@ public class BrowserConfig
     public int DefaultTimeout { get; set; } = 30000;
     public int ViewportWidth { get; set; } = 1920;
     public int ViewportHeight { get; set; } = 1080;
-    public string UserAgent { get; set; } = "";
+    public string UserAgent { get; set; } = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36";
     public int MaxConcurrentContexts { get; set; } = 5;
     public int ContextIdleTimeout { get; set; } = 1800000;
     public bool HeadlessMode { get; set; } = true;

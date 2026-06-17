@@ -35,6 +35,9 @@ public class BrowserExecuteJsTool : ITool
         if (string.IsNullOrEmpty(script))
             return Fail("script 不能为空");
 
+        if (script.Length > 10240)  // 10KB限制
+            return Fail("脚本长度超过限制（最大10KB）");
+
         try
         {
             var sessionManager = _component.GetSessionManager();

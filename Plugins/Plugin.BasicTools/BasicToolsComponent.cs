@@ -9,6 +9,7 @@ namespace Plugin.BasicTools;
 public class BasicToolsComponent : LoopComponentBase
 {
     private SpeakTool? _speak;
+    private ThinkingTool? _thinking;
     private SendMediaTool? _sendMedia;
     private SendFileTool? _sendFile;
     private AdapterActionTool? _adapterAction;
@@ -16,7 +17,7 @@ public class BasicToolsComponent : LoopComponentBase
     public override ComponentMeta Meta => new()
     {
         Name = "basic-tools",
-        Description = "基础通信工具（speak, send_media, send_file, adapter_action）",
+        Description = "基础通信工具（speak, thinking, send_media, send_file, adapter_action）",
         DefaultEnabled = true,
         PromptPriority = 100
     };
@@ -26,6 +27,7 @@ public class BasicToolsComponent : LoopComponentBase
         get
         {
             if (_speak != null) yield return _speak;
+            if (_thinking != null) yield return _thinking;
             if (_sendMedia != null) yield return _sendMedia;
             if (_sendFile != null) yield return _sendFile;
             if (_adapterAction != null) yield return _adapterAction;
@@ -41,6 +43,7 @@ public class BasicToolsComponent : LoopComponentBase
         _speak = channelAccess != null
             ? new SpeakTool(channelAccess, channelId, speakGuard)
             : new SpeakTool();
+        _thinking = new ThinkingTool();
         _sendMedia = channelAccess != null
             ? new SendMediaTool(channelAccess, channelId)
             : new SendMediaTool();
