@@ -195,8 +195,11 @@ namespace AgentCoreProcessor.Tool.Host
                     LifecycleNames = new List<string>()
                 };
 
+                // 记录工具类型名称（用于 WebUI 显示）
+                // 如果插件有 Component，工具由 Component 管理；否则 PluginLoader 直接注册
                 if (componentTypes.Count == 0)
                 {
+                    // 独立工具插件：立即实例化并注册
                     foreach (var type in toolTypes)
                     {
                         var tool = InstantiateTool(type);
@@ -206,6 +209,23 @@ namespace AgentCoreProcessor.Tool.Host
                             entry.ToolNames.Add(tool.Name);
                         else
                             Signal.Warn(LogGroup.Plugin, "插件工具注册失败（名称冲突）", new { tool = tool.Name, dll = fileName });
+                    }
+                }
+                else
+                {
+                    // 组件化插件：记录工具类型名称（实际注册由 ComponentHost 负责）
+                    foreach (var type in toolTypes)
+                    {
+                        try
+                        {
+                            var tool = InstantiateTool(type);
+                            if (tool != null)
+                                entry.ToolNames.Add(tool.Name);
+                        }
+                        catch
+                        {
+                            // 实例化失败，跳过
+                        }
                     }
                 }
 
