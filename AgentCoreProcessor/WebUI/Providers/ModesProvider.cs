@@ -19,13 +19,15 @@ internal class ModesProvider : IWebUIProvider
     public string DisplayName => "模式管理";
     public IReadOnlyList<PageDefinition> Pages => _pages;
     private readonly List<PageDefinition> _pages;
+    private readonly MasterEngine _engine;
 
-    public ModesProvider()
+    public ModesProvider(MasterEngine engine)
     {
+        _engine = engine;
         _pages = new List<PageDefinition> { BuildModesPage() };
     }
 
-    private static PageDefinition BuildModesPage()
+    private PageDefinition BuildModesPage()
     {
         return new PageDefinition
         {
@@ -153,7 +155,7 @@ internal class ModesProvider : IWebUIProvider
             {
                 new() { Id = "modes-list", Source = new ModesListSource() },
                 new() { Id = "modes-edit", Source = new ModesEditSource() },
-                new() { Id = "modes-tools", Source = new ModesToolsSource() },
+                new() { Id = "modes-tools", Source = new ModesToolsSource(_engine) },
             },
         };
     }
@@ -339,7 +341,10 @@ internal class ModesEditSource : IDataSource
 
 internal class ModesToolsSource : IDataSource
 {
+    private readonly MasterEngine _engine;
     private string? _lastModeId;
+
+    public ModesToolsSource(MasterEngine engine) => _engine = engine;
 
     public bool SupportsPush => false;
     public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
@@ -360,7 +365,14 @@ internal class ModesToolsSource : IDataSource
 
         var mode = ModeConfigLoader.GetMode(modeId);
         var defaultLabel = mode?.ToolDefaults == "enabled" ? "默认(启用)" : "默认(禁用)";
-        var allTools = ToolRegistry.All;
+
+        // 包含独立工具和组件工具
+        var allTools = ToolRegistry.All.Values
+            .Concat(_engine.GetAllComponentTools())
+            .GroupBy(t => t.Name)
+            .Select(g => g.First())
+            .ToDictionary(t => t.Name, t => t);
+
         var rows = new JsonArray();
         foreach (var (name, tool) in allTools)
         {
