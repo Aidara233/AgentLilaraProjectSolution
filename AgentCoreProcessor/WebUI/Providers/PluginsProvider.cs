@@ -661,15 +661,11 @@ internal class AllToolsSource : IDataSource
         }
 
         var list = filtered.ToList();
-        var total = list.Count;
 
-        // 分页
-        var page = query?.Page ?? 1;
-        var pageSize = query?.PageSize ?? 30;
-        var paged = list.Skip((page - 1) * pageSize).Take(pageSize).ToList();
-
+        // 注意：这里不做服务器端分页，因为 TableCard 使用客户端分页模式
+        // 返回所有数据，让前端自行分页显示
         var arr = new JsonArray();
-        foreach (var tool in paged)
+        foreach (var tool in list)
         {
             var meta = ToolRegistry.GetMeta(tool.Name)
                 ?? Attribute.GetCustomAttribute(tool.GetType(), typeof(ToolMetaAttribute)) as ToolMetaAttribute;
@@ -686,7 +682,7 @@ internal class AllToolsSource : IDataSource
                 ["disabled"] = isDisabled ? $"已禁用: {reason}" : "启用",
             });
         }
-        return Task.FromResult(new DataResult { Data = arr, TotalCount = total });
+        return Task.FromResult(new DataResult { Data = arr, TotalCount = arr.Count });
     }
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)

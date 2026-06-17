@@ -277,8 +277,6 @@ internal class ModelListSource : IDataSource
 
     public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
-        var page = query?.Page ?? 1;
-        var pageSize = query?.PageSize ?? 30;
         var all = await _engine.ModelCallLogs.GetRecentAsync(2000);
 
         var filtered = all.AsEnumerable();
@@ -292,11 +290,10 @@ internal class ModelListSource : IDataSource
         }
 
         var list = filtered.ToList();
-        var total = list.Count;
-        var paged = list.Skip((page - 1) * pageSize).Take(pageSize).ToList();
 
+        // 注意：TableCard 使用客户端分页，返回所有数据（最多2000条）
         var arr = new JsonArray();
-        foreach (var log in paged)
+        foreach (var log in list)
         {
             var tokens = log.IsError ? "—" : $"{Fmt(log.InputTokens)}→{Fmt(log.OutputTokens)}";
             var cache = log.CacheReadTokens + log.CacheHitTokens + log.CacheCreationTokens;
@@ -315,7 +312,7 @@ internal class ModelListSource : IDataSource
                 ["logFileName"] = log.LogFileName ?? "",
             });
         }
-        return new DataResult { Data = arr, TotalCount = total };
+        return new DataResult { Data = arr, TotalCount = arr.Count };
     }
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
