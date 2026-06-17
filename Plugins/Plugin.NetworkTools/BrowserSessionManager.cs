@@ -101,12 +101,20 @@ public class BrowserSessionManager
 
             foreach (var loopId in toRemove)
             {
-                var session = _sessions[loopId];
-                if (session.CurrentPage != null)
-                    await session.CurrentPage.CloseAsync();
-                await session.Context.CloseAsync();
-                _sessions.Remove(loopId);
-                Console.WriteLine($"[BrowserSession] 清理空闲会话: {loopId}");
+                try
+                {
+                    var session = _sessions[loopId];
+                    if (session.CurrentPage != null)
+                        await session.CurrentPage.CloseAsync();
+                    await session.Context.CloseAsync();
+                    _sessions.Remove(loopId);
+                    Console.WriteLine($"[BrowserSession] 清理空闲会话: {loopId}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[BrowserSession] 清理会话失败 {loopId}: {ex.Message}");
+                    _sessions.Remove(loopId); // 即使失败也移除，避免重复尝试
+                }
             }
         }
         finally
@@ -122,9 +130,16 @@ public class BrowserSessionManager
         {
             foreach (var session in _sessions.Values)
             {
-                if (session.CurrentPage != null)
-                    await session.CurrentPage.CloseAsync();
-                await session.Context.CloseAsync();
+                try
+                {
+                    if (session.CurrentPage != null)
+                        await session.CurrentPage.CloseAsync();
+                    await session.Context.CloseAsync();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[BrowserSession] 关闭会话失败 {session.LoopId}: {ex.Message}");
+                }
             }
             _sessions.Clear();
             Console.WriteLine("[BrowserSession] 所有会话已清理");
