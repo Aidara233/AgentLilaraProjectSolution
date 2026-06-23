@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Core;
+using AgentCoreProcessor.Engine.Session;
 using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Tool;
@@ -146,8 +147,33 @@ namespace AgentCoreProcessor.Engine
 
                 messages.Add(FormatResultsExpress(output.ToolCalls, expressResults));
 
-                // 注意：escalate 工具不再触发模式切换（Working 模式已移除），
-                // 但仍保留在 Express white-list 中以便模型自由调用
+                // escalate → 通过 SessionEngine 创建 Working 会话
+                for (int i = 0; i < output.ToolCalls.Count; i++)
+                {
+                    var call = output.ToolCalls[i];
+                    if (call.Tool == "escalate")
+                    {
+                        var reason = expressResults[i]?.Data ?? "";
+                        var sessionEngine = ctx.GetActiveEnginesSnapshot()
+                            .OfType<Session.SessionEngine>().FirstOrDefault();
+                        if (sessionEngine != null)
+                        {
+                            sessionEngine.CreateSession(new CreateSessionSpec
+                            {
+                                ComponentIds = new[] { "basic-tools", "working-tools", "file-tools", "file-ops", "memory-tools" },
+                                MaxLevel = 1,
+                                AutoClaimChannel = true,
+                                InputPorts = new Dictionary<string, PortSpec>
+                                {
+                                    ["channel"] = new PortSpec { ChannelId = channelId, SubStream = "normal", Weight = 100 }
+                                },
+                                InitialState = $"用户请求切换到工作模式，原因：{reason}",
+                                OverrideLimits = new SessionLimits { MaxLifetime = TimeSpan.FromHours(2), IdleTimeout = TimeSpan.FromMinutes(30) }
+                            });
+                        }
+                        break;
+                    }
+                }
                 if (inlineWaitRequested)
                     break;
 
