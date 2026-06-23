@@ -1,6 +1,6 @@
 # Agent Lilara 架构地图
 
-多平台 AI Agent 框架。核心：Engine 生态（OS 内核式调度）+ 记忆系统（双库 + 向量检索）+ 做梦机制（离线记忆整理 + 全局复盘）。
+多平台 AI Agent 框架。三层架构：框架层（ChannelEngine）+ 引擎层（8个 ISubEngine）+ 会话层（RuntimeSession 统一 agent 循环）。
 
 技术栈：.NET 8 / C# / SQLite-net-pcl / Anthropic SDK (Claude) / OpenAI SDK / SiliconFlow API / bge-large-zh-v1.5 embedding
 
@@ -20,7 +20,18 @@ AgentLilaraProjectSolution/
 │     ├── Config/      PathConfig 绝对路径管理
 │     ├── Core/        业务核心（AgentCore+PreprocessingCore+MemoryExtractionCore+RelationClassificationCore+WeightCore+SummarizationCore+SleepTalkCore等），继承 CoreBase，各自 JSON 配置
 │     ├── Database/    实体 + Repository（SQLite，13张表）
-│     ├── Engine/      引擎生态（MasterEngine 内核 + 子引擎 + Worker闸门循环 + 内务模块）
+│     ├── Engine/      引擎生态（MasterEngine内核 + 8个ISubEngine + Components + Modules）
+│     │     ├── Core/     MasterEngine内核 + Gate/Agent/ComponentHost/DelegationBus等基类
+│     │     ├── Session/  SessionEngine + RuntimeSession（会话管理+频道占用）
+│     │     ├── Messaging/ MessageEngine（双向消息枢纽+去重分发）
+│     │     ├── AdapterEng/ AdapterEngine（适配器生命周期+频道融合）
+│     │     ├── Extraction/ ExtractionEngine + EavesdropTask（记忆提取+监听检测）
+│     │     ├── Worker/   ChannelEngine（框架层，Express响应）
+│     │     ├── Timer/    TimerEngine（心跳30s）
+│     │     ├── Dream/    DreamEngine + ReviewEngine + EvaluationEngine
+│     │     ├── Vision/   VisionEngine（图片描述+OCR）
+│     │     ├── Command/  CommandSpawnCheck（指令拦截）
+│     │     └── Modules/  各模块（CompressionTierModule等）
 │     ├── Memory/      MemoryService 检索管线
 │     ├── MCP/         MCP Client 桥接层（外部插件生态接入）
 │     ├── Tool/        工具宿主（PluginLoader/ToolRegistry/ToolExecutor/ToolProfileManager）+ 核心工具（continue_loop/wait）
@@ -69,52 +80,67 @@ PluginLoader 扫描子目录 → 读 `plugin.json` → 加载 `entry` DLL。无�
 
 ## 引擎生态
 
+三层架构：框架层（ChannelEngine，常驻 Express 响应）→ 引擎层（8个 ISubEngine）→ 会话层（RuntimeSession，按需创建）。
+
 ```
-MasterEngine (内核，实现 ISystemContext)
-  ├── SpawnCheck 注册表 (IEngineSpawnCheck)
-  │     Timer   → TimerEngine (心跳30s，IsInfrastructure=true)
-  │     Channel → ChannelEngine (每活跃频道一个，常驻，频道循环)
-  │     System  → SystemEngine (单例，系统循环，纯调度者)
-  │     Dream   → DreamEngine (走神/小睡/大睡)
-  │     Vision  → VisionEngine (图片描述+OCR，IsInfrastructure=true)
-  │     Command → CommandSpawnCheck (指令拦截)
-  ├── 活跃引擎表 (List<ISubEngine>)
-  ├── CrossRequestRegistry (跨循环请求生命周期管理)
-  │     Submit → Respond(Accept/Reject/Progress/Complete) → Idle → Archive
-  │     广播: TargetId=null → 所有活跃循环见摘要
-  │     定向: 指定TargetId → 目标循环见详情，自动激活或排队
-  │     JSONL 追加持久化，重启恢复
-  ├── DelegationBus (跨循环定向路由总线)
-  │     引擎注册/注销 handler → Deliver 精准投递
-  │     非全局广播，无关循环不感知
-  ├── ToolProfileManager (组件状态模型，链式继承)
-  │     Profile: components(enabled/disabled/unavailable) + blockedTools/unblockedTools
-  │     _root → channel/system/sub-agent 继承链
-  │     channelMapping: channelId → profileName
-  ├── GlobalComponentHost + ComponentHost(per-loop) + ModuleBus(per-loop)
-  │     Component 系统: IGlobalComponent(全局) / ILoopComponent(per-loop)
-  │     ComponentRegistry: 类型注册，PluginLoader 扫描 [Component] 标记
-  │     ComponentHost: 实例管理 + 工具注册/反注册 ToolRegistry + ModuleBus 订阅
-  │     ModuleBus: 每引擎独立 pub/sub（替代旧 ILoopBus + ComponentEventBus）
-  └── 事件流水线: EventBus → HandleEventAsync
-        ① 内核更新 (lastMessageTime)
-        ② SpawnCheck: OnEventAsync → ShouldSpawnAsync → Create → StartEngine
-        ③ 派发 OnEvent 给活跃实例
-        ④ 清理 IsAlive=false 的实例
+框架层（非 ISubEngine，随进程启动）:
+  ChannelEngine — Express 响应 + 冲动值决策 + escalate → 创建 WorkingSession
+
+基础设施引擎层（ISubEngine，SpawnCheck 托管生命周期）:
+  MasterEngine (内核，实现 ISystemContext)
+    ├── SpawnCheck 注册表 (IEngineSpawnCheck)
+    │     Timer      → TimerEngine (心跳30s，IsInfrastructure=true)
+    │     Message    → MessageEngine (双向消息枢纽，IsInfrastructure=true)
+    │     Adapter    → AdapterEngine (适配器管理+频道融合，IsInfrastructure=true)
+    │     Session    → SessionEngine (会话生命周期+频道占用，IsInfrastructure=true)
+    │     Extraction → ExtractionEngine (记忆提取+监听检测，IsInfrastructure=true)
+    │     Channel    → ChannelEngine (每活跃频道一个，Express 响应)
+    │     Dream      → DreamEngine (走神/小睡/大睡)
+    │     Review     → ReviewEngine (自由探索复盘)
+    │     Vision     → VisionEngine (图片描述+OCR，IsInfrastructure=true)
+    │     Command    → CommandSpawnCheck (指令拦截)
+    ├── 活跃引擎表 (List<ISubEngine>)
+    ├── CrossRequestRegistry (跨循环请求生命周期管理)
+    │     Submit → Respond(Accept/Reject/Progress/Complete) → Idle → Archive
+    │     广播: TargetId=null → 所有活跃循环见摘要
+    │     定向: 指定TargetId → 目标循环见详情，自动激活或排队
+    │     JSONL 追加持久化，重启恢复
+    ├── DelegationBus (跨循环定向路由总线)
+    │     引擎注册/注销 handler → Deliver 精准投递
+    │     非全局广播，无关循环不感知
+    ├── ToolProfileManager (组件状态模型，链式继承)
+    │     Profile: components(enabled/disabled/unavailable) + blockedTools/unblockedTools
+    │     _root → channel/session 继承链
+    │     channelMapping: channelId → profileName
+    ├── GlobalComponentHost + ComponentHost(per-session) + ModuleBus(per-session)
+    │     Component 系统: IGlobalComponent(全局) / ILoopComponent(per-session)
+    │     ComponentRegistry: 类型注册，PluginLoader 扫描 [Component] 标记
+    │     ComponentHost: 实例管理 + 工具注册/反注册 ToolRegistry + ModuleBus 订阅
+    │     ModuleBus: 每引擎独立 pub/sub（替代旧 ILoopBus + ComponentEventBus）
+    └── 事件流水线: EventBus → HandleEventAsync
+          ① 内核更新 (lastMessageTime)
+          ② SpawnCheck: OnEventAsync → ShouldSpawnAsync → Create → StartEngine
+          ③ 派发 OnEvent 给活跃实例
+          ④ 清理 IsAlive=false 的实例
+
+会话层（IRuntimeSession，不定生命周期）:
+  RuntimeSession — 统一 agent 循环，行为由 CreateSessionSpec 驱动
+    场景: Working（频道全功能）/ Task（任务执行，禁止套娃）/ Eavesdrop（监听判定）
+    端口: IInputPort（注入上下文，按权重激活）/ IOutputPort（工具写端口，决定工具注册）
+    创建: SessionEngine.CreateSession(CreateSessionSpec) — 组件列表+端口配置+超限参数
 ```
 
 ISubEngine: EngineType / RunAsync / OnEvent / IsAlive / RequestStop / IsInfrastructure(默认false)
 ISystemContext: 数据访问 + 适配器 + EventBus + 引擎查询 + StartEngine/RequestStopEngine + CrossRequests + DelegationBus + CurrentSleepState + MuteMode + ToolProfiles + GlobalComponentHost + ComponentServices
-IAgentSession: 统一会话接口 (ChannelSession/TaskSession/MonitorSession)
 
-### 引擎内部循环架构（Phase 1+2 统一模型）
+### 引擎内部循环架构（Session 统一模型）
 
 ```
-每个引擎（Channel/System）内部结构:
+RuntimeSession 内部（取代旧 Channel/System 引擎内循环）:
   Gate (闸门)
     ├── delegate 驱动，组合不继承
     ├── WaitAsync(timeout) → 放行后立即重置
-    └── Signal() 升闸（任何人可唤醒）
+    └── Signal() 升闸（端口权重/超时触发）
 
   Agent (多轮推理循环)
     ├── 构建上下文 → 调模型 → 执行工具 → 是否继续
@@ -123,7 +149,7 @@ IAgentSession: 统一会话接口 (ChannelSession/TaskSession/MonitorSession)
     ├── ConversationOffset: 区分框架注入和对话内容
     └── StopReason: Completed / MaxRounds / WaitRequested / ForceStopped / Error
 
-  IAgentHost (宿主接口，引擎实现)
+  IAgentHost (宿主接口，Session/RuntimeSession 实现)
     ├── BuildStartInjectAsync(): 每次唤醒注入一次（固定前缀/摘要/记忆/新消息/组件目录）
     └── BuildRoundInjectAsync(): 每轮注入（实时状态/工具结果/信号缓冲）
 
@@ -132,109 +158,142 @@ IAgentSession: 统一会话接口 (ChannelSession/TaskSession/MonitorSession)
     ├── BuildRoundInjectAsync(InjectContext): 实时数据，每轮
     └── InjectPriority: 排序
 
-  ModuleBus (每引擎独立 pub/sub)
+  ModuleBus (每 Session 独立 pub/sub)
     ├── Subscribe<T>(Action<T>): 订阅事件
     ├── Publish<T>(T): 发布事件
     └── 事件类型: ToolExecutedEvent / RoundEndingEvent / SpeakRequestedEvent / MemoryStoreEvent / SignalEmitEvent
 
-  ChannelSignal (类型化信号缓冲)
-    ├── NewMessageSignal: 新消息到达
-    ├── BusEventSignal: EventBus 事件（委托完成等）
-    ├── CompressionSignal: 压缩完成（新摘要 + 保留历史）
-    └── ModeSwitchSignal: Express ↔ Working 切换
-
-  CompressionTierModule (三层压缩)
-    ├── L1 提示: 接近阈值时注入提示
-    ├── L2 提醒: 超过软阈值时强提醒
-    └── L3 硬保底: 超过硬阈值时强制压缩（模型调 compress 工具）
-
-  ChannelContextPersistence (per-channel JSON 原子写入)
-    ├── SaveContext(summary, mode, rounds): 只保存 ConversationOffset 之后的对话
-    └── LoadContext(): 恢复摘要 + 模式 + 对话轮次
+  Session 持久化
+    ├── Storage/Sessions/{sessionId}/meta.json   — type, status, limits
+    ├── Storage/Sessions/{sessionId}/context.json — 压缩摘要+保留消息
+    └── Storage/Sessions/{sessionId}/state.json  — cursor, pinboard, thinking_notes
 ```
 
 ## 消息处理流
 
 ```
-Adapter → EventBus(MessageEvent) → ChannelEngineSpawnCheck
-  ① SessionManager.OnMessageAsync (用户映射 + 频道映射 + 消息入库)
-  ② 权限检查 (Blocked/Restricted 拦截)
-  ③ 按 ChannelId 路由: 有活跃 ChannelEngine → EnqueueMessage / 无 → 创建新 ChannelEngine
-  （睡眠行为由 ChannelEngineSpawnCheck 按 SleepState 拦截处理）
+入向:
+适配器 ──► AdapterEngine ──► MessageEngine (入库+去重+标记+分发)
+                                  │
+                                  ├── ChannelEngine (冲动值决策 + Express 响应)
+                                  ├── ExtractionEngine (记忆提取 + 监听检测)
+                                  └── WorkingSession (IRuntimeSession, agent 循环)
 
-Notice 事件分流 (OneBotMessageParser.ParseNoticeEvent):
-  系统事件转为 IncomingMessage(IsSystemEvent=true, SystemEventSubType=...)
-  已处理: poke/ban/unban/recall/upload
-  SystemEventSubType 供引擎层路由: ban→阻断唤醒, unban→强制唤醒
-  不计入冲动值 (ImpulseTracker 跳过了 IsSystemEvent)
+出向:
+Session ── speak/send_media ──► MessageEngine (出向入库) ──► AdapterEngine (发送) ──► 适配器
 
-ChannelEngine (频道循环，常驻，一个活跃频道一个):
-  实现 ISubEngine + IAgentHost
+AdapterEngine: 托管适配器生命周期 + 频道融合(多适配器合并一条流) + 消息分段(按平台规则拆分)
+  发送决策: 选 Priority 最高、AdapterId 最小的活着适配器
+
+MessageEngine: 双向枢纽
+  入向: AcceptIncoming → DB 去重(ChannelId+MessageId) → 标记 tag(normal/mention/command) → 推订阅者
+  出向: SendOutgoing → INSERT(SentByBot=true) → 发 AdapterEngine → 适配器实际发送
+  子流: 每条频道按 tag 拆 normal / mention / command
+  订阅: Subscribe(channelId, subStream) → IInputPort，按权重(mention=100/normal=5)激活 Session
+
+ChannelEngine (框架层全局单例，非 ISubEngine):
+  职责:
+    - 冲动值计算: 每条消息查最近 20 条 → 计算冲动值（不持久化，纯计算）
+    - Express 响应: 冲动值 > Express 阈值 → 执行 Express agent 循环
+    - 频道占用检查: 频道已被 Session Full 占用 → 跳过
+    - 消息分发: 调 MessageEngine 分发
+
+  冲动值决策 (per Channel, ImpulseConfig.json 全参数可配置):
+    私聊 → 缓冲聚合后一定回复
+    @提及 → 穿透冷却期，必回
+    群聊 → 冲动值 ≥ 阈值(100):
+      累加（加法模型）: BaseScore(10) + AffinityBonusMax(5) × channelAffinity - ParticipantDiscount(0/2/4/6)
+        @提及额外 +MentionBonus(30)
+      衰减: 指数衰减，半衰期 30s
+      触发后: impulse = min(impulse, PostResponseCap(20))
+      发言后冷却 3s
+
+  Express 工具白名单（5 个）:
+    speak / send_media / escalate / wait / memory(只读)
+
+  Express 双模板（由睡眠状态控制）:
+    清醒 → 正常语气
+    梦话 → 提示词注入"你正在睡觉"，相同 5 个工具
+
+  escalate 行为:
+    Express 调 escalate → SessionEngine.CreateSession("working", { channelId })
+    → WorkingSession 创建，Full 占用频道 → ChannelEngine 停止该频道的 Express 响应
+    WorkingSession 结束或 deescalate → 释放占用 → ChannelEngine 恢复
 
   禁言阻断:
-    收到 SystemEventSubType="ban" → _isBanned=true → EnqueueMessage 跳过唤醒
-    消息照常 buffer + 记忆提取照常，仅不跑推理
-    SystemEventSubType="unban" → _isBanned=false + IsMentioned=true → 强制唤醒 drain
+    收到 SystemEventSubType="ban" → _isBanned=true → 跳过唤醒
+    SystemEventSubType="unban" → _isBanned=false → 强制唤醒 drain
 
-  闸门驱动循环 (Gate, auto-reset):
-    gate.WaitAsync(coldTimeout) → 放行后立即重置 → 收集 → 执行 → 回到等待
-    触发源: 缓冲定时器(新消息) / ContinueLoop自唤醒 / ESCALATE切模式 / EventBus信号
-    超时 → 冷却退出
+  Notice 事件分流 (OneBotMessageParser.ParseNoticeEvent):
+    系统事件转为 IncomingMessage(IsSystemEvent=true, SystemEventSubType=...)
+    已处理: poke/ban/unban/recall/upload
+    不计入冲动值 (ImpulseTracker 跳过了 IsSystemEvent)
 
-  堆叠式上下文模型:
-    fixedPrefix: 系统配置 + 工具描述 + 人设 + 组件目录（BuildStartInjectAsync 注入）
-    contextSummary: 压缩后的历史摘要（BuildStartInjectAsync 注入）
-    记忆检索: BuildMemorySection → MemorySvc.RecallAsync（10s 超时，topK=5/10）
-    IInjectProvider 收集: 组件 + 插件的 BuildStartInjectAsync/BuildRoundInjectAsync
-    Agent.History: 追加式对话历史（ConversationOffset 之后为对话内容）
+SessionEngine (ISubEngine, IsInfrastructure=true):
+  30s 监控循环:
+    检查所有 WaitUntil <= now 的 Session → 通过输入端口注入 timeout 消息激活
+    ScheduledTask 检测 (ExecuteAt <= now) → CreateSession("task")
+    TODO 扫描 (pending, MinBalance 满足) → 创建 Session 或注入相关频道
 
-  Agent 循环 (Working 模式):
-    EnsureAgent() → 创建 Agent + 恢复持久化上下文
-    Agent.RunAsync(): BuildStartInject → [多轮: BuildRoundInject → 调模型 → 执行工具]
-    OnToolExecuted → bus.Publish(ToolExecutedEvent) → 组件/模块响应
-    StopReason: Completed(无工具) / WaitRequested(wait工具) / MaxRounds
+  创建: IRuntimeSession CreateSession(CreateSessionSpec spec)
+  停止: StopResult StopSession(id, reason) — 子未停阻塞，ForceKill 可强杀整个树
+  占用: ClaimChannel(sessionId, channelId, ClaimLevel.Full/Listen)
+        Full → 接管 reply 端口 + 抑制 ChannelEngine
+        Listen → 只读消息流
+        同一频道允许多个 Listen，最多一个 Full
+  自动占用: WorkingSession 创建时自动 Full 占用归属频道
 
-  Express 模式 (直接调 Core，不走 Agent):
-    ExecuteExpressCycleAsync: 构建上下文 → AgentCore.InvokeAsync → 发文本 + 静默执行 Express 工具
-    Express 工具 (fire-and-forget): 由 ModeConfig.json Express 模式 tools 字段控制
-    核心 Express 工具: escalate(切Working)
-    非 native 提供商 fallback: 仍解析 [ESCALATE] 文本标记
+  崩溃恢复:
+    Storage/Sessions/{sessionId}/*.json → 扫描 → Running/Crashed → 恢复 → 继续运行
 
-  模式切换:
-    Express escalate工具 → 切 Working + gate.Signal()，下轮自然走 Working
-    Working 连续3次外部触发 → 回退 Express
-    分类检测任务 → 直接进入 Working
+ExtractionEngine (ISubEngine, IsInfrastructure=true):
+  每频道独立计数，新消息累计 10 条 → 一批处理:
+    一次 LLM 调用完成:
+      记忆提取（现有流程）→ 存入记忆库
+      监听检测（蹭 LLM）→ 检查 EavesdropTask → 命中 → CreateSession("eavesdrop")
 
-  模块/组件体系:
-    LoopControlModule: 轮次控制（MaxRounds/MaxSilentRounds）
-    CompressionTierModule: 三层压缩（L1/L2/L3）
-    ComponentHost + ModuleBus: 组件实例管理 + 事件订阅
-    IInjectProvider 插件: Plugin.WorkingTools（pinboard/thinking_notes/retain_list/task_management）
-    Plugin.BasicTools: speak + send_media（通过 ToolExecutedEvent 触发发送）
+  全频道监听（定时扫描，5-30 分钟）:
+    对每个全频道 EavesdropTask:
+      查 DB → 关键词粗筛（滤掉 99%）→ 轻量 LLM 判断
 
-  关注列表 (WatchRules):
-    系统循环通过 SetWatchRuleTool 下发规则到频道循环
-    规则含自主权级别: NotifyOnly / AutoRespond / Escalate
-    频道循环在 Express prompt 注入规则，模型语义匹配
-    命中后通过 IAgentMessaging.SubmitFireAndForget 上报系统循环
+  EavesdropTask 定义: TaskId / Name / ChannelIds(空=全频道) / Rules[{Keywords, Hint}] / NotificationTargetId
+  EavesdropSession: 一次性短命判定，MaxMessages=5, IdleTimeout=5min
 
-  持久化 + 压缩:
-    ChannelContextPersistence: 只保存 ConversationOffset 之后的对话内容
-    CompressionSignal → ClearHistory + 新摘要 + fixedPrefix 重注入
-    
-  后处理:
-    ParseBotOutput 解析 <at/>/<reply/> 标签 → OutgoingMessage
-    MemoryExtractionCore 异步提取记忆 (每3条触发，独立 Worker)
-    TrustProgress 每日自动增长 (per-person 日上限)
+RuntimeSession (统一 agent 循环):
+  不分子类，差异由 CreateSessionSpec 驱动:
+    ComponentIds: 启用的组件列表
+    MaxLevel: 工具等级上限 (0=L0全开, 1-3=预留)
+    InputPorts: 端口名 → (频道, 子流, 权重)
+    OutputPorts: 端口名 → 目标
+    AutoClaimChannel: 自动 Full 占用归属频道
+    OverrideLimits: MaxLifetime / IdleTimeout 覆写
 
-  图片处理 (ContextBuilder 图片感知):
-    适配器层: [IMG:N] 占位符保留图片在消息中的位置
-    ContextBuilder: 占位符 → <img id="N"/> 或 <img id="N" desc="..."/> 标记
-    规则: new块普通图→直传, 表情包有描述→描述, history有描述→描述, 无描述→直传(受限)
-    限制: 单张MaxDirectSendSize(1MB) / 总量MaxTotalDirectSendSize(3MB) / 数量MaxDirectSendCount(5)
-    PromptBuilder: 文本XML + #IMGN:标签 + image block 混排
-    "查看图片"工具: Working专用, 输入ImageRecord.Id, 返回原图
-    缩略图: SkiaSharp 缩放(长边≤1568px) + JPEG 85%, 存 Storage/Images/thumbs/
+  默认配置:
+    Working: basic-tools, working-tools, file-tools, file-ops, memory-tools, system-tools | AutoClaim=true
+    Task:    basic-tools, file-tools, file-ops, memory-tools | AutoClaim=false | MaxLifetime=30min
+    Eavesdrop: basic-tools | AutoClaim=false | MaxLifetime=15min, IdleTimeout=5min
+
+  激活:
+    端口权重达阈值(mention=100 立即/normal=5 攒多条) → 激活
+    WaitUntil 到期 → SessionEngine 30s 循环注入 timeout 消息 → 激活
+    创建后直接启动（无输入端口的 TaskSession）
+
+  权限:
+    工具等级 L0-L3（目前几乎全 L0）
+    Session.MaxLevel 过滤
+    enable_component / disable_component：Session 自行管理组件，L0 行为
+
+  持久化:
+    meta.json (type/status/limits) + context.json (压缩摘要) + state.json (cursor/pinboard)
+
+  轮次定价（对接 ICurrencyService）:
+    前 20 轮免费，之后 ceil((N-20)/10) 币/轮
+    余额不足 → 注入警告 → Session 自行收尾
+    余额分级: L1 提醒(≤500) / L2 收紧(≤200) / L3 危急(≤50) → 能力收紧+全局警告
+
+压缩模块 (ChannelContextPersistence + CompressionTierModule):
+  ChannelContextPersistence: per-channel JSON 原子写入
+  CompressionTierModule: 三层压缩（L1提示/L2提醒/L3硬保底），模型调 compress 工具主动压缩
 ```
 
 VisionEngine (视觉引擎，单例，基础设施):
@@ -266,69 +325,6 @@ VisionEngine (视觉引擎，单例，基础设施):
     /engine/vision — 状态/配置/待处理队列/手动触发/全部重新生成
     /images — 图片库浏览/预览/筛选/编辑描述/删除
 
-```
-
-SystemEngine (系统循环，单例，纯调度者):
-  实现 ISubEngine + IAgentHost
-
-  闸门驱动循环 (Gate, auto-reset):
-    gate.WaitAsync(coldTimeout) → 放行后立即重置 → 收集 → 执行 → 回到等待
-    触发源: CrossRequests.OnRequestSubmitted / DelegationBus投递 / ContinueLoop自唤醒 / 定时器
-    超时 → 冷却退出
-  
-  堆叠式上下文 (同 ChannelEngine 模型):
-    BuildStartInjectAsync: 固定前缀 + 上下文摘要 + 状态快照 + IInjectProvider 收集
-    BuildRoundInjectAsync: 实时状态 + 信号缓冲 drain + IInjectProvider 收集
-    Agent 循环: 多轮推理 + OnToolExecuted → bus.Publish
-    CompressionTierModule: 三层压缩（同频道循环）
-
-  容错与自愈:
-    内层 Agent 循环异常: catch → 记录错误 → 退出当前轮（不杀外层 while）
-    连续失败 ≥5 次: exponential backoff (10s→30s→60s→120s→300s)
-    外层致命异常: IsAlive=false → SpawnCheck 检测到死亡 → 10s 后自动重启
-    错误状态暴露: Snapshot 含 ConsecutiveFailures/TotalErrorCount/LastErrorMessage
-  
-  通信规则（不直接发消息）:
-    系统循环不持有发消息能力，一律通过频道循环间接实现
-    通知频道: IAgentMessaging.SubmitFireAndForget → DelegationBus 路由 → 目标循环代理 prompt
-    委托结果: 子agent完成 → OnCompleted回调 → CrossRequestRegistry.Respond(Complete) → 发起者自动唤醒
-    适配器操作: 拦截 send_* 类操作，仅允许查询类（获取群列表等）
-  
-  上下文持久化:
-    ContextPersistence 模块: Storage/SystemContext.json（WAL 模式）
-    重启时恢复上下文（便签板/思考笔记/任务队列）
-  
-  上下文压缩:
-    超过 80k tokens 触发（CompressionTierModule L1/L2/L3）
-    模型调 compress 工具 → 生成摘要 → ClearHistory + 重注入
-  
-  
-  模块/组件体系:
-    LoopControlModule / PendingEventsModule
-    ContextPersistence / ContextCompressionModule
-    ComponentHost + ModuleBus: 组件实例管理
-    IInjectProvider 插件: Plugin.WorkingTools（pinboard/thinking_notes/retain_list/task_management）
-
-  工具集 (纯调度+轻量执行):
-    调度类: CreateSubAgent / SendToSubAgent / StopSubAgent / DeleteSubAgent
-    通信类: 通知频道 / CheckNotifications / SetWatchRule / CheckTaskQueue
-    委托类: evaluate_request / complete_request（跨循环请求）
-    自用类: 便签板 / 思考笔记 / 继续 / 等待
-    轻量执行: 记忆读写 / 频道信息 / 引擎管理 / 适配器操作(仅查询)
-```
-
-## 冲动值决策 (per Channel, ImpulseConfig.json 全参数可配置)
-
-```
-私聊 → 缓冲聚合后一定回复
-@提及(CQ at 或文本包含 botNames 或引用bot消息) → 穿透冷却期，必回
-群聊 → 冲动值 ≥ 阈值(100):
-  累加（加法模型）: BaseScore(10) + AffinityBonusMax(5) × channelAffinity - ParticipantDiscount(0/2/4/6)
-    @提及额外 +MentionBonus(30)
-  衰减: 指数衰减，半衰期 30s
-  触发后: impulse = min(impulse, PostResponseCap(20))
-  发言后冷却 3s
-  系统事件仅 @提及 时加分，不计 BaseScore
 ```
 
 ## 做梦系统
@@ -412,7 +408,7 @@ AgentLilara.PluginSDK (共享契约，独立类库):
   IPromptContributor: SectionKey / Priority / BuildSection()
   ToolMetaAttribute: Group / ContinueLoop / AllowSubAgent / CapabilitySummary / Permission / Scope / OutputOnly
   ToolParameter: Name / Description / Index / IsRequired（控制 JSON Schema required 数组）
-  EngineMode: Express / Working（SDK 枚举，供 ILoopControl 使用）
+  EngineMode: Express（SDK 枚举）
   Services/: IMemoryAccess（完整数据访问：语义搜索/向量操作/批量读取/临时库/关联图）
              IAgentMessaging / IChannelAccess / ISubAgentAccess
              IChannelAccess / IAdapterAccess / IEngineAccess
@@ -422,7 +418,7 @@ AgentLilara.PluginSDK (共享契约，独立类库):
 
 主程序 Tool/ (宿主层):
   Core/CoreTools.cs          — 核心工具（continue_loop + wait + escalate），不可卸载
-  Core/EscalateTool.cs       — Express→Working 模式切换工具
+  Core/EscalateTool.cs       — Express escalate 工具，触发 SessionEngine.CreateSession
   Host/PluginLoader          — 扫描 {BaseDirectory}/Plugins/*.dll，AssemblyLoadContext 隔离加载
   Host/ToolContextImpl       — IToolContext 实现（ConcurrentDictionary 服务容器）
   Host/MemoryAccessImpl      — IMemoryAccess 桥接（Repository + EmbeddingProvider）
@@ -455,12 +451,11 @@ ToolCall: 原生 tool_use (Claude API) 为主路径
   NativeToolCallHandler: 按 properties 顺序映射命名参数到位置输入
   参数名必须英文（Bedrock 代理不支持非 ASCII schema 属性名）
 
-循环控制（两种模式统一为事件驱动）:
-  频道循环: 每轮自动继续，模型调 wait 显式结束
-    只说话不调其他工具 → 下一轮提示确认是否结束
-    安全上限: MaxRounds=30(用户消息重置) / MaxSilentRounds=5(speak重置)
-  系统循环: 处理完检查队列，有事继续，无事休眠
-    事件驱动唤醒: TaskBridge/委托提交/定时器
+循环控制:
+  ChannelEngine (Express): 每轮自动继续，模型调 wait 显式结束
+    安全上限: MaxRounds=8
+  RuntimeSession (Working/Task/Eavesdrop): 端口权重驱动或 Wait 超时激活
+    安全上限由 SessionLimits.MaxLifetime / IdleTimeout 控制
 
 插件加载:
   目录: {程序目录}/Plugins/（跟程序走，不跟 Storage 走）
@@ -645,6 +640,6 @@ WebUI 日志追踪页 (/logs/trace):
   交互: 悬停高亮+详情预览 / 单击锁定详情 / 双击筛选同信号 / 右键解锁
   文本区: 时间 / 来源(scope列) / 事件名 + 详情标签
   Close节点自动带open名称([完成] 处理轮次)
-  列头中文显示(频道123/系统循环/Timer心跳等)
+  列头中文显示(频道123/Session/Timer心跳等)
   悬停暂停自动滚动，滚轮恢复
 ```

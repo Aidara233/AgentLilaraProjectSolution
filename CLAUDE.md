@@ -3,39 +3,24 @@
 ## 项目状态
 
 **核心特性**：
-- 双循环架构：频道循环（用户交互）+ 系统循环（任务调度）
-- 系统循环不直接发消息：一律通过 NotifyChannel 注入频道循环，由频道循环自行决定回应方式
-- 委托系统：频道循环提交委托 → 系统循环评估(accept/queue/reject) → 子agent执行 → 结果回传频道循环
-- TaskBridge 异步通信：任务队列 + 通知队列
-- 子agent系统：TaskSession 被动执行，工具白名单，禁止套娃，支持 delegationId 自动回写结果
-- 引擎容错：API 调用失败不杀循环，连续失败 exponential backoff，SystemEngine 崩溃后 SpawnCheck 自动重启
+- 三层架构：框架层（ChannelEngine，Express 响应+冲动值）、基础设施引擎层（8个 ISubEngine）、会话层（RuntimeSession，统一 agent 循环）
+- 基础设施引擎：SessionEngine（会话生命周期+频道占用+30s循环）、MessageEngine（双向消息枢纽，入向去重+分发、出向入库+路由）、AdapterEngine（适配器管理+频道融合+消息分段）、ExtractionEngine（记忆提取+监听检测）、DreamEngine（秩序+巡逻）、ReviewEngine（自由探索）、VisionEngine（图片描述+OCR）、TimerEngine（定时触发）
+- 统一会话：RuntimeSession 不分子类，行为由 CreateSessionSpec（组件列表+端口配置+超限参数）驱动。场景：Working（频道全功能，由 escalate 创建）、Task（任务执行，禁止套娃）、Eavesdrop（监听判定）
+- ChannelEngine：框架层全局单例，仅 Express 响应（冲动值决策+escalate），不实现 IRuntimeSession。WorkingSession 由 Express 的 escalate 工具触发 SessionEngine.CreateSession 创建
+- 端口模型：Session 通过 IInputPort（注入上下文）和 IOutputPort（工具写端口）与外界交互，端口决定工具注册
+- 消息流：AdapterEngine → MessageEngine（入向去重+分发）→ 订阅者（ChannelEngine/Session/ExtractionEngine）；出向 Session → MessageEngine → AdapterEngine
+- 引擎容错：API 调用失败不杀循环，连续失败 exponential backoff，SpawnCheck 检测死亡自动重启
 - 优雅退出：ApplicationStopping 钩子 → 停适配器 → 停引擎（signal gate + CTS）→ 等 30s → 强杀兜底 → close startupSignal
 - 引擎生命周期信号：每个引擎 RunAsync 用 Signal.Continue 创建 lifecycle span（scope=自己），退出时 Close 带 reason
-- 上下文持久化：SystemContext.json WAL 模式
-- 上下文压缩：CompressionTierModule 三层压缩（L1提示/L2提醒/L3硬保底），模型可调 compress 工具主动压缩
-- 关注列表：系统循环下发规则，频道循环语义匹配
 - 睡觉系统：DreamEngine 常驻循环（秩序+巡逻），由 force-sleep 信号触发启动，小睡/大睡通过信号展开
 - 睡眠打断分级：走神被@醒、小睡需@+关键词叫醒（仅@触发梦话）、大睡仅 force-wake 信号可唤醒
-- 睡眠期消息拦截：ChannelEngineSpawnCheck 按 CurrentSleepState 拦截，消息入库但不响应，醒来后自动补提取记忆
 - Prompt Caching：Claude 系 Core 启用 promptCaching，中转站已验证兼容
 - Token 统计：ModelCallLog 数据库表记录每次调用（含 usage + caller tag）。WebUI 已有 LogsProvider（`/p/logs/tokens` 和 `/p/logs/model`）提供可视化。
-  - CallerTag 标识调用来源：Channel:{id} / System / SubAgent:{sessionId} / Review:{mode} / Dream:{phase}
+  - CallerTag 标识调用来源：Channel:{id} / Session:{sessionId} / Task:{sessionId} / Review:{mode} / Dream:{phase}
 - 工具管理：ToolRegistry 动态注册/卸载 + WebUI /p/plugins 管理
-- **模式系统（ModeConfig）**：数据驱动的模式管理，`Storage/Engine/ModeConfig.json` 定义所有模式，WebUI /p/modes 可视化编辑
-  - **Express**（轻量对话）：fire-and-forget，speak/wait/poke/escalate，maxRounds=8
-  - **plan**（规划）：只读分析，5轮，不能修改文件
-  - **browse**（浏览）：阅读搜索，10轮，不能修改
-  - **build**（构建）：编写代码，15轮，可读写文件，不能创建子agent
-  - **manage**（管理）：调度委托、管理远程，toolDefaults=enabled
-  - **fullpower**（完全权限）：不受限，30轮，切换前须征得用户明确同意
-  - Express→Working：escalate 工具（默认进入 plan），上下文清空
-  - Working 子模式间：switch_mode 工具横向切换，保留上下文，**必须先征求用户同意**
-  - Working→Express：deescalate 工具，清空上下文
-  - 工具过滤：ModeConfigLoader.IsToolEnabled(modeId, toolName) — 组件开关(ComponentConfig) 和模式工具列表(ModeConfig) 两层独立
-  - AgentCore.CurrentModeId 统一 Express/Working 过滤路径
 - 消息段交错：MessageSegment（Text/Image/At/Reply）按原文顺序排列。OutgoingMessage.Segments 优先于旧 Content+Attachments 路径。OneBotActions 直接消费 Segments 构建分段消息数组。
 - 图片发送：本地图片通过 base64:// 编码传给 NapCat（不依赖 file:/// 或裸路径）。
-- 多模态图片处理：ContentPart 支持 text/image(path或base64)、图片感知（img 标记+直传/描述分流）、ViewImageTool Working专用、SkiaSharp 缩略图
+- 多模态图片处理：ContentPart 支持 text/image(path或base64)、图片感知（img 标记+直传/描述分流）、SkiaSharp 缩略图
 
 ## 工作规范
 
@@ -181,22 +166,20 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 入口：Program.cs（--file / --debug / --test / 默认 Web 服务器）
 - 数据库：Database/DbManager.cs（初始化 + 迁移）+ 13 张业务表 + logs.db
 - 会话管理：Engine/Core/SessionManager.cs（用户映射 + 频道映射 + 消息入库）
-- 引擎内核：Engine/MasterEngine.cs（SpawnCheck 注册表 + 活跃引擎表 + 全局组件宿主）
-- 引擎孵化：Engine/Core/ChannelEngineSpawnCheck.cs（频道引擎生命周期 + 睡眠拦截）
-- 频道循环：Engine/Worker/ChannelEngine.cs
-- 系统循环：Engine/System/SystemEngine.cs
+- 引擎内核：Engine/Core/MasterEngine.cs（SpawnCheck 注册表 + 活跃引擎表 + 全局组件宿主）
+- 引擎孵化：Engine/Worker/ChannelEngineSpawnCheck.cs（频道引擎生命周期 + 睡眠拦截）
+- 频道循环：Engine/Worker/ChannelEngine.cs（框架层全局单例，Express 响应+冲动值决策）
+- 会话引擎：Engine/Session/SessionEngine.cs（30s监控循环，ScheduledTask/TODO扫描，频道占用管理）
+- 统一会话：Engine/Session/RuntimeSession.cs（IRuntimeSession 实现，行为由 CreateSessionSpec 驱动）
+- 消息枢纽：Engine/Messaging/MessageEngine.cs（双向枢纽，入向去重+分发，出向入库+路由）
+- 适配器引擎：Engine/AdapterEng/AdapterEngine.cs（适配器生命周期+频道融合+消息分段）
+- 提取引擎：Engine/Extraction/ExtractionEngine.cs（记忆提取+监听检测，共用 LLM 调用）
+- 监听任务：Engine/Extraction/EavesdropTask.cs（关键词粗筛+LLM判定，一次性短命会话）
+- 会话规格：AgentLilara.PluginSDK/CreateSessionSpec.cs（组件列表+端口配置+超限参数）
 - 跨循环请求：Engine/Core/CrossRequestRegistry.cs（JSONL 持久化 + 状态机）
 - 委托总线：Engine/Core/DelegationBus.cs（定向路由，非全局广播）
 - 统一通信：Engine/Core/LoopId.cs + Engine/Core/CrossRequest.cs（请求模型）
-- 通信实现：Component/AgentMessagingImpl.cs（IAgentMessaging 实现）
-- 子agent会话：Engine/System/TaskSession.cs
-- 引擎会话接口：Engine/Core/IAgentSession.cs（TaskSession 统一抽象）
 - 循环闸门：Engine/Core/Gate.cs（delegate 驱动，组合不继承）+ Engine/Worker/LoopGate.cs（auto-reset 信号）
-- 模式配置：templates/Engine/ModeConfig.json（模板）+ Storage/Engine/ModeConfig.json（运行时）
-- 模式加载：Engine/ModeConfigLoader.cs（Load/Save/IsToolEnabled/GetMode）
-- 模式切换工具：Tool/Core/SwitchModeTool.cs（Working 子模式横向切换，需用户确认）
-- Escalate/Deescalate：Tool/Core/EscalateTool.cs + Tool/Core/DeescalateTool.cs
-- 模式 WebUI：WebUI/Providers/ModesProvider.cs（/p/modes 页面）
 - Agent 循环：Engine/Core/Agent.cs（多轮推理，退避策略）
 - Agent 宿主接口：Engine/Core/IAgentHost.cs（BuildStartInjectAsync/BuildRoundInjectAsync）
 - Agent 配置：Engine/Core/AgentConfig.cs（轮次/退避/压缩阈值）
@@ -210,8 +193,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 信号类型：Engine/Core/ChannelSignal.cs（NewMessageSignal/BusEventSignal/CompressionSignal/ModeSwitchSignal）
 - 模块总线：Engine/Core/ModuleBus.cs（每引擎独立 pub/sub）
 - 频道持久化：Engine/Worker/ChannelContextPersistence.cs（per-channel JSON 原子写入）
-- 系统持久化：Engine/System/ContextPersistence.cs（SystemContext.json WAL 模式）
-- 统一模型调用：Core/AgentCore.cs（Express/Working 分流 + 原生 tool_use）
+- 统一模型调用：Core/AgentCore.cs（Express 响应 + 原生 tool_use）
 - 记忆检索：Memory/MemoryService.cs（RecallAsync：全量扫描 + 向量精排 + 关联扩展）
 - 记忆提取：Core/MemoryExtractionCore.cs（每3条触发，独立 Worker）
 - Embedding：Client/EmbeddingProvider.cs（bge-large-zh-v1.5，SiliconFlow）
