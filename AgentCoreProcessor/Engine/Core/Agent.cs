@@ -180,7 +180,7 @@ namespace AgentCoreProcessor.Engine
                     await _host.OnTokensUsedAsync(output.Usage);
 
                 // 追加 assistant 到历史
-                _history.Add(FormatAssistant(output));
+                _history.Add(NativeToolMessageFormatter.FormatAssistant(output, _core.UseNativeTools, _toolResolver));
 
                 // 无工具 → 停止
                 if (!output.HasToolCalls || output.ToolCalls == null || output.ToolCalls.Count == 0)
@@ -227,7 +227,7 @@ namespace AgentCoreProcessor.Engine
                 LastRoundResults = results;
 
                 // 工具结果加入历史（Claude API 要求 tool_use 后必须跟 tool_result）
-                _history.Add(FormatToolResults(output.ToolCalls, results));
+                _history.Add(NativeToolMessageFormatter.FormatToolResults(output.ToolCalls, results, _core.UseNativeTools));
 
                 // 每轮持久化
                 if (OnRoundCompleted != null)
@@ -275,148 +275,6 @@ namespace AgentCoreProcessor.Engine
         }
 
         public void AddToHistory(Message msg) => _history.Add(msg);
-
-        // ── 格式化 ──
-
-        private Message FormatAssistant(ModelOutput output)
-        {
-            if (output.HasToolCalls && output.ToolCalls != null)
-            {
-                if (_core.UseNativeTools)
-                {
-                    var parts = new List<ContentPart>();
-                    if (!string.IsNullOrEmpty(output.Thinking))
-                        parts.Add(ContentPart.FromText(output.Thinking));
-                    foreach (var c in output.ToolCalls)
-                    {
-                        if (c.ToolUseId != null)
-                        {
-                            var json = BuildToolInputJson(c);
-                            parts.Add(ContentPart.FromToolUse(c.ToolUseId, c.Tool, json));
-                        }
-                    }
-                    return new Message
-                    {
-                        Role = "assistant",
-                        Content = !string.IsNullOrEmpty(output.Thinking) ? output.Thinking : "[tool calls]",
-                        ContentParts = parts
-                    };
-                }
-                else
-                {
-                    var sb = new System.Text.StringBuilder();
-                    if (!string.IsNullOrEmpty(output.Thinking))
-                        sb.AppendLine(output.Thinking);
-                    foreach (var c in output.ToolCalls)
-                        sb.AppendLine($"{c.Tool}({string.Join(", ", c.Inputs).Truncate(100)})");
-                    return new Message { Role = "assistant", Content = sb.ToString() };
-                }
-            }
-            var content = output.Text ?? output.Thinking;
-            if (string.IsNullOrEmpty(content))
-                content = "[无输出]";
-            return new Message { Role = "assistant", Content = content };
-        }
-
-        private Message FormatToolResults(List<ToolCall> calls, List<ToolResult> results)
-        {
-            if (_core.UseNativeTools)
-            {
-                var parts = new List<ContentPart>();
-                for (int i = 0; i < calls.Count && i < results.Count; i++)
-                {
-                    if (calls[i].ToolUseId != null)
-                    {
-                        var data = results[i].IsSuccess
-                            ? (results[i].Data ?? "成功")
-                            : $"失败: {results[i].Error ?? results[i].Status}";
-                        parts.Add(ContentPart.FromToolResult(calls[i].ToolUseId!, data, !results[i].IsSuccess));
-
-                        // 图片附件：在 tool_result 后追加 image ContentPart
-                        var attachments = results[i].Attachments;
-                        if (results[i].IsSuccess && attachments != null)
-                        {
-                            foreach (var att in attachments)
-                            {
-                                if (att.Type == "image")
-                                {
-                                    if (!string.IsNullOrEmpty(att.FilePath) && File.Exists(att.FilePath))
-                                        parts.Add(ContentPart.FromImagePath(att.FilePath));
-                                    else if (!string.IsNullOrEmpty(att.Base64Data))
-                                        parts.Add(ContentPart.FromImageBase64(att.Base64Data, att.MediaType ?? "image/png"));
-                                }
-                            }
-                        }
-                    }
-                }
-                return new Message { Role = "user", Content = "[tool results]", ContentParts = parts };
-            }
-            else
-            {
-                var sb = new System.Text.StringBuilder("[上一轮工具执行结果]\n");
-                for (int i = 0; i < calls.Count && i < results.Count; i++)
-                {
-                    if (results[i].IsSuccess)
-                        sb.AppendLine($"[{calls[i].Tool}]: 成功");
-                    else
-                        sb.AppendLine($"[{calls[i].Tool}]: {results[i].Status} - {results[i].Error}");
-                }
-                return new Message { Role = "user", Content = sb.ToString() };
-            }
-        }
-
-        /// <summary>
-        /// 确保 tool_use 的 input 始终是 JSON 对象（非数组）。
-        /// 各 API 均要求 tool_use.input 为 JSON object，数组格式会导致 400。
-        /// </summary>
-        private string BuildToolInputJson(ToolCall call)
-        {
-            // 优先用 RawInputJson，但验证它是对象
-            if (!string.IsNullOrEmpty(call.RawInputJson))
-            {
-                try
-                {
-                    var node = Newtonsoft.Json.Linq.JToken.Parse(call.RawInputJson);
-                    if (node is Newtonsoft.Json.Linq.JObject)
-                        return call.RawInputJson;
-                }
-                catch { }
-            }
-
-            // 从工具 schema 重建具名 JSON 对象
-            var tool = _toolResolver(call.Tool);
-            if (tool != null)
-            {
-                try
-                {
-                    var schemaNode = tool.GetInputSchema();
-                    var schemaStr = schemaNode?.ToJsonString();
-                    if (!string.IsNullOrEmpty(schemaStr))
-                    {
-                        var schema = Newtonsoft.Json.Linq.JObject.Parse(schemaStr);
-                        if (schema["properties"] is Newtonsoft.Json.Linq.JObject props)
-                        {
-                            var obj = new Newtonsoft.Json.Linq.JObject();
-                            int i = 0;
-                            foreach (var prop in props.Properties())
-                            {
-                                var raw = i < call.Inputs.Count ? call.Inputs[i] : "";
-                                Newtonsoft.Json.Linq.JToken val;
-                                try { val = Newtonsoft.Json.Linq.JToken.Parse(raw); }
-                                catch { val = raw; }
-                                obj[prop.Name] = val;
-                                i++;
-                            }
-                            return obj.ToString(Newtonsoft.Json.Formatting.None);
-                        }
-                    }
-                }
-                catch { }
-            }
-
-            // 最后兜底：空对象
-            return "{}";
-        }
     }
 
     internal enum AgentStopReason
