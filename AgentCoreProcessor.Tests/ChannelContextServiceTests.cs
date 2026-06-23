@@ -57,17 +57,29 @@ public class ChannelContextServiceTests
     }
 }
 
-file class FakeDataSource : IChannelDataSource
+class FakeDataSource : IChannelDataSource
 {
     public List<UserMessage> Messages = new();
     public Dictionary<int, User> Users = new();
     public Dictionary<int, Person> Persons = new();
+    public string? BotPlatformId { get; set; }
+
     public Task<List<UserMessage>> GetRecentMessagesAsync(int channelId, int limit)
         => Task.FromResult(Messages.FindAll(m => m.ChannelId == channelId));
     public Task<User?> GetUserByIdAsync(int userId)
         => Task.FromResult(Users.TryGetValue(userId, out var u) ? u : null);
     public Task<Person?> GetPersonByIdAsync(int personId)
         => Task.FromResult(Persons.TryGetValue(personId, out var p) ? p : null);
+
+    public Task<List<UserMessage>> GetContextByChannelAsync(int channelId, int limit)
+        => Task.FromResult(Messages.FindAll(m => m.ChannelId == channelId).Take(limit).ToList());
+    public Task<List<UserMessage>> GetLatestMessagesAfterIdAsync(int channelId, int afterId, int limit)
+        => Task.FromResult(Messages.FindAll(m => m.ChannelId == channelId && m.Id > afterId).TakeLast(limit).ToList());
+    public Task<UserMessage?> GetByPlatformMessageIdAsync(int channelId, string platformMessageId)
+        => Task.FromResult(Messages.FirstOrDefault(m => m.ChannelId == channelId && m.PlatformMessageId == platformMessageId));
+    public Task<List<UserMessage>> GetContextAroundAsync(int messageId, int channelId, int radius)
+        => Task.FromResult(Messages.FindAll(m => m.ChannelId == channelId && Math.Abs(m.Id - messageId) <= radius));
+    public string? GetBotPlatformId(string platform) => BotPlatformId;
 }
 
 public class ParticipantDerivationTests
@@ -91,5 +103,105 @@ public class ParticipantDerivationTests
         Assert.Equal(2, ps.Count);                       // distinct，bot 排除
         Assert.Contains(ps, p => p.PlatformId == "p10" && p.DisplayName == "甲名" && p.TrustLevel == 2);
         Assert.Contains(ps, p => p.PlatformId == "p20" && p.DisplayName == "乙名");
+    }
+}
+
+public class FormatIncomingTests
+{
+    private static FakeDataSource MakeData(string? botId = "10001") => new() { BotPlatformId = botId };
+
+    private static ChannelContextState MakeState(int channelId = 1) => new()
+    {
+        ChannelId = channelId,
+        ChannelName = "group_12345",
+        Mode = "express"
+    };
+
+    [Fact]
+    public async Task FormatIncoming_WrapsInNewMessagesTag()
+    {
+        var data = MakeData();
+        var svc = new ChannelContextService(data);
+        var m = new UserMessage { Id = 1, ChannelId = 1, SenderName = "张三", Content = "你好" };
+        var msg = await svc.FormatIncomingAsync(MakeState(), m);
+        Assert.NotNull(msg);
+        Assert.Contains("<new_messages>", msg!.Content);
+        Assert.Contains("</new_messages>", msg.Content);
+    }
+
+    [Fact]
+    public async Task FormatIncoming_MentionedByBot_HasMentionedAttr()
+    {
+        var data = MakeData(botId: "10001");
+        var svc = new ChannelContextService(data);
+        var m = new UserMessage
+        {
+            Id = 1, ChannelId = 1, SenderName = "张三",
+            Content = "@bot 帮我", MentionedPlatformIds = "10001"
+        };
+        var msg = await svc.FormatIncomingAsync(MakeState(), m);
+        Assert.NotNull(msg);
+        Assert.Contains("mentioned=\"true\"", msg!.Content);
+    }
+
+    [Fact]
+    public async Task FormatIncoming_NotMentioned_NoMentionedAttr()
+    {
+        var data = MakeData(botId: "10001");
+        var svc = new ChannelContextService(data);
+        var m = new UserMessage
+        {
+            Id = 1, ChannelId = 1, SenderName = "张三",
+            Content = "普通消息", MentionedPlatformIds = null
+        };
+        var msg = await svc.FormatIncomingAsync(MakeState(), m);
+        Assert.NotNull(msg);
+        Assert.DoesNotContain("mentioned=\"true\"", msg!.Content);
+    }
+
+    [Fact]
+    public async Task FormatIncoming_WithReply_HasReplyAttr()
+    {
+        var data = MakeData();
+        var svc = new ChannelContextService(data);
+        var m = new UserMessage
+        {
+            Id = 2, ChannelId = 1, SenderName = "李四",
+            Content = "回复你", ReplyToPlatformMessageId = "msgABC"
+        };
+        var msg = await svc.FormatIncomingAsync(MakeState(), m);
+        Assert.NotNull(msg);
+        Assert.Contains("reply=\"msgABC\"", msg!.Content);
+    }
+
+    [Fact]
+    public async Task FormatIncoming_SenderNameEscaped()
+    {
+        var data = MakeData();
+        var svc = new ChannelContextService(data);
+        var m = new UserMessage
+        {
+            Id = 3, ChannelId = 1, SenderName = "用户<test>",
+            Content = "消息"
+        };
+        var msg = await svc.FormatIncomingAsync(MakeState(), m);
+        Assert.NotNull(msg);
+        // 名字应当被 XML 转义
+        Assert.Contains("&lt;test&gt;", msg!.Content);
+    }
+
+    [Fact]
+    public void IsBotMentionedInMessage_CorrectlyDetects()
+    {
+        var data = MakeData(botId: "10001");
+        var svc = new ChannelContextService(data);
+
+        var mentioned = new UserMessage { MentionedPlatformIds = "10001,99999" };
+        var notMentioned = new UserMessage { MentionedPlatformIds = "99999" };
+        var noMentions = new UserMessage { MentionedPlatformIds = null };
+
+        Assert.True(svc.IsBotMentionedInMessage(mentioned));
+        Assert.False(svc.IsBotMentionedInMessage(notMentioned));
+        Assert.False(svc.IsBotMentionedInMessage(noMentions));
     }
 }
