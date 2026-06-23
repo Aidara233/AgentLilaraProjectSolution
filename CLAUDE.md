@@ -193,7 +193,10 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 信号类型：Engine/Core/ChannelSignal.cs（NewMessageSignal/BusEventSignal/CompressionSignal/ModeSwitchSignal）
 - 模块总线：Engine/Core/ModuleBus.cs（每引擎独立 pub/sub）
 - 频道持久化：Engine/Worker/ChannelContextPersistence.cs（per-channel JSON 原子写入）
-- 统一模型调用：Core/AgentCore.cs（Express 响应 + 原生 tool_use）
+- 上下文构建：Engine/Context/ChannelContextService.cs（ChannelEngine 与 RuntimeSession 共用的上下文格式化）
+- 上下文状态：Engine/Context/ChannelContextState.cs（频道完整上下文快照：参与者+历史+系统信息）
+- 会话宿主：Engine/Session/SessionAgentHost.cs（RuntimeSession 端口驱动的 Agent 宿主实现）
+- 统一模型调用：Core/AgentCore.cs（Express 响应 + 原生 tool_use；SessionCore 原名 WorkingCore）
 - 记忆检索：Memory/MemoryService.cs（RecallAsync：全量扫描 + 向量精排 + 关联扩展）
 - 记忆提取：Core/MemoryExtractionCore.cs（每3条触发，独立 Worker）
 - Embedding：Client/EmbeddingProvider.cs（bge-large-zh-v1.5，SiliconFlow）

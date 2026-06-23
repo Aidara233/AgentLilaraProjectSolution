@@ -115,7 +115,7 @@ Persona.txt 作为普通 prompt 文件处理。需要 Persona 的 Core 在 `prom
 | 配置文件名 | provider | model | useNativeTools | 用途 |
 |-----------|----------|-------|:---:|------|
 | `Base.json` | openai | deepseek-v4-flash | - | 默认回退 + 工具核心共用 |
-| `WorkingCore.json` | claude | claude-opus-4-6 | ✓ | 频道循环 Working 模式 |
+| `SessionCore.json` | claude | claude-opus-4-6 | ✓ | RuntimeSession 多轮推理（原 WorkingCore） |
 | `ExpressCore.json` | claude | claude-sonnet-4-6 | ✓ | 频道循环 Express 模式 |
 | `SystemCore.json` | claude | claude-opus-4-6 | ✓ | 系统循环 |
 | `ReviewCore.json` | openai | deepseek-v4-pro | ✓ | 复盘引擎 |

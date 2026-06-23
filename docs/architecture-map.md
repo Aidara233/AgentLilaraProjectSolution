@@ -82,7 +82,18 @@ PluginLoader 扫描子目录 → 读 `plugin.json` → 加载 `entry` DLL。无�
 
 三层架构：框架层（ChannelEngine，常驻 Express 响应）→ 引擎层（8个 ISubEngine）→ 会话层（RuntimeSession，按需创建）。
 
-```
+### 上下文机制
+
+**ChannelContextService** 为 ChannelEngine 与 RuntimeSession 共用的上下文构建服务，统一格式化频道上下文。该服务输出 `ChannelContextState`，包含当前频道会话的完整上下文快照：
+- **参与者信息**：从数据库派生（实时查询），无累积状态，反映当前频道活跃用户
+- **消息历史**：按规则保留（最近 N 条+关键事件）
+- **系统上下文**：频道配置+睡眠状态+模式标记
+
+**Session 认知**构成：
+- 频道端口集合：Session 挂载的每根端口对应一个频道，每频道贡献其 ChannelContextState（参与者+历史）
+- 初始状态（InitialState）：Session 创建时的指令，排在所有频道上下文之后，驱动 Session 行为
+
+这种设计避免参与者累积过期状态，同时支持 Session 跨多个频道关联信息。
 框架层（非 ISubEngine，随进程启动）:
   ChannelEngine — Express 响应 + 冲动值决策 + escalate → 创建 WorkingSession
 

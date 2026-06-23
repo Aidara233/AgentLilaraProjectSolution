@@ -8,14 +8,14 @@
 
 ### 定位
 
-AgentCore 是系统中最关键的核心，负责所有 LLM 对话交互。它合并了原先 ExpressCore + WorkingCore 两个独立核心的能力，统一处理两种引擎模式下的模型调用。
+AgentCore 是系统中最关键的核心，负责所有 LLM 对话交互。它合并了原先 ExpressCore + SessionCore 两个独立核心的能力，统一处理两种引擎模式下的模型调用。SessionCore（原 WorkingCore）现已专供 RuntimeSession 的统一会话循环使用。
 
 ### 模式切换
 
 | 模式 | 配置文件 | 用途 |
 |------|----------|------|
 | Express | `ExpressCore.json` | 快速响应（fire-and-forget 工具，不续轮） |
-| Working | `WorkingCore.json` | 多轮推理（工具调用结果回注，循环执行） |
+| Session | `SessionCore.json` | 多轮推理（工具调用结果回注，循环执行；RuntimeSession 专用） |
 
 模式通过 `SwitchMode(EngineMode)` 自动切换，切换时重建 Processor 以加载不同配置。若构造时指定了 `cfgName`（固定模式），则 `SwitchMode` 不生效。
 
@@ -66,7 +66,7 @@ Task<ModelOutput> InvokeWithHistoryAsync(List<Message> messages, string? profile
 
 | 构造 | 说明 |
 |------|------|
-| `new AgentCore()` | 默认，配置="WorkingCore"，`UsePersona=true`，模式可切换 |
+| `new AgentCore()` | 默认，配置="SessionCore"，`UsePersona=true`，模式可切换 |
 | `new AgentCore("SystemCore", usePersona: false)` | 系统循环用，固定模式，无 Persona |
 | `new AgentCore("ReviewCore", usePersona: false)` | 复盘用，固定模式，无 Persona |
 
