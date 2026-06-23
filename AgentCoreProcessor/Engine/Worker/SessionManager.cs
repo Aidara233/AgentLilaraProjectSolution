@@ -220,6 +220,13 @@ namespace AgentCoreProcessor.Engine
         public Task<UserMessage?> GetByPlatformMessageIdAsync(int channelId, string platformMessageId)
             => messages.GetByPlatformMessageIdAsync(channelId, platformMessageId);
 
+        /// <summary>按平台消息ID查找消息（用于 MessageEngine 去重）。</summary>
+        public Task<UserMessage?> FindMessageByPlatformIdAsync(int channelId, string platformMessageId)
+            => messages.GetByPlatformMessageIdAsync(channelId, platformMessageId);
+
+        /// <summary>直接插入消息（MessageEngine 用）。</summary>
+        public async Task InsertMessageAsync(UserMessage msg) => await messages.SaveAsync(msg);
+
         /// <summary>以某条消息为锚点，取前后各 radius 条消息作为上下文。</summary>
         public Task<List<UserMessage>> GetContextAroundAsync(int messageId, int channelId, int radius = 3)
             => messages.GetContextAroundAsync(messageId, channelId, radius);
