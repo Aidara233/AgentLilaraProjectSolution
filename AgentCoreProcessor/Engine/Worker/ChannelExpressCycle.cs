@@ -51,6 +51,11 @@ namespace AgentCoreProcessor.Engine
                 .ToList();
             agentCore.GlobalComponentTools = ctx.GlobalComponentHost?.GetVisibleTools("channel").ToList();
 
+            // 诊断：输出当前可用的 Express 工具
+            var allExpressDefs = ToolRegistry.GetExpressToolDefinitions("channel");
+            var additionalNames = agentCore.AdditionalTools?.Select(t => t.Name).ToList() ?? new();
+            Console.Error.WriteLine($"[Express ch:{channelId}] ToolRegistry={allExpressDefs.Count} tools, AdditionalTools={additionalNames.Count} tools: {string.Join(", ", additionalNames)}");
+
             if (_consecutiveExpressFailures > 0 && _consecutiveExpressFailures <= agentConfig.BackoffSeconds.Length)
             {
                 var backoff = agentConfig.BackoffSeconds[_consecutiveExpressFailures - 1];
@@ -158,6 +163,7 @@ namespace AgentCoreProcessor.Engine
                     var call = output.ToolCalls[i];
                     if (call.Tool == "escalate")
                     {
+                        Console.Error.WriteLine($"[Express ch:{channelId}] escalate 触发，创建 Working session...");
                         var reason = expressResults[i]?.Data ?? "";
                         var sessionEngine = ctx.GetActiveEnginesSnapshot()
                             .OfType<Session.SessionEngine>().FirstOrDefault();
@@ -194,6 +200,11 @@ namespace AgentCoreProcessor.Engine
                                 InitialState = historyText.ToString(),
                                 OverrideLimits = new SessionLimits { MaxLifetime = TimeSpan.FromHours(2), IdleTimeout = TimeSpan.FromMinutes(30) }
                             });
+                            Console.Error.WriteLine($"[Express ch:{channelId}] Working session 已创建，频道已占用");
+                        }
+                        else
+                        {
+                            Console.Error.WriteLine($"[Express ch:{channelId}] escalate 失败：SessionEngine 未找到");
                         }
                         break;
                     }
