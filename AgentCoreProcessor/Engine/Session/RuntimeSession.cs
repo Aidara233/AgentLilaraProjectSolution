@@ -293,13 +293,24 @@ internal class RuntimeSession : IRuntimeSession
                 // ── 工具执行 ──
                 if (output.HasToolCalls && output.ToolCalls != null && output.ToolCalls.Count > 0)
                 {
-                    var executor = new ToolExecutor(name =>
-                        _componentHost?.TryGetTool(name) ?? ToolRegistry.Get(name));
+                    System.Func<string, ITool?> resolver = name =>
+                        _componentHost?.TryGetTool(name) ?? ToolRegistry.Get(name);
+                    var executor = new ToolExecutor(resolver);
 
                     var results = await executor.ExecuteAsync(output.ToolCalls);
                     Console.Error.WriteLine($"[Session {SessionId}] ToolResults: {string.Join(", ", output.ToolCalls.Select((c, i) => $"{c.Tool}={results[i].Status}"))}");
-                    var stopRequested = false;
 
+                    // assistant 轮：保留 tool_use ContentParts（携带 tool_use_id），与下方 tool_result 严格配对
+                    // 替换上面那条空文本 assistant，避免模型看不到自己调用了工具（runaway 根因）
+                    messages[messages.Count - 1] = NativeToolMessageFormatter.FormatAssistant(
+                        output, _agentCore.UseNativeTools, resolver);
+
+                    // tool_result 轮：一条消息按 tool_use_id 配对全部 call→result
+                    messages.Add(NativeToolMessageFormatter.FormatToolResults(
+                        output.ToolCalls, results, _agentCore.UseNativeTools));
+
+                    // 副作用 + 停止判定（镜像 Agent.cs 的停循环语义）
+                    var stopRequested = false;
                     for (int i = 0; i < output.ToolCalls.Count; i++)
                     {
                         var call = output.ToolCalls[i];
@@ -307,37 +318,37 @@ internal class RuntimeSession : IRuntimeSession
 
                         switch (call.Tool)
                         {
-                            case "speak":
-                                // 将回复发回 MessageEngine 出向
-                                await SendOutput(result.Data ?? "");
-                                break;
+                            // speak/send_media 等 OutputOnly 工具自带发送，不在此重发（旧代码 SendOutput(result.Data) 会把消息ID当正文重发）
                             case "deescalate":
+                                // deescalate 自身不发消息，这里把理由作为收尾发言发出
                                 await SendOutput(result.Data ?? "工作完成，切回轻量模式。");
                                 stopRequested = true;
                                 break;
                             case "wait":
-                                if (int.TryParse(result.Data, out var mins) || int.TryParse(call.Inputs.Count > 1 ? call.Inputs[1] : "5", out mins))
-                                    SetWaitUntil(DateTime.UtcNow.AddMinutes(mins));
-                                else
-                                    SetWaitUntil(DateTime.UtcNow.AddMinutes(5));
+                                // 分钟数来自第二个参数 timeout_minutes（Inputs[1]），Inputs[0] 是 reason
+                                var mins = 5;
+                                if (call.Inputs.Count > 1 && int.TryParse(call.Inputs[1], out var parsed))
+                                    mins = parsed;
+                                SetWaitUntil(DateTime.UtcNow.AddMinutes(mins));
+                                stopRequested = true;
+                                break;
+                            case "switch_mode":
+                                // 子模式切换：批次1仅停止突发避免静默无限循环；真正的模式切换待批次2循环重构
                                 stopRequested = true;
                                 break;
                         }
-
-                        // 工具结果注入上下文
-                        messages.Add(new Message
-                        {
-                            Role = "user",
-                            Content = $"[工具 {call.Tool} 结果] {result.Data ?? result.Status}"
-                        });
                     }
+
+                    // 内联 wait（speak 含 [wait] 占位符时 result.RequestWait=true）
+                    if (results.Any(r => r.RequestWait))
+                        stopRequested = true;
 
                     if (stopRequested)
                         break;
                 }
                 else
                 {
-                    // 无工具调用：模型给了最终回复，等待下一轮输入
+                    // 无工具调用：模型给了最终回复，结束突发，等待下一轮输入
                     messages.Clear();
                 }
             }
