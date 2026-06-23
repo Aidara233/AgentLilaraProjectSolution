@@ -387,7 +387,11 @@ internal partial class ChannelContextService
         var recentMsgs = await _data.GetContextByChannelAsync(st.ChannelId, 20);
         if (recentMsgs.Count > 0)
         {
-            var historyMsgs = recentMsgs.Where(m => m.Id <= st.LastConsumedMessageId).ToList();
+            // Express：游标筛选（Id<=cursor 之前的算历史，之后的留给 RoundInject 追赶段）
+            // Session：忽略游标，取最近 N 条全量快照（escalate 出来的 session 游标恒 0，不能按游标筛）
+            var historyMsgs = st.Mode == "session"
+                ? recentMsgs
+                : recentMsgs.Where(m => m.Id <= st.LastConsumedMessageId).ToList();
             if (historyMsgs.Count > 0)
             {
                 var histQc = await BuildQuotedContextForBatchAsync(historyMsgs, st.ChannelId, maxDepth: 1, includeSurrounding: true);

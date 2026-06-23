@@ -205,3 +205,46 @@ public class FormatIncomingTests
         Assert.False(svc.IsBotMentionedInMessage(noMentions));
     }
 }
+
+public class BuildHistoryBlockTests
+{
+    private static FakeDataSource MakeData(string? botId = null) => new() { BotPlatformId = botId };
+
+    [Fact]
+    public async Task Session_IgnoresCursor_ReturnsRecentMessages()
+    {
+        var data = MakeData();
+        data.Messages.Add(new UserMessage { Id = 1, ChannelId = 1, SenderName = "张三", Content = "消息一", IsFromBot = false });
+        data.Messages.Add(new UserMessage { Id = 2, ChannelId = 1, SenderName = "李四", Content = "消息二", IsFromBot = false });
+        data.Messages.Add(new UserMessage { Id = 3, ChannelId = 1, SenderName = "王五", Content = "消息三", IsFromBot = false });
+
+        var svc = new ChannelContextService(data);
+        var st = new ChannelContextState { ChannelId = 1, Mode = "session", LastConsumedMessageId = 0 };
+        var msgs = await svc.BuildHistoryBlockAsync(st);
+
+        // session 模式忽略游标，应返回全部 3 条消息内容
+        var allContent = string.Join(" ", msgs.Select(m => m.Content ?? ""));
+        Assert.Contains("消息一", allContent);
+        Assert.Contains("消息二", allContent);
+        Assert.Contains("消息三", allContent);
+    }
+
+    [Fact]
+    public async Task Express_RespectsCursor_FiltersByMessageId()
+    {
+        var data = MakeData();
+        data.Messages.Add(new UserMessage { Id = 1, ChannelId = 1, SenderName = "张三", Content = "消息一", IsFromBot = false });
+        data.Messages.Add(new UserMessage { Id = 2, ChannelId = 1, SenderName = "李四", Content = "消息二", IsFromBot = false });
+        data.Messages.Add(new UserMessage { Id = 3, ChannelId = 1, SenderName = "王五", Content = "消息三", IsFromBot = false });
+
+        var svc = new ChannelContextService(data);
+        var st = new ChannelContextState { ChannelId = 1, Mode = "express", LastConsumedMessageId = 2 };
+        var msgs = await svc.BuildHistoryBlockAsync(st);
+
+        // express 模式按游标筛选，只含 Id<=2 的消息，不含 Id=3
+        var allContent = string.Join(" ", msgs.Select(m => m.Content ?? ""));
+        Assert.Contains("消息一", allContent);
+        Assert.Contains("消息二", allContent);
+        Assert.DoesNotContain("消息三", allContent);
+    }
+}
