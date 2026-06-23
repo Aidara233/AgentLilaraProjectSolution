@@ -39,7 +39,7 @@ namespace AgentCoreProcessor.Engine
 
             agentCore.EngineType = "channel";
             agentCore.CurrentModeId = "express";
-            agentCore.AdditionalTools = ToolRegistry.All.Values
+            agentCore.AdditionalTools = (componentHost?.GetVisibleTools() ?? Enumerable.Empty<ITool>())
                 .Where(t => !ToolRegistry.IsDisabled(t.Name)
                             && ModeConfigLoader.IsToolEnabled("express", t.Name))
                 .ToList();

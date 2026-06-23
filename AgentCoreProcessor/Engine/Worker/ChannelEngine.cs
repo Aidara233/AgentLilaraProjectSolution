@@ -154,6 +154,10 @@ namespace AgentCoreProcessor.Engine
         private readonly object watchRulesLock = new();
         private List<WatchRule> watchRules = new();
 
+        // 组件宿主（Express 工具加载）
+        private Component.ComponentHost? componentHost;
+        private readonly ModuleBus _moduleBus = new();
+
 
         /// <summary>由 SpawnCheck 创建，传入初始消息。</summary>
         public ChannelEngine(ISystemContext ctx, SessionContext initialContext, IncomingMessage initialMessage)
@@ -407,6 +411,14 @@ namespace AgentCoreProcessor.Engine
             _signalFilter = ctx.SignalFilters.GetConfig("channel");
             delegationNotificationModule.SetFilterConfig(_signalFilter);
             ctx.DelegationBus.RegisterLoop(myLoopId, OnCrossRequestReceived);
+
+            // 初始化 ComponentHost（加载 Express 相关 LoopComponent）
+            componentHost = new Component.ComponentHost(
+                myLoopId, "channel", _moduleBus, ctx.ComponentServices,
+                () => gate.ForceWake(),
+                new Dictionary<Type, object> { [typeof(IAgentMessaging)] = _messaging });
+            componentHost.GlobalHost = ctx.GlobalComponentHost;
+            await componentHost.InitAsync();
 
             SignalContext? sessionCtx = null;
 
