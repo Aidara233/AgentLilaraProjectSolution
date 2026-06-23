@@ -203,6 +203,7 @@ internal class RuntimeSession : IRuntimeSession
                 _agentCore.EngineType = "channel"; // 复用 channel 工具白名单
                 _agentCore.CurrentModeId = MaxLevel > 0 ? "build" : "plan";
                 _agentCore.AdditionalTools = _tools.Values.ToList();
+                Console.Error.WriteLine($"[Session {SessionId}] Tools: {string.Join(", ", _tools.Keys)} (EngineType={_agentCore.EngineType}, Mode={_agentCore.CurrentModeId})");
 
                 agentRound++;
                 if (agentRound > MaxAgentRounds)
@@ -215,6 +216,7 @@ internal class RuntimeSession : IRuntimeSession
                 try
                 {
                     output = await _agentCore.InvokeAsync(messages, EngineMode.Working);
+                    Console.Error.WriteLine($"[Session {SessionId}] ModelOutput: Text={output.Text?.Length ?? 0}chars, ToolCalls={output.ToolCalls?.Count ?? 0}");
                 }
                 catch (Exception ex)
                 {
@@ -231,6 +233,7 @@ internal class RuntimeSession : IRuntimeSession
                         _componentHost?.TryGetTool(name) ?? ToolRegistry.Get(name));
 
                     var results = await executor.ExecuteAsync(output.ToolCalls);
+                    Console.Error.WriteLine($"[Session {SessionId}] ToolResults: {string.Join(", ", output.ToolCalls.Select((c, i) => $"{c.Tool}={results[i].Status}"))}");
                     var stopRequested = false;
 
                     for (int i = 0; i < output.ToolCalls.Count; i++)
