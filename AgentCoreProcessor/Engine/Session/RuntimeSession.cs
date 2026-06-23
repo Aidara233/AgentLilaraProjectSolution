@@ -200,7 +200,7 @@ internal class RuntimeSession : IRuntimeSession
                 // ── Agent 推理 ──
                 if (_agentCore == null) break;
 
-                _agentCore.EngineType = "session";
+                _agentCore.EngineType = "channel"; // 复用 channel 工具白名单
                 _agentCore.CurrentModeId = MaxLevel > 0 ? "build" : "plan";
                 _agentCore.AdditionalTools = _tools.Values.ToList();
 

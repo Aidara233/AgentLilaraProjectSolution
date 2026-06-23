@@ -50,7 +50,7 @@ internal class SessionEngine : ISubEngine
         try
         {
             session.InitComponents(
-                "sub-agent", // 复用现有 LoopApplicability
+                "channel", // 复用频道组件白名单（BasicTools 等）
                 _ctx.ModuleBus,
                 _ctx.ComponentServices,
                 () => { /* wake loop callback */ });
