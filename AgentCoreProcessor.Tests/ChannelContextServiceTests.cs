@@ -1,6 +1,7 @@
 // AgentCoreProcessor.Tests/ChannelContextServiceTests.cs
 using Xunit;
 using AgentCoreProcessor.Engine.Context;
+using AgentCoreProcessor.Database;
 
 namespace AgentCoreProcessor.Tests;
 
@@ -53,5 +54,42 @@ public class ChannelContextServiceTests
     public void RenderParticipants_Empty_ReturnsEmpty()
     {
         Assert.Equal("", ChannelContextService.RenderParticipants("group_1", 1, new List<ParticipantView>()));
+    }
+}
+
+file class FakeDataSource : IChannelDataSource
+{
+    public List<UserMessage> Messages = new();
+    public Dictionary<int, User> Users = new();
+    public Dictionary<int, Person> Persons = new();
+    public Task<List<UserMessage>> GetRecentMessagesAsync(int channelId, int limit)
+        => Task.FromResult(Messages.FindAll(m => m.ChannelId == channelId));
+    public Task<User?> GetUserByIdAsync(int userId)
+        => Task.FromResult(Users.TryGetValue(userId, out var u) ? u : null);
+    public Task<Person?> GetPersonByIdAsync(int personId)
+        => Task.FromResult(Persons.TryGetValue(personId, out var p) ? p : null);
+}
+
+public class ParticipantDerivationTests
+{
+    [Fact]
+    public async Task GetParticipants_DistinctSendersFromRecentMessages()
+    {
+        var data = new FakeDataSource();
+        data.Messages.Add(new UserMessage { ChannelId = 1, UserId = 10, IsFromBot = false });
+        data.Messages.Add(new UserMessage { ChannelId = 1, UserId = 10, IsFromBot = false }); // 重复发送者
+        data.Messages.Add(new UserMessage { ChannelId = 1, UserId = 20, IsFromBot = false });
+        data.Messages.Add(new UserMessage { ChannelId = 1, UserId = 0,  IsFromBot = true });  // bot 跳过
+        data.Users[10] = new User { Id = 10, PersonId = 100, PlatformId = "p10", DisplayName = "甲" };
+        data.Users[20] = new User { Id = 20, PersonId = 200, PlatformId = "p20", DisplayName = "乙" };
+        data.Persons[100] = new Person { Id = 100, Name = "甲名", TrustLevel = TrustLevel.Understanding }; // Understanding = 2
+        data.Persons[200] = new Person { Id = 200, Name = "乙名", TrustLevel = TrustLevel.Stranger };      // Stranger = 1
+
+        var svc = new ChannelContextService(data);
+        var ps = await svc.GetParticipantsAsync(1);
+
+        Assert.Equal(2, ps.Count);                       // distinct，bot 排除
+        Assert.Contains(ps, p => p.PlatformId == "p10" && p.DisplayName == "甲名" && p.TrustLevel == 2);
+        Assert.Contains(ps, p => p.PlatformId == "p20" && p.DisplayName == "乙名");
     }
 }
