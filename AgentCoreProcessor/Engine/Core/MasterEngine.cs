@@ -125,7 +125,6 @@ namespace AgentCoreProcessor.Engine
         private readonly List<(ISubEngine Engine, Task Task)> _engineTasks = new();
         private readonly object engineLock = new();
         private readonly SemaphoreSlim eventLock = new(1, 1);
-        private SystemEngine? systemEngine; // Phase 5: 保存 SystemEngine 引用用于工具注册
 
         // ---- Component 系统 ----
         private readonly ModuleBus _moduleBus = new();
@@ -137,13 +136,16 @@ namespace AgentCoreProcessor.Engine
         // SpawnCheck 工厂（有序列表，Command 在 Channel 之前拦截命令消息）
         private static readonly List<(string Name, Func<IEngineSpawnCheck> Factory)> SpawnCheckFactory =
         [
-            ("Command", () => new CommandSpawnCheck()),
-            ("Timer",   () => new TimerEngineSpawnCheck()),
-            ("System",  () => new SystemEngineSpawnCheck()),
-            ("Channel",  () => new ChannelEngineSpawnCheck()),
-            ("Dream",   () => new DreamEngineSpawnCheck()),
-            ("Review",  () => new ReviewEngineSpawnCheck()),
-            ("Vision",  () => new Vision.VisionEngineSpawnCheck()),
+            ("Command",     () => new CommandSpawnCheck()),
+            ("Timer",       () => new TimerEngineSpawnCheck()),
+            ("Message",     () => new MessageEngineSpawnCheck()),
+            ("Adapter",     () => new AdapterEngineSpawnCheck()),
+            ("Session",     () => new SessionEngineSpawnCheck()),
+            ("Extraction",  () => new ExtractionEngineSpawnCheck()),
+            ("Channel",     () => new ChannelEngineSpawnCheck()),
+            ("Dream",       () => new DreamEngineSpawnCheck()),
+            ("Review",      () => new ReviewEngineSpawnCheck()),
+            ("Vision",      () => new Vision.VisionEngineSpawnCheck()),
         ];
 
 
@@ -197,8 +199,6 @@ namespace AgentCoreProcessor.Engine
         {
             lock (engineLock) { return spawnChecks.OfType<T>().FirstOrDefault(); }
         }
-
-        internal SystemEngine? GetSystemEngine() => systemEngine;
 
         public List<ISubEngine> GetActiveEnginesSnapshot()
         {
@@ -600,9 +600,8 @@ namespace AgentCoreProcessor.Engine
             CrossRequests = new CrossRequestRegistry(systemLoopPath, DelegationBus);
             CrossRequests.OnRequestSubmitted += initiatorId =>
             {
-                if (initiatorId == LoopId.System && systemEngine != null)
-                    systemEngine.SignalGate();
-                else if (LoopId.IsChannel(initiatorId, out var chId))
+                // SystemEngine 已删除，跨循环请求由 SessionEngine 接管（TODO）
+                if (LoopId.IsChannel(initiatorId, out var chId))
                     WakeLoop(initiatorId);
             };
             CrossRequests.OnRequestUpdated += loopId =>
@@ -726,12 +725,6 @@ namespace AgentCoreProcessor.Engine
                 {
                     var engine = check.Create(this);
                     StartEngine(engine);
-
-                    // Phase 5: 保存 SystemEngine 引用
-                    if (engine is SystemEngine sysEngine)
-                    {
-                        systemEngine = sysEngine;
-                    }
                 }
             }
 
@@ -865,7 +858,7 @@ namespace AgentCoreProcessor.Engine
         {
             if (LoopId.IsSystem(loopId))
             {
-                systemEngine?.SignalGate();
+                // SystemEngine 已删除，跨循环请求由 SessionEngine 接管
                 return;
             }
 

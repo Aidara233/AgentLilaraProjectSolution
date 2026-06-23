@@ -1,7 +1,8 @@
 // AgentCoreProcessor/Engine/Extraction/ExtractionEngineSpawnCheck.cs
 using System.Threading.Tasks;
+using AgentCoreProcessor.Engine.Extraction;
 
-namespace AgentCoreProcessor.Engine.Extraction;
+namespace AgentCoreProcessor.Engine;
 
 internal class ExtractionEngineSpawnCheck : IEngineSpawnCheck
 {

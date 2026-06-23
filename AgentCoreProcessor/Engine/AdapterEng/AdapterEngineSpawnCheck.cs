@@ -1,7 +1,8 @@
 // AgentCoreProcessor/Engine/AdapterEng/AdapterEngineSpawnCheck.cs
 using System.Threading.Tasks;
+using AgentCoreProcessor.Engine.AdapterEng;
 
-namespace AgentCoreProcessor.Engine.AdapterEng;
+namespace AgentCoreProcessor.Engine;
 
 internal class AdapterEngineSpawnCheck : IEngineSpawnCheck
 {

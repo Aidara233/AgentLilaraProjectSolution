@@ -1,7 +1,8 @@
 // AgentCoreProcessor/Engine/Session/SessionEngineSpawnCheck.cs
 using System.Threading.Tasks;
+using AgentCoreProcessor.Engine.Session;
 
-namespace AgentCoreProcessor.Engine.Session;
+namespace AgentCoreProcessor.Engine;
 
 internal class SessionEngineSpawnCheck : IEngineSpawnCheck
 {

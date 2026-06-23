@@ -125,6 +125,9 @@ internal class SessionEngine : ISubEngine
     public IRuntimeSession? GetSession(string id) =>
         _sessions.TryGetValue(id, out var s) ? s : null;
 
+    public IReadOnlyList<IRuntimeSession> GetActiveSessions() =>
+        _sessions.Values.Where(s => s.IsAlive).ToList();
+
     public bool HasActiveWorking(int channelId)
     {
         lock (_channelFullClaims)

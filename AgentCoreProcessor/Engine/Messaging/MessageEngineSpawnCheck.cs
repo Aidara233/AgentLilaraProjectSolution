@@ -1,7 +1,8 @@
 // AgentCoreProcessor/Engine/Messaging/MessageEngineSpawnCheck.cs
 using System.Threading.Tasks;
+using AgentCoreProcessor.Engine.Messaging;
 
-namespace AgentCoreProcessor.Engine.Messaging;
+namespace AgentCoreProcessor.Engine;
 
 internal class MessageEngineSpawnCheck : IEngineSpawnCheck
 {
@@ -11,7 +12,6 @@ internal class MessageEngineSpawnCheck : IEngineSpawnCheck
 
     public Task<bool> ShouldSpawnAsync(EngineEvent e, ISystemContext ctx)
     {
-        // MessageEngine 随 SystemEvent Started 启动一次
         if (e is SystemEvent se && se.Action == SystemAction.Started)
             return Task.FromResult(true);
         return Task.FromResult(false);
