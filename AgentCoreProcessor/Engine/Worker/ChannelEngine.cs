@@ -176,6 +176,10 @@ namespace AgentCoreProcessor.Engine
             _ctxState = new ChannelContextState { ChannelId = channelId, ChannelName = channelName, Mode = "express" };
             _ctxService = new ChannelContextService(new SystemContextDataSource(ctx));
 
+            // 播种参与者数，避免冷启动 Accumulate 用初值 1 导致折扣算错（busy 群削弱话唠抑制）
+            try { _lastKnownParticipantCount = Math.Max(1, _ctxService.GetParticipantsAsync(channelId).GetAwaiter().GetResult().Count); }
+            catch { /* 查询失败保持初值 1 */ }
+
             // ── 持久化 + 状态恢复 ──
             persistence = new ChannelContextPersistence(channelId);
             {
@@ -226,6 +230,10 @@ namespace AgentCoreProcessor.Engine
             // ── 上下文服务（DB 派生参与者，无累积状态）──
             _ctxState = new ChannelContextState { ChannelId = channelId, ChannelName = channelName, Mode = "express" };
             _ctxService = new ChannelContextService(new SystemContextDataSource(ctx));
+
+            // 播种参与者数，避免冷启动 Accumulate 用初值 1 导致折扣算错（busy 群削弱话唠抑制）
+            try { _lastKnownParticipantCount = Math.Max(1, _ctxService.GetParticipantsAsync(channelId).GetAwaiter().GetResult().Count); }
+            catch { /* 查询失败保持初值 1 */ }
 
             persistence = new ChannelContextPersistence(channelId);
             {
