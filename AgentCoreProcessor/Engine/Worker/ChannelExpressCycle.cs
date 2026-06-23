@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Engine.Session;
@@ -151,7 +152,7 @@ namespace AgentCoreProcessor.Engine
 
                 messages.Add(FormatResultsExpress(output.ToolCalls, expressResults));
 
-                // escalate → 通过 SessionEngine 创建 Working 会话
+                // escalate → 加载频道历史 + 通过 SessionEngine 创建 Working 会话
                 for (int i = 0; i < output.ToolCalls.Count; i++)
                 {
                     var call = output.ToolCalls[i];
@@ -162,6 +163,25 @@ namespace AgentCoreProcessor.Engine
                             .OfType<Session.SessionEngine>().FirstOrDefault();
                         if (sessionEngine != null)
                         {
+                            // 加载频道最近历史消息作为初始上下文
+                            var historyText = new StringBuilder();
+                            historyText.AppendLine($"用户请求切换到工作模式，原因：{reason}");
+                            try
+                            {
+                                var recentMsgs = await ctx.Session.GetContextByChannelAsync(channelId, HistoryMaxMessages);
+                                if (recentMsgs.Count > 0)
+                                {
+                                    historyText.AppendLine();
+                                    historyText.AppendLine("[对话历史]");
+                                    foreach (var m in recentMsgs)
+                                    {
+                                        var name = m.IsFromBot ? "你" : m.SenderName;
+                                        historyText.AppendLine($"{name}: {m.Content}");
+                                    }
+                                }
+                            }
+                            catch { /* 非关键路径 */ }
+
                             sessionEngine.CreateSession(new CreateSessionSpec
                             {
                                 ComponentIds = new[] { "basic-tools", "working-tools", "file-tools", "file-ops", "memory-tools" },
@@ -171,7 +191,7 @@ namespace AgentCoreProcessor.Engine
                                 {
                                     ["channel"] = new PortSpec { ChannelId = channelId, SubStream = "normal", Weight = 100 }
                                 },
-                                InitialState = $"用户请求切换到工作模式，原因：{reason}",
+                                InitialState = historyText.ToString(),
                                 OverrideLimits = new SessionLimits { MaxLifetime = TimeSpan.FromHours(2), IdleTimeout = TimeSpan.FromMinutes(30) }
                             });
                         }
