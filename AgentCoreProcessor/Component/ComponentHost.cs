@@ -10,7 +10,7 @@ namespace AgentCoreProcessor.Component;
 
 /// <summary>
 /// 管理一个循环内所有 Component 实例的生命周期、工具收集、Prompt 收集。
-/// 每个 ChannelEngine/SystemEngine 持有一个 ComponentHost。
+/// 每个 ChannelEngine/SessionEngine 持有一个 ComponentHost。
 /// </summary>
 internal class ComponentHost
 {

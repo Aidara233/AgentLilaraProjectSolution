@@ -42,7 +42,7 @@ internal class EnginesProvider : IWebUIProvider
                             {
                                 new() { Field = "total", Label = "活跃总数" },
                                 new() { Field = "breakdown", Label = "类型分布" },
-                                new() { Field = "systemState", Label = "系统循环", Type = StatusFieldType.Indicator },
+                                new() { Field = "sessionState", Label = "会话引擎", Type = StatusFieldType.Indicator },
                                 new() { Field = "sleepState", Label = "睡眠状态", Type = StatusFieldType.Badge }
                             }
                         },
@@ -102,15 +102,15 @@ internal class EngineSummarySource : IDataSource
             ? string.Join("  ", summary.Select(s => $"{s.Type}×{s.Count}"))
             : "无";
 
-        var systemCheck = _engine.GetSpawnCheck<SystemEngineSpawnCheck>();
-        var systemSnap = systemCheck?.GetSystemSnapshot();
+        var sessionEngine = _engine.GetActiveEnginesSnapshot()
+            .OfType<AgentCoreProcessor.Engine.Session.SessionEngine>().FirstOrDefault();
         var sleepState = _engine.CurrentSleepState;
 
         var data = new JsonObject
         {
             ["total"] = total.ToString(),
             ["breakdown"] = breakdown,
-            ["systemState"] = systemSnap?.IsAlive == true ? "运行中" : "停止",
+            ["sessionState"] = sessionEngine?.IsAlive == true ? "运行中" : "停止",
             ["sleepState"] = sleepState != SleepState.None ? sleepState.ToString() : "清醒"
         };
         return Task.FromResult(new DataResult { Data = data });
@@ -156,18 +156,20 @@ internal class EngineListSource : IDataSource
             }
         }
 
-        // System 引擎
-        var systemCheck = _engine.GetSpawnCheck<SystemEngineSpawnCheck>();
-        var systemSnap = systemCheck?.GetSystemSnapshot();
-        if (systemSnap?.IsAlive == true)
+        // Session 引擎
+        var sessionEngine = _engine.GetActiveEnginesSnapshot()
+            .OfType<AgentCoreProcessor.Engine.Session.SessionEngine>().FirstOrDefault();
+        if (sessionEngine?.IsAlive == true)
         {
+            var sessions = sessionEngine.GetActiveSessions();
+            var todoCount = sessionEngine.GetPendingTodos().Count;
             arr.Add(new JsonObject
             {
-                ["type"] = "System",
-                ["name"] = "系统循环",
+                ["type"] = "Session",
+                ["name"] = "会话引擎",
                 ["status"] = "运行中",
-                ["detail"] = $"任务队列 {systemSnap.TaskQueueDepth} | 子agent {systemSnap.ActiveSubAgentCount}",
-                ["_link"] = "/p/engines/system"
+                ["detail"] = $"活跃会话 {sessions.Count} | 待办 {todoCount}",
+                ["_link"] = "/p/engines/session"
             });
         }
 

@@ -34,7 +34,7 @@ namespace AgentCoreProcessor.Engine
         /// </summary>
         bool IsBusy => IsAlive;
 
-        /// <summary>组件宿主（仅 ChannelEngine/SystemEngine 实现）。供 WebUI 查询组件工具。</summary>
+        /// <summary>组件宿主（仅 ChannelEngine/SessionEngine 实现）。供 WebUI 查询组件工具。</summary>
         Component.ComponentHost? ComponentHost => null;
     }
 

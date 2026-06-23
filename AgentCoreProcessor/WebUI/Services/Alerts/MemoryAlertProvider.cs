@@ -6,10 +6,9 @@ namespace AgentCoreProcessor.WebUI.Services.Alerts
 {
     internal class MemoryAlertProvider : IAlertProvider
     {
-        public IEnumerable<AlertItem> GetAlerts(SystemSnapshot snapshot)
+        public IEnumerable<AlertItem> GetAlerts()
         {
-            // 未来可以从 snapshot 中获取记忆统计
-            // 目前作为占位，后续接入记忆数据后启用
+            // 记忆统计告警（暂为占位）
             yield break;
         }
     }

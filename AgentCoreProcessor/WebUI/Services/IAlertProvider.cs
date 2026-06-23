@@ -5,6 +5,6 @@ namespace AgentCoreProcessor.WebUI.Services
 {
     internal interface IAlertProvider
     {
-        IEnumerable<AlertItem> GetAlerts(SystemSnapshot snapshot);
+        IEnumerable<AlertItem> GetAlerts();
     }
 }

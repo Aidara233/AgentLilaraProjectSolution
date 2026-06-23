@@ -32,11 +32,6 @@ internal class EngineDetailProvider : IWebUIProvider
         {
             var pages = new List<PageDefinition>();
 
-            // System
-            var systemCheck = _engine.GetSpawnCheck<SystemEngineSpawnCheck>();
-            if (systemCheck?.GetSystemSnapshot()?.IsAlive == true)
-                pages.Add(BuildSystemPage(systemCheck));
-
             // Channel (multi-instance) — 引擎监视页面
             var channelCheck = _engine.GetSpawnCheck<ChannelEngineSpawnCheck>();
             if (channelCheck != null)
@@ -70,28 +65,6 @@ internal class EngineDetailProvider : IWebUIProvider
             return pages;
         }
     }
-    private PageDefinition BuildSystemPage(SystemEngineSpawnCheck check)
-    {
-        return new PageDefinition
-        {
-            Route = "engines/system",
-            Meta = new PageMeta { Title = "系统循环", Icon = "bi-gear", Group = "", Order = -89, ShowInNav = false },
-            Cards = new List<CardDefinition>
-            {
-                StatusCard("engine-status", "引擎状态", "engine-detail-status"),
-                ContextCard("engine-context", "上下文", "engine-detail-context"),
-                ActionCard("engine-actions", "操作", "engine-detail-actions")
-            },
-            DataSources = new List<DataSourceDefinition>
-            {
-                new() { Id = "engine-detail-status", Source = new SystemDetailStatusSource(check) },
-                new() { Id = "engine-detail-context", Source = new EngineContextSource(() => check.GetContextSnapshot()) },
-                new() { Id = "engine-detail-actions", Source = new EngineActionSource(
-                    () => check.ForceWake(), () => check.ForceCompress()) }
-            }
-        };
-    }
-
     private PageDefinition BuildChannelEnginePage(ChannelEngine ch, int channelId)
     {
         var snap = ch.GetSnapshot();
@@ -218,33 +191,6 @@ internal class EngineDetailProvider : IWebUIProvider
     };
 }
 // ---- 数据源 ----
-
-internal class SystemDetailStatusSource : IDataSource
-{
-    private readonly SystemEngineSpawnCheck _check;
-    public SystemDetailStatusSource(SystemEngineSpawnCheck check) => _check = check;
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
-
-    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-    {
-        var snap = _check.GetSystemSnapshot();
-        var ctx = _check.GetContextSnapshot();
-        var data = new JsonObject
-        {
-            ["state"] = snap.IsAlive ? "运行中" : "停止",
-            ["rounds"] = ctx?.TotalRounds.ToString() ?? "—",
-            ["tokens"] = ctx != null ? $"{ctx.EstimatedTokens / 1000}k ({ctx.MessageCount} 条)" : "—",
-            ["compression"] = ctx?.CompressionTier.ToString() ?? "None",
-            ["backoff"] = ctx?.IsInBackoff == true ? "退避中" : "正常",
-            ["extra"] = $"任务队列 {snap.TaskQueueDepth} | 子agent {snap.ActiveSubAgentCount} | 重启 {snap.RestartCount}次"
-        };
-        return Task.FromResult(new DataResult { Data = data });
-    }
-
-    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-        => Task.FromResult(new ActionResult { Success = true });
-}
 
 internal class ChannelEngineStatusSource : IDataSource
 {

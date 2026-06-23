@@ -885,25 +885,44 @@ namespace AgentCoreProcessor.Engine
 
                 if (!matched) continue;
 
-                // 通知系统循环
+                // 命中 → 通过 SessionEngine 创建处理 session
+                var sessionEngine = ctx.GetActiveEnginesSnapshot()
+                    .OfType<Session.SessionEngine>().FirstOrDefault();
+                if (sessionEngine == null) return;
+
                 var watchSummary = $"规则「{rule.RuleId}」命中：{rule.Description}\n" +
                                    $"消息：{msg.Content.Substring(0, Math.Min(50, msg.Content.Length))}...";
-                _messaging!.SubmitFireAndForget(LoopId.System,
-                    $"WatchHit: {rule.RuleId}", watchSummary);
 
                 switch (rule.Action)
                 {
                     case WatchAction.Notify:
+                        sessionEngine.CreateSession(new CreateSessionSpec
+                        {
+                            ComponentIds = new[] { "basic-tools", "memory-tools" },
+                            InitialState = watchSummary,
+                            OverrideLimits = new SessionLimits { MaxLifetime = TimeSpan.FromMinutes(10), IdleTimeout = TimeSpan.FromMinutes(3) }
+                        });
                         break;
 
                     case WatchAction.Interrupt:
                         if (rule.AutoResponse)
                             gate.Signal();
+                        sessionEngine.CreateSession(new CreateSessionSpec
+                        {
+                            ComponentIds = new[] { "basic-tools", "memory-tools" },
+                            InitialState = watchSummary,
+                            OverrideLimits = new SessionLimits { MaxLifetime = TimeSpan.FromMinutes(10), IdleTimeout = TimeSpan.FromMinutes(3) }
+                        });
                         break;
 
                     case WatchAction.Escalate:
-                        _messaging.SubmitFireAndForget(LoopId.System,
-                            $"规则「{rule.RuleId}」升级：{rule.Description}", msg.Content);
+                        sessionEngine.CreateSession(new CreateSessionSpec
+                        {
+                            ComponentIds = new[] { "basic-tools", "working-tools", "memory-tools" },
+                            MaxLevel = 1,
+                            InitialState = $"规则「{rule.RuleId}」升级：{rule.Description}\n\n原始消息：\n{msg.Content}",
+                            OverrideLimits = new SessionLimits { MaxLifetime = TimeSpan.FromMinutes(30), IdleTimeout = TimeSpan.FromMinutes(10) }
+                        });
                         break;
                 }
             }
@@ -1035,5 +1054,24 @@ namespace AgentCoreProcessor.Engine
 
             return fragments;
         }
+    }
+
+    // ── WatchRule 类型 ──
+
+    /// <summary>关注规则。</summary>
+    public class WatchRule
+    {
+        public string RuleId { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string Pattern { get; set; } = "";
+        public WatchAction Action { get; set; }
+        public bool AutoResponse { get; set; }
+    }
+
+    public enum WatchAction
+    {
+        Notify,
+        Interrupt,
+        Escalate
     }
 }

@@ -6,7 +6,7 @@ using AgentLilara.PluginSDK.Dice;
 namespace AgentLilara.PluginSDK.Services;
 
 /// <summary>
-/// 骰子摇奖服务。SystemEngine 闲时调用 RollAsync 批量摇 N 个面。
+/// 骰子摇奖服务。SessionEngine 闲时调用 RollAsync 批量摇 N 个面。
 /// </summary>
 public interface IDiceService
 {

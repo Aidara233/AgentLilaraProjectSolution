@@ -600,7 +600,7 @@ namespace AgentCoreProcessor.Engine
             CrossRequests = new CrossRequestRegistry(systemLoopPath, DelegationBus);
             CrossRequests.OnRequestSubmitted += initiatorId =>
             {
-                // SystemEngine 已删除，跨循环请求由 SessionEngine 接管（TODO）
+                // 跨循环请求由 SessionEngine 接管
                 if (LoopId.IsChannel(initiatorId, out var chId))
                     WakeLoop(initiatorId);
             };
@@ -732,6 +732,14 @@ namespace AgentCoreProcessor.Engine
             }
 
             Signal.Event(LogGroup.Engine, "引擎就绪");
+
+            // Wire MessageEngine ↔ ExtractionEngine if both are active
+            var messageEngine = GetActiveEnginesSnapshot()
+                .OfType<Messaging.MessageEngine>().FirstOrDefault();
+            var extractionEngine = GetActiveEnginesSnapshot()
+                .OfType<Extraction.ExtractionEngine>().FirstOrDefault();
+            if (messageEngine != null && extractionEngine != null)
+                messageEngine.SetExtractionEngine(extractionEngine);
         }
 
         // ---- 事件分发（内核流水线） ----
@@ -887,7 +895,6 @@ namespace AgentCoreProcessor.Engine
         {
             if (LoopId.IsSystem(loopId))
             {
-                // SystemEngine 已删除，跨循环请求由 SessionEngine 接管
                 return;
             }
 

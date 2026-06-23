@@ -68,9 +68,9 @@ internal class DashboardProvider : IWebUIProvider
                             {
                                 new() { Field = "activeEngines", Label = "活跃引擎" },
                                 new() { Field = "dreamState", Label = "做梦", Type = StatusFieldType.Badge },
-                                new() { Field = "systemEngine", Label = "系统循环", Type = StatusFieldType.Indicator },
-                                new() { Field = "taskQueue", Label = "任务队列" },
-                                new() { Field = "subAgents", Label = "子agent" }
+                                new() { Field = "sessionEngine", Label = "会话引擎", Type = StatusFieldType.Indicator },
+                                new() { Field = "sessionCount", Label = "活跃会话" },
+                                new() { Field = "todoCount", Label = "待办事项" }
                             }
                         },
                         Layout = new CardLayout { PreferredCols = 6 }
@@ -203,20 +203,22 @@ internal class DashboardEngineSource : IDataSource
             ? string.Join(", ", summary.Select(s => $"{s.Type}×{s.Count}"))
             : "无";
 
-        var systemCheck = _engine.GetSpawnCheck<SystemEngineSpawnCheck>();
+        var sessionEngine = _engine.GetActiveEnginesSnapshot()
+            .OfType<AgentCoreProcessor.Engine.Session.SessionEngine>().FirstOrDefault();
         var hasDream = _engine.HasActiveEngine("Dream");
 
         var dreamLabel = hasDream ? "进行中" : (_engine.CurrentSleepState != SleepState.None ? "睡眠中" : "清醒");
 
-        var systemSnap = systemCheck?.GetSystemSnapshot();
+        var sessions = sessionEngine?.GetActiveSessions() ?? Array.Empty<AgentLilara.PluginSDK.IRuntimeSession>();
+        var todoCount = sessionEngine?.GetPendingTodos().Count ?? 0;
 
         var data = new JsonObject
         {
             ["activeEngines"] = engineStr,
             ["dreamState"] = dreamLabel,
-            ["systemEngine"] = systemSnap?.IsAlive == true ? "运行中" : "停止",
-            ["taskQueue"] = (systemSnap?.TaskQueueDepth ?? 0).ToString(),
-            ["subAgents"] = (systemSnap?.ActiveSubAgentCount ?? 0).ToString()
+            ["sessionEngine"] = sessionEngine?.IsAlive == true ? "运行中" : "停止",
+            ["sessionCount"] = sessions.Count.ToString(),
+            ["todoCount"] = todoCount.ToString()
         };
         return Task.FromResult(new DataResult { Data = data });
     }

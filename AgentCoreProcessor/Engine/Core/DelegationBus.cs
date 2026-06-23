@@ -66,7 +66,6 @@ internal class DelegationBus
     {
         foreach (var (loopId, _) in _activeLoops)
         {
-            if (loopId == LoopId.System) continue;
             if (_handlers.TryGetValue(loopId, out var handler))
             {
                 var summary = CreateBroadcastSummary(request);

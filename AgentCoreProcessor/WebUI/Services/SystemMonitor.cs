@@ -13,7 +13,6 @@ namespace AgentCoreProcessor.WebUI.Services
         private readonly AlertService alertService;
         private readonly Timer timer;
 
-        public SystemSnapshot Current { get; private set; } = new();
         public event Action? OnStateChanged;
 
         public SystemMonitor(MasterEngine engine, AlertService alertService)
@@ -27,49 +26,8 @@ namespace AgentCoreProcessor.WebUI.Services
         {
             try
             {
-                var workerCheck = engine.GetSpawnCheck<ChannelEngineSpawnCheck>();
-                var dreamCheck = engine.GetSpawnCheck<DreamEngineSpawnCheck>();
-                var systemCheck = engine.GetSpawnCheck<SystemEngineSpawnCheck>();
-
-                var workers = new List<WorkerSnapshot>();
-                if (workerCheck != null)
-                {
-                    foreach (var (channelId, w) in workerCheck.GetActiveChannels())
-                    {
-                        if (!w.IsAlive) continue;
-                        var snap = w.GetSnapshot();
-                        workers.Add(snap);
-                    }
-                }
-
-                DreamStateSnapshot? dreamState = null;
-                if (dreamCheck != null)
-                {
-                    bool hasActive = engine.HasActiveEngine("Dream");
-                    dreamState = dreamCheck.GetDreamSnapshot(hasActive);
-                }
-
-                SystemEngineSnapshot? systemState = null;
-                if (systemCheck != null)
-                {
-                    systemState = systemCheck.GetSystemSnapshot();
-                }
-
-                var snapshot = new SystemSnapshot
-                {
-                    IsIdle = engine.IsIdle,
-                    IdleDuration = engine.IdleDuration,
-                    LastMessageTime = engine.LastMessageTime,
-                    MuteMode = engine.MuteMode,
-                    EngineSummary = engine.GetActiveEngineSummary(),
-                    Workers = workers,
-                    DreamState = dreamState,
-                    SystemEngine = systemState,
-                    SnapshotTime = DateTime.Now
-                };
-                snapshot.Alerts = alertService.CollectAlerts(snapshot);
-
-                Current = snapshot;
+                // 收集告警（不再依赖 SystemSnapshot DTO）
+                alertService.CollectAlerts();
 
                 OnStateChanged?.Invoke();
             }

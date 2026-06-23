@@ -16,7 +16,7 @@ namespace AgentCoreProcessor.Engine
 
     /// <summary>
     /// 心跳引擎。定期发布 SignalEvent("timer-tick")，驱动其他引擎的周期性检查。
-    /// Phase 8: 监控 SystemEngine 心跳，超时则报警（不触发睡觉）。
+    /// Phase 8: 监控 SessionEngine 心跳，超时则报警（不触发睡觉）。
     /// </summary>
     internal class TimerEngine : ISubEngine
     {
@@ -63,7 +63,7 @@ namespace AgentCoreProcessor.Engine
                     catch { /* 静默清理失败 */ }
 
                     // Phase 8: 检查 SystemEngine 心跳
-                    if (ctx.HasActiveEngine("System"))
+                    if (ctx.HasActiveEngine("Session"))
                     {
                         lastSystemHeartbeat = System.DateTime.Now;
                         alarmSent = false;
@@ -97,7 +97,7 @@ namespace AgentCoreProcessor.Engine
 
                 var allChannels = await ctx.Session.GetAllChannelsAsync();
                 var message = "[系统严重故障]\n" +
-                              "SystemEngine（系统循环）已停止响应超过 1 小时。\n" +
+                              "SessionEngine（会话引擎）已停止响应超过 1 小时。\n" +
                               "这是严重事故，需要立即人工介入检查。\n" +
                               "可能原因：崩溃、死锁、资源耗尽。\n\n" +
                               "建议操作：\n" +

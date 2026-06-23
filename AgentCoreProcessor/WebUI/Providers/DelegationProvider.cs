@@ -332,7 +332,6 @@ internal class DelegationLoopsSource : IDataSource
         {
             var type = id switch
             {
-                string s when s == LoopId.System => "系统",
                 string s when LoopId.IsChannel(s, out _) => "频道",
                 string s when s.StartsWith("task:") => "子任务",
                 string s when s.StartsWith("review:") => "复盘",

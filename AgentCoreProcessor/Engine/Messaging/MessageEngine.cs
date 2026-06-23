@@ -22,11 +22,14 @@ internal class MessageEngine : ISubEngine
 
     private readonly ISystemContext _ctx;
     private readonly ConcurrentDictionary<(int channelId, string subStream), List<MessageInputPort>> _subscribers = new();
+    private Extraction.ExtractionEngine? _extractionEngine;
 
     public MessageEngine(ISystemContext ctx)
     {
         _ctx = ctx;
     }
+
+    public void SetExtractionEngine(Extraction.ExtractionEngine ee) => _extractionEngine = ee;
 
     public IInputPort Subscribe(int channelId, string subStream, int weight = 5)
     {
@@ -61,6 +64,9 @@ internal class MessageEngine : ISubEngine
 
         // 按 tag 分发到子流
         Distribute(msg.ChannelId, msg.Tag, msg);
+
+        // 通知 ExtractionEngine 计数
+        _extractionEngine?.OnMessage(msg.ChannelId);
     }
 
     /// <summary>出向入口：Session 工具调用后写入</summary>

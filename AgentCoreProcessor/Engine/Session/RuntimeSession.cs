@@ -49,6 +49,9 @@ internal class RuntimeSession : IRuntimeSession
     private DateTime _lastActivity = DateTime.UtcNow;
     private CancellationTokenSource? _cts;
 
+    /// <summary>会话完成时触发（正常结束/异常/崩溃）。</summary>
+    public event Action<IRuntimeSession>? OnCompleted;
+
     private const int FreeRounds = 20;
 
     public RuntimeSession(CreateSessionSpec spec)
@@ -209,6 +212,7 @@ internal class RuntimeSession : IRuntimeSession
         {
             if (Status == SessionStatus.Running)
                 Status = SessionStatus.Completed;
+            OnCompleted?.Invoke(this);
         }
     }
 

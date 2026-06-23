@@ -14,11 +14,11 @@ namespace AgentCoreProcessor.WebUI.Services
             lock (providerLock) { providers.Add(provider); }
         }
 
-        public List<AlertItem> CollectAlerts(SystemSnapshot snapshot)
+        public List<AlertItem> CollectAlerts()
         {
             List<IAlertProvider> providerList;
             lock (providerLock) { providerList = providers.ToList(); }
-            return providerList.SelectMany(p => p.GetAlerts(snapshot)).ToList();
+            return providerList.SelectMany(p => p.GetAlerts()).ToList();
         }
     }
 }

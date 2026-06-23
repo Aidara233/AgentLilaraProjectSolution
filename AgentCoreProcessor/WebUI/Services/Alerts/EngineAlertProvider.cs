@@ -1,58 +1,71 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.WebUI.Components.Shared;
 
 namespace AgentCoreProcessor.WebUI.Services.Alerts
 {
     internal class EngineAlertProvider : IAlertProvider
     {
-        public IEnumerable<AlertItem> GetAlerts(SystemSnapshot snapshot)
+        private readonly MasterEngine _engine;
+        public EngineAlertProvider(MasterEngine engine) => _engine = engine;
+
+        public IEnumerable<AlertItem> GetAlerts()
         {
-            // SystemEngine 未运行
-            if (snapshot.SystemEngine == null || !snapshot.SystemEngine.IsAlive)
+            // SessionEngine 状态
+            var sessionEngine = _engine.GetActiveEnginesSnapshot()
+                .OfType<AgentCoreProcessor.Engine.Session.SessionEngine>().FirstOrDefault();
+
+            if (sessionEngine == null || !sessionEngine.IsAlive)
             {
                 yield return new AlertItem
                 {
-                    Level = AlertLevel.Error,
+                    Level = AlertLevel.Warning,
                     Source = "引擎",
-                    Message = "SystemEngine 未运行" +
-                        (snapshot.SystemEngine?.RestartCount > 0
-                            ? $" (已重启 {snapshot.SystemEngine.RestartCount} 次)"
-                            : ""),
-                    LinkHref = "/p/system"
+                    Message = "SessionEngine 未运行"
                 };
             }
             else
             {
-                // 系统循环 API 错误
-                if (snapshot.SystemEngine.HasRecentError)
+                // 会话过多告警
+                var sessionCount = sessionEngine.GetActiveSessions().Count;
+                if (sessionCount > 10)
                 {
                     yield return new AlertItem
                     {
-                        Level = snapshot.SystemEngine.ConsecutiveFailures >= 3
-                            ? AlertLevel.Error : AlertLevel.Warning,
-                        Source = "系统循环",
-                        Message = $"API 连续失败 {snapshot.SystemEngine.ConsecutiveFailures} 次: {Truncate(snapshot.SystemEngine.LastErrorMessage, 80)}",
-                        LinkHref = "/p/system"
+                        Level = AlertLevel.Warning,
+                        Source = "会话",
+                        Message = $"活跃会话过多: {sessionCount} 个"
                     };
                 }
 
-                // 任务队列积压
-                if (snapshot.SystemEngine.TaskQueueDepth > 5)
+                // 待办积压
+                var pendingTodos = sessionEngine.GetPendingTodos();
+                if (pendingTodos.Count > 5)
                 {
                     yield return new AlertItem
                     {
                         Level = AlertLevel.Warning,
                         Source = "任务",
-                        Message = $"任务队列积压: {snapshot.SystemEngine.TaskQueueDepth} 个待处理",
-                        LinkHref = "/p/system/events"
+                        Message = $"待办事项积压: {pendingTodos.Count} 个"
                     };
                 }
             }
 
             // 频道循环 API 错误
-            var errorWorkers = snapshot.Workers.Where(w => w.HasRecentError).ToList();
+            var workerCheck = _engine.GetSpawnCheck<ChannelEngineSpawnCheck>();
+            var workers = new List<WorkerSnapshot>();
+            if (workerCheck != null)
+            {
+                foreach (var (_, w) in workerCheck.GetActiveChannels())
+                {
+                    if (!w.IsAlive) continue;
+                    workers.Add(w.GetSnapshot());
+                }
+            }
+
+            var errorWorkers = workers.Where(w => w.HasRecentError).ToList();
             if (errorWorkers.Count > 0)
             {
                 var worst = errorWorkers.OrderByDescending(w => w.ConsecutiveFailures).First();
@@ -67,7 +80,5 @@ namespace AgentCoreProcessor.WebUI.Services.Alerts
                 };
             }
         }
-        private static string Truncate(string? s, int maxLen)
-            => s == null ? "" : s.Length <= maxLen ? s : s[..maxLen] + "...";
     }
 }
