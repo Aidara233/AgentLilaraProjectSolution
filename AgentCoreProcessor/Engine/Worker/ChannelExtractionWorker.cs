@@ -242,7 +242,15 @@ namespace AgentCoreProcessor.Engine
         {
             if (string.IsNullOrEmpty(about)) return null;
 
-            // ParticipantView 中无 userId 字段，仅支持 DisplayName 模糊匹配
+            // 支持 "#userId" 格式（如 "张三#5678" 或 "#5678"）：解析末尾 #数字 部分
+            var hashIdx = about.LastIndexOf('#');
+            if (hashIdx >= 0 && int.TryParse(about.AsSpan(hashIdx + 1), out int userId) && userId > 0)
+            {
+                var byId = participants.FirstOrDefault(p => p.UserId == userId);
+                if (byId != null) return byId.PersonId;
+            }
+
+            // 按 DisplayName 模糊匹配（OrdinalIgnoreCase）
             foreach (var p in participants)
                 if (p.DisplayName.Equals(about, StringComparison.OrdinalIgnoreCase))
                     return p.PersonId;

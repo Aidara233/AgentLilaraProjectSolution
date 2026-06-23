@@ -15,7 +15,7 @@ namespace AgentCoreProcessor.Engine.Context;
 /// <summary>频道上下文的一个参与者视图（DB 派生，无累积状态）。</summary>
 internal record ParticipantView(
     string DisplayName, string? Aliases, string PlatformId,
-    int PersonId, int TrustLevel, string? Memo);
+    int PersonId, int TrustLevel, string? Memo, int UserId = 0);
 
 /// <summary>
 /// 频道上下文构建服务。ChannelEngine 与 RuntimeSession 共用。
@@ -47,7 +47,7 @@ internal partial class ChannelContextService
                 : user.PlatformId;
             result.Add(new ParticipantView(
                 displayName, person?.Aliases, user.PlatformId,
-                user.PersonId, (int)(person?.TrustLevel ?? Database.TrustLevel.Unknown), person?.FastMemory));
+                user.PersonId, (int)(person?.TrustLevel ?? Database.TrustLevel.Unknown), person?.FastMemory, user.Id));
         }
         return result;
     }

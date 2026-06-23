@@ -101,8 +101,8 @@ public class ParticipantDerivationTests
         var ps = await svc.GetParticipantsAsync(1);
 
         Assert.Equal(2, ps.Count);                       // distinct，bot 排除
-        Assert.Contains(ps, p => p.PlatformId == "p10" && p.DisplayName == "甲名" && p.TrustLevel == 2);
-        Assert.Contains(ps, p => p.PlatformId == "p20" && p.DisplayName == "乙名");
+        Assert.Contains(ps, p => p.PlatformId == "p10" && p.DisplayName == "甲名" && p.TrustLevel == 2 && p.UserId == 10);
+        Assert.Contains(ps, p => p.PlatformId == "p20" && p.DisplayName == "乙名" && p.UserId == 20);
     }
 }
 

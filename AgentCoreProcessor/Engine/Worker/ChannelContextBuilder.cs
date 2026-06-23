@@ -201,6 +201,8 @@ namespace AgentCoreProcessor.Engine
             // 3. 参与者列表注入（DB 派生，无累积状态）
             {
                 var participants = await _ctxService.GetParticipantsAsync(channelId);
+                // 更新缓存的参与者数供同步 Accumulate 调用使用（至少为 1，避免折扣算错方向）
+                _lastKnownParticipantCount = Math.Max(1, participants.Count);
                 var partBlock = ChannelContextService.RenderParticipants(channelName, channelId, participants);
                 if (!string.IsNullOrEmpty(partBlock))
                     msgs.Add(new Message { Role = "user", Content = partBlock });

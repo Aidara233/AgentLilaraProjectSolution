@@ -64,6 +64,8 @@ namespace AgentCoreProcessor.Engine
 
         // 冲动值
         private readonly ImpulseTracker impulseTracker;
+        /// <summary>上次 GetParticipantsAsync 返回的参与者数。同步 Accumulate 调用的 fallback。初始为 1。</summary>
+        private int _lastKnownParticipantCount = 1;
 
         // 上下文服务（DB 派生，无累积状态）
         private ChannelContextState _ctxState = null!;
@@ -200,7 +202,7 @@ namespace AgentCoreProcessor.Engine
                 () => LastCompletionTime);
 
             CollectImagePaths(initialMessage);
-            impulseTracker.Accumulate(initialMessage, 1, initialMessage.IsSystemEvent);
+            impulseTracker.Accumulate(initialMessage, _lastKnownParticipantCount, initialMessage.IsSystemEvent);
             _lastSessionContext = initialContext;
             _bufferedMessageCount = 1;
             _bufferTriggered = impulseTracker.ShouldRespond(initialMessage, _bufferedMessageCount, null);
@@ -296,7 +298,7 @@ namespace AgentCoreProcessor.Engine
                     }
                 }
             }
-            impulseTracker.Accumulate(msg, 1, msg.IsSystemEvent);
+            impulseTracker.Accumulate(msg, _lastKnownParticipantCount, msg.IsSystemEvent);
             loopControlModule.OnNewMessage();
             _lastSessionContext = sc;
 
