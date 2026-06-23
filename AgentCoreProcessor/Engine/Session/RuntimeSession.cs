@@ -44,6 +44,9 @@ internal class RuntimeSession : IRuntimeSession
 
     private ComponentHost? _componentHost;
     private ICurrencyService? _currency;
+    private AgentCore? _agentCore;
+    private MessageEngine? _messageEngine;
+    private object? _initialState;
     private int _roundCount;
     private readonly DateTime _createdAt = DateTime.UtcNow;
     private DateTime _lastActivity = DateTime.UtcNow;
@@ -53,6 +56,7 @@ internal class RuntimeSession : IRuntimeSession
     public event Action<IRuntimeSession>? OnCompleted;
 
     private const int FreeRounds = 20;
+    private const int MaxAgentRounds = 15;
 
     public RuntimeSession(CreateSessionSpec spec)
     {
@@ -60,11 +64,14 @@ internal class RuntimeSession : IRuntimeSession
         ParentSessionId = spec.ParentSessionId;
         if (spec.OverrideLimits != null) Limits = spec.OverrideLimits;
         _componentIds.AddRange(spec.ComponentIds);
+        _initialState = spec.InitialState;
     }
 
     // ── 依赖注入 ──
 
     public void SetCurrency(ICurrencyService currency) => _currency = currency;
+    public void SetAgentCore(AgentCore core) => _agentCore = core;
+    public void SetMessageEngine(MessageEngine me) => _messageEngine = me;
 
     /// <summary>
     /// 从 ComponentRegistry 加载指定组件，构建 ComponentHost。
@@ -90,9 +97,20 @@ internal class RuntimeSession : IRuntimeSession
         _tools.Clear();
         if (_componentHost == null) return;
 
-        // 从 GlobalComponentHost 和本地 ComponentHost 收集工具
-        // 实际工具名来自 ComponentHost 注册的 ITool
-        // 此处简化：根据 ComponentIds 查找已知工具
+        foreach (var tool in _componentHost.GetVisibleTools())
+        {
+            _tools[tool.Name] = tool;
+            _activeTools.Add(tool.Name);
+        }
+        // 合并 ToolRegistry 独立工具
+        foreach (var (name, tool) in ToolRegistry.All)
+        {
+            if (!_tools.ContainsKey(name))
+            {
+                _tools[name] = tool;
+                _activeTools.Add(name);
+            }
+        }
     }
 
     // ── 端口管理 ──
@@ -143,69 +161,118 @@ internal class RuntimeSession : IRuntimeSession
         Status = SessionStatus.Running;
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
+        // 构建初始消息列表
+        var messages = new List<Message>();
+        if (_initialState is string initText && !string.IsNullOrEmpty(initText))
+            messages.Add(new Message { Role = "user", Content = initText });
+
+        int agentRound = 0;
+
         try
         {
             while (IsAlive && !ct.IsCancellationRequested)
             {
-                // 等待输入数据或超时
-                if (!await WaitForActivationAsync(_cts.Token))
-                    break;
-
-                if (!CheckLifetimeLimits())
-                {
-                    Status = SessionStatus.Completed;
-                    break;
-                }
-
-                TouchActivity();
-                SetWaitUntil(null); // 清除 wait 计时
-
-                // 轮次定价
-                _roundCount++;
-                if (_roundCount > FreeRounds && _currency != null)
-                {
-                    var price = (decimal)Math.Ceiling((_roundCount - FreeRounds) / 10.0);
-                    if (_currency.Balance >= price)
-                    {
-                        try { _currency.Spend(price, $"Session {SessionId} round {_roundCount}"); }
-                        catch { /* 扣费失败不中断 */ }
-                    }
-                    else
-                    {
-                        // 余额不足，注入警告，不收钱，让 Session 收尾
-                        InjectMessage(new { type = "warning", text = $"余额不足（当前 {_currency.Balance:F0} 币），无法续期。请收尾。" });
-                    }
-                }
-
-                // 收集输入端口数据
-                var messages = new List<Message>();
-                foreach (var (name, port) in _inputs)
-                {
-                    while (port.TryPeek(out var data))
-                    {
-                        await port.ReceiveAsync(ct);
-                        if (data is EngineIncomingMessage em)
-                            messages.Add(new Message { Role = "user", Content = em.Content });
-                        else if (data is string s)
-                            messages.Add(new Message { Role = "user", Content = s });
-                        else if (data != null)
-                        {
-                            var json = JsonConvert.SerializeObject(data);
-                            messages.Add(new Message { Role = "system", Content = json });
-                        }
-                    }
-                }
-
-                // 无消息且非超时 → 继续等待
+                // 如果有初始消息，直接进入处理循环；否则等待输入
                 if (messages.Count == 0)
+                {
+                    if (!await WaitForActivationAsync(_cts.Token))
+                        break;
+
+                    if (!CheckLifetimeLimits())
+                    {
+                        Status = SessionStatus.Completed;
+                        break;
+                    }
+
+                    TouchActivity();
+                    SetWaitUntil(null);
+
+                    // 轮次定价
+                    _roundCount++;
+                    ApplyRoundPricing();
+
+                    // 收集输入
+                    messages = DrainInputPorts(ct);
+                    if (messages.Count == 0)
+                        continue;
+                }
+
+                // ── Agent 推理 ──
+                if (_agentCore == null) break;
+
+                _agentCore.EngineType = "session";
+                _agentCore.CurrentModeId = MaxLevel > 0 ? "build" : "plan";
+                _agentCore.AdditionalTools = _tools.Values.ToList();
+
+                agentRound++;
+                if (agentRound > MaxAgentRounds)
+                {
+                    await SendOutput($"已达到最大轮次限制（{MaxAgentRounds}），会话即将结束。");
+                    break;
+                }
+
+                ModelOutput output;
+                try
+                {
+                    output = await _agentCore.InvokeAsync(messages, EngineMode.Working);
+                }
+                catch (Exception ex)
+                {
+                    messages.Add(new Message { Role = "system", Content = $"[错误] 模型调用失败: {ex.Message}" });
                     continue;
+                }
 
-                // Agent 推理 → 由外部注入的 AgentCore 执行
-                // 工具调用由外部框架处理，此处只负责数据收集和生命周期
-                // 实际 Agent 调用在 ChannelEngine 的 Express 循环或外部注入中完成
+                messages.Add(new Message { Role = "assistant", Content = output.Text ?? output.Thinking ?? "" });
 
-                // 检查 wait 工具调用标记
-                // wait 由外部工具实现设置 WaitUntil
+                // ── 工具执行 ──
+                if (output.HasToolCalls && output.ToolCalls != null && output.ToolCalls.Count > 0)
+                {
+                    var executor = new ToolExecutor(name =>
+                        _componentHost?.TryGetTool(name) ?? ToolRegistry.Get(name));
+
+                    var results = await executor.ExecuteAsync(output.ToolCalls);
+                    var stopRequested = false;
+
+                    for (int i = 0; i < output.ToolCalls.Count; i++)
+                    {
+                        var call = output.ToolCalls[i];
+                        var result = results[i];
+
+                        switch (call.Tool)
+                        {
+                            case "speak":
+                                // 将回复发回 MessageEngine 出向
+                                await SendOutput(result.Data ?? "");
+                                break;
+                            case "deescalate":
+                                await SendOutput(result.Data ?? "工作完成，切回轻量模式。");
+                                stopRequested = true;
+                                break;
+                            case "wait":
+                                if (int.TryParse(result.Data, out var mins) || int.TryParse(call.Inputs.Count > 1 ? call.Inputs[1] : "5", out mins))
+                                    SetWaitUntil(DateTime.UtcNow.AddMinutes(mins));
+                                else
+                                    SetWaitUntil(DateTime.UtcNow.AddMinutes(5));
+                                stopRequested = true;
+                                break;
+                        }
+
+                        // 工具结果注入上下文
+                        messages.Add(new Message
+                        {
+                            Role = "user",
+                            Content = $"[工具 {call.Tool} 结果] {result.Data ?? result.Status}"
+                        });
+                    }
+
+                    if (stopRequested)
+                        break;
+                }
+                else
+                {
+                    // 无工具调用：模型给了最终回复，等待下一轮输入
+                    messages.Clear();
+                }
             }
         }
         finally
@@ -213,6 +280,62 @@ internal class RuntimeSession : IRuntimeSession
             if (Status == SessionStatus.Running)
                 Status = SessionStatus.Completed;
             OnCompleted?.Invoke(this);
+        }
+    }
+
+    private Task SendOutput(string text)
+    {
+        if (_messageEngine == null || string.IsNullOrEmpty(text))
+            return Task.CompletedTask;
+
+        int channelId = 0;
+        foreach (var (_, port) in _inputs)
+        {
+            if (port is MessageInputPort mp) { channelId = mp.ChannelId; break; }
+        }
+        if (channelId <= 0)
+            return Task.CompletedTask;
+
+        return _messageEngine.SendOutgoing(new EngineOutgoingMessage
+        {
+            ChannelId = channelId,
+            Content = text,
+            SentByBot = true
+        });
+    }
+
+
+    private List<Message> DrainInputPorts(CancellationToken ct)
+    {
+        var messages = new List<Message>();
+        foreach (var (_, port) in _inputs)
+        {
+            while (port.TryPeek(out var data))
+            {
+                port.ReceiveAsync(ct).GetAwaiter().GetResult();
+                if (data is EngineIncomingMessage em)
+                    messages.Add(new Message { Role = "user", Content = em.Content });
+                else if (data is string s)
+                    messages.Add(new Message { Role = "user", Content = s });
+                else if (data != null)
+                    messages.Add(new Message { Role = "system", Content = JsonConvert.SerializeObject(data) });
+            }
+        }
+        return messages;
+    }
+
+    private void ApplyRoundPricing()
+    {
+        if (_roundCount <= FreeRounds || _currency == null) return;
+        var price = (decimal)Math.Ceiling((_roundCount - FreeRounds) / 10.0);
+        if (_currency.Balance >= price)
+        {
+            try { _currency.Spend(price, $"Session {SessionId} round {_roundCount}"); }
+            catch { /* 扣费失败不中断 */ }
+        }
+        else
+        {
+            InjectMessage(new { type = "warning", text = $"余额不足（当前 {_currency.Balance:F0} 币），无法续期。请收尾。" });
         }
     }
 

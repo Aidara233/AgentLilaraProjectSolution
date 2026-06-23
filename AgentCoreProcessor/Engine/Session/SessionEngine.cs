@@ -63,6 +63,23 @@ internal class SessionEngine : ISubEngine
 
         _sessions[session.SessionId] = session;
 
+        // 注入 AgentCore 和 MessageEngine
+        var agentCore = new Core.AgentCore();
+        var messageEngine = _ctx.GetActiveEnginesSnapshot()
+            .OfType<Messaging.MessageEngine>().FirstOrDefault();
+        session.SetAgentCore(agentCore);
+        if (messageEngine != null) session.SetMessageEngine(messageEngine);
+
+        // 根据 PortSpec 创建输入端口并订阅 MessageEngine
+        foreach (var (portName, portSpec) in spec.InputPorts)
+        {
+            if (messageEngine != null)
+            {
+                var port = messageEngine.Subscribe(portSpec.ChannelId, portSpec.SubStream, portSpec.Weight);
+                session.AddInputPort(portName, port);
+            }
+        }
+
         // 自动 ClaimChannel
         if (spec.AutoClaimChannel && spec.InputPorts.Count > 0)
         {
