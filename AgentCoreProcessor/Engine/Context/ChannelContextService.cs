@@ -431,18 +431,11 @@ internal partial class ChannelContextService
     /// </summary>
     public async Task<Message?> FormatIncomingAsync(ChannelContextState st, UserMessage m)
     {
-        var name = m.IsFromBot ? "Lilara" : EscapeXml(m.SenderName);
-        var attrs = new List<string>();
-        if (!string.IsNullOrEmpty(m.PlatformMessageId))
-            attrs.Add($"id=\"{EscapeXml(m.PlatformMessageId)}\"");
-        if (!string.IsNullOrEmpty(m.ReplyToPlatformMessageId))
-            attrs.Add($"reply=\"{EscapeXml(m.ReplyToPlatformMessageId)}\"");
-        if (IsBotMentionedInMessage(m))
-            attrs.Add("mentioned=\"true\"");
-        if (!string.IsNullOrEmpty(m.MentionedPlatformIds))
-            attrs.Add($"mentioned_users=\"{EscapeXml(m.MentionedPlatformIds)}\"");
-        var attrStr = attrs.Count > 0 ? " " + string.Join(" ", attrs) : "";
-        var nmsText = $"<new_messages>\n<message role=\"user\" sender=\"{name}\"{attrStr}>\n{EscapeXml(m.Content)}\n</message>\n</new_messages>";
+        var mentionPrefix = IsBotMentionedInMessage(m) ? "[@你] " : "";
+        var name = m.IsFromBot ? "你" : m.SenderName;
+        var msgId = !string.IsNullOrEmpty(m.PlatformMessageId) ? $"[#{m.PlatformMessageId}]" : "";
+        var replyNote = !string.IsNullOrEmpty(m.ReplyToPlatformMessageId) ? $" (回复 #{m.ReplyToPlatformMessageId})" : "";
+        var nmsText = $"[新消息]\n{mentionPrefix}{msgId}{name}: {m.Content}{replyNote}";
 
         var nmsMsg = new Message { Role = "user", Content = nmsText };
 

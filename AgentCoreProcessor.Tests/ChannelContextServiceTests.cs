@@ -118,19 +118,19 @@ public class FormatIncomingTests
     };
 
     [Fact]
-    public async Task FormatIncoming_WrapsInNewMessagesTag()
+    public async Task FormatIncoming_PlainText_HasNewMessageMarker()
     {
         var data = MakeData();
         var svc = new ChannelContextService(data);
         var m = new UserMessage { Id = 1, ChannelId = 1, SenderName = "张三", Content = "你好" };
         var msg = await svc.FormatIncomingAsync(MakeState(), m);
         Assert.NotNull(msg);
-        Assert.Contains("<new_messages>", msg!.Content);
-        Assert.Contains("</new_messages>", msg.Content);
+        Assert.Contains("[新消息]", msg!.Content);
+        Assert.DoesNotContain("<new_messages>", msg.Content);
     }
 
     [Fact]
-    public async Task FormatIncoming_MentionedByBot_HasMentionedAttr()
+    public async Task FormatIncoming_MentionedByBot_HasMentionPrefix()
     {
         var data = MakeData(botId: "10001");
         var svc = new ChannelContextService(data);
@@ -141,7 +141,7 @@ public class FormatIncomingTests
         };
         var msg = await svc.FormatIncomingAsync(MakeState(), m);
         Assert.NotNull(msg);
-        Assert.Contains("mentioned=\"true\"", msg!.Content);
+        Assert.Contains("[@你]", msg!.Content);
     }
 
     [Fact]
@@ -156,7 +156,7 @@ public class FormatIncomingTests
         };
         var msg = await svc.FormatIncomingAsync(MakeState(), m);
         Assert.NotNull(msg);
-        Assert.DoesNotContain("mentioned=\"true\"", msg!.Content);
+        Assert.DoesNotContain("[@你]", msg!.Content);
     }
 
     [Fact]
@@ -171,11 +171,11 @@ public class FormatIncomingTests
         };
         var msg = await svc.FormatIncomingAsync(MakeState(), m);
         Assert.NotNull(msg);
-        Assert.Contains("reply=\"msgABC\"", msg!.Content);
+        Assert.Contains("(回复 #msgABC)", msg!.Content);
     }
 
     [Fact]
-    public async Task FormatIncoming_SenderNameEscaped()
+    public async Task FormatIncoming_SenderNamePlain()
     {
         var data = MakeData();
         var svc = new ChannelContextService(data);
@@ -186,8 +186,8 @@ public class FormatIncomingTests
         };
         var msg = await svc.FormatIncomingAsync(MakeState(), m);
         Assert.NotNull(msg);
-        // 名字应当被 XML 转义
-        Assert.Contains("&lt;test&gt;", msg!.Content);
+        // 纯文本不转义，原样出现
+        Assert.Contains("用户<test>", msg!.Content);
     }
 
     [Fact]
