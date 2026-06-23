@@ -145,6 +145,7 @@ namespace AgentCoreProcessor.Engine
                 }
 
                 var inlineWaitRequested = false;
+                var escalateTriggered = false;
                 for (int i = 0; i < output.ToolCalls.Count; i++)
                 {
                     var call = output.ToolCalls[i];
@@ -201,6 +202,7 @@ namespace AgentCoreProcessor.Engine
                                 OverrideLimits = new SessionLimits { MaxLifetime = TimeSpan.FromHours(2), IdleTimeout = TimeSpan.FromMinutes(30) }
                             });
                             Console.Error.WriteLine($"[Express ch:{channelId}] Working session 已创建，频道已占用");
+                            escalateTriggered = true;
                         }
                         else
                         {
@@ -213,6 +215,9 @@ namespace AgentCoreProcessor.Engine
                     break;
 
                 if (output.ToolCalls.Any(c => c.Tool == "wait"))
+                    break;
+
+                if (escalateTriggered)
                     break;
 
                 for (int i = 0; i < output.ToolCalls.Count; i++)
