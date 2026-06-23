@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Engine.Session;
@@ -173,25 +172,7 @@ namespace AgentCoreProcessor.Engine
                             .OfType<Session.SessionEngine>().FirstOrDefault();
                         if (sessionEngine != null)
                         {
-                            // 加载频道最近历史消息作为初始上下文
-                            var historyText = new StringBuilder();
-                            historyText.AppendLine($"用户请求切换到工作模式，原因：{reason}");
-                            try
-                            {
-                                var recentMsgs = await ctx.Session.GetContextByChannelAsync(channelId, HistoryMaxMessages);
-                                if (recentMsgs.Count > 0)
-                                {
-                                    historyText.AppendLine();
-                                    historyText.AppendLine("[对话历史]");
-                                    foreach (var m in recentMsgs)
-                                    {
-                                        var name = m.IsFromBot ? "你" : m.SenderName;
-                                        historyText.AppendLine($"{name}: {m.Content}");
-                                    }
-                                }
-                            }
-                            catch { /* 非关键路径 */ }
-
+                            // 历史由 SessionAgentHost 通过端口的 PreloadHistory 从 DB 自动加载，无需手拼
                             sessionEngine.CreateSession(new CreateSessionSpec
                             {
                                 ComponentIds = new[] { "basic-tools", "working-tools", "file-tools", "file-ops", "memory-tools" },
@@ -201,7 +182,7 @@ namespace AgentCoreProcessor.Engine
                                 {
                                     ["channel"] = new PortSpec { ChannelId = channelId, SubStream = "normal", Weight = 100 }
                                 },
-                                InitialState = historyText.ToString(),
+                                InitialState = $"用户请求切换到工作模式，原因：{reason}",
                                 OverrideLimits = new SessionLimits { MaxLifetime = TimeSpan.FromHours(2), IdleTimeout = TimeSpan.FromMinutes(30) }
                             });
                             Console.Error.WriteLine($"[Express ch:{channelId}] Working session 已创建，频道已占用");
