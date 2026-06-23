@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Component;
 using AgentCoreProcessor.Config;
+using AgentCoreProcessor.Engine.Context;
 using AgentCoreProcessor.Engine.Messaging;
 using AgentLilara.PluginSDK;
 using AgentLilara.PluginSDK.Services;
@@ -46,11 +47,24 @@ internal class SessionEngine : ISubEngine
         var session = new RuntimeSession(spec);
         session.SetCurrency(_currency!);
 
+        // 确定 loopId：单频道端口时用 LoopId.ForChannel，让 BasicTools 能解析真实 channelId
+        string loopId;
+        int singleChannelId = -1;
+        if (spec.InputPorts.Count == 1)
+        {
+            singleChannelId = spec.InputPorts.First().Value.ChannelId;
+            loopId = LoopId.ForChannel(singleChannelId);
+        }
+        else
+        {
+            loopId = $"session:{session.SessionId}";
+        }
+
         // 加载组件
         try
         {
             session.InitComponents(
-                "channel", // 复用频道组件白名单（BasicTools 等）
+                loopId, // 单频道端口时传 "channel:N"，让 BasicToolsComponent.ParseChannelId 能解析
                 _ctx.ModuleBus,
                 _ctx.ComponentServices,
                 () => { /* wake loop callback */ });
@@ -63,8 +77,8 @@ internal class SessionEngine : ISubEngine
 
         _sessions[session.SessionId] = session;
 
-        // 注入 AgentCore 和 MessageEngine
-        var agentCore = new Core.AgentCore();
+        // 注入 AgentCore（使用 spec 指定的 Core 配置名）和 MessageEngine
+        var agentCore = new Core.AgentCore(spec.CoreConfigName);
         var messageEngine = _ctx.GetActiveEnginesSnapshot()
             .OfType<Messaging.MessageEngine>().FirstOrDefault();
         session.SetAgentCore(agentCore);
@@ -86,6 +100,33 @@ internal class SessionEngine : ISubEngine
             var firstChannel = spec.InputPorts.First().Value.ChannelId;
             ClaimChannel(session.SessionId, firstChannel, ClaimLevel.Full);
         }
+
+        // 构建 SessionAgentHost（异步查询 channelName 后注入）
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var channelPorts = new List<(int channelId, string? channelName, bool preload)>();
+                foreach (var (_, portSpec) in spec.InputPorts)
+                {
+                    var ch = await _ctx.Session.GetChannelByIdAsync(portSpec.ChannelId);
+                    channelPorts.Add((portSpec.ChannelId, ch?.Name, portSpec.PreloadHistory));
+                }
+
+                var dataSource = new SystemContextDataSource(_ctx);
+                var svc = new ChannelContextService(dataSource);
+                var initialStateText = spec.InitialState is string s ? s
+                    : spec.InitialState != null ? Newtonsoft.Json.JsonConvert.SerializeObject(spec.InitialState)
+                    : null;
+                var host = new SessionAgentHost(channelPorts, initialStateText, svc);
+                session.SetAgentHost(host);
+                Console.Error.WriteLine($"[SessionEngine] Session {session.SessionId} AgentHost ready: {channelPorts.Count} channel port(s), loopId={loopId}");
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[SessionEngine] AgentHost init failed for {session.SessionId}: {ex.Message}");
+            }
+        });
 
         // 启动 Session
         _ = Task.Run(async () =>

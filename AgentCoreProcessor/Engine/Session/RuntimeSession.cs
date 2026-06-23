@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using AgentCoreProcessor.Component;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Core;
+using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine.Messaging;
 using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Tool;
@@ -41,6 +42,10 @@ internal class RuntimeSession : IRuntimeSession
     private readonly Dictionary<string, IInputPort> _inputs = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, IOutputPort> _outputs = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ITool> _tools = new(StringComparer.OrdinalIgnoreCase);
+
+    private SessionAgentHost? _host;
+
+    public void SetAgentHost(SessionAgentHost host) => _host = host;
 
     private ComponentHost? _componentHost;
     private ICurrencyService? _currency;
@@ -75,18 +80,17 @@ internal class RuntimeSession : IRuntimeSession
 
     /// <summary>
     /// 从 ComponentRegistry 加载指定组件，构建 ComponentHost。
+    /// loopId 示例："channel:123"（单频道）或 "session:xxxx"（多端口/无端口），
+    /// loopType 从 loopId 提取（"channel"/"session" 等），用于组件白名单查找。
     /// </summary>
-    public void InitComponents(string loopType, ModuleBus moduleBus, IServiceProvider services, Action wakeLoop)
+    public void InitComponents(string loopId, ModuleBus moduleBus, IServiceProvider services, Action wakeLoop)
     {
-        _componentHost = new ComponentHost($"session:{SessionId}", loopType, moduleBus, services, wakeLoop);
+        // 从 loopId 提取 loopType（LoopId.ExtractLoopType 已有此逻辑）
+        var loopType = LoopId.ExtractLoopType(loopId);
+        // 组件白名单使用 "channel" 类型（BasicTools 等都注册在 "channel" 下）
+        var componentLoopType = loopType == "session" ? "channel" : loopType;
+        _componentHost = new ComponentHost(loopId, componentLoopType, moduleBus, services, wakeLoop);
         _componentHost.InitAsync().GetAwaiter().GetResult();
-
-        // 收集所有组件工具
-        foreach (var comp in ComponentRegistry.GetLoopComponents(loopType))
-        {
-            if (!_componentIds.Contains(comp.Type.Name)) continue;
-            // 工具由 ComponentHost 管理，这里只收集名称
-        }
 
         RefreshToolList();
     }
@@ -161,10 +165,39 @@ internal class RuntimeSession : IRuntimeSession
         Status = SessionStatus.Running;
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
-        // 构建初始消息列表
-        var messages = new List<Message>();
-        if (_initialState is string initText && !string.IsNullOrEmpty(initText))
-            messages.Add(new Message { Role = "user", Content = initText });
+        // 等待 AgentHost 初始化（异步构建，最多等 3 秒）
+        var hostWait = 0;
+        while (_host == null && hostWait < 30)
+        {
+            await Task.Delay(100, ct);
+            hostWait++;
+        }
+
+        // 构建初始消息列表：优先用 host 的富上下文，fallback 到裸 InitialState 字符串
+        List<Message> messages;
+        if (_host != null)
+        {
+            try
+            {
+                messages = await _host.BuildStartAsync();
+                Console.Error.WriteLine($"[Session {SessionId}] BuildStartAsync: {messages.Count} messages from AgentHost");
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Session {SessionId}] BuildStartAsync failed, fallback: {ex.Message}");
+                messages = new List<Message>();
+                if (_initialState is string initText && !string.IsNullOrEmpty(initText))
+                    messages.Add(new Message { Role = "user", Content = initText });
+            }
+        }
+        else
+        {
+            // AgentHost 未就绪，fallback 到裸 InitialState
+            messages = new List<Message>();
+            if (_initialState is string initText && !string.IsNullOrEmpty(initText))
+                messages.Add(new Message { Role = "user", Content = initText });
+            Console.Error.WriteLine($"[Session {SessionId}] AgentHost not ready, using bare InitialState");
+        }
 
         int agentRound = 0;
 
@@ -191,10 +224,41 @@ internal class RuntimeSession : IRuntimeSession
                     _roundCount++;
                     ApplyRoundPricing();
 
-                    // 收集输入
-                    messages = DrainInputPorts(ct);
-                    if (messages.Count == 0)
-                        continue;
+                    // 收集输入，并通过 host 格式化（如有）
+                    var drained = DrainInputPortsRaw(ct);
+                    if (drained.Count == 0) continue;
+
+                    if (_host != null)
+                    {
+                        try
+                        {
+                            // 只把有真实 channelId 的消息传给 BuildRoundAsync（host 只知道注册的频道）
+                            var channelDrained = drained.Where(d => d.channelId > 0).ToList();
+                            var systemDrained = drained.Where(d => d.channelId <= 0).ToList();
+
+                            messages = channelDrained.Count > 0
+                                ? await _host.BuildRoundAsync(channelDrained)
+                                : new List<Message>();
+
+                            // 系统注入消息直接追加
+                            foreach (var (_, um) in systemDrained)
+                                messages.Add(new Message { Role = "user", Content = um.Content });
+
+                            Console.Error.WriteLine($"[Session {SessionId}] BuildRoundAsync: {messages.Count} messages for {channelDrained.Count} channel + {systemDrained.Count} system input(s)");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.Error.WriteLine($"[Session {SessionId}] BuildRoundAsync failed, fallback: {ex.Message}");
+                            messages = drained.Select(d => new Message { Role = "user", Content = d.msg.Content }).ToList();
+                        }
+                    }
+                    else
+                    {
+                        // fallback：裸内容
+                        messages = drained.Select(d => new Message { Role = "user", Content = d.msg.Content }).ToList();
+                    }
+
+                    if (messages.Count == 0) continue;
                 }
 
                 // ── Agent 推理 ──
@@ -308,23 +372,49 @@ internal class RuntimeSession : IRuntimeSession
     }
 
 
-    private List<Message> DrainInputPorts(CancellationToken ct)
+    /// <summary>
+    /// 从所有输入端口收集消息，转换为 (channelId, UserMessage) 元组列表。
+    /// EngineIncomingMessage → UserMessage：最小化转换（无 SenderName，但含 ChannelId/Content/UserId/PlatformMessageId）。
+    /// </summary>
+    private List<(int channelId, UserMessage msg)> DrainInputPortsRaw(CancellationToken ct)
     {
-        var messages = new List<Message>();
+        var result = new List<(int channelId, UserMessage msg)>();
         foreach (var (_, port) in _inputs)
         {
             while (port.TryPeek(out var data))
             {
                 port.ReceiveAsync(ct).GetAwaiter().GetResult();
                 if (data is EngineIncomingMessage em)
-                    messages.Add(new Message { Role = "user", Content = em.Content });
+                {
+                    // 最小化 EngineIncomingMessage → UserMessage 转换
+                    // SenderName 暂缺（EngineIncomingMessage 只有 SenderUserId，无 SenderName）
+                    var um = new UserMessage
+                    {
+                        ChannelId = em.ChannelId,
+                        UserId = em.SenderUserId,
+                        Content = em.Content,
+                        PlatformMessageId = em.MessageId,
+                        Time = em.Timestamp == default ? DateTime.UtcNow : em.Timestamp,
+                        IsFromBot = false,
+                        SenderName = "" // 无法从 EngineIncomingMessage 获取，FormatIncomingAsync 将显示空名
+                    };
+                    result.Add((em.ChannelId, um));
+                }
                 else if (data is string s)
-                    messages.Add(new Message { Role = "user", Content = s });
+                {
+                    // 纯字符串注入（timeout/signal 等）
+                    var um = new UserMessage { Content = s, ChannelId = 0, Time = DateTime.UtcNow };
+                    result.Add((0, um));
+                }
                 else if (data != null)
-                    messages.Add(new Message { Role = "system", Content = JsonConvert.SerializeObject(data) });
+                {
+                    // 其他类型（JSON 序列化）
+                    var um = new UserMessage { Content = JsonConvert.SerializeObject(data), ChannelId = 0, Time = DateTime.UtcNow };
+                    result.Add((0, um));
+                }
             }
         }
-        return messages;
+        return result;
     }
 
     private void ApplyRoundPricing()
