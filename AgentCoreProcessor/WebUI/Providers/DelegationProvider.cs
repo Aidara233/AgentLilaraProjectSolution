@@ -34,7 +34,7 @@ internal class DelegationProvider : IWebUIProvider
     private PageDefinition BuildOverviewPage() => new()
     {
         Route = "delegation",
-        Meta = new PageMeta { Title = "委托总览", Icon = "bi-diagram-3", Group = "系统引擎", Order = 33 },
+        Meta = new PageMeta { Title = "委托总览", Icon = "bi-diagram-3", Group = "会话引擎", Order = 33 },
         Cards = new List<CardDefinition>
         {
             new()
@@ -109,7 +109,7 @@ internal class DelegationProvider : IWebUIProvider
     private PageDefinition BuildDetailPage() => new()
     {
         Route = "delegation/request/{id}",
-        Meta = new PageMeta { Title = "请求详情", Icon = "bi-chat-right-text", Group = "系统引擎", ShowInNav = false },
+        Meta = new PageMeta { Title = "请求详情", Icon = "bi-chat-right-text", Group = "会话引擎", ShowInNav = false },
         Cards = new List<CardDefinition>
         {
             new()
@@ -165,7 +165,7 @@ internal class DelegationProvider : IWebUIProvider
     private PageDefinition BuildHistoryPage() => new()
     {
         Route = "delegation/history",
-        Meta = new PageMeta { Title = "历史记录", Icon = "bi-clock-history", Group = "系统引擎", Order = 34 },
+        Meta = new PageMeta { Title = "历史记录", Icon = "bi-clock-history", Group = "会话引擎", Order = 34 },
         Cards = new List<CardDefinition>
         {
             new()
