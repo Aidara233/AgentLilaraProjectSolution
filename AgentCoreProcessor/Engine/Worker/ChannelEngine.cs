@@ -132,8 +132,7 @@ namespace AgentCoreProcessor.Engine
         // 统一游标：最后消费消息 DB Id
         private int _lastConsumedMessageId;
 
-        // ── 统一循环 Phase 2：信号缓冲 + 双源注入 ──
-        private readonly ConcurrentQueue<ChannelSignal> _signalBuffer = new();
+        // ── 统一循环 Phase 2：双源注入 ──
         private readonly List<IInjectProvider> _injectProviders = new();
 
         // 当前处理批次（供 Agent host 注入使用）
