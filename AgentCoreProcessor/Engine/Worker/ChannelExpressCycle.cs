@@ -122,7 +122,7 @@ namespace AgentCoreProcessor.Engine
                 using (var expressToolSpan = Signal.Open(LogGroup.Tool, $"Express工具 R{round + 1}: {string.Join(", ", output.ToolCalls.Select(c => c.Tool))}",
                     new { round = round + 1, calls = output.ToolCalls.Select(c => new { c.Tool, c.Inputs }) }))
                 {
-                    var executor = new ToolExecutor(ToolRegistry.Get);
+                    var executor = new ToolExecutor(name => componentHost?.TryGetTool(name) ?? ToolRegistry.Get(name));
                     expressResults = await executor.ExecuteAsync(output.ToolCalls);
                     expressToolSpan.SetCloseDetail(new
                     {
@@ -140,7 +140,7 @@ namespace AgentCoreProcessor.Engine
                     var result = expressResults[i];
                     if (result.RequestWait)
                         inlineWaitRequested = true;
-                    var toolDef = ToolRegistry.Get(call.Tool);
+                    var toolDef = componentHost?.TryGetTool(call.Tool) ?? ToolRegistry.Get(call.Tool);
                     bus.Publish(new ToolExecutedEvent(call, result, toolDef));
                 }
 
