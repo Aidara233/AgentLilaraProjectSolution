@@ -21,7 +21,10 @@ namespace AgentCoreProcessor.Engine
         /// <summary>Express 微循环：多轮模型调用（最多 ExpressMaxRounds 轮），工具结果回注供下一轮参考。</summary>
         private async Task ExecuteExpressCycleAsync()
         {
-            _roundImageHashes.Clear();
+            // 每轮重置图片追踪状态（在 _ctxState 中）
+            _ctxState.RoundImageHashes.Clear();
+            _ctxState.InjectedDescriptions.Clear();
+            _ctxState.InjectedOcrTexts.Clear();
             _startInjectMaxId = 0;
 
             var messages = new List<Message>();

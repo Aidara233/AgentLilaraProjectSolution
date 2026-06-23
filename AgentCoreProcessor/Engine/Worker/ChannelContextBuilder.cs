@@ -2,11 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Component;
 using AgentCoreProcessor.Database;
+using AgentCoreProcessor.Engine.Context;
 using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Memory;
 using AgentCoreProcessor.Models;
@@ -41,7 +41,7 @@ namespace AgentCoreProcessor.Engine
                 var botId = ctx.Adapters.GetBotPlatformId("qq");
                 if (!string.IsNullOrEmpty(botId))
                     sb.AppendLine($"身份信息：你的QQ号是 {botId}。");
-                sb.AppendLine(FormatChannelContext());
+                sb.AppendLine(ChannelContextService.RenderChannelInfo(channelName, channelId));
                 sb.AppendLine("[图片说明] 正文中的 [IMG:N] 标记表示该位置有图片。[图片描述] 后跟随图片的视觉内容描述。[图中文字] 后跟随OCR提取的文字。文字较长时会被截断，可使用 get_image_text 工具传入图片hash查看全文。相同图片不会重复出现。");
             }
             else
@@ -51,7 +51,7 @@ namespace AgentCoreProcessor.Engine
                 var botId = ctx.Adapters.GetBotPlatformId("qq");
                 if (!string.IsNullOrEmpty(botId))
                     sb.AppendLine($"\n身份信息：你的QQ号是 {botId}。");
-                sb.AppendLine(FormatChannelContext());
+                sb.AppendLine(ChannelContextService.RenderChannelInfo(channelName, channelId));
                 sb.AppendLine("\n[图片说明] 正文中的 [IMG:N] 标记表示该位置有图片，下方紧随对应的 [IMG:N] + 实际图片。[图中文字] 后跟随OCR提取的文字。文字较长时会被截断，可使用 get_image_text 工具传入图片hash查看全文。相同图片不会重复出现。");
             }
 
@@ -70,84 +70,9 @@ namespace AgentCoreProcessor.Engine
             return sb.ToString();
         }
 
-        private string FormatChannelContext()
-        {
-            if (string.IsNullOrEmpty(channelName)) return "";
-            var parts = channelName.Split('_', 2);
-            if (parts.Length != 2) return "";
-            var type = parts[0];
-            var id = parts[1];
-            return type switch
-            {
-                "group" => $"当前频道：群聊，群号: {id}，频道ID: {channelId}。对群成员操作时需提供 group_id={id}。",
-                "private" => $"当前频道：私聊，对方QQ: {id}，频道ID: {channelId}。",
-                _ => ""
-            };
-        }
-
         // ═══════════════════════════════════════════════════════════
-        // 消息格式化辅助（reply / mention / quoted-context）
+        // 消息格式化辅助（quoted-context for NewMessageSignal）
         // ═══════════════════════════════════════════════════════════
-
-        private string? _botPlatformId;
-
-        private string? GetBotPlatformId()
-        {
-            if (_botPlatformId == null)
-                _botPlatformId = ctx.Adapters.GetBotPlatformId("qq");
-            return _botPlatformId;
-        }
-
-        /// <summary>检查 DB 消息中 bot 是否被 @提及。</summary>
-        private bool IsBotMentionedInMessage(UserMessage m)
-        {
-            if (string.IsNullOrEmpty(m.MentionedPlatformIds)) return false;
-            var botId = GetBotPlatformId();
-            if (string.IsNullOrEmpty(botId)) return false;
-            return m.MentionedPlatformIds.Split(',').Any(id => id == botId);
-        }
-
-        /// <summary>为 Working XML <message> 构建额外属性（id / reply / mentioned / mentioned_users）。</summary>
-        private string FormatMessageAttrs(UserMessage m)
-        {
-            var parts = new List<string>();
-            if (!string.IsNullOrEmpty(m.PlatformMessageId))
-                parts.Add($"id=\"{EscapeXml(m.PlatformMessageId)}\"");
-            parts.Add($"db_id=\"{m.Id}\"");
-            if (!string.IsNullOrEmpty(m.ReplyToPlatformMessageId))
-                parts.Add($"reply=\"{EscapeXml(m.ReplyToPlatformMessageId)}\"");
-            if (IsBotMentionedInMessage(m))
-                parts.Add("mentioned=\"true\"");
-            if (!string.IsNullOrEmpty(m.MentionedPlatformIds))
-                parts.Add($"mentioned_users=\"{EscapeXml(m.MentionedPlatformIds)}\"");
-            return parts.Count > 0 ? " " + string.Join(" ", parts) : "";
-        }
-
-        /// <summary>为一组消息批次构建缺失引用的 <quoted-context> 块（递归展开）。返回文本 + 收集到的图片路径。</summary>
-        private async Task<(string Text, List<string> ImagePaths)?> BuildQuotedContextForBatchAsync(
-            List<UserMessage> batch, int channelId, int maxDepth, bool includeSurrounding)
-        {
-            var visibleIds = new HashSet<string>();
-            foreach (var m in batch)
-                if (!string.IsNullOrEmpty(m.PlatformMessageId))
-                    visibleIds.Add(m.PlatformMessageId);
-
-            var included = new HashSet<string>(visibleIds);
-            var sb = new StringBuilder();
-            var imagePaths = new List<string>();
-
-            foreach (var m in batch)
-            {
-                if (!string.IsNullOrEmpty(m.ReplyToPlatformMessageId)
-                    && !included.Contains(m.ReplyToPlatformMessageId))
-                {
-                    await AppendQuotedContextRecursiveAsync(sb, imagePaths, m.ReplyToPlatformMessageId,
-                        channelId, maxDepth, included, includeSurrounding);
-                }
-            }
-
-            return sb.Length > 0 ? (sb.ToString(), imagePaths) : null;
-        }
 
         /// <summary>递归构建单条 quoted-context（含引用链展开）。同时收集图片路径。</summary>
         private async Task AppendQuotedContextRecursiveAsync(
@@ -226,80 +151,6 @@ namespace AgentCoreProcessor.Engine
             msgs.Add(msg);
         }
 
-        /// <summary>按 [IMG:N] 标记拆分文本，交错插入 [图N] 标签 + 图片。同 hash 去重。</summary>
-        private async Task<List<ContentPart>> BuildInterleavedContentParts(
-            string text, IEnumerable<UserMessage> msgs, HashSet<string> seenHashes)
-        {
-            // 收集图片路径（顺序与 [IMG:N] 对应）
-            var imagePaths = new List<string>();
-            var imageHashes = new List<string>();
-            foreach (var m in msgs)
-            {
-                if (string.IsNullOrEmpty(m.ImageHashes)) continue;
-                foreach (var hash in m.ImageHashes.Split(',', StringSplitOptions.RemoveEmptyEntries))
-                {
-                    var trimmed = hash.Trim();
-                    var path = await ImageStorage.GetModelInputPathAsync(trimmed);
-                    imagePaths.Add(path ?? "");
-                    imageHashes.Add(trimmed);
-                }
-            }
-
-            var regex = new Regex(@"\[IMG:(\d+)\]");
-            var matches = regex.Matches(text);
-            var parts = new List<ContentPart>();
-            int lastEnd = 0;
-
-            foreach (Match match in matches)
-            {
-                // 标记前的文本
-                if (match.Index > lastEnd)
-                    parts.Add(ContentPart.FromText(text[lastEnd..match.Index]));
-
-                int imgIndex = int.Parse(match.Groups[1].Value);
-                if (imgIndex >= 0 && imgIndex < imagePaths.Count && !string.IsNullOrEmpty(imagePaths[imgIndex]))
-                {
-                    var hash = imageHashes[imgIndex];
-                    if (seenHashes.Contains(hash))
-                    {
-                        // 重复图片：只引用标签
-                        parts.Add(ContentPart.FromText($"[IMG:{imgIndex}]"));
-                    }
-                    else
-                    {
-                        // 首次出现：标记 + 图片 + 描述
-                        seenHashes.Add(hash);
-                        _roundImageHashes.Add(hash);
-                        parts.Add(ContentPart.FromText($"[IMG:{imgIndex}]"));
-                        parts.Add(ContentPart.FromImagePath(imagePaths[imgIndex]));
-                        var desc = await ImageStorage.GetDescriptionAsync(hash);
-                        if (!string.IsNullOrEmpty(desc))
-                        {
-                            _injectedDescriptions.Add(hash);
-                            parts.Add(ContentPart.FromText($"[图片描述] {desc}"));
-                        }
-                        var ocrInjection = await BuildOcrInjectionTextAsync(hash, true);
-                        if (!string.IsNullOrEmpty(ocrInjection))
-                        {
-                            _injectedOcrTexts.Add(hash);
-                            parts.Add(ContentPart.FromText(ocrInjection));
-                        }
-                    }
-                }
-
-                lastEnd = match.Index + match.Length;
-            }
-
-            // 剩余文本
-            if (lastEnd < text.Length)
-                parts.Add(ContentPart.FromText(text[lastEnd..]));
-
-            if (parts.Count == 0)
-                parts.Add(ContentPart.FromText(text));
-
-            return parts;
-        }
-
         /// <summary>将文本 + 一组图片 hash 列表组装为 ContentParts。</summary>
         private async Task<List<ContentPart>> BuildContentPartsWithImagePaths(string text, IEnumerable<string> imagePaths, List<string>? imageHashes = null)
         {
@@ -347,33 +198,12 @@ namespace AgentCoreProcessor.Engine
             if (!string.IsNullOrEmpty(contextSummary))
                 msgs.Add(new Message { Role = "user", Content = $"[上下文摘要]\n{contextSummary}" });
 
-            // 3. 参与者列表注入（名字、平台ID、内部ID、信任等级、权限）
-            if (currentParticipantSnapshot != null && currentParticipantSnapshot.Count > 0)
+            // 3. 参与者列表注入（DB 派生，无累积状态）
             {
-                var partSb = new StringBuilder();
-                // 频道基本信息（Express 模式）
-                if (!string.IsNullOrEmpty(channelName))
-                {
-                    var chParts = channelName.Split('_', 2);
-                    if (chParts.Length == 2)
-                    {
-                        var chType = chParts[0];
-                        var chId = chParts[1];
-                        partSb.AppendLine($"[频道] 类型: {chType}, 平台ID: {chId}, 频道ID: {channelId}");
-                    }
-                }
-                partSb.AppendLine("[当前参与者]");
-                foreach (var (_, p) in currentParticipantSnapshot)
-                {
-                    partSb.Append($"- {p.DisplayName}");
-                    if (!string.IsNullOrEmpty(p.Aliases))
-                        partSb.Append($" (别称:{p.Aliases})");
-                    partSb.Append($" [platform_id:{p.PlatformId}, person_id:{p.PersonId}, trust:{p.TrustLevel}]");
-                    if (!string.IsNullOrEmpty(p.Memo))
-                        partSb.Append($" — {p.Memo}");
-                    partSb.AppendLine();
-                }
-                msgs.Add(new Message { Role = "user", Content = partSb.ToString() });
+                var participants = await _ctxService.GetParticipantsAsync(channelId);
+                var partBlock = ChannelContextService.RenderParticipants(channelName, channelId, participants);
+                if (!string.IsNullOrEmpty(partBlock))
+                    msgs.Add(new Message { Role = "user", Content = partBlock });
             }
 
             // 4. IInjectProvider start injections
@@ -399,39 +229,15 @@ namespace AgentCoreProcessor.Engine
 
             // ═══ CONVERSATION ═══
 
-            // 6. 初始历史：从 DB 拉取历史消息（Express 格式）
+            // 6. 初始历史：委托给 ChannelContextService.BuildHistoryBlockAsync
             {
-                _startInjectMaxId = _lastConsumedMessageId;
-                var recentMsgs = await ctx.Session.GetContextByChannelAsync(channelId, HistoryMaxMessages);
-                if (recentMsgs.Count > 0)
-                {
-                    var historyMsgs = recentMsgs.Where(m => m.Id <= _lastConsumedMessageId).ToList();
-                    if (historyMsgs.Count > 0)
-                    {
-                        var histQc = await BuildQuotedContextForBatchAsync(historyMsgs, channelId, maxDepth: 1, includeSurrounding: true);
-                        if (histQc != null)
-                            await AddQuotedContextMessage(msgs, histQc.Value.Text, histQc.Value.ImagePaths);
-
-                        var histSb = new StringBuilder("[对话历史]\n");
-                        foreach (var m in historyMsgs)
-                        {
-                            var mentionPrefix = IsBotMentionedInMessage(m) ? "[@你] " : "";
-                            var name = m.IsFromBot ? "你" : m.SenderName;
-                            var msgId = !string.IsNullOrEmpty(m.PlatformMessageId) ? $"[#{m.PlatformMessageId}]" : "";
-                            var replyNote = !string.IsNullOrEmpty(m.ReplyToPlatformMessageId) ? $" (回复 #{m.ReplyToPlatformMessageId})" : "";
-                            histSb.AppendLine($"{mentionPrefix}{msgId}{name}: {m.Content}{replyNote}");
-                        }
-                        {
-                            var seenHashes = new HashSet<string>();
-                            var parts = await BuildInterleavedContentParts(histSb.ToString(), historyMsgs, seenHashes);
-                            var msg = new Message { Role = "user", Content = histSb.ToString() };
-                            if (parts.Count > 1) msg.ContentParts = parts;
-                            msgs.Add(msg);
-                        }
-                    }
-
-                    _startInjectMaxId = historyMsgs.Count > 0 ? historyMsgs.Max(m => m.Id) : _lastConsumedMessageId;
-                }
+                // 同步游标到 _ctxState，让 service 使用正确的游标
+                _ctxState.LastConsumedMessageId = _lastConsumedMessageId;
+                var histMsgs = await _ctxService.BuildHistoryBlockAsync(_ctxState);
+                // 回写游标
+                _lastConsumedMessageId = _ctxState.LastConsumedMessageId;
+                _startInjectMaxId = _ctxState.StartInjectMaxId;
+                msgs.AddRange(histMsgs);
             }
 
             // 7. 记忆检索
@@ -588,35 +394,43 @@ namespace AgentCoreProcessor.Engine
                         newMsgs = newMsgs.Skip(newMsgs.Count - HistoryMaxMessages).ToList();
                     }
 
-                    // Express 格式
-                    {
-                        var sb = new StringBuilder("<新消息（自上次处理后）>\n");
-                        foreach (var m in newMsgs)
-                        {
-                            var mentionPrefix = IsBotMentionedInMessage(m) ? "[@你] " : "";
-                            var name = m.IsFromBot ? "你" : m.SenderName;
-                            var msgId = !string.IsNullOrEmpty(m.PlatformMessageId) ? $"[#{m.PlatformMessageId}]" : "";
-                            var replyNote = !string.IsNullOrEmpty(m.ReplyToPlatformMessageId) ? $" (回复 #{m.ReplyToPlatformMessageId})" : "";
-                            sb.AppendLine($"{mentionPrefix}{msgId}{name}: {m.Content}{replyNote}");
-                        }
-                        sb.Append("</新消息>");
-                        var roundQc = await BuildQuotedContextForBatchAsync(newMsgs, channelId, maxDepth: 2, includeSurrounding: true);
-                        if (roundQc != null)
-                            await AddQuotedContextMessage(msgs, roundQc.Value.Text, roundQc.Value.ImagePaths);
+                    // 同步 _ctxState 游标，FormatIncomingAsync 需要 ChannelId
+                    _ctxState.LastConsumedMessageId = _lastConsumedMessageId;
 
+                    // 每条消息：保留 reply 补块逻辑，再调 FormatIncomingAsync
+                    var includedQuoted = new HashSet<string>();
+                    // 预填充已在 newMsgs 中的平台消息ID
+                    foreach (var m in newMsgs)
+                        if (!string.IsNullOrEmpty(m.PlatformMessageId))
+                            includedQuoted.Add(m.PlatformMessageId);
+
+                    foreach (var m in newMsgs)
+                    {
+                        // reply 补块：若引用的消息不在本批，补 quoted-context
+                        if (!string.IsNullOrEmpty(m.ReplyToPlatformMessageId)
+                            && !includedQuoted.Contains(m.ReplyToPlatformMessageId))
                         {
-                            var seenHashes = new HashSet<string>();
-                            var parts = await BuildInterleavedContentParts(sb.ToString(), newMsgs, seenHashes);
-                            var msg = new Message { Role = "user", Content = sb.ToString() };
-                            if (parts.Count > 1) msg.ContentParts = parts;
-                            msgs.Add(msg);
+                            var qcSb = new StringBuilder();
+                            var qcImagePaths = new List<string>();
+                            await _ctxService.AppendQuotedContextRecursiveAsync(
+                                qcSb, qcImagePaths, m.ReplyToPlatformMessageId,
+                                channelId, remainingDepth: 2, includedQuoted, includeSurrounding: true);
+                            if (qcSb.Length > 0)
+                                await _ctxService.AddQuotedContextMessage(msgs, qcSb.ToString(), qcImagePaths);
                         }
+
+                        var formatted = await _ctxService.FormatIncomingAsync(_ctxState, m);
+                        if (formatted != null)
+                            msgs.Add(formatted);
                     }
 
                     // 游标推进到所有新消息（包括被裁剪的）
                     var maxNewId = allNewMsgs.Max(m => m.Id);
                     if (maxNewId > _lastConsumedMessageId)
+                    {
                         _lastConsumedMessageId = maxNewId;
+                        _ctxState.LastConsumedMessageId = _lastConsumedMessageId;
+                    }
 
                     // 同步扣减缓冲计数：已消费的消息不应再触发外层循环
                     lock (bufferLock)
@@ -635,28 +449,10 @@ namespace AgentCoreProcessor.Engine
                 EstimatedTokens = 0
             };
 
-            // 滞后描述补注：本轮图片的描述可能在后续轮次才就绪
-            foreach (var hash in _roundImageHashes)
+            // 滞后图片描述/OCR 补注：委托给 ChannelContextService.BuildLaggingImageInjectionsAsync
             {
-                if (_injectedDescriptions.Contains(hash)) continue;
-                var desc = await ImageStorage.GetDescriptionAsync(hash);
-                if (!string.IsNullOrEmpty(desc))
-                {
-                    _injectedDescriptions.Add(hash);
-                    msgs.Add(new Message { Role = "user", Content = $"[图片描述] 之前图片的描述已就绪：{desc}" });
-                }
-            }
-
-            // 滞后 OCR 补注
-            foreach (var hash in _roundImageHashes)
-            {
-                if (_injectedOcrTexts.Contains(hash)) continue;
-                var ocrInjection = await BuildOcrInjectionTextAsync(hash, true);
-                if (!string.IsNullOrEmpty(ocrInjection))
-                {
-                    _injectedOcrTexts.Add(hash);
-                    msgs.Add(new Message { Role = "user", Content = ocrInjection });
-                }
+                var laggingMsgs = await _ctxService.BuildLaggingImageInjectionsAsync(_ctxState);
+                msgs.AddRange(laggingMsgs);
             }
 
             return msgs.Count > 0 ? msgs : null;

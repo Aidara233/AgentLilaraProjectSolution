@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Database;
+using AgentCoreProcessor.Engine.Context;
 using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Memory;
 using AgentCoreProcessor.Models;
@@ -61,11 +62,12 @@ namespace AgentCoreProcessor.Engine
         // ---- 禁言状态 ----
         private bool _isBanned; // 当前是否被禁言，禁言期间不唤醒引擎
 
-        // ---- 冲动值 ----
+        // 冲动值
         private readonly ImpulseTracker impulseTracker;
 
-        // 参与者追踪
-        private readonly ConcurrentDictionary<int, ParticipantInfo> recentParticipants = new();
+        // 上下文服务（DB 派生，无累积状态）
+        private ChannelContextState _ctxState = null!;
+        private ChannelContextService _ctxService = null!;
 
         // Core 实例
         private readonly AgentCore agentCore = new();
@@ -133,7 +135,6 @@ namespace AgentCoreProcessor.Engine
         private readonly List<IInjectProvider> _injectProviders = new();
 
         // 当前处理批次（供 Agent host 注入使用）
-        private Dictionary<int, ParticipantInfo>? currentParticipantSnapshot;
         private SessionContext? _lastSessionContext;
         private bool hadSpeakThisRound;
 
@@ -145,10 +146,6 @@ namespace AgentCoreProcessor.Engine
         // 信号追踪：最近入队消息携带的上游信号
         private string? _traceParentSpanId;
         private string? _sessionRootSpanId; // session root span（提取 cause 指向此处，避免指向内部子 span）
-
-        private readonly HashSet<string> _roundImageHashes = new();
-        private readonly HashSet<string> _injectedDescriptions = new();
-        private readonly HashSet<string> _injectedOcrTexts = new();
 
         // Phase 6: 关注规则
         private readonly object watchRulesLock = new();
@@ -173,6 +170,10 @@ namespace AgentCoreProcessor.Engine
 
             _traceParentSpanId = Logging.SignalContext.Current?.CurrentSpanId;
 
+            // ── 上下文服务（DB 派生参与者，无累积状态）──
+            _ctxState = new ChannelContextState { ChannelId = channelId, ChannelName = channelName, Mode = "express" };
+            _ctxService = new ChannelContextService(new SystemContextDataSource(ctx));
+
             // ── 持久化 + 状态恢复 ──
             persistence = new ChannelContextPersistence(channelId);
             {
@@ -194,12 +195,12 @@ namespace AgentCoreProcessor.Engine
             gate.EventFilter = _ => false;
 
             extractionWorker = new ChannelExtractionWorker(
-                ctx, channelId, channelConfig, recentParticipants,
+                ctx, channelId, channelConfig,
+                () => _ctxService.GetParticipantsAsync(channelId),
                 () => LastCompletionTime);
 
             CollectImagePaths(initialMessage);
-            recentParticipants.TryAdd(initialContext.User.Id, ParticipantInfo.From(initialContext.User, initialContext.Person, initialMessage));
-            impulseTracker.Accumulate(initialMessage, recentParticipants.Count, initialMessage.IsSystemEvent);
+            impulseTracker.Accumulate(initialMessage, 1, initialMessage.IsSystemEvent);
             _lastSessionContext = initialContext;
             _bufferedMessageCount = 1;
             _bufferTriggered = impulseTracker.ShouldRespond(initialMessage, _bufferedMessageCount, null);
@@ -220,6 +221,10 @@ namespace AgentCoreProcessor.Engine
             this.lastBufferTime = DateTime.Now;
             agentCore.CallerTag = $"Channel:{channelId}";
 
+            // ── 上下文服务（DB 派生参与者，无累积状态）──
+            _ctxState = new ChannelContextState { ChannelId = channelId, ChannelName = channelName, Mode = "express" };
+            _ctxService = new ChannelContextService(new SystemContextDataSource(ctx));
+
             persistence = new ChannelContextPersistence(channelId);
             {
                 var (savedSummary, _, _, savedCursor, _) = persistence.LoadContext();
@@ -238,7 +243,8 @@ namespace AgentCoreProcessor.Engine
             gate.EventFilter = _ => false;
 
             extractionWorker = new ChannelExtractionWorker(
-                ctx, channelId, channelConfig, recentParticipants,
+                ctx, channelId, channelConfig,
+                () => _ctxService.GetParticipantsAsync(channelId),
                 () => LastCompletionTime);
 
             InitModules();
@@ -290,11 +296,7 @@ namespace AgentCoreProcessor.Engine
                     }
                 }
             }
-            recentParticipants.AddOrUpdate(
-                sc.User.Id,
-                ParticipantInfo.From(sc.User, sc.Person, msg),
-                (_, _) => ParticipantInfo.From(sc.User, sc.Person, msg));
-            impulseTracker.Accumulate(msg, recentParticipants.Count, msg.IsSystemEvent);
+            impulseTracker.Accumulate(msg, 1, msg.IsSystemEvent);
             loopControlModule.OnNewMessage();
             _lastSessionContext = sc;
 
@@ -480,8 +482,6 @@ namespace AgentCoreProcessor.Engine
 
                 if (hasNewMessages)
                 {
-                    currentParticipantSnapshot = new Dictionary<int, ParticipantInfo>(recentParticipants);
-
                     List<(string Path, string? Hash, string? Category)> pendingCopy;
                     lock (bufferLock)
                     {
@@ -499,7 +499,7 @@ namespace AgentCoreProcessor.Engine
                         while (processedTicks.Count > MaxProcessedTicksWindow)
                             processedTicks.RemoveFirst();
 
-                        if (IsBotMentionedInMessage(m) && !string.IsNullOrEmpty(m.ImageHashes))
+                        if (_ctxService.IsBotMentionedInMessage(m) && !string.IsNullOrEmpty(m.ImageHashes))
                         {
                             foreach (var hash in m.ImageHashes.Split(',', StringSplitOptions.RemoveEmptyEntries))
                             {
@@ -678,7 +678,7 @@ namespace AgentCoreProcessor.Engine
             TotalRounds = loopControlModule.TotalRounds,
             SilentRounds = loopControlModule.SilentRounds,
             AuthorizedToolCount = ctx.GlobalComponentHost?.GetVisibleTools("channel").Count() ?? 0,
-            ParticipantCount = recentParticipants.Count,
+            ParticipantCount = 0, // 参与者数量现由 ChannelContextService 动态派生，无累积计数
             ProcessedMessageCount = processedMessageCount,
             TotalErrorCount = totalErrorCount,
             LastErrorTime = lastErrorTime,

@@ -1,11 +1,11 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Database;
+using AgentCoreProcessor.Engine.Context;
 using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Memory;
 
@@ -20,7 +20,8 @@ namespace AgentCoreProcessor.Engine
         private readonly ISystemContext ctx;
         private readonly int channelId;
         private readonly ChannelConfig channelConfig;
-        private readonly ConcurrentDictionary<int, ParticipantInfo> recentParticipants;
+        /// <summary>从 ChannelContextService 获取参与者列表（DB 派生，无累积状态）。</summary>
+        private readonly Func<Task<List<ParticipantView>>> getParticipants;
         private readonly Func<DateTime?> getLastCompletionTime;
 
         private int lastExtractedMessageId = -1; // -1 = 未初始化
@@ -37,13 +38,13 @@ namespace AgentCoreProcessor.Engine
         public int ExtractedMessageCount => extractedMessageCount;
 
         public ChannelExtractionWorker(ISystemContext ctx, int channelId,
-            ChannelConfig config, ConcurrentDictionary<int, ParticipantInfo> participants,
+            ChannelConfig config, Func<Task<List<ParticipantView>>> getParticipants,
             Func<DateTime?> getLastCompletionTime)
         {
             this.ctx = ctx;
             this.channelId = channelId;
             this.channelConfig = config;
-            this.recentParticipants = participants;
+            this.getParticipants = getParticipants;
             this.getLastCompletionTime = getLastCompletionTime;
         }
 
@@ -117,6 +118,11 @@ namespace AgentCoreProcessor.Engine
             extractedMessageCount = await ctx.Session.GetMessageCountUpToAsync(
                 channelId, lastExtractedMessageId);
 
+            // 从 ChannelContextService 获取参与者列表（DB 派生）
+            List<ParticipantView> participants;
+            try { participants = await getParticipants(); }
+            catch { participants = new List<ParticipantView>(); }
+
             while (!ct.IsCancellationRequested)
             {
                 totalMessageCount = await ctx.Session.GetMessageCountByChannelAsync(channelId);
@@ -151,7 +157,7 @@ namespace AgentCoreProcessor.Engine
                 var contextLines = contextMessages.Select(FormatMessageLine).ToList();
                 var newLines = newMessages.Select(FormatMessageLine).ToList();
 
-                var participantNames = recentParticipants.Values
+                var participantNames = participants
                     .Select(p => p.DisplayName)
                     .Where(n => !string.IsNullOrEmpty(n))
                     .Distinct().ToList();
@@ -178,13 +184,13 @@ namespace AgentCoreProcessor.Engine
                         }
                         else if (item.Type == "feedback" && item.Sentiment != null)
                         {
-                            int personId = ResolveAboutToPersonId(item.About) ?? context.Person.Id;
+                            int personId = ResolveAboutToPersonId(item.About, participants) ?? context.Person.Id;
                             await ctx.MemorySvc.ApplyFeedbackAsync(
                                 personId, item.Content, item.Sentiment, item.Correction);
                         }
                         else
                         {
-                            int personId = ResolveAboutToPersonId(item.About) ?? context.Person.Id;
+                            int personId = ResolveAboutToPersonId(item.About, participants) ?? context.Person.Id;
                             string memType = item.Type ?? MemoryType.Fact;
                             await ctx.MemorySvc.StoreAsync(item.Content,
                                 personId, context.Channel.Id,
@@ -232,25 +238,12 @@ namespace AgentCoreProcessor.Engine
             return $"{name}(#{m.UserId}): {m.Content}";
         }
 
-        private int? ResolveAboutToPersonId(string? about)
+        private int? ResolveAboutToPersonId(string? about, List<ParticipantView> participants)
         {
             if (string.IsNullOrEmpty(about)) return null;
 
-            if (about.StartsWith('#') && int.TryParse(about[1..], out var userId))
-            {
-                if (recentParticipants.TryGetValue(userId, out var info))
-                    return info.PersonId;
-            }
-
-            var hashIdx = about.IndexOf('#');
-            if (hashIdx >= 0)
-            {
-                var idPart = about[(hashIdx + 1)..].TrimEnd(')');
-                if (int.TryParse(idPart, out var uid) && recentParticipants.TryGetValue(uid, out var info2))
-                    return info2.PersonId;
-            }
-
-            foreach (var (_, p) in recentParticipants)
+            // ParticipantView 中无 userId 字段，仅支持 DisplayName 模糊匹配
+            foreach (var p in participants)
                 if (p.DisplayName.Equals(about, StringComparison.OrdinalIgnoreCase))
                     return p.PersonId;
 
