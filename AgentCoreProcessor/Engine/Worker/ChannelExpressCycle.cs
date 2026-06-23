@@ -40,9 +40,13 @@ namespace AgentCoreProcessor.Engine
 
             agentCore.EngineType = "channel";
             agentCore.CurrentModeId = "express";
-            agentCore.AdditionalTools = (componentHost?.GetVisibleTools() ?? Enumerable.Empty<ITool>())
+            // 合并 ComponentHost 工具 + ToolRegistry 独立工具（escalate、wait 等）
+            var componentTools = componentHost?.GetVisibleTools() ?? Enumerable.Empty<ITool>();
+            agentCore.AdditionalTools = componentTools
+                .Concat(ToolRegistry.All.Values)
                 .Where(t => !ToolRegistry.IsDisabled(t.Name)
                             && ModeConfigLoader.IsToolEnabled("express", t.Name))
+                .DistinctBy(t => t.Name)
                 .ToList();
             agentCore.GlobalComponentTools = ctx.GlobalComponentHost?.GetVisibleTools("channel").ToList();
 
