@@ -15,9 +15,6 @@ namespace AgentCoreProcessor.Engine
     {
         public string EngineType => "Channel";
 
-        private SessionContext? pendingContext;
-        private IncomingMessage? pendingMessage;
-
         /// <summary>活跃频道引擎表（ChannelId → ChannelEngine）。</summary>
         private readonly Dictionary<int, ChannelEngine> activeChannels = new();
 
@@ -25,8 +22,6 @@ namespace AgentCoreProcessor.Engine
         private readonly object _spawnLock = new();
         /// <summary>正在创建中的频道 ID 集合，防止并发重复创建。</summary>
         private readonly HashSet<int> _pendingSpawns = new();
-
-        // 频道循环不活跃时的跨循环请求暂存（待实现：DelegationBus 自动路由）
 
         public Task OnEventAsync(EngineEvent e, ISystemContext ctx)
         {
@@ -43,66 +38,83 @@ namespace AgentCoreProcessor.Engine
             return Task.CompletedTask;
         }
 
-        public async Task<bool> ShouldSpawnAsync(EngineEvent e, ISystemContext ctx)
+        /// <summary>
+        /// 直接消息路由入口（绕过 EventBus）。处理消息入库 + 频道引擎孵化 / 转发。
+        /// </summary>
+        public async Task HandleMessageAsync(IncomingMessage msg, ISystemContext ctx)
         {
-            if (e is not MessageEvent msgEvent) return false;
+            // 清理已死亡的频道引擎
+            lock (_spawnLock)
+            {
+                var dead = activeChannels.Where(kv => !kv.Value.IsAlive).Select(kv => kv.Key).ToList();
+                foreach (var key in dead)
+                {
+                    activeChannels.Remove(key);
+                    _pendingSpawns.Remove(key);
+                }
+            }
 
-            var message = msgEvent.Message;
-
-            // SessionManager：用户映射、频道、消息入库（无论是否睡眠都要入库）
-            var sessionContext = await ctx.Session.OnMessageAsync(message);
+            // SessionManager：用户映射、频道、消息入库
+            var sessionContext = await ctx.Session.OnMessageAsync(msg);
 
             // 自产消息（bot 自身行为触发的 notice 回执）：已入库但不触发引擎孵化
-            if (message.IsSelfTriggered) return false;
+            if (msg.IsSelfTriggered) return;
 
             // 权限检查
             switch (sessionContext.User.PermissionLevel)
             {
                 case PermissionLevel.Blocked:
-                    return false;
+                    return;
                 case PermissionLevel.Restricted:
-                    return false;
+                    return;
             }
 
             var channelId = sessionContext.Channel.Id;
 
-            // 信任等级：首次出现自动升为 Stranger（锁外执行，不参与竞态）
+            // 信任等级：首次出现自动升为 Stranger
             if (sessionContext.Person.TrustLevel == TrustLevel.Unknown)
             {
                 sessionContext.Person.TrustLevel = TrustLevel.Stranger;
                 await ctx.Session.UpdatePersonAsync(sessionContext.Person);
             }
 
+            ISubEngine? newEngine = null;
+
             lock (_spawnLock)
             {
                 // 已有活跃的频道引擎 → 无条件转发
                 if (activeChannels.TryGetValue(channelId, out var existing) && existing.IsAlive)
                 {
-                    existing.EnqueueMessage(message, sessionContext, e.TraceParentSpanId);
-                    return false;
+                    existing.EnqueueMessage(msg, sessionContext, null);
+                    return;
                 }
 
                 // 已有并发流程正在为此频道创建引擎 → 不重复创建
                 if (!_pendingSpawns.Add(channelId))
-                    return false;
+                    return;
 
-                pendingContext = sessionContext;
-                pendingMessage = message;
-                return true;
+                // 创建新引擎
+                var engine = new ChannelEngine(ctx, sessionContext, msg);
+                activeChannels[channelId] = engine;
+                _pendingSpawns.Remove(channelId);
+                newEngine = engine;
             }
+
+            // 在锁外启动引擎
+            if (newEngine != null)
+                ctx.StartEngine(newEngine);
+        }
+
+        public Task<bool> ShouldSpawnAsync(EngineEvent e, ISystemContext ctx)
+        {
+            // 消息路由已迁移至 HandleMessageAsync，不再通过 EventBus 孵化
+            return Task.FromResult(false);
         }
 
         public ISubEngine Create(ISystemContext ctx)
         {
-            var sc = pendingContext!;
-            var msg = pendingMessage!;
-            pendingContext = null;
-            pendingMessage = null;
-
-            var engine = new ChannelEngine(ctx, sc, msg);
-            activeChannels[sc.Channel.Id] = engine;
-            _pendingSpawns.Remove(sc.Channel.Id);
-            return engine;
+            // 不再通过 EventBus 触发，Create 备用（TryColdStart 仍然使用）
+            throw new System.InvalidOperationException("ChannelEngine should be created via HandleMessageAsync or TryColdStart");
         }
 
         internal IReadOnlyDictionary<int, ChannelEngine> GetActiveChannels() => activeChannels;

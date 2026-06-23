@@ -36,7 +36,6 @@ namespace AgentCoreProcessor.Engine
 
         /// <summary>是否正在处理消息。</summary>
         public bool IsBusy => Interlocked.Read(ref _busyFlag) == 1;
-        public Component.ComponentHost? ComponentHost => componentHost;
 
         /// <summary>上次处理完成的时间。用于冷却期计算。</summary>
         public DateTime? LastCompletionTime
@@ -76,23 +75,16 @@ namespace AgentCoreProcessor.Engine
         private Agent? agent;
         private AgentConfig agentConfig = null!;
         private ChannelContextPersistence? persistence;
-        private CompressionTierModule? compressionTierModule;
 
         // ── 堆叠式上下文 ──
         private string? fixedPrefix;
         private string? contextSummary;
-        private List<Message>? _loadedConversation;
-        private int _frameworkMessageCount;
 
         // 事件总线 + 内务模块
         private readonly LoopBus bus = new();
         private readonly LoopControlModule loopControlModule = new();
         private readonly DelegationNotificationModule delegationNotificationModule = new();
         private List<EngineModule> modules = null!;
-
-        // Component 系统
-        private readonly ModuleBus _moduleBus = new();
-        private ComponentHost? componentHost;
 
         // 已处理消息标记
         private readonly LinkedList<long> processedTicks = new();
@@ -118,14 +110,10 @@ namespace AgentCoreProcessor.Engine
         // TrustProgress 每日自动增长跟踪
         private readonly Dictionary<int, (DateTime Date, float Accumulated)> dailyProgressTracker = new();
 
-        // Working 模式图片去重追踪（跨轮累积，同 hash 不重复追加图片）
-        private readonly HashSet<string> _seenImageHashes = new();
-
         // StartInject 已消费的最大消息 Id（防止 BuildRoundInjectAsync 重复拉取）
         private int _startInjectMaxId;
 
-        // Express/Working 自适应切换
-        private volatile bool isWorkingMode = false;
+        // Express/Working 自适应切换 — 已移除 Working 模式，仅保留 Express
 
         // 本轮触发是否因 @提及（用于 impulse 额外扣减）
         private bool _triggerHadMention;
@@ -135,20 +123,10 @@ namespace AgentCoreProcessor.Engine
         private volatile bool _sleepTalkMode;
         private volatile bool _justWokenUp;
 
-        // 模式配置驱动（Phase 2）：当前模式 ID 和定义
-        private volatile string _currentModeId = "express";
-        private ModeDefinition? _currentModeDef;
+        // 模式配置驱动（Phase 2）：当前模式 ID 和定义 — 已移除，仅保留 Express
 
-        // 统一游标：两种模式共用的最后消费消息 DB Id
+        // 统一游标：最后消费消息 DB Id
         private int _lastConsumedMessageId;
-        // escalate 理由暂存（Express→Working 时注入一次）
-        private string? _escalateReason;
-
-        // 延迟压缩：compress 工具回调中暂存结果，Agent.RunAsync 返回后再应用，
-        // 避免工具回调中的 ClearHistory 导致 tool_use 丢失、tool_result 变成孤儿
-        private string? _pendingCompressionSummary;
-        private List<Message>? _pendingCompressionRetained;
-        private bool _pendingCompressionApply;
 
         // ── 统一循环 Phase 2：信号缓冲 + 双源注入 ──
         private readonly ConcurrentQueue<ChannelSignal> _signalBuffer = new();
@@ -157,11 +135,7 @@ namespace AgentCoreProcessor.Engine
         // 当前处理批次（供 Agent host 注入使用）
         private Dictionary<int, ParticipantInfo>? currentParticipantSnapshot;
         private SessionContext? _lastSessionContext;
-        private bool isInWorkingSession = false;
         private bool hadSpeakThisRound;
-        private bool hadWorkThisRound; // 本轮是否执行了非输出工具（speak/send_media/wait/deescalate 以外）
-        private int _consecutiveSpeakRounds;
-        private SpeakGuard? _speakGuard;
 
         // 错误追踪
         private DateTime? lastErrorTime = null;
@@ -198,22 +172,8 @@ namespace AgentCoreProcessor.Engine
             // ── 持久化 + 状态恢复 ──
             persistence = new ChannelContextPersistence(channelId);
             {
-                var (savedSummary, savedMode, _, savedCursor, savedReason) = persistence.LoadContext();
+                var (savedSummary, _, _, savedCursor, _) = persistence.LoadContext();
                 _lastConsumedMessageId = savedCursor;
-                _escalateReason = savedReason;
-                if (!string.IsNullOrEmpty(savedMode))
-                {
-                    var modeDef = ModeConfigLoader.GetMode(savedMode);
-                    if (modeDef != null && string.Equals(modeDef.MetaType, "Working", StringComparison.OrdinalIgnoreCase))
-                    {
-                        isWorkingMode = true;
-                        _currentModeId = savedMode;
-                    }
-                    else
-                    {
-                        _currentModeId = savedMode;
-                    }
-                }
                 if (!string.IsNullOrEmpty(savedSummary) && string.IsNullOrEmpty(contextSummary))
                     contextSummary = savedSummary;
             }
@@ -223,12 +183,6 @@ namespace AgentCoreProcessor.Engine
             {
                 MaxRounds = 20,
                 ExpressMaxRounds = 8,
-                CompressL1Tokens = 30000,
-                CompressL2Tokens = 50000,
-                CompressL3Tokens = 70000,
-                CompressMinTokens = 5000,
-                CompressRetainedMessageCount = 6,
-                CompressRetainedMaxTokens = 2000
             };
 
             // ── Gate ──
@@ -264,22 +218,8 @@ namespace AgentCoreProcessor.Engine
 
             persistence = new ChannelContextPersistence(channelId);
             {
-                var (savedSummary, savedMode, _, savedCursor, savedReason) = persistence.LoadContext();
+                var (savedSummary, _, _, savedCursor, _) = persistence.LoadContext();
                 _lastConsumedMessageId = savedCursor;
-                _escalateReason = savedReason;
-                if (!string.IsNullOrEmpty(savedMode))
-                {
-                    var modeDef = ModeConfigLoader.GetMode(savedMode);
-                    if (modeDef != null && string.Equals(modeDef.MetaType, "Working", StringComparison.OrdinalIgnoreCase))
-                    {
-                        isWorkingMode = true;
-                        _currentModeId = savedMode;
-                    }
-                    else
-                    {
-                        _currentModeId = savedMode;
-                    }
-                }
                 if (!string.IsNullOrEmpty(savedSummary) && string.IsNullOrEmpty(contextSummary))
                     contextSummary = savedSummary;
             }
@@ -288,12 +228,6 @@ namespace AgentCoreProcessor.Engine
             {
                 MaxRounds = 20,
                 ExpressMaxRounds = 8,
-                CompressL1Tokens = 30000,
-                CompressL2Tokens = 50000,
-                CompressL3Tokens = 70000,
-                CompressMinTokens = 5000,
-                CompressRetainedMessageCount = 6,
-                CompressRetainedMaxTokens = 2000
             };
 
             gate = new Gate(ctx.EventBus);
@@ -320,17 +254,12 @@ namespace AgentCoreProcessor.Engine
             bus.Subscribe<ToolExecutedEvent>(e =>
             {
                 if (!e.Result.IsSuccess) return;
-                var data = e.Result.Data ?? "";
                 var meta = Tool.ToolRegistry.GetMeta(e.Call.Tool);
 
                 if (meta?.OutputOnly == true)
                 {
                     hadSpeakThisRound = true;
                 }
-
-                // OutputOnly 工具和核心流控工具（wait/deescalate）不算"工作"
-                if (meta?.OutputOnly != true && e.Call.Tool is not "wait" and not "deescalate")
-                    hadWorkThisRound = true;
             });
         }
 
@@ -465,26 +394,11 @@ namespace AgentCoreProcessor.Engine
                 $"channel:{channelId}", LogGroup.Engine, $"Channel引擎 [{channelName}]",
                 new { engineType = EngineType, channelId, channelName });
 
-            // 收集 IInjectProvider：内部模块 + 插件实例
+            // 收集 IInjectProvider：内部模块
             _injectProviders.Clear();
             _injectProviders.AddRange(modules);  // EngineModule : IInjectProvider
-            var pluginLoader = ctx.PluginLoader;
-            if (pluginLoader != null)
-            {
-                var engineServices = BuildEngineServiceProvider();
-                foreach (var type in pluginLoader.InjectProviderTypes)
-                {
-                    try
-                    {
-                        var provider = pluginLoader.InstantiateInjectProvider(type, engineServices);
-                        if (provider != null)
-                            _injectProviders.Add(provider);
-                    }
-                    catch (Exception ex) { Signal.Warn(LogGroup.Engine, $"插件实例化失败: {type.Name}", new { type = type.FullName, error = ex.Message }); }
-                }
-            }
 
-            // 初始化 ComponentHost
+            // 注册到委托总线
             var myLoopId = LoopId.ForChannel(channelId);
             _messaging = new Component.AgentMessagingImpl(myLoopId, ctx.CrossRequests,
                 () => gate.Signal(), loopId => ctx.DelegationBus.IsLoopActive(loopId),
@@ -492,19 +406,6 @@ namespace AgentCoreProcessor.Engine
             delegationNotificationModule.SetMessaging(_messaging);
             _signalFilter = ctx.SignalFilters.GetConfig("channel");
             delegationNotificationModule.SetFilterConfig(_signalFilter);
-            _speakGuard = new SpeakGuard();
-            componentHost = new ComponentHost(
-                myLoopId, "channel", _moduleBus, ctx.ComponentServices,
-                () => gate.Signal(),
-                new Dictionary<Type, object>
-                {
-                    [typeof(IAgentMessaging)] = _messaging,
-                    [typeof(ISpeakGuard)] = _speakGuard
-                });
-            componentHost.GlobalHost = ctx.GlobalComponentHost;
-            await componentHost.InitAsync();
-
-            // 注册到委托总线
             ctx.DelegationBus.RegisterLoop(myLoopId, OnCrossRequestReceived);
 
             SignalContext? sessionCtx = null;
@@ -523,8 +424,22 @@ namespace AgentCoreProcessor.Engine
                     break;
                 }
 
+                // 检查频道是否被 SessionEngine Full 占用，若是则跳过本轮
+                var sessionEngine = ctx.GetActiveEnginesSnapshot()
+                    .OfType<Session.SessionEngine>().FirstOrDefault();
+                if (sessionEngine != null && sessionEngine.IsChannelClaimed(channelId))
+                {
+                    lock (bufferLock)
+                    {
+                        _bufferedMessageCount = 0;
+                        _bufferTriggered = false;
+                    }
+                    _bufferTimerCts?.Cancel();
+                    _bufferTimerCts = null;
+                    continue;
+                }
+
                 _totalGateCycles++;
-                await componentHost.OnActivatedAsync();
 
                 // 排空跨循环请求队列，转为一次性通知（防止同会话每轮重复注入）
                 var incomingCross = DrainCrossRequests();
@@ -533,7 +448,6 @@ namespace AgentCoreProcessor.Engine
                     foreach (var req in incomingCross)
                         impl.EnqueueIncoming(req);
                 }
-                var hasPendingNotifications = (_messaging as Component.AgentMessagingImpl)?.HasPendingNotifications == true;
 
                 // ② 状态准备：从 DB 检查新消息
                 bool hasNewMessages;
@@ -543,12 +457,9 @@ namespace AgentCoreProcessor.Engine
                     _bufferedMessageCount = 0;
                     _bufferTriggered = false;
                 }
-                // 取消旧缓冲定时器，防止处理期间旧定时器触发幽灵循环。
-                // 处理期间到达的消息会通过 EnqueueMessage 创建新定时器，不受影响。
                 _bufferTimerCts?.Cancel();
                 _bufferTimerCts = null;
 
-                // 消费触发本轮响应的冲动值，防止处理期间到达的消息看到旧高峰值而误触发
                 if (hasNewMessages)
                 {
                     impulseTracker.ApplyPostResponseUpdate(_triggerHadMention);
@@ -559,7 +470,6 @@ namespace AgentCoreProcessor.Engine
                 {
                     currentParticipantSnapshot = new Dictionary<int, ParticipantInfo>(recentParticipants);
 
-                    // 消费 pending 图片
                     List<(string Path, string? Hash, string? Category)> pendingCopy;
                     lock (bufferLock)
                     {
@@ -570,7 +480,6 @@ namespace AgentCoreProcessor.Engine
                     if (pendingCopy.Count > 0)
                         ResolveImagePresentation(pendingCopy);
 
-                    // 从 DB 拉取新消息用于 processedTicks
                     var tickMsgs = await ctx.Session.GetMessagesAfterIdAsync(channelId, _lastConsumedMessageId);
                     foreach (var m in tickMsgs)
                     {
@@ -578,7 +487,6 @@ namespace AgentCoreProcessor.Engine
                         while (processedTicks.Count > MaxProcessedTicksWindow)
                             processedTicks.RemoveFirst();
 
-                        // @提及 + 含图 → 触发 Phase 2 精炼
                         if (IsBotMentionedInMessage(m) && !string.IsNullOrEmpty(m.ImageHashes))
                         {
                             foreach (var hash in m.ImageHashes.Split(',', StringSplitOptions.RemoveEmptyEntries))
@@ -598,8 +506,7 @@ namespace AgentCoreProcessor.Engine
                     }
                     processedMessageCount += tickMsgs.Count;
 
-                    // 重置 Working 轮次状态
-                    isInWorkingSession = false;
+                    // 重置状态
                     agent = null;
                     fixedPrefix = null;
                 }
@@ -612,44 +519,33 @@ namespace AgentCoreProcessor.Engine
 
                     if (parentSpan != null)
                         sessionCtx = Signal.Continue(SignalContext.NewSignalId(), parentSpan, $"channel:{channelId}", LogGroup.Engine, "频道会话",
-                            new { channelId, mode = isWorkingMode ? "working" : "express" });
+                            new { channelId, mode = "express" });
                     else
                         sessionCtx = Signal.Begin(LogGroup.Engine, $"channel:{channelId}", "频道会话",
-                            new { channelId, mode = isWorkingMode ? "working" : "express" });
+                            new { channelId, mode = "express" });
                     _sessionRootSpanId = sessionCtx?.CurrentSpanId;
                 }
 
                 // ④ 执行
-                hadWorkThisRound = false;
                 Interlocked.Exchange(ref _busyFlag, 1);
                 try
                 {
-                    await componentHost.OnBeforeInvokeAsync();
-
-                    using var roundSpan = Signal.Open(LogGroup.Engine, $"处理轮次 #{_totalGateCycles} [{(isWorkingMode ? "Working" : "Express")}]",
-                        new { channelId, mode = isWorkingMode ? "working" : "express" });
+                    using var roundSpan = Signal.Open(LogGroup.Engine, $"处理轮次 #{_totalGateCycles} [Express]",
+                        new { channelId, mode = "express" });
 
                     if (_sleepTalkMode)
                     {
                         _sleepTalkMode = false;
-                        hadWorkThisRound = true;
                         await GenerateAndSendSleepTalkAsync();
-                    }
-                    else if (isWorkingMode)
-                    {
-                        await ExecuteWorkingCycleAsync();
                     }
                     else
                     {
                         await ExecuteExpressCycleAsync();
                     }
 
-                    await componentHost.OnAfterInvokeAsync();
-
                     roundSpan.SetCloseDetail(new
                     {
-                        mode = isWorkingMode ? "working" : "express",
-                        isInWorkingSession,
+                        mode = "express",
                         hadSpeak = hadSpeakThisRound
                     });
                 }
@@ -677,22 +573,17 @@ namespace AgentCoreProcessor.Engine
                     catch (Exception notifyEx) { Signal.Warn(LogGroup.Adapter, "错误通知发送失败", new { channelId, error = notifyEx.Message }); }
 
                     IsAlive = false;
-                    isInWorkingSession = false;
                 }
                 finally
                 {
-                    if (!isInWorkingSession && sessionCtx != null)
+                    if (sessionCtx != null)
                     {
                         sessionCtx?.Close(new { reason = "循环挂起" });
                         sessionCtx = null;
                         SignalContext.Restore(lifeCtx);
                     }
-                    if (!isInWorkingSession)
-                    {
-                        Interlocked.Exchange(ref _busyFlag, 0);
-                        Interlocked.Exchange(ref _completionTicks, DateTime.Now.Ticks);
-                        await componentHost.OnPauseAsync();
-                    }
+                    Interlocked.Exchange(ref _busyFlag, 0);
+                    Interlocked.Exchange(ref _completionTicks, DateTime.Now.Ticks);
                 }
             }
 
@@ -700,16 +591,9 @@ namespace AgentCoreProcessor.Engine
             ctx.DelegationBus.UnregisterLoop(LoopId.ForChannel(channelId));
             (_messaging as Component.AgentMessagingImpl)?.Detach();
 
-            // 关闭 ComponentHost
-            if (componentHost != null)
-                await componentHost.ShutdownAsync(ShutdownReason.Destroy);
-
             // 清理模块状态
             foreach (var m in modules) m.Reset();
             hadSpeakThisRound = false;
-            hadWorkThisRound = false;
-            _consecutiveSpeakRounds = 0;
-            if (_speakGuard != null) _speakGuard.ConsecutiveSpeakRounds = 0;
 
             lifeCtx.Close(new { engineType = EngineType, channelId, reason = "cold_timeout" });
         }
@@ -765,8 +649,6 @@ namespace AgentCoreProcessor.Engine
             ChannelName = channelName,
             IsAlive = IsAlive,
             IsBusy = IsBusy,
-            IsWorkingMode = isWorkingMode,
-            IsInWorkingSession = isInWorkingSession,
             Impulse = impulseTracker.Impulse,
             Threshold = ctx.ImpulseConfig.Threshold,
             ChannelAffinity = channelConfig.Affinity,
@@ -783,7 +665,7 @@ namespace AgentCoreProcessor.Engine
             LastCompletionTime = LastCompletionTime,
             TotalRounds = loopControlModule.TotalRounds,
             SilentRounds = loopControlModule.SilentRounds,
-            AuthorizedToolCount = componentHost?.GetAllVisibleToolNames().Count ?? 0,
+            AuthorizedToolCount = ctx.GlobalComponentHost?.GetVisibleTools("channel").Count() ?? 0,
             ParticipantCount = recentParticipants.Count,
             ProcessedMessageCount = processedMessageCount,
             TotalErrorCount = totalErrorCount,
@@ -794,17 +676,10 @@ namespace AgentCoreProcessor.Engine
         /// <summary>强制唤醒（跳过 ShouldActivate）。</summary>
         public void ForceWake() => gate.Signal();
 
-        /// <summary>强制触发上下文压缩。</summary>
+        /// <summary>强制触发上下文压缩（已移除，Working 模式不再可用）。</summary>
         public void ForceCompress()
         {
-            if (agent == null || compressionTierModule == null || compressionTierModule.IsCompressing || IsBusy) return;
-            _ = compressionTierModule.CompressAsync(agent.History, (summary, retained) =>
-            {
-                agent.History.Clear();
-                foreach (var m in retained) agent.AddToHistory(m);
-                compressionTierModule.SetSummary(summary);
-                contextSummary = summary;
-            });
+            // Working mode removed — no-op
         }
 
         /// <summary>获取上下文快照（供 WebUI 详情页）。</summary>
@@ -842,8 +717,8 @@ namespace AgentCoreProcessor.Engine
                 EstimatedTokens = totalChars / 3,
                 MessageCount = history.Count,
                 ConversationOffset = agent.ConversationOffset,
-                CompressionTier = compressionTierModule?.CurrentTier ?? CompressionTier.None,
-                IsCompressing = compressionTierModule?.IsCompressing ?? false,
+                CompressionTier = CompressionTier.None,
+                IsCompressing = false,
                 Summary = contextSummary,
                 TotalRounds = agent.TotalRounds,
                 IsInBackoff = agent.IsInBackoff,
@@ -871,7 +746,7 @@ namespace AgentCoreProcessor.Engine
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
                 var task = ctx.MemorySvc.RecallAsync(
                     sc.Person.Id, sc.Channel.Id,
-                    query, topK: isWorkingMode ? 10 : 5, includeLinks: true, includePersona: true);
+                    query, topK: 5, includeLinks: true, includePersona: true);
                 var completed = await Task.WhenAny(task, Task.Delay(10000, cts.Token));
 
                 if (completed != task)

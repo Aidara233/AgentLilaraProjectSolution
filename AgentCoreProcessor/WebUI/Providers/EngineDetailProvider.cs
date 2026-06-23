@@ -257,7 +257,6 @@ internal class ChannelEngineStatusSource : IDataSource
     {
         var snap = _ch.GetSnapshot();
         var ctx = _ch.GetContextSnapshot();
-        var mode = snap.IsWorkingMode ? "Working" : "Express";
         var data = new JsonObject
         {
             ["state"] = snap.IsBusy ? "处理中" : "等待",
@@ -265,7 +264,7 @@ internal class ChannelEngineStatusSource : IDataSource
             ["tokens"] = ctx != null ? $"{ctx.EstimatedTokens / 1000}k ({ctx.MessageCount} 条)" : "—",
             ["compression"] = ctx?.CompressionTier.ToString() ?? "None",
             ["backoff"] = ctx?.IsInBackoff == true ? "退避中" : (snap.ConsecutiveFailures > 0 ? $"失败{snap.ConsecutiveFailures}次" : "正常"),
-            ["extra"] = $"{mode} | 冲动 {snap.Impulse:F1}/{snap.Threshold:F1} | 工具 {snap.AuthorizedToolCount} | 参与者 {snap.ParticipantCount}"
+            ["extra"] = $"Express | 冲动 {snap.Impulse:F1}/{snap.Threshold:F1} | 工具 {snap.AuthorizedToolCount} | 参与者 {snap.ParticipantCount}"
         };
         return Task.FromResult(new DataResult { Data = data });
     }

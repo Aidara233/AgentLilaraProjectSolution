@@ -6,7 +6,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Config;
-using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Logging;
 using Newtonsoft.Json;
 
@@ -17,14 +16,15 @@ namespace AgentCoreProcessor.Adapter
         private readonly ConcurrentDictionary<string, IAdapter> adapters = new();
         private readonly ConcurrentDictionary<string, bool> enabledMap = new();
         private readonly ConcurrentDictionary<string, AdapterInstanceConfig> configs = new();
-        private readonly EventBus? eventBus;
         private readonly string configDirectory;
+
+        /// <summary>消息入向回调，由 MasterEngine 在 InitAsync 中注入。</summary>
+        public Func<IncomingMessage, Task>? OnIncomingMessage { get; set; }
 
         public event Action? OnAdaptersChanged;
 
-        public AdapterManager(EventBus? eventBus = null)
+        public AdapterManager()
         {
-            this.eventBus = eventBus;
             this.configDirectory = Path.Combine(PathConfig.StoragePath, "Adapter");
         }
 
@@ -67,7 +67,9 @@ namespace AgentCoreProcessor.Adapter
                     "消息接收",
                     new { adapterId = adapter.Id, platform = adapter.Platform, channelId = msg.ChannelId, userId = msg.PlatformUserId, isPrivate = msg.IsPrivate }
                 );
-                eventBus?.PublishMessage(msg);
+                var handler = OnIncomingMessage;
+                if (handler != null)
+                    _ = handler(msg);
             };
             adapters[adapter.Id] = adapter;
             enabledMap[adapter.Id] = enabled;

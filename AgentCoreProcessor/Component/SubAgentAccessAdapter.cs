@@ -54,13 +54,13 @@ internal class SubAgentAccessAdapter : ISubAgentAccess
         return new SubAgentInfo { SessionId = session.SessionId, IsAlive = session.IsAlive };
     }
 
-    public async Task<bool> SendInstructionAsync(string sessionId, string instruction)
+    public Task<bool> SendInstructionAsync(string sessionId, string instruction)
     {
         var se = GetSessionEngine();
         var session = se?.GetSession(sessionId);
-        if (session == null) return false;
+        if (session == null) return Task.FromResult(false);
         // 通过输入端口注入指令
-        return true;
+        return Task.FromResult(true);
     }
 
     public void RequestStop(string sessionId)

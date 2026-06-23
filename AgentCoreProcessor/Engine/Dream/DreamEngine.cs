@@ -725,13 +725,8 @@ namespace AgentCoreProcessor.Engine
 
         public void OnEvent(EngineEvent e)
         {
-            if (e is MessageEvent msgEvent)
-            {
-                var msg = msgEvent.Message;
-                if (msg.IsMentioned && SleepUtils.ContainsWakeKeyword(msg.Content))
-                    shouldWake = true;
-            }
-            // Note: force-review 信号由 ReviewEngineSpawnCheck 直接处理
+            // Note: wake-up from messages is handled by ChannelEngine's sleep interception,
+            // not via EventBus MessageEvent (removed). ForceWake() for explicit wake-up.
         }
 
         internal void ForceWake(string reason) => shouldWake = true;

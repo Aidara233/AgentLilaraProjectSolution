@@ -202,8 +202,7 @@ namespace AgentCoreProcessor.Engine
 
         public void OnEvent(EngineEvent e)
         {
-            if (e is MessageEvent)
-                _reviewControl?.NotifyWake();
+            // MessageEvent removed from EventBus; wake-up via other channels
         }
 
         public void RequestStop()

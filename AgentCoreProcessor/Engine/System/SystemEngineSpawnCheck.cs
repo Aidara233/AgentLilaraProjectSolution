@@ -5,7 +5,7 @@ namespace AgentCoreProcessor.Engine
 {
     /// <summary>
     /// SystemEngine 的创建条件检查。单例模式：仅在无存活 SystemEngine 时创建。
-    /// 响应 SystemEvent.Started 或 TimerEvent（自愈）触发。
+    /// 响应 SystemEvent.Started 或 timer-tick 信号（自愈）触发。
     /// </summary>
     internal class SystemEngineSpawnCheck : IEngineSpawnCheck
     {
@@ -43,8 +43,9 @@ namespace AgentCoreProcessor.Engine
                 return Task.FromResult(true);
             }
 
-            // 自愈：响应 TimerEvent（心跳），实例已死亡时重启
-            if (e is TimerEvent && activeInstance == null && lastDeathTime != null)
+            // 自愈：响应 timer-tick 信号，实例已死亡时重启
+            if (e is SignalEvent signal && signal.SignalName == "timer-tick"
+                && activeInstance == null && lastDeathTime != null)
             {
                 // 死亡后至少等 10s 再重启，避免疯狂重启
                 var elapsed = (DateTime.Now - lastDeathTime.Value).TotalSeconds;

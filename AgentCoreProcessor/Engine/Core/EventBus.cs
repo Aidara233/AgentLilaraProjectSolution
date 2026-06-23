@@ -1,12 +1,12 @@
 using System;
-using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Logging;
 
 namespace AgentCoreProcessor.Engine
 {
     /// <summary>
-    /// 轻量事件总线。所有触发源（适配器、定时器、工具回环等）通过此总线发布事件，
-    /// MasterEngine 订阅并按事件类型路由。
+    /// 控制信号总线。仅承载基础设施控制信号（EngineStart/Stop、ConfigChange、timer-tick、
+    /// force-sleep、force-review、new-image、refine-image 等）。业务消息已迁移至
+    /// MessageEngine / AdapterEngine。
     /// </summary>
     public class EventBus
     {
@@ -24,13 +24,7 @@ namespace AgentCoreProcessor.Engine
             }
         }
 
-        /// <summary>便捷方法：发布消息事件。</summary>
-        public void PublishMessage(IncomingMessage msg)
-        {
-            Publish(new MessageEvent { Message = msg, Time = msg.Time });
-        }
-
-        /// <summary>便捷方法：发布信号事件（工具回环用）。</summary>
+        /// <summary>便捷方法：发布信号事件（工具回环/内部控制用）。</summary>
         public void PublishSignal(string signalName, object? payload = null)
         {
             Publish(new SignalEvent { SignalName = signalName, Payload = payload });

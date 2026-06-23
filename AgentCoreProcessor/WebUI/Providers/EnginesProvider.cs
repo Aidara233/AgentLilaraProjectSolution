@@ -150,7 +150,7 @@ internal class EngineListSource : IDataSource
                     ["type"] = "Channel",
                     ["name"] = snap.ChannelName ?? $"#{snap.ChannelId}",
                     ["status"] = snap.IsBusy ? "处理中" : "等待",
-                    ["detail"] = $"冲动 {snap.Impulse:F1} | 轮次 {snap.TotalRounds} | {(snap.IsWorkingMode ? "Working" : "Express")}",
+                    ["detail"] = $"冲动 {snap.Impulse:F1} | 轮次 {snap.TotalRounds} | Express",
                     ["_link"] = $"/p/engines/channel_{snap.ChannelId}"
                 });
             }

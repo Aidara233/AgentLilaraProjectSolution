@@ -8,8 +8,6 @@ namespace AgentCoreProcessor.WebUI.Services
         public string? ChannelName { get; init; }
         public bool IsAlive { get; init; }
         public bool IsBusy { get; init; }
-        public bool IsWorkingMode { get; init; }
-        public bool IsInWorkingSession { get; init; }
         public float Impulse { get; init; }
         public float Threshold { get; init; }
         public float ChannelAffinity { get; init; }

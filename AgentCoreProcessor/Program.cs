@@ -51,7 +51,7 @@ namespace AgentCoreProcessor
             var eventBus = new EventBus();
 
             // 适配器管理器
-            var adapterManager = new AdapterManager(eventBus);
+            var adapterManager = new AdapterManager();
 
             // 适配器
             FileAdapter? fileAdapter = null;
@@ -179,8 +179,8 @@ namespace AgentCoreProcessor
 
                 try
                 {
-                    // debug 模式同步等待，直接调用 HandleEventAsync
-                    await engine.HandleEventAsync(new MessageEvent { Message = msg, Time = msg.Time });
+                    // debug 模式同步等待，直接调用消息路由
+                    await engine.RouteMessageAsync(msg);
                 }
                 catch (Exception ex)
                 {

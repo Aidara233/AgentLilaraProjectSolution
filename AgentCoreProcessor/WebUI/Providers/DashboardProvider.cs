@@ -248,7 +248,7 @@ internal class DashboardChannelSource : IDataSource
                 {
                     ["channelId"] = snap.ChannelId,
                     ["name"] = snap.ChannelName ?? $"#{snap.ChannelId}",
-                    ["mode"] = snap.IsWorkingMode ? "Working" : "Express",
+                    ["mode"] = "Express",
                     ["status"] = snap.IsBusy ? "处理中" : "等待",
                     ["impulse"] = snap.Impulse.ToString("F1"),
                     ["rounds"] = snap.TotalRounds

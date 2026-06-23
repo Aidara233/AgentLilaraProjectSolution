@@ -378,7 +378,7 @@ internal class ConsoleChatSource : IDataSource
                     ChannelId = _channelName, Content = "(控制台自动启动)",
                     DisplayName = "WebAdmin", Time = DateTime.Now,
                 };
-                await Task.Run(() => _engine.EventBus.PublishMessage(kickMsg));
+                await Task.Run(() => _engine.RouteMessageAsync(kickMsg));
                 await Task.Delay(800);
             }
 
@@ -402,7 +402,7 @@ internal class ConsoleChatSource : IDataSource
 
     private void SendAsUser(string text, bool mention, bool priv)
     {
-        _engine.EventBus.PublishMessage(new IncomingMessage
+        _ = _engine.RouteMessageAsync(new IncomingMessage
         {
             Platform = "WebConsole", PlatformUserId = "web-admin",
             ChannelId = _channelName, Content = text,
@@ -415,7 +415,7 @@ internal class ConsoleChatSource : IDataSource
     {
         if (saveMode is "both" or "adapter_only")
         {
-            _engine.EventBus.PublishMessage(new IncomingMessage
+            _ = _engine.RouteMessageAsync(new IncomingMessage
             {
                 Platform = "WebConsole", PlatformUserId = "bot-self",
                 ChannelId = _channelName, Content = text,
@@ -431,7 +431,7 @@ internal class ConsoleChatSource : IDataSource
 
     private void SendAsCustom(string text, string name, bool mention, bool priv)
     {
-        _engine.EventBus.PublishMessage(new IncomingMessage
+        _ = _engine.RouteMessageAsync(new IncomingMessage
         {
             Platform = "WebConsole", PlatformUserId = $"custom-{name.ToLowerInvariant()}",
             ChannelId = _channelName, Content = text,

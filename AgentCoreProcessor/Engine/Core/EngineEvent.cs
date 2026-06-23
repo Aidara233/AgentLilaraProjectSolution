@@ -1,13 +1,9 @@
 using System;
-using AgentCoreProcessor.Adapter;
 
 namespace AgentCoreProcessor.Engine
 {
     public enum EngineEventType
     {
-        Message,
-        Timer,
-        Idle,
         Signal,
         System,
     }
@@ -26,28 +22,7 @@ namespace AgentCoreProcessor.Engine
         public string? TraceParentSpanId { get; set; }
     }
 
-    /// <summary>用户消息事件，包装 IncomingMessage。</summary>
-    public class MessageEvent : EngineEvent
-    {
-        public override EngineEventType Type => EngineEventType.Message;
-        public required IncomingMessage Message { get; set; }
-    }
-
-    /// <summary>定时触发事件（预留，做梦调度用）。</summary>
-    public class TimerEvent : EngineEvent
-    {
-        public override EngineEventType Type => EngineEventType.Timer;
-        public string TimerName { get; set; } = "";
-    }
-
-    /// <summary>空闲触发事件（预留，走神/小睡用）。</summary>
-    public class IdleEvent : EngineEvent
-    {
-        public override EngineEventType Type => EngineEventType.Idle;
-        public TimeSpan IdleDuration { get; set; }
-    }
-
-    /// <summary>信号事件（预留，工具回环用，如睡眠许可）。</summary>
+    /// <summary>信号事件（内部控制信号：force-sleep、force-review、timer-tick、new-image、refine-image 等）。</summary>
     public class SignalEvent : EngineEvent
     {
         public override EngineEventType Type => EngineEventType.Signal;
@@ -55,7 +30,7 @@ namespace AgentCoreProcessor.Engine
         public object? Payload { get; set; }
     }
 
-    /// <summary>系统事件（预留，启动/关闭等）。</summary>
+    /// <summary>系统事件（启动/停止/配置变更等基础设施控制信号）。</summary>
     public class SystemEvent : EngineEvent
     {
         public override EngineEventType Type => EngineEventType.System;
@@ -66,5 +41,6 @@ namespace AgentCoreProcessor.Engine
     {
         Started,
         Stopping,
+        ConfigChange,
     }
 }

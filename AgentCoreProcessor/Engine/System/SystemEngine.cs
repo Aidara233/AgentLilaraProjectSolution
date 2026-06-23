@@ -565,7 +565,7 @@ namespace AgentCoreProcessor.Engine
 
         public void OnEvent(EngineEvent e)
         {
-            // TimerEvent 不再唤醒闸门 — 由 gate 超时（waitTimeoutMinutes）控制周期
+            // timer-tick 信号不再唤醒闸门 — 由 gate 超时（waitTimeoutMinutes）控制周期
 
             // 入队信号供 BuildRoundInjectAsync 排空
             _signalBuffer.Enqueue(new BusEventSignal(e));

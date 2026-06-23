@@ -42,14 +42,15 @@ namespace AgentCoreProcessor.Engine
             return Task.CompletedTask;
         }
 
-        public async Task<bool> ShouldSpawnAsync(EngineEvent e, ISystemContext ctx)
+        /// <summary>
+        /// 直接消息路由入口（绕过 EventBus）。返回 true 表示消息已被命令消费，应停止后续路由。
+        /// </summary>
+        public async Task<bool> HandleMessageAsync(IncomingMessage msg, ISystemContext ctx)
         {
-            if (e is not MessageEvent msgEvent) return false;
-
-            var content = msgEvent.Message.Content?.Trim();
+            var content = msg.Content?.Trim();
             if (string.IsNullOrEmpty(content)) return false;
 
-            var sessionKey = $"{msgEvent.Message.Platform}:{msgEvent.Message.PlatformUserId}";
+            var sessionKey = $"{msg.Platform}:{msg.PlatformUserId}";
 
             // ---- 1. 活跃会话拦截 ----
             if (_sessions.TryGetValue(sessionKey, out var session))
@@ -58,14 +59,12 @@ namespace AgentCoreProcessor.Engine
                 if (content.Equals($"{config.Prefix}cancel", StringComparison.OrdinalIgnoreCase))
                 {
                     _sessions.Remove(sessionKey);
-                    await Reply(ctx, msgEvent.Message, "已取消。");
-                    e.Consumed = true;
-                    return false;
+                    await Reply(ctx, msg, "已取消。");
+                    return true;
                 }
 
-                await HandleSessionInput(ctx, msgEvent.Message, session, content);
-                e.Consumed = true;
-                return false;
+                await HandleSessionInput(ctx, msg, session, content);
+                return true;
             }
 
             // ---- 2. 命令前缀解析 ----
@@ -81,29 +80,27 @@ namespace AgentCoreProcessor.Engine
             var command = CommandRegistry.Get(name);
             if (command == null)
             {
-                await Reply(ctx, msgEvent.Message,
+                await Reply(ctx, msg,
                     $"未知命令: {config.Prefix}{name}，输入 {config.Prefix}help 查看可用命令。");
-                e.Consumed = true;
-                return false;
+                return true;
             }
 
             // 轻量用户解析
-            var (user, person) = await ctx.Session.ResolveUserAsync(msgEvent.Message);
+            var (user, person) = await ctx.Session.ResolveUserAsync(msg);
 
             // 权限检查
             if (user.PermissionLevel < command.RequiredPermission)
             {
-                await Reply(ctx, msgEvent.Message,
+                await Reply(ctx, msg,
                     $"权限不足: /{name} 需要 {command.RequiredPermission} 权限。");
-                e.Consumed = true;
-                return false;
+                return true;
             }
 
             var context = new CommandContext
             {
                 User = user,
                 Person = person,
-                Message = msgEvent.Message,
+                Message = msg,
                 SystemContext = ctx
             };
 
@@ -118,9 +115,8 @@ namespace AgentCoreProcessor.Engine
                     CurrentStep = 0
                 };
                 _sessions[sessionKey] = newSession;
-                await Reply(ctx, msgEvent.Message, FormatStepPrompt(interactive.Steps[0]));
-                e.Consumed = true;
-                return false;
+                await Reply(ctx, msg, FormatStepPrompt(interactive.Steps[0]));
+                return true;
             }
 
             // ---- 2b/2c. 一次性执行 ----
@@ -128,15 +124,20 @@ namespace AgentCoreProcessor.Engine
             {
                 var result = await command.ExecuteAsync(args, context);
                 if (!string.IsNullOrEmpty(result.Response))
-                    await Reply(ctx, msgEvent.Message, result.Response);
+                    await Reply(ctx, msg, result.Response);
             }
             catch (Exception ex)
             {
-                await Reply(ctx, msgEvent.Message, $"命令异常: {ex.Message}");
+                await Reply(ctx, msg, $"命令异常: {ex.Message}");
             }
 
-            e.Consumed = true;
-            return false;
+            return true;
+        }
+
+        public Task<bool> ShouldSpawnAsync(EngineEvent e, ISystemContext ctx)
+        {
+            // 命令路由已迁移至 HandleMessageAsync，不再通过 EventBus 处理
+            return Task.FromResult(false);
         }
 
         private async Task HandleSessionInput(ISystemContext ctx, IncomingMessage msg,

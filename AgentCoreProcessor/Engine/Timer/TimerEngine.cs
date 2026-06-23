@@ -15,7 +15,7 @@ namespace AgentCoreProcessor.Engine
     }
 
     /// <summary>
-    /// 心跳引擎。定期发布 TimerEvent("tick")，驱动其他引擎的周期性检查。
+    /// 心跳引擎。定期发布 SignalEvent("timer-tick")，驱动其他引擎的周期性检查。
     /// Phase 8: 监控 SystemEngine 心跳，超时则报警（不触发睡觉）。
     /// </summary>
     internal class TimerEngine : ISubEngine
@@ -56,7 +56,7 @@ namespace AgentCoreProcessor.Engine
 
                     // 每次心跳创建独立信号源，下游工作继承此信号
                     using var tickSignal = Signal.Begin(LogGroup.Engine, "timer:heartbeat", "心跳");
-                    ctx.EventBus.Publish(new TimerEvent { TimerName = "tick" });
+                    ctx.EventBus.PublishSignal("timer-tick");
 
                     // 定期清理：CrossRequestRegistry 已归档/超时的条目
                     try { ctx.CrossRequests.Cleanup(TimeSpan.FromHours(1)); }

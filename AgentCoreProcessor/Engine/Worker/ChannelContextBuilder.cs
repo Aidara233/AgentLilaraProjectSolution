@@ -47,7 +47,7 @@ namespace AgentCoreProcessor.Engine
             else
             {
                 sb.AppendLine(ToolRegistry.GenerateDescriptions(
-                    additionalTools: componentHost!.GetAllVisibleTools().ToList()));
+                    additionalTools: ctx.GlobalComponentHost?.GetVisibleTools("channel").ToList()));
                 var botId = ctx.Adapters.GetBotPlatformId("qq");
                 if (!string.IsNullOrEmpty(botId))
                     sb.AppendLine($"\n身份信息：你的QQ号是 {botId}。");
@@ -63,30 +63,10 @@ namespace AgentCoreProcessor.Engine
 
         private string BuildModeRules()
         {
-            var modeId = _currentModeId ?? "express";
-            var def = ModeConfigLoader.GetMode(modeId);
-            var name = def?.DisplayName ?? "Express";
-            var desc = def?.Description ?? "轻量对话";
-
             var sb = new StringBuilder();
-            sb.AppendLine($"[当前模式] {name} ({modeId})");
-            sb.AppendLine(desc);
-
-            if (def?.MetaType == "Working")
-            {
-                sb.AppendLine();
-                sb.AppendLine("[模式规则]");
-                sb.AppendLine("- 用 switch_mode 切换工作子模式前，必须先用 speak 征求用户同意并等待确认回复");
-                sb.AppendLine("  - 用户直接要求切换时 asked_user_message 留空，user_confirm_message_id 填用户消息的 platform_id");
-                sb.AppendLine("  - 你主动询问时 asked_user_message 填你的问话内容，user_confirm_message_id 填用户确认回复的 platform_id");
-                sb.AppendLine("- deescalate 可随时退回 Express，无需确认");
-                sb.AppendLine("- 不得为绕过本模式的工具限制而切换模式");
-            }
-            else
-            {
-                sb.AppendLine("[模式规则] 需要复杂操作时用 escalate 切换到工作模式。");
-            }
-
+            sb.AppendLine("[当前模式] Express (express)");
+            sb.AppendLine("轻量对话模式。工具：speak, send_media, escalate, wait, memory");
+            sb.AppendLine("[模式规则] 需要复杂操作时用 escalate 切换到工作会话。");
             return sb.ToString();
         }
 
@@ -298,7 +278,7 @@ namespace AgentCoreProcessor.Engine
                             _injectedDescriptions.Add(hash);
                             parts.Add(ContentPart.FromText($"[图片描述] {desc}"));
                         }
-                        var ocrInjection = await BuildOcrInjectionTextAsync(hash, !isWorkingMode);
+                        var ocrInjection = await BuildOcrInjectionTextAsync(hash, true);
                         if (!string.IsNullOrEmpty(ocrInjection))
                         {
                             _injectedOcrTexts.Add(hash);
@@ -336,7 +316,7 @@ namespace AgentCoreProcessor.Engine
                         var desc = await ImageStorage.GetDescriptionAsync(hashes[i]);
                         if (!string.IsNullOrEmpty(desc))
                             parts.Add(ContentPart.FromText($"[图片描述] {desc}"));
-                        var ocrInjection = await BuildOcrInjectionTextAsync(hashes[i], !isWorkingMode);
+                        var ocrInjection = await BuildOcrInjectionTextAsync(hashes[i], true);
                         if (!string.IsNullOrEmpty(ocrInjection))
                             parts.Add(ContentPart.FromText(ocrInjection));
                     }
@@ -367,55 +347,39 @@ namespace AgentCoreProcessor.Engine
             if (!string.IsNullOrEmpty(contextSummary))
                 msgs.Add(new Message { Role = "user", Content = $"[上下文摘要]\n{contextSummary}" });
 
-            // 3. 参与者列表注入（名字、平台ID、内部ID、信任等级、权限、快速记忆）
+            // 3. 参与者列表注入（名字、平台ID、内部ID、信任等级、权限）
             if (currentParticipantSnapshot != null && currentParticipantSnapshot.Count > 0)
             {
-                if (isWorkingMode)
+                var partSb = new StringBuilder();
+                // 频道基本信息（Express 模式）
+                if (!string.IsNullOrEmpty(channelName))
                 {
-                    var partSb = new StringBuilder("<participants>\n");
-                    foreach (var (_, p) in currentParticipantSnapshot)
+                    var chParts = channelName.Split('_', 2);
+                    if (chParts.Length == 2)
                     {
-                        var memo = !string.IsNullOrEmpty(p.Memo) ? $" memo=\"{EscapeXml(p.Memo)}\"" : "";
-                        var nick = !string.IsNullOrEmpty(p.Nickname) && p.Nickname != p.DisplayName ? $" nickname=\"{EscapeXml(p.Nickname)}\"" : "";
-                        var aliases = !string.IsNullOrEmpty(p.Aliases) ? $" aliases=\"{EscapeXml(p.Aliases)}\"" : "";
-                        partSb.AppendLine($"<user name=\"{EscapeXml(p.DisplayName)}\"{nick}{aliases} platform_id=\"{EscapeXml(p.PlatformId)}\" person_id=\"{p.PersonId}\" trust=\"{p.TrustLevel}\" permission=\"{p.PermissionLevel}\"{memo} />");
+                        var chType = chParts[0];
+                        var chId = chParts[1];
+                        partSb.AppendLine($"[频道] 类型: {chType}, 平台ID: {chId}, 频道ID: {channelId}");
                     }
-                    partSb.Append("</participants>");
-                    msgs.Add(new Message { Role = "user", Content = partSb.ToString() });
                 }
-                else
+                partSb.AppendLine("[当前参与者]");
+                foreach (var (_, p) in currentParticipantSnapshot)
                 {
-                    var partSb = new StringBuilder();
-                    // 频道基本信息（express 模式）
-                    if (!string.IsNullOrEmpty(channelName))
-                    {
-                        var chParts = channelName.Split('_', 2);
-                        if (chParts.Length == 2)
-                        {
-                            var chType = chParts[0];
-                            var chId = chParts[1];
-                            partSb.AppendLine($"[频道] 类型: {chType}, 平台ID: {chId}, 频道ID: {channelId}");
-                        }
-                    }
-                    partSb.AppendLine("[当前参与者]");
-                    foreach (var (_, p) in currentParticipantSnapshot)
-                    {
-                        partSb.Append($"- {p.DisplayName}");
-                        if (!string.IsNullOrEmpty(p.Aliases))
-                            partSb.Append($" (别称:{p.Aliases})");
-                        partSb.Append($" [platform_id:{p.PlatformId}, person_id:{p.PersonId}, trust:{p.TrustLevel}]");
-                        if (!string.IsNullOrEmpty(p.Memo))
-                            partSb.Append($" — {p.Memo}");
-                        partSb.AppendLine();
-                    }
-                    msgs.Add(new Message { Role = "user", Content = partSb.ToString() });
+                    partSb.Append($"- {p.DisplayName}");
+                    if (!string.IsNullOrEmpty(p.Aliases))
+                        partSb.Append($" (别称:{p.Aliases})");
+                    partSb.Append($" [platform_id:{p.PlatformId}, person_id:{p.PersonId}, trust:{p.TrustLevel}]");
+                    if (!string.IsNullOrEmpty(p.Memo))
+                        partSb.Append($" — {p.Memo}");
+                    partSb.AppendLine();
                 }
+                msgs.Add(new Message { Role = "user", Content = partSb.ToString() });
             }
 
             // 4. IInjectProvider start injections
             var iCtx = new InjectContext
             {
-                Mode = isWorkingMode ? "working" : "express",
+                Mode = "express",
                 CurrentRound = 0,
                 MaxRounds = agentConfig.MaxRounds
             };
@@ -430,94 +394,47 @@ namespace AgentCoreProcessor.Engine
                 catch (Exception ex) { Signal.Warn(LogGroup.Engine, $"InjectProvider.Start 失败: {p.GetType().Name}", new { provider = p.GetType().Name, error = ex.Message }); }
             }
 
-            // 5. Component prompt sections
+            // 5. BuildComponentInjections — 使用全局组件宿主替代本地 ComponentHost
             BuildComponentInjections(msgs);
 
-            // ── framework 边界：以下内容会被持久化，不再从 DB 重复拉取 ──
-            _frameworkMessageCount = msgs.Count;
+            // ═══ CONVERSATION ═══
 
-            // ═══ CONVERSATION: 持久化到 ChannelContexts json，会话恢复时直接注入 ═══
-
-            // 6. escalate 理由（仅一次，解释为何进入 Working 模式）
-            if (isWorkingMode && !string.IsNullOrEmpty(_escalateReason))
+            // 6. 初始历史：从 DB 拉取历史消息（Express 格式）
             {
-                var modeLabel = _currentModeDef?.DisplayName ?? _currentModeId;
-                msgs.Add(new Message { Role = "user", Content = $"[模式切换] 已从 Express 切换至 {modeLabel} 模式。切换原因：{_escalateReason}" });
-                _escalateReason = null;
-            }
-
-            // 7. 初始历史 / 持久化对话
-            if (isWorkingMode && _loadedConversation != null && _loadedConversation.Count > 0)
-            {
-                // 会话恢复：_loadedConversation 已是完整上下文（含历史消息、助手回应、工具结果）
-                msgs.AddRange(_loadedConversation);
-                _loadedConversation = null;
                 _startInjectMaxId = _lastConsumedMessageId;
-            }
-            else
-            {
-                // 首次会话：从 DB 拉取历史消息，注入后会被 PersistCurrentContext 持久化
+                var recentMsgs = await ctx.Session.GetContextByChannelAsync(channelId, HistoryMaxMessages);
+                if (recentMsgs.Count > 0)
                 {
-                    _startInjectMaxId = _lastConsumedMessageId;
-                    var recentMsgs = await ctx.Session.GetContextByChannelAsync(channelId, HistoryMaxMessages);
-                    if (recentMsgs.Count > 0)
+                    var historyMsgs = recentMsgs.Where(m => m.Id <= _lastConsumedMessageId).ToList();
+                    if (historyMsgs.Count > 0)
                     {
-                        var historyMsgs = recentMsgs.Where(m => m.Id <= _lastConsumedMessageId).ToList();
-                        if (historyMsgs.Count > 0)
+                        var histQc = await BuildQuotedContextForBatchAsync(historyMsgs, channelId, maxDepth: 1, includeSurrounding: true);
+                        if (histQc != null)
+                            await AddQuotedContextMessage(msgs, histQc.Value.Text, histQc.Value.ImagePaths);
+
+                        var histSb = new StringBuilder("[对话历史]\n");
+                        foreach (var m in historyMsgs)
                         {
-                            if (isWorkingMode)
-                            {
-                                var histQc = await BuildQuotedContextForBatchAsync(historyMsgs, channelId, maxDepth: 1, includeSurrounding: false);
-                                if (histQc != null)
-                                    await AddQuotedContextMessage(msgs, histQc.Value.Text, histQc.Value.ImagePaths);
-
-                                var histSb = new StringBuilder("<conversation_history>\n");
-                                foreach (var m in historyMsgs)
-                                {
-                                    var name = m.IsFromBot ? "assistant" : EscapeXml(m.SenderName);
-                                    var attrs = FormatMessageAttrs(m);
-                                    histSb.AppendLine($"<message role=\"{(m.IsFromBot ? "assistant" : "user")}\" sender=\"{name}\"{attrs}>");
-                                    histSb.AppendLine(EscapeXml(m.Content));
-                                    histSb.AppendLine("</message>");
-                                }
-                                histSb.Append("</conversation_history>");
-                                {
-                                    var parts = await BuildInterleavedContentParts(histSb.ToString(), historyMsgs, _seenImageHashes);
-                                    var msg = new Message { Role = "user", Content = histSb.ToString() };
-                                    if (parts.Count > 1) msg.ContentParts = parts;
-                                    msgs.Add(msg);
-                                }
-                            }
-                            else
-                            {
-                                var histQc = await BuildQuotedContextForBatchAsync(historyMsgs, channelId, maxDepth: 1, includeSurrounding: true);
-                                if (histQc != null)
-                                    await AddQuotedContextMessage(msgs, histQc.Value.Text, histQc.Value.ImagePaths);
-
-                                var histSb = new StringBuilder("[对话历史]\n");
-                                foreach (var m in historyMsgs)
-                                {
-                                    var mentionPrefix = IsBotMentionedInMessage(m) ? "[@你] " : "";
-                                    var name = m.IsFromBot ? "你" : m.SenderName;
-                                    var msgId = !string.IsNullOrEmpty(m.PlatformMessageId) ? $"[#{m.PlatformMessageId}]" : "";
-                                    var replyNote = !string.IsNullOrEmpty(m.ReplyToPlatformMessageId) ? $" (回复 #{m.ReplyToPlatformMessageId})" : "";
-                                    histSb.AppendLine($"{mentionPrefix}{msgId}{name}: {m.Content}{replyNote}");
-                                }
-                                {
-                                    var parts = await BuildInterleavedContentParts(histSb.ToString(), historyMsgs, _seenImageHashes);
-                                    var msg = new Message { Role = "user", Content = histSb.ToString() };
-                                    if (parts.Count > 1) msg.ContentParts = parts;
-                                    msgs.Add(msg);
-                                }
-                            }
+                            var mentionPrefix = IsBotMentionedInMessage(m) ? "[@你] " : "";
+                            var name = m.IsFromBot ? "你" : m.SenderName;
+                            var msgId = !string.IsNullOrEmpty(m.PlatformMessageId) ? $"[#{m.PlatformMessageId}]" : "";
+                            var replyNote = !string.IsNullOrEmpty(m.ReplyToPlatformMessageId) ? $" (回复 #{m.ReplyToPlatformMessageId})" : "";
+                            histSb.AppendLine($"{mentionPrefix}{msgId}{name}: {m.Content}{replyNote}");
                         }
-
-                        _startInjectMaxId = historyMsgs.Count > 0 ? historyMsgs.Max(m => m.Id) : _lastConsumedMessageId;
+                        {
+                            var seenHashes = new HashSet<string>();
+                            var parts = await BuildInterleavedContentParts(histSb.ToString(), historyMsgs, seenHashes);
+                            var msg = new Message { Role = "user", Content = histSb.ToString() };
+                            if (parts.Count > 1) msg.ContentParts = parts;
+                            msgs.Add(msg);
+                        }
                     }
+
+                    _startInjectMaxId = historyMsgs.Count > 0 ? historyMsgs.Max(m => m.Id) : _lastConsumedMessageId;
                 }
             }
 
-            // 8. 记忆检索（持久化：相同 query 结果不变，会话恢复时已在 _loadedConversation 中）
+            // 7. 记忆检索
             if (_lastSessionContext != null && _lastConsumedMessageId > 0)
             {
                 var queryMsgs = await ctx.Session.GetMessagesAfterIdAsync(channelId, _lastConsumedMessageId);
@@ -536,7 +453,7 @@ namespace AgentCoreProcessor.Engine
             Signal.Event(LogGroup.Engine, "上下文组装完成", new
             {
                 channelId,
-                mode = isWorkingMode ? "working" : "express",
+                mode = "express",
                 totalMessages = msgs.Count,
                 prefixLen = fixedPrefix?.Length ?? 0,
                 summaryLen = contextSummary?.Length ?? 0,
@@ -639,36 +556,13 @@ namespace AgentCoreProcessor.Engine
                         msgs.Add(new Message { Role = "user", Content = $"[系统事件] {bes.Event.GetType().Name}" });
                         break;
                     case CompressionSignal cs:
-                        // Rebuild Agent with new summary + retained history
+                        // Express 模式：仅更新上下文摘要，不重建 Agent
                         contextSummary = cs.Summary;
-                        EnsureAgent();
-                        agent!.ClearHistory();
-                        if (fixedPrefix == null) fixedPrefix = BuildFixedPrefix();
-                        agent.AddToHistory(new Message { Role = "user", Content = fixedPrefix });
-                        agent.AddToHistory(new Message { Role = "user", Content = $"[上下文摘要]\n{cs.Summary}" });
-                        agent.ConversationOffset = agent.History.Count;
-                        foreach (var msg in cs.RetainedHistory)
-                            agent.AddToHistory(msg);
                         break;
                     case ModeSwitchSignal mss:
-                        isWorkingMode = mss.NewMode != "express";
-                        _currentModeId = mss.NewMode;
-                        _currentModeDef = ModeConfigLoader.GetMode(mss.NewMode);
+                        // 模式切换信号（Working 已移除，仅保留通知）
                         if (!string.IsNullOrEmpty(mss.Reason))
-                        {
-                            if (mss.NewMode != "express")
-                            {
-                                // Express→Working：暂存理由供 BuildStartInjectAsync 注入
-                                if (string.IsNullOrEmpty(_escalateReason))
-                                    _escalateReason = mss.Reason;
-                                var modeName = _currentModeDef?.DisplayName ?? mss.NewMode;
-                                msgs.Add(new Message { Role = "user", Content = $"[系统] 切换到 {modeName} 模式：{mss.Reason}" });
-                            }
-                            else
-                            {
-                                msgs.Add(new Message { Role = "user", Content = $"[系统] 切换到 Express 模式：{mss.Reason}" });
-                            }
-                        }
+                            msgs.Add(new Message { Role = "user", Content = $"[系统] 模式切换通知：{mss.Reason}" });
                         break;
                 }
             }
@@ -688,38 +582,13 @@ namespace AgentCoreProcessor.Engine
                     {
                         newMsgs = newMsgs.Skip(newMsgs.Count - HistoryMaxMessages).ToList();
                     }
-                    // Express 模式裁剪：只保留最近一组窗口，避免上下文爆炸
-                    if (!isWorkingMode && newMsgs.Count > HistoryMaxMessages)
+                    // Express：裁剪只保留最近窗口，避免上下文爆炸
+                    if (newMsgs.Count > HistoryMaxMessages)
                     {
                         newMsgs = newMsgs.Skip(newMsgs.Count - HistoryMaxMessages).ToList();
                     }
 
-                    if (isWorkingMode)
-                    {
-                        var sb = new StringBuilder("<new_messages>\n");
-                        foreach (var m in newMsgs)
-                        {
-                            var name = m.IsFromBot ? "assistant" : EscapeXml(m.SenderName);
-                            var attrs = FormatMessageAttrs(m);
-                            sb.AppendLine($"<message role=\"{(m.IsFromBot ? "assistant" : "user")}\" sender=\"{name}\"{attrs}>");
-                            sb.AppendLine(EscapeXml(m.Content));
-                            sb.AppendLine("</message>");
-                        }
-                        sb.Append("</new_messages>");
-                        // 新消息引用缺省补块（递归 2 层）—— 放在新消息前面
-                        var roundQc = await BuildQuotedContextForBatchAsync(newMsgs, channelId, maxDepth: 2, includeSurrounding: false);
-                        if (roundQc != null)
-                            await AddQuotedContextMessage(msgs, roundQc.Value.Text, roundQc.Value.ImagePaths);
-
-                        // Working：只追当前批次新消息的图片（老图已在 agent 堆叠历史中）
-                        {
-                            var parts = await BuildInterleavedContentParts(sb.ToString(), newMsgs, _seenImageHashes);
-                            var msg = new Message { Role = "user", Content = sb.ToString() };
-                            if (parts.Count > 1) msg.ContentParts = parts;
-                            msgs.Add(msg);
-                        }
-                    }
-                    else
+                    // Express 格式
                     {
                         var sb = new StringBuilder("<新消息（自上次处理后）>\n");
                         foreach (var m in newMsgs)
@@ -731,14 +600,13 @@ namespace AgentCoreProcessor.Engine
                             sb.AppendLine($"{mentionPrefix}{msgId}{name}: {m.Content}{replyNote}");
                         }
                         sb.Append("</新消息>");
-                        // 新消息引用缺省补块（递归 2 层，带 ±3 上下文）—— 放在新消息前面
                         var roundQc = await BuildQuotedContextForBatchAsync(newMsgs, channelId, maxDepth: 2, includeSurrounding: true);
                         if (roundQc != null)
                             await AddQuotedContextMessage(msgs, roundQc.Value.Text, roundQc.Value.ImagePaths);
 
-                        // Express：交错图片
                         {
-                            var parts = await BuildInterleavedContentParts(sb.ToString(), newMsgs, _seenImageHashes);
+                            var seenHashes = new HashSet<string>();
+                            var parts = await BuildInterleavedContentParts(sb.ToString(), newMsgs, seenHashes);
                             var msg = new Message { Role = "user", Content = sb.ToString() };
                             if (parts.Count > 1) msg.ContentParts = parts;
                             msgs.Add(msg);
@@ -761,62 +629,11 @@ namespace AgentCoreProcessor.Engine
             // IInjectProvider round injections
             var roundCtx = new InjectContext
             {
-                Mode = isWorkingMode ? "working" : "express",
+                Mode = "express",
                 CurrentRound = agent?.TotalRounds ?? 1,
                 MaxRounds = agentConfig.MaxRounds,
-                EstimatedTokens = agent?.History.Sum(m => (m.Content?.Length ?? 0)) / 3 ?? 0
+                EstimatedTokens = 0
             };
-            foreach (var p in _injectProviders.OrderBy(p => p.InjectPriority))
-            {
-                try
-                {
-                    var s = await p.BuildRoundInjectAsync(roundCtx);
-                    if (!string.IsNullOrEmpty(s))
-                        msgs.Add(new Message { Role = "user", Content = s });
-                }
-                catch (Exception ex) { Signal.Warn(LogGroup.Engine, $"InjectProvider.Round失败: {p.GetType().Name}", new { provider = p.GetType().Name, error = ex.Message }); }
-            }
-
-            // Compression tier hint
-            if (compressionTierModule != null && agent != null)
-            {
-                var estTokens = agent.History.Sum(m => (m.Content?.Length ?? 0)) / 3;
-                var text = compressionTierModule.GetInjectText(estTokens);
-                if (!string.IsNullOrEmpty(text))
-                {
-                    msgs.Add(new Message { Role = "user", Content = text });
-                    if (compressionTierModule.CurrentTier == CompressionTier.L1)
-                        compressionTierModule.MarkL1Injected();
-                }
-            }
-
-            // 达到静默轮次上限时提示模型发言
-            if (isWorkingMode && loopControlModule.IsMaxSilentReached)
-            {
-                msgs.Add(new Message { Role = "user", Content = "你沉默太久了，需要向用户报告你当前的工作进度。" });
-            }
-
-            // 最后一轮提示模型总结并请求确认
-            if (isWorkingMode && agent != null && agent.TotalRounds >= agentConfig.MaxRounds)
-            {
-                msgs.Add(new Message { Role = "user", Content = "这是本轮 Working 会话的最后一轮。请总结当前进展和结果，并告知用户如需继续可发送新消息。" });
-            }
-
-            // 连续多轮无实际工作时，提醒可切换回 Express（Working 模型更强，深思也可能是合理的）
-            if (isWorkingMode && loopControlModule.ConsecutiveOutputOnly >= 2)
-            {
-                msgs.Add(new Message { Role = "user", Content = "你已连续多轮没有执行实际工作（仅发言/等待）。如果工作已完成，可用 deescalate 切换回轻量模式；如果需要继续深思或等待结果则不必。" });
-            }
-
-            // 连续 speak 警告（防止话唠）
-            if (_consecutiveSpeakRounds >= 2)
-            {
-                msgs.Add(new Message { Role = "user", Content = "你已连续两轮只说话不做实际工作，本轮 speak 工具将被阻断。请先使用其他工具完成需要的工作。" });
-            }
-            else if (_consecutiveSpeakRounds >= 1)
-            {
-                msgs.Add(new Message { Role = "user", Content = "你上一轮调用了 speak，本轮如需继续发言请先执行其他工作。" });
-            }
 
             // 滞后描述补注：本轮图片的描述可能在后续轮次才就绪
             foreach (var hash in _roundImageHashes)
@@ -834,7 +651,7 @@ namespace AgentCoreProcessor.Engine
             foreach (var hash in _roundImageHashes)
             {
                 if (_injectedOcrTexts.Contains(hash)) continue;
-                var ocrInjection = await BuildOcrInjectionTextAsync(hash, !isWorkingMode);
+                var ocrInjection = await BuildOcrInjectionTextAsync(hash, true);
                 if (!string.IsNullOrEmpty(ocrInjection))
                 {
                     _injectedOcrTexts.Add(hash);
@@ -847,73 +664,22 @@ namespace AgentCoreProcessor.Engine
 
         private void BuildComponentInjections(List<Message> msgs)
         {
-            if (componentHost != null)
+            if (ctx.GlobalComponentHost != null)
             {
-                var groups = ToolListFormatter.CollectGroups(componentHost, ctx.GlobalComponentHost);
-                var overview = ToolListFormatter.BuildToolOverviewSection(groups, _currentModeId);
+                var groups = ToolListFormatter.CollectGroups(null, ctx.GlobalComponentHost);
+                var overview = ToolListFormatter.BuildToolOverviewSection(groups, "express");
                 if (!string.IsNullOrEmpty(overview))
                     msgs.Add(new Message { Role = "user", Content = overview });
 
-                var sections = componentHost.BuildPromptSections();
-                foreach (var s in sections)
-                    if (!string.IsNullOrEmpty(s))
-                        msgs.Add(new Message { Role = "user", Content = s });
-
-                var globalSections = ctx.GlobalComponentHost?.BuildPromptSections(
-                    new LoopInfo(channelId.ToString(), "channel")) ?? new();
+                var globalSections = ctx.GlobalComponentHost.BuildPromptSections(
+                    new LoopInfo(channelId.ToString(), "channel"));
                 foreach (var s in globalSections)
                     if (!string.IsNullOrEmpty(s))
                         msgs.Add(new Message { Role = "user", Content = s });
             }
         }
 
-        private void PersistCurrentContext()
-        {
-            if (persistence == null || agent == null || agent.History.Count == 0) return;
-
-            // Only persist conversation content (skip framework injections)
-            var startIdx = agent.ConversationOffset;
-            if (startIdx >= agent.History.Count) return;
-
-            var conversation = agent.History.Skip(startIdx).ToList();
-
-            // 按 assistant 回复分割 rounds：每个 round = 前面的 user 消息 + assistant 回复
-            var rounds = new List<List<Message>>();
-            var currentRound = new List<Message>();
-            foreach (var msg in conversation)
-            {
-                if (IsEmptyMessage(msg)) continue;
-                currentRound.Add(msg);
-                if (msg.Role == "assistant")
-                {
-                    rounds.Add(currentRound);
-                    currentRound = new List<Message>();
-                }
-            }
-            // 尾部未闭合的 user 消息也保留
-            if (currentRound.Count > 0)
-                rounds.Add(currentRound);
-
-            persistence.SaveContext(contextSummary, _currentModeId, rounds,
-                _lastConsumedMessageId, _escalateReason);
-        }
-
         private static bool IsEmptyMessage(Message m)
             => string.IsNullOrEmpty(m.Content) && (m.ContentParts == null || m.ContentParts.Count == 0);
-
-        private void EndWorkingSession()
-        {
-            Signal.Event(LogGroup.Engine, "Working会话结束", new
-            {
-                channelId,
-                totalRounds = agent?.TotalRounds ?? 0,
-                hadSpeak = hadSpeakThisRound
-            });
-            isInWorkingSession = false;
-            _consecutiveSpeakRounds = 0;
-            if (_speakGuard != null) _speakGuard.ConsecutiveSpeakRounds = 0;
-            // 清除 agent 确保下次 Working 会话从干净状态开始（防止 BuildStartInjectAsync 重复注入）
-            agent = null;
-        }
     }
 }

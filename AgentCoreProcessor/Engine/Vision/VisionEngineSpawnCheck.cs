@@ -31,7 +31,7 @@ namespace AgentCoreProcessor.Engine.Vision
             if (activeInstance != null && activeInstance.IsAlive)
                 return Task.FromResult(false);
 
-            if (e is TimerEvent timer && timer.TimerName == "tick")
+            if (e is SignalEvent signal && signal.SignalName == "timer-tick")
             {
                 if (lastDeathTime == null || (DateTime.Now - lastDeathTime.Value).TotalSeconds >= 10)
                 {

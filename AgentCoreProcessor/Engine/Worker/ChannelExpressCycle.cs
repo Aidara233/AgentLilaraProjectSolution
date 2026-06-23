@@ -20,7 +20,6 @@ namespace AgentCoreProcessor.Engine
         private async Task ExecuteExpressCycleAsync()
         {
             _roundImageHashes.Clear();
-            _seenImageHashes.Clear();
             _startInjectMaxId = 0;
 
             var messages = new List<Message>();
@@ -34,15 +33,16 @@ namespace AgentCoreProcessor.Engine
             if (messages.Count > HistoryMaxMessages)
             {
                 var excess = messages.Count - HistoryMaxMessages;
-                var maxRemovable = messages.Count - _frameworkMessageCount;
-                if (excess > maxRemovable) excess = maxRemovable;
                 if (excess > 0)
-                    messages.RemoveRange(_frameworkMessageCount, excess);
+                    messages.RemoveRange(0, excess);
             }
 
             agentCore.EngineType = "channel";
-            agentCore.CurrentModeId = _currentModeId;
-            agentCore.AdditionalTools = componentHost!.GetVisibleTools().ToList();
+            agentCore.CurrentModeId = "express";
+            agentCore.AdditionalTools = ToolRegistry.All.Values
+                .Where(t => !ToolRegistry.IsDisabled(t.Name)
+                            && ModeConfigLoader.IsToolEnabled("express", t.Name))
+                .ToList();
             agentCore.GlobalComponentTools = ctx.GlobalComponentHost?.GetVisibleTools("channel").ToList();
 
             if (_consecutiveExpressFailures > 0 && _consecutiveExpressFailures <= agentConfig.BackoffSeconds.Length)
@@ -51,9 +51,7 @@ namespace AgentCoreProcessor.Engine
                 await Task.Delay(TimeSpan.FromSeconds(backoff));
             }
 
-            bool escalated = false;
-            _currentModeDef ??= ModeConfigLoader.GetMode("express");
-            var maxRounds = _currentModeDef?.MaxRounds ?? agentConfig.ExpressMaxRounds;
+            var maxRounds = agentConfig.ExpressMaxRounds;
             for (int round = 0; round < maxRounds; round++)
             {
                 ModelOutput output;
@@ -124,7 +122,7 @@ namespace AgentCoreProcessor.Engine
                 using (var expressToolSpan = Signal.Open(LogGroup.Tool, $"Express工具 R{round + 1}: {string.Join(", ", output.ToolCalls.Select(c => c.Tool))}",
                     new { round = round + 1, calls = output.ToolCalls.Select(c => new { c.Tool, c.Inputs }) }))
                 {
-                    var executor = new ToolExecutor(componentHost.TryGetTool);
+                    var executor = new ToolExecutor(ToolRegistry.Get);
                     expressResults = await executor.ExecuteAsync(output.ToolCalls);
                     expressToolSpan.SetCloseDetail(new
                     {
@@ -142,36 +140,14 @@ namespace AgentCoreProcessor.Engine
                     var result = expressResults[i];
                     if (result.RequestWait)
                         inlineWaitRequested = true;
-                    var toolDef = componentHost.TryGetTool(call.Tool);
+                    var toolDef = ToolRegistry.Get(call.Tool);
                     bus.Publish(new ToolExecutedEvent(call, result, toolDef));
                 }
 
                 messages.Add(FormatResultsExpress(output.ToolCalls, expressResults));
 
-                foreach (var call in output.ToolCalls)
-                {
-                    if (call.Tool == "escalate")
-                    {
-                        var reason = call.Inputs.Count > 0 ? call.Inputs[0] : null;
-                        var targetModeId = ModeConfigLoader.GetEscalateTarget();
-                        var targetDef = ModeConfigLoader.GetMode(targetModeId);
-                        _signalBuffer.Enqueue(new ModeSwitchSignal(targetModeId, reason));
-                        isWorkingMode = true;
-                        _currentModeId = targetModeId;
-                        _currentModeDef = targetDef;
-                        isInWorkingSession = true;
-                        _escalateReason = reason;
-                        persistence?.SaveContext(null, targetModeId, new List<List<Message>>(),
-                            _lastConsumedMessageId, reason);
-                        Signal.Event(LogGroup.Engine, "模式切换",
-                            new { channelId, from = "Express", to = targetModeId, reason = reason ?? "工具调用" });
-                        gate.Signal();
-                        escalated = true;
-                        break;
-                    }
-                }
-                if (escalated) break;
-
+                // 注意：escalate 工具不再触发模式切换（Working 模式已移除），
+                // 但仍保留在 Express white-list 中以便模型自由调用
                 if (inlineWaitRequested)
                     break;
 
@@ -210,9 +186,9 @@ namespace AgentCoreProcessor.Engine
             if (_startInjectMaxId > _lastConsumedMessageId)
                 _lastConsumedMessageId = _startInjectMaxId;
 
-            if (!escalated && _lastConsumedMessageId > 0)
-                persistence?.SaveContext(contextSummary, _currentModeId, new List<List<Message>>(),
-                    _lastConsumedMessageId, _escalateReason);
+            if (_lastConsumedMessageId > 0)
+                persistence?.SaveContext(contextSummary, "express", new List<List<Message>>(),
+                    _lastConsumedMessageId, null);
         }
 
         private static Message FormatAssistantExpress(ModelOutput output)

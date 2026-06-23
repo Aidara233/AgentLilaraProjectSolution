@@ -713,8 +713,11 @@ namespace AgentCoreProcessor.Engine
             foreach (var (_, factory) in SpawnCheckFactory)
                 spawnChecks.Add(factory());
 
-            // 订阅事件总线
+            // 订阅事件总线（仅内部控制信号）
             eventBus.OnEvent += e => _ = HandleEventAsync(e);
+
+            // 适配器消息路由：绕过 EventBus，直接走 SpawnCheck
+            adapterManager.OnIncomingMessage = async msg => await RouteMessageAsync(msg);
 
             // 加载开机自启配置
             var engineCfg = EngineConfig.Load(DefaultEngineConfigPath);
@@ -733,6 +736,36 @@ namespace AgentCoreProcessor.Engine
 
         // ---- 事件分发（内核流水线） ----
 
+        /// <summary>
+        /// 直接消息路由（绕过 EventBus）。由 AdapterManager.OnIncomingMessage 和
+        /// ConsoleProvider 调用。串行化防止并发状态冲突。
+        /// </summary>
+        public async Task RouteMessageAsync(IncomingMessage msg)
+        {
+            await eventLock.WaitAsync();
+            try
+            {
+                lastMessageTime = msg.Time;
+
+                // ① CommandSpawnCheck：命令拦截
+                var cmdCheck = GetSpawnCheck<CommandSpawnCheck>();
+                if (cmdCheck != null)
+                {
+                    if (await cmdCheck.HandleMessageAsync(msg, this))
+                        return; // 命令已消费，停止路由
+                }
+
+                // ② ChannelEngineSpawnCheck：频道引擎孵化 / 转发
+                var chCheck = GetSpawnCheck<ChannelEngineSpawnCheck>();
+                if (chCheck != null)
+                    await chCheck.HandleMessageAsync(msg, this);
+            }
+            finally
+            {
+                eventLock.Release();
+            }
+        }
+
         public async Task HandleEventAsync(EngineEvent e)
         {
             // 串行化事件处理，防止 SpawnCheck 并发状态冲突
@@ -749,11 +782,7 @@ namespace AgentCoreProcessor.Engine
 
         private async Task HandleEventCoreAsync(EngineEvent e)
         {
-            // ① 内核更新
-            if (e is MessageEvent msgEvent)
-                lastMessageTime = msgEvent.Time;
-
-            // ② SpawnCheck：OnEvent + ShouldSpawn
+            // ① SpawnCheck：OnEvent + ShouldSpawn
             // 复制列表避免遍历时修改
             var checks = spawnChecks.ToList();
             foreach (var check in checks)
@@ -774,7 +803,7 @@ namespace AgentCoreProcessor.Engine
                 }
             }
 
-            // ③ 派发给活跃实例（已消费的事件跳过）
+            // ② 派发给活跃实例（已消费的事件跳过）
             if (!e.Consumed)
             {
                 List<ISubEngine> engines;
@@ -789,7 +818,7 @@ namespace AgentCoreProcessor.Engine
                 }
             }
 
-            // ④ 清理已死亡的实例
+            // ③ 清理已死亡的实例
             lock (engineLock)
             {
                 activeEngines.RemoveAll(e => !e.IsAlive);
