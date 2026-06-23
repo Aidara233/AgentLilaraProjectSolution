@@ -728,6 +728,11 @@ namespace AgentCoreProcessor.Engine
                 {
                     var engine = check.Create(this);
                     StartEngine(engine);
+                    Console.Error.WriteLine($"[MasterEngine] 自启引擎: {type} (IsAlive={engine.IsAlive})");
+                }
+                else
+                {
+                    Console.Error.WriteLine($"[MasterEngine] 自启引擎 {type} 的 SpawnCheck 未注册！");
                 }
             }
 
