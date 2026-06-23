@@ -28,4 +28,7 @@ public class CreateSessionSpec
 
     public string? ParentSessionId { get; set; }
     public SessionLimits? OverrideLimits { get; set; }
+
+    /// <summary>Session 使用的 Core 配置文件名（不含路径和扩展名），默认 "SessionCore"</summary>
+    public string CoreConfigName { get; set; } = "SessionCore";
 }

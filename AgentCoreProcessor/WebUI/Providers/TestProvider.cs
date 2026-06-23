@@ -371,8 +371,8 @@ internal class TestStreamDataSource : IDataSource
         {
             new JsonObject { ["time"] = now.AddSeconds(-30).ToString("HH:mm:ss"), ["level"] = "INFO",  ["text"] = "[ChannelEngine] 频道循环启动，channelId=qq-123456" },
             new JsonObject { ["time"] = now.AddSeconds(-25).ToString("HH:mm:ss"), ["level"] = "INFO",  ["text"] = "[MemoryService] 检索完成，命中 3 条记忆片段" },
-            new JsonObject { ["time"] = now.AddSeconds(-20).ToString("HH:mm:ss"), ["level"] = "DEBUG", ["text"] = "[WorkingCore] 开始构建上下文，当前 token 估算 2048" },
-            new JsonObject { ["time"] = now.AddSeconds(-15).ToString("HH:mm:ss"), ["level"] = "INFO",  ["text"] = "[WorkingCore] 模型调用完成，usage: input=2048 output=312 cache_hit=1820" },
+            new JsonObject { ["time"] = now.AddSeconds(-20).ToString("HH:mm:ss"), ["level"] = "DEBUG", ["text"] = "[SessionCore] 开始构建上下文，当前 token 估算 2048" },
+            new JsonObject { ["time"] = now.AddSeconds(-15).ToString("HH:mm:ss"), ["level"] = "INFO",  ["text"] = "[SessionCore] 模型调用完成，usage: input=2048 output=312 cache_hit=1820" },
             new JsonObject { ["time"] = now.AddSeconds(-5).ToString("HH:mm:ss"),  ["level"] = "INFO",  ["text"] = "[SessionEngine] 待办事项检查完成，0 条待处理" },
             new JsonObject { ["time"] = now.ToString("HH:mm:ss"),                 ["level"] = "ERROR", ["text"] = "[PluginLoader] 插件 Plugin.FileTools 加载失败：找不到依赖 SkiaSharp" }
         };

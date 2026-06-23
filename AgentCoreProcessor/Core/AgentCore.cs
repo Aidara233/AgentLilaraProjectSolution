@@ -10,12 +10,13 @@ using AgentLilara.PluginSDK;
 namespace AgentCoreProcessor.Core
 {
     /// <summary>
-    /// 统一 Agent 核心。合并 ExpressCore + WorkingCore 的模型调用能力。
+    /// 统一 Agent 核心。合并 ExpressCore + SessionCore 的模型调用能力。
+    /// SessionCore 专供 RuntimeSession 会话循环，ExpressCore 用于框架层快速响应。
     /// 只负责模型调用和输出解析，不管循环、不管状态、不管副作用。
     /// </summary>
     internal class AgentCore : CoreBase
     {
-        private string currentMode = "WorkingCore";
+        private string currentMode = "SessionCore";
         private readonly bool fixedMode;
 
         /// <summary>当前是否使用原生工具调用。</summary>
@@ -33,7 +34,7 @@ namespace AgentCoreProcessor.Core
         /// <summary>当前模式 ID（如 "express"、"plan"、"build"）。null 时跳过模式过滤（子 agent 等场景）。</summary>
         public string? CurrentModeId { get; set; }
 
-        public AgentCore() : base("WorkingCore")
+        public AgentCore() : base("SessionCore")
         {
         }
 
@@ -47,7 +48,7 @@ namespace AgentCoreProcessor.Core
         public void SwitchMode(Engine.EngineMode mode)
         {
             if (fixedMode) return;
-            var target = mode == Engine.EngineMode.Express ? "ExpressCore" : "WorkingCore";
+            var target = mode == Engine.EngineMode.Express ? "ExpressCore" : "SessionCore";
             if (target == currentMode) return;
             currentMode = target;
             processor.CfgName = target;
