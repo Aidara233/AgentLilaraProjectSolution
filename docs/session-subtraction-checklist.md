@@ -1,7 +1,8 @@
 # Session 减法清单（半重构第一步）
 
+> 状态：**已完成（2026-06-24）**。分支 `feature/session-inbound-connection`，base = master(590af54)。
+> 5 个 commit：17d0000(撤子模式+MaxLevel) / d3a9c51(清 ModeConfigLoader+prompt) / 8b97814(删 agent 死字段+快照) / 5f006f6(标记半残组件接口)。
 > 方针：先做减法，剃掉死代码 + 半残设计 + 子模式，缩小代码面，让入向接通的真问题浮出来。
-> 分支 `feature/session-inbound-connection`，base = master(590af54)。
 > **本轮只减不加**：动态启用组件等加法功能等减完法、入向接通后再单做。
 
 ## 减法决策（已与用户确认）
@@ -75,3 +76,26 @@
 4. commit: 标记 EnableComponent/DisableComponent 半残接口
 5. commit: MaxLevel 处理（按 A 或 B）
 每步 build + test 验证，不攒。
+
+---
+
+## 完成记录（2026-06-24）
+
+实际 4 个 commit（MaxLevel 并入 commit 1，按方案 A 彻底删）：
+- **17d0000**：撤子模式 + 删 MaxLevel。CurrentModeId=null（工具范围纯由组件决定，不过 ModeConfig 白名单）；删 SwitchModeTool + 注册 + Agent.cs 死 switch_mode 分支 + ModeSwitched 枚举；ModeConfig 只留 express；WebUI 删等级列。
+- **d3a9c51**：删 ModeConfigLoader.GetEscalateTarget/GetModesByMetaType（零调用）+ EscalateTarget 字段；改写 working_workflow.txt 删 plan/build/switch_mode 误导文本。
+- **8b97814**：删 ChannelEngine.agent（恒 null）+ GetContextSnapshot + ForceCompress + EstimateCharsLocal；频道详情页删上下文卡 + force-compress 动作（状态卡 token/压缩字段降级 "—"）；删 FormatMessageAttrs + AdapterEngine.OnAdapterMessage。
+- **5f006f6**：EnableComponent/DisableComponent 改抛 NotSupportedException（原空壳，加载侧从未实现）。
+
+验证：每步 dotnet build 0 错误 + 15 单测通过；--test 启动正常（Timer/Session/Vision 自启活跃）。escalate→session E2E 留发行版手动验证。
+
+### 踩坑留档
+- `fixedPrefix` 一度误删：它在 ChannelEngine.cs 只剩声明+赋 null，但真正读取在 partial 另一文件 ChannelContextBuilder.cs:75（BuildStartInjectAsync 缓存框架前缀），是活逻辑。已恢复。**教训：partial class 字段判死必须 grep 全部 partial 文件**。
+- `agent` 删对了，但 ChannelContextBuilder:241 残留 `agent?.TotalRounds ?? 1` 引用（恒取 1），改为直接读 loopControlModule.TotalRounds。
+
+### 本轮未动（超出"剃死代码"边界，留给后续）
+- **ConsoleProvider.ForceCompress（:260）**：语义过时——它调 `SignalGate()`（唤醒 gate），不是已删的 ChannelEngine.ForceCompress，**非死代码**。但"强制压缩"语义已无压缩动作，与 force-start/force-stop 并列显多余。删它属功能调整，未做。
+- 发行版 Storage（`E:\Tool\Lilara\Storage`）+ dev bin Storage 的 ModeConfig.json 运行时副本仍含旧 Working 模式 → **无害死数据**（session 已不读 ModeConfig 白名单，只 express 被 ChannelEngine 用）。如需彻底清，手动同步运行时副本（与 SessionCore 重命名同坑）。
+
+### 下一步
+减法完成，代码面缩小。回到 P0 真问题：A 生命周期（突发结束≠会话结束）+ B 入向接通（RouteMessageAsync 分叉 claim 频道改投 session 端口）+ 游标接力。详见 `session-inbound-connection-design.md`。
