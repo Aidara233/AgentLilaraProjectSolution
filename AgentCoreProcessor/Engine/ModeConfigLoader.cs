@@ -62,15 +62,6 @@ namespace AgentCoreProcessor.Engine
                 string.Equals(m.Id, modeId, StringComparison.OrdinalIgnoreCase));
         }
 
-        /// <summary>获取指定 metaType 的所有模式。</summary>
-        public static List<ModeDefinition> GetModesByMetaType(string metaType)
-        {
-            var config = Load();
-            return config.Modes
-                .Where(m => string.Equals(m.MetaType, metaType, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-        }
-
         /// <summary>获取所有模式。</summary>
         public static List<ModeDefinition> GetAllModes()
         {
@@ -107,13 +98,6 @@ namespace AgentCoreProcessor.Engine
             }
 
             return "default";
-        }
-
-        /// <summary>获取 escalate 的目标模式 ID。</summary>
-        public static string GetEscalateTarget()
-        {
-            var config = Load();
-            return string.IsNullOrEmpty(config.EscalateTarget) ? "plan" : config.EscalateTarget;
         }
 
         /// <summary>保存模式配置到 Storage。线程安全。</summary>
@@ -154,9 +138,6 @@ namespace AgentCoreProcessor.Engine
 
         [JsonProperty("modes")]
         public List<ModeDefinition> Modes { get; set; } = new();
-
-        [JsonProperty("escalateTarget")]
-        public string EscalateTarget { get; set; } = "plan";
     }
 
     internal class ModeDefinition
