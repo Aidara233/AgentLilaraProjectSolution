@@ -172,6 +172,17 @@ internal class RuntimeSession : IRuntimeSession
             {
                 messages = await _host.BuildStartAsync();
                 Console.Error.WriteLine($"[Session {SessionId}] BuildStartAsync: {messages.Count} messages from AgentHost");
+
+                // 游标接力首轮播种：BuildStartAsync 取的历史快照最大 id 写回持久化游标。
+                // 否则 session 若无新消息直接 deescalate，ChannelEngine 恢复时会把这批历史当新消息重读。
+                foreach (var (_, port) in _inputs)
+                {
+                    if (port is MessageInputPort mp && mp.ChannelId > 0)
+                    {
+                        var snapMax = _host.StateFor(mp.ChannelId).StartInjectMaxId;
+                        AdvanceChannelCursor(mp.ChannelId, snapMax);
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -233,6 +244,10 @@ internal class RuntimeSession : IRuntimeSession
                             messages = channelDrained.Count > 0
                                 ? await _host.BuildRoundAsync(channelDrained)
                                 : new List<Message>();
+
+                            // 游标接力：每个频道推进到本轮消费的最大 message id
+                            foreach (var grp in channelDrained.GroupBy(d => d.channelId))
+                                AdvanceChannelCursor(grp.Key, grp.Max(d => d.msg.Id));
 
                             // 系统注入消息直接追加
                             foreach (var (_, um) in systemDrained)
@@ -364,7 +379,6 @@ internal class RuntimeSession : IRuntimeSession
     {
         if (_messageEngine == null || string.IsNullOrEmpty(text))
             return Task.CompletedTask;
-
         int channelId = 0;
         foreach (var (_, port) in _inputs)
         {
@@ -379,6 +393,18 @@ internal class RuntimeSession : IRuntimeSession
             Content = text,
             SentByBot = true
         });
+    }
+
+    /// <summary>
+    /// 频道级游标接力：把本频道已处理到的最大 message id 写回持久化游标。
+    /// session 占有期间推进同一份 ChannelContextPersistence 游标，使其始终是频道级唯一真相——
+    /// session 结束后 ChannelEngine 从同一游标恢复，不重读 session 已处理的消息。
+    /// </summary>
+    private void AdvanceChannelCursor(int channelId, int maxMessageId)
+    {
+        if (channelId <= 0 || maxMessageId <= 0) return;
+        try { new ChannelContextPersistence(channelId).AdvanceCursor(maxMessageId); }
+        catch { /* best-effort，落地失败不中断会话 */ }
     }
 
 

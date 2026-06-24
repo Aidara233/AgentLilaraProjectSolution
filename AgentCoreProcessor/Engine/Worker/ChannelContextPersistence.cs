@@ -111,6 +111,20 @@ namespace AgentCoreProcessor.Engine
             catch { return (null, "working", new List<List<Message>>(), 0, null); }
         }
 
+        /// <summary>
+        /// 频道级游标接力：只推进 LastConsumedMessageId，保留 summary/mode/rounds 不变。
+        /// session 占有频道期间消费消息后调用，使持久化游标始终是频道级唯一真相——
+        /// session 结束后 ChannelEngine 从同一游标恢复，不重读 session 已处理的消息。
+        /// 仅当 newCursor 大于已存游标时写入（单调递增，避免回退）。
+        /// </summary>
+        public void AdvanceCursor(int newCursor)
+        {
+            if (newCursor <= 0) return;
+            var (summary, mode, rounds, current, _) = LoadContext();
+            if (newCursor <= current) return;
+            SaveContext(summary, mode, rounds, newCursor, null);
+        }
+
         private List<Message>? DeserializeMessages(dynamic obj)
             => (obj is Newtonsoft.Json.Linq.JToken jt) ? jt.ToObject<List<Message>>() : null;
     }
