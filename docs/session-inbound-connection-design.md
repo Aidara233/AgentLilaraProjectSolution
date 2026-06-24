@@ -1,7 +1,9 @@
 # Session 入向接通 + 生命周期 + 撤子模式 设计（第二批）
 
-> 状态：**设计待审**。分支 `feature/session-inbound-connection`，base = master(590af54)。
-> 解决 P0（escalate 后 Express 接手）+ P1（撤旧 working 子模式）。
+> 状态：**已实现（2026-06-24）**。
+> P1 撤子模式随减法批完成（master 17d0000）；A+B+游标接力在分支 `feature/session-inbound-pipe`（base=master 2f16794）3 commit 落地。
+> 6109786(A生命周期) / 03d4d90(B入向接通) / 0a44334(游标接力)。build 0错误 + 15单测过 + --test 启动正常。E2E 留发行版手动。
+> 实现要点见 `.git/sdd/progress.md` 末段「P0 入向接通完成」。一处偏差：B 分叉点落在 `ChannelEngineSpawnCheck.HandleMessageAsync` 内（OnMessageAsync 入库后、ChannelEngine spawn 前），非设计原文的 RouteMessageAsync——避免双重入库，功能等价。
 
 ## 问题回顾（已用真实代码核实）
 
