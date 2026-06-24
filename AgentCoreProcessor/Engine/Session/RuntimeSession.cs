@@ -122,18 +122,15 @@ internal class RuntimeSession : IRuntimeSession
 
     // ── 组件管理 ──
 
+    // 运行时动态启用/卸载组件：尚未实现。
+    // 当前 _componentHost 在 InitComponents 时一次性构建，运行期无法增删组件实例并重建工具表。
+    // 真正实现需要：实例化新组件 → 注册其工具到 _componentHost → RefreshToolList。
+    // 在落地前抛异常而非静默改 _componentIds，避免调用方误以为组件已生效。
     public void EnableComponent(string componentId)
-    {
-        if (_componentIds.Contains(componentId)) return;
-        _componentIds.Add(componentId);
-        // 运行时加载：实例化组件并注册其工具
-    }
+        => throw new NotSupportedException("运行时动态启用组件尚未实现，组件须在 CreateSessionSpec.ComponentIds 中预先声明");
 
     public void DisableComponent(string componentId)
-    {
-        _componentIds.Remove(componentId);
-        RefreshToolList();
-    }
+        => throw new NotSupportedException("运行时动态卸载组件尚未实现，组件须在 CreateSessionSpec.ComponentIds 中预先声明");
 
     public bool CheckLifetimeLimits()
     {
