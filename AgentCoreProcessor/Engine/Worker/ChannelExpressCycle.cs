@@ -176,7 +176,6 @@ namespace AgentCoreProcessor.Engine
                             sessionEngine.CreateSession(new CreateSessionSpec
                             {
                                 ComponentIds = new[] { "basic-tools", "working-tools", "file-tools", "file-ops", "memory-tools" },
-                                MaxLevel = 1,
                                 AutoClaimChannel = true,
                                 InputPorts = new Dictionary<string, PortSpec>
                                 {

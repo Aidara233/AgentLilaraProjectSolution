@@ -940,7 +940,6 @@ namespace AgentCoreProcessor.Engine
                         sessionEngine.CreateSession(new CreateSessionSpec
                         {
                             ComponentIds = new[] { "basic-tools", "working-tools", "memory-tools" },
-                            MaxLevel = 1,
                             InitialState = $"规则「{rule.RuleId}」升级：{rule.Description}\n\n原始消息：\n{msg.Content}",
                             OverrideLimits = new SessionLimits { MaxLifetime = TimeSpan.FromMinutes(30), IdleTimeout = TimeSpan.FromMinutes(10) }
                         });

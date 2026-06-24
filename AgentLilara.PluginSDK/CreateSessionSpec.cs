@@ -11,9 +11,6 @@ public class CreateSessionSpec
     /// <summary>要激活的组件 ID 列表，如 ["basic-tools", "file-tools"]</summary>
     public string[] ComponentIds { get; set; } = System.Array.Empty<string>();
 
-    /// <summary>工具等级上限，默认 L0</summary>
-    public int MaxLevel { get; set; } = 0;
-
     /// <summary>自动 Full 占用归属频道（端口配置中的第一个 channelId）</summary>
     public bool AutoClaimChannel { get; set; } = false;
 

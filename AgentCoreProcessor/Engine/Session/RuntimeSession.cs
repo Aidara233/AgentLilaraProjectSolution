@@ -25,7 +25,6 @@ namespace AgentCoreProcessor.Engine.Session;
 internal class RuntimeSession : IRuntimeSession
 {
     public string SessionId { get; } = Guid.NewGuid().ToString("N")[..12];
-    public int MaxLevel { get; private set; }
     public SessionStatus Status { get; private set; } = SessionStatus.Creating;
     public bool IsAlive => Status is SessionStatus.Running or SessionStatus.Creating or SessionStatus.Restored;
     public DateTime? WaitUntil { get; private set; }
@@ -65,7 +64,6 @@ internal class RuntimeSession : IRuntimeSession
 
     public RuntimeSession(CreateSessionSpec spec)
     {
-        MaxLevel = spec.MaxLevel;
         ParentSessionId = spec.ParentSessionId;
         if (spec.OverrideLimits != null) Limits = spec.OverrideLimits;
         _componentIds.AddRange(spec.ComponentIds);
@@ -136,10 +134,6 @@ internal class RuntimeSession : IRuntimeSession
         _componentIds.Remove(componentId);
         RefreshToolList();
     }
-
-    // ── 等级 ──
-
-    public void SetLevel(int newLevel) => MaxLevel = newLevel;
 
     public bool CheckLifetimeLimits()
     {
@@ -265,9 +259,9 @@ internal class RuntimeSession : IRuntimeSession
                 if (_agentCore == null) break;
 
                 _agentCore.EngineType = "channel"; // 复用 channel 工具白名单
-                _agentCore.CurrentModeId = MaxLevel > 0 ? "build" : "plan";
+                _agentCore.CurrentModeId = null;   // 不分子模式，工具范围由组件决定（不过 ModeConfig 白名单）
                 _agentCore.AdditionalTools = _tools.Values.ToList();
-                Console.Error.WriteLine($"[Session {SessionId}] Tools: {string.Join(", ", _tools.Keys)} (EngineType={_agentCore.EngineType}, Mode={_agentCore.CurrentModeId})");
+                Console.Error.WriteLine($"[Session {SessionId}] Tools: {string.Join(", ", _tools.Keys)} (EngineType={_agentCore.EngineType})");
 
                 agentRound++;
                 if (agentRound > MaxAgentRounds)
@@ -330,10 +324,6 @@ internal class RuntimeSession : IRuntimeSession
                                 if (call.Inputs.Count > 1 && int.TryParse(call.Inputs[1], out var parsed))
                                     mins = parsed;
                                 SetWaitUntil(DateTime.UtcNow.AddMinutes(mins));
-                                stopRequested = true;
-                                break;
-                            case "switch_mode":
-                                // 子模式切换：批次1仅停止突发避免静默无限循环；真正的模式切换待批次2循环重构
                                 stopRequested = true;
                                 break;
                         }
@@ -483,7 +473,6 @@ internal class RuntimeSession : IRuntimeSession
         var meta = new
         {
             status = Status.ToString(),
-            maxLevel = MaxLevel,
             createdAt = _createdAt,
             roundCount = _roundCount,
             componentIds = _componentIds
@@ -501,10 +490,9 @@ internal class RuntimeSession : IRuntimeSession
             try
             {
                 var json = File.ReadAllText(metaPath);
-                var meta = JsonConvert.DeserializeAnonymousType(json, new { status = "", maxLevel = 0, roundCount = 0 });
+                var meta = JsonConvert.DeserializeAnonymousType(json, new { status = "", roundCount = 0 });
                 if (meta != null)
                 {
-                    MaxLevel = meta.maxLevel;
                     _roundCount = meta.roundCount;
                     Status = meta.status switch
                     {

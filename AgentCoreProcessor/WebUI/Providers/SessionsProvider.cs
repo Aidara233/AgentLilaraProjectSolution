@@ -54,7 +54,6 @@ internal class SessionsProvider : IWebUIProvider
                         new() { Field = "sessionId", Header = "会话ID", Width = "140px" },
                         new() { Field = "status", Header = "状态", Width = "100px", Format = ColumnFormat.Badge },
                         new() { Field = "components", Header = "组件" },
-                        new() { Field = "level", Header = "等级", Width = "60px" },
                         new() { Field = "parent", Header = "父会话", Width = "140px" },
                         new() { Field = "rounds", Header = "轮次", Width = "60px" }
                     },
@@ -192,7 +191,6 @@ internal class SessionsActiveSource : IDataSource
                 ["sessionId"] = s.SessionId,
                 ["status"] = s.Status.ToString(),
                 ["components"] = components,
-                ["level"] = s.MaxLevel.ToString(),
                 ["parent"] = s.ParentSessionId ?? "—",
                 ["rounds"] = SessionsProvider.GetRoundCount(s).ToString(),
                 ["_link"] = $"/p/sessions/{s.SessionId}"
@@ -206,7 +204,6 @@ internal class SessionsActiveSource : IDataSource
                 ["sessionId"] = "（无活跃会话）",
                 ["status"] = "—",
                 ["components"] = "—",
-                ["level"] = "—",
                 ["parent"] = "—",
                 ["rounds"] = "—"
             });

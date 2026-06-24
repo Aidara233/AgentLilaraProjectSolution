@@ -13,7 +13,6 @@ public interface IRuntimeSession
 {
     // 标识
     string SessionId { get; }
-    int MaxLevel { get; }
     SessionStatus Status { get; }
     bool IsAlive { get; }
 
@@ -40,7 +39,4 @@ public interface IRuntimeSession
     // 组件管理
     void EnableComponent(string componentId);
     void DisableComponent(string componentId);
-
-    // 等级
-    void SetLevel(int newLevel);
 }
