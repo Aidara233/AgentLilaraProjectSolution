@@ -41,11 +41,6 @@ internal class AdapterEngine : ISubEngine
             .FirstOrDefault();
     }
 
-    public async Task OnAdapterMessage(EngineIncomingMessage msg, MessageEngine messageEngine)
-    {
-        await messageEngine.AcceptIncoming(msg);
-    }
-
     public async Task SendOutgoing(EngineOutgoingMessage engineMsg)
     {
         var handle = GetActiveAdapter(engineMsg.ChannelId);

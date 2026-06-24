@@ -115,22 +115,6 @@ internal partial class ChannelContextService
         return m.MentionedPlatformIds.Split(',').Any(id => id == botId);
     }
 
-    /// <summary>为 Working XML &lt;message&gt; 构建额外属性（id / reply / mentioned / mentioned_users）。</summary>
-    public string FormatMessageAttrs(UserMessage m)
-    {
-        var parts = new List<string>();
-        if (!string.IsNullOrEmpty(m.PlatformMessageId))
-            parts.Add($"id=\"{EscapeXml(m.PlatformMessageId)}\"");
-        parts.Add($"db_id=\"{m.Id}\"");
-        if (!string.IsNullOrEmpty(m.ReplyToPlatformMessageId))
-            parts.Add($"reply=\"{EscapeXml(m.ReplyToPlatformMessageId)}\"");
-        if (IsBotMentionedInMessage(m))
-            parts.Add("mentioned=\"true\"");
-        if (!string.IsNullOrEmpty(m.MentionedPlatformIds))
-            parts.Add($"mentioned_users=\"{EscapeXml(m.MentionedPlatformIds)}\"");
-        return parts.Count > 0 ? " " + string.Join(" ", parts) : "";
-    }
-
     // ═══════════════════════════════════════════════════════════
     // OCR 辅助（静态，仅依赖 ImageStorage + VisionEngineConfig）
     // ═══════════════════════════════════════════════════════════

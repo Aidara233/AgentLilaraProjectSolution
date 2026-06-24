@@ -76,7 +76,6 @@ namespace AgentCoreProcessor.Engine
 
         // ── 统一循环（Phase 1）──
         private Gate gate = null!;
-        private Agent? agent;
         private AgentConfig agentConfig = null!;
         private ChannelContextPersistence? persistence;
 
@@ -528,7 +527,6 @@ namespace AgentCoreProcessor.Engine
                     processedMessageCount += tickMsgs.Count;
 
                     // 重置状态
-                    agent = null;
                     fixedPrefix = null;
                 }
 
@@ -696,65 +694,6 @@ namespace AgentCoreProcessor.Engine
 
         /// <summary>强制唤醒（跳过 ShouldActivate）。</summary>
         public void ForceWake() => gate.Signal();
-
-        /// <summary>强制触发上下文压缩（已移除，Working 模式不再可用）。</summary>
-        public void ForceCompress()
-        {
-            // Working mode removed — no-op
-        }
-
-        /// <summary>获取上下文快照（供 WebUI 详情页）。</summary>
-        internal WebUI.Services.EngineContextSnapshot? GetContextSnapshot()
-        {
-            if (agent == null) return null;
-            var history = agent.History;
-            var messages = new List<WebUI.Services.ContextMessageSnapshot>();
-            int totalChars = 0;
-            foreach (var m in history)
-            {
-                var est = EstimateCharsLocal(m);
-                totalChars += est;
-                var snap = new WebUI.Services.ContextMessageSnapshot
-                {
-                    Role = m.Role,
-                    Content = m.Content,
-                    EstimatedTokens = est / 3
-                };
-                if (m.ContentParts != null)
-                {
-                    snap.Parts = m.ContentParts.Select(p => new WebUI.Services.ContextPartSnapshot
-                    {
-                        Type = p.Type ?? "text",
-                        Text = p.Text?.Truncate(500),
-                        ToolName = p.ToolName,
-                        ToolInput = p.ToolInput?.Truncate(200),
-                        IsError = p.IsError
-                    }).ToList();
-                }
-                messages.Add(snap);
-            }
-            return new WebUI.Services.EngineContextSnapshot
-            {
-                EstimatedTokens = totalChars / 3,
-                MessageCount = history.Count,
-                ConversationOffset = agent.ConversationOffset,
-                CompressionTier = CompressionTier.None,
-                IsCompressing = false,
-                Summary = contextSummary,
-                TotalRounds = agent.TotalRounds,
-                IsInBackoff = agent.IsInBackoff,
-                Messages = messages
-            };
-        }
-
-        private static int EstimateCharsLocal(Message m)
-        {
-            if (m.Content != null) return m.Content.Length;
-            if (m.ContentParts != null)
-                return m.ContentParts.Sum(p =>
-                    (p.Text?.Length ?? 0) + (p.ToolInput?.Length ?? 0) + (p.ToolName?.Length ?? 0));
-            return 0;
-        }
 
         // ---- 记忆 ----
 

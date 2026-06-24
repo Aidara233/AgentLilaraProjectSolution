@@ -238,7 +238,7 @@ namespace AgentCoreProcessor.Engine
             var roundCtx = new InjectContext
             {
                 Mode = "express",
-                CurrentRound = agent?.TotalRounds ?? 1,
+                CurrentRound = loopControlModule.TotalRounds,
                 MaxRounds = agentConfig.MaxRounds,
                 EstimatedTokens = 0
             };

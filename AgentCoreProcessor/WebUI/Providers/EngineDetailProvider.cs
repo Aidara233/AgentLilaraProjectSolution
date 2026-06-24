@@ -76,15 +76,13 @@ internal class EngineDetailProvider : IWebUIProvider
             Cards = new List<CardDefinition>
             {
                 StatusCard("engine-status", "引擎状态", "engine-detail-status"),
-                ContextCard("engine-context", "上下文", "engine-detail-context"),
                 ActionCard("engine-actions", "操作", "engine-detail-actions")
             },
             DataSources = new List<DataSourceDefinition>
             {
                 new() { Id = "engine-detail-status", Source = new ChannelEngineStatusSource(ch) },
-                new() { Id = "engine-detail-context", Source = new EngineContextSource(() => ch.GetContextSnapshot()) },
                 new() { Id = "engine-detail-actions", Source = new EngineActionSource(
-                    () => ch.ForceWake(), () => ch.ForceCompress()) }
+                    () => ch.ForceWake()) }
             }
         };
     }
@@ -183,8 +181,7 @@ internal class EngineDetailProvider : IWebUIProvider
             Fields = new() { new() { Field = "info", Label = "可用操作" } },
             Actions = new()
             {
-                new() { Id = "force-wake", Label = "强制唤醒", Confirm = "确认强制唤醒引擎？" },
-                new() { Id = "force-compress", Label = "强制压缩", Confirm = "确认强制压缩上下文？" }
+                new() { Id = "force-wake", Label = "强制唤醒", Confirm = "确认强制唤醒引擎？" }
             }
         },
         Layout = new CardLayout { PreferredCols = 12 }
@@ -202,14 +199,13 @@ internal class ChannelEngineStatusSource : IDataSource
     public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
         var snap = _ch.GetSnapshot();
-        var ctx = _ch.GetContextSnapshot();
         var data = new JsonObject
         {
             ["state"] = snap.IsBusy ? "处理中" : "等待",
             ["rounds"] = $"{snap.TotalRounds} (静默 {snap.SilentRounds})",
-            ["tokens"] = ctx != null ? $"{ctx.EstimatedTokens / 1000}k ({ctx.MessageCount} 条)" : "—",
-            ["compression"] = ctx?.CompressionTier.ToString() ?? "None",
-            ["backoff"] = ctx?.IsInBackoff == true ? "退避中" : (snap.ConsecutiveFailures > 0 ? $"失败{snap.ConsecutiveFailures}次" : "正常"),
+            ["tokens"] = "—",
+            ["compression"] = "—",
+            ["backoff"] = snap.ConsecutiveFailures > 0 ? $"失败{snap.ConsecutiveFailures}次" : "正常",
             ["extra"] = $"Express | 冲动 {snap.Impulse:F1}/{snap.Threshold:F1} | 工具 {snap.AuthorizedToolCount} | 参与者 {snap.ParticipantCount}"
         };
         return Task.FromResult(new DataResult { Data = data });
@@ -366,15 +362,14 @@ internal class EngineContextSource : IDataSource
 internal class EngineActionSource : IDataSource
 {
     private readonly Action _forceWake;
-    private readonly Action _forceCompress;
-    public EngineActionSource(Action forceWake, Action forceCompress)
-    { _forceWake = forceWake; _forceCompress = forceCompress; }
+    public EngineActionSource(Action forceWake)
+    { _forceWake = forceWake; }
     public bool SupportsPush => false;
     public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
 
     public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
-        var data = new JsonObject { ["info"] = "强制唤醒 / 强制压缩" };
+        var data = new JsonObject { ["info"] = "强制唤醒" };
         return Task.FromResult(new DataResult { Data = data });
     }
 
@@ -385,9 +380,6 @@ internal class EngineActionSource : IDataSource
             case "force-wake":
                 _forceWake();
                 return Task.FromResult(new ActionResult { Success = true, Message = "已发送唤醒信号" });
-            case "force-compress":
-                _forceCompress();
-                return Task.FromResult(new ActionResult { Success = true, Message = "已触发压缩" });
             default:
                 return Task.FromResult(new ActionResult { Success = false, Message = $"未知操作: {action}" });
         }
