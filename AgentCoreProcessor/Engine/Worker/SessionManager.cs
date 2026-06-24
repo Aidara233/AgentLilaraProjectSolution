@@ -135,7 +135,8 @@ namespace AgentCoreProcessor.Engine
                 User = user,
                 Person = person,
                 Channel = channel,
-                RecentMessages = recent
+                RecentMessages = recent,
+                IncomingMessage = userMessage
             };
         }
 

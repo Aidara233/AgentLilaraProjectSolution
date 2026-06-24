@@ -69,6 +69,15 @@ internal class MessageEngine : ISubEngine
         _extractionEngine?.OnMessage(msg.ChannelId);
     }
 
+    /// <summary>
+    /// 投递已入库的消息到被占用频道的 session 端口（入向接通）。
+    /// 由 RouteMessageAsync 在频道被 session full-claim 时调用：消息已经过 SessionManager
+    /// 完整入库+身份映射，这里只负责分发到端口，不重复入库/去重。subStream 固定 "normal"
+    /// （escalate session 端口订阅的子流，见 ChannelExpressCycle PortSpec）。
+    /// </summary>
+    public void DeliverToSession(int channelId, UserMessage msg)
+        => Distribute(channelId, "normal", msg);
+
     /// <summary>出向入口：Session 工具调用后写入</summary>
     public async Task SendOutgoing(EngineOutgoingMessage msg)
     {

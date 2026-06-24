@@ -19,5 +19,8 @@ namespace AgentCoreProcessor.Engine
 
         /// <summary>频道的最近历史消息（按时间升序）</summary>
         public List<UserMessage> RecentMessages { get; set; } = new();
+
+        /// <summary>本次入库的消息实体（含 DB Id），供入向接通投递到 session 端口。</summary>
+        public UserMessage? IncomingMessage { get; set; }
     }
 }

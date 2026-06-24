@@ -78,6 +78,25 @@ namespace AgentCoreProcessor.Engine
                 await ctx.Session.UpdatePersonAsync(sessionContext.Person);
             }
 
+            // 入向接通：频道被 session full-claim → 改投 session 端口，不碰 ChannelEngine。
+            // 消息已由 OnMessageAsync 完整入库+身份映射，这里只分发已入库的 UserMessage。
+            var sessionEngine = ctx.GetActiveEnginesSnapshot()
+                .OfType<Session.SessionEngine>().FirstOrDefault();
+            if (sessionEngine != null && sessionContext.IncomingMessage != null)
+            {
+                var claimerId = sessionEngine.GetFullClaimer(channelId);
+                if (claimerId != null && sessionEngine.GetSession(claimerId)?.IsAlive == true)
+                {
+                    var messageEngine = ctx.GetActiveEnginesSnapshot()
+                        .OfType<Messaging.MessageEngine>().FirstOrDefault();
+                    if (messageEngine != null)
+                    {
+                        messageEngine.DeliverToSession(channelId, sessionContext.IncomingMessage);
+                        return;
+                    }
+                }
+            }
+
             ISubEngine? newEngine = null;
 
             lock (_spawnLock)

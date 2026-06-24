@@ -394,7 +394,12 @@ internal class RuntimeSession : IRuntimeSession
             while (port.TryPeek(out var data))
             {
                 port.ReceiveAsync(ct).GetAwaiter().GetResult();
-                if (data is EngineIncomingMessage em)
+                if (data is UserMessage existing)
+                {
+                    // 入向接通投递的已入库消息：身份完整（SenderName/PlatformMessageId/Id），直接消费。
+                    result.Add((existing.ChannelId, existing));
+                }
+                else if (data is EngineIncomingMessage em)
                 {
                     // 最小化 EngineIncomingMessage → UserMessage 转换
                     // SenderName 暂缺（EngineIncomingMessage 只有 SenderUserId，无 SenderName）
