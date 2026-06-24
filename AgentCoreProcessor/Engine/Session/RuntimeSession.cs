@@ -211,6 +211,9 @@ internal class RuntimeSession : IRuntimeSession
                     TouchActivity();
                     SetWaitUntil(null);
 
+                    // 新突发开始：重置突发内轮次计数（MaxAgentRounds 防单突发 runaway，非会话总轮次）
+                    agentRound = 0;
+
                     // 轮次定价
                     _roundCount++;
                     ApplyRoundPricing();
@@ -300,8 +303,11 @@ internal class RuntimeSession : IRuntimeSession
                     messages.Add(NativeToolMessageFormatter.FormatToolResults(
                         output.ToolCalls, results, _agentCore.UseNativeTools));
 
-                    // 副作用 + 停止判定（镜像 Agent.cs 的停循环语义）
-                    var stopRequested = false;
+                    // 副作用 + 停止判定（突发结束 ≠ 会话结束）
+                    // endBurst：本次突发收尾，清消息回 WaitForActivationAsync，session 保活握 claim
+                    // endSession：会话真正终结，break 走 finally 释放 claim
+                    var endBurst = false;
+                    var endSession = false;
                     for (int i = 0; i < output.ToolCalls.Count; i++)
                     {
                         var call = output.ToolCalls[i];
@@ -311,31 +317,37 @@ internal class RuntimeSession : IRuntimeSession
                         {
                             // speak/send_media 等 OutputOnly 工具自带发送，不在此重发（旧代码 SendOutput(result.Data) 会把消息ID当正文重发）
                             case "deescalate":
-                                // deescalate 自身不发消息，这里把理由作为收尾发言发出
+                                // deescalate 自身不发消息，这里把理由作为收尾发言发出；会话终结
                                 await SendOutput(result.Data ?? "工作完成，切回轻量模式。");
-                                stopRequested = true;
+                                endSession = true;
                                 break;
                             case "wait":
+                                // 挂起本突发，等下条消息或超时唤醒，session 保活
                                 // 分钟数来自第二个参数 timeout_minutes（Inputs[1]），Inputs[0] 是 reason
                                 var mins = 5;
                                 if (call.Inputs.Count > 1 && int.TryParse(call.Inputs[1], out var parsed))
                                     mins = parsed;
                                 SetWaitUntil(DateTime.UtcNow.AddMinutes(mins));
-                                stopRequested = true;
+                                endBurst = true;
                                 break;
                         }
                     }
 
-                    // 内联 wait（speak 含 [wait] 占位符时 result.RequestWait=true）
+                    // 内联 wait（speak 含 [wait] 占位符时 result.RequestWait=true）：挂起本突发
                     if (results.Any(r => r.RequestWait))
-                        stopRequested = true;
+                        endBurst = true;
 
-                    if (stopRequested)
+                    if (endSession)
                         break;
+                    if (endBurst)
+                    {
+                        messages.Clear();
+                        continue;
+                    }
                 }
                 else
                 {
-                    // 无工具调用：模型给了最终回复，结束突发，等待下一轮输入
+                    // 无工具调用：模型给了最终回复，结束突发，等待下一轮输入（session 保活）
                     messages.Clear();
                 }
             }
