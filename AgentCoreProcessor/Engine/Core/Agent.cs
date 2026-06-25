@@ -246,13 +246,6 @@ namespace AgentCoreProcessor.Engine
                     StopReason = AgentStopReason.WaitRequested;
                     return;
                 }
-
-                // deescalate 工具 → 降级到 Express
-                if (output.ToolCalls.Any(c => c.Tool == "deescalate"))
-                {
-                    StopReason = AgentStopReason.Deescalated;
-                    return;
-                }
             }
 
             StopReason = AgentStopReason.MaxRounds;
@@ -275,7 +268,6 @@ namespace AgentCoreProcessor.Engine
         Completed,
         MaxRounds,
         WaitRequested,
-        Deescalated,
         ForceStopped,
         Cancelled,
         Error

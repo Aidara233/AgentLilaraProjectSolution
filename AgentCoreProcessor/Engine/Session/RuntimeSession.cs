@@ -95,7 +95,7 @@ internal class RuntimeSession : IRuntimeSession
 
     /// <summary>
     /// session 工具表排除的独立工具：escalate（升级到工作模式）对已在工作模式的 session 无意义。
-    /// deescalate 保留——它是 session 退回轻量模式（endSession）的触发器，见 RunAsync 工具副作用。
+    /// 收尾由 end_session 负责（见 RunAsync 工具副作用），它对频道/任务 session 都适用。
     /// </summary>
     private static readonly HashSet<string> _sessionExcludedTools =
         new(StringComparer.OrdinalIgnoreCase) { "escalate" };
@@ -182,7 +182,7 @@ internal class RuntimeSession : IRuntimeSession
                 Console.Error.WriteLine($"[Session {SessionId}] BuildStartAsync: {messages.Count} messages from AgentHost");
 
                 // 游标接力首轮播种：BuildStartAsync 取的历史快照最大 id 写回持久化游标。
-                // 否则 session 若无新消息直接 deescalate，ChannelEngine 恢复时会把这批历史当新消息重读。
+                // 否则 session 若无新消息直接 end_session，ChannelEngine 恢复时会把这批历史当新消息重读。
                 foreach (var (_, port) in _inputs)
                 {
                     if (port is MessageInputPort mp && mp.ChannelId > 0)
@@ -339,9 +339,9 @@ internal class RuntimeSession : IRuntimeSession
                         switch (call.Tool)
                         {
                             // speak/send_media 等 OutputOnly 工具自带发送，不在此重发（旧代码 SendOutput(result.Data) 会把消息ID当正文重发）
-                            case "deescalate":
-                                // deescalate 自身不发消息，这里把理由作为收尾发言发出；会话终结
-                                await SendOutput(result.Data ?? "工作完成，切回轻量模式。");
+                            case "end_session":
+                                // end_session 自身不发消息，这里把理由作为收尾发言发出；会话终结
+                                await SendOutput(result.Data ?? "工作完成。");
                                 endSession = true;
                                 break;
                             case "wait":

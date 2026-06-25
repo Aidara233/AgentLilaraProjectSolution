@@ -181,7 +181,7 @@ namespace AgentCoreProcessor.Engine
                                 {
                                     ["channel"] = new PortSpec { ChannelId = channelId, SubStream = "normal", Weight = 100 }
                                 },
-                                InitialState = $"用户请求切换到工作模式，原因：{reason}",
+                                InitialState = $"用户请求切换到工作模式，原因：{reason}\n（完成后调用 end_session 结束工作会话，会退回轻量对话模式继续陪伴。）",
                                 OverrideLimits = new SessionLimits { MaxLifetime = TimeSpan.FromHours(2), IdleTimeout = TimeSpan.FromMinutes(30) }
                             });
                             Console.Error.WriteLine($"[Express ch:{channelId}] Working session 已创建，频道已占用");

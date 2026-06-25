@@ -627,7 +627,7 @@ namespace AgentCoreProcessor.Engine
             Tool.ToolRegistry.Register(new Tool.Core.WaitTool(), isNonComponent: true);
 
             Tool.ToolRegistry.Register(new Tool.Core.EscalateTool(), isNonComponent: true);
-            Tool.ToolRegistry.Register(new Tool.Core.DeescalateTool(), isNonComponent: true);
+            Tool.ToolRegistry.Register(new Tool.Core.EndSessionTool(), isNonComponent: true);
             Tool.ToolRegistry.Register(new Tool.Core.RefineImageTool(), isNonComponent: true);
             Tool.ToolRegistry.Register(new Tool.Core.GetImageTextTool(), isNonComponent: true);
 
