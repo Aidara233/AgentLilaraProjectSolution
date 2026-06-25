@@ -298,7 +298,7 @@ internal class RuntimeSession : IRuntimeSession
                 // ── Agent 推理 ──
                 if (_agentCore == null) break;
 
-                _agentCore.EngineType = _componentLoopType; // 按实际 loopType 过滤工具白名单
+                _agentCore.EngineType = "channel"; // 复用 channel 工具白名单（所有 session 统一用 channel 过滤）
                 _agentCore.CurrentModeId = null;   // 不分子模式，工具范围由组件决定（不过 ModeConfig 白名单）
                 _agentCore.AdditionalTools = _tools.Values.ToList();
 
