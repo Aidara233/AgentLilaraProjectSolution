@@ -85,15 +85,19 @@ namespace AgentCoreProcessor.Engine
             if (sessionEngine != null && sessionContext.IncomingMessage != null)
             {
                 var claimerId = sessionEngine.GetFullClaimer(channelId);
-                if (claimerId != null && sessionEngine.GetSession(claimerId)?.IsAlive == true)
+                var claimerAlive = claimerId != null && sessionEngine.GetSession(claimerId)?.IsAlive == true;
+                System.Console.Error.WriteLine($"[Inbound ch:{channelId}] msg#{sessionContext.IncomingMessage.Id} claimer={claimerId ?? "<none>"} alive={claimerAlive}");
+                if (claimerId != null && claimerAlive)
                 {
                     var messageEngine = ctx.GetActiveEnginesSnapshot()
                         .OfType<Messaging.MessageEngine>().FirstOrDefault();
                     if (messageEngine != null)
                     {
                         messageEngine.DeliverToSession(channelId, sessionContext.IncomingMessage);
+                        System.Console.Error.WriteLine($"[Inbound ch:{channelId}] 已投递 msg#{sessionContext.IncomingMessage.Id} 到 session {claimerId} 端口，不走 ChannelEngine");
                         return;
                     }
+                    System.Console.Error.WriteLine($"[Inbound ch:{channelId}] claimer 命中但 MessageEngine 未找到，回退 ChannelEngine");
                 }
             }
 

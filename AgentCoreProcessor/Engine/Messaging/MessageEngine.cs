@@ -76,7 +76,12 @@ internal class MessageEngine : ISubEngine
     /// （escalate session 端口订阅的子流，见 ChannelExpressCycle PortSpec）。
     /// </summary>
     public void DeliverToSession(int channelId, UserMessage msg)
-        => Distribute(channelId, "normal", msg);
+    {
+        var key = (channelId, "normal");
+        var count = _subscribers.TryGetValue(key, out var ports) ? ports.Count : 0;
+        System.Console.Error.WriteLine($"[MessageEngine] DeliverToSession ch:{channelId} msg#{msg.Id} -> 'normal' 子流订阅者数={count}");
+        Distribute(channelId, "normal", msg);
+    }
 
     /// <summary>出向入口：Session 工具调用后写入</summary>
     public async Task SendOutgoing(EngineOutgoingMessage msg)

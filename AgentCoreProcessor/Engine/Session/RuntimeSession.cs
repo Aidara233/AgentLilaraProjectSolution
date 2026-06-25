@@ -93,6 +93,13 @@ internal class RuntimeSession : IRuntimeSession
         RefreshToolList();
     }
 
+    /// <summary>
+    /// session 工具表排除的独立工具：escalate（升级到工作模式）对已在工作模式的 session 无意义。
+    /// deescalate 保留——它是 session 退回轻量模式（endSession）的触发器，见 RunAsync 工具副作用。
+    /// </summary>
+    private static readonly HashSet<string> _sessionExcludedTools =
+        new(StringComparer.OrdinalIgnoreCase) { "escalate" };
+
     private void RefreshToolList()
     {
         _activeTools.Clear();
@@ -104,9 +111,10 @@ internal class RuntimeSession : IRuntimeSession
             _tools[tool.Name] = tool;
             _activeTools.Add(tool.Name);
         }
-        // 合并 ToolRegistry 独立工具
+        // 合并 ToolRegistry 独立工具（排除 Express↔session 切换工具）
         foreach (var (name, tool) in ToolRegistry.All)
         {
+            if (_sessionExcludedTools.Contains(name)) continue;
             if (!_tools.ContainsKey(name))
             {
                 _tools[name] = tool;
@@ -353,9 +361,13 @@ internal class RuntimeSession : IRuntimeSession
                         endBurst = true;
 
                     if (endSession)
+                    {
+                        Console.Error.WriteLine($"[Session {SessionId}] endSession：退出循环释放 claim");
                         break;
+                    }
                     if (endBurst)
                     {
+                        Console.Error.WriteLine($"[Session {SessionId}] endBurst：清空消息回等待（保活，claim 保留，WaitUntil={WaitUntil:HH:mm:ss})");
                         messages.Clear();
                         continue;
                     }
@@ -363,6 +375,7 @@ internal class RuntimeSession : IRuntimeSession
                 else
                 {
                     // 无工具调用：模型给了最终回复，结束突发，等待下一轮输入（session 保活）
+                    Console.Error.WriteLine($"[Session {SessionId}] 无工具调用，结束突发回等待（保活）");
                     messages.Clear();
                 }
             }
@@ -478,19 +491,25 @@ internal class RuntimeSession : IRuntimeSession
         while (!ct.IsCancellationRequested)
         {
             // 检查是否有输入
-            foreach (var (_, port) in _inputs)
-                if (port.TryPeek(out _)) return true;
+            foreach (var (name, port) in _inputs)
+                if (port.TryPeek(out _))
+                {
+                    Console.Error.WriteLine($"[Session {SessionId}] WaitForActivation 唤醒：端口 {name} 有输入");
+                    return true;
+                }
 
             // 检查 WaitUntil 是否到期
             if (WaitUntil != null && DateTime.UtcNow >= WaitUntil.Value)
             {
                 // 超时激活，注入 timeout 消息
+                Console.Error.WriteLine($"[Session {SessionId}] WaitForActivation 唤醒：WaitUntil 到期");
                 InjectMessage(new { type = "timeout", wait_reason = "wait timeout expired" });
                 return true;
             }
 
             await Task.Delay(200, ct);
         }
+        Console.Error.WriteLine($"[Session {SessionId}] WaitForActivation 退出：ct 取消");
         return false;
     }
 

@@ -98,7 +98,8 @@ internal class SessionEngine : ISubEngine
         if (spec.AutoClaimChannel && spec.InputPorts.Count > 0)
         {
             var firstChannel = spec.InputPorts.First().Value.ChannelId;
-            ClaimChannel(session.SessionId, firstChannel, ClaimLevel.Full);
+            var claimed = ClaimChannel(session.SessionId, firstChannel, ClaimLevel.Full);
+            Console.Error.WriteLine($"[SessionEngine] Session {session.SessionId} AutoClaim channel {firstChannel} => {claimed} (claimer now={GetFullClaimer(firstChannel)})");
         }
 
         // 构建 SessionAgentHost（异步查询 channelName 后注入）
@@ -135,15 +136,17 @@ internal class SessionEngine : ISubEngine
             {
                 using var cts = new CancellationTokenSource();
                 await session.RunAsync(cts.Token);
+                Console.Error.WriteLine($"[SessionEngine] Session {session.SessionId} RunAsync 返回（Status={session.Status}），即将释放 claim");
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[SessionEngine] Session {session.SessionId} crashed: {ex.Message}");
+                Console.Error.WriteLine($"[SessionEngine] Session {session.SessionId} crashed: {ex.Message}\n{ex.StackTrace}");
             }
             finally
             {
                 // Session 结束时释放占用
                 ReleaseSessionClaims(session.SessionId);
+                Console.Error.WriteLine($"[SessionEngine] Session {session.SessionId} claims 已释放");
             }
         });
 
