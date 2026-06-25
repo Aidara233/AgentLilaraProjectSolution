@@ -103,7 +103,7 @@ namespace AgentCoreProcessor.Engine
                         .OfType<Messaging.MessageEngine>().FirstOrDefault();
                     if (messageEngine != null)
                     {
-                        messageEngine.DeliverToSession(channelId, sessionContext.IncomingMessage);
+                        messageEngine.DeliverToSession(channelId, sessionContext.IncomingMessage, msg.IsMentioned);
                         Signal.Event(LogGroup.Engine, "入向已投递到 session 端口",
                             new { channelId, msgId = sessionContext.IncomingMessage.Id, sessionId = claimerId });
                         return;

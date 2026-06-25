@@ -179,7 +179,8 @@ namespace AgentCoreProcessor.Engine
                                 AutoClaimChannel = true,
                                 InputPorts = new Dictionary<string, PortSpec>
                                 {
-                                    ["channel"] = new PortSpec { ChannelId = channelId, SubStream = "normal", Weight = 100 }
+                                    ["channel"] = new PortSpec { ChannelId = channelId, SubStream = "normal", Weight = 5 },
+                                    ["mention"] = new PortSpec { ChannelId = channelId, SubStream = "mention", Weight = 100 }
                                 },
                                 InitialState = $"用户请求切换到工作模式，原因：{reason}\n（说完话用 wait 挂起等待，保持在工作模式陪用户继续；只有确实不再需要工作模式时才用 end_session 退回轻量对话。）",
                                 OverrideLimits = new SessionLimits { MaxLifetime = TimeSpan.FromHours(2), IdleTimeout = TimeSpan.FromMinutes(30) }

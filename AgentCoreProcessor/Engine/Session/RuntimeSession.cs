@@ -497,6 +497,9 @@ internal class RuntimeSession : IRuntimeSession
                     result.Add((0, um));
                 }
             }
+            // 排空后重置 MessageInputPort 队列计数器（新消息会在 Enqueue 时重新累加）
+            if (port is MessageInputPort mp)
+                mp.ResetQueueCount();
         }
         return result;
     }
@@ -520,18 +523,46 @@ internal class RuntimeSession : IRuntimeSession
     {
         while (!ct.IsCancellationRequested)
         {
-            // 检查是否有输入
+            // ① 非消息端口（系统注入/timeout/signal）有数据 → 立即激活
             foreach (var (name, port) in _inputs)
-                if (port.TryPeek(out _))
+            {
+                if (port is not MessageInputPort && port.TryPeek(out _))
                 {
-                    Signal.Debug(LogGroup.Engine, "WaitForActivation 唤醒：端口有输入", new { sessionId = SessionId, port = name });
+                    Signal.Debug(LogGroup.Engine, "WaitForActivation 唤醒：系统端口有输入", new { sessionId = SessionId, port = name });
                     return true;
                 }
+            }
 
-            // 检查 WaitUntil 是否到期
+            // ② @提及端口 (Weight >= 100) 有数据 → 立即激活
+            foreach (var (name, port) in _inputs)
+            {
+                if (port is MessageInputPort mp && mp.Weight >= 100 && mp.TryPeek(out _))
+                {
+                    ResetAllMpQueueCounts();
+                    Signal.Debug(LogGroup.Engine, "WaitForActivation 唤醒：@提及端口有输入",
+                        new { sessionId = SessionId, port = name, weight = mp.Weight });
+                    return true;
+                }
+            }
+
+            // ③ 普通消息端口 (Weight < 100)：累积权重 >= 100 才激活（Weight=5 需 20 条）
+            int totalWeight = 0;
+            foreach (var (name, port) in _inputs)
+            {
+                if (port is MessageInputPort mp && mp.Weight < 100)
+                    totalWeight += mp.QueueCount * mp.Weight;
+            }
+            if (totalWeight >= 100)
+            {
+                ResetAllMpQueueCounts();
+                Signal.Debug(LogGroup.Engine, "WaitForActivation 唤醒：累积权重达标",
+                    new { sessionId = SessionId, totalWeight });
+                return true;
+            }
+
+            // ④ 检查 WaitUntil 是否到期
             if (WaitUntil != null && DateTime.UtcNow >= WaitUntil.Value)
             {
-                // 超时激活，注入 timeout 消息
                 Signal.Debug(LogGroup.Engine, "WaitForActivation 唤醒：WaitUntil 到期", new { sessionId = SessionId });
                 InjectMessage(new { type = "timeout", wait_reason = "wait timeout expired" });
                 return true;
@@ -541,6 +572,15 @@ internal class RuntimeSession : IRuntimeSession
         }
         Signal.Debug(LogGroup.Engine, "WaitForActivation 退出：ct 取消", new { sessionId = SessionId });
         return false;
+    }
+
+    private void ResetAllMpQueueCounts()
+    {
+        foreach (var (_, port) in _inputs)
+        {
+            if (port is MessageInputPort mp)
+                mp.ResetQueueCount();
+        }
     }
 
     private void InjectMessage(object data)
