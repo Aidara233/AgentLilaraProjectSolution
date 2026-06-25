@@ -22,6 +22,15 @@ namespace AgentCoreProcessor.Core
         /// <summary>当前是否使用原生工具调用。</summary>
         internal bool UseNativeTools => processor?.Client?.Config?.UseNativeTools == true;
 
+        /// <summary>当前模型是否禁用图片消息（DeepSeek 等不支持图片的 API）。</summary>
+        internal bool DisableImageMessages => processor?.Client?.Config?.DisableImageMessages == true;
+
+        /// <summary>需要模型"看"图片的工具——当 DisableImageMessages 时过滤掉。</summary>
+        private static readonly HashSet<string> ImageDependentTools = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "read_image", "refine_image"
+        };
+
         /// <summary>额外的工具列表（loop 组件工具），合并到每次 API 请求的 tool_use 定义中。</summary>
         public List<ITool>? AdditionalTools { get; set; }
 
@@ -68,6 +77,9 @@ namespace AgentCoreProcessor.Core
             if (mode == Engine.EngineMode.Express)
             {
                 var expressDefs = ToolRegistry.GetExpressToolDefinitions(EngineType);
+                // 图片工具过滤：DisableImageMessages 时移除需要模型"看"图片的工具
+                if (DisableImageMessages)
+                    expressDefs.RemoveAll(d => ImageDependentTools.Contains(d.Name));
                 // 合并全局组件工具
                 if (GlobalComponentTools != null)
                 {
@@ -75,6 +87,7 @@ namespace AgentCoreProcessor.Core
                     {
                         if (ToolRegistry.IsDisabled(t.Name)) continue;
                         if (!ModeConfigLoader.IsToolEnabled("express", t.Name)) continue;
+                        if (DisableImageMessages && ImageDependentTools.Contains(t.Name)) continue;
                         if (expressDefs.Any(d => d.Name == t.Name)) continue;
                         expressDefs.Add(ToDefinition(t));
                     }
@@ -86,6 +99,7 @@ namespace AgentCoreProcessor.Core
                     {
                         if (ToolRegistry.IsDisabled(t.Name)) continue;
                         if (!ModeConfigLoader.IsToolEnabled("express", t.Name)) continue;
+                        if (DisableImageMessages && ImageDependentTools.Contains(t.Name)) continue;
                         if (expressDefs.Any(d => d.Name == t.Name)) continue;
                         expressDefs.Add(ToDefinition(t));
                     }
@@ -175,7 +189,8 @@ namespace AgentCoreProcessor.Core
                 .Select(ToolRegistry.Get)
                 .Where(t => t != null && !ToolRegistry.IsDisabled(t.Name)
                             && ToolRegistry.IsApplicableToEngine(t.Name, EngineType)
-                            && (CurrentModeId == null || ModeConfigLoader.IsToolEnabled(CurrentModeId, t.Name)))
+                            && (CurrentModeId == null || ModeConfigLoader.IsToolEnabled(CurrentModeId, t.Name))
+                            && !(DisableImageMessages && ImageDependentTools.Contains(t.Name)))
                 .Select(ToDefinition!)
                 .ToList();
 
@@ -184,6 +199,10 @@ namespace AgentCoreProcessor.Core
 
             // 合并 loop 组件工具（已由 ComponentHost 过滤）
             MergeTools(toolDefs, AdditionalTools);
+
+            // 图片工具过滤（组件工具路径）
+            if (DisableImageMessages)
+                toolDefs.RemoveAll(td => ImageDependentTools.Contains(td.Name));
 
             NativeToolCallHandler handler = new(toolDefs);
             var usage = await GenerateWithToolsAsync(toolDefs, handler.OnEvent);

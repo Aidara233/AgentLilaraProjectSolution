@@ -62,7 +62,7 @@ namespace AgentCoreProcessor.Engine
         /// 把工具调用与结果配对为 user 历史消息。
         /// 原生模式输出 tool_result ContentParts（含 tool_use_id + 图片附件），否则降级为文本汇总。
         /// </summary>
-        public static Message FormatToolResults(List<ToolCall> calls, List<ToolResult> results, bool useNativeTools)
+        public static Message FormatToolResults(List<ToolCall> calls, List<ToolResult> results, bool useNativeTools, bool includeImages = true)
         {
             if (useNativeTools)
             {
@@ -78,7 +78,7 @@ namespace AgentCoreProcessor.Engine
 
                         // 图片附件：在 tool_result 后追加 image ContentPart
                         var attachments = results[i].Attachments;
-                        if (results[i].IsSuccess && attachments != null)
+                        if (includeImages && results[i].IsSuccess && attachments != null)
                         {
                             foreach (var att in attachments)
                             {

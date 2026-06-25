@@ -227,7 +227,7 @@ namespace AgentCoreProcessor.Engine
                 LastRoundResults = results;
 
                 // 工具结果加入历史（Claude API 要求 tool_use 后必须跟 tool_result）
-                _history.Add(NativeToolMessageFormatter.FormatToolResults(output.ToolCalls, results, _core.UseNativeTools));
+                _history.Add(NativeToolMessageFormatter.FormatToolResults(output.ToolCalls, results, _core.UseNativeTools, !_core.DisableImageMessages));
 
                 // 每轮持久化
                 if (OnRoundCompleted != null)

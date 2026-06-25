@@ -350,7 +350,7 @@ internal class RuntimeSession : IRuntimeSession
 
                     // tool_result 轮：一条消息按 tool_use_id 配对全部 call→result
                     messages.Add(NativeToolMessageFormatter.FormatToolResults(
-                        output.ToolCalls, results, _agentCore.UseNativeTools));
+                        output.ToolCalls, results, _agentCore.UseNativeTools, !_agentCore.DisableImageMessages));
 
                     // 副作用 + 停止判定（突发结束 ≠ 会话结束）
                     // endBurst：本次突发收尾，清消息回 WaitForActivationAsync，session 保活握 claim
