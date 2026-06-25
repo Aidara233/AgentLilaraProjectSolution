@@ -31,7 +31,7 @@ namespace AgentCoreProcessor.Tool.Core
     internal class WaitTool : ITool
     {
         public string Name => "wait";
-        public string Description => "停止当前工作循环，进入等待状态。工作模式默认每轮自动继续，只在任务完成或需要等待用户回应时调用此工具。";
+        public string Description => "挂起当前循环、等待用户下一句话（会话保持，用户回应即唤醒）。说完话、暂时没事做时的默认收尾。注意：这只是挂起等待，不结束会话；要退出工作模式请用 end_session。";
         public IReadOnlyList<ToolParameter> Parameters =>
         [
             new("reason", "等待原因（简短说明为什么现在停下）", 0),

@@ -12,7 +12,7 @@ namespace AgentCoreProcessor.Tool.Core
     internal class EndSessionTool : ITool
     {
         public string Name => "end_session";
-        public string Description => "结束当前工作会话。任务完成或不再需要继续时调用，释放资源并收尾。";
+        public string Description => "彻底结束当前工作会话、退回轻量对话模式。仅在确实不再需要工作模式时调用（如用户明确表示结束、或一项长任务全部完成且无后续）。日常说完话只想等用户回应，请用 wait 而不是这个——用错会把自己踢出工作模式。";
 
         public IReadOnlyList<ToolParameter> Parameters =>
         [
