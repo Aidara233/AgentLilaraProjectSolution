@@ -258,12 +258,15 @@ SessionEngine (ISubEngine, IsInfrastructure=true):
     Storage/Sessions/{sessionId}/*.json → 扫描 → Running/Crashed → 恢复 → 继续运行
 
 ExtractionEngine (ISubEngine, IsInfrastructure=true):
-  每频道独立计数，新消息累计 10 条 → 一批处理:
-    一次 LLM 调用完成:
-      记忆提取（现有流程）→ 存入记忆库
-      监听检测（蹭 LLM）→ 检查 EavesdropTask → 命中 → CreateSession("eavesdrop")
+  引擎无关，从入向唯一咽喉喂数据（HandleMessageAsync 入库后 OnMessage），
+  覆盖 ChannelEngine 与 session 占用两条路（不再随 Express 循环停摆）:
+    每频道独立计数，累计若干条 → 触发该频道 ChannelExtractionWorker:
+      活跃/潜水阈值靠"最近 5 分钟内有无 bot 出向消息"判定（GetLatestBotMessageTimeAsync）
+      一次 LLM 调用完成记忆提取（现有流程）→ 存入记忆库
+      about 解析失败时归属人 = 该批最后发言的非 bot 用户
+    监听检测（EavesdropTask 关键词粗筛）尚未实现，留壳
 
-  全频道监听（定时扫描，5-30 分钟）:
+  全频道监听（定时扫描，5-30 分钟）— 待实现:
     对每个全频道 EavesdropTask:
       查 DB → 关键词粗筛（滤掉 99%）→ 轻量 LLM 判断
 
