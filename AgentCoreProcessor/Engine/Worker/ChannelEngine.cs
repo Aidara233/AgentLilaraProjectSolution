@@ -102,13 +102,9 @@ namespace AgentCoreProcessor.Engine
         // 记忆提取计数（用于退出时判断是否需要收尾提取）
         private int processedMessageCount = 0;
         private int unrespondedMessageCount = 0;
-        private SessionContext? lastContext;
 
         // Express 对话历史：从数据库拉取最近 N 条消息
         private const int HistoryMaxMessages = 20;
-
-        // 记忆提取 Worker（独立信号 + 独立文件）
-        private ChannelExtractionWorker extractionWorker = null!;
 
         // TrustProgress 每日自动增长跟踪
         private readonly Dictionary<int, (DateTime Date, float Accumulated)> dailyProgressTracker = new();
@@ -145,7 +141,6 @@ namespace AgentCoreProcessor.Engine
 
         // 信号追踪：最近入队消息携带的上游信号
         private string? _traceParentSpanId;
-        private string? _sessionRootSpanId; // session root span（提取 cause 指向此处，避免指向内部子 span）
 
         // Phase 6: 关注规则
         private readonly object watchRulesLock = new();
@@ -198,11 +193,6 @@ namespace AgentCoreProcessor.Engine
             gate = new Gate(ctx.EventBus);
             gate.EventFilter = _ => false;
 
-            extractionWorker = new ChannelExtractionWorker(
-                ctx, channelId, channelConfig,
-                () => _ctxService.GetParticipantsAsync(channelId),
-                () => LastCompletionTime);
-
             CollectImagePaths(initialMessage);
             impulseTracker.Accumulate(initialMessage, _lastKnownParticipantCount, initialMessage.IsSystemEvent);
             _lastSessionContext = initialContext;
@@ -249,11 +239,6 @@ namespace AgentCoreProcessor.Engine
 
             gate = new Gate(ctx.EventBus);
             gate.EventFilter = _ => false;
-
-            extractionWorker = new ChannelExtractionWorker(
-                ctx, channelId, channelConfig,
-                () => _ctxService.GetParticipantsAsync(channelId),
-                () => LastCompletionTime);
 
             InitModules();
         }
@@ -440,8 +425,6 @@ namespace AgentCoreProcessor.Engine
 
                 if (!triggered)
                 {
-                    if (processedMessageCount > 0 && lastContext != null)
-                        extractionWorker.Trigger(lastContext, null);
                     IsAlive = false;
                     break;
                 }
@@ -542,7 +525,6 @@ namespace AgentCoreProcessor.Engine
                     else
                         sessionCtx = Signal.Begin(LogGroup.Engine, $"channel:{channelId}", "频道会话",
                             new { channelId, mode = "express" });
-                    _sessionRootSpanId = sessionCtx?.CurrentSpanId;
                 }
 
                 // ④ 执行
@@ -627,7 +609,7 @@ namespace AgentCoreProcessor.Engine
                     var json = Newtonsoft.Json.Linq.JObject.Parse(sig.Payload?.ToString() ?? "{}");
                     var chId = (int?)json["channelId"];
                     var message = (string?)json["message"];
-                    if (chId == channelId && !string.IsNullOrEmpty(message) && lastContext != null)
+                    if (chId == channelId && !string.IsNullOrEmpty(message) && _lastSessionContext != null)
                     {
                         var sysMsg = new IncomingMessage
                         {
@@ -638,7 +620,7 @@ namespace AgentCoreProcessor.Engine
                             IsSystemEvent = true,
                             Time = DateTime.Now
                         };
-                        EnqueueMessage(sysMsg, lastContext);
+                        EnqueueMessage(sysMsg, _lastSessionContext);
                     }
                 }
                 catch (Exception ex)
@@ -674,11 +656,6 @@ namespace AgentCoreProcessor.Engine
             Importance = channelConfig.Importance,
             ActiveExtractionThreshold = channelConfig.ActiveExtractionThreshold,
             LurkingExtractionThreshold = channelConfig.LurkingExtractionThreshold,
-            LastExtractedMessageId = extractionWorker.LastExtractedMessageId,
-            LatestMessageId = extractionWorker.LatestMessageId,
-            TotalMessageCount = extractionWorker.TotalMessageCount,
-            ExtractedMessageCount = extractionWorker.ExtractedMessageCount,
-            ExtractionRunning = extractionWorker.IsRunning,
             AutoExtractionEnabled = channelConfig.AutoExtractionEnabled,
             UnrespondedMessageCount = unrespondedMessageCount,
             LastCompletionTime = LastCompletionTime,
@@ -752,35 +729,6 @@ namespace AgentCoreProcessor.Engine
                 return null;
             }
         }
-
-        private void TrackMemoryExtraction(SessionContext sc)
-        {
-            this.lastContext = sc;
-            extractionWorker.Trigger(sc, _sessionRootSpanId);
-        }
-
-        public void TriggerLurkingExtraction()
-        {
-            if (lastContext == null) return;
-            extractionWorker.Trigger(lastContext, null);
-        }
-
-        public void ForceExtraction()
-        {
-            if (lastContext == null) return;
-            extractionWorker.ForceTrigger(lastContext, null);
-        }
-
-        public void SetAutoExtraction(bool enabled)
-        {
-            extractionWorker.SetAutoExtraction(enabled);
-        }
-
-        public void CancelExtraction()
-        {
-            extractionWorker.Cancel();
-        }
-
 
         private async Task IncrementDailyProgressAsync(Person person)
         {

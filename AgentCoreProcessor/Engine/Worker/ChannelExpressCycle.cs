@@ -228,7 +228,6 @@ namespace AgentCoreProcessor.Engine
             impulseTracker.ApplyPostResponseUpdate();
             if (_lastSessionContext != null)
             {
-                TrackMemoryExtraction(_lastSessionContext);
                 await IncrementDailyProgressAsync(_lastSessionContext.Person);
             }
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -214,23 +215,26 @@ internal class ChannelInfoSource : IDataSource
         var hasEngine = channelCheck?.GetActiveChannels().TryGetValue(_channelId, out eng) == true && eng!.IsAlive;
 
         string engineStatus;
-        bool extractionRunning = false;
-        int extractedCount = 0;
         if (hasEngine)
         {
             var snap = eng!.GetSnapshot();
             engineStatus = snap.IsBusy ? "Express" : "Express（空闲）";
-            extractionRunning = snap.ExtractionRunning;
-            extractedCount = snap.ExtractedMessageCount;
         }
         else
         {
             engineStatus = "未启动";
         }
 
+        // 提取状态改读 ExtractionEngine（提取已与 ChannelEngine 解耦，独立运行）
+        var extractionEngine = _engine.GetActiveEnginesSnapshot()
+            .OfType<AgentCoreProcessor.Engine.Extraction.ExtractionEngine>().FirstOrDefault();
+        var extractionStatus = extractionEngine?.GetExtractionStatus(_channelId);
+        bool extractionRunning = extractionStatus?.running ?? false;
+        int extractedCount = extractionStatus?.extractedCount ?? 0;
+
         var disabledActions = new JsonArray();
         if (!hasEngine) disabledActions.Add("view-engine");
-        if (!hasEngine || extractionRunning) disabledActions.Add("force-extraction");
+        if (extractionEngine == null || extractionRunning) disabledActions.Add("force-extraction");
 
         var data = new JsonObject
         {
@@ -263,11 +267,13 @@ internal class ChannelInfoSource : IDataSource
         }
         if (action == "force-extraction")
         {
-            if (!hasEngine)
-                return Task.FromResult(new ActionResult { Success = false, Message = "引擎未启动" });
-            if (eng!.GetSnapshot().ExtractionRunning)
+            var extractionEngine = _engine.GetActiveEnginesSnapshot()
+                .OfType<AgentCoreProcessor.Engine.Extraction.ExtractionEngine>().FirstOrDefault();
+            if (extractionEngine == null)
+                return Task.FromResult(new ActionResult { Success = false, Message = "提取引擎未启动" });
+            if (extractionEngine.GetExtractionStatus(_channelId).running)
                 return Task.FromResult(new ActionResult { Success = false, Message = "提取正在进行中" });
-            eng.ForceExtraction();
+            extractionEngine.ForceExtraction(_channelId);
             return Task.FromResult(new ActionResult { Success = true, Message = "已触发强制提取" });
         }
         return Task.FromResult(new ActionResult { Success = true });

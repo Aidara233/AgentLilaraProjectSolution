@@ -13,16 +13,16 @@ namespace AgentCoreProcessor.Engine
 {
     /// <summary>
     /// 频道记忆提取 Worker。独立信号树，fire-and-forget 执行，
-    /// cause 指向触发 session。每次调用创建新信号，支持并行提取可视化。
+    /// cause 指向触发 span。每次调用创建新信号，支持并行提取可视化。
+    /// 引擎无关：participants 自 DB 派生，活跃/潜水阈值靠最近 bot 出向消息时间判定。
     /// </summary>
     internal class ChannelExtractionWorker
     {
         private readonly ISystemContext ctx;
         private readonly int channelId;
         private readonly ChannelConfig channelConfig;
-        /// <summary>从 ChannelContextService 获取参与者列表（DB 派生，无累积状态）。</summary>
-        private readonly Func<Task<List<ParticipantView>>> getParticipants;
-        private readonly Func<DateTime?> getLastCompletionTime;
+        /// <summary>参与者列表从 ChannelContextService 派生（DB 派生，无累积状态）。</summary>
+        private readonly ChannelContextService ctxService;
 
         private int lastExtractedMessageId = -1; // -1 = 未初始化
         private int latestMessageId;
@@ -37,15 +37,12 @@ namespace AgentCoreProcessor.Engine
         public int TotalMessageCount => totalMessageCount;
         public int ExtractedMessageCount => extractedMessageCount;
 
-        public ChannelExtractionWorker(ISystemContext ctx, int channelId,
-            ChannelConfig config, Func<Task<List<ParticipantView>>> getParticipants,
-            Func<DateTime?> getLastCompletionTime)
+        public ChannelExtractionWorker(ISystemContext ctx, int channelId, ChannelConfig config)
         {
             this.ctx = ctx;
             this.channelId = channelId;
             this.channelConfig = config;
-            this.getParticipants = getParticipants;
-            this.getLastCompletionTime = getLastCompletionTime;
+            this.ctxService = new ChannelContextService(new SystemContextDataSource(ctx));
         }
 
         public void SetAutoExtraction(bool enabled)
@@ -59,19 +56,19 @@ namespace AgentCoreProcessor.Engine
             cts?.Cancel();
         }
 
-        public void Trigger(SessionContext context, string? causeSpanId)
+        public void Trigger(string? causeSpanId)
         {
             if (!channelConfig.AutoExtractionEnabled || running) return;
-            StartRun(context, causeSpanId, force: false);
+            StartRun(causeSpanId, force: false);
         }
 
-        public void ForceTrigger(SessionContext context, string? causeSpanId)
+        public void ForceTrigger(string? causeSpanId)
         {
             if (running) return;
-            StartRun(context, causeSpanId, force: true);
+            StartRun(causeSpanId, force: true);
         }
 
-        private void StartRun(SessionContext context, string? causeSpanId, bool force)
+        private void StartRun(string? causeSpanId, bool force)
         {
             running = true;
 
@@ -85,7 +82,7 @@ namespace AgentCoreProcessor.Engine
 
                 try
                 {
-                    await RunAsync(context, force);
+                    await RunAsync(force);
                 }
                 catch (Exception ex)
                 {
@@ -100,7 +97,7 @@ namespace AgentCoreProcessor.Engine
             });
         }
 
-        private async Task RunAsync(SessionContext context, bool force = false)
+        private async Task RunAsync(bool force = false)
         {
             cts = new CancellationTokenSource();
             var ct = cts.Token;
@@ -120,7 +117,7 @@ namespace AgentCoreProcessor.Engine
 
             // 从 ChannelContextService 获取参与者列表（DB 派生）
             List<ParticipantView> participants;
-            try { participants = await getParticipants(); }
+            try { participants = await ctxService.GetParticipantsAsync(channelId); }
             catch { participants = new List<ParticipantView>(); }
 
             while (!ct.IsCancellationRequested)
@@ -135,10 +132,10 @@ namespace AgentCoreProcessor.Engine
 
                 latestMessageId = newMessages[^1].Id;
 
-                // 判断活跃/潜水阈值
-                var lastTime = getLastCompletionTime();
-                bool isActive = lastTime != null
-                    && (DateTime.Now - lastTime.Value).TotalMinutes < 5;
+                // 判断活跃/潜水阈值：最近 5 分钟内有 bot 出向消息 = 活跃（方案 A，引擎无关）
+                var lastBotTime = await ctx.Session.GetLatestBotMessageTimeAsync(channelId);
+                bool isActive = lastBotTime != null
+                    && (DateTime.Now - lastBotTime.Value).TotalMinutes < 5;
                 int threshold = isActive
                     ? channelConfig.ActiveExtractionThreshold
                     : channelConfig.LurkingExtractionThreshold;
@@ -164,6 +161,9 @@ namespace AgentCoreProcessor.Engine
                 if (participantNames.Count > 0)
                     contextLines.Insert(0, $"[群聊参与者: {string.Join("、", participantNames)}]");
 
+                // about 解析失败时的归属人：该批最后发言的非 bot 用户（有总比没有强）
+                int? fallbackPersonId = await ResolveFallbackPersonId(newMessages);
+
                 // 每批提取 span
                 int count;
                 using (var batchSpan = Signal.Open(LogGroup.Memory, "提取批次",
@@ -184,16 +184,17 @@ namespace AgentCoreProcessor.Engine
                         }
                         else if (item.Type == "feedback" && item.Sentiment != null)
                         {
-                            int personId = ResolveAboutToPersonId(item.About, participants) ?? context.Person.Id;
-                            await ctx.MemorySvc.ApplyFeedbackAsync(
-                                personId, item.Content, item.Sentiment, item.Correction);
+                            int? personId = ResolveAboutToPersonId(item.About, participants) ?? fallbackPersonId;
+                            if (personId != null)
+                                await ctx.MemorySvc.ApplyFeedbackAsync(
+                                    personId.Value, item.Content, item.Sentiment, item.Correction);
                         }
                         else
                         {
-                            int personId = ResolveAboutToPersonId(item.About, participants) ?? context.Person.Id;
+                            int? personId = ResolveAboutToPersonId(item.About, participants) ?? fallbackPersonId;
                             string memType = item.Type ?? MemoryType.Fact;
                             await ctx.MemorySvc.StoreAsync(item.Content,
-                                personId, context.Channel.Id,
+                                personId, channelId,
                                 confidence: item.Certainty >= 0.7f ? "high" : "low",
                                 type: memType, subject: item.Subject);
                         }
@@ -236,6 +237,19 @@ namespace AgentCoreProcessor.Engine
             if (m.IsFromBot) return $"Lilara: {m.Content}";
             var name = !string.IsNullOrEmpty(m.SenderName) ? m.SenderName : "用户";
             return $"{name}(#{m.UserId}): {m.Content}";
+        }
+
+        /// <summary>该批最后发言的非 bot 用户的 PersonId（about 解析失败时的兜底归属）。无则 null。</summary>
+        private async Task<int?> ResolveFallbackPersonId(List<UserMessage> batch)
+        {
+            for (int i = batch.Count - 1; i >= 0; i--)
+            {
+                var m = batch[i];
+                if (m.IsFromBot || m.UserId <= 0) continue;
+                var user = await ctx.Session.GetUserByIdAsync(m.UserId);
+                if (user != null) return user.PersonId;
+            }
+            return null;
         }
 
         private int? ResolveAboutToPersonId(string? about, List<ParticipantView> participants)

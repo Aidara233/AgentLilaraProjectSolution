@@ -253,6 +253,10 @@ namespace AgentCoreProcessor.Engine
         public Task<int> GetMessageCountUpToAsync(int channelId, int upToId)
             => messages.GetCountUpToAsync(channelId, upToId);
 
+        /// <summary>获取指定频道最新一条 bot 出向消息的时间（无则 null）。</summary>
+        public Task<DateTime?> GetLatestBotMessageTimeAsync(int channelId)
+            => messages.GetLatestBotMessageTimeAsync(channelId);
+
         public Task<List<User>> GetUsersByPersonIdAsync(int personId)
             => users.GetByPersonIdAsync(personId);
 

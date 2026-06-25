@@ -89,6 +89,15 @@ namespace AgentCoreProcessor.Database
             return result.Count > 0 ? result[0].Value : 0;
         }
 
+        /// <summary>获取指定频道最新一条 bot 出向消息的时间（无则 null）。供提取引擎判活跃/潜水阈值。</summary>
+        public async Task<DateTime?> GetLatestBotMessageTimeAsync(int channelId)
+        {
+            var results = await db.QueryAsync<UserMessage>(
+                "SELECT * FROM UserMessages WHERE ChannelId = ? AND IsFromBot = 1 ORDER BY Id DESC LIMIT 1",
+                channelId);
+            return results.Count > 0 ? results[0].Time : (DateTime?)null;
+        }
+
         /// <summary>获取指定频道中 Id <= upToId 的消息数量。</summary>
         public async Task<int> GetCountUpToAsync(int channelId, int upToId)
         {

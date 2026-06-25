@@ -61,6 +61,14 @@ namespace AgentCoreProcessor.Engine
             // 自产消息（bot 自身行为触发的 notice 回执）：已入库但不触发引擎孵化
             if (msg.IsSelfTriggered) return;
 
+            // 记忆提取计数（入向唯一咽喉，覆盖 ChannelEngine 与 session 占用两条路）
+            if (sessionContext.IncomingMessage != null)
+            {
+                var extractionEngine = ctx.GetActiveEnginesSnapshot()
+                    .OfType<Extraction.ExtractionEngine>().FirstOrDefault();
+                extractionEngine?.OnMessage(sessionContext.Channel.Id);
+            }
+
             // 权限检查
             switch (sessionContext.User.PermissionLevel)
             {
