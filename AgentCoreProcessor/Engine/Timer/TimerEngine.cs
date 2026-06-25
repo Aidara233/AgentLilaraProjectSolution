@@ -62,7 +62,7 @@ namespace AgentCoreProcessor.Engine
                     try { ctx.CrossRequests.Cleanup(TimeSpan.FromHours(1)); }
                     catch { /* 静默清理失败 */ }
 
-                    // Phase 8: 检查 SystemEngine 心跳
+                    // Phase 8: 检查 SessionEngine 心跳
                     if (ctx.HasActiveEngine("Session"))
                     {
                         lastSystemHeartbeat = System.DateTime.Now;

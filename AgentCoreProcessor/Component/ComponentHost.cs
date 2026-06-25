@@ -74,7 +74,7 @@ internal class ComponentHost
             try
             {
                 var compName = ComponentAttribute.GetFrom(reg.Type)?.Name ?? reg.Type.Name;
-                if (!_config.IsEnabled(compName, _loopType, true))
+                if (!_config.IsEnabled(compName, _loopType, reg.DefaultEnabled))
                     continue;
                 var instance = CreateInstance(reg);
                 if (instance == null) continue;

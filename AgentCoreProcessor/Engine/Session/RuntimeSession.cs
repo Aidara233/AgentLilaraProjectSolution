@@ -48,6 +48,7 @@ internal class RuntimeSession : IRuntimeSession
     public void SetAgentHost(SessionAgentHost host) => _host = host;
 
     private ComponentHost? _componentHost;
+    private string _componentLoopType = "channel";
     private ICurrencyService? _currency;
     private AgentCore? _agentCore;
     private MessageEngine? _messageEngine;
@@ -87,8 +88,8 @@ internal class RuntimeSession : IRuntimeSession
         // 从 loopId 提取 loopType（LoopId.ExtractLoopType 已有此逻辑）
         var loopType = LoopId.ExtractLoopType(loopId);
         // 组件白名单使用 "channel" 类型（BasicTools 等都注册在 "channel" 下）
-        var componentLoopType = loopType == "session" ? "channel" : loopType;
-        _componentHost = new ComponentHost(loopId, componentLoopType, moduleBus, services, wakeLoop);
+        _componentLoopType = loopType == "session" ? "channel" : loopType;
+        _componentHost = new ComponentHost(loopId, _componentLoopType, moduleBus, services, wakeLoop);
         _componentHost.InitAsync().GetAwaiter().GetResult();
 
         RefreshToolList();
@@ -297,7 +298,7 @@ internal class RuntimeSession : IRuntimeSession
                 // ── Agent 推理 ──
                 if (_agentCore == null) break;
 
-                _agentCore.EngineType = "channel"; // 复用 channel 工具白名单
+                _agentCore.EngineType = _componentLoopType; // 按实际 loopType 过滤工具白名单
                 _agentCore.CurrentModeId = null;   // 不分子模式，工具范围由组件决定（不过 ModeConfig 白名单）
                 _agentCore.AdditionalTools = _tools.Values.ToList();
 

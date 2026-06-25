@@ -70,7 +70,7 @@ internal class ComponentConfig
     }
 
     /// <summary>获取所有已知引擎类型。</summary>
-    public static readonly string[] EngineTypes = ["channel", "system", "subAgent", "review"];
+    public static readonly string[] EngineTypes = ["channel", "system", "sub-agent", "review"];
 
     private void Save()
     {

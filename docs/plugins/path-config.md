@@ -35,7 +35,7 @@ StoragePath (数据目录)
 │   │   └── per-channel-xxx/      ← Loop 组件实例目录
 │   ├── file-tools/
 │   └── ...
-├── Engine/                       ← 引擎配置（ToolProfiles.json, ComponentConfig.json, ImpulseConfig.json）
+├── Engine/                       ← 引擎配置（ComponentConfig.json, ImpulseConfig.json）
 ├── Dream/                        ← 睡眠/复盘配置和进度
 ├── Images/                       ← 图片缓存
 └── FileAdapter/                  ← 文件适配器测试数据
@@ -134,8 +134,7 @@ public MyTool(IToolContext ctx)
 | `Program.cs:61` | `{StoragePath}/FileAdapter/` | 文件适配器测试目录 |
 | `Program.cs:335` | `{StoragePath}/Images/` | 图片缓存 |
 | `ToolRegistry.cs:24` | `{StoragePath}/ToolConfig.json` | 工具配置 |
-| `ComponentConfig.cs` | `{StoragePath}/Engine/ComponentConfig.json` | 组件启用/禁用状态 |
-| `ToolProfileManager.cs` | `{StoragePath}/Engine/ToolProfiles.json` | 工具集配置 |
+| `ComponentConfig.cs` | `{StoragePath}/Engine/ComponentConfig.json` | 组件按引擎类型启用/禁用状态 |
 
 ## Claude 常见错误
 

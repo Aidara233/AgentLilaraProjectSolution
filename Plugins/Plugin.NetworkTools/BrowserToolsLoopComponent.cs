@@ -25,7 +25,7 @@ public class BrowserToolsLoopComponent : LoopComponentBase
     {
         Name = "browser-tools",
         Description = "Playwright 浏览器自动化：导航/点击/填表/提取/截图/JS/Cookie/等待/关闭会话",
-        DefaultEnabled = false,
+        DefaultEnabled = true,
         PromptPriority = 50
     };
 

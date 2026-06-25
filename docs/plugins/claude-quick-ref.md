@@ -145,6 +145,5 @@ AgentCoreProcessor/Component/ComponentHost.cs   ← Loop 组件宿主
 AgentCoreProcessor/Component/GlobalComponentHost.cs ← 全局组件宿主
 
 # 配置
-Storage/Engine/ComponentConfig.json             ← 组件启用/禁用状态
-Storage/Engine/ToolProfiles.json                ← 工具配置
+Storage/Engine/ComponentConfig.json             ← 组件按引擎类型启用/禁用状态
 ```

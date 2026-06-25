@@ -34,7 +34,7 @@ AgentLilaraProjectSolution/
 │     │     └── Modules/  各模块（CompressionTierModule等）
 │     ├── Memory/      MemoryService 检索管线
 │     ├── MCP/         MCP Client 桥接层（外部插件生态接入）
-│     ├── Tool/        工具宿主（PluginLoader/ToolRegistry/ToolExecutor/ToolProfileManager）+ 核心工具（continue_loop/wait）
+│     ├── Tool/        工具宿主（PluginLoader/ToolRegistry/ToolExecutor）+ 核心工具（continue_loop/wait）
 │     ├── Util/        VectorUtil 向量操作
 │     ├── WebUI/       Blazor Server 管理面板（嵌入式，同进程）
 │     └── Program.cs   入口（WebApplication 宿主，默认启动 Web 服务器 + 适配器）
@@ -119,10 +119,6 @@ PluginLoader 扫描子目录 → 读 `plugin.json` → 加载 `entry` DLL。无�
     ├── DelegationBus (跨循环定向路由总线)
     │     引擎注册/注销 handler → Deliver 精准投递
     │     非全局广播，无关循环不感知
-    ├── ToolProfileManager (组件状态模型，链式继承)
-    │     Profile: components(enabled/disabled/unavailable) + blockedTools/unblockedTools
-    │     _root → channel/session 继承链
-    │     channelMapping: channelId → profileName
     ├── GlobalComponentHost + ComponentHost(per-session) + ModuleBus(per-session)
     │     Component 系统: IGlobalComponent(全局) / ILoopComponent(per-session)
     │     ComponentRegistry: 类型注册，PluginLoader 扫描 [Component] 标记
@@ -142,7 +138,7 @@ PluginLoader 扫描子目录 → 读 `plugin.json` → 加载 `entry` DLL。无�
 ```
 
 ISubEngine: EngineType / RunAsync / OnEvent / IsAlive / RequestStop / IsInfrastructure(默认false)
-ISystemContext: 数据访问 + 适配器 + EventBus + 引擎查询 + StartEngine/RequestStopEngine + CrossRequests + DelegationBus + CurrentSleepState + MuteMode + ToolProfiles + GlobalComponentHost + ComponentServices
+ISystemContext: 数据访问 + 适配器 + EventBus + 引擎查询 + StartEngine/RequestStopEngine + CrossRequests + DelegationBus + CurrentSleepState + MuteMode + GlobalComponentHost + ComponentServices
 
 ### 引擎内部循环架构（Session 统一模型）
 
@@ -436,7 +432,6 @@ AgentLilara.PluginSDK (共享契约，独立类库):
   Host/PluginLoader          — 扫描 {BaseDirectory}/Plugins/*.dll，AssemblyLoadContext 隔离加载
   Host/ToolContextImpl       — IToolContext 实现（ConcurrentDictionary 服务容器）
   Host/MemoryAccessImpl      — IMemoryAccess 桥接（Repository + EmbeddingProvider）
-  Host/ToolProfileManager    — 组件状态模型（enabled/disabled/unavailable），链式继承，per-channel 映射
   ToolRegistry               — 全局注册表（Register/Unregister/Get/禁用管理）
   ToolExecutor               — 顺序执行 + 权限检查 + OnToolExecuted 回调
 
@@ -573,8 +568,7 @@ Storage/
 │     ├── ImpulseConfig.json         冲动值全参数配置
 │     ├── TrustProgressionConfig.json 信任升降阈值+警报冷却配置
 │     ├── VisionEngineConfig.json    视觉引擎并发/批量/重试配置
-│     ├── ToolProfiles.json          组件配置（profile继承树+channelMapping）
-│     └── ComponentConfig.json       组件启用/禁用状态
+│     └── ComponentConfig.json       组件按引擎类型启用/禁用状态
 ├── Adapter/
 │     └── *.json  适配器实例配置（多实例，config-driven）
 │         qq-main.json: OneBotAdapter 配置(WS地址/token/白名单/botNames)
