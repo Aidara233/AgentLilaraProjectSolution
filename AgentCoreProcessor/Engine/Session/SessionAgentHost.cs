@@ -54,15 +54,15 @@ internal class SessionAgentHost
     }
 
     /// <summary>每轮：当前时间 + drained 新消息格式化 + 滞后图片补注。</summary>
-    public async Task<List<Message>> BuildRoundAsync(IEnumerable<(int channelId, UserMessage msg)> drained)
+    public async Task<List<Message>> BuildRoundAsync(IEnumerable<(int channelId, UserMessage msg, bool isMention)> drained)
     {
         var msgs = new List<Message>
         {
             new() { Role = "user", Content = $"[系统] 当前时间: {System.DateTime.Now:yyyy-MM-dd HH:mm:ss dddd} UTC+8 (Asia/Shanghai)" }
         };
-        foreach (var (cid, m) in drained)
+        foreach (var (cid, m, isMention) in drained)
         {
-            var formatted = await _svc.FormatIncomingAsync(_states[cid], m);
+            var formatted = await _svc.FormatIncomingAsync(_states[cid], m, isMention);
             if (formatted != null) msgs.Add(formatted);
         }
         foreach (var (cid, _, _) in _channelPorts)

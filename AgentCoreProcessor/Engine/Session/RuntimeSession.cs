@@ -277,7 +277,7 @@ internal class RuntimeSession : IRuntimeSession
                                 AdvanceChannelCursor(grp.Key, grp.Max(d => d.msg.Id));
 
                             // 系统注入消息直接追加
-                            foreach (var (_, um) in systemDrained)
+                            foreach (var (_, um, _) in systemDrained)
                                 messages.Add(new Message { Role = "user", Content = um.Content });
 
                             Signal.Event(LogGroup.Engine, "BuildRoundAsync 注入", new { sessionId = SessionId, added = drained.Count, historyCount = messages.Count });
@@ -285,13 +285,13 @@ internal class RuntimeSession : IRuntimeSession
                         catch (Exception ex)
                         {
                             Signal.Warn(LogGroup.Engine, "BuildRoundAsync 失败，回退裸内容", new { sessionId = SessionId, error = ex.Message });
-                            messages.AddRange(drained.Select(d => new Message { Role = "user", Content = d.msg.Content }));
+                            messages.AddRange(drained.Select(d => new Message { Role = "user", Content = (d.isMention ? "⚠️ [被@提及]\n" : "") + d.msg.Content }));
                         }
                     }
                     else
                     {
                         // fallback：裸内容
-                        messages.AddRange(drained.Select(d => new Message { Role = "user", Content = d.msg.Content }));
+                        messages.AddRange(drained.Select(d => new Message { Role = "user", Content = (d.isMention ? "⚠️ [被@提及]\n" : "") + d.msg.Content }));
                     }
                 }
 
@@ -452,26 +452,25 @@ internal class RuntimeSession : IRuntimeSession
 
 
     /// <summary>
-    /// 从所有输入端口收集消息，转换为 (channelId, UserMessage) 元组列表。
+    /// 从所有输入端口收集消息，转换为 (channelId, UserMessage, isMention) 元组列表。
     /// EngineIncomingMessage → UserMessage：最小化转换（无 SenderName，但含 ChannelId/Content/UserId/PlatformMessageId）。
+    /// isMention：消息来自 "mention" 端口（Weight >= 100，被 @ 提及）。
     /// </summary>
-    private List<(int channelId, UserMessage msg)> DrainInputPortsRaw(CancellationToken ct)
+    private List<(int channelId, UserMessage msg, bool isMention)> DrainInputPortsRaw(CancellationToken ct)
     {
-        var result = new List<(int channelId, UserMessage msg)>();
-        foreach (var (_, port) in _inputs)
+        var result = new List<(int channelId, UserMessage msg, bool isMention)>();
+        foreach (var (name, port) in _inputs)
         {
+            bool isMentionPort = name.Contains("mention", StringComparison.OrdinalIgnoreCase);
             while (port.TryPeek(out var data))
             {
                 port.ReceiveAsync(ct).GetAwaiter().GetResult();
                 if (data is UserMessage existing)
                 {
-                    // 入向接通投递的已入库消息：身份完整（SenderName/PlatformMessageId/Id），直接消费。
-                    result.Add((existing.ChannelId, existing));
+                    result.Add((existing.ChannelId, existing, isMentionPort));
                 }
                 else if (data is EngineIncomingMessage em)
                 {
-                    // 最小化 EngineIncomingMessage → UserMessage 转换
-                    // SenderName 暂缺（EngineIncomingMessage 只有 SenderUserId，无 SenderName）
                     var um = new UserMessage
                     {
                         ChannelId = em.ChannelId,
@@ -480,24 +479,21 @@ internal class RuntimeSession : IRuntimeSession
                         PlatformMessageId = em.MessageId,
                         Time = em.Timestamp == default ? DateTime.UtcNow : em.Timestamp,
                         IsFromBot = false,
-                        SenderName = "" // 无法从 EngineIncomingMessage 获取，FormatIncomingAsync 将显示空名
+                        SenderName = ""
                     };
-                    result.Add((em.ChannelId, um));
+                    result.Add((em.ChannelId, um, isMentionPort));
                 }
                 else if (data is string s)
                 {
-                    // 纯字符串注入（timeout/signal 等）
                     var um = new UserMessage { Content = s, ChannelId = 0, Time = DateTime.UtcNow };
-                    result.Add((0, um));
+                    result.Add((0, um, false));
                 }
                 else if (data != null)
                 {
-                    // 其他类型（JSON 序列化）
                     var um = new UserMessage { Content = JsonConvert.SerializeObject(data), ChannelId = 0, Time = DateTime.UtcNow };
-                    result.Add((0, um));
+                    result.Add((0, um, false));
                 }
             }
-            // 排空后重置 MessageInputPort 队列计数器（新消息会在 Enqueue 时重新累加）
             if (port is MessageInputPort mp)
                 mp.ResetQueueCount();
         }

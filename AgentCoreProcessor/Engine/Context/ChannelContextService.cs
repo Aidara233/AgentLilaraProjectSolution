@@ -413,9 +413,11 @@ internal partial class ChannelContextService
     /// 注意：reply 补块（quoted-context）由调用方负责在此消息前用 AppendQuotedContextRecursiveAsync 单独构建，
     /// 因为补块需要插入到 nmsMsg 之前的消息列表中。
     /// </summary>
-    public async Task<Message?> FormatIncomingAsync(ChannelContextState st, UserMessage m)
+    public async Task<Message?> FormatIncomingAsync(ChannelContextState st, UserMessage m, bool isMentionPort = false)
     {
-        var mentionPrefix = IsBotMentionedInMessage(m) ? "[@你] " : "";
+        // 提及标记：端口级信息（权威）+ MentionedPlatformIds 检查（兜底）
+        var isMention = isMentionPort || IsBotMentionedInMessage(m);
+        var mentionPrefix = isMention ? "⚠️ [!! @提及 !!] ⚠️\n" : "";
         var name = m.IsFromBot ? "你" : m.SenderName;
         var msgId = !string.IsNullOrEmpty(m.PlatformMessageId) ? $"[#{m.PlatformMessageId}]" : "";
         var replyNote = !string.IsNullOrEmpty(m.ReplyToPlatformMessageId) ? $" (回复 #{m.ReplyToPlatformMessageId})" : "";
