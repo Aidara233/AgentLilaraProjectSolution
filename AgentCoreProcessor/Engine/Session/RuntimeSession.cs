@@ -172,7 +172,8 @@ internal class RuntimeSession : IRuntimeSession
             hostWait++;
         }
 
-        // 构建初始消息列表：优先用 host 的富上下文，fallback 到裸 InitialState 字符串
+        // messages 是会话的常驻历史，跨突发累积，wait 挂起后再激活时保留——
+        // 不再每突发清空（清空会丢失 wait 前的全部对话）。压缩/持久化留后续。
         List<Message> messages;
         if (_host != null)
         {
@@ -210,13 +211,15 @@ internal class RuntimeSession : IRuntimeSession
         }
 
         int agentRound = 0;
+        // 首轮已有 BuildStartAsync 的初始上下文，直接处理；之后每突发结束置 true 回到等待
+        bool awaitingInput = messages.Count == 0;
 
         try
         {
             while (IsAlive && !ct.IsCancellationRequested)
             {
-                // 如果有初始消息，直接进入处理循环；否则等待输入
-                if (messages.Count == 0)
+                // 等待新输入（突发间），或首轮无初始消息时
+                if (awaitingInput)
                 {
                     if (!await WaitForActivationAsync(_cts.Token))
                         break;
@@ -229,6 +232,7 @@ internal class RuntimeSession : IRuntimeSession
 
                     TouchActivity();
                     SetWaitUntil(null);
+                    awaitingInput = false;
 
                     // 新突发开始：重置突发内轮次计数（MaxAgentRounds 防单突发 runaway，非会话总轮次）
                     agentRound = 0;
@@ -237,9 +241,13 @@ internal class RuntimeSession : IRuntimeSession
                     _roundCount++;
                     ApplyRoundPricing();
 
-                    // 收集输入，并通过 host 格式化（如有）
+                    // 收集输入，并通过 host 格式化（如有），追加到常驻历史 messages
                     var drained = DrainInputPortsRaw(ct);
-                    if (drained.Count == 0) continue;
+                    if (drained.Count == 0)
+                    {
+                        awaitingInput = true;
+                        continue;
+                    }
 
                     if (_host != null)
                     {
@@ -249,9 +257,8 @@ internal class RuntimeSession : IRuntimeSession
                             var channelDrained = drained.Where(d => d.channelId > 0).ToList();
                             var systemDrained = drained.Where(d => d.channelId <= 0).ToList();
 
-                            messages = channelDrained.Count > 0
-                                ? await _host.BuildRoundAsync(channelDrained)
-                                : new List<Message>();
+                            if (channelDrained.Count > 0)
+                                messages.AddRange(await _host.BuildRoundAsync(channelDrained));
 
                             // 游标接力：每个频道推进到本轮消费的最大 message id
                             foreach (var grp in channelDrained.GroupBy(d => d.channelId))
@@ -261,21 +268,19 @@ internal class RuntimeSession : IRuntimeSession
                             foreach (var (_, um) in systemDrained)
                                 messages.Add(new Message { Role = "user", Content = um.Content });
 
-                            Console.Error.WriteLine($"[Session {SessionId}] BuildRoundAsync: {messages.Count} messages for {channelDrained.Count} channel + {systemDrained.Count} system input(s)");
+                            Console.Error.WriteLine($"[Session {SessionId}] BuildRoundAsync: +{drained.Count} input(s), history now {messages.Count} messages");
                         }
                         catch (Exception ex)
                         {
                             Console.Error.WriteLine($"[Session {SessionId}] BuildRoundAsync failed, fallback: {ex.Message}");
-                            messages = drained.Select(d => new Message { Role = "user", Content = d.msg.Content }).ToList();
+                            messages.AddRange(drained.Select(d => new Message { Role = "user", Content = d.msg.Content }));
                         }
                     }
                     else
                     {
                         // fallback：裸内容
-                        messages = drained.Select(d => new Message { Role = "user", Content = d.msg.Content }).ToList();
+                        messages.AddRange(drained.Select(d => new Message { Role = "user", Content = d.msg.Content }));
                     }
-
-                    if (messages.Count == 0) continue;
                 }
 
                 // ── Agent 推理 ──
@@ -367,16 +372,16 @@ internal class RuntimeSession : IRuntimeSession
                     }
                     if (endBurst)
                     {
-                        Console.Error.WriteLine($"[Session {SessionId}] endBurst：清空消息回等待（保活，claim 保留，WaitUntil={WaitUntil:HH:mm:ss})");
-                        messages.Clear();
+                        Console.Error.WriteLine($"[Session {SessionId}] endBurst：回等待（保活，历史保留 {messages.Count} 条，claim 保留，WaitUntil={WaitUntil:HH:mm:ss})");
+                        awaitingInput = true;
                         continue;
                     }
                 }
                 else
                 {
-                    // 无工具调用：模型给了最终回复，结束突发，等待下一轮输入（session 保活）
-                    Console.Error.WriteLine($"[Session {SessionId}] 无工具调用，结束突发回等待（保活）");
-                    messages.Clear();
+                    // 无工具调用：模型给了最终回复，结束突发，等待下一轮输入（session 保活，历史保留）
+                    Console.Error.WriteLine($"[Session {SessionId}] 无工具调用，结束突发回等待（保活，历史保留 {messages.Count} 条）");
+                    awaitingInput = true;
                 }
             }
         }
