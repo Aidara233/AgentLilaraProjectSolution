@@ -247,7 +247,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 -           Plugins/Plugin.ScheduledTasks/（定时任务，插件化实现）
 -           Plugins/Plugin.Email/（邮件收发：send_email, check_unread, check_email, read_email, search_email, download_attachment, delete_email, mark_all_read, list_folders）— Global
 -           Plugins/Plugin.SkillTools/（技能工具：casual-chat / code-review / system-maintenance）
--           Plugins/Plugin.NetworkTools/（网络工具）
+-           Plugins/Plugin.NetworkTools/（http_request + download_file + Playwright 浏览器自动化 10 个工具：navigate/click/fill/extract/screenshot/js/cookies/wait/close）— Global + Loop
 -           Plugins/Plugin.SshTools/（SSH 工具）
 -           Plugins/Plugin.WebSearch/（网页搜索）
 -           Plugins/Plugin.DicePool/（骰子系统）

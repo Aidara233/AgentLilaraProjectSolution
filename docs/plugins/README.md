@@ -126,7 +126,7 @@ AgentLilaraProjectSolution/
     Plugin.ScheduledTasks/        ← 定时任务（schedule/cancel/list）— Loop, channel only
     Plugin.Email/                 ← 邮件收发（send_email, check_unread, check_email, read_email, search_email, download_attachment, delete_email, mark_all_read, list_folders）— Global
     Plugin.SkillTools/            ← 技能工具（casual-chat, code-review, system-maintenance）
-    Plugin.NetworkTools/          ← 网络工具
+    Plugin.NetworkTools/          ← 网络工具（http_request, download_file + Playwright 浏览器自动化 10 个工具）— Global + Loop
     Plugin.SshTools/              ← SSH 工具
     Plugin.WebSearch/             ← 网页搜索
     Plugin.DicePool/              ← 骰子系统

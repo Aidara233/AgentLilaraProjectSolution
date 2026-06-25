@@ -50,7 +50,7 @@ AgentLilaraProjectSolution/
       ├── Plugin.ReviewTools/     review_* 15个复盘工具
       ├── Plugin.ScheduledTasks/  定时任务（插件化实现）
       ├── Plugin.SkillTools/      casual-chat / code-review / system-maintenance
-      ├── Plugin.NetworkTools/    网络工具
+      ├── Plugin.NetworkTools/    网络工具 + Playwright 浏览器自动化
       ├── Plugin.SshTools/        SSH 工具
       ├── Plugin.WebSearch/       网页搜索
       ├── Plugin.DicePool/        骰子系统
@@ -452,7 +452,7 @@ AgentLilara.PluginSDK (共享契约，独立类库):
   Plugin.ReviewTools     — review_* 15个复盘工具
   Plugin.ScheduledTasks  — 定时任务（插件化实现）
   Plugin.SkillTools      — casual-chat / code-review / system-maintenance
-  Plugin.NetworkTools    — 网络工具
+  Plugin.NetworkTools    — http_request + download_file [LoopComponent: network-tools] + Playwright 浏览器自动化 10 工具 [GlobalComponent: browser + LoopComponent: browser-tools]
   Plugin.SshTools        — SSH 工具
   Plugin.WebSearch       — 网页搜索
   Plugin.DicePool        — 骰子系统

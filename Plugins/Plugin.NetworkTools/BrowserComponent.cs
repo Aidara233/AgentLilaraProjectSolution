@@ -57,6 +57,9 @@ public class BrowserComponent : GlobalComponentBase
                 await _sessionManager.CleanupIdleSessionsAsync();
         }, null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
 
+        // 暴露静态引用供 Loop 组件工具使用
+        BrowserAccessor.Configure(this);
+
         Console.WriteLine("[Browser] Playwright 浏览器组件已启动");
     }
 
@@ -102,6 +105,8 @@ public class BrowserComponent : GlobalComponentBase
 
         _playwright?.Dispose();
 
+        BrowserAccessor.Reset();
+
         Console.WriteLine("[Browser] Playwright 浏览器组件已关闭");
     }
 
@@ -115,4 +120,17 @@ public class BrowserComponent : GlobalComponentBase
     public BrowserSessionManager? GetSessionManager() => _sessionManager;
     public BrowserConfig? GetConfig() => _config;
     public IPluginStorage? GetStorage() => _storage;
+}
+
+/// <summary>
+/// 静态访问器：BrowserComponent 初始化后设置，Loop 组件通过此访问共享资源。
+/// 模式与 NetworkToolsAccessor 一致。
+/// </summary>
+public static class BrowserAccessor
+{
+    public static BrowserComponent? Instance { get; private set; }
+
+    public static void Configure(BrowserComponent instance) => Instance = instance;
+
+    public static void Reset() => Instance = null;
 }
