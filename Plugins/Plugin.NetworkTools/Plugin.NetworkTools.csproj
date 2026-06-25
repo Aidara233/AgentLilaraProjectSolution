@@ -30,10 +30,16 @@
       <_PluginOut Include="$(OutputPath)*.deps.json" />
       <_PluginOut Include="$(OutputPath)plugin.json" />
       <_PluginOut Include="$(OutputPath)playwright.ps1" />
-      <_PluginOut Include="$(OutputPath).playwright\**\*" />
     </ItemGroup>
     <Copy SourceFiles="@(_PluginOut)"
-          DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\$(MSBuildProjectName)\%(RecursiveDir)"
+          DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\$(MSBuildProjectName)\"
+          SkipUnchangedFiles="true" />
+    <!-- .playwright 目录需要保留完整相对路径 -->
+    <ItemGroup>
+      <_PlaywrightFiles Include="$(OutputPath).playwright\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_PlaywrightFiles)"
+          DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\$(MSBuildProjectName)\.playwright\%(RecursiveDir)"
           SkipUnchangedFiles="true" />
   </Target>
 
