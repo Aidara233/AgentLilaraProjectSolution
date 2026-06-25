@@ -307,7 +307,7 @@ namespace AgentCoreProcessor.Client
                 {
                     messages.Add(new ToolChatMessage(toolUseId, result));
 
-                    if (imagePaths != null && imagePaths.Count > 0)
+                    if (imagePaths != null && imagePaths.Count > 0 && !apiClientCfg.DisableImageMessages)
                     {
                         var imgParts = new List<ChatMessageContentPart>();
                         foreach (var path in imagePaths)
