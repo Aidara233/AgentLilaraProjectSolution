@@ -11,6 +11,7 @@ using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine.Messaging;
+using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Tool;
 using AgentLilara.PluginSDK;
@@ -164,6 +165,16 @@ internal class RuntimeSession : IRuntimeSession
         Status = SessionStatus.Running;
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
+        // 生命周期信号：Continue 从触发者（escalate 所在的 Express 信号 / 监控循环）建立因果连线，
+        // 并把 session 拉进自己的 scope（"session:{id}"）——否则继承的 Express 信号会很快 close，
+        // session 下游所有事件都挂到已关闭的信号上，trace 页表现为红色孤儿节点。
+        var parentCtx = SignalContext.Current;
+        var lifeCtx = Signal.Continue(
+            SignalContext.NewSignalId(), parentCtx?.CurrentSpanId,
+            $"session:{SessionId}", LogGroup.Engine, "Session 生命周期",
+            new { sessionId = SessionId, components = string.Join(",", _componentIds) });
+        var endReason = "completed";
+
         // 等待 AgentHost 初始化（异步构建，最多等 3 秒）
         var hostWait = 0;
         while (_host == null && hostWait < 30)
@@ -180,7 +191,7 @@ internal class RuntimeSession : IRuntimeSession
             try
             {
                 messages = await _host.BuildStartAsync();
-                Console.Error.WriteLine($"[Session {SessionId}] BuildStartAsync: {messages.Count} messages from AgentHost");
+                Signal.Event(LogGroup.Engine, "BuildStartAsync 完成", new { sessionId = SessionId, messageCount = messages.Count });
 
                 // 游标接力首轮播种：BuildStartAsync 取的历史快照最大 id 写回持久化游标。
                 // 否则 session 若无新消息直接 end_session，ChannelEngine 恢复时会把这批历史当新消息重读。
@@ -195,7 +206,7 @@ internal class RuntimeSession : IRuntimeSession
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[Session {SessionId}] BuildStartAsync failed, fallback: {ex.Message}");
+                Signal.Warn(LogGroup.Engine, "BuildStartAsync 失败，回退裸 InitialState", new { sessionId = SessionId, error = ex.Message });
                 messages = new List<Message>();
                 if (_initialState is string initText && !string.IsNullOrEmpty(initText))
                     messages.Add(new Message { Role = "user", Content = initText });
@@ -207,7 +218,7 @@ internal class RuntimeSession : IRuntimeSession
             messages = new List<Message>();
             if (_initialState is string initText && !string.IsNullOrEmpty(initText))
                 messages.Add(new Message { Role = "user", Content = initText });
-            Console.Error.WriteLine($"[Session {SessionId}] AgentHost not ready, using bare InitialState");
+            Signal.Warn(LogGroup.Engine, "AgentHost 未就绪，使用裸 InitialState", new { sessionId = SessionId });
         }
 
         int agentRound = 0;
@@ -268,11 +279,11 @@ internal class RuntimeSession : IRuntimeSession
                             foreach (var (_, um) in systemDrained)
                                 messages.Add(new Message { Role = "user", Content = um.Content });
 
-                            Console.Error.WriteLine($"[Session {SessionId}] BuildRoundAsync: +{drained.Count} input(s), history now {messages.Count} messages");
+                            Signal.Event(LogGroup.Engine, "BuildRoundAsync 注入", new { sessionId = SessionId, added = drained.Count, historyCount = messages.Count });
                         }
                         catch (Exception ex)
                         {
-                            Console.Error.WriteLine($"[Session {SessionId}] BuildRoundAsync failed, fallback: {ex.Message}");
+                            Signal.Warn(LogGroup.Engine, "BuildRoundAsync 失败，回退裸内容", new { sessionId = SessionId, error = ex.Message });
                             messages.AddRange(drained.Select(d => new Message { Role = "user", Content = d.msg.Content }));
                         }
                     }
@@ -289,23 +300,27 @@ internal class RuntimeSession : IRuntimeSession
                 _agentCore.EngineType = "channel"; // 复用 channel 工具白名单
                 _agentCore.CurrentModeId = null;   // 不分子模式，工具范围由组件决定（不过 ModeConfig 白名单）
                 _agentCore.AdditionalTools = _tools.Values.ToList();
-                Console.Error.WriteLine($"[Session {SessionId}] Tools: {string.Join(", ", _tools.Keys)} (EngineType={_agentCore.EngineType})");
 
                 agentRound++;
                 if (agentRound > MaxAgentRounds)
                 {
                     await SendOutput($"已达到最大轮次限制（{MaxAgentRounds}），会话即将结束。");
+                    endReason = "max-rounds";
                     break;
                 }
+
+                // 每轮推理一条 span，承载模型调用 + 工具执行的耗时与结果
+                using var roundSpan = Signal.Open(LogGroup.Engine, $"Session 轮次 #{agentRound}",
+                    new { sessionId = SessionId, round = agentRound, toolCount = _tools.Count });
 
                 ModelOutput output;
                 try
                 {
                     output = await _agentCore.InvokeAsync(messages, EngineMode.Working);
-                    Console.Error.WriteLine($"[Session {SessionId}] ModelOutput: Text={output.Text?.Length ?? 0}chars, ToolCalls={output.ToolCalls?.Count ?? 0}");
                 }
                 catch (Exception ex)
                 {
+                    Signal.Warn(LogGroup.Model, "Session 模型调用失败", new { sessionId = SessionId, round = agentRound, error = ex.Message });
                     messages.Add(new Message { Role = "system", Content = $"[错误] 模型调用失败: {ex.Message}" });
                     continue;
                 }
@@ -320,7 +335,12 @@ internal class RuntimeSession : IRuntimeSession
                     var executor = new ToolExecutor(resolver);
 
                     var results = await executor.ExecuteAsync(output.ToolCalls);
-                    Console.Error.WriteLine($"[Session {SessionId}] ToolResults: {string.Join(", ", output.ToolCalls.Select((c, i) => $"{c.Tool}={results[i].Status}"))}");
+                    roundSpan.SetCloseDetail(new
+                    {
+                        sessionId = SessionId,
+                        round = agentRound,
+                        tools = output.ToolCalls.Select((c, i) => new { tool = c.Tool, status = results[i].Status })
+                    });
 
                     // assistant 轮：保留 tool_use ContentParts（携带 tool_use_id），与下方 tool_result 严格配对
                     // 替换上面那条空文本 assistant，避免模型看不到自己调用了工具（runaway 根因）
@@ -367,12 +387,14 @@ internal class RuntimeSession : IRuntimeSession
 
                     if (endSession)
                     {
-                        Console.Error.WriteLine($"[Session {SessionId}] endSession：退出循环释放 claim");
+                        Signal.Event(LogGroup.Engine, "endSession：退出循环释放 claim", new { sessionId = SessionId });
+                        endReason = "end_session";
                         break;
                     }
                     if (endBurst)
                     {
-                        Console.Error.WriteLine($"[Session {SessionId}] endBurst：回等待（保活，历史保留 {messages.Count} 条，claim 保留，WaitUntil={WaitUntil:HH:mm:ss})");
+                        Signal.Event(LogGroup.Engine, "endBurst：回等待保活",
+                            new { sessionId = SessionId, historyCount = messages.Count, waitUntil = WaitUntil });
                         awaitingInput = true;
                         continue;
                     }
@@ -380,7 +402,8 @@ internal class RuntimeSession : IRuntimeSession
                 else
                 {
                     // 无工具调用：模型给了最终回复，结束突发，等待下一轮输入（session 保活，历史保留）
-                    Console.Error.WriteLine($"[Session {SessionId}] 无工具调用，结束突发回等待（保活，历史保留 {messages.Count} 条）");
+                    Signal.Event(LogGroup.Engine, "无工具调用，结束突发回等待",
+                        new { sessionId = SessionId, historyCount = messages.Count });
                     awaitingInput = true;
                 }
             }
@@ -389,6 +412,7 @@ internal class RuntimeSession : IRuntimeSession
         {
             if (Status == SessionStatus.Running)
                 Status = SessionStatus.Completed;
+            lifeCtx.Close(new { sessionId = SessionId, reason = endReason, status = Status.ToString() });
             OnCompleted?.Invoke(this);
         }
     }
@@ -499,7 +523,7 @@ internal class RuntimeSession : IRuntimeSession
             foreach (var (name, port) in _inputs)
                 if (port.TryPeek(out _))
                 {
-                    Console.Error.WriteLine($"[Session {SessionId}] WaitForActivation 唤醒：端口 {name} 有输入");
+                    Signal.Debug(LogGroup.Engine, "WaitForActivation 唤醒：端口有输入", new { sessionId = SessionId, port = name });
                     return true;
                 }
 
@@ -507,14 +531,14 @@ internal class RuntimeSession : IRuntimeSession
             if (WaitUntil != null && DateTime.UtcNow >= WaitUntil.Value)
             {
                 // 超时激活，注入 timeout 消息
-                Console.Error.WriteLine($"[Session {SessionId}] WaitForActivation 唤醒：WaitUntil 到期");
+                Signal.Debug(LogGroup.Engine, "WaitForActivation 唤醒：WaitUntil 到期", new { sessionId = SessionId });
                 InjectMessage(new { type = "timeout", wait_reason = "wait timeout expired" });
                 return true;
             }
 
             await Task.Delay(200, ct);
         }
-        Console.Error.WriteLine($"[Session {SessionId}] WaitForActivation 退出：ct 取消");
+        Signal.Debug(LogGroup.Engine, "WaitForActivation 退出：ct 取消", new { sessionId = SessionId });
         return false;
     }
 

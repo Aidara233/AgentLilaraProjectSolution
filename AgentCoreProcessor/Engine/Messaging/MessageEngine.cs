@@ -79,7 +79,8 @@ internal class MessageEngine : ISubEngine
     {
         var key = (channelId, "normal");
         var count = _subscribers.TryGetValue(key, out var ports) ? ports.Count : 0;
-        System.Console.Error.WriteLine($"[MessageEngine] DeliverToSession ch:{channelId} msg#{msg.Id} -> 'normal' 子流订阅者数={count}");
+        Signal.Debug(LogGroup.Engine, "DeliverToSession 分发",
+            new { channelId, msgId = msg.Id, subStream = "normal", subscriberCount = count });
         Distribute(channelId, "normal", msg);
     }
 

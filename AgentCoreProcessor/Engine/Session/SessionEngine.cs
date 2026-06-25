@@ -9,6 +9,7 @@ using AgentCoreProcessor.Component;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Engine.Context;
 using AgentCoreProcessor.Engine.Messaging;
+using AgentCoreProcessor.Logging;
 using AgentLilara.PluginSDK;
 using AgentLilara.PluginSDK.Services;
 using Newtonsoft.Json;
@@ -72,7 +73,7 @@ internal class SessionEngine : ISubEngine
         catch (Exception ex)
         {
             // 组件加载失败不阻塞 Session 创建
-            Console.Error.WriteLine($"[SessionEngine] Component init failed for {session.SessionId}: {ex.Message}");
+            Signal.Error(LogGroup.Engine, "Session 组件初始化失败", new { sessionId = session.SessionId, error = ex.Message });
         }
 
         _sessions[session.SessionId] = session;
@@ -99,7 +100,8 @@ internal class SessionEngine : ISubEngine
         {
             var firstChannel = spec.InputPorts.First().Value.ChannelId;
             var claimed = ClaimChannel(session.SessionId, firstChannel, ClaimLevel.Full);
-            Console.Error.WriteLine($"[SessionEngine] Session {session.SessionId} AutoClaim channel {firstChannel} => {claimed} (claimer now={GetFullClaimer(firstChannel)})");
+            Signal.Event(LogGroup.Engine, "Session AutoClaim 频道",
+                new { sessionId = session.SessionId, channelId = firstChannel, claimed, claimer = GetFullClaimer(firstChannel) });
         }
 
         // 构建 SessionAgentHost（异步查询 channelName 后注入）
@@ -121,11 +123,12 @@ internal class SessionEngine : ISubEngine
                     : null;
                 var host = new SessionAgentHost(channelPorts, initialStateText, svc);
                 session.SetAgentHost(host);
-                Console.Error.WriteLine($"[SessionEngine] Session {session.SessionId} AgentHost ready: {channelPorts.Count} channel port(s), loopId={loopId}");
+                Signal.Event(LogGroup.Engine, "Session AgentHost 就绪",
+                    new { sessionId = session.SessionId, channelPorts = channelPorts.Count, loopId });
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[SessionEngine] AgentHost init failed for {session.SessionId}: {ex.Message}");
+                Signal.Error(LogGroup.Engine, "Session AgentHost 初始化失败", new { sessionId = session.SessionId, error = ex.Message });
             }
         });
 
@@ -136,17 +139,19 @@ internal class SessionEngine : ISubEngine
             {
                 using var cts = new CancellationTokenSource();
                 await session.RunAsync(cts.Token);
-                Console.Error.WriteLine($"[SessionEngine] Session {session.SessionId} RunAsync 返回（Status={session.Status}），即将释放 claim");
+                Signal.Event(LogGroup.Engine, "Session RunAsync 返回，即将释放 claim",
+                    new { sessionId = session.SessionId, status = session.Status.ToString() });
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[SessionEngine] Session {session.SessionId} crashed: {ex.Message}\n{ex.StackTrace}");
+                Signal.Error(LogGroup.Engine, "Session 崩溃",
+                    new { sessionId = session.SessionId, error = ex.Message, stack = ex.StackTrace });
             }
             finally
             {
                 // Session 结束时释放占用
                 ReleaseSessionClaims(session.SessionId);
-                Console.Error.WriteLine($"[SessionEngine] Session {session.SessionId} claims 已释放");
+                Signal.Event(LogGroup.Engine, "Session claims 已释放", new { sessionId = session.SessionId });
             }
         });
 
@@ -296,74 +301,87 @@ internal class SessionEngine : ISubEngine
 
     public async Task RunAsync()
     {
+        // 引擎生命周期信号（Continue 从启动者 signal 建立因果连线，与其他引擎对齐）
+        var parentCtx = SignalContext.Current;
+        var lifeCtx = Signal.Continue(
+            parentCtx?.SignalId ?? Signal.NewId(), parentCtx?.CurrentSpanId,
+            "session-engine", LogGroup.Engine, "Session引擎",
+            new { engineType = EngineType });
+
         // 恢复持久化的 sessions
         RestoreAll();
 
-        while (IsAlive)
+        try
         {
-            try
+            while (IsAlive)
             {
-                await Task.Delay(TimeSpan.FromSeconds(30));
-
-                // 1. 检查 WaitUntil 超时 → SessionEngine 的注入由 RuntimeSession 内部处理
-                // Session 的 WaitForActivationAsync 会自行检测 WaitUntil 到期
-
-                // 2. 检查 ScheduledTask
-                List<ScheduledTask> due;
-                lock (_scheduledTasks)
+                try
                 {
-                    due = _scheduledTasks
-                        .Where(t => t.Status == "pending" && t.ExecuteAt <= DateTime.UtcNow)
-                        .ToList();
-                }
+                    await Task.Delay(TimeSpan.FromSeconds(30));
 
-                foreach (var task in due)
-                {
-                    task.Status = "executing";
-                    CreateSession(new CreateSessionSpec
-                    {
-                        ComponentIds = new[] { "basic-tools", "file-tools", "memory-tools" },
-                        InitialState = $"执行定时任务: {task.Description}",
-                        OverrideLimits = new SessionLimits { MaxLifetime = TimeSpan.FromMinutes(30), IdleTimeout = TimeSpan.FromMinutes(5) }
-                    });
+                    // 1. 检查 WaitUntil 超时 → SessionEngine 的注入由 RuntimeSession 内部处理
+                    // Session 的 WaitForActivationAsync 会自行检测 WaitUntil 到期
 
-                    // Recurring → 排下一次
-                    if (task.Type == ScheduleType.Recurring && !string.IsNullOrEmpty(task.CronExpression))
+                    // 2. 检查 ScheduledTask
+                    List<ScheduledTask> due;
+                    lock (_scheduledTasks)
                     {
-                        task.ExecuteAt = CalculateNextCron(task.CronExpression, DateTime.UtcNow);
-                        task.Status = "pending";
+                        due = _scheduledTasks
+                            .Where(t => t.Status == "pending" && t.ExecuteAt <= DateTime.UtcNow)
+                            .ToList();
                     }
-                }
 
-                // 3. 检查 TODO（每 15 分钟扫一次）
-                if ((DateTime.UtcNow - _lastTodoScan).TotalMinutes >= 15)
-                {
-                    _lastTodoScan = DateTime.UtcNow;
-                    var pending = GetPendingTodos()
-                        .OrderBy(t => t.CreatedAt)
-                        .Take(1) // 一次只处理一条
-                        .ToList();
-
-                    foreach (var todo in pending)
+                    foreach (var task in due)
                     {
-                        todo.Status = "executing";
+                        task.Status = "executing";
                         CreateSession(new CreateSessionSpec
                         {
                             ComponentIds = new[] { "basic-tools", "file-tools", "memory-tools" },
-                            InitialState = $"待办事项: {todo.Description}",
+                            InitialState = $"执行定时任务: {task.Description}",
                             OverrideLimits = new SessionLimits { MaxLifetime = TimeSpan.FromMinutes(30), IdleTimeout = TimeSpan.FromMinutes(5) }
                         });
+
+                        // Recurring → 排下一次
+                        if (task.Type == ScheduleType.Recurring && !string.IsNullOrEmpty(task.CronExpression))
+                        {
+                            task.ExecuteAt = CalculateNextCron(task.CronExpression, DateTime.UtcNow);
+                            task.Status = "pending";
+                        }
+                    }
+
+                    // 3. 检查 TODO（每 15 分钟扫一次）
+                    if ((DateTime.UtcNow - _lastTodoScan).TotalMinutes >= 15)
+                    {
+                        _lastTodoScan = DateTime.UtcNow;
+                        var pending = GetPendingTodos()
+                            .OrderBy(t => t.CreatedAt)
+                            .Take(1) // 一次只处理一条
+                            .ToList();
+
+                        foreach (var todo in pending)
+                        {
+                            todo.Status = "executing";
+                            CreateSession(new CreateSessionSpec
+                            {
+                                ComponentIds = new[] { "basic-tools", "file-tools", "memory-tools" },
+                                InitialState = $"待办事项: {todo.Description}",
+                                OverrideLimits = new SessionLimits { MaxLifetime = TimeSpan.FromMinutes(30), IdleTimeout = TimeSpan.FromMinutes(5) }
+                            });
+                        }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[SessionEngine] Monitor loop error: {ex.Message}");
+                catch (Exception ex)
+                {
+                    Signal.Error(LogGroup.Engine, "Session引擎监控循环异常", new { error = ex.Message });
+                }
             }
         }
-
-        // 退出时全量持久化
-        await PersistAllAsync();
+        finally
+        {
+            // 退出时全量持久化
+            await PersistAllAsync();
+            lifeCtx.Close(new { engineType = EngineType, reason = "shutdown" });
+        }
     }
 
     public void OnEvent(EngineEvent e) { }
@@ -389,7 +407,7 @@ internal class SessionEngine : ISubEngine
                 {
                     // 恢复 session（简化：仅状态为 Running/Crashed 的恢复）
                     var sessionId = Path.GetFileName(dir);
-                    Console.WriteLine($"[SessionEngine] Restoring session {sessionId}...");
+                    Signal.Event(LogGroup.Engine, "恢复 Session", new { sessionId });
                 }
             }
             catch { /* skip corrupt */ }

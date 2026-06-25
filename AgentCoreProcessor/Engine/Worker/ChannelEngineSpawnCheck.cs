@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Database;
+using AgentCoreProcessor.Logging;
 
 namespace AgentCoreProcessor.Engine
 {
@@ -86,7 +87,8 @@ namespace AgentCoreProcessor.Engine
             {
                 var claimerId = sessionEngine.GetFullClaimer(channelId);
                 var claimerAlive = claimerId != null && sessionEngine.GetSession(claimerId)?.IsAlive == true;
-                System.Console.Error.WriteLine($"[Inbound ch:{channelId}] msg#{sessionContext.IncomingMessage.Id} claimer={claimerId ?? "<none>"} alive={claimerAlive}");
+                Signal.Debug(LogGroup.Engine, "入向投递判定",
+                    new { channelId, msgId = sessionContext.IncomingMessage.Id, claimer = claimerId, alive = claimerAlive });
                 if (claimerId != null && claimerAlive)
                 {
                     var messageEngine = ctx.GetActiveEnginesSnapshot()
@@ -94,10 +96,12 @@ namespace AgentCoreProcessor.Engine
                     if (messageEngine != null)
                     {
                         messageEngine.DeliverToSession(channelId, sessionContext.IncomingMessage);
-                        System.Console.Error.WriteLine($"[Inbound ch:{channelId}] 已投递 msg#{sessionContext.IncomingMessage.Id} 到 session {claimerId} 端口，不走 ChannelEngine");
+                        Signal.Event(LogGroup.Engine, "入向已投递到 session 端口",
+                            new { channelId, msgId = sessionContext.IncomingMessage.Id, sessionId = claimerId });
                         return;
                     }
-                    System.Console.Error.WriteLine($"[Inbound ch:{channelId}] claimer 命中但 MessageEngine 未找到，回退 ChannelEngine");
+                    Signal.Warn(LogGroup.Engine, "claimer 命中但 MessageEngine 未找到，回退 ChannelEngine",
+                        new { channelId, sessionId = claimerId });
                 }
             }
 
