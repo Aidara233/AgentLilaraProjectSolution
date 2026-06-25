@@ -1,3 +1,3 @@
 {
-  "autoStart": ["Timer", "Session", "Vision"]
+  "autoStart": ["Message", "Timer", "Session", "Vision"]
 }
