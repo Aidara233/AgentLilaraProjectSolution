@@ -42,7 +42,6 @@ public class BasicToolsComponent : LoopComponentBase
         // 连接驱动：session 注入 IConnectedChannel，发送工具据此运行期决定目标频道并校验发言权限。
         // express（ChannelEngine）无此服务，回退到 loopId 解析的固定 channelId。
         var connected = context.GetService<IConnectedChannel>();
-        System.Console.Error.WriteLine($"[BasicTools.OnInit] loopId={context.LoopId}, connected={(connected != null ? "OK" : "NULL")}, channelId={channelId}");
 
         if (channelAccess != null)
         {

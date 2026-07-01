@@ -497,6 +497,29 @@ internal class RuntimeSession : IRuntimeSession
 
                 agentRound++;
 
+                // 中途注入：每轮推理前检查端口是否有新消息，有就立即注入上下文（不阻塞等待）
+                {
+                    var midDrain = DrainInputPortsRaw(CancellationToken.None);
+                    if (midDrain.Count > 0)
+                    {
+                        if (_host != null)
+                        {
+                            var cd = midDrain.Where(d => d.channelId > 0).ToList();
+                            var sd = midDrain.Where(d => d.channelId <= 0).ToList();
+                            if (cd.Count > 0)
+                                messages.AddRange(await _host.BuildRoundAsync(cd));
+                            foreach (var grp in cd.GroupBy(d => d.channelId))
+                                AdvanceChannelCursor(grp.Key, grp.Max(d => d.msg.Id));
+                            foreach (var (_, um, _) in sd)
+                                messages.Add(new Message { Role = "user", Content = um.Content });
+                        }
+                        else
+                        {
+                            messages.AddRange(midDrain.Select(d => new Message { Role = "user", Content = (d.isMention ? "⚠️ [被@提及]\n" : "") + d.msg.Content }));
+                        }
+                    }
+                }
+
                 // 每轮推理一条 span，承载模型调用 + 工具执行的耗时与结果
                 using var roundSpan = Signal.Open(LogGroup.Engine, $"Session 轮次 #{agentRound}",
                     new { sessionId = SessionId, round = agentRound, toolCount = _tools.Count });
