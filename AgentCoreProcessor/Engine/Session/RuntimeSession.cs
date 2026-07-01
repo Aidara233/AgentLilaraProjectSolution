@@ -594,10 +594,10 @@ internal class RuntimeSession : IRuntimeSession
                 }
                 else
                 {
-                    // 无工具调用：模型给了最终回复，结束突发，等待下一轮输入（session 保活，历史保留）
-                    Signal.Event(LogGroup.Engine, "无工具调用，结束突发回等待",
-                        new { sessionId = SessionId, historyCount = messages.Count });
-                    awaitingInput = true;
+                    // 模型无工具调用：注入提醒继续循环（Working session 不应自动挂起）
+                    Signal.Event(LogGroup.Engine, "无工具调用，注入提醒继续",
+                        new { sessionId = SessionId, round = agentRound });
+                    messages.Add(new Message { Role = "user", Content = "[系统] 你没有调用任何工具。如果任务完成请用 end_session 结束，需要等人回复用 wait 挂起，否则继续工作。" });
                 }
             }
         }
@@ -773,11 +773,8 @@ internal class RuntimeSession : IRuntimeSession
 
     private void InjectMessage(object data)
     {
-        foreach (var (_, port) in _inputs)
-        {
-            if (port is ChannelInputPort<object> cp)
-                cp.Write(data);
-        }
+        var text = data is string s ? s : Newtonsoft.Json.JsonConvert.SerializeObject(data);
+        _pendingInjections.Add(new Message { Role = "user", Content = $"[系统] {text}" });
     }
 
     // ── 持久化 ──
