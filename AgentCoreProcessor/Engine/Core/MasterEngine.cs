@@ -631,6 +631,11 @@ namespace AgentCoreProcessor.Engine
             Tool.ToolRegistry.Register(new Tool.Core.RefineImageTool(), isNonComponent: true);
             Tool.ToolRegistry.Register(new Tool.Core.GetImageTextTool(), isNonComponent: true);
 
+            // 频道连接工具（session 运行期连接/断开频道，副作用由 RuntimeSession 执行）
+            Tool.ToolRegistry.Register(new Tool.Core.ConnectChannelTool(), isNonComponent: true);
+            Tool.ToolRegistry.Register(new Tool.Core.ListenChannelTool(), isNonComponent: true);
+            Tool.ToolRegistry.Register(new Tool.Core.DisconnectChannelTool(), isNonComponent: true);
+
             // 插件加载
             _toolContext = new Tool.Host.ToolContextImpl(new Tool.Host.PluginStorageImpl("_system"));
             var memoryAccess = new Tool.Host.MemoryAccessImpl(Memories, TempMemories, MemoryLinks, Embedding);

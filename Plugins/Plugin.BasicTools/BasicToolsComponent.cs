@@ -39,17 +39,30 @@ public class BasicToolsComponent : LoopComponentBase
         var channelAccess = context.GetService<IChannelAccess>();
         var channelId = ParseChannelId(context.LoopId);
         var speakGuard = context.GetService<ISpeakGuard>();
+        // 连接驱动：session 注入 IConnectedChannel，发送工具据此运行期决定目标频道并校验发言权限。
+        // express（ChannelEngine）无此服务，回退到 loopId 解析的固定 channelId。
+        var connected = context.GetService<IConnectedChannel>();
+        System.Console.Error.WriteLine($"[BasicTools.OnInit] loopId={context.LoopId}, connected={(connected != null ? "OK" : "NULL")}, channelId={channelId}");
 
-        _speak = channelAccess != null
-            ? new SpeakTool(channelAccess, channelId, speakGuard)
-            : new SpeakTool();
+        if (channelAccess != null)
+        {
+            _speak = connected != null
+                ? new SpeakTool(channelAccess, connected, speakGuard)
+                : new SpeakTool(channelAccess, channelId, speakGuard);
+            _sendMedia = connected != null
+                ? new SendMediaTool(channelAccess, connected)
+                : new SendMediaTool(channelAccess, channelId);
+            _sendFile = connected != null
+                ? new SendFileTool(channelAccess, connected)
+                : new SendFileTool(channelAccess, channelId);
+        }
+        else
+        {
+            _speak = new SpeakTool();
+            _sendMedia = new SendMediaTool();
+            _sendFile = new SendFileTool();
+        }
         _thinking = new ThinkingTool();
-        _sendMedia = channelAccess != null
-            ? new SendMediaTool(channelAccess, channelId)
-            : new SendMediaTool();
-        _sendFile = channelAccess != null
-            ? new SendFileTool(channelAccess, channelId)
-            : new SendFileTool();
 
         var adapterAccess = context.GetService<IAdapterAccess>();
         if (adapterAccess != null && channelAccess != null)

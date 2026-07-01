@@ -103,9 +103,12 @@ namespace AgentCoreProcessor.Engine
                         .OfType<Messaging.MessageEngine>().FirstOrDefault();
                     if (messageEngine != null)
                     {
-                        messageEngine.DeliverToSession(channelId, sessionContext.IncomingMessage, msg.IsMentioned);
+                        // 私聊视同提及：投 mention 子流即时激活 session（否则 normal 子流要攒满 20 条权重才醒）。
+                        // 与 express 路径一致（ImpulseTracker 对 IsPrivate/IsMentioned 都即时响应）。
+                        var deliverAsMention = msg.IsMentioned || msg.IsPrivate;
+                        messageEngine.DeliverToSession(channelId, sessionContext.IncomingMessage, deliverAsMention);
                         Signal.Event(LogGroup.Engine, "入向已投递到 session 端口",
-                            new { channelId, msgId = sessionContext.IncomingMessage.Id, sessionId = claimerId });
+                            new { channelId, msgId = sessionContext.IncomingMessage.Id, sessionId = claimerId, asMention = deliverAsMention });
                         return;
                     }
                     Signal.Warn(LogGroup.Engine, "claimer 命中但 MessageEngine 未找到，回退 ChannelEngine",

@@ -141,7 +141,7 @@ public class FormatIncomingTests
         };
         var msg = await svc.FormatIncomingAsync(MakeState(), m);
         Assert.NotNull(msg);
-        Assert.Contains("[@你]", msg!.Content);
+        Assert.Contains("@提及", msg!.Content);
     }
 
     [Fact]

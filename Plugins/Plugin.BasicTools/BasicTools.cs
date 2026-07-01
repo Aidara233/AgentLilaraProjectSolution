@@ -17,6 +17,7 @@ namespace Plugin.BasicTools
             @"\[wait(?::([^\]]*))?\]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         private readonly IChannelAccess? _channelAccess;
+        private readonly IConnectedChannel? _connected;
         private readonly int _channelId;
         private readonly ISpeakGuard? _speakGuard;
 
@@ -28,6 +29,17 @@ namespace Plugin.BasicTools
             _channelId = channelId;
             _speakGuard = speakGuard;
         }
+
+        /// <summary>连接驱动构造：目标频道由 IConnectedChannel 运行期决定，且仅 Full 连接态可发言。</summary>
+        public SpeakTool(IChannelAccess channelAccess, IConnectedChannel connected, ISpeakGuard? speakGuard = null)
+        {
+            _channelAccess = channelAccess;
+            _connected = connected;
+            _speakGuard = speakGuard;
+        }
+
+        /// <summary>当前目标频道：优先连接状态，回退构造时写死的 channelId。</summary>
+        private int TargetChannelId => _connected?.CurrentChannelId ?? _channelId;
 
         public string Name => "speak";
         public string Description => "逐条发送消息到当前频道。content 为一个字符串，"
@@ -59,6 +71,13 @@ namespace Plugin.BasicTools
         {
             if (resolvedInputs.Count < 1 || string.IsNullOrWhiteSpace(resolvedInputs[0]))
                 return new ToolResult { Status = "failed", Error = "消息内容不能为空" };
+
+            // 连接态校验：仅 Full 连接才可发言（Listen/未连接均不可）
+            if (_connected != null && !_connected.CanSpeak)
+                return new ToolResult { Status = "failed", Error =
+                    _connected.CurrentChannelId == 0
+                        ? "消息发送失败：当前未连接任何频道，请先用 connect_channel 连接"
+                        : "消息发送失败：当前为旁听态（listen），不能发言。如需发言请用 connect_channel 占用频道" };
 
             // 防话唠阻断：连续多轮只说话不做实际工作时阻止 speak 调用
             if (_speakGuard?.IsBlocked == true)
@@ -109,7 +128,7 @@ namespace Plugin.BasicTools
             {
                 ct.ThrowIfCancellationRequested();
 
-                var sentId = await _channelAccess.SendMessageAsync(_channelId, filteredMessages[i]);
+                var sentId = await _channelAccess.SendMessageAsync(TargetChannelId, filteredMessages[i]);
                 if (sentId != null)
                     sentIds.Add(sentId);
 
@@ -156,6 +175,7 @@ namespace Plugin.BasicTools
     public class SendFileTool : ITool
     {
         private readonly IChannelAccess? _channelAccess;
+        private readonly IConnectedChannel? _connected;
         private readonly int _channelId;
 
         public SendFileTool() { }
@@ -165,6 +185,14 @@ namespace Plugin.BasicTools
             _channelAccess = channelAccess;
             _channelId = channelId;
         }
+
+        public SendFileTool(IChannelAccess channelAccess, IConnectedChannel connected)
+        {
+            _channelAccess = channelAccess;
+            _connected = connected;
+        }
+
+        private int TargetChannelId => _connected?.CurrentChannelId ?? _channelId;
 
         public string Name => "send_file";
         public string Description => "发送文件到当前频道。file_path: hash:xxx（图库）或 Workspace 相对路径。"
@@ -181,13 +209,19 @@ namespace Plugin.BasicTools
             if (resolvedInputs.Count < 1 || string.IsNullOrWhiteSpace(resolvedInputs[0]))
                 return Task.FromResult(new ToolResult { Status = "failed", Error = "文件路径不能为空" });
 
+            if (_connected != null && !_connected.CanSpeak)
+                return Task.FromResult(new ToolResult { Status = "failed", Error =
+                    _connected.CurrentChannelId == 0
+                        ? "发送失败：当前未连接任何频道，请先用 connect_channel 连接"
+                        : "发送失败：当前为旁听态（listen），不能发送。如需发送请用 connect_channel 占用频道" });
+
             var filePath = resolvedInputs[0].Trim();
             var fileName = resolvedInputs.Count > 1 ? resolvedInputs[1]?.Trim() : null;
 
             if (_channelAccess != null)
             {
                 var channelAccess = _channelAccess;
-                var channelId = _channelId;
+                var channelId = TargetChannelId;
                 _ = Task.Run(async () =>
                 {
                     try
@@ -247,6 +281,7 @@ namespace Plugin.BasicTools
     public class SendMediaTool : ITool
     {
         private readonly IChannelAccess? _channelAccess;
+        private readonly IConnectedChannel? _connected;
         private readonly int _channelId;
 
         public SendMediaTool() { }
@@ -256,6 +291,14 @@ namespace Plugin.BasicTools
             _channelAccess = channelAccess;
             _channelId = channelId;
         }
+
+        public SendMediaTool(IChannelAccess channelAccess, IConnectedChannel connected)
+        {
+            _channelAccess = channelAccess;
+            _connected = connected;
+        }
+
+        private int TargetChannelId => _connected?.CurrentChannelId ?? _channelId;
 
         public string Name => "send_media";
         public string Description => "发送独立媒体（语音/视频/贴纸），不适合和文字混排。图片请用 speak 的 <img/> 标签。"
@@ -272,12 +315,18 @@ namespace Plugin.BasicTools
             if (resolvedInputs.Count < 2 || string.IsNullOrWhiteSpace(resolvedInputs[1]))
                 return new ToolResult { Status = "failed", Error = "类型和路径不能为空" };
 
+            if (_connected != null && !_connected.CanSpeak)
+                return new ToolResult { Status = "failed", Error =
+                    _connected.CurrentChannelId == 0
+                        ? "发送失败：当前未连接任何频道，请先用 connect_channel 连接"
+                        : "发送失败：当前为旁听态（listen），不能发送。如需发送请用 connect_channel 占用频道" };
+
             var type = resolvedInputs[0].Trim().ToLower();
             var path = resolvedInputs[1].Trim();
 
             if (_channelAccess != null)
             {
-                var sentId = await _channelAccess.SendMediaAsync(_channelId, type, path);
+                var sentId = await _channelAccess.SendMediaAsync(TargetChannelId, type, path);
                 return sentId != null
                     ? new ToolResult { Status = "success", Data = sentId }
                     : new ToolResult { Status = "failed", Error = "媒体发送失败" };

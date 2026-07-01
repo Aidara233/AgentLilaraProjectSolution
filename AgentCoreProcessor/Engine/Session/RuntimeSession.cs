@@ -52,6 +52,11 @@ internal class RuntimeSession : IRuntimeSession
     private ICurrencyService? _currency;
     private AgentCore? _agentCore;
     private MessageEngine? _messageEngine;
+    private SessionEngine? _sessionEngine;
+    private readonly ConnectedChannelState _connected = new();
+    /// <summary>当前连接频道的输入端口（normal + 可选 mention），断开时退订。</summary>
+    private readonly List<IInputPort> _connectedPorts = new();
+    private readonly List<ToolCall> _initActions;
     private object? _initialState;
     private int _roundCount;
     private readonly DateTime _createdAt = DateTime.UtcNow;
@@ -62,7 +67,6 @@ internal class RuntimeSession : IRuntimeSession
     public event Action<IRuntimeSession>? OnCompleted;
 
     private const int FreeRounds = 20;
-    private const int MaxAgentRounds = 15;
 
     public RuntimeSession(CreateSessionSpec spec)
     {
@@ -70,6 +74,7 @@ internal class RuntimeSession : IRuntimeSession
         if (spec.OverrideLimits != null) Limits = spec.OverrideLimits;
         _componentIds.AddRange(spec.ComponentIds);
         _initialState = spec.InitialState;
+        _initActions = spec.InitActions ?? new List<ToolCall>();
     }
 
     // ── 依赖注入 ──
@@ -77,6 +82,10 @@ internal class RuntimeSession : IRuntimeSession
     public void SetCurrency(ICurrencyService currency) => _currency = currency;
     public void SetAgentCore(AgentCore core) => _agentCore = core;
     public void SetMessageEngine(MessageEngine me) => _messageEngine = me;
+    public void SetSessionEngine(SessionEngine se) => _sessionEngine = se;
+
+    /// <summary>当前连接频道状态（注入组件 perLoopServices，供发送工具读取）。</summary>
+    public ConnectedChannelState ConnectedChannel => _connected;
 
     /// <summary>
     /// 从 ComponentRegistry 加载指定组件，构建 ComponentHost。
@@ -89,7 +98,12 @@ internal class RuntimeSession : IRuntimeSession
         var loopType = LoopId.ExtractLoopType(loopId);
         // 组件白名单使用 "channel" 类型（BasicTools 等都注册在 "channel" 下）
         _componentLoopType = loopType == "session" ? "channel" : loopType;
-        _componentHost = new ComponentHost(loopId, _componentLoopType, moduleBus, services, wakeLoop);
+        // 注入 per-session 连接状态：发送工具据此决定目标频道并校验发言权限
+        var perLoopServices = new Dictionary<Type, object>
+        {
+            [typeof(IConnectedChannel)] = _connected
+        };
+        _componentHost = new ComponentHost(loopId, _componentLoopType, moduleBus, services, wakeLoop, perLoopServices);
         _componentHost.InitAsync().GetAwaiter().GetResult();
 
         RefreshToolList();
@@ -129,6 +143,164 @@ internal class RuntimeSession : IRuntimeSession
 
     public void AddInputPort(string name, IInputPort port) => _inputs[name] = port;
     public void AddOutputPort(string name, IOutputPort port) => _outputs[name] = port;
+
+    // ── 频道连接 ──
+    // 连接 = 统一动作，同时管输入（订阅+历史）、输出（speak 去向）、占用（claim→停 express）。
+    // 独占单频道：连新的先断旧的。connect_channel/listen_channel/disconnect_channel 工具与
+    // InitActions bootstrap 都通过 ApplyToolEffect 走到这里，逻辑单一来源。
+
+    /// <summary>连接动作产生的上下文消息（频道信息+参与者+历史 / 系统提示），由 RunAsync 注入下一轮。</summary>
+    private readonly List<Message> _pendingInjections = new();
+
+    /// <summary>bootstrap（InitActions）生成的初始化系统消息，CreateSession 同步生成，RunAsync 首轮消费。</summary>
+    private readonly List<Message> _bootstrapMessages = new();
+
+    /// <summary>
+    /// 连接到频道。Full：claim 占用+停 express+订阅 normal+mention+可发言；Listen：仅订阅 normal、不占用、不可发言。
+    /// 连接前先断开当前连接（独占单频道）。连接后载入该频道历史到下一轮上下文。
+    /// </summary>
+    public async Task ConnectChannelAsync(int channelId, ConnectionMode mode)
+    {
+        if (channelId <= 0 || _sessionEngine == null || _messageEngine == null) return;
+
+        // 独占：先断开当前连接
+        if (_connected.CurrentChannelId != 0)
+            DisconnectChannel();
+
+        var level = mode == ConnectionMode.Full ? ClaimLevel.Full : ClaimLevel.Listen;
+        var claimed = _sessionEngine.ClaimChannel(SessionId, channelId, level);
+        if (!claimed && mode == ConnectionMode.Full)
+        {
+            _pendingInjections.Add(new Message { Role = "user",
+                Content = $"[系统] 连接频道 {channelId} 失败：该频道已被其他会话占用。" });
+            return;
+        }
+
+        // 订阅消息：Full 收 normal+mention，Listen 仅收 normal
+        var normalPort = _sessionEngine.SubscribeChannel(channelId, "normal", 5);
+        _inputs[$"ch{channelId}:normal"] = normalPort;
+        _connectedPorts.Add(normalPort);
+        if (mode == ConnectionMode.Full)
+        {
+            var mentionPort = _sessionEngine.SubscribeChannel(channelId, "mention", 100);
+            _inputs[$"ch{channelId}:mention"] = mentionPort;
+            _connectedPorts.Add(mentionPort);
+        }
+
+        _connected.Set(channelId, mode);
+
+        // 载入频道上下文（信息+参与者+历史）到下一轮
+        if (_host != null)
+        {
+            var channel = await _sessionEngine.GetChannelByIdAsync(channelId);
+            _host.AttachChannel(channelId, channel?.Name);
+            try { _pendingInjections.AddRange(await _host.BuildChannelContextAsync(channelId)); }
+            catch (Exception ex) { Signal.Warn(LogGroup.Engine, "连接频道历史载入失败", new { sessionId = SessionId, channelId, error = ex.Message }); }
+        }
+
+        Signal.Event(LogGroup.Engine, "Session 连接频道",
+            new { sessionId = SessionId, channelId, mode = mode.ToString() });
+    }
+
+    /// <summary>断开当前连接频道：退订端口、移除 InputPort、释放 claim、清状态、host 卸载。</summary>
+    public void DisconnectChannel()
+    {
+        var channelId = _connected.CurrentChannelId;
+        if (channelId == 0) return;
+
+        foreach (var port in _connectedPorts)
+            _messageEngine?.Unsubscribe(port);
+        _connectedPorts.Clear();
+        var toRemove = _inputs.Keys.Where(k => k.StartsWith($"ch{channelId}:")).ToList();
+        foreach (var k in toRemove) _inputs.Remove(k);
+
+        _sessionEngine?.ReleaseChannel(SessionId, channelId);
+        _host?.DetachChannel(channelId);
+        _connected.Clear();
+
+        Signal.Event(LogGroup.Engine, "Session 断开频道", new { sessionId = SessionId, channelId });
+    }
+
+    /// <summary>工具副作用结果：是否结束本突发 / 整个会话。</summary>
+    private readonly record struct ToolEffect(bool EndBurst, bool EndSession);
+
+    /// <summary>
+    /// 执行初始化工具调用（bootstrap）。由 CreateSession 在 host 就绪后**同步**调用——
+    /// claim/订阅/连接是入向路由前提，必须在 CreateSession 返回前生效，否则 escalate 后
+    /// 新消息因 GetFullClaimer 命中不到而落回 ChannelEngine。结果系统消息缓存供 RunAsync 首轮消费。
+    /// </summary>
+    public async Task BootstrapAsync()
+    {
+        if (_initActions.Count == 0) return;
+
+        var resolver = (Func<string, ITool?>)(name => _componentHost?.TryGetTool(name) ?? ToolRegistry.Get(name));
+        var executor = new ToolExecutor(resolver);
+        var lines = new List<string>();
+
+        foreach (var action in _initActions)
+        {
+            var results = await executor.ExecuteAsync(new List<ToolCall> { action });
+            var result = results.Count > 0 ? results[0]
+                : new ToolResult { Status = "failed", Error = "无结果" };
+            await ApplyToolEffectAsync(action, result);
+
+            var argStr = action.Inputs.Count > 0 ? string.Join(", ", action.Inputs) : "";
+            var summary = result.IsSuccess
+                ? DescribeInitResult(action.Tool, result)
+                : $"失败：{result.Error ?? result.Status}";
+            lines.Add($"- {action.Tool}({argStr}) → {summary}");
+        }
+
+        var msg = "[初始化] 你启动时执行了以下工具调用：\n" + string.Join("\n", lines);
+        _bootstrapMessages.Add(new Message { Role = "user", Content = msg });
+    }
+
+    /// <summary>为初始化工具结果生成人类可读说明（连接类工具据当前连接状态描述）。</summary>
+    private string DescribeInitResult(string tool, ToolResult result)
+    {
+        return tool switch
+        {
+            "connect_channel" => _connected.CanSpeak
+                ? $"已连接到频道「{_connected.CurrentChannelId}」（可发言）"
+                : $"连接频道 {result.Data} 未成功（可能已被占用）",
+            "listen_channel" => $"已旁听频道「{_connected.CurrentChannelId}」（只看不说）",
+            "disconnect_channel" => "已断开频道连接",
+            _ => result.Data ?? "成功"
+        };
+    }
+
+    /// <summary>
+    /// 统一工具副作用分发。正常 agent 循环与 InitActions bootstrap 共用单一来源。
+    /// speak/send_media 等 OutputOnly 工具自带发送，不在此重发。
+    /// </summary>
+    private async Task<ToolEffect> ApplyToolEffectAsync(ToolCall call, ToolResult result)
+    {
+        switch (call.Tool)
+        {
+            case "end_session":
+                await SendOutput(result.Data ?? "工作完成。");
+                return new ToolEffect(false, true);
+            case "wait":
+                var mins = 5;
+                if (call.Inputs.Count > 1 && int.TryParse(call.Inputs[1], out var parsed))
+                    mins = parsed;
+                SetWaitUntil(DateTime.UtcNow.AddMinutes(mins));
+                return new ToolEffect(true, false);
+            case "connect_channel":
+                if (int.TryParse(result.Data, out var connId))
+                    await ConnectChannelAsync(connId, ConnectionMode.Full);
+                return default;
+            case "listen_channel":
+                if (int.TryParse(result.Data, out var listenId))
+                    await ConnectChannelAsync(listenId, ConnectionMode.Listen);
+                return default;
+            case "disconnect_channel":
+                DisconnectChannel();
+                return default;
+            default:
+                return default;
+        }
+    }
 
     // ── 组件管理 ──
 
@@ -222,6 +394,21 @@ internal class RuntimeSession : IRuntimeSession
             Signal.Warn(LogGroup.Engine, "AgentHost 未就绪，使用裸 InitialState", new { sessionId = SessionId });
         }
 
+        // 初始化工具调用（bootstrap）：claim/订阅/连接已在 CreateSession 同步完成（路由前提），
+        // 这里仅消费已生成的初始化系统消息 + 连接上下文，注入首轮。
+        if (_bootstrapMessages.Count > 0)
+        {
+            messages.AddRange(_bootstrapMessages);
+            _bootstrapMessages.Clear();
+        }
+
+        // 连接动作产生的频道上下文（历史等）追加进首轮
+        if (_pendingInjections.Count > 0)
+        {
+            messages.AddRange(_pendingInjections);
+            _pendingInjections.Clear();
+        }
+
         int agentRound = 0;
         // 首轮已有 BuildStartAsync 的初始上下文，直接处理；之后每突发结束置 true 回到等待
         bool awaitingInput = messages.Count == 0;
@@ -246,7 +433,7 @@ internal class RuntimeSession : IRuntimeSession
                     SetWaitUntil(null);
                     awaitingInput = false;
 
-                    // 新突发开始：重置突发内轮次计数（MaxAgentRounds 防单突发 runaway，非会话总轮次）
+                    // 新突发开始：重置突发内轮次计数
                     agentRound = 0;
 
                     // 轮次定价
@@ -298,17 +485,17 @@ internal class RuntimeSession : IRuntimeSession
                 // ── Agent 推理 ──
                 if (_agentCore == null) break;
 
-                _agentCore.EngineType = "channel"; // 复用 channel 工具白名单（所有 session 统一用 channel 过滤）
-                _agentCore.CurrentModeId = null;   // 不分子模式，工具范围由组件决定（不过 ModeConfig 白名单）
+                // 连接动作（上一轮 connect_channel）产生的频道上下文，注入本轮推理前
+                if (_pendingInjections.Count > 0)
+                {
+                    messages.AddRange(_pendingInjections);
+                    _pendingInjections.Clear();
+                }
+
+                _agentCore.EngineType = "channel";
                 _agentCore.AdditionalTools = _tools.Values.ToList();
 
                 agentRound++;
-                if (agentRound > MaxAgentRounds)
-                {
-                    await SendOutput($"已达到最大轮次限制（{MaxAgentRounds}），会话即将结束。");
-                    endReason = "max-rounds";
-                    break;
-                }
 
                 // 每轮推理一条 span，承载模型调用 + 工具执行的耗时与结果
                 using var roundSpan = Signal.Open(LogGroup.Engine, $"Session 轮次 #{agentRound}",
@@ -359,27 +546,9 @@ internal class RuntimeSession : IRuntimeSession
                     var endSession = false;
                     for (int i = 0; i < output.ToolCalls.Count; i++)
                     {
-                        var call = output.ToolCalls[i];
-                        var result = results[i];
-
-                        switch (call.Tool)
-                        {
-                            // speak/send_media 等 OutputOnly 工具自带发送，不在此重发（旧代码 SendOutput(result.Data) 会把消息ID当正文重发）
-                            case "end_session":
-                                // end_session 自身不发消息，这里把理由作为收尾发言发出；会话终结
-                                await SendOutput(result.Data ?? "工作完成。");
-                                endSession = true;
-                                break;
-                            case "wait":
-                                // 挂起本突发，等下条消息或超时唤醒，session 保活
-                                // 分钟数来自第二个参数 timeout_minutes（Inputs[1]），Inputs[0] 是 reason
-                                var mins = 5;
-                                if (call.Inputs.Count > 1 && int.TryParse(call.Inputs[1], out var parsed))
-                                    mins = parsed;
-                                SetWaitUntil(DateTime.UtcNow.AddMinutes(mins));
-                                endBurst = true;
-                                break;
-                        }
+                        var effect = await ApplyToolEffectAsync(output.ToolCalls[i], results[i]);
+                        if (effect.EndBurst) endBurst = true;
+                        if (effect.EndSession) endSession = true;
                     }
 
                     // 内联 wait（speak 含 [wait] 占位符时 result.RequestWait=true）：挂起本突发

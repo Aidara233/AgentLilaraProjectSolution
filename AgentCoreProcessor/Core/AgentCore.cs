@@ -40,9 +40,6 @@ namespace AgentCoreProcessor.Core
         /// <summary>当前引擎类型（如 "channel"、"system"、"review"、"sub-agent"），用于工具过滤。</summary>
         public string? EngineType { get; set; }
 
-        /// <summary>当前模式 ID（如 "express"、"plan"、"build"）。null 时跳过模式过滤（子 agent 等场景）。</summary>
-        public string? CurrentModeId { get; set; }
-
         public AgentCore() : base("SessionCore")
         {
         }
@@ -86,7 +83,6 @@ namespace AgentCoreProcessor.Core
                     foreach (var t in GlobalComponentTools)
                     {
                         if (ToolRegistry.IsDisabled(t.Name)) continue;
-                        if (!ModeConfigLoader.IsToolEnabled("express", t.Name)) continue;
                         if (DisableImageMessages && ImageDependentTools.Contains(t.Name)) continue;
                         if (expressDefs.Any(d => d.Name == t.Name)) continue;
                         expressDefs.Add(ToDefinition(t));
@@ -98,7 +94,6 @@ namespace AgentCoreProcessor.Core
                     foreach (var t in AdditionalTools)
                     {
                         if (ToolRegistry.IsDisabled(t.Name)) continue;
-                        if (!ModeConfigLoader.IsToolEnabled("express", t.Name)) continue;
                         if (DisableImageMessages && ImageDependentTools.Contains(t.Name)) continue;
                         if (expressDefs.Any(d => d.Name == t.Name)) continue;
                         expressDefs.Add(ToDefinition(t));
@@ -189,7 +184,6 @@ namespace AgentCoreProcessor.Core
                 .Select(ToolRegistry.Get)
                 .Where(t => t != null && !ToolRegistry.IsDisabled(t.Name)
                             && ToolRegistry.IsApplicableToEngine(t.Name, EngineType)
-                            && (CurrentModeId == null || ModeConfigLoader.IsToolEnabled(CurrentModeId, t.Name))
                             && !(DisableImageMessages && ImageDependentTools.Contains(t.Name)))
                 .Select(ToDefinition!)
                 .ToList();
@@ -260,7 +254,6 @@ namespace AgentCoreProcessor.Core
             foreach (var t in tools)
             {
                 if (ToolRegistry.IsDisabled(t.Name)) continue;
-                if (CurrentModeId != null && !ModeConfigLoader.IsToolEnabled(CurrentModeId, t.Name)) continue;
                 if (defs.Any(d => d.Name == t.Name)) continue;
                 defs.Add(ToDefinition(t));
             }

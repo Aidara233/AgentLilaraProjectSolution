@@ -257,7 +257,7 @@ namespace AgentCoreProcessor.Engine
             if (ctx.GlobalComponentHost != null)
             {
                 var groups = ToolListFormatter.CollectGroups(null, ctx.GlobalComponentHost);
-                var overview = ToolListFormatter.BuildToolOverviewSection(groups, "express");
+                var overview = ToolListFormatter.BuildToolOverviewSection(groups);
                 if (!string.IsNullOrEmpty(overview))
                     msgs.Add(new Message { Role = "user", Content = overview });
 

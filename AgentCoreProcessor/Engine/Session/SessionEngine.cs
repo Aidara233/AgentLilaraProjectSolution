@@ -47,6 +47,7 @@ internal class SessionEngine : ISubEngine
     {
         var session = new RuntimeSession(spec);
         session.SetCurrency(_currency!);
+        session.SetSessionEngine(this);
 
         // 确定 loopId：单频道端口时用 LoopId.ForChannel，让 BasicTools 能解析真实 channelId
         string loopId;
@@ -104,33 +105,41 @@ internal class SessionEngine : ISubEngine
                 new { sessionId = session.SessionId, channelId = firstChannel, claimed, claimer = GetFullClaimer(firstChannel) });
         }
 
-        // 构建 SessionAgentHost（异步查询 channelName 后注入）
-        _ = Task.Run(async () =>
+        // 构建 SessionAgentHost（同步）：InitActions 的 connect_channel 需要 host 已就绪才能挂载频道上下文
+        try
         {
-            try
+            var channelPorts = new List<(int channelId, string? channelName, bool preload)>();
+            foreach (var (_, portSpec) in spec.InputPorts)
             {
-                var channelPorts = new List<(int channelId, string? channelName, bool preload)>();
-                foreach (var (_, portSpec) in spec.InputPorts)
-                {
-                    var ch = await _ctx.Session.GetChannelByIdAsync(portSpec.ChannelId);
-                    channelPorts.Add((portSpec.ChannelId, ch?.Name, portSpec.PreloadHistory));
-                }
+                var ch = _ctx.Session.GetChannelByIdAsync(portSpec.ChannelId).GetAwaiter().GetResult();
+                channelPorts.Add((portSpec.ChannelId, ch?.Name, portSpec.PreloadHistory));
+            }
 
-                var dataSource = new SystemContextDataSource(_ctx);
-                var svc = new ChannelContextService(dataSource);
-                var initialStateText = spec.InitialState is string s ? s
-                    : spec.InitialState != null ? Newtonsoft.Json.JsonConvert.SerializeObject(spec.InitialState)
-                    : null;
-                var host = new SessionAgentHost(channelPorts, initialStateText, svc);
-                session.SetAgentHost(host);
-                Signal.Event(LogGroup.Engine, "Session AgentHost 就绪",
-                    new { sessionId = session.SessionId, channelPorts = channelPorts.Count, loopId });
-            }
-            catch (Exception ex)
-            {
-                Signal.Error(LogGroup.Engine, "Session AgentHost 初始化失败", new { sessionId = session.SessionId, error = ex.Message });
-            }
-        });
+            var dataSource = new SystemContextDataSource(_ctx);
+            var svc = new ChannelContextService(dataSource);
+            var initialStateText = spec.InitialState is string s ? s
+                : spec.InitialState != null ? Newtonsoft.Json.JsonConvert.SerializeObject(spec.InitialState)
+                : null;
+            var host = new SessionAgentHost(channelPorts, initialStateText, svc);
+            session.SetAgentHost(host);
+            Signal.Event(LogGroup.Engine, "Session AgentHost 就绪",
+                new { sessionId = session.SessionId, channelPorts = channelPorts.Count, loopId });
+        }
+        catch (Exception ex)
+        {
+            Signal.Error(LogGroup.Engine, "Session AgentHost 初始化失败", new { sessionId = session.SessionId, error = ex.Message });
+        }
+
+        // 执行 InitActions bootstrap（同步）：claim/订阅/连接是入向路由前提，必须在 CreateSession
+        // 返回前生效，否则触发者（escalate）返回后新消息因 claim 未建立而落回 ChannelEngine。
+        try
+        {
+            session.BootstrapAsync().GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            Signal.Error(LogGroup.Engine, "Session Bootstrap 失败", new { sessionId = session.SessionId, error = ex.Message });
+        }
 
         // 启动 Session
         _ = Task.Run(async () =>
@@ -201,6 +210,24 @@ internal class SessionEngine : ISubEngine
     }
 
     // ── 频道占用 ──
+
+    /// <summary>供 RuntimeSession 连接动作查询频道名称。</summary>
+    public Task<Database.Channel?> GetChannelByIdAsync(int channelId)
+        => _ctx.Session.GetChannelByIdAsync(channelId);
+
+    /// <summary>供 RuntimeSession 连接动作订阅频道消息子流。</summary>
+    public IInputPort SubscribeChannel(int channelId, string subStream, int weight)
+    {
+        var me = _ctx.GetActiveEnginesSnapshot().OfType<Messaging.MessageEngine>().FirstOrDefault();
+        return me!.Subscribe(channelId, subStream, weight);
+    }
+
+    /// <summary>供 RuntimeSession 断开动作退订频道端口。</summary>
+    public void UnsubscribeChannel(IInputPort port)
+    {
+        var me = _ctx.GetActiveEnginesSnapshot().OfType<Messaging.MessageEngine>().FirstOrDefault();
+        me?.Unsubscribe(port);
+    }
 
     public bool ClaimChannel(string sessionId, int channelId, ClaimLevel level)
     {

@@ -42,13 +42,11 @@ namespace AgentCoreProcessor.Engine
             }
 
             agentCore.EngineType = "channel";
-            agentCore.CurrentModeId = "express";
             // 合并 ComponentHost 工具 + ToolRegistry 独立工具（escalate、wait 等）
             var componentTools = componentHost?.GetVisibleTools() ?? Enumerable.Empty<ITool>();
             agentCore.AdditionalTools = componentTools
                 .Concat(ToolRegistry.All.Values)
-                .Where(t => !ToolRegistry.IsDisabled(t.Name)
-                            && ModeConfigLoader.IsToolEnabled("express", t.Name))
+                .Where(t => !ToolRegistry.IsDisabled(t.Name))
                 .DistinctBy(t => t.Name)
                 .ToList();
             agentCore.GlobalComponentTools = ctx.GlobalComponentHost?.GetVisibleTools("channel").ToList();
@@ -172,15 +170,13 @@ namespace AgentCoreProcessor.Engine
                             .OfType<Session.SessionEngine>().FirstOrDefault();
                         if (sessionEngine != null)
                         {
-                            // 历史由 SessionAgentHost 通过端口的 PreloadHistory 从 DB 自动加载，无需手拼
+                            // 频道占用 + 历史载入由 InitActions 的 connect_channel 在 session 启动时完成
                             sessionEngine.CreateSession(new CreateSessionSpec
                             {
                                 ComponentIds = new[] { "basic-tools", "working-tools", "file-tools", "file-ops", "memory-tools" },
-                                AutoClaimChannel = true,
-                                InputPorts = new Dictionary<string, PortSpec>
+                                InitActions = new List<ToolCall>
                                 {
-                                    ["channel"] = new PortSpec { ChannelId = channelId, SubStream = "normal", Weight = 5 },
-                                    ["mention"] = new PortSpec { ChannelId = channelId, SubStream = "mention", Weight = 100 }
+                                    new() { Tool = "connect_channel", Inputs = new List<string> { channelId.ToString() } }
                                 },
                                 InitialState = $"用户请求切换到工作模式，原因：{reason}\n（说完话用 wait 挂起等待，保持在工作模式陪用户继续；只有确实不再需要工作模式时才用 end_session 退回轻量对话。）",
                                 OverrideLimits = new SessionLimits { MaxLifetime = TimeSpan.FromHours(2), IdleTimeout = TimeSpan.FromMinutes(30) }

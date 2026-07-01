@@ -32,7 +32,7 @@ namespace AgentCoreProcessor.Engine
         public string EngineType => "Channel";
         public bool IsAlive { get; private set; } = true;
 
-        /// <summary>频道 ID（公开，供 SetWatchRuleTool 查找）。</summary>
+        /// <summary>频道 ID（公开）。</summary>
         public int ChannelId => channelId;
 
         /// <summary>是否正在处理消息。</summary>
@@ -141,10 +141,6 @@ namespace AgentCoreProcessor.Engine
 
         // 信号追踪：最近入队消息携带的上游信号
         private string? _traceParentSpanId;
-
-        // Phase 6: 关注规则
-        private readonly object watchRulesLock = new();
-        private List<WatchRule> watchRules = new();
 
         // 组件宿主（Express 工具加载）
         private Component.ComponentHost? componentHost;
@@ -359,9 +355,6 @@ namespace AgentCoreProcessor.Engine
                     ScheduleBufferSignal();
                 }
             }
-
-            // Phase 6: 检查关注规则
-            CheckWatchRulesAsync(msg, sc);
         }
 
         /// <summary>唤醒闸门（供外部触发，如 ConsoleProvider 压缩信号）。</summary>
@@ -751,90 +744,6 @@ namespace AgentCoreProcessor.Engine
             await ctx.Session.UpdatePersonAsync(person);
         }
 
-        // ---- Phase 6: 关注规则管理 ----
-
-        /// <summary>获取当前关注规则列表（副本）。</summary>
-        public List<WatchRule> GetWatchRules()
-        {
-            lock (watchRulesLock)
-            {
-                return new List<WatchRule>(watchRules);
-            }
-        }
-
-        /// <summary>更新关注规则列表。</summary>
-        public void UpdateWatchRules(List<WatchRule> rules)
-        {
-            lock (watchRulesLock)
-            {
-                watchRules = new List<WatchRule>(rules);
-            }
-        }
-
-        /// <summary>检查消息是否命中关注规则。</summary>
-        private void CheckWatchRulesAsync(IncomingMessage msg, SessionContext sc)
-        {
-            List<WatchRule> rules;
-            lock (watchRulesLock)
-            {
-                if (watchRules.Count == 0) return;
-                rules = new List<WatchRule>(watchRules);
-            }
-
-            foreach (var rule in rules)
-            {
-                bool matched = false;
-
-                // 简单关键词匹配（后续可扩展为正则表达式）
-                if (msg.Content.Contains(rule.Pattern, StringComparison.OrdinalIgnoreCase))
-                {
-                    matched = true;
-                }
-
-                if (!matched) continue;
-
-                // 命中 → 通过 SessionEngine 创建处理 session
-                var sessionEngine = ctx.GetActiveEnginesSnapshot()
-                    .OfType<Session.SessionEngine>().FirstOrDefault();
-                if (sessionEngine == null) return;
-
-                var watchSummary = $"规则「{rule.RuleId}」命中：{rule.Description}\n" +
-                                   $"消息：{msg.Content.Substring(0, Math.Min(50, msg.Content.Length))}...";
-
-                switch (rule.Action)
-                {
-                    case WatchAction.Notify:
-                        sessionEngine.CreateSession(new CreateSessionSpec
-                        {
-                            ComponentIds = new[] { "basic-tools", "memory-tools" },
-                            InitialState = watchSummary,
-                            OverrideLimits = new SessionLimits { MaxLifetime = TimeSpan.FromMinutes(10), IdleTimeout = TimeSpan.FromMinutes(3) }
-                        });
-                        break;
-
-                    case WatchAction.Interrupt:
-                        if (rule.AutoResponse)
-                            gate.Signal();
-                        sessionEngine.CreateSession(new CreateSessionSpec
-                        {
-                            ComponentIds = new[] { "basic-tools", "memory-tools" },
-                            InitialState = watchSummary,
-                            OverrideLimits = new SessionLimits { MaxLifetime = TimeSpan.FromMinutes(10), IdleTimeout = TimeSpan.FromMinutes(3) }
-                        });
-                        break;
-
-                    case WatchAction.Escalate:
-                        sessionEngine.CreateSession(new CreateSessionSpec
-                        {
-                            ComponentIds = new[] { "basic-tools", "working-tools", "memory-tools" },
-                            InitialState = $"规则「{rule.RuleId}」升级：{rule.Description}\n\n原始消息：\n{msg.Content}",
-                            OverrideLimits = new SessionLimits { MaxLifetime = TimeSpan.FromMinutes(30), IdleTimeout = TimeSpan.FromMinutes(10) }
-                        });
-                        break;
-                }
-            }
-        }
-
         // ── Vision 辅助 ──
 
         private async Task<string?> ResolveImageRefAsync(string imageRef)
@@ -961,24 +870,5 @@ namespace AgentCoreProcessor.Engine
 
             return fragments;
         }
-    }
-
-    // ── WatchRule 类型 ──
-
-    /// <summary>关注规则。</summary>
-    public class WatchRule
-    {
-        public string RuleId { get; set; } = "";
-        public string Description { get; set; } = "";
-        public string Pattern { get; set; } = "";
-        public WatchAction Action { get; set; }
-        public bool AutoResponse { get; set; }
-    }
-
-    public enum WatchAction
-    {
-        Notify,
-        Interrupt,
-        Escalate
     }
 }

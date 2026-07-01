@@ -51,9 +51,8 @@ internal static class ToolListFormatter
     /// <summary>
     /// 构建组件目录注入 prompt。启用的列工具名，禁用的折叠为摘要。
     /// 工具描述不重复（由 API tool schema 提供）。
-    /// modeId 不为空时，仅列出当前模式启用的工具。
     /// </summary>
-    public static string? BuildToolOverviewSection(List<ToolGroup> groups, string? modeId = null)
+    public static string? BuildToolOverviewSection(List<ToolGroup> groups)
     {
         if (groups.Count == 0) return null;
 
@@ -66,9 +65,7 @@ internal static class ToolListFormatter
 
             if (g.IsEnabled)
             {
-                var tools = modeId != null
-                    ? g.Tools.Where(t => Engine.ModeConfigLoader.IsToolEnabled(modeId, t.Name)).ToList()
-                    : g.Tools.ToList();
+                var tools = g.Tools.ToList();
                 if (tools.Count == 0) continue;
                 var toolNames = string.Join(", ", tools.Select(t => t.Name));
                 sb.AppendLine($"▸ {g.ComponentName}（{scope}）: {toolNames}");
