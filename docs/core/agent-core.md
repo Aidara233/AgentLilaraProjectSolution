@@ -4,7 +4,7 @@
 
 **文件：** `Core/AgentCore.cs`
 **继承：** `CoreBase`
-**实例化：** ChannelEngine（每频道一个）、SystemEngine（一个）、ReviewEngine（一个）
+**实例化：** ChannelEngine（每频道一个）、RuntimeSession（按需创建）、ReviewEngine（一个）
 
 ### 定位
 
@@ -75,5 +75,5 @@ Task<ModelOutput> InvokeWithHistoryAsync(List<Message> messages, string? profile
 | 位置 | 构造 | CallerTag |
 |------|------|-----------|
 | `ChannelEngine.cs:73` | `new AgentCore()` | `"Channel:{id}"` |
-| `SystemEngine.cs:110` | `new AgentCore("SystemCore", false)` | `"System"` |
+| `RuntimeSession`（SessionEngine.CreateSession） | `new AgentCore(spec.CoreConfigName)` | `"Session:{sessionId}"` |
 | `ReviewEngine.cs:90` | `new AgentCore("ReviewCore", false)` | `"Review:{mode}"` |

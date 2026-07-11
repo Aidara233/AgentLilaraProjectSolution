@@ -74,7 +74,7 @@ Program.cs 启动
 | 阶段 | 谁持有 | 何时创建 |
 |------|--------|----------|
 | **GlobalComponentHost** | MasterEngine | 启动时 `InitAsync()`，扫描 `ComponentRegistry.GetGlobals()` |
-| **ComponentHost** | 每个 ChannelEngine/SystemEngine/ReviewEngine | 引擎初始化时 `InitAsync()`，扫描 `ComponentRegistry.GetLoopComponents(loopType)` |
+| **ComponentHost** | 每个 ChannelEngine/RuntimeSession/ReviewEngine | 引擎初始化时 `InitAsync()`，扫描 `ComponentRegistry.GetLoopComponents(loopType)` |
 
 构造函数注入优先级（`PluginLoader.InstantiateWithInjection`）：
 1. 含 `IToolContext` 参数的构造函数（独立工具）

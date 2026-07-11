@@ -22,7 +22,6 @@ internal class ConfigProvider : IWebUIProvider
         ["MemoryExtractionCore"] = "Core/MemoryExtractionCore.json",
         ["ReviewCore"] = "Core/ReviewCore.json",
         ["SleepTalkCore"] = "Core/SleepTalkCore.json",
-        ["SummarizationCore"] = "Core/SummarizationCore.json",
     };
 
     private readonly Dictionary<string, string> _serviceFiles = new()

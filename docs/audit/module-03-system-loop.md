@@ -1,5 +1,7 @@
 # 模块3审计报告：系统循环+子Agent (System Loop)
 
+> **历史快照：** 本审计反映 2026-05-26 时点的 SystemEngine 代码。SystemEngine / SystemSession 已在后续架构重构中删除，审计结论仅作历史记录。当前架构由 SessionEngine + RuntimeSession 取代，详见 `docs/architecture-map.md`。
+
 审计时间：2026-05-26
 文件数：10 | 总行数：~2,100
 

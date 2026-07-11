@@ -88,6 +88,6 @@ void MarkL1Injected();                          // 标记 L1 已注入，避免�
 
 ### 已废弃
 
-- `SummarizationCore` — 不再被使用，文件保留作预留。旧设计中的副模型压缩路径已被 compact 工具的"模型自己写摘要"方案取代
+- `SummarizationCore` — 已删除。旧设计中的副模型压缩路径已被 compact 工具的"模型自己写摘要"方案取代（模板文件 `templates/Core/SummarizationCore.json` + `templates/Core/Prompts/SummarizationPrompt.txt` 保留作归档）
 - `CompressTool` — 已删除，被 `CompactTool` 取代
 - `CompressionTierModule.CompressAsync / CompressL3Async` — 已删除，不再需要原地压缩

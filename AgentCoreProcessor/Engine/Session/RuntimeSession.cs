@@ -323,6 +323,9 @@ internal class RuntimeSession : IRuntimeSession
 
         Signal.Event(LogGroup.Engine, "Session 连接频道",
             new { sessionId = SessionId, channelId, mode = mode.ToString() });
+
+        // 连接状态即时落地，避免崩溃丢失 claim（§5.9）
+        PersistStateSync();
     }
 
     /// <summary>断开当前连接频道：退订端口、移除 InputPort、释放 claim、清状态、host 卸载。</summary>
@@ -342,6 +345,21 @@ internal class RuntimeSession : IRuntimeSession
         _connected.Clear();
 
         Signal.Event(LogGroup.Engine, "Session 断开频道", new { sessionId = SessionId, channelId });
+
+        // 断开状态即时落地，避免崩溃后 claim 状态与存档不一致（§5.9）
+        PersistStateSync();
+    }
+
+    /// <summary>同步持久化 state.json（连接/断开兜底，best-effort 不阻塞）。</summary>
+    private void PersistStateSync()
+    {
+        if (_persister == null) return;
+        try { _persister.SaveStateAsync(BuildStateSnapshot()).GetAwaiter().GetResult(); }
+        catch (Exception ex)
+        {
+            Signal.Warn(LogGroup.Engine, "连接状态持久化失败（不阻塞）",
+                new { sessionId = SessionId, error = ex.Message });
+        }
     }
 
     /// <summary>工具副作用结果：是否结束本突发 / 整个会话。</summary>

@@ -23,7 +23,7 @@ public interface ITool
 
 ### ILoopComponent
 
-循环作用域组件。每个引擎循环（ChannelEngine / SystemEngine / ReviewEngine / SubAgent）各自创建一个实例。
+循环作用域组件。每个引擎循环（ChannelEngine / RuntimeSession / ReviewEngine）各自创建一个实例。
 
 ```csharp
 public interface ILoopComponent

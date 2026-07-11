@@ -29,7 +29,7 @@ This happens in exactly two cases:
 |-------------|-------|-----------------|
 | Engine lifecycle starts | `{engine}:{id}` | SignalContext.Current (startup signal via AsyncLocal) |
 | ChannelEngine wakes | `channel:{channelId}` | EngineEvent.TraceSignalId (from adapter) |
-| SystemEngine processes task | `system:{engineId}` | SystemTask.TraceSignalId (from channel) |
+| RuntimeSession starts | `session:{sessionId}` | EngineEvent.TraceSignalId (from channel) or new signal (Task session) |
 | Sub-agent spawned | `subagent:{sessionId}` | Delegation.TraceSignalId (from channel) |
 | DreamEngine starts | `dream:{engineId}` | EngineEvent.TraceSignalId (from timer) |
 | VisionEngine processes | `vision:{engineId}` | (internal queue, Begin as fallback) |
@@ -66,7 +66,7 @@ public async Task RunAsync()
 **Key points:**
 - Lifecycle uses `Continue` from startup signal → creates `cause_span_id` link (diagonal line on trace page)
 - Lifecycle span lives in the engine's own scope (not the caller's scope)
-- **Lifecycle name MUST include engine type**: `"Channel引擎 [群名]"`, `"System引擎"`, `"Timer引擎"` — not generic `"引擎运行"`
+- **Lifecycle name MUST include engine type**: `"Channel引擎 [群名]"`, `"Session引擎"`, `"Timer引擎"` — not generic `"引擎运行"`
 - Per-iteration signals are independent (they replace `SignalContext.Current` but lifecycle is closed via `lifeCtx` variable)
 - On graceful shutdown: lifecycle closes with reason → green on trace page
 - On crash/kill: lifecycle never closes → red on trace page (distinguishes "crashed" from "in progress")
@@ -190,13 +190,14 @@ Format: `{engineType}:{instanceId}`
 
 | Owner | Scope format | Example |
 |-------|-------------|---------|
-| SystemEngine | `system:{engineId}` | `system:main` |
+| SystemEngine (已删除) | — | — |
 | ChannelEngine | `channel:{channelId}` | `channel:group_12345` |
 | DreamEngine | `dream:{engineId}` | `dream:main` |
 | VisionEngine | `vision:{engineId}` | `vision:main` |
 | TimerEngine | `timer:{engineId}` | `timer:heartbeat` |
 | ReviewEngine | `review:{engineId}` | `review:nightly` |
 | OneBotAdapter | `adapter:{adapterId}` | `adapter:qq-main` |
+| RuntimeSession | `session:{sessionId}` | `session:a3f2c1b8e9f2` |
 | TaskSession | `subagent:{sessionId}` | `subagent:task-abc123` |
 | Program startup | `system:init` | (one-time) |
 
@@ -212,7 +213,7 @@ Assign by **what the operation IS**, not who calls it:
 | Operation | LogGroup | Regardless of caller |
 |-----------|----------|---------------------|
 | LLM API request/response | Model | Even if DreamEngine calls it |
-| Tool invocation | Tool | Even if SystemEngine triggers it |
+| Tool invocation | Tool | Even if RuntimeSession triggers it |
 | Memory read/write/embed | Memory | Even if ChannelEngine does it |
 | Message send/receive | Adapter | |
 | Plugin load/unload | Plugin | |

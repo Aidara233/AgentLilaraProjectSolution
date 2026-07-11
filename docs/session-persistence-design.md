@@ -1,6 +1,6 @@
 # Session 持久化 + 上下文压缩 完整实施计划
 
-> 状态：**待实施**。本文档整合持久化、压缩工具链重建、死代码清理三条线的完整方案。
+> 状态：**已实施**。本文档整合持久化、压缩工具链重建、死代码清理三条线的完整方案。
 
 ## 一、目标与背景
 
@@ -901,11 +901,11 @@ RunAsync 的 OnCompleted 事件触发后，应从 `_sessions` 移除。但 compa
 
 ## 十二、文档更新检查清单
 
-- [ ] 本文档实现完成后去掉"待实施"状态
-- [ ] `docs/architecture-map.md` 更新 Session 持久化与压缩描述
-- [ ] `docs/core/context-management.md` 更新三层压缩实际路径
-- [ ] `CLAUDE.md` 移除"压缩/持久化留后续"等注释，更新 Session 持久化状态
-- [ ] `docs/core/agent-core.md` 清理 SystemEngine 过期引用
-- [ ] `docs/signal/signal-instrumentation-guide.md` 清理 SystemEngine scope 引用
-- [ ] `docs/plugins/*.md` 清理 SystemEngine 组件宿主引用
-- [ ] `docs/audit/*.md` 审计对象已删除的处理
+- [x] 本文档实现完成后去掉"待实施"状态
+- [x] `docs/architecture-map.md` 更新 Session 持久化与压缩描述
+- [x] `docs/core/context-management.md` 更新三层压缩实际路径
+- [x] `CLAUDE.md` 移除"压缩/持久化留后续"等注释，更新 Session 持久化状态
+- [x] `docs/core/agent-core.md` 清理 SystemEngine 过期引用
+- [x] `docs/signal/signal-instrumentation-guide.md` 清理 SystemEngine scope 引用
+- [x] `docs/plugins/*.md` 清理 SystemEngine 组件宿主引用
+- [x] `docs/audit/*.md` 审计对象已删除的处理

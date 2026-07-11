@@ -18,7 +18,7 @@ AgentLilaraProjectSolution/
 │     ├── Client/      IModelClient 抽象层（Claude/OpenAI 双协议）+ Embedding + IVisionProvider + IOcrProvider
 │     ├── Command/     框架指令系统（/help /status /config 等）
 │     ├── Config/      PathConfig 绝对路径管理
-│     ├── Core/        业务核心（AgentCore+PreprocessingCore+MemoryExtractionCore+RelationClassificationCore+WeightCore+SummarizationCore+SleepTalkCore等），继承 CoreBase，各自 JSON 配置
+│     ├── Core/        业务核心（AgentCore+PreprocessingCore+MemoryExtractionCore+RelationClassificationCore+WeightCore+SleepTalkCore等），继承 CoreBase，各自 JSON 配置
 │     ├── Database/    实体 + Repository（SQLite，13张表）
 │     ├── Engine/      引擎生态（MasterEngine内核 + 8个ISubEngine + Components + Modules）
 │     │     ├── Core/     MasterEngine内核 + Gate/Agent/ComponentHost/DelegationBus等基类

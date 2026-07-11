@@ -129,7 +129,7 @@ Persona.txt 作为普通 prompt 文件处理。需要 Persona 的 Core 在 `prom
 | `MemoryQueryCore.json` | openai | deepseek-v4-flash | - | （已废弃） |
 | `SleepTalkCore.json` | openai | deepseek-v4-flash | - | 梦话生成 |
 | `SubAgentCore.json` | openai | deepseek-v4-flash | - | （已废弃） |
-| `SummarizationCore.json` | （特殊格式） | - | - | 摘要压缩 |
+| `SummarizationCore.json` | — | — | — | （已删除，模板归档于 templates/Core/） |
 
 > 注：`VisionProvider.json`、`OcrProvider.json`、`EmbeddingProvider.json` 不是 Core 配置，而是独立 Provider 的配置。
 
