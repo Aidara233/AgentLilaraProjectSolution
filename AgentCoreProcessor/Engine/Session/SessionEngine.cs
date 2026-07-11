@@ -69,7 +69,7 @@ internal class SessionEngine : ISubEngine
                 loopId, // 单频道端口时传 "channel:N"，让 BasicToolsComponent.ParseChannelId 能解析
                 _ctx.ModuleBus,
                 _ctx.ComponentServices,
-                () => { /* wake loop callback */ });
+                () => session.WakeUp());
         }
         catch (Exception ex)
         {
@@ -269,6 +269,13 @@ internal class SessionEngine : ISubEngine
     {
         lock (_channelFullClaims)
             return _channelFullClaims.ContainsKey(channelId);
+    }
+
+    /// <summary>通过外部信号唤醒指定 session（异步任务完成等）。</summary>
+    public void WakeUpSession(string sessionId)
+    {
+        if (_sessions.TryGetValue(sessionId, out var session))
+            session.WakeUp();
     }
 
     private void ReleaseSessionClaims(string sessionId)

@@ -917,6 +917,15 @@ namespace AgentCoreProcessor.Engine
                 return;
             }
 
+            if (loopId.StartsWith("session:", StringComparison.OrdinalIgnoreCase))
+            {
+                var sid = loopId[8..];
+                var se = GetActiveEnginesSnapshot()
+                    .OfType<Session.SessionEngine>().FirstOrDefault();
+                se?.WakeUpSession(sid);
+                return;
+            }
+
             // task: / review: — 不直接唤醒，由各自的 Gate 管理
         }
 

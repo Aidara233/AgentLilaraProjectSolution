@@ -62,6 +62,8 @@ internal class RuntimeSession : IRuntimeSession
     private readonly DateTime _createdAt = DateTime.UtcNow;
     private DateTime _lastActivity = DateTime.UtcNow;
     private CancellationTokenSource? _cts;
+    /// <summary>外部唤醒信号（异步任务完成、跨循环通知等）。</summary>
+    private volatile bool _wakeSignaled;
 
     /// <summary>会话完成时触发（正常结束/异常/崩溃）。</summary>
     public event Action<IRuntimeSession>? OnCompleted;
@@ -330,6 +332,8 @@ internal class RuntimeSession : IRuntimeSession
 
     public void SetWaitUntil(DateTime? until) => WaitUntil = until;
     public void TouchActivity() => _lastActivity = DateTime.UtcNow;
+    /// <summary>外部信号唤醒（由 wakeLoop 回调触发，如异步任务完成）。</summary>
+    public void WakeUp() => _wakeSignaled = true;
 
     // ── Agent 循环 ──
 
@@ -484,6 +488,19 @@ internal class RuntimeSession : IRuntimeSession
 
                 // ── Agent 推理 ──
                 if (_agentCore == null) break;
+
+                // 组件通知排空：异步任务完成通知（下载/SSH/群文件等）→ prompt section
+                if (_componentHost != null)
+                {
+                    await _componentHost.OnBeforeInvokeAsync();
+                    var sections = _componentHost.BuildPromptSections();
+                    if (sections.Count > 0)
+                    {
+                        messages.Add(new Message { Role = "user", Content = "[组件通知]\n" + string.Join("\n\n", sections) });
+                        Signal.Event(LogGroup.Engine, "组件通知注入",
+                            new { sessionId = SessionId, sectionCount = sections.Count });
+                    }
+                }
 
                 // 连接动作（上一轮 connect_channel）产生的频道上下文，注入本轮推理前
                 if (_pendingInjections.Count > 0)
@@ -753,6 +770,14 @@ internal class RuntimeSession : IRuntimeSession
             {
                 Signal.Debug(LogGroup.Engine, "WaitForActivation 唤醒：WaitUntil 到期", new { sessionId = SessionId });
                 InjectMessage(new { type = "timeout", wait_reason = "wait timeout expired" });
+                return true;
+            }
+
+            // ⑤ 外部唤醒信号（异步任务完成/跨循环通知）
+            if (_wakeSignaled)
+            {
+                _wakeSignaled = false;
+                Signal.Debug(LogGroup.Engine, "WaitForActivation 唤醒：外部信号", new { sessionId = SessionId });
                 return true;
             }
 
