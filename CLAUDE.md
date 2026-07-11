@@ -15,6 +15,8 @@
 - 睡觉系统：DreamEngine 常驻循环（秩序+巡逻），由 force-sleep 信号触发启动，小睡/大睡通过信号展开
 - 睡眠打断分级：走神被@醒、小睡需@+关键词叫醒（仅@触发梦话）、大睡仅 force-wake 信号可唤醒
 - Prompt Caching：Claude 系 Core 启用 promptCaching，中转站已验证兼容
+- Session 持久化（已实现）：三件套 spec.json（创建一次写）/ state.json（每轮原子重写）/ history.jsonl（每轮追加），重启续跑 + 死的不加载（仅恢复 status ∈ {Running, Crashed} 的存档，Completed 留档）
+- 上下文压缩（已激活）：compact 工具不是扳机而是接管——模型调 compact(summary) → 旧 session 退出 + 新 session 创建承接摘要。三层阈值 L1=80k / L2=130k / L3=150k（基于 200k 上下文模型），L3 锁定工具表只剩 compact
 - Token 统计：ModelCallLog 数据库表记录每次调用（含 usage + caller tag）。WebUI 已有 LogsProvider（`/p/logs/tokens` 和 `/p/logs/model`）提供可视化。
   - CallerTag 标识调用来源：Channel:{id} / Session:{sessionId} / Task:{sessionId} / Review:{mode} / Dream:{phase}
 - 工具管理：ToolRegistry 动态注册/卸载 + WebUI /p/plugins 管理
@@ -107,7 +109,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - `docs/core/infrastructure.md` — CoreBase / Processor / ModelOutput 基类和数据模型
 - `docs/core/agent-core.md` — AgentCore 统一对话核心（Express + Working 双模式）
 - `docs/core/memory-cores.md` — 7 个记忆处理核心（提取/去重/权重/关联/组合/整合）
-- `docs/core/context-management.md` — SummarizationCore 三层压缩
+- `docs/core/context-management.md` — 三层压缩 + CompactTool 接管路径
 - `docs/core/special-purpose.md` — SleepTalkCore / PreprocessingCore
 - `docs/core/stream-handlers.md` — NativeToolCallHandler / ExpressToolCallHandler
 - `docs/core/configuration.md` — JSON 配置文件格式、协议选择、字段说明
@@ -186,8 +188,8 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 组件系统：Engine/Core/ComponentHost.cs（实例管理 + ModuleBus 订阅 + 工具注册）
 - 组件注册：Engine/Core/ComponentRegistry.cs（类型注册，PluginLoader 扫描）
 - 全局组件：Engine/Core/IGlobalComponent.cs / ILoopComponent.cs
-- 三层压缩：Engine/Modules/CompressionTierModule.cs（L1提示/L2提醒/L3硬保底）
-- 压缩工具：Tool/Core/CompressTool.cs（模型可调用，所有模式可用）
+- 三层压缩：Engine/Modules/CompressionTierModule.cs（L1提示80k/L2催促130k/L3锁定150k，仅 Evaluate+GetInjectText）
+- 压缩工具：Tool/Core/CompactTool.cs（模型调 compact(summary)，新 session 接管旧 session）
 - 注入接口：Engine/Core/IInjectProvider.cs（BuildStartInjectAsync/BuildRoundInjectAsync）
 - 生命周期：Engine/Core/IEngineLifecycle.cs（OnInitializeAsync/OnShutdownAsync）
 - 信号类型：Engine/Core/ChannelSignal.cs（NewMessageSignal/BusEventSignal/CompressionSignal/ModeSwitchSignal）
@@ -257,5 +259,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 -           Plugins/Plugin.DocumentTools/（文档处理）
 -           Plugins/Plugin.QuickActions/（快捷操作）
 -           Plugins/FileToolKit.Shared/ — FileToolBase 抽象基类（路径解析/沙箱/快捷方法），文件类插件共享引用
+- 异步唤醒链路：后台任务完成 → GlobalComponent 回调 → MasterEngine.WakeLoop → SessionEngine.WakeUpSession → RuntimeSession.WakeUp（设 _wakeSignaled）→ WaitForActivationAsync 检测并返回 → OnBeforeInvokeAsync 排空通知 → BuildPromptSections 注入上下文
+- 组件通知排空：RuntimeSession 每轮 agent 推理前调用 _componentHost.OnBeforeInvokeAsync() + BuildPromptSections()，结果以"[组件通知]"消息注入 context（download_file/ssh_exec/群文件下载等异步工具的完成通知均通过此路径）
 - 工具配置：Storage/Engine/ComponentConfig.json（组件按引擎类型启用/禁用）+ Storage/ToolConfig.json（全局工具禁用）
 - 配置文件：Storage/ 目录下

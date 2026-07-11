@@ -34,7 +34,6 @@ public interface IRuntimeSession
 
     // 持久化
     Task PersistStateAsync();
-    Task RestoreStateAsync();
 
     // 组件管理
     void EnableComponent(string componentId);

@@ -2,27 +2,29 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Models;
 
 namespace AgentCoreProcessor.Engine.Modules
 {
+    /// <summary>
+    /// 三层压缩判定模块。仅做 Evaluate + GetInjectText：
+    /// - L1（80k，约占 200k 上下文 40%）：温和提醒，不强制
+    /// - L2（130k，约占 65%）：明确催促，但仍允许模型在合适时机执行
+    /// - L3（150k，约占 75%）：强制锁定工具表只剩 compact（由 RuntimeSession 的 _l3Lockdown 处理）
+    ///
+    /// 压缩动作由模型调 CompactTool 触发（新 session 接管旧 session），本模块不再调用 SummarizationCore。
+    /// </summary>
     internal class CompressionTierModule
     {
         private readonly AgentConfig _config;
-        private readonly SummarizationCore _summarizer = new();
         private readonly Func<List<Message>> _getHistory;
         private readonly Action _onL3Triggered;
 
-        private string? _currentSummary;
         private bool _l1Injected;
         private CompressionTier _currentTier = CompressionTier.None;
-        private volatile bool _compressing;
 
         public CompressionTier CurrentTier => _currentTier;
-        public string? CurrentSummary => _currentSummary;
-        public bool IsCompressing => _compressing;
 
         public CompressionTierModule(AgentConfig config, Func<List<Message>> getHistory, Action onL3Triggered)
         {
@@ -31,10 +33,9 @@ namespace AgentCoreProcessor.Engine.Modules
             _onL3Triggered = onL3Triggered;
         }
 
-        public void SetSummary(string? summary) => _currentSummary = summary;
-
         public CompressionTier Evaluate(int estimatedTokens)
         {
+            var prev = _currentTier;
             if (estimatedTokens < _config.CompressMinTokens)
                 _currentTier = CompressionTier.None;
             else if (estimatedTokens >= _config.CompressL3Tokens)
@@ -45,6 +46,11 @@ namespace AgentCoreProcessor.Engine.Modules
                 _currentTier = CompressionTier.L1;
             else
                 _currentTier = CompressionTier.None;
+
+            // L3 触发回调：通知 RuntimeSession 在下一轮锁定工具表
+            if (_currentTier == CompressionTier.L3 && prev != CompressionTier.L3)
+                _onL3Triggered?.Invoke();
+
             return _currentTier;
         }
 
@@ -54,72 +60,22 @@ namespace AgentCoreProcessor.Engine.Modules
             return _currentTier switch
             {
                 CompressionTier.L1 when !_l1Injected =>
-                    "[压缩提示] 上下文较长（首次提醒）。如果当前话题不重要（如闲聊），可以调用 `compress` 工具压缩对话历史。",
+                    "[系统提示] 上下文稍大。如果当前内容不重要，可以考虑调用 compact 工具来精简会话。\n" +
+                    "调用时需提供一段摘要作为参数，描述：做了什么、得出了什么、下一步要做什么。",
                 CompressionTier.L2 =>
-                    "[压缩提示] 上下文已较长，请尽快调用 `compress` 工具压缩上下文，腾出空间。",
+                    "[系统警告] 会话长度已经较高，建议尽快在合适的地方调用 compact 工具。\n" +
+                    "compact 参数应是你对当前会话的完整总结。调用后会启动新会话承接你的摘要。",
                 CompressionTier.L3 =>
-                    "这是压缩前最后一轮对话，本轮结束后将强制压缩。请简要告知用户。",
+                    "[系统强制] 上下文已达硬上限，本轮请调用 compact 工具结束当前会话并切换到新会话。\n" +
+                    "参数是你对会话的完整总结。请认真总结，新会话将基于你的总结继续工作。",
                 _ => null
             };
         }
 
         public void MarkL1Injected() => _l1Injected = true;
 
-        public async Task CompressAsync(List<Message> history, Action<string, List<Message>> onComplete)
-        {
-            if (_compressing) return;
-            _compressing = true;
-            try
-            {
-                var totalTokens = history.Sum(m => EstimateChars(m)) / 3;
-                using var span = Signal.Open(LogGroup.Engine, $"上下文压缩 ({totalTokens}t, {_currentTier})",
-                    new { historyCount = history.Count, estimatedTokens = totalTokens, tier = _currentTier.ToString(), hasPriorSummary = _currentSummary != null });
-
-                var retained = new List<Message>();
-                int tokenCount = 0;
-                for (int i = history.Count - 1; i >= 0; i--)
-                {
-                    var t = EstimateChars(history[i]) / 3;
-                    if (retained.Count >= _config.CompressRetainedMessageCount
-                        || tokenCount + t > _config.CompressRetainedMaxTokens)
-                        break;
-                    retained.Insert(0, history[i]);
-                    tokenCount += t;
-                }
-
-                var toCompress = history.Take(history.Count - retained.Count).ToList();
-                if (toCompress.Count > 0
-                    && toCompress.Sum(m => EstimateChars(m)) / 3 >= _config.CompressMinTokens)
-                {
-                    _currentSummary = await _summarizer.SummarizeContextAsync(toCompress, _currentSummary);
-                }
-
-                _l1Injected = false;
-                span.SetCloseDetail(new
-                {
-                    compressedCount = toCompress.Count,
-                    retainedCount = retained.Count,
-                    retainedTokens = tokenCount,
-                    summaryLength = _currentSummary?.Length ?? 0,
-                    summary = _currentSummary
-                });
-                onComplete(_currentSummary ?? "", retained);
-            }
-            catch (Exception ex)
-            {
-                Signal.Error(LogGroup.Engine, "压缩失败", new { error = ex.GetType().Name, message = ex.Message });
-            }
-            finally
-            {
-                _compressing = false;
-            }
-        }
-
-        /// <summary>压缩（L3 硬保底），委托给异步实现。</summary>
-        public Task CompressL3Async(List<Message> history, Action<string, List<Message>> onComplete)
-            => CompressAsync(history, onComplete);
-
-        private static int EstimateChars(Message m)
+        /// <summary>估算 Message 字符数。供外部估算 tokens 用（chars/3）。</summary>
+        public static int EstimateChars(Message m)
         {
             if (m.Content != null)
                 return m.Content.Length;

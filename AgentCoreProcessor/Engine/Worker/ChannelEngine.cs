@@ -81,7 +81,6 @@ namespace AgentCoreProcessor.Engine
 
         // ── 堆叠式上下文 ──
         private string? fixedPrefix;
-        private string? contextSummary;
 
         // 事件总线 + 内务模块
         private readonly LoopBus bus = new();
@@ -172,10 +171,8 @@ namespace AgentCoreProcessor.Engine
             // ── 持久化 + 状态恢复 ──
             persistence = new ChannelContextPersistence(channelId);
             {
-                var (savedSummary, _, _, savedCursor, _) = persistence.LoadContext();
+                var (_, _, _, savedCursor, _) = persistence.LoadContext();
                 _lastConsumedMessageId = savedCursor;
-                if (!string.IsNullOrEmpty(savedSummary) && string.IsNullOrEmpty(contextSummary))
-                    contextSummary = savedSummary;
             }
 
             // ── Agent 配置 ──
@@ -221,10 +218,8 @@ namespace AgentCoreProcessor.Engine
 
             persistence = new ChannelContextPersistence(channelId);
             {
-                var (savedSummary, _, _, savedCursor, _) = persistence.LoadContext();
+                var (_, _, _, savedCursor, _) = persistence.LoadContext();
                 _lastConsumedMessageId = savedCursor;
-                if (!string.IsNullOrEmpty(savedSummary) && string.IsNullOrEmpty(contextSummary))
-                    contextSummary = savedSummary;
             }
 
             agentConfig = new AgentConfig

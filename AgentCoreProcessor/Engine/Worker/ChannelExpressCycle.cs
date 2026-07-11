@@ -232,7 +232,7 @@ namespace AgentCoreProcessor.Engine
                 _lastConsumedMessageId = _startInjectMaxId;
 
             if (_lastConsumedMessageId > 0)
-                persistence?.SaveContext(contextSummary, "express", new List<List<Message>>(),
+                persistence?.SaveContext(null, "express", new List<List<Message>>(),
                     _lastConsumedMessageId, null);
         }
 

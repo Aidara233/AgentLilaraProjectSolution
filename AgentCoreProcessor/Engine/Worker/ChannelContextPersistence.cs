@@ -48,26 +48,6 @@ namespace AgentCoreProcessor.Engine
             catch { /* best-effort persistence, don't crash on IO errors */ }
         }
 
-        /// <summary>Save compression result: replace summary and rounds.</summary>
-        public void SaveCompressionResult(string summary, List<Message> retained, string mode,
-            int lastConsumedMessageId)
-        {
-            // 按 assistant 回复分割 rounds
-            var rounds = new List<List<Message>>();
-            var current = new List<Message>();
-            foreach (var m in retained)
-            {
-                current.Add(m);
-                if (m.Role == "assistant")
-                {
-                    rounds.Add(current);
-                    current = new List<Message>();
-                }
-            }
-            if (current.Count > 0) rounds.Add(current);
-            SaveContext(summary, mode, rounds, lastConsumedMessageId, null);
-        }
-
         /// <summary>Load context: (summary, mode, rounds, lastConsumedMessageId, escalateReason).</summary>
         public (string? Summary, string? Mode, List<List<Message>> Rounds,
             int LastConsumedMessageId, string? EscalateReason) LoadContext()

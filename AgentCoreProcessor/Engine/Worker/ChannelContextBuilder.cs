@@ -82,11 +82,7 @@ namespace AgentCoreProcessor.Engine
                 msgs.Add(new Message { Role = "user", Content = "[系统] 你刚被吵醒，还没完全清醒，语气带着起床气和迷糊。" });
             }
 
-            // 2. 上下文摘要（压缩后的历史）
-            if (!string.IsNullOrEmpty(contextSummary))
-                msgs.Add(new Message { Role = "user", Content = $"[上下文摘要]\n{contextSummary}" });
-
-            // 3. 参与者列表注入（DB 派生，无累积状态）
+            // 2. 参与者列表注入（DB 派生，无累积状态）
             {
                 var participants = await _ctxService.GetParticipantsAsync(channelId);
                 // 更新缓存的参与者数供同步 Accumulate 调用使用（至少为 1，避免折扣算错方向）
@@ -96,7 +92,7 @@ namespace AgentCoreProcessor.Engine
                     msgs.Add(new Message { Role = "user", Content = partBlock });
             }
 
-            // 4. IInjectProvider start injections
+            // 3. IInjectProvider start injections
             var iCtx = new InjectContext
             {
                 Mode = "express",
@@ -114,12 +110,12 @@ namespace AgentCoreProcessor.Engine
                 catch (Exception ex) { Signal.Warn(LogGroup.Engine, $"InjectProvider.Start 失败: {p.GetType().Name}", new { provider = p.GetType().Name, error = ex.Message }); }
             }
 
-            // 5. BuildComponentInjections — 使用全局组件宿主替代本地 ComponentHost
+            // 4. BuildComponentInjections — 使用全局组件宿主替代本地 ComponentHost
             BuildComponentInjections(msgs);
 
             // ═══ CONVERSATION ═══
 
-            // 6. 初始历史：委托给 ChannelContextService.BuildHistoryBlockAsync
+            // 5. 初始历史：委托给 ChannelContextService.BuildHistoryBlockAsync
             {
                 // 同步游标到 _ctxState，让 service 使用正确的游标
                 _ctxState.LastConsumedMessageId = _lastConsumedMessageId;
@@ -130,7 +126,7 @@ namespace AgentCoreProcessor.Engine
                 msgs.AddRange(histMsgs);
             }
 
-            // 7. 记忆检索
+            // 6. 记忆检索
             if (_lastSessionContext != null && _lastConsumedMessageId > 0)
             {
                 var queryMsgs = await ctx.Session.GetMessagesAfterIdAsync(channelId, _lastConsumedMessageId);
@@ -152,7 +148,6 @@ namespace AgentCoreProcessor.Engine
                 mode = "express",
                 totalMessages = msgs.Count,
                 prefixLen = fixedPrefix?.Length ?? 0,
-                summaryLen = contextSummary?.Length ?? 0,
                 newMessageCount = _bufferedMessageCount,
                 estimatedTokens = msgs.Sum(m => (m.Content?.Length ?? 0)) / 3
             });

@@ -11,6 +11,7 @@ using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine.Messaging;
+using AgentCoreProcessor.Engine.Modules;
 using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Tool;
@@ -25,7 +26,7 @@ namespace AgentCoreProcessor.Engine.Session;
 /// </summary>
 internal class RuntimeSession : IRuntimeSession
 {
-    public string SessionId { get; } = Guid.NewGuid().ToString("N")[..12];
+    public string SessionId { get; private set; } = Guid.NewGuid().ToString("N")[..12];
     public SessionStatus Status { get; private set; } = SessionStatus.Creating;
     public bool IsAlive => Status is SessionStatus.Running or SessionStatus.Creating or SessionStatus.Restored;
     public DateTime? WaitUntil { get; private set; }
@@ -59,11 +60,25 @@ internal class RuntimeSession : IRuntimeSession
     private readonly List<ToolCall> _initActions;
     private object? _initialState;
     private int _roundCount;
-    private readonly DateTime _createdAt = DateTime.UtcNow;
+    private DateTime _createdAt = DateTime.UtcNow;
     private DateTime _lastActivity = DateTime.UtcNow;
     private CancellationTokenSource? _cts;
     /// <summary>外部唤醒信号（异步任务完成、跨循环通知等）。</summary>
     private volatile bool _wakeSignaled;
+
+    // ── 会话历史（字段化，跨突发累积，wait 挂起后再激活时保留）──
+    private List<Message> _history = new();
+    public List<Message> History => _history;
+
+    // ── 持久化器（每轮写入 history.jsonl + state.json）──
+    private SessionPersistence? _persister;
+    public void SetPersister(SessionPersistence p) => _persister = p;
+
+    // ── 压缩（L1/L2 提示注入活跃，L3 锁定留 Phase 5）──
+    private CompressionTierModule? _compression;
+    internal ITool? _compactTool;  // Phase 5 注入具体 CompactTool 实例
+    private bool _l3Lockdown;
+    private Dictionary<string, ITool>? _preLockdownTools;
 
     /// <summary>会话完成时触发（正常结束/异常/崩溃）。</summary>
     public event Action<IRuntimeSession>? OnCompleted;
@@ -77,6 +92,12 @@ internal class RuntimeSession : IRuntimeSession
         _componentIds.AddRange(spec.ComponentIds);
         _initialState = spec.InitialState;
         _initActions = spec.InitActions ?? new List<ToolCall>();
+    }
+
+    /// <summary>恢复专用：复用已有 SessionId，避免重启后 ID 变动。</summary>
+    internal RuntimeSession(CreateSessionSpec spec, string fixedSessionId) : this(spec)
+    {
+        SessionId = fixedSessionId;
     }
 
     // ── 依赖注入 ──
@@ -139,7 +160,107 @@ internal class RuntimeSession : IRuntimeSession
                 _activeTools.Add(name);
             }
         }
+
+        // Phase 5 后注入的 compact 工具会出现在 _tools；Phase 3 暂不注入，保持空判断安全
+        if (_compactTool != null && !_tools.ContainsKey("compact"))
+        {
+            _tools["compact"] = _compactTool;
+            _activeTools.Add("compact");
+        }
     }
+
+    /// <summary>
+    /// 初始化压缩模块：CompressionTierModule（Evaluate + GetInjectText） + CompactTool（注入 _tools）。
+    /// AgentConfig 阈值：L1=80k / L2=130k / L3=150k，匹配 200k 上下文模型。
+    /// L3 触发后：_l3Lockdown=true，下一轮 RuntimeSession 会清空 _tools 只留 compact，模型必调。
+    /// </summary>
+    internal void InitCompression(AgentConfig? config = null)
+    {
+        var cfg = config ?? new AgentConfig();
+        _compression = new CompressionTierModule(
+            cfg,
+            getHistory: () => _history,
+            onL3Triggered: () => _l3Lockdown = true
+        );
+
+        // 创建 CompactTool 并注入工具表
+        if (_sessionEngine != null)
+        {
+            _compactTool = new Tool.Core.CompactTool(this, _sessionEngine);
+            if (!_tools.ContainsKey("compact"))
+            {
+                _tools["compact"] = _compactTool;
+                _activeTools.Add("compact");
+            }
+        }
+    }
+
+    /// <summary>恢复存档后灌入运行状态 + 历史。</summary>
+    internal void RestoreFromSnapshot(SessionStateSnapshot state, List<Message> history)
+    {
+        Status = state.Status == SessionStatus.Crashed ? SessionStatus.Restored : state.Status;
+        _createdAt = state.CreatedAt;
+        _roundCount = state.RoundCount;
+        WaitUntil = state.WaitUntil;
+        _lastActivity = state.LastActivity;
+        _history = history ?? new List<Message>();
+
+        // 恢复连接频道状态（仅 Full 占用级，Listen 由 RestoreAll 单独重建订阅）
+        if (!string.IsNullOrEmpty(state.ConnectedChannelId)
+            && int.TryParse(state.ConnectedChannelId, out var cid)
+            && !string.IsNullOrEmpty(state.ConnectedMode))
+        {
+            var mode = Enum.TryParse<ConnectionMode>(state.ConnectedMode, true, out var m)
+                ? m : ConnectionMode.Full;
+            // 真正的 claim + 订阅由 SessionEngine.RestoreAll 在 RestoreFromSnapshot 之前重建；
+            // 这里仅恢复 ConnectedChannelState 内存状态
+            _connected.Set(cid, mode);
+        }
+    }
+
+    /// <summary>compact 后新 session 接续旧 session 的轮次计数。</summary>
+    internal void InheritRoundCount(int parentRoundCount)
+    {
+        _roundCount = parentRoundCount;
+    }
+
+    // ── compact 工具读取旧 session 信息的访问器 ──
+
+    /// <summary>compact 创建新 session 时复用旧 session 的端口配置。</summary>
+    internal Dictionary<string, PortSpec> BuildPortSpecSnapshotForCompact()
+    {
+        var ports = new Dictionary<string, PortSpec>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, port) in _inputs)
+        {
+            if (port is MessageInputPort mp)
+            {
+                ports[name] = new PortSpec
+                {
+                    ChannelId = mp.ChannelId,
+                    SubStream = mp.SubStream ?? "normal",
+                    Weight = mp.Weight,
+                    PreloadHistory = false  // compact 新 session 上下文来自摘要，不重读历史
+                };
+            }
+        }
+        return ports;
+    }
+
+    /// <summary>compact 重建 InitActions：仅 connect_channel 重新连接原频道（claim 已释放需重建）。</summary>
+    internal List<ToolCall> GetInitActionsForCompact()
+    {
+        if (_connected.CurrentChannelId > 0)
+        {
+            return new List<ToolCall>
+            {
+                new() { Tool = "connect_channel", Inputs = new List<string> { _connected.CurrentChannelId.ToString() } }
+            };
+        }
+        return new List<ToolCall>();
+    }
+
+    /// <summary>compact 新 session 接续旧 session 的 _roundCount。</summary>
+    internal int GetRoundCountForCompact() => _roundCount;
 
     // ── 端口管理 ──
 
@@ -282,6 +403,12 @@ internal class RuntimeSession : IRuntimeSession
             case "end_session":
                 await SendOutput(result.Data ?? "工作完成。");
                 return new ToolEffect(false, true);
+            case "compact":
+                // compact 执行成功 = 新 session 已接管频道，旧 session 退出循环
+                // tool_result 已在 RunAsync 主路径追加进 _history，"善始善终"
+                return result.IsSuccess
+                    ? new ToolEffect(EndBurst: false, EndSession: true)
+                    : new ToolEffect(EndBurst: false, EndSession: false);  // compact 失败：继续循环
             case "wait":
                 var mins = 5;
                 if (call.Inputs.Count > 1 && int.TryParse(call.Inputs[1], out var parsed))
@@ -361,14 +488,14 @@ internal class RuntimeSession : IRuntimeSession
         }
 
         // messages 是会话的常驻历史，跨突发累积，wait 挂起后再激活时保留——
-        // 不再每突发清空（清空会丢失 wait 前的全部对话）。压缩/持久化留后续。
-        List<Message> messages;
+        // 不再每突发清空（清空会丢失 wait 前的全部对话）。提升为 _history 字段后持久化钩子可触及每轮新增消息。
         if (_host != null)
         {
             try
             {
-                messages = await _host.BuildStartAsync();
-                Signal.Event(LogGroup.Engine, "BuildStartAsync 完成", new { sessionId = SessionId, messageCount = messages.Count });
+                var startMsgs = await _host.BuildStartAsync();
+                _history.AddRange(startMsgs);
+                Signal.Event(LogGroup.Engine, "BuildStartAsync 完成", new { sessionId = SessionId, messageCount = _history.Count });
 
                 // 游标接力首轮播种：BuildStartAsync 取的历史快照最大 id 写回持久化游标。
                 // 否则 session 若无新消息直接 end_session，ChannelEngine 恢复时会把这批历史当新消息重读。
@@ -384,17 +511,18 @@ internal class RuntimeSession : IRuntimeSession
             catch (Exception ex)
             {
                 Signal.Warn(LogGroup.Engine, "BuildStartAsync 失败，回退裸 InitialState", new { sessionId = SessionId, error = ex.Message });
-                messages = new List<Message>();
                 if (_initialState is string initText && !string.IsNullOrEmpty(initText))
-                    messages.Add(new Message { Role = "user", Content = initText });
+                    _history.Add(new Message { Role = "user", Content = initText });
             }
+
+            // 持久化首轮 Bootstrap（存档落到 history.jsonl + state.json）
+            await PersistRoundAsync(_history.ToList());
         }
         else
         {
             // AgentHost 未就绪，fallback 到裸 InitialState
-            messages = new List<Message>();
             if (_initialState is string initText && !string.IsNullOrEmpty(initText))
-                messages.Add(new Message { Role = "user", Content = initText });
+                _history.Add(new Message { Role = "user", Content = initText });
             Signal.Warn(LogGroup.Engine, "AgentHost 未就绪，使用裸 InitialState", new { sessionId = SessionId });
         }
 
@@ -402,20 +530,23 @@ internal class RuntimeSession : IRuntimeSession
         // 这里仅消费已生成的初始化系统消息 + 连接上下文，注入首轮。
         if (_bootstrapMessages.Count > 0)
         {
-            messages.AddRange(_bootstrapMessages);
+            _history.AddRange(_bootstrapMessages);
             _bootstrapMessages.Clear();
+            await PersistRoundAsync(_history.ToList());  // 追加 bootstrap 消息到存档
         }
 
         // 连接动作产生的频道上下文（历史等）追加进首轮
         if (_pendingInjections.Count > 0)
         {
-            messages.AddRange(_pendingInjections);
+            var pendingCopy = _pendingInjections.ToList();
+            _history.AddRange(pendingCopy);
             _pendingInjections.Clear();
+            await PersistRoundAsync(pendingCopy);
         }
 
         int agentRound = 0;
         // 首轮已有 BuildStartAsync 的初始上下文，直接处理；之后每突发结束置 true 回到等待
-        bool awaitingInput = messages.Count == 0;
+        bool awaitingInput = _history.Count == 0;
 
         try
         {
@@ -460,8 +591,13 @@ internal class RuntimeSession : IRuntimeSession
                             var channelDrained = drained.Where(d => d.channelId > 0).ToList();
                             var systemDrained = drained.Where(d => d.channelId <= 0).ToList();
 
+                            List<Message> newRoundMsgs = new();
                             if (channelDrained.Count > 0)
-                                messages.AddRange(await _host.BuildRoundAsync(channelDrained));
+                            {
+                                var built = await _host.BuildRoundAsync(channelDrained);
+                                newRoundMsgs.AddRange(built);
+                                _history.AddRange(built);
+                            }
 
                             // 游标接力：每个频道推进到本轮消费的最大 message id
                             foreach (var grp in channelDrained.GroupBy(d => d.channelId))
@@ -469,20 +605,29 @@ internal class RuntimeSession : IRuntimeSession
 
                             // 系统注入消息直接追加
                             foreach (var (_, um, _) in systemDrained)
-                                messages.Add(new Message { Role = "user", Content = um.Content });
+                            {
+                                var m = new Message { Role = "user", Content = um.Content };
+                                newRoundMsgs.Add(m);
+                                _history.Add(m);
+                            }
 
-                            Signal.Event(LogGroup.Engine, "BuildRoundAsync 注入", new { sessionId = SessionId, added = drained.Count, historyCount = messages.Count });
+                            Signal.Event(LogGroup.Engine, "BuildRoundAsync 注入", new { sessionId = SessionId, added = drained.Count, historyCount = _history.Count });
+                            await PersistRoundAsync(newRoundMsgs);
                         }
                         catch (Exception ex)
                         {
                             Signal.Warn(LogGroup.Engine, "BuildRoundAsync 失败，回退裸内容", new { sessionId = SessionId, error = ex.Message });
-                            messages.AddRange(drained.Select(d => new Message { Role = "user", Content = (d.isMention ? "⚠️ [被@提及]\n" : "") + d.msg.Content }));
+                            var fallback = drained.Select(d => new Message { Role = "user", Content = (d.isMention ? "⚠️ [被@提及]\n" : "") + d.msg.Content }).ToList();
+                            _history.AddRange(fallback);
+                            await PersistRoundAsync(fallback);
                         }
                     }
                     else
                     {
                         // fallback：裸内容
-                        messages.AddRange(drained.Select(d => new Message { Role = "user", Content = (d.isMention ? "⚠️ [被@提及]\n" : "") + d.msg.Content }));
+                        var fallback = drained.Select(d => new Message { Role = "user", Content = (d.isMention ? "⚠️ [被@提及]\n" : "") + d.msg.Content }).ToList();
+                        _history.AddRange(fallback);
+                        await PersistRoundAsync(fallback);
                     }
                 }
 
@@ -496,7 +641,8 @@ internal class RuntimeSession : IRuntimeSession
                     var sections = _componentHost.BuildPromptSections();
                     if (sections.Count > 0)
                     {
-                        messages.Add(new Message { Role = "user", Content = "[组件通知]\n" + string.Join("\n\n", sections) });
+                        var notifyMsg = new Message { Role = "user", Content = "[组件通知]\n" + string.Join("\n\n", sections) };
+                        _history.Add(notifyMsg);
                         Signal.Event(LogGroup.Engine, "组件通知注入",
                             new { sessionId = SessionId, sectionCount = sections.Count });
                     }
@@ -505,8 +651,40 @@ internal class RuntimeSession : IRuntimeSession
                 // 连接动作（上一轮 connect_channel）产生的频道上下文，注入本轮推理前
                 if (_pendingInjections.Count > 0)
                 {
-                    messages.AddRange(_pendingInjections);
+                    var pendingCopy = _pendingInjections.ToList();
+                    _history.AddRange(pendingCopy);
                     _pendingInjections.Clear();
+                    await PersistRoundAsync(pendingCopy);
+                }
+
+                // ── 压缩提示注入（L1/L2 文字，L3 锁定待 Phase 5 CompactTool 注入后启用）──
+                if (_compression != null)
+                {
+                    var estimatedTokens = _history.Sum(m => EstimateChars(m)) / 3;
+                    var compressHint = _compression.GetInjectText(estimatedTokens);
+                    if (compressHint != null)
+                    {
+                        var hintMsg = new Message { Role = "user", Content = compressHint };
+                        _history.Add(hintMsg);
+                        _compression.MarkL1Injected();
+                        Signal.Event(LogGroup.Engine, "压缩提示注入",
+                            new { sessionId = SessionId, tier = _compression.CurrentTier.ToString(), estimatedTokens });
+                    }
+
+                    // L3 锁定：仅当 _compactTool 已注入（Phase 5）才走锁定路径
+                    if (_l3Lockdown && _compactTool != null && _preLockdownTools == null)
+                    {
+                        _l3Lockdown = false;
+                        _preLockdownTools = new Dictionary<string, ITool>(_tools, StringComparer.OrdinalIgnoreCase);
+                        _tools.Clear();
+                        _activeTools.Clear();
+                        _tools["compact"] = _compactTool;
+                        _activeTools.Add("compact");
+                        if (_agentCore != null)
+                            _agentCore.AdditionalTools = new List<ITool> { _compactTool };
+                        Signal.Event(LogGroup.Engine, "L3 锁定：工具表只剩 compact",
+                            new { sessionId = SessionId, preLockdownCount = _preLockdownTools.Count });
+                    }
                 }
 
                 _agentCore.EngineType = "channel";
@@ -519,21 +697,34 @@ internal class RuntimeSession : IRuntimeSession
                     var midDrain = DrainInputPortsRaw(CancellationToken.None);
                     if (midDrain.Count > 0)
                     {
+                        List<Message> midNew = new();
                         if (_host != null)
                         {
                             var cd = midDrain.Where(d => d.channelId > 0).ToList();
                             var sd = midDrain.Where(d => d.channelId <= 0).ToList();
                             if (cd.Count > 0)
-                                messages.AddRange(await _host.BuildRoundAsync(cd));
+                            {
+                                var built = await _host.BuildRoundAsync(cd);
+                                midNew.AddRange(built);
+                                _history.AddRange(built);
+                            }
                             foreach (var grp in cd.GroupBy(d => d.channelId))
                                 AdvanceChannelCursor(grp.Key, grp.Max(d => d.msg.Id));
                             foreach (var (_, um, _) in sd)
-                                messages.Add(new Message { Role = "user", Content = um.Content });
+                            {
+                                var m = new Message { Role = "user", Content = um.Content };
+                                midNew.Add(m);
+                                _history.Add(m);
+                            }
                         }
                         else
                         {
-                            messages.AddRange(midDrain.Select(d => new Message { Role = "user", Content = (d.isMention ? "⚠️ [被@提及]\n" : "") + d.msg.Content }));
+                            var fallback = midDrain.Select(d => new Message { Role = "user", Content = (d.isMention ? "⚠️ [被@提及]\n" : "") + d.msg.Content }).ToList();
+                            midNew.AddRange(fallback);
+                            _history.AddRange(fallback);
                         }
+                        if (midNew.Count > 0)
+                            await PersistRoundAsync(midNew);
                     }
                 }
 
@@ -544,16 +735,16 @@ internal class RuntimeSession : IRuntimeSession
                 ModelOutput output;
                 try
                 {
-                    output = await _agentCore.InvokeAsync(messages, EngineMode.Working);
+                    output = await _agentCore.InvokeAsync(_history, EngineMode.Working);
                 }
                 catch (Exception ex)
                 {
                     Signal.Warn(LogGroup.Model, "Session 模型调用失败", new { sessionId = SessionId, round = agentRound, error = ex.Message });
-                    messages.Add(new Message { Role = "system", Content = $"[错误] 模型调用失败: {ex.Message}" });
+                    _history.Add(new Message { Role = "system", Content = $"[错误] 模型调用失败: {ex.Message}" });
                     continue;
                 }
 
-                messages.Add(new Message { Role = "assistant", Content = output.Text ?? output.Thinking ?? "" });
+                _history.Add(new Message { Role = "assistant", Content = output.Text ?? output.Thinking ?? "" });
 
                 // ── 工具执行 ──
                 if (output.HasToolCalls && output.ToolCalls != null && output.ToolCalls.Count > 0)
@@ -572,12 +763,20 @@ internal class RuntimeSession : IRuntimeSession
 
                     // assistant 轮：保留 tool_use ContentParts（携带 tool_use_id），与下方 tool_result 严格配对
                     // 替换上面那条空文本 assistant，避免模型看不到自己调用了工具（runaway 根因）
-                    messages[messages.Count - 1] = NativeToolMessageFormatter.FormatAssistant(
+                    _history[_history.Count - 1] = NativeToolMessageFormatter.FormatAssistant(
                         output, _agentCore.UseNativeTools, resolver);
 
                     // tool_result 轮：一条消息按 tool_use_id 配对全部 call→result
-                    messages.Add(NativeToolMessageFormatter.FormatToolResults(
-                        output.ToolCalls, results, _agentCore.UseNativeTools, !_agentCore.DisableImageMessages));
+                    var resultMsg = NativeToolMessageFormatter.FormatToolResults(
+                        output.ToolCalls, results, _agentCore.UseNativeTools, !_agentCore.DisableImageMessages);
+                    _history.Add(resultMsg);
+
+                    // 每轮持久化：assistant turn + tool_result turn 一起写
+                    await PersistRoundAsync(new List<Message>
+                    {
+                        _history[_history.Count - 2],
+                        _history[_history.Count - 1]
+                    });
 
                     // 副作用 + 停止判定（突发结束 ≠ 会话结束）
                     // endBurst：本次突发收尾，清消息回 WaitForActivationAsync，session 保活握 claim
@@ -604,7 +803,7 @@ internal class RuntimeSession : IRuntimeSession
                     if (endBurst)
                     {
                         Signal.Event(LogGroup.Engine, "endBurst：回等待保活",
-                            new { sessionId = SessionId, historyCount = messages.Count, waitUntil = WaitUntil });
+                            new { sessionId = SessionId, historyCount = _history.Count, waitUntil = WaitUntil });
                         awaitingInput = true;
                         continue;
                     }
@@ -614,7 +813,14 @@ internal class RuntimeSession : IRuntimeSession
                     // 模型无工具调用：注入提醒继续循环（Working session 不应自动挂起）
                     Signal.Event(LogGroup.Engine, "无工具调用，注入提醒继续",
                         new { sessionId = SessionId, round = agentRound });
-                    messages.Add(new Message { Role = "user", Content = "[系统] 你没有调用任何工具。如果任务完成请用 end_session 结束，需要等人回复用 wait 挂起，否则继续工作。" });
+                    var reminder = new Message { Role = "user", Content = "[系统] 你没有调用任何工具。如果任务完成请用 end_session 结束，需要等人回复用 wait 挂起，否则继续工作。" };
+                    _history.Add(reminder);
+                    // assistant + reminder 一起写
+                    await PersistRoundAsync(new List<Message>
+                    {
+                        _history[_history.Count - 2],
+                        _history[_history.Count - 1]
+                    });
                 }
             }
         }
@@ -804,45 +1010,85 @@ internal class RuntimeSession : IRuntimeSession
 
     // ── 持久化 ──
 
-    public async Task PersistStateAsync()
+    /// <summary>
+    /// 每轮持久化：追加新增消息到 history.jsonl + 原子重写 state.json。
+    /// best-effort，失败不阻塞会话循环。
+    /// </summary>
+    private async Task PersistRoundAsync(List<Message> newMessages)
     {
-        var dir = Path.Combine(PathConfig.StoragePath, "Sessions", SessionId);
-        Directory.CreateDirectory(dir);
-
-        var meta = new
+        if (_persister == null) return;
+        try
         {
-            status = Status.ToString(),
-            createdAt = _createdAt,
-            roundCount = _roundCount,
-            componentIds = _componentIds
-        };
-        await File.WriteAllTextAsync(Path.Combine(dir, "meta.json"),
-            JsonConvert.SerializeObject(meta, Formatting.Indented));
+            await _persister.AppendHistoryAsync(newMessages);
+            await _persister.SaveStateAsync(BuildStateSnapshot());
+        }
+        catch (Exception ex)
+        {
+            Signal.Warn(LogGroup.Engine, "持久化失败（不阻塞）",
+                new { sessionId = SessionId, error = ex.Message, newCount = newMessages.Count });
+        }
     }
 
-    public Task RestoreStateAsync()
+    /// <summary>构造 state.json 快照对象。</summary>
+    internal SessionStateSnapshot BuildStateSnapshot() => new()
     {
-        var dir = Path.Combine(PathConfig.StoragePath, "Sessions", SessionId);
-        var metaPath = Path.Combine(dir, "meta.json");
-        if (File.Exists(metaPath))
+        SessionId = SessionId,
+        Status = Status,
+        CreatedAt = _createdAt,
+        RoundCount = _roundCount,
+        WaitUntil = WaitUntil,
+        LastActivity = _lastActivity,
+        CompressionTier = _compression?.CurrentTier.ToString() ?? "None",
+        ConnectedChannelId = _connected.CurrentChannelId > 0 ? _connected.CurrentChannelId.ToString() : null,
+        ConnectedMode = _connected.Mode != ConnectionMode.None ? _connected.Mode.ToString() : null,
+        ChannelCursors = BuildChannelCursors()
+    };
+
+    /// <summary>从 host 维护的各频道 state 取 LastConsumedMessageId 构造游标快照。</summary>
+    private Dictionary<int, int> BuildChannelCursors()
+    {
+        var cursors = new Dictionary<int, int>();
+        if (_host == null) return cursors;
+        foreach (var cid in _host.ChannelIds)
         {
             try
             {
-                var json = File.ReadAllText(metaPath);
-                var meta = JsonConvert.DeserializeAnonymousType(json, new { status = "", roundCount = 0 });
-                if (meta != null)
-                {
-                    _roundCount = meta.roundCount;
-                    Status = meta.status switch
-                    {
-                        "Running" => SessionStatus.Restored,
-                        "Crashed" => SessionStatus.Crashed,
-                        _ => SessionStatus.Completed
-                    };
-                }
+                var c = _host.StateFor(cid).LastConsumedMessageId;
+                if (c > 0) cursors[cid] = c;
             }
-            catch { /* 恢复失败不阻塞 */ }
+            catch { /* skip */ }
         }
-        return Task.CompletedTask;
+        return cursors;
+    }
+
+    private static int EstimateChars(Message m)
+    {
+        if (m.Content != null)
+            return m.Content.Length;
+        if (m.ContentParts != null)
+            return m.ContentParts.Sum(p =>
+                (p.Text?.Length ?? 0) + (p.ToolInput?.Length ?? 0) + (p.ToolName?.Length ?? 0));
+        return 0;
+    }
+
+    public async Task PersistStateAsync()
+    {
+        if (_persister == null)
+        {
+            // 兼容路径：无 persister 时走旧 meta.json 写入（用于优雅退出场景的兜底）
+            var dir = Path.Combine(PathConfig.StoragePath, "Sessions", SessionId);
+            Directory.CreateDirectory(dir);
+            var meta = new
+            {
+                status = Status.ToString(),
+                createdAt = _createdAt,
+                roundCount = _roundCount,
+                componentIds = _componentIds
+            };
+            await File.WriteAllTextAsync(Path.Combine(dir, "meta.json"),
+                JsonConvert.SerializeObject(meta, Formatting.Indented));
+            return;
+        }
+        await _persister.SaveStateAsync(BuildStateSnapshot());
     }
 }

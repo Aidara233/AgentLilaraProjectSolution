@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -141,6 +142,23 @@ internal class SessionEngine : ISubEngine
             Signal.Error(LogGroup.Engine, "Session Bootstrap 失败", new { sessionId = session.SessionId, error = ex.Message });
         }
 
+        // 写 spec.json + 注入 persister（持久化三件套就绪）
+        // spec.json 是不可变存档，创建时一次写入；state.json 由 RunAsync 内每轮原子重写
+        try
+        {
+            var persister = new SessionPersistence(session.SessionId);
+            persister.SaveSpecAsync(spec, DateTime.UtcNow).GetAwaiter().GetResult();
+            session.SetPersister(persister);
+        }
+        catch (Exception ex)
+        {
+            Signal.Warn(LogGroup.Engine, "Session spec.json 写入失败（持久化降级）",
+                new { sessionId = session.SessionId, error = ex.Message });
+        }
+
+        // 启用压缩（L1/L2 文字注入；L3 锁定等 Phase 5 注入 CompactTool 后自动激活）
+        session.InitCompression();
+
         // 启动 Session
         _ = Task.Run(async () =>
         {
@@ -165,6 +183,39 @@ internal class SessionEngine : ISubEngine
         });
 
         return session;
+    }
+
+    /// <summary>
+    /// compact 工具专属：旧 session 调 compact(summary) 触发新会话承接。
+    /// 新 SessionId（新 GUID），ParentSessionId = 旧 sessionId，
+    /// InitialState = "[上一会话摘要]\n{summary}\n\n请继续工作"，轮次接续旧 session。
+    /// 同步生效：ClaimChannel 在 CreateSession 内同步完成，新 session 立马接管频道。
+    /// </summary>
+    public IRuntimeSession CreateFromCompact(RuntimeSession oldSession, string summary)
+    {
+        var oldSpec = new CreateSessionSpec
+        {
+            // 从旧 session 派生：组件 / 端口 / InitActions / Limits / CoreConfigName
+            ComponentIds = oldSession.ComponentIds.ToArray(),
+            AutoClaimChannel = true,
+            InputPorts = new Dictionary<string, PortSpec>(oldSession.BuildPortSpecSnapshotForCompact()),
+            OutputPorts = new Dictionary<string, string>(),
+            InitialState = $"[上一会话摘要]\n{summary}\n\n请继续工作",
+            InitActions = new List<ToolCall>(oldSession.GetInitActionsForCompact()),
+            ParentSessionId = oldSession.SessionId,
+            OverrideLimits = oldSession.Limits,
+            CoreConfigName = "SessionCore"  // compact 后新 session 复用同一 Core
+        };
+
+        var newSession = (RuntimeSession)CreateSession(oldSpec);
+
+        // 接续旧 session 的轮次计数，避免新 session 从 0 重新跑 free round
+        newSession.InheritRoundCount(oldSession.GetRoundCountForCompact());
+
+        Signal.Event(LogGroup.Engine, "compact 创建新 session",
+            new { oldId = oldSession.SessionId, newId = newSession.SessionId, summaryLen = summary.Length });
+
+        return newSession;
     }
 
     public StopResult StopSession(string id, string reason)
@@ -430,21 +481,138 @@ internal class SessionEngine : ISubEngine
 
         foreach (var dir in Directory.GetDirectories(baseDir))
         {
-            var metaPath = Path.Combine(dir, "meta.json");
-            if (!File.Exists(metaPath)) continue;
+            SessionPersistence persister;
+            CreateSessionSpec spec;
+            SessionStateSnapshot state;
+            List<Models.Message> history;
 
             try
             {
-                var json = File.ReadAllText(metaPath);
-                var meta = JsonConvert.DeserializeAnonymousType(json, new { status = "" });
-                if (meta?.status is "Running" or "Crashed")
+                persister = new SessionPersistence(Path.GetFileName(dir));
+                (spec, state, history) = persister.Load();
+            }
+            catch (Exception ex)
+            {
+                Signal.Warn(LogGroup.Engine, "Session 存档读取失败（跳过）",
+                    new { sessionId = Path.GetFileName(dir), error = ex.Message });
+                continue;
+            }
+
+            // ★ 冷启动过滤：只恢复 Running/Crashed，Completed/Creating 保留存档但不加载
+            if (state.Status is not (SessionStatus.Running or SessionStatus.Crashed))
+            {
+                Signal.Debug(LogGroup.Engine, "Session 存档跳过（已结束）",
+                    new { sessionId = state.SessionId, status = state.Status.ToString() });
+                continue;
+            }
+
+            // ① 先恢复频道占用（同步生效，挡住 ChannelEngine），抢在适配器投递消息之前
+            if (spec.AutoClaimChannel && spec.InputPorts.Count > 0)
+            {
+                var cid = spec.InputPorts.First().Value.ChannelId;
+                var claimed = ClaimChannel(state.SessionId, cid, ClaimLevel.Full);
+                Signal.Event(LogGroup.Engine, "恢复 Session 频道占用",
+                    new { sessionId = state.SessionId, channelId = cid, claimed });
+            }
+
+            // ② 重建 RuntimeSession（复用旧 SessionId）
+            var session = new RuntimeSession(spec, state.SessionId);
+            session.SetCurrency(_currency!);
+            session.SetSessionEngine(this);
+
+            // ③ 走标准初始化路径（组件 / AgentCore / MessageEngine / AgentHost）
+            //    跳过 BootstrapAsync：InitActions 已在旧 session 执行过，不重复 claim/订阅
+            string loopId;
+            int singleChannelId = -1;
+            if (spec.InputPorts.Count == 1)
+            {
+                singleChannelId = spec.InputPorts.First().Value.ChannelId;
+                loopId = LoopId.ForChannel(singleChannelId);
+            }
+            else
+            {
+                loopId = $"session:{session.SessionId}";
+            }
+
+            try
+            {
+                session.InitComponents(loopId, _ctx.ModuleBus, _ctx.ComponentServices, () => session.WakeUp());
+            }
+            catch (Exception ex)
+            {
+                Signal.Error(LogGroup.Engine, "恢复 Session 组件初始化失败",
+                    new { sessionId = session.SessionId, error = ex.Message });
+            }
+
+            _sessions[session.SessionId] = session;
+
+            var agentCore = new Core.AgentCore(spec.CoreConfigName);
+            var messageEngine = _ctx.GetActiveEnginesSnapshot().OfType<Messaging.MessageEngine>().FirstOrDefault();
+            session.SetAgentCore(agentCore);
+            if (messageEngine != null) session.SetMessageEngine(messageEngine);
+
+            // 重建输入端口 + 订阅（不重新订阅会丢消息）
+            foreach (var (portName, portSpec) in spec.InputPorts)
+            {
+                if (messageEngine != null)
                 {
-                    // 恢复 session（简化：仅状态为 Running/Crashed 的恢复）
-                    var sessionId = Path.GetFileName(dir);
-                    Signal.Event(LogGroup.Engine, "恢复 Session", new { sessionId });
+                    var port = messageEngine.Subscribe(portSpec.ChannelId, portSpec.SubStream, portSpec.Weight);
+                    session.AddInputPort(portName, port);
                 }
             }
-            catch { /* skip corrupt */ }
+
+            // 重建 SessionAgentHost
+            try
+            {
+                var channelPorts = new List<(int channelId, string? channelName, bool preload)>();
+                foreach (var (_, portSpec) in spec.InputPorts)
+                {
+                    var ch = _ctx.Session.GetChannelByIdAsync(portSpec.ChannelId).GetAwaiter().GetResult();
+                    channelPorts.Add((portSpec.ChannelId, ch?.Name, portSpec.PreloadHistory));
+                }
+
+                var dataSource = new SystemContextDataSource(_ctx);
+                var svc = new ChannelContextService(dataSource);
+                var initialStateText = spec.InitialState is string s ? s
+                    : spec.InitialState != null ? JsonConvert.SerializeObject(spec.InitialState)
+                    : null;
+                var host = new SessionAgentHost(channelPorts, initialStateText, svc);
+                session.SetAgentHost(host);
+            }
+            catch (Exception ex)
+            {
+                Signal.Error(LogGroup.Engine, "恢复 Session AgentHost 失败",
+                    new { sessionId = session.SessionId, error = ex.Message });
+            }
+
+            // ④ 灌入存档状态 + 历史
+            session.RestoreFromSnapshot(state, history);
+
+            // ⑤ 注入 persister + 启用压缩
+            session.SetPersister(persister);
+            session.InitCompression();
+
+            Signal.Event(LogGroup.Engine, "Session 已恢复",
+                new { sessionId = session.SessionId, historyCount = history.Count, roundCount = state.RoundCount });
+
+            // ⑥ 启动 RunAsync
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    using var cts = new CancellationTokenSource();
+                    await session.RunAsync(cts.Token);
+                }
+                catch (Exception ex)
+                {
+                    Signal.Error(LogGroup.Engine, "恢复后 Session 崩溃",
+                        new { sessionId = session.SessionId, error = ex.Message });
+                }
+                finally
+                {
+                    ReleaseSessionClaims(session.SessionId);
+                }
+            });
         }
     }
 

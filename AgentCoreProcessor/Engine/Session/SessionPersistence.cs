@@ -1,0 +1,306 @@
+// AgentCoreProcessor/Engine/Session/SessionPersistence.cs
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using AgentCoreProcessor.Config;
+using AgentCoreProcessor.Models;
+using AgentLilara.PluginSDK;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+
+namespace AgentCoreProcessor.Engine.Session
+{
+    /// <summary>
+    /// Session 三文件持久化封装：spec.json（一次写）/ state.json（每轮原子重写）/ history.jsonl（追加）。
+    /// 崩溃恢复由 SessionEngine.RestoreAll 调用 Load() 后重建。
+    /// </summary>
+    internal class SessionPersistence
+    {
+        private const int SpecFormatVersion = 1;
+        private const int StateFormatVersion = 1;
+
+        private readonly string _dir;
+        private readonly string _specPath;
+        private readonly string _statePath;
+        private readonly string _historyPath;
+
+        public SessionPersistence(string sessionId)
+        {
+            _dir = Path.Combine(PathConfig.StoragePath, "Sessions", sessionId);
+            Directory.CreateDirectory(_dir);
+            _specPath = Path.Combine(_dir, "spec.json");
+            _statePath = Path.Combine(_dir, "state.json");
+            _historyPath = Path.Combine(_dir, "history.jsonl");
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // spec.json：创建时一次写入（不可变）
+        // ═══════════════════════════════════════════════════════════
+
+        public Task SaveSpecAsync(CreateSessionSpec spec, DateTime createdAt)
+        {
+            var data = new
+            {
+                formatVersion = SpecFormatVersion,
+                sessionId = Path.GetFileName(_dir),
+                createdAt,
+                componentIds = spec.ComponentIds,
+                autoClaimChannel = spec.AutoClaimChannel,
+                inputPorts = spec.InputPorts,
+                outputPorts = spec.OutputPorts,
+                initialState = spec.InitialState,
+                initActions = spec.InitActions,
+                parentSessionId = spec.ParentSessionId,
+                overrideLimits = spec.OverrideLimits,
+                coreConfigName = spec.CoreConfigName
+            };
+            var json = JsonConvert.SerializeObject(data, Formatting.Indented,
+                new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
+            return File.WriteAllTextAsync(_specPath, json);
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // state.json：每轮原子重写（tmp+move）
+        // ═══════════════════════════════════════════════════════════
+
+        public async Task SaveStateAsync(SessionStateSnapshot state)
+        {
+            var data = new
+            {
+                formatVersion = StateFormatVersion,
+                sessionId = state.SessionId,
+                status = state.Status.ToString(),
+                createdAt = state.CreatedAt,
+                roundCount = state.RoundCount,
+                waitUntil = state.WaitUntil,
+                lastActivity = state.LastActivity,
+                compressionTier = state.CompressionTier,
+                connectedChannelId = state.ConnectedChannelId,
+                connectedMode = state.ConnectedMode,
+                channelCursors = state.ChannelCursors
+            };
+            var json = JsonConvert.SerializeObject(data, Formatting.Indented,
+                new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
+            var tmp = _statePath + ".tmp";
+            await File.WriteAllTextAsync(tmp, json);
+            File.Move(tmp, _statePath, overwrite: true);
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // history.jsonl：每轮追加（assistant + tool_result 一起写）
+        // ═══════════════════════════════════════════════════════════
+
+        public async Task AppendHistoryAsync(List<Message> newMessages)
+        {
+            if (newMessages == null || newMessages.Count == 0) return;
+            var lines = new List<string>(newMessages.Count);
+            foreach (var m in newMessages)
+            {
+                lines.Add(JsonConvert.SerializeObject(m,
+                    new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore }));
+            }
+            await File.AppendAllLinesAsync(_historyPath, lines);
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // Load：全量读，返回 spec + state + history
+        // 崩溃半截处理：丢弃末尾无配对 tool_result 的 assistant tool_use
+        // ═══════════════════════════════════════════════════════════
+
+        public (CreateSessionSpec Spec, SessionStateSnapshot State, List<Message> History) Load()
+        {
+            var spec = LoadSpec();
+            var state = LoadState();
+            var history = LoadHistory();
+            return (spec, state, history);
+        }
+
+        private CreateSessionSpec LoadSpec()
+        {
+            if (!File.Exists(_specPath))
+                throw new InvalidOperationException($"spec.json missing for session {Path.GetFileName(_dir)}");
+
+            var json = File.ReadAllText(_specPath);
+            var wrapper = JsonConvert.DeserializeObject<SpecWrapper>(json)
+                ?? throw new InvalidOperationException($"spec.json corrupted for session {Path.GetFileName(_dir)}");
+
+            var spec = new CreateSessionSpec
+            {
+                ComponentIds = wrapper.ComponentIds ?? Array.Empty<string>(),
+                AutoClaimChannel = wrapper.AutoClaimChannel,
+                InputPorts = wrapper.InputPorts ?? new(),
+                OutputPorts = wrapper.OutputPorts ?? new(),
+                InitialState = wrapper.InitialState,
+                InitActions = wrapper.InitActions ?? new(),
+                ParentSessionId = wrapper.ParentSessionId,
+                OverrideLimits = wrapper.OverrideLimits,
+                CoreConfigName = wrapper.CoreConfigName ?? "SessionCore"
+            };
+            return spec;
+        }
+
+        private SessionStateSnapshot LoadState()
+        {
+            if (!File.Exists(_statePath))
+            {
+                // state.json 不存在视为 Crashed（spec 写完但 state 还没落地）
+                return new SessionStateSnapshot
+                {
+                    SessionId = Path.GetFileName(_dir),
+                    Status = SessionStatus.Crashed,
+                    CreatedAt = DateTime.UtcNow,
+                    RoundCount = 0,
+                    LastActivity = DateTime.UtcNow
+                };
+            }
+
+            try
+            {
+                var json = File.ReadAllText(_statePath);
+                var wrapper = JsonConvert.DeserializeObject<StateWrapper>(json);
+                if (wrapper == null)
+                    return new SessionStateSnapshot
+                    {
+                        SessionId = Path.GetFileName(_dir),
+                        Status = SessionStatus.Crashed,
+                        CreatedAt = DateTime.UtcNow,
+                        RoundCount = 0,
+                        LastActivity = DateTime.UtcNow
+                    };
+
+                var status = Enum.TryParse<SessionStatus>(wrapper.Status, true, out var s)
+                    ? s
+                    : SessionStatus.Crashed;
+
+                var cursors = wrapper.ChannelCursors ?? new Dictionary<int, int>();
+                if (cursors.Keys.Any(k => k.GetType() != typeof(int)))
+                {
+                    // JSON 反序列化数字键可能为字符串，做一次重构
+                    var rebuilt = new Dictionary<int, int>();
+                    foreach (var kv in cursors)
+                    {
+                        if (int.TryParse(kv.Key.ToString(), out var k2))
+                            rebuilt[k2] = kv.Value;
+                    }
+                    cursors = rebuilt;
+                }
+
+                return new SessionStateSnapshot
+                {
+                    SessionId = wrapper.SessionId ?? Path.GetFileName(_dir),
+                    Status = status,
+                    CreatedAt = wrapper.CreatedAt,
+                    RoundCount = wrapper.RoundCount,
+                    WaitUntil = wrapper.WaitUntil,
+                    LastActivity = wrapper.LastActivity,
+                    CompressionTier = wrapper.CompressionTier ?? "None",
+                    ConnectedChannelId = wrapper.ConnectedChannelId,
+                    ConnectedMode = wrapper.ConnectedMode,
+                    ChannelCursors = cursors
+                };
+            }
+            catch
+            {
+                return new SessionStateSnapshot
+                {
+                    SessionId = Path.GetFileName(_dir),
+                    Status = SessionStatus.Crashed,
+                    CreatedAt = DateTime.UtcNow,
+                    RoundCount = 0,
+                    LastActivity = DateTime.UtcNow
+                };
+            }
+        }
+
+        private List<Message> LoadHistory()
+        {
+            var history = new List<Message>();
+            if (!File.Exists(_historyPath)) return history;
+
+            foreach (var line in File.ReadAllLines(_historyPath))
+            {
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                try
+                {
+                    var msg = JsonConvert.DeserializeObject<Message>(line);
+                    if (msg != null)
+                        history.Add(msg);
+                }
+                catch { /* 跳过损坏的行 */ }
+            }
+
+            // 崩溃半截处理：末尾 assistant 含 tool_use 但下一条不是对应的 tool_result → 丢弃
+            if (history.Count > 0)
+            {
+                var last = history[^1];
+                if (last.Role == "assistant"
+                    && last.ContentParts != null
+                    && last.ContentParts.Any(p => p.Type == "tool_use"))
+                {
+                    history.RemoveAt(history.Count - 1);
+                }
+            }
+
+            return history;
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // Archive：留档（Phase 1-6 范围内为空实现，不删除存档目录）
+        // ═══════════════════════════════════════════════════════════
+
+        public Task ArchiveAsync() => Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Session 运行状态快照。每轮原子重写到 state.json。
+    /// </summary>
+    internal class SessionStateSnapshot
+    {
+        public string SessionId { get; set; } = "";
+        public SessionStatus Status { get; set; } = SessionStatus.Creating;
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public int RoundCount { get; set; }
+        public DateTime? WaitUntil { get; set; }
+        public DateTime LastActivity { get; set; } = DateTime.UtcNow;
+        public string CompressionTier { get; set; } = "None";
+        public string? ConnectedChannelId { get; set; }
+        public string? ConnectedMode { get; set; }
+        public Dictionary<int, int> ChannelCursors { get; set; } = new();
+    }
+
+    // 内部反序列化包装类型（仅用于 JsonConvert.DeserializeAnonymousType 替代）
+    internal class SpecWrapper
+    {
+        [JsonProperty("formatVersion")] public int? FormatVersion;
+        [JsonProperty("sessionId")] public string? SessionId;
+        [JsonProperty("createdAt")] public DateTime CreatedAt;
+        [JsonProperty("componentIds")] public string[]? ComponentIds;
+        [JsonProperty("autoClaimChannel")] public bool AutoClaimChannel;
+        [JsonProperty("inputPorts")] public Dictionary<string, PortSpec>? InputPorts;
+        [JsonProperty("outputPorts")] public Dictionary<string, string>? OutputPorts;
+        [JsonProperty("initialState")] public object? InitialState;
+        [JsonProperty("initActions")] public List<ToolCall>? InitActions;
+        [JsonProperty("parentSessionId")] public string? ParentSessionId;
+        [JsonProperty("overrideLimits")] public SessionLimits? OverrideLimits;
+        [JsonProperty("coreConfigName")] public string? CoreConfigName;
+    }
+
+    internal class StateWrapper
+    {
+        [JsonProperty("formatVersion")] public int? FormatVersion;
+        [JsonProperty("sessionId")] public string? SessionId;
+        [JsonProperty("status")] public string? Status;
+        [JsonProperty("createdAt")] public DateTime CreatedAt;
+        [JsonProperty("roundCount")] public int RoundCount;
+        [JsonProperty("waitUntil")] public DateTime? WaitUntil;
+        [JsonProperty("lastActivity")] public DateTime LastActivity;
+        [JsonProperty("compressionTier")] public string? CompressionTier;
+        [JsonProperty("connectedChannelId")] public string? ConnectedChannelId;
+        [JsonProperty("connectedMode")] public string? ConnectedMode;
+        // JSON 键可能为字符串，反序列化为 string→int 便于解析
+        [JsonProperty("channelCursors")]
+        public Dictionary<int, int> ChannelCursors { get; set; } = new();
+    }
+}

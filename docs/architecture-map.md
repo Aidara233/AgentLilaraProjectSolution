@@ -170,10 +170,11 @@ RuntimeSession 内部（取代旧 Channel/System 引擎内循环）:
     ├── Publish<T>(T): 发布事件
     └── 事件类型: ToolExecutedEvent / RoundEndingEvent / SpeakRequestedEvent / MemoryStoreEvent / SignalEmitEvent
 
-  Session 持久化
-    ├── Storage/Sessions/{sessionId}/meta.json   — type, status, limits
-    ├── Storage/Sessions/{sessionId}/context.json — 压缩摘要+保留消息
-    └── Storage/Sessions/{sessionId}/state.json  — cursor, pinboard, thinking_notes
+  Session 持久化（三件套，重启续跑 + 死的不加载）
+    ├── Storage/Sessions/{sessionId}/spec.json    — 创建时一次写：组件/端口/InitActions/InitialState/Limits
+    ├── Storage/Sessions/{sessionId}/state.json   — 每轮原子重写：status/roundCount/WaitUntil/连接/channelCursors
+    └── Storage/Sessions/{sessionId}/history.jsonl — 每轮追加：assistant + tool_result 一起写
+    恢复时仅加载 status ∈ {Running, Crashed} 的存档；Completed 留档不加载
 ```
 
 ## 消息处理流
@@ -270,6 +271,14 @@ ExtractionEngine (ISubEngine, IsInfrastructure=true):
   EavesdropSession: 一次性短命判定，MaxMessages=5, IdleTimeout=5min
 
 RuntimeSession (统一 agent 循环):
+  wakeLoop: 由 SessionEngine.CreateSession 传入 `() => session.WakeUp()`，
+    组件/GlobalComponent 通过 MasterEngine.WakeLoop → SessionEngine.WakeUpSession
+    → RuntimeSession.WakeUp（设 volatile bool _wakeSignaled）唤醒等待中的 session。
+    WaitForActivationAsync 每轮检测 _wakeSignaled，检测到后清标志并返回 true。
+  组件通知排空：每轮 agent 推理前调用 _componentHost.OnBeforeInvokeAsync() 排空
+    异步任务完成通知（下载/SSH/群文件等），再调用 BuildPromptSections() 将其
+    注入 context（以"[组件通知]"消息呈现给模型）。
+
   不分子类，差异由 CreateSessionSpec 驱动:
     ComponentIds: 启用的组件列表
     MaxLevel: 工具等级上限 (0=L0全开, 1-3=预留)
@@ -294,16 +303,23 @@ RuntimeSession (统一 agent 循环):
     enable_component / disable_component：Session 自行管理组件，L0 行为
 
   持久化:
-    meta.json (type/status/limits) + context.json (压缩摘要) + state.json (cursor/pinboard)
+    持久化三件套已在 SessionEngine + RuntimeSession + SessionPersistence 完成
+  spec.json (组件/端口/InitActions/InitialState/Limits) + state.json (status/roundCount/连接/游标) + history.jsonl (每轮追加 assistant + tool_result)
 
   轮次定价（对接 ICurrencyService）:
     前 20 轮免费，之后 ceil((N-20)/10) 币/轮
     余额不足 → 注入警告 → Session 自行收尾
     余额分级: L1 提醒(≤500) / L2 收紧(≤200) / L3 危急(≤50) → 能力收紧+全局警告
 
-压缩模块 (ChannelContextPersistence + CompressionTierModule):
-  ChannelContextPersistence: per-channel JSON 原子写入
-  CompressionTierModule: 三层压缩（L1提示/L2提醒/L3硬保底），模型调 compress 工具主动压缩
+压缩模块 (CompressionTierModule + CompactTool，接入 RuntimeSession):
+  CompressionTierModule: 三层判定（Evaluate + GetInjectText）
+    阈值: L1=80k / L2=130k / L3=150k（基于 200k 上下文模型）
+    L1 温和提醒 / L2 明确催促 / L3 触发 onL3Triggered 回调
+  CompactTool: 模型调 compact(summary) 触发新 session 接管旧 session
+    旧 session EndSession 退出循环，新 session 走标准 CreateSession 路径
+    ParentSessionId = 旧 sessionId，InitialState = "[上一会话摘要]\n{summary}\n\n请继续工作"
+    L3 锁定工具表只剩 compact（_preLockdownTools 备份），模型必调
+  ChannelContextPersistence: per-channel JSON 原子写入（游标接力，与 session 持久化解耦）
 ```
 
 VisionEngine (视觉引擎，单例，基础设施):
