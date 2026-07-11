@@ -1,4 +1,0 @@
-platform=file
-channelId=1001
-userId=test-user
-content=你好，这是集成测试消息

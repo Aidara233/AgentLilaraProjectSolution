@@ -442,7 +442,7 @@ internal class RuntimeSession : IRuntimeSession
 
                     // 收集输入，并通过 host 格式化（如有），追加到常驻历史 messages
                     var drained = DrainInputPortsRaw(ct);
-                    if (drained.Count == 0)
+                    if (drained.Count == 0 && _pendingInjections.Count == 0)
                     {
                         awaitingInput = true;
                         continue;
