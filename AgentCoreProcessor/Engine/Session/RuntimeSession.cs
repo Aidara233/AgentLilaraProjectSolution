@@ -74,6 +74,9 @@ internal class RuntimeSession : IRuntimeSession
     private SessionPersistence? _persister;
     public void SetPersister(SessionPersistence p) => _persister = p;
 
+    // ── 恢复标记：Restored 的 session 跳过 BuildStartAsync / bootstrap 注入，直接等新消息 ──
+    private bool _isRestored;
+
     // ── 压缩（L1/L2 提示注入活跃，L3 锁定留 Phase 5）──
     private CompressionTierModule? _compression;
     internal ITool? _compactTool;  // Phase 5 注入具体 CompactTool 实例
@@ -199,6 +202,7 @@ internal class RuntimeSession : IRuntimeSession
     internal void RestoreFromSnapshot(SessionStateSnapshot state, List<Message> history)
     {
         Status = state.Status == SessionStatus.Crashed ? SessionStatus.Restored : state.Status;
+        _isRestored = true;
         _createdAt = state.CreatedAt;
         _roundCount = state.RoundCount;
         WaitUntil = state.WaitUntil;
@@ -507,7 +511,12 @@ internal class RuntimeSession : IRuntimeSession
 
         // messages 是会话的常驻历史，跨突发累积，wait 挂起后再激活时保留——
         // 不再每突发清空（清空会丢失 wait 前的全部对话）。提升为 _history 字段后持久化钩子可触及每轮新增消息。
-        if (_host != null)
+        //
+        // 恢复的 session（_isRestored=true）跳过 BuildStartAsync / bootstrap / pendingInjections——
+        // _history 已从存档灌入完整对话历史，频道信息+参与者+InitialState 在旧 session 创建时已注入，
+        // 重复注入会导致模型收到冗余上下文并立即激活一次推理（非期望行为）。
+        // 恢复后直接 awaitingInput=true，等新消息到达再激活。
+        if (!_isRestored && _host != null)
         {
             try
             {
@@ -536,7 +545,7 @@ internal class RuntimeSession : IRuntimeSession
             // 持久化首轮 Bootstrap（存档落到 history.jsonl + state.json）
             await PersistRoundAsync(_history.ToList());
         }
-        else
+        else if (!_isRestored)
         {
             // AgentHost 未就绪，fallback 到裸 InitialState
             if (_initialState is string initText && !string.IsNullOrEmpty(initText))
@@ -546,7 +555,8 @@ internal class RuntimeSession : IRuntimeSession
 
         // 初始化工具调用（bootstrap）：claim/订阅/连接已在 CreateSession 同步完成（路由前提），
         // 这里仅消费已生成的初始化系统消息 + 连接上下文，注入首轮。
-        if (_bootstrapMessages.Count > 0)
+        // 恢复的 session 跳过（InitActions 已在旧 session 执行过，不重复 claim/订阅）
+        if (!_isRestored && _bootstrapMessages.Count > 0)
         {
             _history.AddRange(_bootstrapMessages);
             _bootstrapMessages.Clear();
@@ -554,7 +564,8 @@ internal class RuntimeSession : IRuntimeSession
         }
 
         // 连接动作产生的频道上下文（历史等）追加进首轮
-        if (_pendingInjections.Count > 0)
+        // 恢复的 session 跳过（频道上下文已在 _history 中）
+        if (!_isRestored && _pendingInjections.Count > 0)
         {
             var pendingCopy = _pendingInjections.ToList();
             _history.AddRange(pendingCopy);
@@ -564,7 +575,8 @@ internal class RuntimeSession : IRuntimeSession
 
         int agentRound = 0;
         // 首轮已有 BuildStartAsync 的初始上下文，直接处理；之后每突发结束置 true 回到等待
-        bool awaitingInput = _history.Count == 0;
+        // 恢复的 session：_history 已有完整历史，但不立即激活——等新消息到达再唤醒
+        bool awaitingInput = _isRestored || _history.Count == 0;
 
         try
         {

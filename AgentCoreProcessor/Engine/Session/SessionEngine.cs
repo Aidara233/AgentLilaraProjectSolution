@@ -35,6 +35,17 @@ internal class SessionEngine : ISubEngine
     private ICurrencyService? _currency;
     private DateTime _lastTodoScan = DateTime.MinValue;
 
+    /// <summary>RestoreAll 完成信号。消息路由在检查 claim 前等待此信号，确保恢复的 claim 已落地。</summary>
+    private readonly TaskCompletionSource _restoreTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    /// <summary>等待 RestoreAll 完成（带超时）。超时后放行，避免 SessionEngine 异常时阻塞所有消息路由。</summary>
+    public async Task WaitRestoredAsync(TimeSpan timeout)
+    {
+        var done = _restoreTcs.Task;
+        var winner = await Task.WhenAny(done, Task.Delay(timeout));
+        if (winner != done)
+            Signal.Warn(LogGroup.Engine, "等待 RestoreAll 超时，放行消息路由", new { timeout = timeout.TotalSeconds });
+    }
+
     public SessionEngine(ISystemContext ctx)
     {
         _ctx = ctx;
@@ -614,6 +625,9 @@ internal class SessionEngine : ISubEngine
                 }
             });
         }
+
+        // RestoreAll 完成：放行消息路由中等待的 claim 检查
+        _restoreTcs.TrySetResult();
     }
 
     private async Task PersistAllAsync()

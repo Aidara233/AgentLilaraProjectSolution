@@ -89,10 +89,17 @@ namespace AgentCoreProcessor.Engine
 
             // 入向接通：频道被 session full-claim → 改投 session 端口，不碰 ChannelEngine。
             // 消息已由 OnMessageAsync 完整入库+身份映射，这里只分发已入库的 UserMessage。
+            //
+            // ⚠ 冷启动时序：SessionEngine 通过 Task.Run 启动，RestoreAll 在 RunAsync 开头执行。
+            // 如果消息在 RestoreAll 完成前到达，claim 字典还是空的，消息会错误地走 Express 路径。
+            // 因此先 await WaitRestoredAsync 确保 claim 恢复完成（带 5s 超时兜底）。
             var sessionEngine = ctx.GetActiveEnginesSnapshot()
                 .OfType<Session.SessionEngine>().FirstOrDefault();
             if (sessionEngine != null && sessionContext.IncomingMessage != null)
             {
+                // 等待 RestoreAll 完成，确保冷启动恢复的 claim 已落地
+                await sessionEngine.WaitRestoredAsync(TimeSpan.FromSeconds(5));
+
                 var claimerId = sessionEngine.GetFullClaimer(channelId);
                 var claimerAlive = claimerId != null && sessionEngine.GetSession(claimerId)?.IsAlive == true;
                 Signal.Debug(LogGroup.Engine, "入向投递判定",
