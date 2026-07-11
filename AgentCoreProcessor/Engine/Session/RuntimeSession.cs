@@ -378,7 +378,9 @@ internal class RuntimeSession : IRuntimeSession
     {
         if (_initActions.Count == 0) return;
 
-        var resolver = (Func<string, ITool?>)(name => _componentHost?.TryGetTool(name) ?? ToolRegistry.Get(name));
+        var resolver = (Func<string, ITool?>)(name =>
+            _tools.TryGetValue(name, out var t) ? t :
+            _componentHost?.TryGetTool(name) ?? ToolRegistry.Get(name));
         var executor = new ToolExecutor(resolver);
         var lines = new List<string>();
 
@@ -780,6 +782,7 @@ internal class RuntimeSession : IRuntimeSession
                 if (output.HasToolCalls && output.ToolCalls != null && output.ToolCalls.Count > 0)
                 {
                     System.Func<string, ITool?> resolver = name =>
+                        _tools.TryGetValue(name, out var t) ? t :
                         _componentHost?.TryGetTool(name) ?? ToolRegistry.Get(name);
                     var executor = new ToolExecutor(resolver);
 
