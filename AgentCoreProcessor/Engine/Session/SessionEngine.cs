@@ -517,33 +517,55 @@ internal class SessionEngine : ISubEngine
                 continue;
             }
 
-            // ① 先恢复频道占用（同步生效，挡住 ChannelEngine），抢在适配器投递消息之前
-            if (spec.AutoClaimChannel && spec.InputPorts.Count > 0)
+            // ① 收集需要恢复的频道端口。
+            //    spec.InputPorts 非空 → 直接用（理论路径）。
+            //    spec.InputPorts 空但 state.ConnectedChannelId 非空 → escalate 路径，端口由旧 session
+            //    执行 InitActions.connect_channel 动态创建，spec 持久化时未保留端口信息，这里从 state 推断。
+            //    ConnectionMode.Full → normal + mention 两端口；Listen → 仅 normal。
+            var restorePorts = new List<(string name, PortSpec spec)>();
+            var restoreMode = ConnectionMode.None;
+            if (spec.InputPorts.Count > 0)
             {
-                var cid = spec.InputPorts.First().Value.ChannelId;
+                foreach (var (name, ps) in spec.InputPorts)
+                    restorePorts.Add((name, ps));
+                if (!string.IsNullOrEmpty(state.ConnectedMode)
+                    && Enum.TryParse(state.ConnectedMode, true, out restoreMode) && restoreMode == ConnectionMode.None)
+                    restoreMode = ConnectionMode.Full;
+            }
+            else if (!string.IsNullOrEmpty(state.ConnectedChannelId)
+                     && int.TryParse(state.ConnectedChannelId, out var restoredCid) && restoredCid > 0)
+            {
+                restoreMode = Enum.TryParse(state.ConnectedMode, true, out restoreMode)
+                    ? restoreMode : ConnectionMode.Full;
+                restorePorts.Add(("default", new PortSpec { ChannelId = restoredCid, SubStream = "normal", Weight = 5, PreloadHistory = false }));
+                if (restoreMode == ConnectionMode.Full)
+                    restorePorts.Add(("mention", new PortSpec { ChannelId = restoredCid, SubStream = "mention", Weight = 100, PreloadHistory = false }));
+                Signal.Event(LogGroup.Engine, "从 state 推断恢复端口",
+                    new { sessionId = state.SessionId, channelId = restoredCid, mode = restoreMode.ToString() });
+            }
+
+            // ② 先恢复频道占用（同步生效，挡住 ChannelEngine），抢在适配器投递消息之前
+            if (restorePorts.Count > 0 && restoreMode == ConnectionMode.Full)
+            {
+                var cid = restorePorts[0].spec.ChannelId;
                 var claimed = ClaimChannel(state.SessionId, cid, ClaimLevel.Full);
                 Signal.Event(LogGroup.Engine, "恢复 Session 频道占用",
                     new { sessionId = state.SessionId, channelId = cid, claimed });
             }
 
-            // ② 重建 RuntimeSession（复用旧 SessionId）
+            // ③ 重建 RuntimeSession（复用旧 SessionId）
             var session = new RuntimeSession(spec, state.SessionId);
             session.SetCurrency(_currency!);
             session.SetSessionEngine(this);
 
-            // ③ 走标准初始化路径（组件 / AgentCore / MessageEngine / AgentHost）
-            //    跳过 BootstrapAsync：InitActions 已在旧 session 执行过，不重复 claim/订阅
+            // ④ 走标准初始化路径（组件 / AgentCore / MessageEngine / AgentHost）
+            //    跳过 BootstrapAsync：InitActions 已在旧 session 执行过，不重复 claim/订阅。
+            //    loopId 凭 restorePorts 推断：单频道端口 → "channel:N"，否则 → "session:{id}"。
             string loopId;
-            int singleChannelId = -1;
-            if (spec.InputPorts.Count == 1)
-            {
-                singleChannelId = spec.InputPorts.First().Value.ChannelId;
-                loopId = LoopId.ForChannel(singleChannelId);
-            }
+            if (restorePorts.Count == 1)
+                loopId = LoopId.ForChannel(restorePorts[0].spec.ChannelId);
             else
-            {
                 loopId = $"session:{session.SessionId}";
-            }
 
             try
             {
@@ -562,8 +584,8 @@ internal class SessionEngine : ISubEngine
             session.SetAgentCore(agentCore);
             if (messageEngine != null) session.SetMessageEngine(messageEngine);
 
-            // 重建输入端口 + 订阅（不重新订阅会丢消息）
-            foreach (var (portName, portSpec) in spec.InputPorts)
+            // ⑤ 重建输入端口 + 订阅（不重新订阅会丢消息）
+            foreach (var (portName, portSpec) in restorePorts)
             {
                 if (messageEngine != null)
                 {
@@ -572,11 +594,11 @@ internal class SessionEngine : ISubEngine
                 }
             }
 
-            // 重建 SessionAgentHost
+            // ⑥ 重建 SessionAgentHost
             try
             {
                 var channelPorts = new List<(int channelId, string? channelName, bool preload)>();
-                foreach (var (_, portSpec) in spec.InputPorts)
+                foreach (var (_, portSpec) in restorePorts)
                 {
                     var ch = _ctx.Session.GetChannelByIdAsync(portSpec.ChannelId).GetAwaiter().GetResult();
                     channelPorts.Add((portSpec.ChannelId, ch?.Name, portSpec.PreloadHistory));
