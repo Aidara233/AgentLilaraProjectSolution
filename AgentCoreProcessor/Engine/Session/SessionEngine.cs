@@ -204,12 +204,26 @@ internal class SessionEngine : ISubEngine
     /// </summary>
     public IRuntimeSession CreateFromCompact(RuntimeSession oldSession, string summary)
     {
+        // 先释放旧 session 的频道 claim，让新 session 能成功 ClaimChannel。
+        // 旧 session 即将由 compact 工具触发 EndSession 退出 RunAsync，不再需要 claim；
+        // 旧 session 退出时 Task.Run 包装层 finally 会再次 ReleaseSessionClaims（幂等）。
+        // 不释放的话：CreateSession 内 ClaimChannel 会撞上旧 claim → 返回 false →
+        // 新 session 没有 Full claim → 入向消息落回 ChannelEngine Express、
+        // speak 与 Express 抢话、整体路由错乱。
+        ReleaseSessionClaims(oldSession.SessionId);
+
+        // spec.InputPorts 留空：build port spec 全靠 InitActions.connect_channel 在 BootstrapAsync
+        // 阶段一次性完成 claim + 订阅 + 频道上下文载入 —— 与 escalate 路径行为对齐，
+        // 避免重复订阅（spec.InputPorts 订阅一次 + connect_channel 又订阅一次 = 4 个端口/2 冗余）。
+        // AutoClaimChannel=true 仅在 spec.InputPorts 非空时才生效，这里保持 true 但不触发。
+        // RestoreAll 读 spec.InputPorts 时仍能从 state.json 的 ConnectedChannelId 回退重建端口
+        // （上一轮已修复）。
         var oldSpec = new CreateSessionSpec
         {
-            // 从旧 session 派生：组件 / 端口 / InitActions / Limits / CoreConfigName
+            // 从旧 session 派生：组件 / InitActions / Limits / CoreConfigName
             ComponentIds = oldSession.ComponentIds.ToArray(),
             AutoClaimChannel = true,
-            InputPorts = new Dictionary<string, PortSpec>(oldSession.BuildPortSpecSnapshotForCompact()),
+            InputPorts = new Dictionary<string, PortSpec>(StringComparer.OrdinalIgnoreCase),
             OutputPorts = new Dictionary<string, string>(),
             InitialState = $"[上一会话摘要]\n{summary}\n\n请继续工作",
             InitActions = new List<ToolCall>(oldSession.GetInitActionsForCompact()),
