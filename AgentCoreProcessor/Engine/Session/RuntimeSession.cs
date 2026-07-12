@@ -379,8 +379,10 @@ internal class RuntimeSession : IRuntimeSession
         if (_initActions.Count == 0) return;
 
         var resolver = (Func<string, ITool?>)(name =>
-            _tools.TryGetValue(name, out var t) ? t :
-            _componentHost?.TryGetTool(name) ?? ToolRegistry.Get(name));
+            _sessionExcludedTools.Contains(name)
+                ? ExcludedToolStub.Instance
+                : _tools.TryGetValue(name, out var t) ? t :
+                  _componentHost?.TryGetTool(name) ?? ToolRegistry.Get(name));
         var executor = new ToolExecutor(resolver);
         var lines = new List<string>();
 
@@ -720,6 +722,7 @@ internal class RuntimeSession : IRuntimeSession
                 }
 
                 _agentCore.EngineType = "channel";
+                _agentCore.ExcludedToolNames = _sessionExcludedTools;
                 _agentCore.AdditionalTools = _tools.Values.ToList();
 
                 agentRound++;
@@ -782,8 +785,10 @@ internal class RuntimeSession : IRuntimeSession
                 if (output.HasToolCalls && output.ToolCalls != null && output.ToolCalls.Count > 0)
                 {
                     System.Func<string, ITool?> resolver = name =>
-                        _tools.TryGetValue(name, out var t) ? t :
-                        _componentHost?.TryGetTool(name) ?? ToolRegistry.Get(name);
+                        _sessionExcludedTools.Contains(name)
+                            ? ExcludedToolStub.Instance
+                            : _tools.TryGetValue(name, out var t) ? t :
+                              _componentHost?.TryGetTool(name) ?? ToolRegistry.Get(name);
                     var executor = new ToolExecutor(resolver);
 
                     var results = await executor.ExecuteAsync(output.ToolCalls);
@@ -1124,4 +1129,29 @@ internal class RuntimeSession : IRuntimeSession
         }
         await _persister.SaveStateAsync(BuildStateSnapshot());
     }
+}
+
+/// <summary>
+/// Session 内部对被排除工具（如 escalate）的代理桩：返回明确错误说明该工具在当前模式下
+/// 不可用，而不是让 ToolExecutor 走 ToolRegistry.Get 找到真工具静默 success。
+/// 避免模型因历史上下文误调用走 compact 路径形成链式压缩风暴。
+/// </summary>
+internal sealed class ExcludedToolStub : ITool
+{
+    public static readonly ExcludedToolStub Instance = new();
+
+    public string Name => "__excluded__";
+    public string Description => "在当前会话模式下不可用的工具";
+    public IReadOnlyList<ToolParameter> Parameters => Array.Empty<ToolParameter>();
+    public TimeSpan Timeout => TimeSpan.FromSeconds(1);
+
+    private ExcludedToolStub() { }
+
+    public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
+        => Task.FromResult(new ToolResult
+        {
+            Status = "failed",
+            Error = "该工具（escalate）仅在 Express 模式下可用，已在工作会话中禁用。" +
+                    "请直接执行你的任务（speak/send_media/compact 等），不要调用 escalate。"
+        });
 }

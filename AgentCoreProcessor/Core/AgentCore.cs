@@ -37,6 +37,13 @@ namespace AgentCoreProcessor.Core
         /// <summary>全局组件工具列表，对所有循环可见。</summary>
         public List<ITool>? GlobalComponentTools { get; set; }
 
+        /// <summary>
+        /// 工具排除名集合（宿主用一个集合在 NonComponentToolNames → toolDefs 路径上额外过滤，
+        /// 弥补仅有 AdditionalTools 过滤不充分的缺陷，例如 escalate 在 channel EngineType
+        /// applicable，但不应出现在 Working session 内部工具表）。
+        /// </summary>
+        public IReadOnlySet<string>? ExcludedToolNames { get; set; }
+
         /// <summary>当前引擎类型（如 "channel"、"system"、"review"、"sub-agent"），用于工具过滤。</summary>
         public string? EngineType { get; set; }
 
@@ -184,6 +191,7 @@ namespace AgentCoreProcessor.Core
                 .Select(ToolRegistry.Get)
                 .Where(t => t != null && !ToolRegistry.IsDisabled(t.Name)
                             && ToolRegistry.IsApplicableToEngine(t.Name, EngineType)
+                            && (ExcludedToolNames == null || !ExcludedToolNames.Contains(t.Name))
                             && !(DisableImageMessages && ImageDependentTools.Contains(t.Name)))
                 .Select(ToDefinition!)
                 .ToList();
