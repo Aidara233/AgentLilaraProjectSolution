@@ -225,7 +225,7 @@ internal class SessionEngine : ISubEngine
             AutoClaimChannel = true,
             InputPorts = new Dictionary<string, PortSpec>(StringComparer.OrdinalIgnoreCase),
             OutputPorts = new Dictionary<string, string>(),
-            InitialState = $"[上一会话摘要]\n{summary}\n\n请继续工作",
+            InitialState = $"[上一会话摘要]\n以下是上一会话的总结，仅供背景参考（压缩动作已完成，你是被 compact 接管的新会话；不要再调用 compact 总结同一会话，也不要再 escalate，你已经在工作模式里）：\n{summary}\n\n请基于上述总结继续未完成的工作。",
             InitActions = new List<ToolCall>(oldSession.GetInitActionsForCompact()),
             ParentSessionId = oldSession.SessionId,
             OverrideLimits = oldSession.Limits,
