@@ -74,44 +74,30 @@ public class SshLoopComponent : LoopComponentBase
 
     public override string? BuildPromptSection()
     {
-        var global = SshToolsAccessor.Global;
+        if (_pendingNotifications.Count == 0)
+            return null;
+
         var sb = new StringBuilder();
-
-        // 连接状态
-        var connStatus = global?.Client?.IsConnected == true ? "已连接" : "未连接";
-        sb.AppendLine($"[SSH] {global?.Config.Host}:{global?.Config.Port} ({connStatus})");
-        sb.AppendLine($"远端工作目录: {_workDir}");
-        sb.AppendLine("用法: ssh_exec 同步输出截断 " + ExecTool.MaxOutputChars + " 字符，"
-            + "需完整内容用 `cmd > file` 重定向后 ssh_download。");
-        sb.AppendLine("建议: 耗时的操作（编译、安装、大文件传输）一律用 timeout=0 异步执行。"
-            + "异步任务完成后会自动唤醒你并在此处通知结果，不要反复调用 ssh_check 轮询。"
-            + "只有需要即时反馈（快速查询、确认状态）才用同步模式。");
-
-        // 异步任务完成通知
-        if (_pendingNotifications.Count > 0)
+        sb.AppendLine("[SSH 任务完成]");
+        foreach (var n in _pendingNotifications)
         {
-            sb.AppendLine();
-            sb.AppendLine("[SSH 任务完成]");
-            foreach (var n in _pendingNotifications)
+            if (n.Status == SshTaskStatus.Completed)
             {
-                if (n.Status == SshTaskStatus.Completed)
-                {
-                    sb.Append($"- {n.TaskId}: \"{n.Command}\" → exit {n.ExitCode ?? 0}");
-                    if (n.StdoutFile != null)
-                        sb.Append($" | stdout: {n.StdoutFile}");
-                    if (n.StderrFile != null)
-                        sb.Append($" | stderr: {n.StderrFile}");
-                    sb.AppendLine();
-                }
-                else if (n.Status == SshTaskStatus.Failed)
-                    sb.AppendLine($"- {n.TaskId}: \"{n.Command}\" → 失败: {n.Error}");
-                else if (n.Status == SshTaskStatus.Killed)
-                    sb.AppendLine($"- {n.TaskId}: \"{n.Command}\" → 已终止");
-                else if (n.Status == SshTaskStatus.TimedOut)
-                    sb.AppendLine($"- {n.TaskId}: \"{n.Command}\" → 超时");
+                sb.Append($"- {n.TaskId}: \"{n.Command}\" → exit {n.ExitCode ?? 0}");
+                if (n.StdoutFile != null)
+                    sb.Append($" | stdout: {n.StdoutFile}");
+                if (n.StderrFile != null)
+                    sb.Append($" | stderr: {n.StderrFile}");
+                sb.AppendLine();
             }
-            _pendingNotifications.Clear();
+            else if (n.Status == SshTaskStatus.Failed)
+                sb.AppendLine($"- {n.TaskId}: \"{n.Command}\" → 失败: {n.Error}");
+            else if (n.Status == SshTaskStatus.Killed)
+                sb.AppendLine($"- {n.TaskId}: \"{n.Command}\" → 已终止");
+            else if (n.Status == SshTaskStatus.TimedOut)
+                sb.AppendLine($"- {n.TaskId}: \"{n.Command}\" → 超时");
         }
+        _pendingNotifications.Clear();
 
         return sb.ToString().TrimEnd();
     }

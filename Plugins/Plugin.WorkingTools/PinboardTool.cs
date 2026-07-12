@@ -43,8 +43,9 @@ namespace Plugin.WorkingTools
             var board = LoadBoard();
             if (board.Count == 0) return null;
             var sb = new System.Text.StringBuilder("[便签板]\n");
-            foreach (var (label, content) in board)
-                sb.AppendLine($"- {label}: {content}");
+            foreach (var label in board.Keys)
+                sb.AppendLine($"- {label}");
+            sb.Append("(用 pinboard action=get key=名称 查看完整内容)");
             return sb.ToString();
         }
 

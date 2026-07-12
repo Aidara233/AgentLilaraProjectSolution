@@ -82,23 +82,19 @@ public class GroupFileToolsComponent : LoopComponentBase
 
     public override string? BuildPromptSection()
     {
+        if (_pendingNotifications.Count == 0)
+            return null;
+
         var sb = new StringBuilder();
-
-        sb.AppendLine("[群文件] download_group_file / download_chat_file 为异步下载，完成后自动在此通知结果。不要反复检查进度。");
-
-        if (_pendingNotifications.Count > 0)
+        sb.AppendLine("[群文件下载通知]");
+        foreach (var n in _pendingNotifications)
         {
-            sb.AppendLine();
-            sb.AppendLine("[群文件下载通知]");
-            foreach (var n in _pendingNotifications)
-            {
-                if (n.Status == "completed")
-                    sb.AppendLine($"- 下载完成: {n.FileName} ({FormatSize(n.Size)}) → {n.SavePath}");
-                else if (n.Status == "failed")
-                    sb.AppendLine($"- 下载失败: {n.FileName}: {n.Error}");
-            }
-            _pendingNotifications.Clear();
+            if (n.Status == "completed")
+                sb.AppendLine($"- 下载完成: {n.FileName} ({FormatSize(n.Size)}) → {n.SavePath}");
+            else if (n.Status == "failed")
+                sb.AppendLine($"- 下载失败: {n.FileName}: {n.Error}");
         }
+        _pendingNotifications.Clear();
 
         return sb.ToString().TrimEnd();
     }

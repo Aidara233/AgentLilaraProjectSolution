@@ -71,11 +71,6 @@ public class BrowserToolsLoopComponent : LoopComponentBase
 
     public override string? BuildPromptSection()
     {
-        var sessionManager = BrowserAccessor.Instance?.GetSessionManager();
-        if (sessionManager == null)
-            return null;
-
-        return "[浏览器工具] Playwright Chromium 可用。工具：browser_navigate/click/fill/extract_text/screenshot/execute_js/get_cookies/set_cookies/wait_for/close_session。"
-            + "会话按循环隔离，30分钟空闲自动回收。截图保存到 Workspace。";
+        return null;
     }
 }
