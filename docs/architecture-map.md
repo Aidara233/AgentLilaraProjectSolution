@@ -134,7 +134,7 @@ PluginLoader 扫描子目录 → 读 `plugin.json` → 加载 `entry` DLL。无�
   RuntimeSession — 统一 agent 循环，行为由 CreateSessionSpec 驱动
     场景: Working（频道全功能）/ Task（任务执行，禁止套娃）/ Eavesdrop（监听判定）
     端口: IInputPort（注入上下文，按权重激活）/ IOutputPort（工具写端口，决定工具注册）
-    创建: SessionEngine.CreateSession(CreateSessionSpec) — 组件列表+端口配置+超限参数
+    创建: SessionEngine.CreateSession(CreateSessionSpec) — 组件列表+端口配置+初始状态
 ```
 
 ISubEngine: EngineType / RunAsync / OnEvent / IsAlive / RequestStop / IsInfrastructure(默认false)
@@ -268,9 +268,10 @@ ExtractionEngine (ISubEngine, IsInfrastructure=true):
       查 DB → 关键词粗筛（滤掉 99%）→ 轻量 LLM 判断
 
   EavesdropTask 定义: TaskId / Name / ChannelIds(空=全频道) / Rules[{Keywords, Hint}] / NotificationTargetId
-  EavesdropSession: 一次性短命判定，MaxMessages=5, IdleTimeout=5min
+  EavesdropSession: 一次性短命判定，MaxMessages=5
 
-RuntimeSession (统一 agent 循环):
+RuntimeSession (统一 agent 循环, 无强制 stop):
+  不设 MaxLifetime/IdleTimeout 上限——仅由模型 end_session / 外部 RequestStop / CTS 取消终止。
   wakeLoop: 由 SessionEngine.CreateSession 传入 `() => session.WakeUp()`，
     组件/GlobalComponent 通过 MasterEngine.WakeLoop → SessionEngine.WakeUpSession
     → RuntimeSession.WakeUp（设 volatile bool _wakeSignaled）唤醒等待中的 session。
@@ -285,12 +286,11 @@ RuntimeSession (统一 agent 循环):
     InputPorts: 端口名 → (频道, 子流, 权重)
     OutputPorts: 端口名 → 目标
     AutoClaimChannel: 自动 Full 占用归属频道
-    OverrideLimits: MaxLifetime / IdleTimeout 覆写
 
   默认配置:
     Working: basic-tools, working-tools, file-tools, file-ops, memory-tools, system-tools | AutoClaim=true
-    Task:    basic-tools, file-tools, file-ops, memory-tools | AutoClaim=false | MaxLifetime=30min
-    Eavesdrop: basic-tools | AutoClaim=false | MaxLifetime=15min, IdleTimeout=5min
+    Task:    basic-tools, file-tools, file-ops, memory-tools | AutoClaim=false
+    Eavesdrop: basic-tools | AutoClaim=false
 
   激活:
     端口权重达阈值(mention=100 立即/normal=5 攒多条) → 激活
@@ -485,7 +485,7 @@ ToolCall: 原生 tool_use (Claude API) 为主路径
   ChannelEngine (Express): 每轮自动继续，模型调 wait 显式结束
     安全上限: MaxRounds=8
   RuntimeSession (Working/Task/Eavesdrop): 端口权重驱动或 Wait 超时激活
-    安全上限由 SessionLimits.MaxLifetime / IdleTimeout 控制
+    无强制上限：仅由模型 end_session / 外部 RequestStop / CTS 取消终止（已移除 MaxLifetime/IdleTimeout 机制）
 
 插件加载:
   目录: {程序目录}/Plugins/（跟程序走，不跟 Storage 走）

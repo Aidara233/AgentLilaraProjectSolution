@@ -36,7 +36,6 @@ internal class RuntimeSession : IRuntimeSession
     public IReadOnlyDictionary<string, IInputPort> Inputs => _inputs;
     public IReadOnlyDictionary<string, IOutputPort> Outputs => _outputs;
     public string? ParentSessionId { get; private set; }
-    public SessionLimits Limits { get; set; } = new();
 
     private readonly List<string> _componentIds = new();
     private readonly List<string> _activeTools = new();
@@ -91,7 +90,6 @@ internal class RuntimeSession : IRuntimeSession
     public RuntimeSession(CreateSessionSpec spec)
     {
         ParentSessionId = spec.ParentSessionId;
-        if (spec.OverrideLimits != null) Limits = spec.OverrideLimits;
         _componentIds.AddRange(spec.ComponentIds);
         _initialState = spec.InitialState;
         _initActions = spec.InitActions ?? new List<ToolCall>();
@@ -469,14 +467,6 @@ internal class RuntimeSession : IRuntimeSession
     public void DisableComponent(string componentId)
         => throw new NotSupportedException("运行时动态卸载组件尚未实现，组件须在 CreateSessionSpec.ComponentIds 中预先声明");
 
-    public bool CheckLifetimeLimits()
-    {
-        var now = DateTime.UtcNow;
-        if (Limits.MaxLifetime > TimeSpan.Zero && now - _createdAt > Limits.MaxLifetime) return false;
-        if (Limits.IdleTimeout > TimeSpan.Zero && now - _lastActivity > Limits.IdleTimeout) return false;
-        return true;
-    }
-
     public void RequestStop(string reason)
     {
         Status = SessionStatus.Completed;
@@ -622,12 +612,6 @@ internal class RuntimeSession : IRuntimeSession
                 {
                     if (!await WaitForActivationAsync(_cts.Token))
                         break;
-
-                    if (!CheckLifetimeLimits())
-                    {
-                        Status = SessionStatus.Completed;
-                        break;
-                    }
 
                     TouchActivity();
                     SetWaitUntil(null);

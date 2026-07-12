@@ -5,7 +5,8 @@
 **核心特性**：
 - 三层架构：框架层（ChannelEngine，Express 响应+冲动值）、基础设施引擎层（8个 ISubEngine）、会话层（RuntimeSession，统一 agent 循环）
 - 基础设施引擎：SessionEngine（会话生命周期+频道占用+30s循环）、MessageEngine（双向消息枢纽，入向去重+分发、出向入库+路由）、AdapterEngine（适配器管理+频道融合+消息分段）、ExtractionEngine（记忆提取+监听检测）、DreamEngine（秩序+巡逻）、ReviewEngine（自由探索）、VisionEngine（图片描述+OCR）、TimerEngine（定时触发）
-- 统一会话：RuntimeSession 不分子类，行为由 CreateSessionSpec（组件列表+端口配置+超限参数）驱动。场景：Working（频道全功能，由 escalate 创建）、Task（任务执行，禁止套娃）、Eavesdrop（监听判定）
+- 统一会话：RuntimeSession 不分子类，行为由 CreateSessionSpec（组件列表+端口配置+初始状态）驱动。场景：Working（频道全功能，由 escalate 创建）、Task（任务执行，禁止套娃）、Eavesdrop（监听判定）
+- 无强制 stop：Session 不设 MaxLifetime/IdleTimeout 上限，仅由模型调 end_session / 外部 RequestStop / CTS 取消终止
 - ChannelEngine：框架层全局单例，仅 Express 响应（冲动值决策+escalate），不实现 IRuntimeSession。WorkingSession 由 Express 的 escalate 工具触发 SessionEngine.CreateSession 创建
 - 端口模型：Session 通过 IInputPort（注入上下文）和 IOutputPort（工具写端口）与外界交互，端口决定工具注册
 - 消息流：AdapterEngine → MessageEngine（入向去重+分发）→ 订阅者（ChannelEngine/Session/ExtractionEngine）；出向 Session → MessageEngine → AdapterEngine
@@ -177,7 +178,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 适配器引擎：Engine/AdapterEng/AdapterEngine.cs（适配器生命周期+频道融合+消息分段）
 - 提取引擎：Engine/Extraction/ExtractionEngine.cs（记忆提取+监听检测，共用 LLM 调用）
 - 监听任务：Engine/Extraction/EavesdropTask.cs（关键词粗筛+LLM判定，一次性短命会话）
-- 会话规格：AgentLilara.PluginSDK/CreateSessionSpec.cs（组件列表+端口配置+超限参数）
+- 会话规格：AgentLilara.PluginSDK/CreateSessionSpec.cs（组件列表+端口配置+初始状态）
 - 跨循环请求：Engine/Core/CrossRequestRegistry.cs（JSONL 持久化 + 状态机）
 - 委托总线：Engine/Core/DelegationBus.cs（定向路由，非全局广播）
 - 统一通信：Engine/Core/LoopId.cs + Engine/Core/CrossRequest.cs（请求模型）

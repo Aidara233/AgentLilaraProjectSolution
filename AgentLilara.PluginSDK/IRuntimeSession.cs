@@ -26,10 +26,8 @@ public interface IRuntimeSession
 
     // 生命周期
     string? ParentSessionId { get; }
-    SessionLimits Limits { get; }
     Task RunAsync(CancellationToken ct);
     void RequestStop(string reason);
-    bool CheckLifetimeLimits();
     DateTime? WaitUntil { get; }
 
     // 持久化

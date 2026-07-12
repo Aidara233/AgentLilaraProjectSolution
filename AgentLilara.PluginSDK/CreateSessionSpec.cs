@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace AgentLilara.PluginSDK;
 
 /// <summary>
-/// Session 创建规格。组件列表 + 等级 + 端口 + 超限参数 = 完整 Session 行为定义。
+/// Session 创建规格。组件列表 + 端口 + 初始状态 = 完整 Session 行为定义。
 /// </summary>
 public class CreateSessionSpec
 {
@@ -33,7 +33,6 @@ public class CreateSessionSpec
     public List<ToolCall> InitActions { get; set; } = new();
 
     public string? ParentSessionId { get; set; }
-    public SessionLimits? OverrideLimits { get; set; }
 
     /// <summary>Session 使用的 Core 配置文件名（不含路径和扩展名），默认 "SessionCore"</summary>
     public string CoreConfigName { get; set; } = "SessionCore";

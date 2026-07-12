@@ -220,15 +220,14 @@ internal class SessionEngine : ISubEngine
         // （上一轮已修复）。
         var oldSpec = new CreateSessionSpec
         {
-            // 从旧 session 派生：组件 / InitActions / Limits / CoreConfigName
+// 从旧 session 派生：组件 / InitActions / CoreConfigName
             ComponentIds = oldSession.ComponentIds.ToArray(),
             AutoClaimChannel = true,
             InputPorts = new Dictionary<string, PortSpec>(StringComparer.OrdinalIgnoreCase),
             OutputPorts = new Dictionary<string, string>(),
-            InitialState = $"[上一会话摘要]\n以下是上一会话的总结，仅供背景参考（压缩动作已完成，你是被 compact 接管的新会话；不要再调用 compact 总结同一会话，也不要再 escalate，你已经在工作模式里）：\n{summary}\n\n请基于上述总结继续未完成的工作。",
+            InitialState = $"[上一会话摘要]\n以下是上一会话的总结，仅供背景参考（压缩动作已完成，你是新 compact 接管的新会话；不要再调用 compact 总结同一会话，也不要用 escalate，你已经在工作模式里）：\n{summary}\n\n请基于上述总结继续未完成的工作。",
             InitActions = new List<ToolCall>(oldSession.GetInitActionsForCompact()),
             ParentSessionId = oldSession.SessionId,
-            OverrideLimits = oldSession.Limits,
             CoreConfigName = "SessionCore"  // compact 后新 session 复用同一 Core
         };
 
@@ -447,9 +446,8 @@ internal class SessionEngine : ISubEngine
                         CreateSession(new CreateSessionSpec
                         {
                             ComponentIds = new[] { "basic-tools", "file-tools", "memory-tools" },
-                            InitialState = $"执行定时任务: {task.Description}",
-                            OverrideLimits = new SessionLimits { MaxLifetime = TimeSpan.FromMinutes(30), IdleTimeout = TimeSpan.FromMinutes(5) }
-                        });
+InitialState = $"执行定时任务: {task.Description}"
+                            });
 
                         // Recurring → 排下一次
                         if (task.Type == ScheduleType.Recurring && !string.IsNullOrEmpty(task.CronExpression))
@@ -474,8 +472,7 @@ internal class SessionEngine : ISubEngine
                             CreateSession(new CreateSessionSpec
                             {
                                 ComponentIds = new[] { "basic-tools", "file-tools", "memory-tools" },
-                                InitialState = $"待办事项: {todo.Description}",
-                                OverrideLimits = new SessionLimits { MaxLifetime = TimeSpan.FromMinutes(30), IdleTimeout = TimeSpan.FromMinutes(5) }
+                                InitialState = $"待办事项: {todo.Description}"
                             });
                         }
                     }

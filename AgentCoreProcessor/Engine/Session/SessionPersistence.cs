@@ -53,7 +53,6 @@ namespace AgentCoreProcessor.Engine.Session
                 initialState = spec.InitialState,
                 initActions = spec.InitActions,
                 parentSessionId = spec.ParentSessionId,
-                overrideLimits = spec.OverrideLimits,
                 coreConfigName = spec.CoreConfigName
             };
             var json = JsonConvert.SerializeObject(data, Formatting.Indented,
@@ -150,7 +149,6 @@ namespace AgentCoreProcessor.Engine.Session
                 InitialState = wrapper.InitialState,
                 InitActions = wrapper.InitActions ?? new(),
                 ParentSessionId = wrapper.ParentSessionId,
-                OverrideLimits = wrapper.OverrideLimits,
                 CoreConfigName = wrapper.CoreConfigName ?? "SessionCore"
             };
             return spec;
@@ -298,7 +296,6 @@ namespace AgentCoreProcessor.Engine.Session
         [JsonProperty("initialState")] public object? InitialState;
         [JsonProperty("initActions")] public List<ToolCall>? InitActions;
         [JsonProperty("parentSessionId")] public string? ParentSessionId;
-        [JsonProperty("overrideLimits")] public SessionLimits? OverrideLimits;
         [JsonProperty("coreConfigName")] public string? CoreConfigName;
     }
 

@@ -80,14 +80,7 @@ internal class SubAgentAccessAdapter : ISubAgentAccess
             InitialState = options.InitialState ?? instruction,
             ParentSessionId = options.ParentLoopId,
             // 子 agent 无频道端口：CreateSession 会用 "session:{id}" 作 loopId
-            InputPorts = new(),
-            OverrideLimits = options.TimeoutMinutes.HasValue
-                ? new SessionLimits
-                {
-                    MaxLifetime = TimeSpan.FromMinutes(options.TimeoutMinutes.Value),
-                    IdleTimeout = TimeSpan.FromMinutes(Math.Max(5, options.TimeoutMinutes.Value / 2))
-                }
-                : null
+            InputPorts = new()
         };
 
         var session = se.CreateSession(spec);

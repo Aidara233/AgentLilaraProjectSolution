@@ -178,8 +178,7 @@ namespace AgentCoreProcessor.Engine
                                 {
                                     new() { Tool = "connect_channel", Inputs = new List<string> { channelId.ToString() } }
                                 },
-                                InitialState = $"用户请求切换到工作模式，原因：{reason}\n（保持在工作模式陪用户继续；只有确实不再需要工作模式时才用 end_session 退回轻量对话。需要等人回复时用 wait 挂起。）",
-                                OverrideLimits = new SessionLimits { MaxLifetime = TimeSpan.FromHours(2), IdleTimeout = TimeSpan.FromMinutes(30) }
+                                InitialState = $"用户请求切换到工作模式，原因：{reason}\n（保持在工作模式陪用户继续；只有确实不再需要工作模式时才用 end_session 退回轻量对话。需要等人回复时用 wait 挂起。）"
                             });
                             Console.Error.WriteLine($"[Express ch:{channelId}] Working session 已创建，频道已占用");
                             escalateTriggered = true;
