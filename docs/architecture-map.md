@@ -46,7 +46,7 @@ AgentLilaraProjectSolution/
       ├── Plugin.FileOps/         archive + search/grep + file_info/hash/compare
       ├── Plugin.GroupFileTools/  分组文件操作
       ├── Plugin.CrossLoopTools/  跨循环委托与通信
-      ├── Plugin.SystemTools/     create_sub_agent + stop_sub_agent
+      ├── Plugin.SystemTools/     子 session 管理：create_sub_agent / stop_sub_agent / send_instruction / list_sub_agents / wait_sub / get_sub_info（system-ops 组件）+ report_to_parent（sub-agent-runtime 组件）
       ├── Plugin.ReviewTools/     review_* 15个复盘工具
       ├── Plugin.ScheduledTasks/  定时任务（插件化实现）
       ├── Plugin.SkillTools/      casual-chat / code-review / system-maintenance
@@ -459,7 +459,12 @@ AgentLilara.PluginSDK (共享契约，独立类库):
   Plugin.FileOps         — archive_create/extract/list + search/grep + file_info/hash/compare
   Plugin.GroupFileTools  — 分组文件操作
   Plugin.CrossLoopTools  — send_request + evaluate_request + complete_request + send_notify 等（跨循环委托与通信）[LoopComponent: cross-loop]
-  Plugin.SystemTools     — create_sub_agent + stop_sub_agent（子agent管理）[LoopComponent: system-ops]
+  Plugin.SystemTools     — 子 session 管理（system-ops 组件：create_sub_agent/stop_sub_agent/send_instruction/list_sub_agents/wait_sub/get_sub_info；sub-agent-runtime 组件：report_to_parent）
+                          SubAgentAccessAdapter 桥接 SessionEngine + CrossRequestRegistry：
+                            - 创建子 session 时附加 MailboxInputPort（父→子指令通道）
+                            - 自动创建 CrossRequest（父可跟踪委托状态）
+                            - 子 session OnCompleted 钩子自动 Respond(Complete) + 唤醒父 session
+                            - report_to_parent 工具经 CrossRequest + InjectExternal 双路通知父 session
   Plugin.ReviewTools     — review_* 15个复盘工具
   Plugin.ScheduledTasks  — 定时任务（插件化实现）
   Plugin.SkillTools      — casual-chat / code-review / system-maintenance

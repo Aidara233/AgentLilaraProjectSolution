@@ -244,7 +244,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 -           Plugins/Plugin.FileOps/（archive_create/extract/list + search_files + grep_files + file_info + file_hash + compare_files）
 -           Plugins/Plugin.GroupFileTools/（分组文件操作）
 -           Plugins/Plugin.CrossLoopTools/（send_request + evaluate_request + complete_request + send_notify + cancel_request + report_progress + check_messages + respond_to_request + list_requests + list_loops）
--           Plugins/Plugin.SystemTools/（create_sub_agent + stop_sub_agent）
+-           Plugins/Plugin.SystemTools/（子 session 管理：create_sub_agent / stop_sub_agent / send_instruction / list_sub_agents / wait_sub / get_sub_info；子侧回报：report_to_parent）— system-ops（父侧 LoopComponent）+ sub-agent-runtime（子侧 LoopComponent）
 -           Plugins/Plugin.ReviewTools/（review_* 15个复盘工具）
 -           Plugins/Plugin.ScheduledTasks/（定时任务，插件化实现）
 -           Plugins/Plugin.Email/（邮件收发：send_email, check_unread, check_email, read_email, search_email, download_attachment, delete_email, mark_all_read, list_folders）— Global

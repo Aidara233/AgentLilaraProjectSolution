@@ -120,7 +120,7 @@ AgentLilaraProjectSolution/
     Plugin.MemoryTools/           ← 记忆存储/检索/关联（10个工具）— Global
     Plugin.FileTools/             ← 文件操作（read_text, write_text, list_dir, move, delete, copy）— Global
     Plugin.FileOps/               ← 高级文件操作（archive_create/extract/list, search_files, grep, file_info, file_hash, compare）— Global
-    Plugin.SystemTools/           ← 子 agent 管理（create_sub_agent, stop_sub_agent）
+    Plugin.SystemTools/           ← 子 session 管理（system-ops 组件：create_sub_agent/stop_sub_agent/send_instruction/list_sub_agents/wait_sub/get_sub_info；sub-agent-runtime 组件：report_to_parent）
     Plugin.ReviewTools/           ← 复盘工具（15个 review_* 工具）— Global, review only
     Plugin.CrossLoopTools/        ← 跨循环通信（12个工具）— Loop, channel + system
     Plugin.ScheduledTasks/        ← 定时任务（schedule/cancel/list）— Loop, channel only

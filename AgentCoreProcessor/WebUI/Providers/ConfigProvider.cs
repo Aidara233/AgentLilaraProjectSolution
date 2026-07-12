@@ -18,7 +18,6 @@ internal class ConfigProvider : IWebUIProvider
         ["ExpressCore"] = "Core/ExpressCore.json",
         ["SessionCore"] = "Core/SessionCore.json",
         ["SystemCore"] = "Core/SystemCore.json",
-        ["SubAgentCore"] = "Core/SubAgentCore.json",
         ["MemoryExtractionCore"] = "Core/MemoryExtractionCore.json",
         ["ReviewCore"] = "Core/ReviewCore.json",
         ["SleepTalkCore"] = "Core/SleepTalkCore.json",

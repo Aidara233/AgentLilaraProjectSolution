@@ -891,8 +891,8 @@ namespace AgentCoreProcessor.Engine
             lock (engineLock) { return activeEngines.Count(e => e.IsAlive); }
         }
 
-        /// <summary>唤醒指定 loopId 的循环（供 GlobalComponentHost / 委托系统使用）。</summary>
-        private void WakeLoop(string loopId)
+        /// <summary>唤醒指定 loopId 的循环（供 GlobalComponentHost / 委托系统 / 子 agent 回报使用）。</summary>
+        internal void WakeLoop(string loopId)
         {
             if (LoopId.IsSystem(loopId))
             {

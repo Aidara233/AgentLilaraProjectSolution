@@ -1,9 +1,0 @@
-{
-  "apiKey": "{{GENERAL_API_KEY}}",
-  "apiEndpoint": "{{GENERAL_ENDPOINT}}",
-  "model": "{{GENERAL_MODEL}}",
-  "provider": "{{GENERAL_PROVIDER}}",
-  "temperature": 0.5,
-  "stream": true,
-  "promptFiles": ["SubAgentPrompt.txt"]
-}

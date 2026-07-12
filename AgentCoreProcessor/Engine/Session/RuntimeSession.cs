@@ -488,6 +488,37 @@ internal class RuntimeSession : IRuntimeSession
     /// <summary>外部信号唤醒（由 wakeLoop 回调触发，如异步任务完成）。</summary>
     public void WakeUp() => _wakeSignaled = true;
 
+    /// <summary>
+    /// 外部直接注入系统消息（如子 session 回报结果、wait timeout 提示等）。
+    /// 写入 _pendingInjections，由下一轮 agent 推理前消费；同时触发 WakeUp 唤醒等待中的 session。
+    /// </summary>
+    internal void InjectExternal(string content)
+    {
+        _pendingInjections.Add(new Message { Role = "user", Content = content });
+        _wakeSignaled = true;
+        Signal.Debug(LogGroup.Engine, "外部消息注入",
+            new { sessionId = SessionId, contentLen = content.Length });
+    }
+
+    /// <summary>当前累计轮次（供 SubAgentAccessAdapter 查询子 session 状态）。</summary>
+    internal int RoundCountInternal => _roundCount;
+    /// <summary>创建时间（供 SubAgentAccessAdapter 查询存活时长）。</summary>
+    internal DateTime CreatedAtInternal => _createdAt;
+    /// <summary>最后活动时间（供 SubAgentAccessAdapter 查询）。</summary>
+    internal DateTime LastActivityInternal => _lastActivity;
+
+    /// <summary>提取 session 最终输出（最后一条 assistant 消息文本）。供子 session 完成通知使用。</summary>
+    internal string? ExtractFinalOutput()
+    {
+        for (int i = _history.Count - 1; i >= 0; i--)
+        {
+            var m = _history[i];
+            if (m.Role == "assistant" && !string.IsNullOrEmpty(m.Content))
+                return m.Content;
+        }
+        return null;
+    }
+
     // ── Agent 循环 ──
 
     public async Task RunAsync(CancellationToken ct)

@@ -10,7 +10,10 @@
 
 2. **明确可脱手的独立任务**（不需要讨论、不需要中间确认的纯执行）
    → create_sub_agent 丢个子 agent 去做，省自己轮次
-   → 子 agent 能力比你弱（工具白名单更少、禁止套娃），只适合封闭式执行
+   → 子 agent 默认组件较少（basic-tools + file-tools + memory-tools + sub-agent-runtime），可传 components 参数覆盖
+   → 子 agent 完成后会自动通知你（[子会话 N 已完成] 系统消息），无需轮询
+   → 中途需要追加指令用 send_instruction；等待串行产出用 wait_sub
+   → 子 agent 自己用 report_to_parent 主动回报进度
 
 3. **需要多轮协商的任务**（需求模糊、需反复和用户沟通）
    → 自己边聊边推进，不要丢出去
@@ -38,7 +41,7 @@
 
 - **独立执行**（明确可脱手）
   → "这个我丢个子 agent 去做，完事告诉你"
-  → create_sub_agent
+  → create_sub_agent，子 agent 完成时会自动收到 [子会话 N 已完成] 通知
 
 - **需要跨循环**（需系统循环协调）
   → "这个需要系统循环帮忙跟踪"

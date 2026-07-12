@@ -37,7 +37,7 @@
 
 | 插件 | 工具 |
 |------|------|
-| **Plugin.SystemTools** | `create_sub_agent`, `stop_sub_agent` |
+| **Plugin.SystemTools** | `create_sub_agent`, `stop_sub_agent`, `send_instruction`, `list_sub_agents`, `wait_sub`, `get_sub_info`（system-ops 组件）+ `report_to_parent`（sub-agent-runtime 组件） |
 | **Plugin.SkillTools** | `casual-chat`, `code-review`, `system-maintenance` |
 | **Plugin.NetworkTools** | 网络工具 |
 | **Plugin.SshTools** | SSH 工具 |
