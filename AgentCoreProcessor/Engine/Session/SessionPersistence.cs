@@ -88,6 +88,21 @@ namespace AgentCoreProcessor.Engine.Session
             File.Move(tmp, _statePath, overwrite: true);
         }
 
+        /// <summary>
+        /// 仅改写 state.json 的 status 字段（保留其它字段），用于 RestoreAll 把被淘汰存档
+        /// 标记为 Completed，避免下次启动重新尝试恢复已被最新存档接替的旧 session。
+        /// </summary>
+        public async Task UpdateStatusAsync(SessionStatus newStatus)
+        {
+            if (!File.Exists(_statePath)) return;
+            var raw = await File.ReadAllTextAsync(_statePath);
+            var jo = JObject.Parse(raw);
+            jo["status"] = newStatus.ToString();
+            var tmp = _statePath + ".tmp";
+            await File.WriteAllTextAsync(tmp, jo.ToString(Formatting.Indented));
+            File.Move(tmp, _statePath, overwrite: true);
+        }
+
         // ═══════════════════════════════════════════════════════════
         // history.jsonl：每轮追加（assistant + tool_result 一起写）
         // ═══════════════════════════════════════════════════════════

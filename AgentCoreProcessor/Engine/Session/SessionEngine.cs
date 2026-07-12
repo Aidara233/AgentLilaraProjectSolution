@@ -504,6 +504,13 @@ internal class SessionEngine : ISubEngine
         var baseDir = Path.Combine(PathConfig.StoragePath, "Sessions");
         if (!Directory.Exists(baseDir)) return;
 
+        // ── 阶段 1：扫描所有 Running/Crashed 存档，按 (channelId) 分组取 createdAt 最新者为"幸存者"。
+        //    防风暴 / 防 compact 链残留：同 channelId 多个 Running 存档时，旧的 compact 链条已被
+        //    最新存档取代，老存档启动也没意义且会争抢 Full claim。无 ConnectedChannelId 的孤儿
+        //    归入 key=0 一组。
+        var loaded = new List<(string dir, SessionPersistence persister, CreateSessionSpec spec, SessionStateSnapshot state, List<Models.Message> history)>();
+        var survivalWinners = new Dictionary<int, (DateTime createdAt, int index)>();
+
         foreach (var dir in Directory.GetDirectories(baseDir))
         {
             SessionPersistence persister;
@@ -523,13 +530,53 @@ internal class SessionEngine : ISubEngine
                 continue;
             }
 
-            // ★ 冷启动过滤：只恢复 Running/Crashed，Completed/Creating 保留存档但不加载
+            // 冷启动过滤：只恢复 Running/Crashed，Completed/Creating 保留存档但不加载
             if (state.Status is not (SessionStatus.Running or SessionStatus.Crashed))
             {
                 Signal.Debug(LogGroup.Engine, "Session 存档跳过（已结束）",
                     new { sessionId = state.SessionId, status = state.Status.ToString() });
                 continue;
             }
+
+            int key = 0;
+            if (!string.IsNullOrEmpty(state.ConnectedChannelId)
+                && int.TryParse(state.ConnectedChannelId, out var cid) && cid > 0)
+                key = cid;
+
+            int idx = loaded.Count;
+            loaded.Add((dir, persister, spec, state, history));
+
+            if (!survivalWinners.TryGetValue(key, out var cur))
+                survivalWinners[key] = (state.CreatedAt, idx);
+            else if (state.CreatedAt > cur.createdAt)
+                survivalWinners[key] = (state.CreatedAt, idx);
+        }
+
+        var survivorIndexes = new HashSet<int>(
+            survivalWinners.Values.Select(v => v.index));
+
+        // 被淘汰者先标 Completed（避免下次重启又尝试），不启动不订阅
+        for (int i = 0; i < loaded.Count; i++)
+        {
+            if (survivorIndexes.Contains(i)) continue;
+            var (dir, persister, spec, state, history) = loaded[i];
+            try
+            {
+                persister.UpdateStatusAsync(SessionStatus.Completed).GetAwaiter().GetResult();
+                Signal.Event(LogGroup.Engine, "Session 存档被幸存者取代，标记为 Completed",
+                    new { sessionId = state.SessionId, channelId = state.ConnectedChannelId, createdAt = state.CreatedAt });
+            }
+            catch (Exception ex)
+            {
+                Signal.Warn(LogGroup.Engine, "Session 存档标 Completed 失败",
+                    new { sessionId = state.SessionId, error = ex.Message });
+            }
+        }
+
+        // ── 阶段 2：仅对幸存者走恢复流程
+        foreach (var idx in survivorIndexes)
+        {
+            var (dir, persister, spec, state, history) = loaded[idx];
 
             // ① 收集需要恢复的频道端口。
             //    spec.InputPorts 非空 → 直接用（理论路径）。
