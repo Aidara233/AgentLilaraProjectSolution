@@ -76,12 +76,13 @@ namespace AgentCoreProcessor.Tool
             get { lock (_nonComponentTools) return new HashSet<string>(_nonComponentTools); }
         }
 
-        /// <summary>检查工具是否适用于指定引擎类型。null 表示所有引擎可用。</summary>
+        /// <summary>检查工具是否适用于指定引擎类型。null = 仅 session 可用。</summary>
         public static bool IsApplicableToEngine(string toolName, string? engineType)
         {
             if (string.IsNullOrEmpty(engineType)) return true;
             var meta = GetMeta(toolName);
-            if (meta?.EngineTypes == null) return true; // 未声明 = 全引擎可用
+            if (meta?.EngineTypes == null)
+                return "session".Equals(engineType, StringComparison.OrdinalIgnoreCase);
             return meta.EngineTypes.Contains(engineType);
         }
 

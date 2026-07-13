@@ -5,7 +5,7 @@ using AgentLilara.PluginSDK.Services;
 namespace Plugin.WorkingTools;
 
 [Component(Name = "working-tools", Scope = ComponentScope.Loop)]
-[LoopApplicability(Channel = Applicability.Enabled, System = Applicability.Disabled)]
+[LoopApplicability(Channel = Applicability.Enabled)]
 public class WorkingToolsComponent : LoopComponentBase
 {
     private ILoopComponentContext _ctx = null!;

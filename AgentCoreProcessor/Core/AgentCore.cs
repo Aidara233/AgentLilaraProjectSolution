@@ -243,7 +243,7 @@ namespace AgentCoreProcessor.Core
         }
 
         /// <summary>
-        /// 设置对话历史（供 ChannelEngine 在每轮准备阶段调用）。
+        /// 设置对话历史（供 ExpressEngine 在每轮准备阶段调用）。
         /// 自动 prepend Processor 加载的基础提示词。
         /// </summary>
         public void SetConversationHistory(List<Message> messages)

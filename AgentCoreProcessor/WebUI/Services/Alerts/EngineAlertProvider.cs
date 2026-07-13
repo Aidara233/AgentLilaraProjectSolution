@@ -54,7 +54,7 @@ namespace AgentCoreProcessor.WebUI.Services.Alerts
             }
 
             // 频道循环 API 错误
-            var workerCheck = _engine.GetSpawnCheck<ChannelEngineSpawnCheck>();
+            var workerCheck = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
             var workers = new List<WorkerSnapshot>();
             if (workerCheck != null)
             {

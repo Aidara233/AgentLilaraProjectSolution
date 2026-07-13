@@ -26,6 +26,8 @@ public interface IRuntimeSession
 
     // 生命周期
     string? ParentSessionId { get; }
+    string? EffectiveParentId { get; }
+    IReadOnlyList<string> ChildSessionIds { get; }
     Task RunAsync(CancellationToken ct);
     void RequestStop(string reason);
     DateTime? WaitUntil { get; }

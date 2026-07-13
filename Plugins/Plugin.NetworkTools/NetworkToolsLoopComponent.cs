@@ -5,8 +5,8 @@ using AgentLilara.PluginSDK;
 namespace Plugin.NetworkTools;
 
 [Component(Name = "network-tools", Scope = ComponentScope.Loop)]
-[LoopApplicability(Channel = Applicability.Enabled, System = Applicability.Enabled,
-    Review = Applicability.Disabled, SubAgent = Applicability.Enabled)]
+[LoopApplicability(Channel = Applicability.Enabled,
+    Review = Applicability.Disabled, Task = Applicability.Enabled)]
 public class NetworkToolsLoopComponent : LoopComponentBase
 {
     private ILoopComponentContext _ctx = null!;

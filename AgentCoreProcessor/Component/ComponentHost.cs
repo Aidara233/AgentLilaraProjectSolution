@@ -10,7 +10,7 @@ namespace AgentCoreProcessor.Component;
 
 /// <summary>
 /// 管理一个循环内所有 Component 实例的生命周期、工具收集、Prompt 收集。
-/// 每个 ChannelEngine/SessionEngine 持有一个 ComponentHost。
+/// 每个 ExpressEngine/SessionEngine 持有一个 ComponentHost。
 /// </summary>
 internal class ComponentHost
 {
@@ -65,8 +65,27 @@ internal class ComponentHost
         }
     }
 
-    public async Task InitAsync()
+    public async Task InitAsync(IReadOnlyList<string>? finalComponentIds = null)
     {
+        if (finalComponentIds != null)
+        {
+            // 仅加载指定列表内的组件
+            var nameSet = new HashSet<string>(finalComponentIds, StringComparer.OrdinalIgnoreCase);
+            foreach (var reg in ComponentRegistry.GetLoopComponents(_loopType))
+            {
+                var compName = ComponentAttribute.GetFrom(reg.Type)?.Name ?? reg.Type.Name;
+                if (!nameSet.Contains(compName)) continue;
+                if (!_config.IsEnabled(compName, _loopType, reg.DefaultEnabled))
+                    continue;
+                var instance = CreateInstance(reg);
+                if (instance == null) continue;
+                _loopComponents.Add(instance);
+                await instance.Component.OnInitAsync(instance.Context, InitReason.Fresh);
+                RegisterTools(instance);
+            }
+            return;
+        }
+
         var registrations = ComponentRegistry.GetLoopComponents(_loopType);
 
         foreach (var reg in registrations)
@@ -110,9 +129,8 @@ internal class ComponentHost
                 var applicability = _loopType switch
                 {
                     "channel" => inst.Registration.ChannelApplicability,
-                    "system" => inst.Registration.SystemApplicability,
                     "review" => inst.Registration.ReviewApplicability,
-                    "sub-agent" => inst.Registration.SubAgentApplicability,
+                    "task" => inst.Registration.TaskApplicability,
                     _ => Applicability.Enabled
                 };
                 if (!_config.IsEnabled(inst.Component.Meta.Name, _loopType, inst.Component.Meta.DefaultEnabled, applicability))

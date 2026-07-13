@@ -12,7 +12,7 @@ namespace Plugin.SystemTools;
 /// 工具：create_sub_agent / stop_sub_agent / send_instruction / list_sub_agents / wait_sub / get_sub_info。
 /// </summary>
 [Component(Name = "system-ops", Scope = ComponentScope.Loop)]
-[LoopApplicability(Channel = Applicability.Enabled, System = Applicability.Enabled)]
+[LoopApplicability(Channel = Applicability.Enabled)]
 public class SystemOpsComponent : LoopComponentBase
 {
     private ILoopComponentContext? _ctx;
@@ -91,7 +91,7 @@ public class SystemOpsComponent : LoopComponentBase
 /// SubAgentAccessAdapter.Create 默认组件列表包含本组件，使子 agent 可主动回报。
 /// </summary>
 [Component(Name = "sub-agent-runtime", Scope = ComponentScope.Loop)]
-[LoopApplicability(Channel = Applicability.Enabled, System = Applicability.Enabled)]
+[LoopApplicability(Channel = Applicability.Enabled)]
 public class SubAgentRuntimeComponent : LoopComponentBase
 {
     private ReportToParentTool? _reportTool;

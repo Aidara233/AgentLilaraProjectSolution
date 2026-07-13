@@ -725,7 +725,7 @@ namespace AgentCoreProcessor.Engine
 
         public void OnEvent(EngineEvent e)
         {
-            // Note: wake-up from messages is handled by ChannelEngine's sleep interception,
+            // Note: wake-up from messages is handled by ExpressEngine's sleep interception,
             // not via EventBus MessageEvent (removed). ForceWake() for explicit wake-up.
         }
 

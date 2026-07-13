@@ -4,8 +4,8 @@ using AgentLilara.PluginSDK;
 namespace Plugin.NetworkTools;
 
 [Component(Name = "browser-tools", Scope = ComponentScope.Loop)]
-[LoopApplicability(Channel = Applicability.Enabled, System = Applicability.Enabled,
-    Review = Applicability.Disabled, SubAgent = Applicability.Enabled)]
+[LoopApplicability(Channel = Applicability.Enabled,
+    Review = Applicability.Disabled, Task = Applicability.Enabled)]
 public class BrowserToolsLoopComponent : LoopComponentBase
 {
     private string _loopId = "";

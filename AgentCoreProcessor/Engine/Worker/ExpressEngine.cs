@@ -27,9 +27,9 @@ namespace AgentCoreProcessor.Engine
     /// 频道引擎。长生命周期，一个活跃频道一个实例。
     /// 负责消息缓冲聚合、冲动值决策、参与者追踪、消息处理（分类→记忆→回复→提取）。
     /// </summary>
-    internal partial class ChannelEngine : ISubEngine, IAgentHost
+    internal partial class ExpressEngine : ISubEngine, IAgentHost
     {
-        public string EngineType => "Channel";
+        public string EngineType => "Express";
         public bool IsAlive { get; private set; } = true;
 
         /// <summary>频道 ID（公开）。</summary>
@@ -72,7 +72,7 @@ namespace AgentCoreProcessor.Engine
         private ChannelContextService _ctxService = null!;
 
         // Core 实例
-        private readonly AgentCore agentCore = new();
+        private readonly AgentCore agentCore = new("ChannelCore");
 
         // ── 统一循环（Phase 1）──
         private Gate gate = null!;
@@ -147,7 +147,7 @@ namespace AgentCoreProcessor.Engine
 
 
         /// <summary>由 SpawnCheck 创建，传入初始消息。</summary>
-        public ChannelEngine(ISystemContext ctx, SessionContext initialContext, IncomingMessage initialMessage)
+        public ExpressEngine(ISystemContext ctx, SessionContext initialContext, IncomingMessage initialMessage)
         {
             this.ctx = ctx;
             this.channelId = initialContext.Channel.Id;
@@ -156,7 +156,7 @@ namespace AgentCoreProcessor.Engine
             this.impulseTracker = new ImpulseTracker(ctx.ImpulseConfig, channelConfig.Affinity, channelId);
             var now = DateTime.Now;
             this.lastBufferTime = now;
-            agentCore.CallerTag = $"Channel:{channelId}";
+            agentCore.CallerTag = $"Express:{channelId}";
 
             _traceParentSpanId = Logging.SignalContext.Current?.CurrentSpanId;
 
@@ -198,7 +198,7 @@ namespace AgentCoreProcessor.Engine
         }
 
         /// <summary>冷启动：无初始消息，仅恢复频道上下文。供组件唤醒等场景使用。</summary>
-        internal ChannelEngine(ISystemContext ctx, Database.Channel channel)
+        internal ExpressEngine(ISystemContext ctx, Database.Channel channel)
         {
             this.ctx = ctx;
             this.channelId = channel.Id;
@@ -206,7 +206,7 @@ namespace AgentCoreProcessor.Engine
             this.channelConfig = ChannelStateManager.LoadConfig(channelId, channel.Affinity);
             this.impulseTracker = new ImpulseTracker(ctx.ImpulseConfig, channelConfig.Affinity, channelId);
             this.lastBufferTime = DateTime.Now;
-            agentCore.CallerTag = $"Channel:{channelId}";
+            agentCore.CallerTag = $"Express:{channelId}";
 
             // ── 上下文服务（DB 派生参与者，无累积状态）──
             _ctxState = new ChannelContextState { ChannelId = channelId, ChannelName = channelName, Mode = "express" };
@@ -613,7 +613,7 @@ namespace AgentCoreProcessor.Engine
                 }
                 catch (Exception ex)
                 {
-                    Logging.Signal.Warn(Logging.LogGroup.Engine, $"ChannelEngine 处理委托结果失败", ex);
+                    Logging.Signal.Warn(Logging.LogGroup.Engine, $"ExpressEngine 处理委托结果失败", ex);
                 }
                 gate.Signal();
                 return;

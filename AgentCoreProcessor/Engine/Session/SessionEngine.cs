@@ -35,6 +35,12 @@ internal class SessionEngine : ISubEngine
     private ICurrencyService? _currency;
     private DateTime _lastTodoScan = DateTime.MinValue;
 
+    // 父子链条
+    private readonly ConcurrentDictionary<string, HashSet<string>> _activeChildren = new();
+    private readonly ConcurrentDictionary<string, string> _childToParent = new();
+    private readonly ConcurrentDictionary<string, string> _forwards = new();
+    private readonly object _childLinkLock = new();
+
     /// <summary>RestoreAll 完成信号。消息路由在检查 claim 前等待此信号，确保恢复的 claim 已落地。</summary>
     private readonly TaskCompletionSource _restoreTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
     /// <summary>等待 RestoreAll 完成（带超时）。超时后放行，避免 SessionEngine 异常时阻塞所有消息路由。</summary>
@@ -57,7 +63,25 @@ internal class SessionEngine : ISubEngine
 
     public IRuntimeSession CreateSession(CreateSessionSpec spec)
     {
-        var session = new RuntimeSession(spec);
+        var profile = SessionTypeProfiles.Get(spec.Type);
+        // 计算 finalComponents
+        string[] finalComponents;
+        if (spec.ResolvedComponentIds != null)
+        {
+            finalComponents = spec.ResolvedComponentIds;
+        }
+        else
+        {
+            var set = new HashSet<string>(profile.DefaultComponentIds, StringComparer.OrdinalIgnoreCase);
+            if (spec.AdditionalComponents != null) set.UnionWith(spec.AdditionalComponents);
+            if (spec.ExcludedComponents != null) set.ExceptWith(spec.ExcludedComponents);
+            var cfg = ComponentConfig.Load();
+            finalComponents = set
+                .Where(c => cfg.IsEnabled(c, profile.LoopApplicabilityKey, defaultEnabled: true))
+                .ToArray();
+        }
+
+        var session = new RuntimeSession(spec, finalComponents);
         session.SetCurrency(_currency!);
         session.SetSessionEngine(this);
 
@@ -92,7 +116,7 @@ internal class SessionEngine : ISubEngine
         _sessions[session.SessionId] = session;
 
         // 注入 AgentCore（使用 spec 指定的 Core 配置名）和 MessageEngine
-        var agentCore = new Core.AgentCore(spec.CoreConfigName);
+        var agentCore = new Core.AgentCore(profile.DefaultCoreConfig);
         var messageEngine = _ctx.GetActiveEnginesSnapshot()
             .OfType<Messaging.MessageEngine>().FirstOrDefault();
         session.SetAgentCore(agentCore);
@@ -193,6 +217,18 @@ internal class SessionEngine : ISubEngine
             }
         });
 
+        // 父子表登记（仅当 ParentSessionId 非空）
+        if (!string.IsNullOrEmpty(spec.ParentSessionId))
+        {
+            lock (_childLinkLock)
+            {
+                _childToParent[session.SessionId] = spec.ParentSessionId;
+                if (!_activeChildren.ContainsKey(spec.ParentSessionId))
+                    _activeChildren[spec.ParentSessionId] = new HashSet<string>();
+                _activeChildren[spec.ParentSessionId].Add(session.SessionId);
+            }
+        }
+
         return session;
     }
 
@@ -208,7 +244,7 @@ internal class SessionEngine : ISubEngine
         // 旧 session 即将由 compact 工具触发 EndSession 退出 RunAsync，不再需要 claim；
         // 旧 session 退出时 Task.Run 包装层 finally 会再次 ReleaseSessionClaims（幂等）。
         // 不释放的话：CreateSession 内 ClaimChannel 会撞上旧 claim → 返回 false →
-        // 新 session 没有 Full claim → 入向消息落回 ChannelEngine Express、
+        // 新 session 没有 Full claim → 入向消息落回 ExpressEngine Express、
         // speak 与 Express 抢话、整体路由错乱。
         ReleaseSessionClaims(oldSession.SessionId);
 
@@ -220,15 +256,14 @@ internal class SessionEngine : ISubEngine
         // （上一轮已修复）。
         var oldSpec = new CreateSessionSpec
         {
-// 从旧 session 派生：组件 / InitActions / CoreConfigName
-            ComponentIds = oldSession.ComponentIds.ToArray(),
+            Type = oldSession.Type,
+            ResolvedComponentIds = oldSession.GetComponentIdsForCompact(),
             AutoClaimChannel = true,
             InputPorts = new Dictionary<string, PortSpec>(StringComparer.OrdinalIgnoreCase),
             OutputPorts = new Dictionary<string, string>(),
             InitialState = $"[上一会话摘要]\n以下是上一会话的总结，仅供背景参考（压缩动作已完成，你是新 compact 接管的新会话；不要再调用 compact 总结同一会话，也不要用 escalate，你已经在工作模式里）：\n{summary}\n\n请基于上述总结继续未完成的工作。",
             InitActions = new List<ToolCall>(oldSession.GetInitActionsForCompact()),
             ParentSessionId = oldSession.SessionId,
-            CoreConfigName = "SessionCore"  // compact 后新 session 复用同一 Core
         };
 
         var newSession = (RuntimeSession)CreateSession(oldSpec);
@@ -236,6 +271,7 @@ internal class SessionEngine : ISubEngine
         // 接续旧 session 的轮次计数，避免新 session 从 0 重新跑 free round
         newSession.InheritRoundCount(oldSession.GetRoundCountForCompact());
 
+// 子链迁移        lock (_childLinkLock)        {            if (_activeChildren.TryRemove(oldSession.SessionId, out var childrenOfOld))            {                _activeChildren[newSession.SessionId] = childrenOfOld;                foreach (var childId in childrenOfOld)                {                    if (_childToParent.ContainsKey(childId))                        _childToParent[childId] = newSession.SessionId;                    try                    {                        var childPersister = new SessionPersistence(childId);                        childPersister.UpdateEffectiveParentAsync(childId, newSession.SessionId).GetAwaiter().GetResult();                    }                    catch { }                }            }            _forwards[oldSession.SessionId] = newSession.SessionId;        }
         Signal.Event(LogGroup.Engine, "compact 创建新 session",
             new { oldId = oldSession.SessionId, newId = newSession.SessionId, summaryLen = summary.Length });
 
@@ -247,13 +283,9 @@ internal class SessionEngine : ISubEngine
         if (!_sessions.TryGetValue(id, out var session))
             return new StopResult { Success = false, BlockReason = "Not found" };
 
-        var children = _sessions.Values
-            .Where(s => s.ParentSessionId == id && s.IsAlive)
-            .Select(s => s.SessionId)
-            .ToList();
-
-        if (children.Count > 0)
-            return new StopResult { Success = false, BlockReason = "Has running children", BlockingChildren = children };
+        var children = GetActiveChildren(id);
+        if (children != null && children.Count > 0)
+            return new StopResult { Success = false, BlockReason = "Has running children", BlockingChildren = children.ToList() };
 
         session.RequestStop(reason);
         ReleaseSessionClaims(id);
@@ -274,6 +306,45 @@ internal class SessionEngine : ISubEngine
 
     public IRuntimeSession? GetSession(string id) =>
         _sessions.TryGetValue(id, out var s) ? s : null;
+
+    // ── 父子链查询 ──
+
+    public IReadOnlyCollection<string>? GetActiveChildren(string sessionId)
+    {
+        return _activeChildren.TryGetValue(sessionId, out var s) ? s : null;
+    }
+
+    public string? ResolveEffectiveParent(string childId)
+    {
+        var current = childId;
+        while (_childToParent.TryGetValue(current, out var p))
+        {
+            if (_forwards.TryGetValue(p, out var forwarded))
+            {
+                current = forwarded;
+                continue;
+            }
+            return p;
+        }
+        return null;
+    }
+
+    public void OnChildCompleted(string childId)
+    {
+        lock (_childLinkLock)
+        {
+            if (_childToParent.TryRemove(childId, out var parentId))
+            {
+                if (_activeChildren.TryGetValue(parentId, out var siblings))
+                {
+                    siblings.Remove(childId);
+                    if (siblings.Count == 0) _activeChildren.TryRemove(parentId, out _);
+                }
+                var parent = GetSession(parentId) as RuntimeSession;
+                parent?.RemoveChildFromState(childId);
+            }
+        }
+    }
 
     public IReadOnlyList<IRuntimeSession> GetActiveSessions() =>
         _sessions.Values.Where(s => s.IsAlive).ToList();
@@ -445,7 +516,7 @@ internal class SessionEngine : ISubEngine
                         task.Status = "executing";
                         CreateSession(new CreateSessionSpec
                         {
-                            ComponentIds = new[] { "basic-tools", "file-tools", "memory-tools" },
+                            Type = SessionType.Task,
 InitialState = $"执行定时任务: {task.Description}"
                             });
 
@@ -471,7 +542,7 @@ InitialState = $"执行定时任务: {task.Description}"
                             todo.Status = "executing";
                             CreateSession(new CreateSessionSpec
                             {
-                                ComponentIds = new[] { "basic-tools", "file-tools", "memory-tools" },
+                                Type = SessionType.Task,
                                 InitialState = $"待办事项: {todo.Description}"
                             });
                         }
@@ -637,7 +708,7 @@ InitialState = $"执行定时任务: {task.Description}"
 
             _sessions[session.SessionId] = session;
 
-            var agentCore = new Core.AgentCore(spec.CoreConfigName);
+            var agentCore = new Core.AgentCore(SessionTypeProfiles.Get(spec.Type).DefaultCoreConfig);
             var messageEngine = _ctx.GetActiveEnginesSnapshot().OfType<Messaging.MessageEngine>().FirstOrDefault();
             session.SetAgentCore(agentCore);
             if (messageEngine != null) session.SetMessageEngine(messageEngine);

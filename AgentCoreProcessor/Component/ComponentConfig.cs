@@ -70,7 +70,7 @@ internal class ComponentConfig
     }
 
     /// <summary>获取所有已知引擎类型。</summary>
-    public static readonly string[] EngineTypes = ["channel", "system", "sub-agent", "review"];
+    public static readonly string[] EngineTypes = ["channel", "task", "review"];
 
     private void Save()
     {
@@ -90,15 +90,13 @@ internal class ComponentConfig
 internal class ComponentPermEntry
 {
     public bool Channel { get; set; } = true;
-    public bool System { get; set; } = true;
-    public bool SubAgent { get; set; } = true;
+    public bool Task { get; set; } = true;
     public bool Review { get; set; } = true;
 
     public bool IsEnabled(string engineType) => engineType switch
     {
         "channel" => Channel,
-        "system" => System,
-        "sub-agent" => SubAgent,
+        "task" => Task,
         "review" => Review,
         _ => true
     };
@@ -108,8 +106,7 @@ internal class ComponentPermEntry
         switch (engineType)
         {
             case "channel": Channel = enabled; break;
-            case "system": System = enabled; break;
-            case "sub-agent": SubAgent = enabled; break;
+            case "task": Task = enabled; break;
             case "review": Review = enabled; break;
         }
     }

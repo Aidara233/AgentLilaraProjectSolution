@@ -8,16 +8,16 @@ using AgentCoreProcessor.Logging;
 namespace AgentCoreProcessor.Engine
 {
     /// <summary>
-    /// ChannelEngine 的创建条件检查。接管 SessionManager 调用和频道路由。
+    /// ExpressEngine 的创建条件检查。接管 SessionManager 调用和频道路由。
     /// 维护活跃频道引擎表，按 ChannelId 路由消息。
-    /// 睡眠行为由 ChannelEngine 内部处理，此处不拦截。
+    /// 睡眠行为由 ExpressEngine 内部处理，此处不拦截。
     /// </summary>
-    internal class ChannelEngineSpawnCheck : IEngineSpawnCheck
+    internal class ExpressEngineSpawnCheck : IEngineSpawnCheck
     {
-        public string EngineType => "Channel";
+        public string EngineType => "Express";
 
         /// <summary>活跃频道引擎表（ChannelId → ChannelEngine）。</summary>
-        private readonly Dictionary<int, ChannelEngine> activeChannels = new();
+        private readonly Dictionary<int, ExpressEngine> activeChannels = new();
 
         /// <summary>保护 ShouldSpawn→Create 序列的并发安全。</summary>
         private readonly object _spawnLock = new();
@@ -61,7 +61,7 @@ namespace AgentCoreProcessor.Engine
             // 自产消息（bot 自身行为触发的 notice 回执）：已入库但不触发引擎孵化
             if (msg.IsSelfTriggered) return;
 
-            // 记忆提取计数（入向唯一咽喉，覆盖 ChannelEngine 与 session 占用两条路）
+            // 记忆提取计数（入向唯一咽喉，覆盖 ExpressEngine 与 session 占用两条路）
             if (sessionContext.IncomingMessage != null)
             {
                 var extractionEngine = ctx.GetActiveEnginesSnapshot()
@@ -118,7 +118,7 @@ namespace AgentCoreProcessor.Engine
                             new { channelId, msgId = sessionContext.IncomingMessage.Id, sessionId = claimerId, asMention = deliverAsMention });
                         return;
                     }
-                    Signal.Warn(LogGroup.Engine, "claimer 命中但 MessageEngine 未找到，回退 ChannelEngine",
+                    Signal.Warn(LogGroup.Engine, "claimer 命中但 MessageEngine 未找到，回退 ExpressEngine",
                         new { channelId, sessionId = claimerId });
                 }
             }
@@ -139,7 +139,7 @@ namespace AgentCoreProcessor.Engine
                     return;
 
                 // 创建新引擎
-                var engine = new ChannelEngine(ctx, sessionContext, msg);
+                var engine = new ExpressEngine(ctx, sessionContext, msg);
                 activeChannels[channelId] = engine;
                 _pendingSpawns.Remove(channelId);
                 newEngine = engine;
@@ -159,13 +159,13 @@ namespace AgentCoreProcessor.Engine
         public ISubEngine Create(ISystemContext ctx)
         {
             // 不再通过 EventBus 触发，Create 备用（TryColdStart 仍然使用）
-            throw new System.InvalidOperationException("ChannelEngine should be created via HandleMessageAsync or TryColdStart");
+            throw new System.InvalidOperationException("ExpressEngine should be created via HandleMessageAsync or TryColdStart");
         }
 
-        internal IReadOnlyDictionary<int, ChannelEngine> GetActiveChannels() => activeChannels;
+        internal IReadOnlyDictionary<int, ExpressEngine> GetActiveChannels() => activeChannels;
 
         /// <summary>冷启动频道引擎（无消息触发）。返回 null 表示引擎已活跃。</summary>
-        internal ChannelEngine? TryColdStart(Database.Channel channel, ISystemContext ctx)
+        internal ExpressEngine? TryColdStart(Database.Channel channel, ISystemContext ctx)
         {
             lock (_spawnLock)
             {
@@ -176,7 +176,7 @@ namespace AgentCoreProcessor.Engine
                     return null;
             }
 
-            var engine = new ChannelEngine(ctx, channel);
+            var engine = new ExpressEngine(ctx, channel);
             activeChannels[channel.Id] = engine;
             _pendingSpawns.Remove(channel.Id);
             return engine;

@@ -4,7 +4,7 @@ using AgentLilara.PluginSDK.Services;
 namespace Plugin.QuickActions;
 
 [Component(Name = "quick-actions", Scope = ComponentScope.Loop)]
-[LoopApplicability(Channel = Applicability.Enabled, System = Applicability.Disabled)]
+[LoopApplicability(Channel = Applicability.Enabled)]
 public class QuickActionsComponent : LoopComponentBase
 {
     private PokeTool? _poke;

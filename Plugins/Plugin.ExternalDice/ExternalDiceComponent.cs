@@ -4,7 +4,7 @@ using AgentLilara.PluginSDK.Services;
 namespace Plugin.ExternalDice;
 
 [Component(Name = "external-dice", Scope = ComponentScope.Global)]
-[LoopApplicability(Channel = Applicability.NotApplicable, Review = Applicability.NotApplicable, SubAgent = Applicability.NotApplicable)]
+[LoopApplicability(Channel = Applicability.NotApplicable, Review = Applicability.NotApplicable, Task = Applicability.NotApplicable)]
 public class ExternalDiceComponent : GlobalComponentBase
 {
     public override ComponentMeta Meta => new()

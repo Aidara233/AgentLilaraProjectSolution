@@ -154,13 +154,13 @@ internal class ChannelListSource : IDataSource
         var allChannels = await _engine.Session.GetAllChannelsAsync();
         _provider.RefreshCache(allChannels);
 
-        var channelCheck = _engine.GetSpawnCheck<ChannelEngineSpawnCheck>();
+        var channelCheck = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
         var activeEngines = channelCheck?.GetActiveChannels();
 
         var arr = new JsonArray();
         foreach (var ch in allChannels)
         {
-            ChannelEngine? eng = null;
+            ExpressEngine? eng = null;
             var hasEngine = activeEngines != null
                 && activeEngines.TryGetValue(ch.Id, out eng) && eng.IsAlive;
 
@@ -210,8 +210,8 @@ internal class ChannelInfoSource : IDataSource
         var config = ChannelStateManager.LoadConfig(_channelId, channel.Affinity);
         var msgCount = await _engine.Session.GetMessageCountByChannelAsync(_channelId);
 
-        var channelCheck = _engine.GetSpawnCheck<ChannelEngineSpawnCheck>();
-        ChannelEngine? eng = null;
+        var channelCheck = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
+        ExpressEngine? eng = null;
         var hasEngine = channelCheck?.GetActiveChannels().TryGetValue(_channelId, out eng) == true && eng!.IsAlive;
 
         string engineStatus;
@@ -225,7 +225,7 @@ internal class ChannelInfoSource : IDataSource
             engineStatus = "未启动";
         }
 
-        // 提取状态改读 ExtractionEngine（提取已与 ChannelEngine 解耦，独立运行）
+        // 提取状态改读 ExtractionEngine（提取已与 ExpressEngine 解耦，独立运行）
         var extractionEngine = _engine.GetActiveEnginesSnapshot()
             .OfType<AgentCoreProcessor.Engine.Extraction.ExtractionEngine>().FirstOrDefault();
         var extractionStatus = extractionEngine?.GetExtractionStatus(_channelId);
@@ -255,8 +255,8 @@ internal class ChannelInfoSource : IDataSource
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
     {
-        var channelCheck = _engine.GetSpawnCheck<ChannelEngineSpawnCheck>();
-        ChannelEngine? eng = null;
+        var channelCheck = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
+        ExpressEngine? eng = null;
         var hasEngine = channelCheck?.GetActiveChannels().TryGetValue(_channelId, out eng) == true && eng!.IsAlive;
 
         if (action == "view-engine")

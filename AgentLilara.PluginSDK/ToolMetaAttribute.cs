@@ -14,16 +14,13 @@ namespace AgentLilara.PluginSDK
         /// <summary>执行后触发下一轮循环。</summary>
         public bool ContinueLoop { get; set; }
 
-        /// <summary>是否允许子 agent 使用。</summary>
-        public bool AllowSubAgent { get; set; } = true;
-
         /// <summary>能力摘要（一句话），注入 Express prompt。null 表示不暴露。</summary>
         public string? CapabilitySummary { get; set; }
 
         /// <summary>纯输出工具（如 speak/send_media），用于引擎追踪本轮是否发过言。</summary>
         public bool OutputOnly { get; set; }
 
-        /// <summary>适用的引擎类型。null = 所有引擎可用，如 ["channel"] 表示仅频道引擎可用。</summary>
+        /// <summary>适用的引擎类型。null = 仅 session 可用；声明 ["express"] 或 ["review"] 才被对应引擎可见。</summary>
         public string[]? EngineTypes { get; set; }
     }
 

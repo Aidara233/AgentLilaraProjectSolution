@@ -3,8 +3,8 @@ using AgentLilara.PluginSDK;
 namespace Plugin.WebSearch;
 
 [Component(Name = "web-search", Scope = ComponentScope.Loop)]
-[LoopApplicability(Channel = Applicability.Enabled, System = Applicability.Enabled,
-    SubAgent = Applicability.Enabled, Review = Applicability.Disabled)]
+[LoopApplicability(Channel = Applicability.Enabled,
+    Task = Applicability.Enabled, Review = Applicability.Disabled)]
 public class WebSearchLoopComponent : LoopComponentBase
 {
     private WebSearchTool? _search;

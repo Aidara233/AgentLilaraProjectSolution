@@ -8,7 +8,7 @@ using AgentLilara.PluginSDK.Logging;
 namespace Plugin.ScheduledTasks;
 
 [Component(Name = "scheduled-tasks", Scope = ComponentScope.Loop)]
-[LoopApplicability(Channel = Applicability.Enabled, System = Applicability.Disabled)]
+[LoopApplicability(Channel = Applicability.Enabled)]
 public class ScheduledTasksComponent : LoopComponentBase
 {
     private ILoopComponentContext _ctx = null!;

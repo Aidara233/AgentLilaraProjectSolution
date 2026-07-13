@@ -6,7 +6,7 @@ using AgentLilara.PluginSDK;
 
 namespace AgentCoreProcessor.Tool.Core
 {
-    [ToolMeta(ContinueLoop = false, EngineTypes = new[] { "channel" })]
+    [ToolMeta(ContinueLoop = false, EngineTypes = new[] { "session" })]
     internal class DisableComponentTool : ITool
     {
         public string Name => "disable_component";

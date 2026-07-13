@@ -61,9 +61,8 @@ internal class GlobalComponentHost
             var applicability = loopType switch
             {
                 "channel" => inst.Registration.ChannelApplicability,
-                "system" => inst.Registration.SystemApplicability,
                 "review" => inst.Registration.ReviewApplicability,
-                "sub-agent" => inst.Registration.SubAgentApplicability,
+                "task" => inst.Registration.TaskApplicability,
                 _ => Applicability.Enabled
             };
             if (!_config.IsEnabled(inst.Component.Meta.Name, loopType, inst.Component.Meta.DefaultEnabled, applicability))
@@ -202,9 +201,8 @@ internal class GlobalComponentHost
             var applicability = engineType switch
             {
                 "channel" => inst.Registration.ChannelApplicability,
-                "system" => inst.Registration.SystemApplicability,
                 "review" => inst.Registration.ReviewApplicability,
-                "sub-agent" => inst.Registration.SubAgentApplicability,
+                "task" => inst.Registration.TaskApplicability,
                 _ => Applicability.Enabled
             };
             if (!_config.IsEnabled(inst.Component.Meta.Name, engineType, inst.Component.Meta.DefaultEnabled, applicability))

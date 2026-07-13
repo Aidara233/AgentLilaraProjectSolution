@@ -146,7 +146,7 @@ public class CampusPrintComponent : GlobalComponentBase
 // ═══════════════════════════════════════════════════════════════ TOOLS
 
 #region print_set_token
-[ToolMeta(Group = "campus-print", ContinueLoop = true, AllowSubAgent = false)]
+[ToolMeta(Group = "campus-print", ContinueLoop = true)]
 public class PrintSetTokenTool : ITool
 {
     private readonly CampusPrintComponent _c;
@@ -168,7 +168,7 @@ public class PrintSetTokenTool : ITool
 #endregion
 
 #region print_store_info
-[ToolMeta(Group = "campus-print", ContinueLoop = true, AllowSubAgent = false)]
+[ToolMeta(Group = "campus-print", ContinueLoop = true)]
 public class PrintStoreInfoTool : ITool
 {
     private readonly CampusPrintComponent _c;
@@ -210,7 +210,7 @@ public class PrintStoreInfoTool : ITool
 #endregion
 
 #region print_file_upload
-[ToolMeta(Group = "campus-print", ContinueLoop = true, AllowSubAgent = false)]
+[ToolMeta(Group = "campus-print", ContinueLoop = true)]
 public class PrintFileUploadTool : ITool
 {
     private readonly CampusPrintComponent _c;
@@ -262,7 +262,7 @@ public class PrintFileUploadTool : ITool
 #endregion
 
 #region print_file_add
-[ToolMeta(Group = "campus-print", ContinueLoop = true, AllowSubAgent = false)]
+[ToolMeta(Group = "campus-print", ContinueLoop = true)]
 public class PrintFileAddTool : ITool
 {
     private readonly CampusPrintComponent _c;
@@ -329,7 +329,7 @@ public class PrintFileAddTool : ITool
 #endregion
 
 #region print_file_update
-[ToolMeta(Group = "campus-print", ContinueLoop = true, AllowSubAgent = false)]
+[ToolMeta(Group = "campus-print", ContinueLoop = true)]
 public class PrintFileUpdateTool : ITool
 {
     private readonly CampusPrintComponent _c;
@@ -380,7 +380,7 @@ public class PrintFileUpdateTool : ITool
 #endregion
 
 #region print_file_list
-[ToolMeta(Group = "campus-print", ContinueLoop = true, AllowSubAgent = false)]
+[ToolMeta(Group = "campus-print", ContinueLoop = true)]
 public class PrintFileListTool : ITool
 {
     private readonly CampusPrintComponent _c;
@@ -418,7 +418,7 @@ public class PrintFileListTool : ITool
 #endregion
 
 #region print_file_del
-[ToolMeta(Group = "campus-print", ContinueLoop = true, AllowSubAgent = false)]
+[ToolMeta(Group = "campus-print", ContinueLoop = true)]
 public class PrintFileDelTool : ITool
 {
     private readonly CampusPrintComponent _c;
@@ -440,7 +440,7 @@ public class PrintFileDelTool : ITool
 #endregion
 
 #region print_file_clear
-[ToolMeta(Group = "campus-print", ContinueLoop = true, AllowSubAgent = false)]
+[ToolMeta(Group = "campus-print", ContinueLoop = true)]
 public class PrintFileClearTool : ITool
 {
     private readonly CampusPrintComponent _c;
@@ -466,7 +466,7 @@ public class PrintFileClearTool : ITool
 #endregion
 
 #region print_pdf_status
-[ToolMeta(Group = "campus-print", ContinueLoop = true, AllowSubAgent = false)]
+[ToolMeta(Group = "campus-print", ContinueLoop = true)]
 public class PrintPdfStatusTool : ITool
 {
     private readonly CampusPrintComponent _c;
@@ -496,7 +496,7 @@ public class PrintPdfStatusTool : ITool
 #endregion
 
 #region print_get_price
-[ToolMeta(Group = "campus-print", ContinueLoop = true, AllowSubAgent = false)]
+[ToolMeta(Group = "campus-print", ContinueLoop = true)]
 public class PrintGetPriceTool : ITool
 {
     private readonly CampusPrintComponent _c;
@@ -522,7 +522,7 @@ public class PrintGetPriceTool : ITool
 #endregion
 
 #region print_order_create
-[ToolMeta(Group = "campus-print", ContinueLoop = true, AllowSubAgent = false)]
+[ToolMeta(Group = "campus-print", ContinueLoop = true)]
 public class PrintOrderCreateTool : ITool
 {
     private readonly CampusPrintComponent _c;

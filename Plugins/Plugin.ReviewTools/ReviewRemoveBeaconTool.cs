@@ -3,7 +3,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.ReviewTools;
 
-[ToolMeta(Group = "review")]
+[ToolMeta(Group = "review", EngineTypes = new[] { "review" })]
 public class ReviewRemoveBeaconTool : ITool
 {
     private readonly IBeaconAccess _beacon;

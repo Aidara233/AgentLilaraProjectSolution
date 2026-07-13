@@ -5,7 +5,7 @@ using AgentLilara.PluginSDK.Services;
 namespace Plugin.BasicTools;
 
 [Component(Name = "basic-tools", Scope = ComponentScope.Loop)]
-[LoopApplicability(Channel = Applicability.Enabled, System = Applicability.Disabled)]
+[LoopApplicability(Channel = Applicability.Enabled)]
 public class BasicToolsComponent : LoopComponentBase
 {
     private SpeakTool? _speak;

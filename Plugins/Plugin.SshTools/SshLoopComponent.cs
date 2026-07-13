@@ -5,8 +5,8 @@ using AgentLilara.PluginSDK;
 namespace Plugin.SshTools;
 
 [Component(Name = "ssh-tools", Scope = ComponentScope.Loop)]
-[LoopApplicability(Channel = Applicability.Enabled, System = Applicability.Enabled,
-    Review = Applicability.Disabled, SubAgent = Applicability.Enabled)]
+[LoopApplicability(Channel = Applicability.Enabled,
+    Review = Applicability.Disabled, Task = Applicability.Enabled)]
 public class SshLoopComponent : LoopComponentBase
 {
     private string _loopId = "";

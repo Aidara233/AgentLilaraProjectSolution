@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace AgentCoreProcessor.Engine.Context;
 
 /// <summary>
-/// 单个消费者（ChannelEngine 或 RuntimeSession）的频道上下文可变状态。
+/// 单个消费者（ExpressEngine 或 RuntimeSession）的频道上下文可变状态。
 /// ChannelContextService 操作此对象，自身不持状态。
 /// </summary>
 internal class ChannelContextState

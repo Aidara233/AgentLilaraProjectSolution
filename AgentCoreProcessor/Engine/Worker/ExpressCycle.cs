@@ -15,7 +15,7 @@ namespace AgentCoreProcessor.Engine
     /// <summary>
     /// Express 微循环：多轮模型调用，工具结果回注供下一轮参考。
     /// </summary>
-    partial class ChannelEngine
+    partial class ExpressEngine
     {
         /// <summary>Express 微循环：多轮模型调用（最多 ExpressMaxRounds 轮），工具结果回注供下一轮参考。</summary>
         private async Task ExecuteExpressCycleAsync()
@@ -41,7 +41,7 @@ namespace AgentCoreProcessor.Engine
                     messages.RemoveRange(0, excess);
             }
 
-            agentCore.EngineType = "channel";
+            agentCore.EngineType = "express";
             // 合并 ComponentHost 工具 + ToolRegistry 独立工具（escalate、wait 等）
             var componentTools = componentHost?.GetVisibleTools() ?? Enumerable.Empty<ITool>();
             agentCore.AdditionalTools = componentTools
@@ -52,7 +52,7 @@ namespace AgentCoreProcessor.Engine
             agentCore.GlobalComponentTools = ctx.GlobalComponentHost?.GetVisibleTools("channel").ToList();
 
             // 诊断：输出当前可用的 Express 工具
-            var allExpressDefs = ToolRegistry.GetExpressToolDefinitions("channel");
+            var allExpressDefs = ToolRegistry.GetExpressToolDefinitions("express");
             var additionalNames = agentCore.AdditionalTools?.Select(t => t.Name).ToList() ?? new();
             Console.Error.WriteLine($"[Express ch:{channelId}] ToolRegistry={allExpressDefs.Count} tools, AdditionalTools={additionalNames.Count} tools: {string.Join(", ", additionalNames)}");
 
@@ -173,7 +173,7 @@ namespace AgentCoreProcessor.Engine
                             // 频道占用 + 历史载入由 InitActions 的 connect_channel 在 session 启动时完成
                             sessionEngine.CreateSession(new CreateSessionSpec
                             {
-                                ComponentIds = new[] { "basic-tools", "working-tools", "file-tools", "file-ops", "memory-tools" },
+                                Type = SessionType.Channel,
                                 InitActions = new List<ToolCall>
                                 {
                                     new() { Tool = "connect_channel", Inputs = new List<string> { channelId.ToString() } }

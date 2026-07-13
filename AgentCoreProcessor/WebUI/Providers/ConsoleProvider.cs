@@ -147,7 +147,7 @@ internal class ConsoleChannelSource : IDataSource
     public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
         var channels = await _engine.Session.GetAllChannelsAsync();
-        var check = _engine.GetSpawnCheck<ChannelEngineSpawnCheck>();
+        var check = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
         var active = check?.GetActiveChannels();
 
         var arr = new JsonArray();
@@ -196,7 +196,7 @@ internal class ConsoleEngineSource : IDataSource
             };
         }
 
-        var check = _engine.GetSpawnCheck<ChannelEngineSpawnCheck>();
+        var check = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
         var active = check?.GetActiveChannels();
         var hasEngine = active?.TryGetValue(_selectedChannelId, out var chEngine) == true && chEngine.IsAlive;
         var msgCount = await _engine.Session.GetMessageCountByChannelAsync(_selectedChannelId);
@@ -229,7 +229,7 @@ internal class ConsoleEngineSource : IDataSource
     private async Task<ActionResult> ForceStart()
     {
         if (_selectedChannelId == 0) return Fail("未选择频道");
-        var check = _engine.GetSpawnCheck<ChannelEngineSpawnCheck>();
+        var check = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
         var active = check?.GetActiveChannels();
         if (active?.ContainsKey(_selectedChannelId) == true)
             return new ActionResult { Success = true, Message = "引擎已在运行" };
@@ -247,7 +247,7 @@ internal class ConsoleEngineSource : IDataSource
     private Task<ActionResult> ForceStop()
     {
         if (_selectedChannelId == 0) return Task.FromResult(Fail("未选择频道"));
-        var check = _engine.GetSpawnCheck<ChannelEngineSpawnCheck>();
+        var check = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
         var active = check?.GetActiveChannels();
         if (active?.TryGetValue(_selectedChannelId, out var chEngine) == true && chEngine.IsAlive)
         {
@@ -260,7 +260,7 @@ internal class ConsoleEngineSource : IDataSource
     private Task<ActionResult> ForceCompress()
     {
         if (_selectedChannelId == 0) return Task.FromResult(Fail("未选择频道"));
-        var check = _engine.GetSpawnCheck<ChannelEngineSpawnCheck>();
+        var check = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
         var active = check?.GetActiveChannels();
         if (active?.TryGetValue(_selectedChannelId, out var chEngine) == true && chEngine.IsAlive)
         {
@@ -368,7 +368,7 @@ internal class ConsoleChatSource : IDataSource
         try
         {
             // 自动启动引擎
-            var check = _engine.GetSpawnCheck<ChannelEngineSpawnCheck>();
+            var check = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
             var active = check?.GetActiveChannels();
             if (active?.ContainsKey(_channelId) != true)
             {

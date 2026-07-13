@@ -10,9 +10,8 @@ internal record ComponentRegistration(
     Type Type,
     ComponentScope Scope,
     Applicability ChannelApplicability,
-    Applicability SystemApplicability,
     Applicability ReviewApplicability,
-    Applicability SubAgentApplicability,
+    Applicability TaskApplicability,
     Assembly SourceAssembly,
     bool DefaultEnabled);
 
@@ -41,9 +40,8 @@ internal static class ComponentRegistry
             Type: type,
             Scope: attr.Scope,
             ChannelApplicability: loopAttr?.Channel ?? Applicability.Enabled,
-            SystemApplicability: loopAttr?.System ?? Applicability.Enabled,
             ReviewApplicability: loopAttr?.Review ?? Applicability.Enabled,
-            SubAgentApplicability: loopAttr?.SubAgent ?? Applicability.Enabled,
+            TaskApplicability: loopAttr?.Task ?? Applicability.Enabled,
             SourceAssembly: type.Assembly,
             DefaultEnabled: defaultEnabled);
 
@@ -71,9 +69,8 @@ internal static class ComponentRegistry
             var applicability = loopType switch
             {
                 "channel" => r.ChannelApplicability,
-                "system" => r.SystemApplicability,
                 "review" => r.ReviewApplicability,
-                "sub-agent" => r.SubAgentApplicability,
+                "task" => r.TaskApplicability,
                 _ => Applicability.Enabled
             };
             return applicability != Applicability.NotApplicable;

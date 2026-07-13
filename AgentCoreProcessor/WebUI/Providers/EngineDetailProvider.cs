@@ -33,7 +33,7 @@ internal class EngineDetailProvider : IWebUIProvider
             var pages = new List<PageDefinition>();
 
             // Channel (multi-instance) — 引擎监视页面
-            var channelCheck = _engine.GetSpawnCheck<ChannelEngineSpawnCheck>();
+            var channelCheck = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
             if (channelCheck != null)
             {
                 foreach (var (id, ch) in channelCheck.GetActiveChannels())
@@ -65,7 +65,7 @@ internal class EngineDetailProvider : IWebUIProvider
             return pages;
         }
     }
-    private PageDefinition BuildChannelEnginePage(ChannelEngine ch, int channelId)
+    private PageDefinition BuildChannelEnginePage(ExpressEngine ch, int channelId)
     {
         var snap = ch.GetSnapshot();
         var name = snap.ChannelName ?? $"#{channelId}";
@@ -191,8 +191,8 @@ internal class EngineDetailProvider : IWebUIProvider
 
 internal class ChannelEngineStatusSource : IDataSource
 {
-    private readonly ChannelEngine _ch;
-    public ChannelEngineStatusSource(ChannelEngine ch) => _ch = ch;
+    private readonly ExpressEngine _ch;
+    public ChannelEngineStatusSource(ExpressEngine ch) => _ch = ch;
     public bool SupportsPush => false;
     public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
 

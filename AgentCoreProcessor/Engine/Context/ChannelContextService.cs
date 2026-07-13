@@ -18,7 +18,7 @@ internal record ParticipantView(
     int PersonId, int TrustLevel, string? Memo, int UserId = 0);
 
 /// <summary>
-/// 频道上下文构建服务。ChannelEngine 与 RuntimeSession 共用。
+/// 频道上下文构建服务。ExpressEngine 与 RuntimeSession 共用。
 /// 纯格式化方法静态；依赖 DB 的方法为实例方法，注入 IChannelDataSource。
 /// </summary>
 internal partial class ChannelContextService

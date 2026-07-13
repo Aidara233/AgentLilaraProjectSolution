@@ -161,7 +161,7 @@ internal class PluginsProvider : IWebUIProvider
                         new() { Field = "componentName", Header = "组件名" },
                         new() { Field = "scope", Header = "作用域", Width = "80px" },
                         new() { Field = "channel", Header = "频道", Width = "60px" },
-                        new() { Field = "system", Header = "系统", Width = "60px" },
+                        new() { Field = "task", Header = "任务", Width = "60px" },
                     },
                     Searchable = false, Paginated = false
                 },
@@ -257,16 +257,14 @@ internal class PluginsProvider : IWebUIProvider
                     Fields = new()
                     {
                         new() { Field = "componentName", Label = "组件" },
-                        new() { Field = "channel", Label = "Channel", Type = StatusFieldType.Badge },
-                        new() { Field = "system", Label = "System", Type = StatusFieldType.Badge },
-                        new() { Field = "subAgent", Label = "Sub-Agent", Type = StatusFieldType.Badge },
+                        new() { Field = "channel", Label = "Express", Type = StatusFieldType.Badge },
+                        new() { Field = "task", Label = "Task", Type = StatusFieldType.Badge },
                         new() { Field = "review", Label = "Review", Type = StatusFieldType.Badge },
                     },
                     Actions = new()
                     {
-                        new() { Id = "toggle-channel", Label = "切换 Channel" },
-                        new() { Id = "toggle-system", Label = "切换 System" },
-                        new() { Id = "toggle-subAgent", Label = "切换 Sub-Agent" },
+                        new() { Id = "toggle-channel", Label = "切换 Express" },
+                        new() { Id = "toggle-task", Label = "切换 Task" },
                         new() { Id = "toggle-review", Label = "切换 Review" },
                     }
                 },
@@ -589,7 +587,7 @@ internal class PluginComponentsSource : IDataSource
                 ["componentName"] = compName,
                 ["scope"] = reg.Scope.ToString(),
                 ["channel"] = reg.ChannelApplicability.ToString(),
-                ["system"] = reg.SystemApplicability.ToString(),
+                ["system"] = reg.TaskApplicability.ToString(),
             });
         }
         return Task.FromResult(new DataResult { Data = arr, TotalCount = arr.Count });
@@ -802,8 +800,8 @@ internal class ComponentPermTogglesSource : IDataSource
                 Data = new JsonObject
                 {
                     ["componentName"] = "选择左侧组件",
-                    ["channel"] = "—", ["system"] = "—",
-                    ["subAgent"] = "—", ["review"] = "—",
+                    ["channel"] = "—", ["task"] = "—",
+                    ["review"] = "—",
                 }
             });
 
@@ -814,8 +812,7 @@ internal class ComponentPermTogglesSource : IDataSource
         {
             ["componentName"] = _selectedComponent,
             ["channel"] = config.IsEnabled(_selectedComponent, "channel", defaultEnabled, reg?.ChannelApplicability ?? Applicability.Enabled) ? "启用" : "禁用",
-            ["system"] = config.IsEnabled(_selectedComponent, "system", defaultEnabled, reg?.SystemApplicability ?? Applicability.Enabled) ? "启用" : "禁用",
-            ["subAgent"] = config.IsEnabled(_selectedComponent, "sub-agent", defaultEnabled, reg?.SubAgentApplicability ?? Applicability.Enabled) ? "启用" : "禁用",
+            ["task"] = config.IsEnabled(_selectedComponent, "task", defaultEnabled, reg?.TaskApplicability ?? Applicability.Enabled) ? "启用" : "禁用",
             ["review"] = config.IsEnabled(_selectedComponent, "review", defaultEnabled, reg?.ReviewApplicability ?? Applicability.Enabled) ? "启用" : "禁用",
         };
         return Task.FromResult(new DataResult { Data = data });
@@ -829,8 +826,7 @@ internal class ComponentPermTogglesSource : IDataSource
         var engineType = action switch
         {
             "toggle-channel" => "channel",
-            "toggle-system" => "system",
-            "toggle-subAgent" => "sub-agent",
+            "toggle-task" => "task",
             "toggle-review" => "review",
             _ => null
         };
@@ -844,8 +840,7 @@ internal class ComponentPermTogglesSource : IDataSource
         var applicability = engineType switch
         {
             "channel" => reg?.ChannelApplicability ?? Applicability.Enabled,
-            "system" => reg?.SystemApplicability ?? Applicability.Enabled,
-            "sub-agent" => reg?.SubAgentApplicability ?? Applicability.Enabled,
+            "task" => reg?.TaskApplicability ?? Applicability.Enabled,
             "review" => reg?.ReviewApplicability ?? Applicability.Enabled,
             _ => Applicability.Enabled
         };

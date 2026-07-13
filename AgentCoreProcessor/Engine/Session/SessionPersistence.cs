@@ -18,8 +18,8 @@ namespace AgentCoreProcessor.Engine.Session
     /// </summary>
     internal class SessionPersistence
     {
-        private const int SpecFormatVersion = 1;
-        private const int StateFormatVersion = 1;
+        private const int SpecFormatVersion = 2;
+        private const int StateFormatVersion = 2;
 
         private readonly string _dir;
         private readonly string _specPath;
@@ -46,14 +46,17 @@ namespace AgentCoreProcessor.Engine.Session
                 formatVersion = SpecFormatVersion,
                 sessionId = Path.GetFileName(_dir),
                 createdAt,
-                componentIds = spec.ComponentIds,
+                type = spec.Type.ToString(),
+                additionalComponents = spec.AdditionalComponents,
+                excludedComponents = spec.ExcludedComponents,
+                resolvedComponentIds = spec.ResolvedComponentIds,
+                channelId = spec.ChannelId,
                 autoClaimChannel = spec.AutoClaimChannel,
                 inputPorts = spec.InputPorts,
                 outputPorts = spec.OutputPorts,
                 initialState = spec.InitialState,
                 initActions = spec.InitActions,
-                parentSessionId = spec.ParentSessionId,
-                coreConfigName = spec.CoreConfigName
+                parentSessionId = spec.ParentSessionId
             };
             var json = JsonConvert.SerializeObject(data, Formatting.Indented,
                 new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
@@ -78,7 +81,10 @@ namespace AgentCoreProcessor.Engine.Session
                 compressionTier = state.CompressionTier,
                 connectedChannelId = state.ConnectedChannelId,
                 connectedMode = state.ConnectedMode,
-                channelCursors = state.ChannelCursors
+                channelCursors = state.ChannelCursors,
+                childSessionIds = state.ChildSessionIds ?? Array.Empty<string>(),
+                effectiveParentId = state.EffectiveParentId,
+                forwardedTo = state.ForwardedTo
             };
             var json = JsonConvert.SerializeObject(data, Formatting.Indented,
                 new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
@@ -100,6 +106,32 @@ namespace AgentCoreProcessor.Engine.Session
             var tmp = _statePath + ".tmp";
             await File.WriteAllTextAsync(tmp, jo.ToString(Formatting.Indented));
             File.Move(tmp, _statePath, overwrite: true);
+        }
+
+        /// <summary>
+        /// 改写指定子 session 的 state.json 的 effectiveParentId 字段。
+        /// </summary>
+        public async Task UpdateEffectiveParentAsync(string childId, string newParentId)
+        {
+            var childDir = Path.Combine(PathConfig.StoragePath, "Sessions", childId);
+            var childStatePath = Path.Combine(childDir, "state.json");
+            if (!File.Exists(childStatePath)) return;
+            var raw = await File.ReadAllTextAsync(childStatePath);
+            var jo = JObject.Parse(raw);
+            jo["effectiveParentId"] = newParentId;
+            var tmp = childStatePath + ".tmp";
+            await File.WriteAllTextAsync(tmp, jo.ToString(Formatting.Indented));
+            File.Move(tmp, childStatePath, overwrite: true);
+        }
+
+        /// <summary>
+        /// 写 forwards 索引持久化（与 SessionEngine 内存表同步）。
+        /// </summary>
+        public async Task AppendForwardAsync(string oldId, string newId)
+        {
+            var forwardsPath = Path.Combine(PathConfig.StoragePath, "Sessions", "_forwards.jsonl");
+            var entry = JsonConvert.SerializeObject(new { oldId, newId, at = DateTime.UtcNow });
+            await File.AppendAllTextAsync(forwardsPath, entry + "\n");
         }
 
         // ═══════════════════════════════════════════════════════════
@@ -142,14 +174,17 @@ namespace AgentCoreProcessor.Engine.Session
 
             var spec = new CreateSessionSpec
             {
-                ComponentIds = wrapper.ComponentIds ?? Array.Empty<string>(),
+                Type = Enum.TryParse<SessionType>(wrapper.Type, true, out var t) ? t : SessionType.Channel,
+                AdditionalComponents = wrapper.AdditionalComponents,
+                ExcludedComponents = wrapper.ExcludedComponents,
+                ResolvedComponentIds = wrapper.ResolvedComponentIds,
+                ChannelId = wrapper.ChannelId,
                 AutoClaimChannel = wrapper.AutoClaimChannel,
                 InputPorts = wrapper.InputPorts ?? new(),
                 OutputPorts = wrapper.OutputPorts ?? new(),
                 InitialState = wrapper.InitialState,
                 InitActions = wrapper.InitActions ?? new(),
-                ParentSessionId = wrapper.ParentSessionId,
-                CoreConfigName = wrapper.CoreConfigName ?? "SessionCore"
+                ParentSessionId = wrapper.ParentSessionId
             };
             return spec;
         }
@@ -211,7 +246,10 @@ namespace AgentCoreProcessor.Engine.Session
                     CompressionTier = wrapper.CompressionTier ?? "None",
                     ConnectedChannelId = wrapper.ConnectedChannelId,
                     ConnectedMode = wrapper.ConnectedMode,
-                    ChannelCursors = cursors
+                    ChannelCursors = cursors,
+                    ChildSessionIds = wrapper.ChildSessionIds ?? Array.Empty<string>(),
+                    EffectiveParentId = wrapper.EffectiveParentId,
+                    ForwardedTo = wrapper.ForwardedTo
                 };
             }
             catch
@@ -281,6 +319,9 @@ namespace AgentCoreProcessor.Engine.Session
         public string? ConnectedChannelId { get; set; }
         public string? ConnectedMode { get; set; }
         public Dictionary<int, int> ChannelCursors { get; set; } = new();
+        public string[] ChildSessionIds { get; set; } = Array.Empty<string>();
+        public string? EffectiveParentId { get; set; }
+        public string? ForwardedTo { get; set; }
     }
 
     // 内部反序列化包装类型（仅用于 JsonConvert.DeserializeAnonymousType 替代）
@@ -289,14 +330,17 @@ namespace AgentCoreProcessor.Engine.Session
         [JsonProperty("formatVersion")] public int? FormatVersion;
         [JsonProperty("sessionId")] public string? SessionId;
         [JsonProperty("createdAt")] public DateTime CreatedAt;
-        [JsonProperty("componentIds")] public string[]? ComponentIds;
+        [JsonProperty("type")] public string? Type;
+        [JsonProperty("additionalComponents")] public string[]? AdditionalComponents;
+        [JsonProperty("excludedComponents")] public string[]? ExcludedComponents;
+        [JsonProperty("resolvedComponentIds")] public string[]? ResolvedComponentIds;
+        [JsonProperty("channelId")] public int? ChannelId;
         [JsonProperty("autoClaimChannel")] public bool AutoClaimChannel;
         [JsonProperty("inputPorts")] public Dictionary<string, PortSpec>? InputPorts;
         [JsonProperty("outputPorts")] public Dictionary<string, string>? OutputPorts;
         [JsonProperty("initialState")] public object? InitialState;
         [JsonProperty("initActions")] public List<ToolCall>? InitActions;
         [JsonProperty("parentSessionId")] public string? ParentSessionId;
-        [JsonProperty("coreConfigName")] public string? CoreConfigName;
     }
 
     internal class StateWrapper
@@ -314,5 +358,8 @@ namespace AgentCoreProcessor.Engine.Session
         // JSON 键可能为字符串，反序列化为 string→int 便于解析
         [JsonProperty("channelCursors")]
         public Dictionary<int, int> ChannelCursors { get; set; } = new();
+        [JsonProperty("childSessionIds")] public string[]? ChildSessionIds;
+        [JsonProperty("effectiveParentId")] public string? EffectiveParentId;
+        [JsonProperty("forwardedTo")] public string? ForwardedTo;
     }
 }

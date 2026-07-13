@@ -138,7 +138,7 @@ internal class EngineListSource : IDataSource
         var arr = new JsonArray();
 
         // Channel 引擎（多实例）
-        var workerCheck = _engine.GetSpawnCheck<ChannelEngineSpawnCheck>();
+        var workerCheck = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
         if (workerCheck != null)
         {
             foreach (var (_, w) in workerCheck.GetActiveChannels())
@@ -147,7 +147,7 @@ internal class EngineListSource : IDataSource
                 var snap = w.GetSnapshot();
                 arr.Add(new JsonObject
                 {
-                    ["type"] = "Channel",
+                    ["type"] = "Express",
                     ["name"] = snap.ChannelName ?? $"#{snap.ChannelId}",
                     ["status"] = snap.IsBusy ? "处理中" : "等待",
                     ["detail"] = $"冲动 {snap.Impulse:F1} | 轮次 {snap.TotalRounds} | Express",

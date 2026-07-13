@@ -8,7 +8,7 @@ namespace AgentCoreProcessor.Engine.Context;
 
 /// <summary>
 /// 生产数据源适配器：将 IChannelDataSource 的所有方法转发到 ISystemContext。
-/// 供 ChannelEngine 构造 ChannelContextService 时使用。
+/// 供 ExpressEngine 构造 ChannelContextService 时使用。
 /// </summary>
 internal sealed class SystemContextDataSource : IChannelDataSource
 {

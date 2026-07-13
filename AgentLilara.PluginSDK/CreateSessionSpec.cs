@@ -8,8 +8,20 @@ namespace AgentLilara.PluginSDK;
 /// </summary>
 public class CreateSessionSpec
 {
-    /// <summary>要激活的组件 ID 列表，如 ["basic-tools", "file-tools"]</summary>
-    public string[] ComponentIds { get; set; } = System.Array.Empty<string>();
+    /// <summary>Session 类型，决定默认组件集、Core 配置、LoopApplicability key</summary>
+    public SessionType Type { get; set; } = SessionType.Channel;
+
+    /// <summary>预计算的组件列表（compact 迁移用）。非 null 则跳过 Profile 计算</summary>
+    public string[]? ResolvedComponentIds { get; set; }
+
+    /// <summary>在 Profile 默认基础上追加的组件</summary>
+    public string[]? AdditionalComponents { get; set; }
+
+    /// <summary>从 Profile 默认中排除的组件</summary>
+    public string[]? ExcludedComponents { get; set; }
+
+    /// <summary>归属频道 ID（任何类型可指定，escalate 路径可省略，由 InitActions.connect_channel 接力）</summary>
+    public int? ChannelId { get; set; }
 
     /// <summary>自动 Full 占用归属频道（端口配置中的第一个 channelId）</summary>
     public bool AutoClaimChannel { get; set; } = false;
@@ -33,7 +45,4 @@ public class CreateSessionSpec
     public List<ToolCall> InitActions { get; set; } = new();
 
     public string? ParentSessionId { get; set; }
-
-    /// <summary>Session 使用的 Core 配置文件名（不含路径和扩展名），默认 "SessionCore"</summary>
-    public string CoreConfigName { get; set; } = "SessionCore";
 }

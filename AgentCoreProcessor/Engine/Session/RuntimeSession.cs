@@ -36,8 +36,13 @@ internal class RuntimeSession : IRuntimeSession
     public IReadOnlyDictionary<string, IInputPort> Inputs => _inputs;
     public IReadOnlyDictionary<string, IOutputPort> Outputs => _outputs;
     public string? ParentSessionId { get; private set; }
+    public string? EffectiveParentId { get; private set; }
+    public IReadOnlyList<string> ChildSessionIds => _childSessionIds;
+    public SessionType Type { get; }
+    public string? ForwardedTo { get; private set; }
 
     private readonly List<string> _componentIds = new();
+    private readonly List<string> _childSessionIds = new();
     private readonly List<string> _activeTools = new();
     private readonly Dictionary<string, IInputPort> _inputs = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, IOutputPort> _outputs = new(StringComparer.OrdinalIgnoreCase);
@@ -87,16 +92,21 @@ internal class RuntimeSession : IRuntimeSession
 
     private const int FreeRounds = 20;
 
-    public RuntimeSession(CreateSessionSpec spec)
+    public RuntimeSession(CreateSessionSpec spec, string[]? finalComponents = null)
     {
+        Type = spec.Type;
         ParentSessionId = spec.ParentSessionId;
-        _componentIds.AddRange(spec.ComponentIds);
+        if (finalComponents != null)
+            _componentIds.AddRange(finalComponents);
+        else
+            throw new ArgumentException("finalComponents 由 SessionEngine 计算，不应为 null", nameof(finalComponents));
         _initialState = spec.InitialState;
         _initActions = spec.InitActions ?? new List<ToolCall>();
     }
 
     /// <summary>恢复专用：复用已有 SessionId，避免重启后 ID 变动。</summary>
-    internal RuntimeSession(CreateSessionSpec spec, string fixedSessionId) : this(spec)
+    internal RuntimeSession(CreateSessionSpec spec, string fixedSessionId, string[]? finalComponents = null)
+        : this(spec, finalComponents)
     {
         SessionId = fixedSessionId;
     }
@@ -118,17 +128,14 @@ internal class RuntimeSession : IRuntimeSession
     /// </summary>
     public void InitComponents(string loopId, ModuleBus moduleBus, IServiceProvider services, Action wakeLoop)
     {
-        // 从 loopId 提取 loopType（LoopId.ExtractLoopType 已有此逻辑）
-        var loopType = LoopId.ExtractLoopType(loopId);
-        // 组件白名单使用 "channel" 类型（BasicTools 等都注册在 "channel" 下）
-        _componentLoopType = loopType == "session" ? "channel" : loopType;
+        _componentLoopType = SessionTypeProfiles.Get(Type).LoopApplicabilityKey;
         // 注入 per-session 连接状态：发送工具据此决定目标频道并校验发言权限
         var perLoopServices = new Dictionary<Type, object>
         {
             [typeof(IConnectedChannel)] = _connected
         };
         _componentHost = new ComponentHost(loopId, _componentLoopType, moduleBus, services, wakeLoop, perLoopServices);
-        _componentHost.InitAsync().GetAwaiter().GetResult();
+        _componentHost.InitAsync(_componentIds).GetAwaiter().GetResult();
 
         RefreshToolList();
     }
@@ -425,6 +432,12 @@ internal class RuntimeSession : IRuntimeSession
         switch (call.Tool)
         {
             case "end_session":
+                var activeChildren = _sessionEngine?.GetActiveChildren(SessionId);
+                if (activeChildren != null && activeChildren.Count > 0)
+                {
+                    InjectExternal($"[系统警告] 你还有 {activeChildren.Count} 个活跃子 agent，请先 stop_sub_agent 后再 end_session。");
+                    return new ToolEffect(false, false); // 拒绝退出，继续循环
+                }
                 await SendOutput(result.Data ?? "工作完成。");
                 return new ToolEffect(false, true);
             case "compact":
@@ -550,7 +563,7 @@ internal class RuntimeSession : IRuntimeSession
                 Signal.Event(LogGroup.Engine, "BuildStartAsync 完成", new { sessionId = SessionId, messageCount = _history.Count });
 
                 // 游标接力首轮播种：BuildStartAsync 取的历史快照最大 id 写回持久化游标。
-                // 否则 session 若无新消息直接 end_session，ChannelEngine 恢复时会把这批历史当新消息重读。
+                // 否则 session 若无新消息直接 end_session，ExpressEngine 恢复时会把这批历史当新消息重读。
                 foreach (var (_, port) in _inputs)
                 {
                     if (port is MessageInputPort mp && mp.ChannelId > 0)
@@ -736,7 +749,7 @@ internal class RuntimeSession : IRuntimeSession
                     }
                 }
 
-                _agentCore!.EngineType = "channel";
+                _agentCore!.EngineType = "session";
                 _agentCore!.ExcludedToolNames = _sessionExcludedTools;
                 _agentCore!.AdditionalTools = _tools.Values.ToList();
 
@@ -909,7 +922,7 @@ internal class RuntimeSession : IRuntimeSession
     /// <summary>
     /// 频道级游标接力：把本频道已处理到的最大 message id 写回持久化游标。
     /// session 占有期间推进同一份 ChannelContextPersistence 游标，使其始终是频道级唯一真相——
-    /// session 结束后 ChannelEngine 从同一游标恢复，不重读 session 已处理的消息。
+    /// session 结束后 ExpressEngine 从同一游标恢复，不重读 session 已处理的消息。
     /// </summary>
     private void AdvanceChannelCursor(int channelId, int maxMessageId)
     {
@@ -1094,7 +1107,10 @@ internal class RuntimeSession : IRuntimeSession
         CompressionTier = _compression?.CurrentTier.ToString() ?? "None",
         ConnectedChannelId = _connected.CurrentChannelId > 0 ? _connected.CurrentChannelId.ToString() : null,
         ConnectedMode = _connected.Mode != ConnectionMode.None ? _connected.Mode.ToString() : null,
-        ChannelCursors = BuildChannelCursors()
+        ChannelCursors = BuildChannelCursors(),
+        ChildSessionIds = _childSessionIds.ToArray(),
+        EffectiveParentId = EffectiveParentId,
+        ForwardedTo = ForwardedTo
     };
 
     /// <summary>从 host 维护的各频道 state 取 LastConsumedMessageId 构造游标快照。</summary>
@@ -1144,6 +1160,21 @@ internal class RuntimeSession : IRuntimeSession
         }
         await _persister.SaveStateAsync(BuildStateSnapshot());
     }
+
+    // ── 父子链辅助方法 ──
+
+    internal void RemoveChildFromState(string childId)
+    {
+        lock (_childSessionIds) _childSessionIds.Remove(childId);
+        _persister?.SaveStateAsync(BuildStateSnapshot()).GetAwaiter().GetResult();
+    }
+
+    internal void AddChild(string childId)
+    {
+        lock (_childSessionIds) _childSessionIds.Add(childId);
+    }
+
+    internal string[] GetComponentIdsForCompact() => _componentIds.ToArray();
 }
 
 /// <summary>

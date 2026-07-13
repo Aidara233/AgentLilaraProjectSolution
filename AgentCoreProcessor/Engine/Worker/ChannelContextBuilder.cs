@@ -19,7 +19,7 @@ namespace AgentCoreProcessor.Engine
     /// <summary>
     /// 上下文构建：系统前缀、模式规则、消息格式化、对话历史、持久化。
     /// </summary>
-    partial class ChannelEngine
+    partial class ExpressEngine
     {
         // ═══════════════════════════════════════════════════════════
         // Agent 相关（堆叠式上下文 + 持久化）

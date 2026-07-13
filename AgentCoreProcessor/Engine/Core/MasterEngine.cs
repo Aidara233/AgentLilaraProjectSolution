@@ -141,7 +141,7 @@ namespace AgentCoreProcessor.Engine
             ("Adapter",     () => new AdapterEngineSpawnCheck()),
             ("Session",     () => new SessionEngineSpawnCheck()),
             ("Extraction",  () => new ExtractionEngineSpawnCheck()),
-            ("Channel",     () => new ChannelEngineSpawnCheck()),
+            ("Express",     () => new ExpressEngineSpawnCheck()),
             ("Dream",       () => new DreamEngineSpawnCheck()),
             ("Review",      () => new ReviewEngineSpawnCheck()),
             ("Vision",      () => new Vision.VisionEngineSpawnCheck()),
@@ -166,7 +166,7 @@ namespace AgentCoreProcessor.Engine
         /// <summary>是否有正在处理消息的 ChannelEngine（常驻 Channel 忙碌中）。</summary>
         public bool HasBusyWorker()
         {
-            lock (engineLock) { return activeEngines.Any(e => e is ChannelEngine w && w.IsAlive && w.IsBusy); }
+            lock (engineLock) { return activeEngines.Any(e => e is ExpressEngine w && w.IsAlive && w.IsBusy); }
         }
 
         public int GetActiveEngineCount(string engineType)
@@ -292,8 +292,7 @@ namespace AgentCoreProcessor.Engine
             var loopType = engineType switch
             {
                 "channel" => "channel",
-                "system" => "system",
-                "sub-agent" => "sub-agent",
+                "task" => "task",
                 "review" => "review",
                 _ => engineType
             };
@@ -347,9 +346,8 @@ namespace AgentCoreProcessor.Engine
                         {
                             // 尊重配置：如果该组件对任何引擎类型都未禁用，则创建
                             if (config.IsEnabled(compName, "channel", true, reg.ChannelApplicability) ||
-                                config.IsEnabled(compName, "system", true, reg.SystemApplicability) ||
-                                config.IsEnabled(compName, "review", true, reg.ReviewApplicability) ||
-                                config.IsEnabled(compName, "sub-agent", true, reg.SubAgentApplicability))
+                                config.IsEnabled(compName, "task", true, reg.TaskApplicability) ||
+                                config.IsEnabled(compName, "review", true, reg.ReviewApplicability))
                             {
                                 await GlobalComponentHost.CreateAndEnableComponentAsync(compName);
                             }
@@ -738,7 +736,7 @@ namespace AgentCoreProcessor.Engine
                 }
 
                 // ② ChannelEngineSpawnCheck：频道引擎孵化 / 转发
-                var chCheck = GetSpawnCheck<ChannelEngineSpawnCheck>();
+                var chCheck = GetSpawnCheck<ExpressEngineSpawnCheck>();
                 if (chCheck != null)
                     await chCheck.HandleMessageAsync(msg, this);
             }
@@ -874,7 +872,7 @@ namespace AgentCoreProcessor.Engine
 
             if (LoopId.IsChannel(loopId, out var channelId))
             {
-                var check = GetSpawnCheck<ChannelEngineSpawnCheck>();
+                var check = GetSpawnCheck<ExpressEngineSpawnCheck>();
                 if (check != null)
                 {
                     var channels = check.GetActiveChannels();
@@ -902,7 +900,7 @@ namespace AgentCoreProcessor.Engine
             // task: / review: — 不直接唤醒，由各自的 Gate 管理
         }
 
-        private async Task ColdStartChannelAsync(int channelId, ChannelEngineSpawnCheck check)
+        private async Task ColdStartChannelAsync(int channelId, ExpressEngineSpawnCheck check)
         {
             try
             {

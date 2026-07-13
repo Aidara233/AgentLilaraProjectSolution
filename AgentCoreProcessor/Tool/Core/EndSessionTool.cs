@@ -8,7 +8,7 @@ namespace AgentCoreProcessor.Tool.Core
 {
     // 引擎不限：频道 working session 与任务 session 都用它收尾。
     // 频道会话"退回轻量模式"的语义在创建时由 InitialState 注入，不写进工具描述（保持中性）。
-    [ToolMeta(ContinueLoop = false)]
+    [ToolMeta(ContinueLoop = false, EngineTypes = new[] { "session" })]
     internal class EndSessionTool : ITool
     {
         public string Name => "end_session";

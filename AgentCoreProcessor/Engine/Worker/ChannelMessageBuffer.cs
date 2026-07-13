@@ -11,7 +11,7 @@ namespace AgentCoreProcessor.Engine
     /// <summary>
     /// 消息缓冲：滑动窗口聚合、定时器、图片收集。
     /// </summary>
-    partial class ChannelEngine
+    partial class ExpressEngine
     {
         // ---- 消息缓冲 ----
         private readonly object bufferLock = new();

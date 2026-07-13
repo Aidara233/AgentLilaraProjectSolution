@@ -4,7 +4,7 @@ using AgentLilara.PluginSDK.Services;
 namespace Plugin.CrossLoopTools;
 
 [Component(Name = "cross-loop", Scope = ComponentScope.Loop)]
-[LoopApplicability(Channel = Applicability.Enabled, System = Applicability.Enabled)]
+[LoopApplicability(Channel = Applicability.Enabled)]
 public class CrossLoopComponent : LoopComponentBase
 {
     private ILoopComponentContext _ctx = null!;

@@ -190,6 +190,8 @@ internal class SessionsActiveSource : IDataSource
             {
                 ["sessionId"] = s.SessionId,
                 ["status"] = s.Status.ToString(),
+                ["type"] = (s is RuntimeSession rs ? rs.Type.ToString() : "—"),
+                ["children"] = s.ChildSessionIds.Count.ToString(),
                 ["components"] = components,
                 ["parent"] = s.ParentSessionId ?? "—",
                 ["rounds"] = SessionsProvider.GetRoundCount(s).ToString(),

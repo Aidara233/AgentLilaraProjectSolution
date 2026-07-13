@@ -8,7 +8,7 @@ namespace AgentCoreProcessor.Engine.Extraction;
 
 /// <summary>
 /// 统一记忆提取 + 监听检测。每频道独立 Worker，引擎无关地从入向咽喉
-/// （HandleMessageAsync 入库后）统一计数触发，覆盖 ChannelEngine 与 session 占用两条路。
+/// （HandleMessageAsync 入库后）统一计数触发，覆盖 ExpressEngine 与 session 占用两条路。
 /// </summary>
 internal class ExtractionEngine : ISubEngine
 {

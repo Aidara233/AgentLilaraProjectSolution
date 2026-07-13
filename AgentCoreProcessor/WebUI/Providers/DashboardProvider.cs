@@ -237,7 +237,7 @@ internal class DashboardChannelSource : IDataSource
 
     public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
-        var workerCheck = _engine.GetSpawnCheck<ChannelEngineSpawnCheck>();
+        var workerCheck = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
         var arr = new JsonArray();
 
         if (workerCheck != null)
