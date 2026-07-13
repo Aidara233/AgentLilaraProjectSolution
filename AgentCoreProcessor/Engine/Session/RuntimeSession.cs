@@ -736,9 +736,9 @@ internal class RuntimeSession : IRuntimeSession
                     }
                 }
 
-                _agentCore.EngineType = "channel";
-                _agentCore.ExcludedToolNames = _sessionExcludedTools;
-                _agentCore.AdditionalTools = _tools.Values.ToList();
+                _agentCore!.EngineType = "channel";
+                _agentCore!.ExcludedToolNames = _sessionExcludedTools;
+                _agentCore!.AdditionalTools = _tools.Values.ToList();
 
                 agentRound++;
 
