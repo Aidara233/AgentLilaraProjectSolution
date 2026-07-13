@@ -1,106 +1,40 @@
 using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 
 namespace AgentLilara.PluginSDK.Services
 {
     /// <summary>
-    /// 统一 agent 间通信接口。所有跨循环请求和通知的唯一入口。
+    /// 循环间单发消息接口。所有跨循环消息的唯一入口。
+    /// 消息模型：fire-and-forget，无状态机、无 response 概念。
+    /// 回复就是再发一条新消息（用对方的 loopId 作 target_id）。
     /// </summary>
     public interface IAgentMessaging
     {
-        /// <summary>提交请求并等待首个回应（评估/超时）。保留用于特殊场景。</summary>
-        Task<CrossRequestResult> SubmitAndWaitAsync(
-            string? targetId, string title, string content,
-            Dictionary<string, string>? metadata = null,
-            TimeSpan? timeout = null);
+        /// <summary>
+        /// 向目标循环发送一条消息。target_id 为 null 表示广播给所有活跃循环。
+        /// 立即投递到内存队列并唤醒目标（如目标活跃），不持久化、无回应。
+        /// 返回 messageId（仅供发起者日志/排除用，无法用它做查询）。
+        /// </summary>
+        string SendMessage(string? targetId, string content);
 
-        /// <summary>Fire-and-forget 提交请求。状态变更通过通知队列送达。</summary>
-        string SubmitFireAndForget(string? targetId, string title, string content);
+        /// <summary>读取并清空本循环待处理的消息（手动查看收件箱）。</summary>
+        List<LoopMessageInfo> Receive(int maxCount = 10);
 
-        /// <summary>读取当前循环的待处理请求。</summary>
-        List<CrossRequestInfo> Receive(int maxCount = 10);
-
-        /// <summary>当前循环回应某请求。返回是否成功。</summary>
-        bool Respond(string requestId, CrossRequestResponseType type, string content);
-
-        /// <summary>排出待通知的委托状态变更（由 inject 模块消费）。</summary>
-        List<DelegationNotificationInfo> DrainNotifications();
-
-        /// <summary>查询活跃请求。</summary>
-        List<CrossRequestInfo> GetActiveRequests();
-
-        /// <summary>查询已完成/失败的请求。</summary>
-        List<CrossRequestInfo> GetCompletedRequests();
-
-        /// <summary>查询已归档的请求。</summary>
-        List<CrossRequestInfo> GetArchivedRequests();
-
-        /// <summary>归档请求（所有接受者收到通知）。</summary>
-        void Archive(string requestId);
-
-        /// <summary>忽略广播请求（仅广播可用）。</summary>
-        void Ignore(string requestId);
-
-        /// <summary>获取单个请求详情。</summary>
-        CrossRequestInfo? Get(string requestId);
+        /// <summary>排出待注入的通知消息（由通知模块消费）。</summary>
+        List<LoopMessageInfo> DrainNotifications();
 
         /// <summary>获取所有活跃循环的 ID 列表。</summary>
         List<string> GetActiveLoopIds();
     }
 
-    // ═══════ DTO ═══════
-
-    public enum CrossRequestResponseType
+    /// <summary>循环消息 DTO。</summary>
+    public class LoopMessageInfo
     {
-        Accept,
-        Reject,
-        Progress,
-        Complete,
-        Failed,
-        Ignore
-    }
-
-    public class CrossRequestResult
-    {
-        public string RequestId { get; set; } = "";
-        public bool Success { get; set; }
-        public bool TimedOut { get; set; }
-        public string? Verdict { get; set; }
-        public string? Result { get; set; }
-    }
-
-    public class CrossRequestInfo
-    {
-        public string Id { get; set; } = "";
+        public string MessageId { get; set; } = "";
         public string InitiatorId { get; set; } = "";
+        /// <summary>null 表示广播。</summary>
         public string? TargetId { get; set; }
-        public string Title { get; set; } = "";
         public string Content { get; set; } = "";
-        public string State { get; set; } = "";
-        public DateTime SubmittedAt { get; set; }
-        public DateTime ExpiresAt { get; set; }
-        public DateTime? CompletedAt { get; set; }
-        public List<CrossRequestResponseInfo> Responses { get; set; } = new();
-    }
-
-    public class CrossRequestResponseInfo
-    {
-        public int Seq { get; set; }
-        public string ResponderId { get; set; } = "";
-        public string Type { get; set; } = "";
-        public string Content { get; set; } = "";
-        public DateTime Timestamp { get; set; }
-    }
-
-    public class DelegationNotificationInfo
-    {
-        public string RequestId { get; set; } = "";
-        public string Title { get; set; } = "";
-        public string NewState { get; set; } = "";
-        public string ResponseType { get; set; } = "";
-        public string? ResponderId { get; set; }
-        public string? Content { get; set; }
         public DateTime Timestamp { get; set; }
     }
 

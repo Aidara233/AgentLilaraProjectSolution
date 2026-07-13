@@ -21,7 +21,7 @@
 |------|----------|------|----------|
 | **Plugin.BasicTools** | channel | `speak`, `send_media`, `send_file`, `adapter_action` | `BasicToolsComponent.cs` |
 | **Plugin.WorkingTools** | channel | `pinboard`, `thinking_notes`, `retain_list`, `task_list`, `mark_for_review` | `WorkingComponent.cs` |
-| **Plugin.CrossLoopTools** | channel + system | `send_request`, `evaluate_request`, `complete_request`, `check_messages`, `respond_to_request`, `list_requests`, `list_loops` 等 | `CrossLoopComponent.cs` |
+| **Plugin.CrossLoopTools** | channel + system | `send_message`, `list_loops` | `CrossLoopComponent.cs` |
 | **Plugin.ScheduledTasks** | channel | `schedule_task`, `cancel_task`, `list_tasks` | `ScheduledTasksComponent.cs` |
 
 ### Global 组件（全局单例）

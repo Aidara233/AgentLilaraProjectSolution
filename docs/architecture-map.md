@@ -45,7 +45,7 @@ AgentLilaraProjectSolution/
       ├── Plugin.FileTools/       read_text + write_text + list_dir + move/delete/copy
       ├── Plugin.FileOps/         archive + search/grep + file_info/hash/compare
       ├── Plugin.GroupFileTools/  分组文件操作
-      ├── Plugin.CrossLoopTools/  跨循环委托与通信
+      ├── Plugin.CrossLoopTools/  跨循环消息（send_message + list_loops）
       ├── Plugin.SystemTools/     子 session 管理：create_sub_agent / stop_sub_agent / send_instruction / list_sub_agents / wait_sub / get_sub_info（system-ops 组件）+ report_to_parent（sub-agent-runtime 组件）
       ├── Plugin.ReviewTools/     review_* 15个复盘工具
       ├── Plugin.ScheduledTasks/  定时任务（插件化实现）
@@ -111,14 +111,12 @@ PluginLoader 扫描子目录 → 读 `plugin.json` → 加载 `entry` DLL。无�
     │     Vision     → VisionEngine (图片描述+OCR，IsInfrastructure=true)
     │     Command    → CommandSpawnCheck (指令拦截)
     ├── 活跃引擎表 (List<ISubEngine>)
-    ├── CrossRequestRegistry (跨循环请求生命周期管理)
-    │     Submit → Respond(Accept/Reject/Progress/Complete) → Idle → Archive
-    │     广播: TargetId=null → 所有活跃循环见摘要
-    │     定向: 指定TargetId → 目标循环见详情，自动激活或排队
-    │     JSONL 追加持久化，重启恢复
-    ├── DelegationBus (跨循环定向路由总线)
+    ├── DelegationBus (跨循环消息路由总线，纯内存)
     │     引擎注册/注销 handler → Deliver 精准投递
-    │     非全局广播，无关循环不感知
+    │     定向: 指定TargetId → 投到目标循环
+    │     广播: TargetId=null → 投到所有活跃循环（每循环一份完整内容）
+    │     消息模型: fire-and-forget，无状态机、无 response、无持久化
+    │     回复就是对方再 SendMessage 一条新消息（target_id 填你的 loopId）
     ├── GlobalComponentHost + ComponentHost(per-session) + ModuleBus(per-session)
     │     Component 系统: IGlobalComponent(全局) / ILoopComponent(per-session)
     │     ComponentRegistry: 类型注册，PluginLoader 扫描 [Component] 标记
@@ -138,7 +136,7 @@ PluginLoader 扫描子目录 → 读 `plugin.json` → 加载 `entry` DLL。无�
 ```
 
 ISubEngine: EngineType / RunAsync / OnEvent / IsAlive / RequestStop / IsInfrastructure(默认false)
-ISystemContext: 数据访问 + 适配器 + EventBus + 引擎查询 + StartEngine/RequestStopEngine + CrossRequests + DelegationBus + CurrentSleepState + MuteMode + GlobalComponentHost + ComponentServices
+ISystemContext: 数据访问 + 适配器 + EventBus + 引擎查询 + StartEngine/RequestStopEngine + DelegationBus + CurrentSleepState + MuteMode + GlobalComponentHost + ComponentServices
 
 ### 引擎内部循环架构（Session 统一模型）
 
@@ -458,13 +456,12 @@ AgentLilara.PluginSDK (共享契约，独立类库):
   Plugin.FileTools       — read_text + write_text + list_dir + move/delete/copy（文件系统）[GlobalComponent: file-tools]
   Plugin.FileOps         — archive_create/extract/list + search/grep + file_info/hash/compare
   Plugin.GroupFileTools  — 分组文件操作
-  Plugin.CrossLoopTools  — send_request + evaluate_request + complete_request + send_notify 等（跨循环委托与通信）[LoopComponent: cross-loop]
+  Plugin.CrossLoopTools  — send_message + list_loops（跨循环单发消息，fire-and-forget）[LoopComponent: cross-loop]
   Plugin.SystemTools     — 子 session 管理（system-ops 组件：create_sub_agent/stop_sub_agent/send_instruction/list_sub_agents/wait_sub/get_sub_info；sub-agent-runtime 组件：report_to_parent）
-                          SubAgentAccessAdapter 桥接 SessionEngine + CrossRequestRegistry：
+                          SubAgentAccessAdapter 桥接 SessionEngine（无 CrossRequest 镜像，纯消息驱动）：
                             - 创建子 session 时附加 MailboxInputPort（父→子指令通道）
-                            - 自动创建 CrossRequest（父可跟踪委托状态）
-                            - 子 session OnCompleted 钩子自动 Respond(Complete) + 唤醒父 session
-                            - report_to_parent 工具经 CrossRequest + InjectExternal 双路通知父 session
+                            - 子 session OnCompleted 钩子 → 直接 InjectExternal 通知父 session + 触发 wait_sub
+                            - report_to_parent 工具直接 InjectExternal 注入父 session 上下文（单条路径，无双轨）
   Plugin.ReviewTools     — review_* 15个复盘工具
   Plugin.ScheduledTasks  — 定时任务（插件化实现）
   Plugin.SkillTools      — casual-chat / code-review / system-maintenance

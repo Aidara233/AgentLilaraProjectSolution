@@ -179,9 +179,8 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 提取引擎：Engine/Extraction/ExtractionEngine.cs（记忆提取+监听检测，共用 LLM 调用）
 - 监听任务：Engine/Extraction/EavesdropTask.cs（关键词粗筛+LLM判定，一次性短命会话）
 - 会话规格：AgentLilara.PluginSDK/CreateSessionSpec.cs（组件列表+端口配置+初始状态）
-- 跨循环请求：Engine/Core/CrossRequestRegistry.cs（JSONL 持久化 + 状态机）
-- 委托总线：Engine/Core/DelegationBus.cs（定向路由，非全局广播）
-- 统一通信：Engine/Core/LoopId.cs + Engine/Core/CrossRequest.cs（请求模型）
+- 跨循环消息：Engine/Core/LoopMessage.cs（单发消息 DTO，fire-and-forget）+ Engine/Core/DelegationBus.cs（定向/广播路由，纯内存）
+- 统一通信：Engine/Core/LoopId.cs（循环 ID 格式）
 - 循环闸门：Engine/Core/Gate.cs（delegate 驱动，组合不继承）+ Engine/Worker/LoopGate.cs（auto-reset 信号）
 - Agent 循环：Engine/Core/Agent.cs（多轮推理，退避策略）
 - Agent 宿主接口：Engine/Core/IAgentHost.cs（BuildStartInjectAsync/BuildRoundInjectAsync）
@@ -244,7 +243,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 -           Plugins/Plugin.FileTools/（read_text + write_text + list_dir + move/delete/copy）
 -           Plugins/Plugin.FileOps/（archive_create/extract/list + search_files + grep_files + file_info + file_hash + compare_files）
 -           Plugins/Plugin.GroupFileTools/（分组文件操作）
--           Plugins/Plugin.CrossLoopTools/（send_request + evaluate_request + complete_request + send_notify + cancel_request + report_progress + check_messages + respond_to_request + list_requests + list_loops）
+-           Plugins/Plugin.CrossLoopTools/（send_message + list_loops，跨循环单发消息 fire-and-forget）
 -           Plugins/Plugin.SystemTools/（子 session 管理：create_sub_agent / stop_sub_agent / send_instruction / list_sub_agents / wait_sub / get_sub_info；子侧回报：report_to_parent）— system-ops（父侧 LoopComponent）+ sub-agent-runtime（子侧 LoopComponent）
 -           Plugins/Plugin.ReviewTools/（review_* 15个复盘工具）
 -           Plugins/Plugin.ScheduledTasks/（定时任务，插件化实现）

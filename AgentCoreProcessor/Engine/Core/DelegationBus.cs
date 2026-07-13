@@ -6,16 +6,16 @@ using System.Linq;
 namespace AgentCoreProcessor.Engine;
 
 /// <summary>
-/// 委托路由总线。定向投递，非全局广播。
+/// 循环间消息路由总线。定向投递 + 广播分发，纯内存、无持久化。
 /// </summary>
 internal class DelegationBus
 {
-    private readonly ConcurrentDictionary<string, Action<CrossRequest>> _handlers = new();
+    private readonly ConcurrentDictionary<string, Action<LoopMessage>> _handlers = new();
     private readonly ConcurrentDictionary<string, byte> _activeLoops = new();
 
-    public void RegisterLoop(string loopId, Action<CrossRequest> onRequestReceived)
+    public void RegisterLoop(string loopId, Action<LoopMessage> onMessageReceived)
     {
-        _handlers[loopId] = onRequestReceived;
+        _handlers[loopId] = onMessageReceived;
         _activeLoops.TryAdd(loopId, 0);
     }
 
@@ -26,70 +26,35 @@ internal class DelegationBus
     }
 
     /// <summary>
-    /// 投递请求到目标。返回已投递到的 loopId 列表。
+    /// 投递消息到目标。返回已投递到的 loopId 列表。
+    /// targetId=null 进行广播；指定 targetId 仅投到该循环。
     /// </summary>
-    public List<string> Deliver(CrossRequest request, Func<string, bool>? createLoopIfNeeded = null)
+    public List<string> Deliver(LoopMessage message)
     {
         var deliveredTo = new List<string>();
 
-        if (request.TargetId != null)
+        if (message.TargetId != null)
         {
-            DeliverToTarget(request, request.TargetId, createLoopIfNeeded, deliveredTo);
+            if (_handlers.TryGetValue(message.TargetId, out var handler))
+            {
+                handler(message);
+                deliveredTo.Add(message.TargetId);
+            }
+            // 目标不存在则丢弃（fire-and-forget，无队列回压）
         }
         else
         {
-            DeliverBroadcast(request, deliveredTo);
+            foreach (var (loopId, _) in _activeLoops)
+            {
+                if (_handlers.TryGetValue(loopId, out var handler))
+                {
+                    handler(message);
+                    deliveredTo.Add(loopId);
+                }
+            }
         }
 
         return deliveredTo;
-    }
-
-    private void DeliverToTarget(CrossRequest request, string targetId,
-        Func<string, bool>? createLoopIfNeeded, List<string> deliveredTo)
-    {
-        if (_handlers.TryGetValue(targetId, out var handler))
-        {
-            handler(request);
-            deliveredTo.Add(targetId);
-        }
-        else if (createLoopIfNeeded?.Invoke(targetId) == true)
-        {
-            if (_handlers.TryGetValue(targetId, out var newHandler))
-            {
-                newHandler(request);
-                deliveredTo.Add(targetId);
-            }
-        }
-    }
-
-    private void DeliverBroadcast(CrossRequest request, List<string> deliveredTo)
-    {
-        foreach (var (loopId, _) in _activeLoops)
-        {
-            if (_handlers.TryGetValue(loopId, out var handler))
-            {
-                var summary = CreateBroadcastSummary(request);
-                handler(summary);
-                deliveredTo.Add(loopId);
-            }
-        }
-    }
-
-    private CrossRequest CreateBroadcastSummary(CrossRequest request)
-    {
-        return new CrossRequest
-        {
-            RequestId = request.RequestId,
-            InitiatorId = request.InitiatorId,
-            TargetId = null,
-            Title = request.Title,
-            Content = request.Content.Length > 500
-                ? request.Content[..500] + "..."
-                : request.Content,
-            State = request.State,
-            SubmittedAt = request.SubmittedAt,
-            ExpiresAt = request.ExpiresAt
-        };
     }
 
     public bool IsLoopActive(string loopId) => _activeLoops.ContainsKey(loopId);

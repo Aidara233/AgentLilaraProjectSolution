@@ -58,10 +58,6 @@ namespace AgentCoreProcessor.Engine
                     using var tickSignal = Signal.Begin(LogGroup.Engine, "timer:heartbeat", "心跳");
                     ctx.EventBus.PublishSignal("timer-tick");
 
-                    // 定期清理：CrossRequestRegistry 已归档/超时的条目
-                    try { ctx.CrossRequests.Cleanup(TimeSpan.FromHours(1)); }
-                    catch { /* 静默清理失败 */ }
-
                     // Phase 8: 检查 SessionEngine 心跳
                     if (ctx.HasActiveEngine("Session"))
                     {

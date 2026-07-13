@@ -10,23 +10,21 @@ using AgentCoreProcessor.Engine.Session;
 using AgentCoreProcessor.Logging;
 using AgentLilara.PluginSDK;
 using AgentLilara.PluginSDK.Services;
-// 显式消除 CrossRequestResponseType 歧义：使用引擎类型（来自 CrossRequestRegistry.Respond）
-using CrossRequestResponseType = AgentCoreProcessor.Engine.CrossRequestResponseType;
 
 namespace AgentCoreProcessor.Component;
 
 /// <summary>
-/// ISubAgentAccess 实现：桥接 SessionEngine 与 CrossRequestRegistry。
+/// ISubAgentAccess 实现：桥接 SessionEngine 与父 session 通信。
 ///
 /// 维护三张表：
 ///   _childMailboxes   childSessionId → MailboxInputPort（父→子指令注入）
 ///   _parentLoopIds    childSessionId → 父 loopId（结果回传+唤醒）
-///   _crossRequestIds  childSessionId → 跨循环 RequestId（状态追踪）
+///   _loopIdToChildSession 反查（report_to_parent 从子 loopId 找到自己的 sessionId）
 ///
-/// 父子通信路径：
+/// 父子通信路径（无 CrossRequest 镜像，纯消息驱动）：
 ///   - 父→子：send_instruction → mailbox.Writer.TryWrite → 下轮 WaitForActivation 立即激活
-///   - 子→父：report_to_parent → CrossRequestRegistry.Respond + RuntimeSession.InjectExternal
-///   - 子自动完成：OnCompleted 事件钩子 → CrossRequest.Respond(Complete) + WakeLoop(parentLoopId) + 父 session InjectExternal
+///   - 子→父：report_to_parent → RuntimeSession.InjectExternal 直接注入父上下文
+///   - 子自动完成：OnCompleted 事件钩子 → 父 session InjectExternal + WaitAsync 唤醒
 ///
 /// 子 agent 默认组件包含 sub-agent-runtime（report_to_parent 工具），不含 system-ops（避免无序套娃）。
 /// </summary>
@@ -38,8 +36,6 @@ internal class SubAgentAccessAdapter : ISubAgentAccess
     private readonly ConcurrentDictionary<string, MailboxInputPort> _childMailboxes = new();
     // 子→父映射。父 loopId 例如 "channel:123" 或 "session:abc"。
     private readonly ConcurrentDictionary<string, string> _parentLoopIds = new();
-    // 子→CrossRequest 映射。父 session 可用 IAgentMessaging.Get(reqId) 查询委托状态。
-    private readonly ConcurrentDictionary<string, string> _crossRequestIds = new();
     // loopId → childSessionId 反查（用于 ReportToParent 从子 loopId 找到自己的 sessionId）。
     private readonly ConcurrentDictionary<string, string> _loopIdToChildSession = new(StringComparer.OrdinalIgnoreCase);
     // 子 session 完成的等待任务。WaitAsync 在此阻塞完成。
@@ -101,46 +97,17 @@ internal class SubAgentAccessAdapter : ISubAgentAccess
         var childLoopId = $"session:{sessionId}";
         _loopIdToChildSession[childLoopId] = sessionId;
 
-        // 创建跨循环请求（父可跟踪状态/接收完成通知）
-        string? requestId = null;
-        if (!string.IsNullOrEmpty(parentLoopId))
-        {
-            try
-            {
-                var req = _master.CrossRequests.Submit(
-                    initiatorId: parentLoopId,
-                    targetId: childLoopId,
-                    title: $"子会话 {sessionId}",
-                    content: instruction.Length > 500 ? instruction[..500] : instruction,
-                    timeout: TimeSpan.FromHours(2));
-
-                // 子 session 自动接受（创建即接受）
-                _master.CrossRequests.Respond(
-                    req.RequestId, childLoopId, CrossRequestResponseType.Accept,
-                    $"子会话已启动：{sessionId}");
-
-                _crossRequestIds[sessionId] = req.RequestId;
-                requestId = req.RequestId;
-            }
-            catch (Exception ex)
-            {
-                Signal.Warn(LogGroup.Engine, "SubAgent CrossRequest 创建失败（子 session 仍启动）",
-                    new { sessionId, parentLoopId, error = ex.Message });
-            }
-        }
-
         // 订阅完成事件
         if (session is RuntimeSession rsComplete)
             rsComplete.OnCompleted += OnChildSessionCompleted;
 
         Signal.Event(LogGroup.Engine, "子 agent 已创建",
-            new { sessionId, parentLoopId, requestId = requestId?[..8] });
+            new { sessionId, parentLoopId });
 
         return new SubAgentInfo
         {
             SessionId = sessionId,
             IsAlive = session.IsAlive,
-            RequestId = requestId,
             ParentLoopId = parentLoopId
         };
     }
@@ -158,15 +125,13 @@ internal class SubAgentAccessAdapter : ISubAgentAccess
         if (!_childMailboxes.TryGetValue(sessionId, out var mailbox))
             return Task.FromResult(false);
 
-        // 注：变量名 instruction 可被 mailbox 立即消费
         var ok = mailbox.TryWrite(instruction);
         if (ok)
         {
             Signal.Event(LogGroup.Engine, "子 agent 指令注入",
                 new { sessionId, contentLen = instruction.Length });
 
-            // 顺带主动唤醒子 session（mailbox 端口在被 WaitForActivation 轮询时也能感知，
-            // 但若子 session 在 Task.Delay 等待中需立即跳出，故通过 SessionEngine.WakeUpSession 唤醒）
+            // 顺带主动唤醒子 session
             GetSessionEngine()?.WakeUpSession(sessionId);
         }
         return Task.FromResult(ok);
@@ -195,11 +160,8 @@ internal class SubAgentAccessAdapter : ISubAgentAccess
         var list = new List<SubAgentInfo>();
         foreach (var s in sessions)
         {
-            // 过滤掉非子 agent（无 ParentSessionId 的非 Create 路径产生的 session）
-            // ParentSessionId 是字符串类型的 "channel:xxx" 或 "session:xxx"（父 loopId）
+            // 仅返回由本适配器登记的子 agent（无 ParentSessionId 的非 Create 路径产生的 session 跳过）
             if (string.IsNullOrEmpty(s.ParentSessionId)) continue;
-
-            // 仅返回由本适配器登记的子 agent
             if (!_childMailboxes.ContainsKey(s.SessionId)) continue;
 
             // 按 parentLoopId 过滤
@@ -234,7 +196,6 @@ internal class SubAgentAccessAdapter : ISubAgentAccess
             detail.RoundCount = rs.RoundCountInternal;
             detail.CreatedAt = rs.CreatedAtInternal;
             detail.LastActivity = rs.LastActivityInternal;
-            detail.RequestId = _crossRequestIds.GetValueOrDefault(sessionId);
             if (!rs.IsAlive)
                 detail.FinalOutput = rs.ExtractFinalOutput();
         }
@@ -258,30 +219,7 @@ internal class SubAgentAccessAdapter : ISubAgentAccess
             return false;
         }
 
-        // 映射 ReportState → CrossRequestResponseType
-        var type = state switch
-        {
-            ReportState.Progress => CrossRequestResponseType.Progress,
-            ReportState.Done => CrossRequestResponseType.Complete,
-            ReportState.Failed => CrossRequestResponseType.Failed,
-            _ => CrossRequestResponseType.Progress
-        };
-
-        // 更新对应 CrossRequest 的状态
-        if (_crossRequestIds.TryGetValue(sessionId, out var reqId))
-        {
-            try
-            {
-                _master.CrossRequests.Respond(reqId, callerLoopId, type, content);
-            }
-            catch (Exception ex)
-            {
-                Signal.Warn(LogGroup.Engine, "ReportToParent: CrossRequest.Respond 失败",
-                    new { sessionId, reqId = reqId[..8], error = ex.Message });
-            }
-        }
-
-        // 直接唤醒父 session 并注入通知（作用最强）
+        // 直接唤醒父 session 并注入通知（唯一通信路径，不再镜像 CrossRequest）
         InjectToParent(parentLoopId, $"[子会话 {sessionId} 回报] ({state}) {content}");
 
         Signal.Event(LogGroup.Engine, "子 agent 回报父会话",
@@ -294,12 +232,11 @@ internal class SubAgentAccessAdapter : ISubAgentAccess
         var se = GetSessionEngine();
         var session = se?.GetSession(sessionId);
         if (session == null) return false;
-        if (!session.IsAlive) return true;  // 已完成即返回 true
+        if (!session.IsAlive) return true;
 
         var tcs = _waitTcs.GetOrAdd(sessionId,
             _ => new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously));
 
-        // 注册一次性完成事件（若已存在 tcs 则复用，避免重复注册）
         if (session is RuntimeSession rs)
         {
             Action<IRuntimeSession>? handler = null;
@@ -330,25 +267,8 @@ internal class SubAgentAccessAdapter : ISubAgentAccess
 
             _loopIdToChildSession.TryRemove($"session:{sessionId}", out _);
 
-            // 自动向 CrossRequest 回 Complete
-            var reqId = _crossRequestIds.GetValueOrDefault(sessionId);
             var parentLoopId = _parentLoopIds.GetValueOrDefault(sessionId);
             var finalOutput = (session as RuntimeSession)?.ExtractFinalOutput() ?? "";
-
-            if (!string.IsNullOrEmpty(reqId))
-            {
-                try
-                {
-                    var childLoopId = $"session:{sessionId}";
-                    _master.CrossRequests.Respond(
-                        reqId, childLoopId, CrossRequestResponseType.Complete, finalOutput);
-                }
-                catch (Exception ex)
-                {
-                    Signal.Warn(LogGroup.Engine, "OnChildSessionCompleted: CrossRequest.Respond 失败",
-                        new { sessionId, reqId = reqId[..8], error = ex.Message });
-                }
-            }
 
             // 触发 wait_sub 等待
             if (_waitTcs.TryRemove(sessionId, out var tcs))
@@ -367,7 +287,6 @@ internal class SubAgentAccessAdapter : ISubAgentAccess
 
             // 清理
             _parentLoopIds.TryRemove(sessionId, out _);
-            _crossRequestIds.TryRemove(sessionId, out _);
         }
         catch (Exception ex)
         {
@@ -381,8 +300,7 @@ internal class SubAgentAccessAdapter : ISubAgentAccess
     /// 三条路径：
     ///   ① 父 loopId = "session:xxx" → 找到 RuntimeSession 直接 InjectExternal
     ///   ② 父 loopId = "channel:N" 且频道被 WorkingSession Full 占用 → 注入到该 WorkingSession
-    ///   ③ 父 loopId = "channel:N" 且无 Full 占用 → CrossRequest 通知自动经 ChannelEngine 的
-    ///      AgentMessagingImpl → DelegationNotificationModule 在下一轮注入；此处仅 WakeLoop 加速唤醒
+    ///   ③ 父 loopId = "channel:N" 且无 Full 占用 → 仅 WakeLoop 加速唤醒 ChannelEngine
     /// </summary>
     private void InjectToParent(string parentLoopId, string content)
     {
@@ -417,8 +335,7 @@ internal class SubAgentAccessAdapter : ISubAgentAccess
         {
             SessionId = sessionId,
             IsAlive = session.IsAlive,
-            ParentLoopId = session.ParentSessionId,
-            RequestId = _crossRequestIds.GetValueOrDefault(sessionId)
+            ParentLoopId = session.ParentSessionId
         };
         return info;
     }

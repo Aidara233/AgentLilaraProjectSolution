@@ -28,8 +28,7 @@ public class CreateSubAgentTool : ITool
     [
         new("instruction", "子 agent 执行指令（建议清晰描述目标、约束、产出格式）", 0),
         new("components", "子 agent 启用的组件列表，逗号分隔（可选）。默认：basic-tools,file-tools,memory-tools,sub-agent-runtime", 1, isRequired: false),
-        new("timeout_minutes", "子 agent 最长存活时间（分钟，可选，默认 60）。超时自动结束", 2, isRequired: false),
-        new("initial_state", "覆盖初始状态文本（可选，默认等于 instruction）。可塞入额外上下文", 3, isRequired: false)
+        new("initial_state", "覆盖初始状态文本（可选，默认等于 instruction）。可塞入额外上下文", 2, isRequired: false)
     ];
 
     public TimeSpan Timeout => TimeSpan.FromSeconds(15);
@@ -38,8 +37,7 @@ public class CreateSubAgentTool : ITool
     {
         var instruction = resolvedInputs.Count > 0 ? resolvedInputs[0] : null;
         var components = resolvedInputs.Count > 1 ? resolvedInputs[1] : null;
-        var timeoutStr = resolvedInputs.Count > 2 ? resolvedInputs[2] : null;
-        var initialState = resolvedInputs.Count > 3 ? resolvedInputs[3] : null;
+        var initialState = resolvedInputs.Count > 2 ? resolvedInputs[2] : null;
 
         if (string.IsNullOrWhiteSpace(instruction))
             return Task.FromResult(new ToolResult { Status = "failed", Error = "instruction 不能为空" });
@@ -59,10 +57,6 @@ public class CreateSubAgentTool : ITool
                 .ToArray();
         }
 
-        // 解析 timeout_minutes
-        if (int.TryParse(timeoutStr, out var tm) && tm > 0)
-            options.TimeoutMinutes = tm;
-
         if (!string.IsNullOrWhiteSpace(initialState))
             options.InitialState = initialState;
 
@@ -76,7 +70,6 @@ public class CreateSubAgentTool : ITool
             Status = "success",
             Data = $"子 agent 已创建并启动。\n" +
                    $"- session_id: {info.SessionId}\n" +
-                   $"- request_id: {info.RequestId ?? "(无)"}\n" +
                    $"- 父 loopId: {_parentLoopId}\n" +
                    $"提示：使用 send_instruction 可追加指令，wait_sub 可阻塞等待完成，" +
                    $"list_sub_agents 可枚举所有子 agent。子 agent 完成时你将自动收到通知。"
@@ -90,7 +83,6 @@ public class CreateSubAgentTool : ITool
         "properties": {
             "instruction": { "type": "string", "description": "子 agent 执行指令" },
             "components": { "type": "string", "description": "启用的组件，逗号分隔（可选）" },
-            "timeout_minutes": { "type": "integer", "description": "最长存活分钟（可选）" },
             "initial_state": { "type": "string", "description": "覆盖初始状态（可选）" }
         },
         "required": ["instruction"]

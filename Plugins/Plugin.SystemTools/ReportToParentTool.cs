@@ -9,7 +9,7 @@ namespace Plugin.SystemTools;
 /// <summary>
 /// 子 agent 专用工具：向父 session 回报进度或完成。仅在 sub-agent-runtime 组件中可见。
 /// 调用方为子 agent 自身（callerLoopId = "session:xxx"），SubAgentAccessAdapter 据此反查自己的 sessionId，
-/// 通过 CrossRequest.Respond + RuntimeSession.InjectExternal 双路通知父 session。
+/// 通过 RuntimeSession.InjectExternal 直接注入父 session 的下一轮上下文。
 /// </summary>
 [ToolMeta(ContinueLoop = true, CapabilitySummary = "向父会话回报进度/完成")]
 public class ReportToParentTool : ITool

@@ -104,7 +104,6 @@ namespace AgentCoreProcessor.Engine
         public string? CurrentDreamPhase { get; set; }
         public DateTime? DreamStartTime { get; set; }
         public McpServerManager? McpManager => mcpManager;
-        public CrossRequestRegistry CrossRequests { get; private set; } = null!;
         public DelegationBus DelegationBus { get; private set; } = null!;
 
         // ---- ISystemContext: Component 系统 ----
@@ -593,34 +592,8 @@ namespace AgentCoreProcessor.Engine
             SignalFilters = new SignalFilterManager(
                 Path.Combine(PathConfig.StoragePath, "Engine", "SignalFilter.json"));
 
-            // 创建 DelegationBus + CrossRequestRegistry（委托系统）
-            var systemLoopPath = Path.Combine(PathConfig.StoragePath, "SystemLoop");
-            Directory.CreateDirectory(systemLoopPath);
+            // 创建循环消息总线（替代旧 CrossRequestRegistry）
             DelegationBus = new DelegationBus();
-            CrossRequests = new CrossRequestRegistry(systemLoopPath, DelegationBus);
-            CrossRequests.OnRequestSubmitted += initiatorId =>
-            {
-                // 跨循环请求由 SessionEngine 接管
-                if (LoopId.IsChannel(initiatorId, out var chId))
-                    WakeLoop(initiatorId);
-            };
-            CrossRequests.OnRequestUpdated += loopId =>
-            {
-                WakeLoop(loopId);
-            };
-            CrossRequests.OnRequestCompleted += request =>
-            {
-                if (LoopId.IsChannel(request.InitiatorId, out var chId))
-                {
-                    var lastResp = request.Responses.LastOrDefault();
-                    var status = request.State == CrossRequestState.Completed ? "完成" : "拒绝";
-                    var msg = $"[委托结果]「{request.Title}」已{status}";
-                    if (lastResp != null && !string.IsNullOrEmpty(lastResp.Content))
-                        msg += $"：{lastResp.Content.Truncate(300)}";
-                    var payload = JsonConvert.SerializeObject(new { channelId = chId, message = msg });
-                    eventBus.PublishSignal("delegation-result", payload);
-                }
-            };
 
             // 注册核心工具（不可卸载的循环控制工具）
             Tool.ToolRegistry.Register(new Tool.Core.ContinueLoopTool(), isNonComponent: true);

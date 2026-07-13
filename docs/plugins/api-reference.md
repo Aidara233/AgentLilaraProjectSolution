@@ -340,59 +340,27 @@ class MessageSummary {
 
 ### IAgentMessaging
 
-跨循环请求系统，所有循环间通信的唯一入口。
+跨循环消息接口，所有循环间通信的唯一入口。fire-and-forget，无状态机、无 response。
 
 ```csharp
-// 提交请求并等待首个回应（保留给特殊场景）
-Task<CrossRequestResult> SubmitAndWaitAsync(
-    string? targetId, string title, string content,
-    Dictionary<string, string>? metadata = null, TimeSpan? timeout = null);
+// 向目标循环发送一条消息。target_id=null 表示广播。返回 messageId（仅供日志用）。
+string SendMessage(string? targetId, string content);
 
-// Fire-and-forget 提交，状态变更通过通知队列送达
-string SubmitFireAndForget(string? targetId, string title, string content);
+// 读取并清空本循环待处理的消息（手动查看收件箱）。
+List<LoopMessageInfo> Receive(int maxCount = 10);
 
-// 当前循环读取待处理请求
-List<CrossRequestInfo> Receive(int maxCount = 10);
+// 排出待注入的通知消息（由通知模块消费，全清）。
+List<LoopMessageInfo> DrainNotifications();
 
-// 回应请求
-bool Respond(string requestId, CrossRequestResponseType type, string content);
-
-// 排出委托状态变更通知（由 inject 模块消费）
-List<DelegationNotificationInfo> DrainNotifications();
-
-// 查询
-List<CrossRequestInfo> GetActiveRequests();
-List<CrossRequestInfo> GetCompletedRequests();
-List<CrossRequestInfo> GetArchivedRequests();
-CrossRequestInfo? Get(string requestId);
-
-// 生命周期
-void Archive(string requestId);
-void Ignore(string requestId);        // 仅广播可用
-
-// 获取所有活跃循环 ID
+// 获取所有活跃循环的 ID 列表。
 List<string> GetActiveLoopIds();
 ```
 
 关联 DTO：
 
 ```csharp
-enum CrossRequestResponseType { Accept, Reject, Progress, Complete, Failed, Ignore }
-
-class CrossRequestResult {
-    string RequestId; bool Success; bool TimedOut; string? Verdict; string? Result;
-}
-class CrossRequestInfo {
-    string Id; string InitiatorId; string? TargetId; string Title; string Content;
-    string State; DateTime SubmittedAt; DateTime ExpiresAt; DateTime? CompletedAt;
-    List<CrossRequestResponseInfo> Responses;
-}
-class CrossRequestResponseInfo {
-    int Seq; string ResponderId; string Type; string Content; DateTime Timestamp;
-}
-class DelegationNotificationInfo {
-    string RequestId; string Title; string NewState; string ResponseType;
-    string? ResponderId; string? Content; DateTime Timestamp;
+class LoopMessageInfo {
+    string MessageId; string InitiatorId; string? TargetId; string Content; DateTime Timestamp;
 }
 ```
 
@@ -622,7 +590,7 @@ IDisposable? Subscribe(Action<JsonNode?> callback);
 
 ### IDelegationAccess
 
-> **已废弃**，由 `IAgentMessaging` 取代。14 个方法，含委托提交/评估/生命周期/重试。
+> **已删除**。原委托系统（CrossRequestRegistry + 8 状态机 + JSONL 持久化）已整体移除，由 `IAgentMessaging`（单发消息模型）取代。
 
 ---
 

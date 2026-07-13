@@ -435,7 +435,7 @@ protected string DetectFormat(string filePath)
 | **Require\<T\> vs GetService\<T\>** | 决定服务缺失时该崩溃还是降级。基础设施用 Require，可选服务用 GetService | `Plugin.ReviewTools`（Require）/ `Plugin.MemoryTools`（GetService） |
 | **TimeExpressionParser** | 需要解析用户自然语言时间表达式（"in 30m"、"每天 9 点"） | `Plugin.ScheduledTasks/TimeExpressionParser.cs` |
 | **Skill 目录发现** | 需要零配置扩展机制（文件夹 + markdown frontmatter） | `Plugin.SkillTools/SkillEntry.cs` |
-| **GetInputSchema 覆写** | 工具参数需要非 string 类型或详细 JSON Schema 描述 | `Plugin.CrossLoopTools/SendRequestTool.cs` |
+| **GetInputSchema 覆写** | 工具参数需要非 string 类型或详细 JSON Schema 描述 | `Plugin.CrossLoopTools/SendMessageTool.cs` |
 | **Atomic File Save**（.tmp + Move） | 任何 JSON 持久化写入，防止崩溃导致数据损坏 | 所有插件的 `SaveXxx` 方法 |
 | **BuildPromptSection 聚合** | 组件内多个工具各自贡献 prompt 片段 | `Plugin.WorkingTools/WorkingToolsComponent.cs` |
 | **IDiceRegistry** | 插件想向骰子池注册随机事件 | `Plugin.MemoryTools/MemoryDiceFaces.cs` |

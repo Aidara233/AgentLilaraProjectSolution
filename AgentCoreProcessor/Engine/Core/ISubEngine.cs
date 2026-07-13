@@ -128,10 +128,7 @@ namespace AgentCoreProcessor.Engine
         /// <summary>MCP Server 管理器（可能为 null，如果 MCP 未初始化）。</summary>
         McpServerManager? McpManager { get; }
 
-        /// <summary>跨循环请求注册表。统一管理请求的完整生命周期。</summary>
-        CrossRequestRegistry CrossRequests { get; }
-
-        /// <summary>委托路由总线。定向投递，非全局广播。</summary>
+        /// <summary>循环间消息路由总线。定向投递 + 广播，纯内存。</summary>
         DelegationBus DelegationBus { get; }
 
         /// <summary>模块间通信总线（全局单例）。替代 ComponentEventBus。</summary>

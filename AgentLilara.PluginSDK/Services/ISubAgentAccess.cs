@@ -11,7 +11,7 @@ namespace AgentLilara.PluginSDK.Services
     /// </summary>
     public interface ISubAgentAccess
     {
-        /// <summary>创建并启动子 agent。返回子 agent 信息（含 RequestId 供父 session 追踪）。</summary>
+        /// <summary>创建并启动子 agent。返回子 agent 信息（含 sessionId 供父 session 后续操作）。</summary>
         SubAgentInfo Create(string instruction, SubAgentOptions? options = null);
 
         /// <summary>按 ID 查询子 agent。</summary>
@@ -53,9 +53,6 @@ namespace AgentLilara.PluginSDK.Services
         /// <summary>子 agent 启用的组件 ID 列表。为空时使用默认组件集。</summary>
         public string[]? ComponentIds { get; set; }
 
-        /// <summary>子 agent 最长存活时间（分钟）。为空时使用 SessionLimits 默认。</summary>
-        public int? TimeoutMinutes { get; set; }
-
         /// <summary>覆盖初始状态文本（默认等于 instruction）。</summary>
         public string? InitialState { get; set; }
     }
@@ -73,8 +70,6 @@ namespace AgentLilara.PluginSDK.Services
     {
         public string SessionId { get; set; } = "";
         public bool IsAlive { get; set; }
-        /// <summary>关联的跨循环请求 ID（父 session 可用 IAgentMessaging 查询委托状态）。</summary>
-        public string? RequestId { get; set; }
         /// <summary>父 loopId（谁创建的我）。</summary>
         public string? ParentLoopId { get; set; }
     }
@@ -86,7 +81,6 @@ namespace AgentLilara.PluginSDK.Services
         public bool IsAlive { get; set; }
         public string Status { get; set; } = "";
         public string? ParentLoopId { get; set; }
-        public string? RequestId { get; set; }
         public int RoundCount { get; set; }
         public System.DateTime CreatedAt { get; set; }
         public System.DateTime LastActivity { get; set; }

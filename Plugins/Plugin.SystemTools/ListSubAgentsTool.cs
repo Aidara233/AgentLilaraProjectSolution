@@ -22,7 +22,7 @@ public class ListSubAgentsTool : ITool
     public string Name => "list_sub_agents";
     public string Description =>
         "列出当前活跃的子 agent。默认仅返回本会话创建的子 agent（按 loopId 过滤）。" +
-        "返回信息含 session_id、状态、关联的 request_id。";
+        "返回信息含 session_id、状态、父 loopId。";
 
     public IReadOnlyList<ToolParameter> Parameters =>
     [
@@ -50,7 +50,7 @@ public class ListSubAgentsTool : ITool
         {
             var status = info.IsAlive ? "运行中" : "已终止";
             var parent = string.IsNullOrEmpty(info.ParentLoopId) ? "(无)" : info.ParentLoopId;
-            sb.AppendLine($"- session_id: {info.SessionId} | 状态: {status} | request_id: {info.RequestId ?? "(无)"} | 父: {parent}");
+            sb.AppendLine($"- session_id: {info.SessionId} | 状态: {status} | 父: {parent}");
         }
         return Task.FromResult(new ToolResult
         {

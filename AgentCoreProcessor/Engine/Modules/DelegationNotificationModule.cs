@@ -7,11 +7,11 @@ using AgentLilara.PluginSDK.Services;
 namespace AgentCoreProcessor.Engine.Modules;
 
 /// <summary>
-/// 委托状态通知模块。将本循环发起的委托的状态变更注入上下文。
+/// 循环消息通知模块。把本循环收到的跨循环单发消息注入到模型上下文。
 /// </summary>
 internal class DelegationNotificationModule : EngineModule
 {
-    public override string Name => "委托通知";
+    public override string Name => "循环消息通知";
     public override int InjectPriority => 39;
 
     private IAgentMessaging? _messaging;
@@ -26,42 +26,23 @@ internal class DelegationNotificationModule : EngineModule
     {
         if (_messaging == null) return Task.FromResult<string?>(null);
 
-        var notifications = _messaging.DrainNotifications();
-        if (notifications.Count == 0) return Task.FromResult<string?>(null);
+        var messages = _messaging.DrainNotifications();
+        if (messages.Count == 0) return Task.FromResult<string?>(null);
 
         if (_filterConfig != null && !_filterConfig.IsVisible(SignalCategory.Delegation))
             return Task.FromResult<string?>(null);
 
-        Signal.Event(LogGroup.Engine, "委托通知注入",
-            new { count = notifications.Count, mode = ctx.Mode });
+        Signal.Event(LogGroup.Engine, "循环消息通知注入", new { count = messages.Count, mode = ctx.Mode });
 
         var sb = new StringBuilder();
-        sb.AppendLine("[委托状态更新]");
-        foreach (var n in notifications)
+        sb.AppendLine("[循环消息]");
+        foreach (var m in messages)
         {
-            var stateStr = FormatState(n.NewState, n.ResponseType);
-            sb.AppendLine($"- 委托 request_id={n.RequestId}「{n.Title}」: {stateStr}");
-            if (!string.IsNullOrEmpty(n.ResponderId))
-                sb.AppendLine($"  回应者: {n.ResponderId}");
-            if (!string.IsNullOrEmpty(n.Content))
-                sb.AppendLine($"  内容: {Truncate(n.Content, 300)}");
+            var direction = m.TargetId == null ? "广播" : "定向";
+            sb.AppendLine($"- 来自 {m.InitiatorId} ({direction}): {Truncate(m.Content, 500)}");
         }
 
         return Task.FromResult<string?>(sb.ToString());
-    }
-
-    private static string FormatState(string state, string responseType)
-    {
-        if (state == "Submitted") return "收到新委托请求";
-        return responseType switch
-        {
-            "Accept" => "已被接受",
-            "Reject" => "已被拒绝",
-            "Progress" => "执行中（进度更新）",
-            "Complete" => "已完成",
-            "Failed" => "执行失败",
-            _ => state
-        };
     }
 
     private static string Truncate(string s, int maxLen)
