@@ -621,6 +621,7 @@ internal class RuntimeSession : IRuntimeSession
             while (IsAlive && !ct.IsCancellationRequested)
             {
                 // 等待新输入（突发间），或首轮无初始消息时
+                bool hasComponentNotification = false;
                 if (awaitingInput)
                 {
                     if (!await WaitForActivationAsync(_cts.Token))
@@ -637,9 +638,25 @@ internal class RuntimeSession : IRuntimeSession
                     _roundCount++;
                     ApplyRoundPricing();
 
+                    // ── 组件通知排空：异步任务完成通知（下载/SSH 等），在早返回之前先排空 ──
+                    if (_componentHost != null)
+                    {
+                        await _componentHost.OnBeforeInvokeAsync();
+                        var sections = _componentHost.BuildPromptSections();
+                        if (sections.Count > 0)
+                        {
+                            var notifyMsg = new Message { Role = "user", Content = "[组件通知]\n" + string.Join("\n\n", sections) };
+                            _history.Add(notifyMsg);
+                            await PersistRoundAsync(new List<Message> { notifyMsg });
+                            Signal.Event(LogGroup.Engine, "组件通知注入(突发入口)",
+                                new { sessionId = SessionId, sectionCount = sections.Count });
+                            hasComponentNotification = true;
+                        }
+                    }
+
                     // 收集输入，并通过 host 格式化（如有），追加到常驻历史 messages
                     var drained = DrainInputPortsRaw(ct);
-                    if (drained.Count == 0 && _pendingInjections.Count == 0)
+                    if (drained.Count == 0 && _pendingInjections.Count == 0 && !hasComponentNotification)
                     {
                         awaitingInput = true;
                         continue;
@@ -697,7 +714,7 @@ internal class RuntimeSession : IRuntimeSession
                 if (_agentCore == null) break;
 
                 // 组件通知排空：异步任务完成通知（下载/SSH/群文件等）→ prompt section
-                if (_componentHost != null)
+                if (!hasComponentNotification && _componentHost != null)
                 {
                     await _componentHost.OnBeforeInvokeAsync();
                     var sections = _componentHost.BuildPromptSections();
