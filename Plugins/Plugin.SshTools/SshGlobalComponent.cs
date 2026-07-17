@@ -1,13 +1,15 @@
 // Plugins/Plugin.SshTools/SshGlobalComponent.cs
 using System.Collections.Concurrent;
+using System.Linq;
 using Renci.SshNet;
 using AgentLilara.PluginSDK;
 using AgentLilara.PluginSDK.Logging;
+using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.SshTools;
 
 [Component(Name = "ssh-tools-global", Scope = ComponentScope.Global)]
-public class SshGlobalComponent : GlobalComponentBase
+public class SshGlobalComponent : GlobalComponentBase, ISessionResource
 {
     private IGlobalComponentContext _ctx = null!;
     private SshClient? _client;
@@ -56,11 +58,15 @@ public class SshGlobalComponent : GlobalComponentBase
 
         SshToolsAccessor.Configure(this);
 
+        context.GetService<ISessionResourceAccess>()?.Register(this);
+
         return Task.CompletedTask;
     }
 
     public override Task OnShutdownAsync(ShutdownReason reason)
     {
+        _ctx.GetService<ISessionResourceAccess>()?.Unregister(this);
+
         _idleTimer?.Dispose();
         OnTaskCompleted = null;
         foreach (var task in _runningTasks.Values)
@@ -194,6 +200,30 @@ public class SshGlobalComponent : GlobalComponentBase
             }
         }
         return result;
+    }
+
+    // ISessionResource 实装
+
+    public Task OnSessionCompactingAsync(string oldSessionId, string newSessionId)
+    {
+        var oldLoopId = $"session:{oldSessionId}";
+        var newLoopId = $"session:{newSessionId}";
+        foreach (var kvp in _runningTasks)
+            if (kvp.Value.LoopId == oldLoopId) kvp.Value.RebindLoopId(newLoopId);
+        foreach (var kvp in _completedTasks)
+            if (kvp.Value.LoopId == oldLoopId) kvp.Value.RebindLoopId(newLoopId);
+        return Task.CompletedTask;
+    }
+
+    public Task OnSessionFreedAsync(string sessionId)
+    {
+        return Task.CompletedTask;
+    }
+
+    public bool HasActiveResources(string sessionId)
+    {
+        var loopId = $"session:{sessionId}";
+        return _runningTasks.Values.Any(t => t.LoopId == loopId);
     }
 
     private void ResetIdleTimer()
