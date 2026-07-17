@@ -634,10 +634,6 @@ namespace AgentCoreProcessor.Engine
                 // Component 服务注册（依赖 PluginLoader 填充 ComponentRegistry）
                 componentServices.Register<AgentLilara.PluginSDK.Services.ISubAgentAccess>(
                     new Component.SubAgentAccessAdapter(this));
-                var se = GetActiveEnginesSnapshot()
-                    .OfType<Session.SessionEngine>().FirstOrDefault();
-                if (se != null)
-                    componentServices.Register<AgentLilara.PluginSDK.Services.ISessionResourceAccess>(se);
                 componentServices.Register<AgentLilara.PluginSDK.IToolContext>(_toolContext);
                 componentServices.Register<AgentLilara.PluginSDK.Services.IMemoryAccess>(memoryAccess);
                 componentServices.Register<AgentLilara.PluginSDK.Services.IBeaconAccess>(
@@ -716,6 +712,12 @@ namespace AgentCoreProcessor.Engine
             }
 
             Signal.Event(LogGroup.Engine, "引擎就绪");
+
+            // 注册 ISessionResourceAccess（SessionEngine 此时已启动）
+            var sessionEngine = GetActiveEnginesSnapshot()
+                .OfType<Session.SessionEngine>().FirstOrDefault();
+            if (sessionEngine != null)
+                componentServices.Register<AgentLilara.PluginSDK.Services.ISessionResourceAccess>(sessionEngine);
         }
 
         // ---- 事件分发（内核流水线） ----

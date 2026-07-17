@@ -28,9 +28,10 @@ namespace AgentCoreProcessor.Component;
 ///
 /// 子 agent 默认组件包含 sub-agent-runtime（report_to_parent 工具），不含 system-ops（避免无序套娃）。
 /// </summary>
-internal class SubAgentAccessAdapter : ISubAgentAccess
+internal class SubAgentAccessAdapter : ISubAgentAccess, AgentLilara.PluginSDK.Services.ISessionResource
 {
     private readonly Engine.MasterEngine _master;
+    private bool _resourceRegistered;
 
     // 子 agent 邮箱端口。父 session send_instruction 写入，子 session WaitForActivation 读出。
     private readonly ConcurrentDictionary<string, MailboxInputPort> _childMailboxes = new();
@@ -40,6 +41,17 @@ internal class SubAgentAccessAdapter : ISubAgentAccess
     public SubAgentAccessAdapter(Engine.MasterEngine master)
     {
         _master = master;
+    }
+
+    private void EnsureResourceRegistered()
+    {
+        if (_resourceRegistered) return;
+        var se = _master.GetActiveEnginesSnapshot().OfType<SessionEngine>().FirstOrDefault();
+        if (se != null)
+        {
+            se.RegisterSessionResource(this);
+            _resourceRegistered = true;
+        }
     }
 
     private SessionEngine? GetSessionEngine()
@@ -54,6 +66,7 @@ internal class SubAgentAccessAdapter : ISubAgentAccess
 
     public SubAgentInfo Create(string instruction, SubAgentOptions? options = null)
     {
+        EnsureResourceRegistered();
         var se = GetSessionEngine();
         if (se == null)
         {
@@ -101,6 +114,7 @@ internal class SubAgentAccessAdapter : ISubAgentAccess
 
     public SubAgentInfo? Get(string sessionId)
     {
+        EnsureResourceRegistered();
         var se = GetSessionEngine();
         var session = se?.GetSession(sessionId);
         if (session == null) return null;
@@ -109,6 +123,7 @@ internal class SubAgentAccessAdapter : ISubAgentAccess
 
     public Task<bool> SendInstructionAsync(string sessionId, string instruction)
     {
+        EnsureResourceRegistered();
         if (!_childMailboxes.TryGetValue(sessionId, out var mailbox))
             return Task.FromResult(false);
 
@@ -126,6 +141,7 @@ internal class SubAgentAccessAdapter : ISubAgentAccess
 
     public SubAgentStopResult RequestStop(string sessionId)
     {
+        EnsureResourceRegistered();
         var se = GetSessionEngine();
         if (se == null) return new SubAgentStopResult { Success = false, BlockReason = "SessionEngine 不可用" };
 
@@ -140,6 +156,7 @@ internal class SubAgentAccessAdapter : ISubAgentAccess
 
     public List<SubAgentInfo> List(string? parentLoopId = null)
     {
+        EnsureResourceRegistered();
         var se = GetSessionEngine();
         if (se == null) return new List<SubAgentInfo>();
 
@@ -169,6 +186,7 @@ internal class SubAgentAccessAdapter : ISubAgentAccess
 
     public SubAgentDetail? GetDetail(string sessionId)
     {
+        EnsureResourceRegistered();
         var se = GetSessionEngine();
         var session = se?.GetSession(sessionId);
         if (session == null) return null;
@@ -197,6 +215,7 @@ internal class SubAgentAccessAdapter : ISubAgentAccess
 
     public bool ReportToParent(string callerLoopId, string content, ReportState state)
     {
+        EnsureResourceRegistered();
         // callerLoopId = "session:xxx"，取冒号后段为 childId
         var childId = callerLoopId.StartsWith("session:") ? callerLoopId[8..] : callerLoopId;
 
@@ -223,6 +242,7 @@ internal class SubAgentAccessAdapter : ISubAgentAccess
 
     public async Task<bool> WaitAsync(string sessionId, int timeoutMs)
     {
+        EnsureResourceRegistered();
         var se = GetSessionEngine();
         var session = se?.GetSession(sessionId);
         if (session == null) return false;
@@ -330,5 +350,40 @@ internal class SubAgentAccessAdapter : ISubAgentAccess
             ParentLoopId = session.ParentSessionId
         };
         return info;
+    }
+
+    // ── ISessionResource 实现 ──
+
+    public Task OnSessionCompactingAsync(string oldSessionId, string newSessionId)
+    {
+        // Sub-agent parent chain is already handled by SessionEngine._forwards
+        // No-op: child mailboxes keyed by childId, not parentId
+        return Task.CompletedTask;
+    }
+
+    public Task OnSessionFreedAsync(string sessionId)
+    {
+        // Find children whose effective parent is this session and clean up
+        var toClean = _childMailboxes.Keys
+            .Where(cid =>
+            {
+                var se = GetSessionEngine();
+                return se?.ResolveEffectiveParent(cid) == sessionId;
+            })
+            .ToList();
+        foreach (var cid in toClean)
+        {
+            _childMailboxes.TryRemove(cid, out _);
+            _waitTcs.TryRemove(cid, out _);
+        }
+        return Task.CompletedTask;
+    }
+
+    public bool HasActiveResources(string sessionId)
+    {
+        var se = GetSessionEngine();
+        if (se == null) return false;
+        var children = se.GetActiveChildren(sessionId);
+        return children != null && children.Count > 0;
     }
 }
