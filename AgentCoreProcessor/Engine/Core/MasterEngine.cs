@@ -876,6 +876,26 @@ namespace AgentCoreProcessor.Engine
 
             if (LoopId.IsChannel(loopId, out var channelId))
             {
+                // 优先查 SessionEngine 是否 Full-claim 了这个频道
+                var sessionEngine = GetActiveEnginesSnapshot()
+                    .OfType<Session.SessionEngine>().FirstOrDefault();
+                if (sessionEngine != null)
+                {
+                    var claimer = sessionEngine.GetFullClaimer(channelId);
+                    if (!string.IsNullOrEmpty(claimer))
+                    {
+                        // claimer 是裸 sessionId
+                        var active = sessionEngine.ResolveActiveSession($"session:{claimer}");
+                        if (active != null)
+                        {
+                            sessionEngine.WakeUpSession(claimer);
+                            return;
+                        }
+                        // claimer 已死 → 落回 Express（claim 在 ReleaseSessionClaims 中会被清，这里 race 兜底）
+                    }
+                }
+
+                // 没 claim → 走 Express
                 var check = GetSpawnCheck<ExpressEngineSpawnCheck>();
                 if (check != null)
                 {
