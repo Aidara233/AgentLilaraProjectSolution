@@ -1,13 +1,15 @@
 // Plugins/Plugin.NetworkTools/DownloadStore.cs
 using System.Collections.Concurrent;
+using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.NetworkTools;
 
 /// <summary>
 /// 全局下载注册表（单例）。Global组件管理下载任务，Loop组件读取通知。
 /// 通过 NetworkToolsNotifier 静态桥接实现 Global→Loop 唤醒通信。
+/// 实装 ISessionResource 以响应 session compact/释放。
 /// </summary>
-public class DownloadStore
+public class DownloadStore : ISessionResource
 {
     private readonly ConcurrentDictionary<string, DownloadTask> _tasks = new();
     private readonly ConcurrentDictionary<string, ConcurrentQueue<DownloadNotification>> _notifications = new();
@@ -142,6 +144,37 @@ public class DownloadStore
     private void DecrementActive()
     {
         lock (_tasks) { _activeCount--; }
+    }
+
+    // ── ISessionResource ──
+
+    public Task OnSessionCompactingAsync(string oldSessionId, string newSessionId)
+    {
+        var oldLoopId = $"session:{oldSessionId}";
+        var newLoopId = $"session:{newSessionId}";
+        foreach (var task in _tasks.Values)
+        {
+            if (task.LoopId == oldLoopId)
+                task.RebindLoopId(newLoopId);
+        }
+        // 通知队列也要改 key
+        if (_notifications.TryRemove(oldLoopId, out var queue))
+            _notifications[newLoopId] = queue;
+        return Task.CompletedTask;
+    }
+
+    public Task OnSessionFreedAsync(string sessionId)
+    {
+        var loopId = $"session:{sessionId}";
+        _notifications.TryRemove(loopId, out _);
+        return Task.CompletedTask;
+    }
+
+    public bool HasActiveResources(string sessionId)
+    {
+        var loopId = $"session:{sessionId}";
+        return _tasks.Values.Any(t => t.LoopId == loopId
+            && (t.Status == DownloadStatus.Downloading || t.Status == DownloadStatus.Pending));
     }
 }
 

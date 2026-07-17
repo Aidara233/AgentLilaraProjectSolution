@@ -1,6 +1,7 @@
 // Plugins/Plugin.NetworkTools/NetworkToolsGlobalComponent.cs
 using System.Net;
 using AgentLilara.PluginSDK;
+using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.NetworkTools;
 
@@ -33,6 +34,10 @@ public class NetworkToolsGlobalComponent : GlobalComponentBase
         // 初始化 DownloadStore 单例
         _store = new DownloadStore { MaxConcurrent = _security.MaxConcurrentDownloads };
 
+        // 注册到 SessionEngine 的子资源表
+        var resourceAccess = context.GetService<ISessionResourceAccess>();
+        resourceAccess?.Register(_store);
+
         // 初始化 HttpClient（自动跟随重定向，初始URL校验提供主要防护）
         var handler = new HttpClientHandler
         {
@@ -61,6 +66,8 @@ public class NetworkToolsGlobalComponent : GlobalComponentBase
     public override Task OnShutdownAsync(ShutdownReason reason)
     {
         NetworkToolsNotifier.OnDownloadCompleted = null;
+        var resourceAccess = _ctx.GetService<ISessionResourceAccess>();
+        if (_store != null) resourceAccess?.Unregister(_store);
         _store?.Shutdown();
         _http?.Dispose();
         return Task.CompletedTask;
