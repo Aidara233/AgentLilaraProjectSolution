@@ -20,7 +20,7 @@ namespace AgentCoreProcessor.Engine.Session;
 /// <summary>
 /// Session 管理器。30s 监控循环：WaitUntil 超时、ScheduledTask 触发、TODO 扫描。
 /// </summary>
-internal class SessionEngine : ISubEngine
+internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessionResourceAccess
 {
     public string EngineType => "Session";
     public bool IsAlive { get; private set; } = true;
@@ -40,6 +40,9 @@ internal class SessionEngine : ISubEngine
     private readonly ConcurrentDictionary<string, string> _childToParent = new();
     private readonly ConcurrentDictionary<string, string> _forwards = new();
     private readonly object _childLinkLock = new();
+
+    // session-scoped 子资源注册表（子 agent / 下载 / SSH 共用）
+    private readonly SessionResourceRegistry _sessionResources = new();
 
     /// <summary>RestoreAll 完成信号。消息路由在检查 claim 前等待此信号，确保恢复的 claim 已落地。</summary>
     private readonly TaskCompletionSource _restoreTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -314,19 +317,28 @@ internal class SessionEngine : ISubEngine
         return _activeChildren.TryGetValue(sessionId, out var s) ? s : null;
     }
 
+    /// <summary>
+    /// 跨 0 或多次 compact 转发解析 loopId 当前的活跃 session ID。
+    /// loopId 非 session: 返回原值。session 已死且无 forward: 返回 null。
+    /// </summary>
+    public string? ResolveActiveSession(string loopId)
+    {
+        if (loopId == null) return null;
+        if (!loopId.StartsWith("session:", System.StringComparison.OrdinalIgnoreCase))
+            return loopId; // channel: / task: / review: 原样返回
+
+        var current = loopId.Substring("session:".Length);
+        while (_forwards.TryGetValue(current, out var forwarded))
+            current = forwarded;
+        if (_sessions.ContainsKey(current)) return $"session:{current}";
+        return null;
+    }
+
+    /// <summary>子 agent 兼容入口，返回 effective parent session ID（无前缀）。内部委托 ResolveActiveSession。</summary>
     public string? ResolveEffectiveParent(string childId)
     {
-        var current = childId;
-        while (_childToParent.TryGetValue(current, out var p))
-        {
-            if (_forwards.TryGetValue(p, out var forwarded))
-            {
-                current = forwarded;
-                continue;
-            }
-            return p;
-        }
-        return null;
+        var resolved = ResolveActiveSession($"session:{childId}");
+        return resolved?.Substring("session:".Length);
     }
 
     public void OnChildCompleted(string childId)
@@ -417,12 +429,27 @@ internal class SessionEngine : ISubEngine
             return _channelFullClaims.ContainsKey(channelId);
     }
 
-    /// <summary>通过外部信号唤醒指定 session（异步任务完成等）。</summary>
+    /// <summary>通过外部信号唤醒指定 session（异步任务完成等）。自动跨 compact forward。</summary>
     public void WakeUpSession(string sessionId)
     {
-        if (_sessions.TryGetValue(sessionId, out var session))
+        var active = ResolveActiveSession($"session:{sessionId}");
+        if (active == null) return;
+        var bareId = active.Substring("session:".Length);
+        if (_sessions.TryGetValue(bareId, out var session))
             session.WakeUp();
     }
+
+    // 注册表对外入口
+    public void RegisterSessionResource(AgentLilara.PluginSDK.Services.ISessionResource r) => _sessionResources.Register(r);
+    public void UnregisterSessionResource(AgentLilara.PluginSDK.Services.ISessionResource r) => _sessionResources.Unregister(r);
+
+    // ISessionResourceAccess 显式实现
+    void AgentLilara.PluginSDK.Services.ISessionResourceAccess.Register(AgentLilara.PluginSDK.Services.ISessionResource r) => _sessionResources.Register(r);
+    void AgentLilara.PluginSDK.Services.ISessionResourceAccess.Unregister(AgentLilara.PluginSDK.Services.ISessionResource r) => _sessionResources.Unregister(r);
+
+    internal System.Threading.Tasks.Task NotifyResourcesCompactingAsync(string oldId, string newId) => _sessionResources.NotifyCompactingAsync(oldId, newId);
+    internal System.Threading.Tasks.Task NotifyResourcesFreedAsync(string id) => _sessionResources.NotifyFreedAsync(id);
+    internal bool AnyResourceBlocksExit(string sessionId) => _sessionResources.AnyHasActiveResources(sessionId);
 
     private void ReleaseSessionClaims(string sessionId)
     {
