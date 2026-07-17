@@ -105,7 +105,9 @@ public class ScheduledTasksComponent : LoopComponentBase
                 isRecurring = task.IsRecurring
             });
 
-            notifications.Add(task.Description);
+            notifications.Add(task.RequiresWork
+                    ? $"{task.Description}（需工作模式处理）"
+                    : task.Description);
 
             if (task.IsRecurring)
             {
@@ -129,7 +131,8 @@ public class ScheduledTasksComponent : LoopComponentBase
             var lines = new List<string> { "[定时任务通知]" };
             foreach (var desc in notifications)
                 lines.Add($"- {desc}（已触发）");
-            lines.Add("请处理以上定时任务。处理完后应调用 dismiss_notification 清除通知。");
+            lines.Add("处理完后应调用 dismiss_notification 清除通知。");
+            lines.Add("若当前不在工作模式且任务需工作模式处理，请先 escalate。");
             _pendingNotification = string.Join("\n", lines);
             _ctx.WakeLoop();
         }
@@ -149,7 +152,9 @@ public class ScheduledTasksComponent : LoopComponentBase
 
         foreach (var task in overdue)
         {
-            notifications.Add(task.Description);
+            notifications.Add(task.RequiresWork
+                    ? $"{task.Description}（需工作模式处理）"
+                    : task.Description);
 
             if (task.IsRecurring)
             {
@@ -173,7 +178,8 @@ public class ScheduledTasksComponent : LoopComponentBase
             var lines = new List<string> { "[定时任务通知]" };
             foreach (var desc in notifications)
                 lines.Add($"- {desc}（已触发）");
-            lines.Add("请处理以上定时任务。处理完后应调用 dismiss_notification 清除通知。");
+            lines.Add("处理完后应调用 dismiss_notification 清除通知。");
+            lines.Add("若当前不在工作模式且任务需工作模式处理，请先 escalate。");
             _pendingNotification = string.Join("\n", lines);
             _ctx.WakeLoop();
         }

@@ -16,6 +16,7 @@ public class ScheduledTaskEntry
     public DateTime? LastFiredAt { get; set; }
     public bool IsRecurring { get; set; }
     public bool Enabled { get; set; } = true;
+    public bool RequiresWork { get; set; } = false;
 }
 
 public class PendingNotification
@@ -79,7 +80,7 @@ public class ScheduledTaskStore
         File.Move(tmp, _filePath, overwrite: true);
     }
 
-    public ScheduledTaskEntry AddTask(string description, string expression, DateTime? nextFire, bool isRecurring)
+    public ScheduledTaskEntry AddTask(string description, string expression, DateTime? nextFire, bool isRecurring, bool requiresWork)
     {
         lock (_lock)
         {
@@ -92,7 +93,8 @@ public class ScheduledTaskStore
                 CreatedAt = Normalize(DateTime.Now),
                 NextFireTime = nextFire.HasValue ? Normalize(nextFire.Value) : null,
                 IsRecurring = isRecurring,
-                Enabled = true
+                Enabled = true,
+                RequiresWork = requiresWork
             };
             tasks.Add(entry);
             SaveTasks(tasks);
@@ -144,6 +146,18 @@ public class ScheduledTaskStore
                 .OrderBy(t => t)
                 .Cast<DateTime?>()
                 .FirstOrDefault();
+        }
+    }
+
+    public (DateTime?, bool) GetNextFireTimeWithFlag()
+    {
+        lock (_lock)
+        {
+            var candidate = LoadTasks()
+                .Where(t => t.Enabled && t.NextFireTime.HasValue)
+                .OrderBy(t => t.NextFireTime!.Value)
+                .FirstOrDefault();
+            return (candidate?.NextFireTime, candidate?.RequiresWork ?? false);
         }
     }
 

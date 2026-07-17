@@ -93,7 +93,7 @@ public class ScheduledTasksTimerComponent : GlobalComponentBase
         {
             try
             {
-                var (nextFire, loopId) = FindEarliestTask();
+                var (nextFire, loopId, requiresWork) = FindEarliestTask();
 
                 if (nextFire == null)
                 {
@@ -109,8 +109,8 @@ public class ScheduledTasksTimerComponent : GlobalComponentBase
                 var delay = nextFire.Value - DateTime.Now;
                 if (delay <= TimeSpan.Zero)
                 {
-                    _log?.Event(LogGroup, "global-timer-fire", new { loopId, overdue = -(int)delay.TotalSeconds });
-                    _ctx.WakeLoop(loopId!);
+                    _log?.Event(LogGroup, "global-timer-fire", new { loopId, overdue = -(int)delay.TotalSeconds, requiresWork });
+                    FireScheduledTask(loopId!, requiresWork);
                     try { await Task.Delay(2000, shutdownCt); } catch { break; }
                     continue;
                 }
@@ -131,8 +131,8 @@ public class ScheduledTasksTimerComponent : GlobalComponentBase
                 try
                 {
                     await Task.Delay(delay, delayCts.Token);
-                    _log?.Event(LogGroup, "global-timer-fire", new { loopId });
-                    _ctx.WakeLoop(loopId!);
+                    _log?.Event(LogGroup, "global-timer-fire", new { loopId, requiresWork });
+                    FireScheduledTask(loopId!, requiresWork);
                 }
                 catch (OperationCanceledException) when (!shutdownCt.IsCancellationRequested)
                 {
@@ -150,13 +150,14 @@ public class ScheduledTasksTimerComponent : GlobalComponentBase
         _log?.Event(LogGroup, "global-timer-loop-stopped");
     }
 
-    private (DateTime? nextFire, string? loopId) FindEarliestTask()
+    private (DateTime? nextFire, string? loopId, bool requiresWork) FindEarliestTask()
     {
         if (!Directory.Exists(_pluginDataBase))
-            return (null, null);
+            return (null, null, false);
 
         DateTime? earliest = null;
         string? earliestLoopId = null;
+        bool earliestRequiresWork = false;
 
         foreach (var dir in Directory.GetDirectories(_pluginDataBase))
         {
@@ -164,17 +165,23 @@ public class ScheduledTasksTimerComponent : GlobalComponentBase
             if (!File.Exists(taskFile)) continue;
 
             var store = new ScheduledTaskStore(dir);
-            var nextFire = store.GetNextFireTime();
+            var (nextFire, requiresWork) = store.GetNextFireTimeWithFlag();
             if (nextFire != null && (earliest == null || nextFire < earliest))
             {
                 earliest = nextFire;
                 // Reverse sanitize: directory name "channel_123" → "channel:123"
                 var dirName = Path.GetFileName(dir);
                 earliestLoopId = dirName.Replace('_', ':');
+                earliestRequiresWork = requiresWork;
             }
         }
 
-        return (earliest, earliestLoopId);
+        return (earliest, earliestLoopId, earliestRequiresWork);
+    }
+
+    private void FireScheduledTask(string loopId, bool requiresWork)
+    {
+        _ctx.WakeLoop(loopId);
     }
 }
 

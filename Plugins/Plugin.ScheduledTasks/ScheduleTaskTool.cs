@@ -20,7 +20,8 @@ public class ScheduleTaskTool : ITool
     public IReadOnlyList<ToolParameter> Parameters =>
     [
         new("expression", "时间表达式", 0),
-        new("description", "任务描述（触发时AI会看到）", 1)
+        new("description", "任务描述（触发时AI会看到）", 1),
+        new("requires_work", "是否需要工作模式处理（false=只提一嘴即可，true=需调用工具干活）。默认 false", 2, isRequired: false)
     ];
     public TimeSpan Timeout => TimeSpan.FromSeconds(5);
 
@@ -33,6 +34,9 @@ public class ScheduleTaskTool : ITool
     {
         var expression = resolvedInputs.Count > 0 ? resolvedInputs[0].Trim() : "";
         var description = resolvedInputs.Count > 1 ? resolvedInputs[1].Trim() : "";
+        var requiresWorkStr = resolvedInputs.Count > 2 ? resolvedInputs[2].Trim() : "false";
+        bool requiresWork = requiresWorkStr.Equals("true", StringComparison.OrdinalIgnoreCase)
+            || requiresWorkStr == "1" || requiresWorkStr == "yes";
 
         if (string.IsNullOrEmpty(expression))
             return Fail("expression 不能为空");
@@ -43,11 +47,12 @@ public class ScheduleTaskTool : ITool
         if (!result.Success)
             return Fail(result.Error!);
 
-        var entry = _store.AddTask(description, expression, result.NextFireTime, result.IsRecurring);
+        var entry = _store.AddTask(description, expression, result.NextFireTime, result.IsRecurring, requiresWork);
 
         var fireTimeStr = entry.NextFireTime?.ToString("yyyy-MM-dd HH:mm:ss");
         var recurringLabel = entry.IsRecurring ? " (循环)" : "";
-        return Ok($"已创建定时任务 [{entry.Id[..8]}]：{description}\n触发时间：{fireTimeStr}{recurringLabel}");
+        var workLabel = requiresWork ? " (工作模式)" : "";
+        return Ok($"已创建定时任务 [{entry.Id[..8]}]：{description}\n触发时间：{fireTimeStr}{recurringLabel}{workLabel}");
     }
 
     private static Task<ToolResult> Ok(string data) =>
