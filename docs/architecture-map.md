@@ -320,6 +320,15 @@ RuntimeSession (统一 agent 循环, 无强制 stop):
   ChannelContextPersistence: per-channel JSON 原子写入（游标接力，与 session 持久化解耦）
 ```
 
+### Session-scoped 子资源 (ISessionResource)
+
+子 agent / 下载 / SSH 任务都实装 ISessionResource，注册到 SessionEngine。
+SessionEngine 持有 _sessionResources 注册表 + _forwards 转发表：
+- compact 时通知所有 ISessionResource.OnSessionCompacting(oldId, newId)，资源改自己的 loopId
+- session 死时通知 OnSessionFreed，资源清理状态
+- 外部唤醒通过 ResolveActiveSession(loopId) 跨 forward 解出活跃 session
+- end_session 通过 ILoopComponent.OnCanExitAsync + SessionEngine.AnyResourceBlocksExit 阻塞有 in-flight 资源的退出
+
 VisionEngine (视觉引擎，单例，基础设施):
   闸门驱动循环 (LoopGate):
     触发源: 心跳(TimerEvent tick, 60s) / 新图信号(SignalEvent "new-image")

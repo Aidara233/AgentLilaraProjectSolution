@@ -439,3 +439,18 @@ protected string DetectFormat(string filePath)
 | **Atomic File Save**（.tmp + Move） | 任何 JSON 持久化写入，防止崩溃导致数据损坏 | 所有插件的 `SaveXxx` 方法 |
 | **BuildPromptSection 聚合** | 组件内多个工具各自贡献 prompt 片段 | `Plugin.WorkingTools/WorkingToolsComponent.cs` |
 | **IDiceRegistry** | 插件想向骰子池注册随机事件 | `Plugin.MemoryTools/MemoryDiceFaces.cs` |
+
+---
+
+## Session-scoped 资源 (ISessionResource)
+
+某些 Loop 组件管理的异步任务（下载、SSH 执行）有明确的 session 归属：
+它们由某个 session 发起，完成后需要通知该 session（或其 compact 后继）。
+
+实装 ISessionResource 的三个方法：
+- OnSessionCompactingAsync(oldSessionId, newSessionId)：session compact 时被调用，改自己的 loopId
+- OnSessionFreedAsync(sessionId)：session 死亡时被调用，清理挂在该 session 的状态
+- HasActiveResources(sessionId)：end_session 时被查询，返回 true 阻止退出
+
+注册时机：在 Global 组件的 OnInitAsync 中通过 ISessionResourceAccess.Register() 注册，
+OnShutdownAsync 中 Unregister()。示例见 Plugin.NetworkTools/DownloadStore 或 Plugin.SshTools/SshGlobalComponent。

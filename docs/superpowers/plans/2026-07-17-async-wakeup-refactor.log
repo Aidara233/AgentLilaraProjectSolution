@@ -1,0 +1,15 @@
+异步唤醒重构 — 验证日志
+开始时间: 2026-07-18
+---
+构建: 0 错误, 0 警告
+启动测试: OK (正常启动)
+---
+
+待手工验证场景（运行中手动测试）:
+1. Session 模式发起下载 → 完成通知注入 _history: [ ]
+2. Session 模式发起下载 → end_session 被拦截 → 二次 end_session 强制退出: [ ]
+3. Session compact 后下载完成 → 通知注入新 session: [ ]
+4. Express 模式 download_file 不可见（模型应 escalate）: [ ]
+5. 定时任务 requires_work=false → Express 被唤醒 → speak: [ ]
+6. 定时任务 requires_work=true → Express escalate: [ ]
+7. 定时任务到期 + Session 活跃 → Session 被唤醒: [ ]

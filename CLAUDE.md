@@ -259,7 +259,11 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 -           Plugins/Plugin.DocumentTools/（文档处理）
 -           Plugins/Plugin.QuickActions/（快捷操作）
 -           Plugins/FileToolKit.Shared/ — FileToolBase 抽象基类（路径解析/沙箱/快捷方法），文件类插件共享引用
-- 异步唤醒链路：后台任务完成 → GlobalComponent 回调 → MasterEngine.WakeLoop → SessionEngine.WakeUpSession → RuntimeSession.WakeUp（设 _wakeSignaled）→ WaitForActivationAsync 检测并返回 → OnBeforeInvokeAsync 排空通知 → BuildPromptSections 注入上下文
-- 组件通知排空：RuntimeSession 每轮 agent 推理前调用 _componentHost.OnBeforeInvokeAsync() + BuildPromptSections()，结果以"[组件通知]"消息注入 context（download_file/ssh_exec/群文件下载等异步工具的完成通知均通过此路径）
+- 异步唤醒链路（session-scoped）：
+  后台任务完成 → GlobalComponent 回调 ISessionResourceAccess.ResolveActiveSession(loopId) 解出活跃 session → SessionEngine.WakeUpSession → RuntimeSession.WakeUp（_wakeSignaled）→ WaitForActivationAsync 检测 → 突发入口先跑 OnBeforeInvokeAsync + BuildPromptSections → 注入 _history → 进入 Agent 推理
+  - session-scoped 子资源：子 agent / 下载 / SSH 实装 ISessionResource，注册到 SessionEngine；compact 时 rebind loopId，session 死时通知清理
+  - end_session 拦截：子 agent + 任意 ISessionResource HasActiveResources=true 都阻止退出；二次 end_session force override
+- 异步唤醒链路（channel-scoped）：
+  定时任务到期 → ScheduledTasksTimerComponent 按 requires_work 路由 → MasterEngine.WakeLoop(channel:N)（内置 Session 占用优先检查）→ claim 则 wake session / 否则 wake Express / 冷启动 Express
 - 工具配置：Storage/Engine/ComponentConfig.json（组件按引擎类型启用/禁用）+ Storage/ToolConfig.json（全局工具禁用）
 - 配置文件：Storage/ 目录下
