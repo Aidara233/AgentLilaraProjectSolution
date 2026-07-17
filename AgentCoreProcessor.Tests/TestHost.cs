@@ -80,6 +80,12 @@ internal static class TestHost
         GetForwards(engine)[oldId] = newId;
     }
 
+    /// <summary>模拟 compact 路径：调用 NotifyResourcesCompactingAsync 并同步等待。</summary>
+    public static void SimulateCompact(this SessionEngine engine, string oldId, string newId)
+    {
+        engine.NotifyResourcesCompactingAsync(oldId, newId).GetAwaiter().GetResult();
+    }
+
     /// <summary>检查指定 session 是否被 WakeUp 调用过。</summary>
     public static bool WasWoken(this SessionEngine engine, string sessionId)
     {

@@ -56,6 +56,27 @@ public class SessionResourceRegistryTests
         Assert.True(engine.WasWoken("S2"));
     }
 
+    [Fact]
+    public async Task CreateFromCompact_notifies_resources_to_rebind()
+    {
+        var engine = TestHost.BuildSessionEngineWithFakeSession("S1", alive: true);
+        var resource = new FakeResource();
+        engine.RegisterSessionResource(resource);
+        await engine.NotifyResourcesCompactingAsync("S1", "S2");
+        Assert.Equal("S1", resource.LastRebindOld);
+        Assert.Equal("S2", resource.LastRebindNew);
+    }
+
+    [Fact]
+    public void StopSession_notifies_resources_freed()
+    {
+        var engine = TestHost.BuildSessionEngineWithFakeSession("S1", alive: true);
+        var resource = new FakeResource();
+        engine.RegisterSessionResource(resource);
+        engine.StopSession("S1", "test");
+        Assert.Equal("S1", resource.LastFreed);
+    }
+
     private class FakeResource : ISessionResource
     {
         public string? LastRebindOld;

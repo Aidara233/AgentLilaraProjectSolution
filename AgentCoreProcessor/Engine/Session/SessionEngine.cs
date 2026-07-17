@@ -241,7 +241,7 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
     /// InitialState = "[上一会话摘要]\n{summary}\n\n请继续工作"，轮次接续旧 session。
     /// 同步生效：ClaimChannel 在 CreateSession 内同步完成，新 session 立马接管频道。
     /// </summary>
-    public IRuntimeSession CreateFromCompact(RuntimeSession oldSession, string summary)
+    public async Task<IRuntimeSession> CreateFromCompact(RuntimeSession oldSession, string summary)
     {
         // 先释放旧 session 的频道 claim，让新 session 能成功 ClaimChannel。
         // 旧 session 即将由 compact 工具触发 EndSession 退出 RunAsync，不再需要 claim；
@@ -274,7 +274,30 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
         // 接续旧 session 的轮次计数，避免新 session 从 0 重新跑 free round
         newSession.InheritRoundCount(oldSession.GetRoundCountForCompact());
 
-// 子链迁移        lock (_childLinkLock)        {            if (_activeChildren.TryRemove(oldSession.SessionId, out var childrenOfOld))            {                _activeChildren[newSession.SessionId] = childrenOfOld;                foreach (var childId in childrenOfOld)                {                    if (_childToParent.ContainsKey(childId))                        _childToParent[childId] = newSession.SessionId;                    try                    {                        var childPersister = new SessionPersistence(childId);                        childPersister.UpdateEffectiveParentAsync(childId, newSession.SessionId).GetAwaiter().GetResult();                    }                    catch { }                }            }            _forwards[oldSession.SessionId] = newSession.SessionId;        }
+        // 子链迁移：compact → 所有子 session 的 parent 从旧 session 指向新 session
+        lock (_childLinkLock)
+        {
+            if (_activeChildren.TryRemove(oldSession.SessionId, out var childrenOfOld))
+            {
+                _activeChildren[newSession.SessionId] = childrenOfOld;
+                foreach (var childId in childrenOfOld)
+                {
+                    if (_childToParent.ContainsKey(childId))
+                        _childToParent[childId] = newSession.SessionId;
+                    try
+                    {
+                        var childPersister = new SessionPersistence(childId);
+                        childPersister.UpdateEffectiveParentAsync(childId, newSession.SessionId).GetAwaiter().GetResult();
+                    }
+                    catch { }
+                }
+            }
+            _forwards[oldSession.SessionId] = newSession.SessionId;
+        }
+
+        // 通知所有 ISessionResource：loopId 从旧 session rebind 到新 session
+        await _sessionResources.NotifyCompactingAsync(oldSession.SessionId, newSession.SessionId);
+
         Signal.Event(LogGroup.Engine, "compact 创建新 session",
             new { oldId = oldSession.SessionId, newId = newSession.SessionId, summaryLen = summary.Length });
 
@@ -290,8 +313,13 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
         if (children != null && children.Count > 0)
             return new StopResult { Success = false, BlockReason = "Has running children", BlockingChildren = children.ToList() };
 
+        // 资源阻塞检查（下载/SSH in-flight）
+        if (AnyResourceBlocksExit(id))
+            return new StopResult { Success = false, BlockReason = "Has active resources" };
+
         session.RequestStop(reason);
         ReleaseSessionClaims(id);
+        _sessionResources.NotifyFreedAsync(id).GetAwaiter().GetResult();
         return new StopResult { Success = true };
     }
 
@@ -304,6 +332,7 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
             session.RequestStop("force kill");
 
         ReleaseSessionClaims(id);
+        _ = _sessionResources.NotifyFreedAsync(id);
         return new StopResult { Success = true };
     }
 

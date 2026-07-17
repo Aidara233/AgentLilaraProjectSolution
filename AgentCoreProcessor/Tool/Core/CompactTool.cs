@@ -42,16 +42,16 @@ namespace AgentCoreProcessor.Tool.Core
             _sessionEngine = sessionEngine;
         }
 
-        public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
+        public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
         {
             if (resolvedInputs == null || resolvedInputs.Count == 0
                 || string.IsNullOrWhiteSpace(resolvedInputs[0]))
             {
-                return Task.FromResult(new ToolResult
+                return new ToolResult
                 {
                     Status = "failed",
                     Error = "compact 需要提供摘要参数（你此次会话的完整总结）"
-                });
+                };
             }
 
             var summary = resolvedInputs[0];
@@ -60,27 +60,27 @@ namespace AgentCoreProcessor.Tool.Core
             {
                 // 触发新 session 创建（同步），新 session 在 CreateFromCompact 内部
                 // 通过标准 CreateSession 走 AutoClaim 同步接管频道
-                _sessionEngine.CreateFromCompact(_session, summary);
+                await _sessionEngine.CreateFromCompact(_session, summary);
 
                 Signal.Event(LogGroup.Engine, "compact 已触发新 session",
                     new { oldSession = _session.SessionId, summaryLength = summary.Length });
 
                 // 返回成功：旧 session 退出循环（EndSession 由 ApplyToolEffectAsync 检测 compact 触发）
-                return Task.FromResult(new ToolResult
+                return new ToolResult
                 {
                     Status = "success",
                     Data = "新会话已创建并接管频道，本会话即将退出。"
-                });
+                };
             }
             catch (Exception ex)
             {
                 Signal.Error(LogGroup.Engine, "compact 创建新 session 失败",
                     new { oldSession = _session.SessionId, error = ex.Message });
-                return Task.FromResult(new ToolResult
+                return new ToolResult
                 {
                     Status = "failed",
                     Error = $"compact 失败：{ex.Message}"
-                });
+                };
             }
         }
     }
