@@ -16,6 +16,7 @@ public abstract class LoopComponentBase : ILoopComponent
     public virtual Task OnBeforeInvokeAsync() => Task.CompletedTask;
     public virtual Task OnAfterInvokeAsync() => Task.CompletedTask;
     public virtual string? BuildPromptSection() => null;
+    public virtual Task<bool> OnCanExitAsync() => Task.FromResult(true);
 }
 
 public abstract class GlobalComponentBase : IGlobalComponent

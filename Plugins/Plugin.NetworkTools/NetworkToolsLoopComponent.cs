@@ -95,6 +95,15 @@ public class NetworkToolsLoopComponent : LoopComponentBase
         return sb.ToString().TrimEnd();
     }
 
+    public override Task<bool> OnCanExitAsync()
+    {
+        var store = NetworkToolsAccessor.Store;
+        if (store == null) return Task.FromResult(true);
+        var bareId = _loopId.StartsWith("session:") ? _loopId[8..] : null;
+        if (bareId == null) return Task.FromResult(true);
+        return Task.FromResult(!store.HasActiveResources(bareId));
+    }
+
     private static string FormatSize(long bytes) => bytes switch
     {
         > 1_000_000 => $"{bytes / 1_000_000.0:F1} MB",

@@ -19,4 +19,7 @@ public interface ILoopComponent
     Task OnAfterInvokeAsync();
 
     string? BuildPromptSection();
+
+    /// <summary>所属 session 准备 end_session 时被询问。返回 false 阻止退出，注入提醒文本由调用方做。</summary>
+    Task<bool> OnCanExitAsync();
 }

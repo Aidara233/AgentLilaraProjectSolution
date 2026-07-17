@@ -208,6 +208,19 @@ internal class ComponentHost
         }
     }
 
+    /// <summary>
+    /// 轮询所有启用的 Loop 组件，任一 OnCanExitAsync 返回 false 即阻止 end_session。
+    /// </summary>
+    public async Task<bool> QueryCanExitAsync()
+    {
+        foreach (var inst in _loopComponents.Where(i => i.Context.IsEnabled))
+        {
+            try { if (!await inst.Component.OnCanExitAsync()) return false; }
+            catch (Exception ex) { LogError(inst, "OnCanExit", ex); }
+        }
+        return true;
+    }
+
     public async Task EnableComponentAsync(string name)
     {
         var inst = _loopComponents.FirstOrDefault(i => i.Component.Meta.Name == name);

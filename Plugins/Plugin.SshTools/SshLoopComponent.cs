@@ -102,6 +102,15 @@ public class SshLoopComponent : LoopComponentBase
         return sb.ToString().TrimEnd();
     }
 
+    public override Task<bool> OnCanExitAsync()
+    {
+        var global = SshToolsAccessor.Global;
+        if (global == null) return Task.FromResult(true);
+        var bareId = _loopId.StartsWith("session:") ? _loopId[8..] : null;
+        if (bareId == null) return Task.FromResult(true);
+        return Task.FromResult(!global.HasActiveResources(bareId));
+    }
+
     private static void EnsureRemoteWorkDir(SshGlobalComponent global, string workDir)
     {
         var client = global.EnsureConnected();

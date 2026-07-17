@@ -70,6 +70,9 @@ internal class RuntimeSession : IRuntimeSession
     /// <summary>外部唤醒信号（异步任务完成、跨循环通知等）。</summary>
     private volatile bool _wakeSignaled;
 
+    /// <summary>end_session 强制退出计数：0=未触发，>=1=已拦截过一次。</summary>
+    private int _forceExitAttempts;
+
     // ── 会话历史（字段化，跨突发累积，wait 挂起后再激活时保留）──
     private List<Message> _history = new();
     public List<Message> History => _history;
@@ -432,12 +435,31 @@ internal class RuntimeSession : IRuntimeSession
         switch (call.Tool)
         {
             case "end_session":
+                // 子 agent 检查（现有）
                 var activeChildren = _sessionEngine?.GetActiveChildren(SessionId);
                 if (activeChildren != null && activeChildren.Count > 0)
                 {
                     InjectExternal($"[系统警告] 你还有 {activeChildren.Count} 个活跃子 agent，请先 stop_sub_agent 后再 end_session。");
-                    return new ToolEffect(false, false); // 拒绝退出，继续循环
+                    return new ToolEffect(false, false);
                 }
+
+                // session-scoped 子资源检查（下载/SSH in-flight）
+                bool hasInFlightResources = _sessionEngine?.AnyResourceBlocksExit(SessionId) == true
+                    || !await (_componentHost?.QueryCanExitAsync() ?? Task.FromResult(true));
+
+                if (hasInFlightResources)
+                {
+                    if (_forceExitAttempts > 0)
+                    {
+                        Signal.Event(LogGroup.Engine, "end_session force override", new { sessionId = SessionId });
+                        await SendOutput(result.Data ?? "工作完成（强制退出，仍有未完成资源）。");
+                        return new ToolEffect(false, true);
+                    }
+                    _forceExitAttempts++;
+                    InjectExternal("[系统警告] 仍有未完成的下载或 SSH 任务。请先 cancel_download/cancel ssh 任务后再 end_session；或再次 end_session 强制退出（不推荐）。");
+                    return new ToolEffect(false, false);
+                }
+
                 await SendOutput(result.Data ?? "工作完成。");
                 return new ToolEffect(false, true);
             case "compact":
@@ -887,6 +909,7 @@ internal class RuntimeSession : IRuntimeSession
                     {
                         Signal.Event(LogGroup.Engine, "endBurst：回等待保活",
                             new { sessionId = SessionId, historyCount = _history.Count, waitUntil = WaitUntil });
+                        _forceExitAttempts = 0;
                         awaitingInput = true;
                         continue;
                     }
