@@ -42,10 +42,11 @@ namespace AgentCoreProcessor.Engine
             }
 
             agentCore.EngineType = "express";
-            // 合并 ComponentHost 工具 + ToolRegistry 独立工具（escalate、wait 等）
+            // Loop 组件工具（speak 等）。核心工具（escalate/wait/continue_loop）由 AgentCore 内部通过
+            // GetExpressToolDefinitions("express") 收集。这里不再 Concat(ToolRegistry.All.Values) 全量合并，
+            // 否则会把 session 专用/全局工具无差别注入 Express 工具表。
             var componentTools = componentHost?.GetVisibleTools() ?? Enumerable.Empty<ITool>();
             agentCore.AdditionalTools = componentTools
-                .Concat(ToolRegistry.All.Values)
                 .Where(t => !ToolRegistry.IsDisabled(t.Name))
                 .DistinctBy(t => t.Name)
                 .ToList();

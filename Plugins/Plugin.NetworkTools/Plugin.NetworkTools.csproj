@@ -32,14 +32,14 @@
       <_PluginOut Include="$(OutputPath)playwright.ps1" />
     </ItemGroup>
     <Copy SourceFiles="@(_PluginOut)"
-          DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\$(MSBuildProjectName)\"
+          DestinationFolder="$(HostPluginsDir)$(MSBuildProjectName)\"
           SkipUnchangedFiles="true" />
     <!-- .playwright 目录需要保留完整相对路径 -->
     <ItemGroup>
       <_PlaywrightFiles Include="$(OutputPath).playwright\**\*" />
     </ItemGroup>
     <Copy SourceFiles="@(_PlaywrightFiles)"
-          DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\$(MSBuildProjectName)\.playwright\%(RecursiveDir)"
+          DestinationFolder="$(HostPluginsDir)$(MSBuildProjectName)\.playwright\%(RecursiveDir)"
           SkipUnchangedFiles="true" />
   </Target>
 

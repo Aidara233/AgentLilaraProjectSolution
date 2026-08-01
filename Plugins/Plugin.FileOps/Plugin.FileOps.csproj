@@ -32,7 +32,7 @@
       <_PluginOut Include="$(OutputPath)plugin.json" />
     </ItemGroup>
     <Copy SourceFiles="@(_PluginOut)"
-          DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\$(MSBuildProjectName)\"
+          DestinationFolder="$(HostPluginsDir)$(MSBuildProjectName)\"
           SkipUnchangedFiles="true" />
   </Target>
 

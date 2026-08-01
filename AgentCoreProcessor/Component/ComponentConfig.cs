@@ -52,9 +52,13 @@ internal class ComponentConfig
     {
         if (Components.TryGetValue(componentName, out var entry))
             return entry.IsEnabled(engineType);
-        if (applicability == Applicability.NotApplicable)
-            return false;
-        return defaultEnabled;
+        return applicability switch
+        {
+            Applicability.Enabled => defaultEnabled,
+            Applicability.Disabled => false,
+            Applicability.NotApplicable => false,
+            _ => defaultEnabled
+        };
     }
 
     /// <summary>修改组件在指定引擎类型下的启用状态并持久化。</summary>

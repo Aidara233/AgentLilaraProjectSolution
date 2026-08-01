@@ -29,7 +29,7 @@
       <_PluginOut Include="$(OutputPath)runtimes\**\*.dll" />
     </ItemGroup>
     <Copy SourceFiles="@(_PluginOut)"
-          DestinationFolder="$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\Plugins\$(MSBuildProjectName)\"
+          DestinationFolder="$(HostPluginsDir)$(MSBuildProjectName)\"
           SkipUnchangedFiles="true" />
   </Target>
 

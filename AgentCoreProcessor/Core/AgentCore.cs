@@ -89,7 +89,7 @@ namespace AgentCoreProcessor.Core
                 {
                     foreach (var t in GlobalComponentTools)
                     {
-                        if (ToolRegistry.IsDisabled(t.Name)) continue;
+                        if (!IsExpressVisible(t)) continue;
                         if (DisableImageMessages && ImageDependentTools.Contains(t.Name)) continue;
                         if (expressDefs.Any(d => d.Name == t.Name)) continue;
                         expressDefs.Add(ToDefinition(t));
@@ -100,7 +100,7 @@ namespace AgentCoreProcessor.Core
                 {
                     foreach (var t in AdditionalTools)
                     {
-                        if (ToolRegistry.IsDisabled(t.Name)) continue;
+                        if (!IsExpressVisible(t)) continue;
                         if (DisableImageMessages && ImageDependentTools.Contains(t.Name)) continue;
                         if (expressDefs.Any(d => d.Name == t.Name)) continue;
                         expressDefs.Add(ToDefinition(t));
@@ -254,6 +254,20 @@ namespace AgentCoreProcessor.Core
             final.AddRange(messages);
             processor.Client.ClearConversationHistory();
             processor.Client.SetConversationHistory(final);
+        }
+
+        /// <summary>
+        /// Express 引擎工具可见性。工具显式声明 EngineTypes 时必须包含当前引擎（如 end_session 声明
+        /// ["session"] 就不会混入 Express）；未声明的组件工具信任组件级过滤（ComponentHost/GlobalComponentHost
+        /// 已按引擎适用性筛过）。Express 白名单收敛由引擎层配合 ToolRegistry 完成。
+        /// </summary>
+        private bool IsExpressVisible(ITool t)
+        {
+            if (ToolRegistry.IsDisabled(t.Name)) return false;
+            var meta = ToolRegistry.GetMeta(t.Name);
+            if (meta?.EngineTypes is { Length: > 0 })
+                return meta.EngineTypes.Contains(EngineType);
+            return true;
         }
 
         private void MergeTools(List<ToolDefinition> defs, List<ITool>? tools)

@@ -75,7 +75,7 @@ internal class ComponentHost
             {
                 var compName = ComponentAttribute.GetFrom(reg.Type)?.Name ?? reg.Type.Name;
                 if (!nameSet.Contains(compName)) continue;
-                if (!_config.IsEnabled(compName, _loopType, reg.DefaultEnabled))
+                if (!_config.IsEnabled(compName, _loopType, reg.DefaultEnabled, GetApplicability(reg)))
                     continue;
                 var instance = CreateInstance(reg);
                 if (instance == null) continue;
@@ -93,7 +93,7 @@ internal class ComponentHost
             try
             {
                 var compName = ComponentAttribute.GetFrom(reg.Type)?.Name ?? reg.Type.Name;
-                if (!_config.IsEnabled(compName, _loopType, reg.DefaultEnabled))
+                if (!_config.IsEnabled(compName, _loopType, reg.DefaultEnabled, GetApplicability(reg)))
                     continue;
                 var instance = CreateInstance(reg);
                 if (instance == null) continue;
@@ -107,6 +107,18 @@ internal class ComponentHost
                     new { type = reg.Type.FullName, error = ex.Message });
             }
         }
+    }
+
+    /// <summary>解析组件在当前循环类型下的适用性（与 GlobalComponentHost.GetVisibleTools 一致）。</summary>
+    private Applicability GetApplicability(ComponentRegistration reg)
+    {
+        return _loopType switch
+        {
+            "channel" => reg.ChannelApplicability,
+            "review" => reg.ReviewApplicability,
+            "task" => reg.TaskApplicability,
+            _ => Applicability.Enabled
+        };
     }
 
     public IEnumerable<ITool> GetVisibleTools()
