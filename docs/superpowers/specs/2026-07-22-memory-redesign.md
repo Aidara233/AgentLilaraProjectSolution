@@ -281,10 +281,73 @@ new = current + (target - current) × rate
 - 模型调 wait 时可带简短 `journal` 参数，随手记当下经历 + 情绪变动
 - 主体内容与情绪变动由**模型自己写完整**，框架只补元数据（Source / ChannelId / SessionId / 时间戳），不做情感推断
 
+### 提取协议（ExtractService → Writer 的 JSON 契约）
+
+提取器产出 **JSON**，Writer 直接解析落库。`wait` 工具的 `journal` 参数复用同一 schema——模型手写、提取器机器产，Writer 无差别解析。
+
+**容器**（一次提取的完整产出）：
+
+```json
+{
+  "claims":   [ ],
+  "journals": [ ]
+}
+```
+
+**Claim**（窄断言）：
+
+```json
+{
+  "subject":   { "type": "entity|keyword|attribute|literal|assertion", "index": "咪咪" },
+  "predicate": { "type": "relation|attribute", "index": "喜欢" },
+  "object":    { "type": "entity|keyword|attribute|literal|assertion", "index": "猫粮" },
+  "raw": "用户说咪咪喜欢猫粮",
+  "source": { "who": "user", "ref": { "kind": "message", "id": 12345 } },
+  "utterance_id": "u_001",
+  "strength": 0.8,
+  "valid_from": null,
+  "valid_until": null,
+  "occurred_at": "2026-08-01T12:00:00+08:00"
+}
+```
+
+**Journal**（经历）：
+
+```json
+{
+  "kind": "Experience|Reflection",
+  "content": "今天用户问我……",
+  "source": "Session|Framework|UserCommand|System",
+  "channel_id": null,
+  "session_id": 42,
+  "emotion_signals": [ { "axis": "joy", "target": 0.4, "reason": "..." } ],
+  "keywords": ["频道", "用户"],
+  "occurred_at": "2026-08-01T12:00:00+08:00"
+}
+```
+
+**Writer 解析契约**：
+
+| 字段 | 落库动作 |
+|---|---|
+| Claim.keyword/attribute 槽位 | 匹配/新建 Keywords（Role 区分）→ FragmentKeywords |
+| Claim.entity 槽位 | 只存 index 作显示/原文返回，不匹配不归并 |
+| Claim.raw | 整句存储，召回直接返回 |
+| Claim.source | Evidence 引用（消息/经历/事件） |
+| Journal.keywords | 匹配/新建 Keywords → FragmentKeywords |
+| Journal.emotion_signals | **事务内转交 EmotionService**（读最新→算→写→快照） |
+| Journal.content | 正文存储，元数据（recorded_at 等）由 Writer 补全 |
+
 ### 框架事件
 
 - 工具失败 / 超时 / 用户否定等 → 写 L0/L1 记录并提交情绪信号，实时应用
 - 具体事件 → 目标值映射表待定
+- **程序启动/停止（已定稿）**：落 L0 框架事件，纯机械日志，不带情绪信号：
+
+  ```
+  FrameworkEvents: { Level: L0, Type: "ProcessStarted" | "ProcessStopped",
+                     Detail: { version, pid, reason?, uptime? }, Timestamp }
+  ```
 
 ## 待定
 
@@ -293,7 +356,7 @@ new = current + (target - current) × rate
 - 各轴框架乘数具体数值（maxInfluence 系数）
 - 自动事件 → 目标值映射表（工具失败 / 用户否定 / 任务完成等分别推哪些轴、什么值）
 - `journal` / `remember` 工具签名（journal 结构已定，参数 schema 待定）
-- 记忆引擎具体设计（引擎跟着经历/情绪设计走，需明确：伴随提取链路 + Session 善后链路 + 工具轨迹读取 + 提取/善后共用逻辑）
+- 记忆引擎具体设计（提取协议 JSON 契约已定，见"提取协议"；需明确：伴随提取链路 + Session 善后链路 + 工具轨迹读取 + Writer 写协议）
 - Session 善后流程细节（end_session / compact 归档后记忆引擎如何触发、读取哪些数据、产出规范）
 - 情绪快照历史（EmotionSnapshot 表已定，具体字段/触发细节待定）
 
