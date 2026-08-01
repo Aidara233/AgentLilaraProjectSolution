@@ -1,7 +1,7 @@
 # 记忆系统重设计 — 碎片统一模型
 
 > **状态：设计中** — 2026-07-22
-> **经历（Journal）+ 情绪模型部分已定稿（2026-08-01）**，见"记录层级"与"情绪模型"章节
+> **经历（Journal）+ 情绪模型 + 记忆产生端已定稿（2026-08-01）**，见"记录层级"、"情绪模型"、"产生端"章节
 
 ## 问题
 
@@ -230,44 +230,41 @@ new = current + (target - current) × rate
 
 ## 产生端：碎片从哪来
 
-### 三入口
+提取能力**全部收敛进记忆引擎**。两条链路共用同一套提取逻辑，只是触发时机不同。
 
-```
-Express 消息 → 提取引擎（轻量批量 LLM 扫描）
-  ├── 输入：聊天记录，攒够一批（N条/N分钟）触发
-  ├── 产出：窄 Claim，"用户说了X"
-  ├── 带消息引用作为 Evidence，Corroboration ≈ 0.2
-  ├── 不做：推断/归纳/写 Journal
-  └── 重量：轻量 LLM 调用，不走 CoreBase
+### 双模式分工
 
-Session 关闭流程 → 模型自己整理
-  ├── end_session 后，注入 prompt："列出本次会话产生的所有新知识/验证结果/更正"
-  ├── 产出：Claim（综合判断、验证结论、更正旧值）+ Journal
-  ├── 可覆盖 Express 提取的低 Corroboration 同名 Claim
-  └── 这是 Claim 的主要高质量来源
-
-运行时 → 模型主动调用
-  ├── journal 工具 → Journal（经验、印象、模式观察），任何时候
-  └── remember 工具 → Claim（用户明确指令"记住这个"），即时写入
-```
-
-### 职责边界
-
-| 入口 | 产出 | 触发 | 重量 |
+| 模式 | 触发 | 产出 | 情绪 |
 |---|---|---|---|
-| Express 提取引擎 | Claim（窄，低印证度） | 消息攒批 | 轻量 LLM |
-| Session 关闭流程 | Claim + Journal（高质量） | Session 结束 | 模型整理 |
-| `journal` 工具 | Journal | 模型自主 | 轻 |
-| `remember` 工具 | Claim | 用户指令 | 轻 |
+| **Express 伴随提取** | 消息攒批 + 空闲补一次 | 窄 Claim（用户说了X） | 不涉及 |
+| **Express wait** | 模型主动调 wait 带 journal 参数 | L2 Journal | 实时 |
+| **Session 运行期** | 暂停伴随提取；模型可随时调 journal | L2/L3 Journal | 实时 |
+| **Session 善后** | end_session / compact 归档后记忆引擎统一处理 | Claim + L2/L3 Journal | 由记忆引擎统一写 |
+| **框架事件** | 工具失败 / 超时 / 用户否定等 | L0/L1 + 情绪信号 | 实时 |
 
-不再需要独立的 `ChannelExtractionWorker` + `MemoryExtractionCore`（7种类型+direction+about）。
-提取引擎职责缩到一句话：从聊天记录里把**明确陈述**抽成窄 Claim，别的什么都不管。
+### Express 模式（伴随提取 + wait）
 
-### 情绪/经历的自动触发点
+- **伴随提取**：一直跟随聊天记录做轻量提取，产窄 Claim（"用户说了X"），带消息引用作为 Evidence
+- 价值密度低但成本也低（只有聊天记录），保持实时
+- 主要用途：**沉默监听**——即使不说话，也在默默积累对频道用户的了解
+- 触发节奏：消息攒批为主 + 空闲补一次，保证监听及时又不漏尾巴
 
-- Express 每次 `wait`
-- Session 每次 `end_session`
-- 框架事件（工具失败 / 超时 / 用户否定等，写 L0/L1 记录并提交情绪信号）
+### Session 模式（运行期暂停 + 善后统一）
+
+- **运行期不做伴随提取**（暂停这条链路），模型可随时调 `journal` 记当下（L2）
+- **善后**：end_session / compact 归档后，记忆引擎读全部聊天记录 + **工具调用轨迹**，产出：
+  - Claim（用户陈述 + 验证结论）
+  - Journal（L2 当时经历 + L3 事后反思）
+- Session 的工具调用结果是高价值记忆源，集中到善后一次性深度处理（而不是运行期轻量链路浪费）
+
+### wait 工具（兼顾 Express 与 Session）
+
+- 模型调 wait 时可带简短 `journal` 参数，随手记当下经历 + 情绪变动
+- 主体内容与情绪变动由**模型自己写完整**，框架只补元数据（Source / ChannelId / SessionId / 时间戳），不做情感推断
+
+### 框架事件
+
+- 工具失败 / 超时 / 用户否定等 → 写 L0/L1 记录并提交情绪信号，实时应用
 - 具体事件 → 目标值映射表待定
 
 ## 待定
@@ -276,10 +273,10 @@ Session 关闭流程 → 模型自己整理
 - 各轴 rate 初值与热容 JSON schema（当前值存 EmotionState.json 已定，rate 数值待定）
 - 各轴框架乘数具体数值（maxInfluence 系数）
 - 自动事件 → 目标值映射表（工具失败 / 用户否定 / 任务完成等分别推哪些轴、什么值）
-- `journal` / `remember` 工具签名
-- Session 关闭整理流程细节
+- `journal` / `remember` 工具签名（journal 结构已定，参数 schema 待定）
 - 情绪快照历史（EmotionSnapshot 表）保留与否
-- 记忆引擎具体设计（引擎跟着经历/情绪设计走）
+- 记忆引擎具体设计（引擎跟着经历/情绪设计走，需明确：伴随提取链路 + Session 善后链路 + 工具轨迹读取 + 提取/善后共用逻辑）
+- Session 善后流程细节（end_session / compact 归档后记忆引擎如何触发、读取哪些数据、产出规范）
 
 **记忆系统其余部分：**
 - 维护引擎的巡逻节奏和具体流程（标定关键词、密度检测、归档）
@@ -288,5 +285,5 @@ Session 关闭流程 → 模型自己整理
 - `expect` 参数解析 → TimerEngine 注册 → 到期唤醒的具体链路
 - 信任/评价系统的去向（保留？简化？合并？）
 - 数据表最终结构（Fragments/Keywords/情绪配置JSON）
-- Session 关闭流程标准化（end_session 后的善后步骤需要规范化到哪个文件）
-- Express 提取引擎的攒批参数（N条或N分钟触发）
+- Express 伴随提取的具体触发参数（攒批 N 条 / 空闲 N 分钟）
+- Session 工具轨迹的读取与记忆判定策略（标记优先 vs 全量，token 成本控制）
