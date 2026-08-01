@@ -110,6 +110,17 @@ FrameworkEvents
 └── Timestamp
 ```
 
+### Conflicts（矛盾挂起，遵循断言文档）
+
+```sql
+Conflicts
+├── Id
+├── ClaimAId / ClaimBId             -- 互相矛盾的断言
+├── Predicate                       -- 矛盾所在谓词
+├── Status: Unresolved|Resolved
+└── DetectedAt
+```
+
 Journal 的 Evidence 可引用 FrameworkEvent / Claims / Journals / 消息 Id。
 
 ## 类型行为
@@ -349,6 +360,83 @@ new = current + (target - current) × rate
                      Detail: { version, pid, reason?, uptime? }, Timestamp }
   ```
 
+## 记忆引擎（整体设计）
+
+记忆引擎持有情绪服务，是**唯一写入口 + 唯一情绪写入者**。提取、事件、模型工具调用产出的数据全部汇入 Writer 统一落库、统一应用情绪。
+
+### 模块结构
+
+```
+MemoryEngine
+├── Writer                 # 统一写入口（提取产物 + 模型 journal 都走这）
+│   ├── ClaimWriter        # 槽位解析 + 关键词关联 + utterance_id + 同源/矛盾检测
+│   ├── JournalWriter      # 补元数据（Source/锚点/时间戳），EmotionSignals 转交情绪服务
+│   └── EventWriter        # L0/L1 落表 + 情绪信号转交（SubmitEvent 通道）
+├── ExtractService         # 提取核心（两条链路共用一套逻辑，产出 JSON）
+│   ├── ExpressExtractor   # 伴随提取：消息攒批 + 空闲补一次（沉默监听）
+│   ├── SessionFinalizer   # 善后：end_session/compact 归档后深度处理
+│   └── TrajectoryReader   # 工具调用轨迹读取
+├── EmotionService         # 五轴状态 + 实时应用 + EmotionState.json 持久化 + 快照
+├── EventSink              # 订阅总线 → 判定 L0/L1 + 情绪目标值映射（映射表待定）
+├── RetrieveService        # 关键词 + 时间窗口检索，印证度按 utterance_id 去重派生
+└── MaintenanceEngine      # 标定关键词 / 密度检测 / 归档（巡逻节奏待定）
+```
+
+### Writer 写协议
+
+**Writer 是记忆引擎内部唯一写入口**。提取器、`wait`/`remember` 的 journal 参数产出的数据全部汇入 Writer，由它统一解析落库、统一应用情绪。**消费端（工具/插件）不得直接碰表**。
+
+#### 统一入参（WriteBatch）
+
+复用"提取协议"的容器结构，一次调用 = 一个原子批次：
+
+```json
+{
+  "claims":   [ ],
+  "journals": [ ]
+}
+```
+
+| 来源 | 包装方式 |
+|---|---|
+| 提取器产出 | 容器原样传入 |
+| wait/remember 的 journal | 包装成 `journals: [单个]` |
+| 事件（L0/L1） | **不走此容器**，走独立 `SubmitEvent` 通道 |
+
+#### 写入流程（原子批次）
+
+```
+WriteBatch 进入
+1. 解析         JSON → 内部实体（Claim/Journal）
+2. 关键词关联    keyword/attribute 槽位 + journal.keywords → 匹配/新建 Keywords → FragmentKeywords
+                （entity 只存 index 不归并；literal 直存；assertion 引用断言 id）
+3. 断言处理     同 utterance_id 分组（同源防重复计分）
+               矛盾检测（同 subject+predicate 比对）→ Conflicts 表挂起，不自动仲裁
+               覆盖遵循断言文档（几乎不覆盖，同源明确更正才覆盖）
+4. 情绪应用     收集全部 journals 的 emotion_signals → EmotionService.ApplyAsync
+5. 落库         Claims / Journals / Keywords / FragmentKeywords / Conflicts / EmotionSnapshot 一次事务
+6. 提交；失败回滚（EmotionState.json 事务成功后原子写）
+```
+
+**原子性的意义**：一次提取的多条断言共享 utterance_id，必须整体成功或整体回滚，否则孤儿断言破坏同源分组。
+
+#### 情绪事务边界
+
+- EmotionService 内部持锁，串行化所有 `ApplyAsync`（读最新 → 算 → 更新内存）
+- **EmotionSnapshot 随 Writer 事务落库**（同连接同事务，数据库完全一致）
+- **EmotionState.json 事务成功后原子写**（文件不参与事务，失败可重试；重启加载时 EmotionState.json 优先，缺失/损坏则从 EmotionSnapshot 恢复最新）
+- 独立 `SubmitSignalAsync` 调用（如未来事件源直接提交）各自开事务，同样实时
+
+#### 事件接入预留
+
+- Writer 提供 `SubmitEvent(level, type, detail, emotionSignals?)` 通道，EventSink 后续接入
+- 当前仅落地程序启停（L0、无情绪），其余事件映射表待定——**接口先留好，实现后续填**
+
+#### 消费端约束
+
+- 插件提交情绪只能经 `IEmotionAccess`，写记忆只能经 Writer 暴露的工具（journal/remember）
+- 不暴露直接改绝对值、删表、删快照
+
 ## 待定
 
 **经历 + 情绪部分（2026-08-01 定稿后剩余）：**
@@ -356,7 +444,7 @@ new = current + (target - current) × rate
 - 各轴框架乘数具体数值（maxInfluence 系数）
 - 自动事件 → 目标值映射表（工具失败 / 用户否定 / 任务完成等分别推哪些轴、什么值）
 - `journal` / `remember` 工具签名（journal 结构已定，参数 schema 待定）
-- 记忆引擎具体设计（提取协议 JSON 契约已定，见"提取协议"；需明确：伴随提取链路 + Session 善后链路 + 工具轨迹读取 + Writer 写协议）
+- 记忆引擎：模块结构 + Writer 写协议已定（见"记忆引擎"章节），待定：ExtractService 两链路的具体实现、工具轨迹读取策略、EventSink 事件映射表
 - Session 善后流程细节（end_session / compact 归档后记忆引擎如何触发、读取哪些数据、产出规范）
 - 情绪快照历史（EmotionSnapshot 表已定，具体字段/触发细节待定）
 
