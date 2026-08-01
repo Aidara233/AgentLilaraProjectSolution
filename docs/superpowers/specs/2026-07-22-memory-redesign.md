@@ -1,4 +1,4 @@
-# 记忆系统重设计 — 碎片统一模型
+# 记忆系统重设计 — Claims + Journals 统一模型
 
 > **状态：设计中** — 2026-07-22
 > **经历（Journal）+ 情绪模型 + 记忆产生端已定稿（2026-08-01）**，见"记录层级"、"情绪模型"、"产生端"章节
@@ -19,57 +19,98 @@
 
 ### 基本原则
 
-- **一张表统一一切** — 不区分临时库/永久库，不区分知识/信念，不建网状关联
+- **两张表统一记忆** — 不区分临时库/永久库，不建网状关联；Claims（断言，三元组）+ Journals（经历，正文式）本就是两类，各用一张
 - **单库模式** — 写入即正式条目，靠状态字段区分处理阶段，不走 Temp→Main 迁移
 - **无关联图** — 关键词库承担关联，时间轴承担序列，不需要 MemoryLinks 边表
-- **几乎不覆盖** — 只有同一来源明确更正自己时才覆盖；新信息=新增碎片，不是替换
+- **几乎不覆盖** — 只有同一来源明确更正自己时才覆盖；新信息=新增碎片，不是替换（详细规则遵循断言文档，不自动仲裁）
 - **窄命题优先** — 不写"xxx最强"，拆成"用户声称xxx最强"+"xxx在A榜得分X"
 
-## Fragment 实体
+## 存储表结构（定稿）
 
-```
-Fragments（一张表统一所有碎片）
+记忆侧拆**两张表**：Claims（断言，三元组）+ Journals（经历，正文式），本就是两类东西。共享 Keywords 关联。
+
+### Claims（断言，三元组）
+
+遵循《断言存储系统设计决定.md》：
+
+```sql
+Claims
 ├── Id
-├── Type: Journal | Claim
-│
-├── Content: string              — 碎片内容
-├── ClaimKey: string?            — 归一化断言键，Journal=null
-│   格式: {来源主体}/{维度}:{值}
-│   维度词从关键词库取标准化形式，保证表述统一
-│   示例: "person:小明/preference:饮料" → "咖啡"
-│         "@用户/声称/capability:代码" → "xxx排名第一"
-│
-├── Corroboration: float         — 印证度 0~1
-│   0.1 = 单一随口陈述
-│   0.5 = 多个独立来源指向同一方向
-│   0.9 = 实测/文档/多方交叉验证
-│   Journal 不需要此字段
-│
-├── Evidence: [ {type, ref, note} ]  — 证据链，多项
-│   type: message / url / fragment / document / benchmark
-│   ref:  具体引用（msg:12345 / https://... / frag:67）
-│   note: 简述
-│
-├── Status: Raw | Tagged | Processed | Archived
-├── RevisionCount: int           — 被覆盖次数（极罕见）
-├── OccurredAt: DateTime
-│
-└── Keywords: [KeywordId]        — 通过 FragmentKeywords 关联
-
-Journal 专有字段（Type=Journal 时）:
-├── JournalKind: Experience | Reflection   — L2 / L3
-├── Source: Framework / Session / UserCommand / System  — 产生者
-├── ChannelId? / SessionId?               — 上下文锚点（追溯用）
-├── EmotionSignals: [ {Axis, Target, Reason} ]  — JSON 列，连续目标值
-│   Axis: Excitement / Joy / Alertness / Satisfaction / Optimism
-│   Target: -1.0 ~ +1.0（吸引子目标值，非增量）
-│   Reason: 简短理由
-└── ExpectRaw: string?                    — 可选预期文本
-
-情绪状态存储（独立于 Fragments 表）:
-├── EmotionState.json  — 当前五轴值（-1~+1），初始 0.0，实时原子写，重启加载
-└── EmotionSnapshot    — 历史变动记录（每次信号应用后），保留与否待定
+├── subject   { type, index, ref? }   -- 槽位 JSON
+├── predicate { type, index, ref? }
+├── object    { type, index, ref? }
+├── raw                        -- 拼好的整句原文（召回时直接返回）
+├── source                     -- 谁说的 + 哪条消息/经历（承担引用职责）
+├── utterance_id               -- 同源分组（一句话拆多条断言的共同出身）
+├── strength                   -- 可选，-1~1（态度方向强度）
+├── valid_from / valid_until
+├── recorded_at
+├── OccurredAt                 -- 经历发生时间（补充）
+├── Status: Raw|Tagged|Processed|Archived
+└── Keywords  → FragmentKeywords
 ```
+
+- 实体**不建独立表**：subject/predicate/object 的 `index` 存表面词字符串，实体身份 = 槽位组合，不做实体归并
+- 无 polarity / confidence 字段（可靠性靠来源链派生）
+
+### Journals（经历，正文式）
+
+```sql
+Journals
+├── Id
+├── Content                     -- 第一人称正文
+├── JournalKind: Experience|Reflection   -- L2/L3
+├── Source: Framework|Session|UserCommand|System
+├── ChannelId? / SessionId?     -- 上下文锚点
+├── EmotionSignals: JSON        -- [{Axis, Target, Reason}]
+├── ExpectRaw?
+├── OccurredAt / CreatedAt
+├── Status: Raw|Tagged|Processed|Archived
+└── Keywords  → FragmentKeywords
+```
+
+### Keywords（合并开放属性名 + 关键词）
+
+```sql
+Keywords
+├── Id
+├── Name
+├── Aliases: JSON
+├── Role: attribute | keyword    -- 开放属性名（断言侧） vs 普通关键词
+├── Category?                    -- Person/Topic/Behavior/Place/Event（keyword 时用）
+└── UseCount / CreatedAt / LastUsedAt
+
+FragmentKeywords（共用关联表）
+├── OwnerType: Claim|Journal     -- 关联对象类型
+├── OwnerId
+└── KeywordId
+```
+
+### 情绪
+
+```sql
+EmotionState.json              -- 当前五轴值（-1~+1），初始 0，原子写，重启加载
+
+EmotionSnapshot                -- 主库表，每次情绪更新记录
+├── Id
+├── Excitement / Joy / Alertness / Satisfaction / Optimism: float
+├── SourceRef?                 -- 触发来源（Journal/L1 引用）
+└── CreatedAt
+```
+
+### 框架事件（L0/L1，不进 Claims/Journals）
+
+```sql
+FrameworkEvents
+├── Id
+├── Level: L0|L1
+├── Type                       -- 事件类型（工具失败/超时/用户否定）
+├── Detail: JSON               -- 结构化详情
+├── EmotionSignals: JSON?      -- L1 可携带
+└── Timestamp
+```
+
+Journal 的 Evidence 可引用 FrameworkEvent / Claims / Journals / 消息 Id。
 
 ## 类型行为
 
@@ -77,66 +118,44 @@ Journal 专有字段（Type=Journal 时）:
 
 - 第一人称叙事，Lilara 为主体
 - 写入即历史，不可覆盖不可修正
-- 不参与 ClaimKey/Corroboration/覆盖逻辑（可被引用为 Evidence 对象）
+- 不参与 Claims 的覆盖/同源逻辑（可被引用为 Evidence 对象）
 - 检索靠关键词 + 时间轴（时间窗口在检索时设定，不预存）
 - 按 JournalKind 区分 Experience(L2) / Reflection(L3)
 - 携带 EmotionSignals（连续目标值），写入时**实时**应用
 - 用户可删：仅管理页面手动删除，无运行时删除工具
 
-### Claim（断言，可修正）
+### Claim（断言，遵循断言文档）
 
-- 所有关于世界的陈述，窄命题形式
-- ClaimKey = `{来源主体}/{维度}:{值}`，维度词经关键词库归一化
-- **覆盖规则**：仅当新 ClaimKey == 旧 ClaimKey **且** 新碎片明确为同一来源的更正时才覆盖
-  - 不同来源不覆盖（`@用户/说/xx` 和 `@benchmark/显示/xx` 是不同的 key，主体不同）
-  - 同一来源不同时间的观点变迁也不覆盖——保留演变
-  - 覆盖是极罕见的例外，不是核心机制
-- Corroboration 基于证据数量和质量可自动推算
+- 三元组结构 `subject/predicate/object`，槽位 `{type, index}`，index 存表面词
+- 遵循《断言存储系统设计决定.md》：无 polarity/confidence，否定靠 strength 负数，可靠性靠来源链派生
+- 覆盖/同源/矛盾检测规则遵循该文档（不自动仲裁，同 utterance_id 防重复计分）
 
 ## 记录层级（L0-L3）
 
 经历与情绪来源分四个等级，决定"是否进记忆库"与"能否影响情绪"：
 
-| 层级 | 名称 | 产生者 | 进 Fragments | 影响情绪 |
+| 层级 | 名称 | 产生者 | 存储位置 | 影响情绪 |
 |---|---|---|---|---|
-| L0 | FrameworkEvent | 框架 | 否 | 可 |
-| L1 | ExperienceRecord | 框架/Session | 否 | 可 |
-| L2 | Journal-Experience | Session/框架 | 是 | 可 |
-| L3 | Journal-Reflection | Session | 是 | 可 |
+| L0 | FrameworkEvent | 框架 | FrameworkEvents 表 | 可 |
+| L1 | ExperienceRecord | 框架/Session | FrameworkEvents 表 | 可 |
+| L2 | Journal-Experience | Session/框架 | Journals 表 | 可 |
+| L3 | Journal-Reflection | Session | Journals 表 | 可 |
 
 - **L0**：纯机械运行日志（工具失败/超时/重试），结构化，不污染记忆库，不设保留期
 - **L1**：重要框架标记（连续失败/用户否定等），可携带情绪信号，模型可引用为 Evidence 但**不可升级**
-- **L2/L3**：进入 Fragments，Type=Journal，JournalKind=Experience/Reflection
+- **L2/L3**：进入 Journals 表，JournalKind=Experience/Reflection
 - **升级必须"认领"**：L1 只能被 Session 明确认领升级为 L2，框架不能自动升级
 - 模型总结时可提及 L0/L1 小节点作为 Evidence，但小节点身份不变
-
-## 关键词库（共享基础设施）
-
-```
-Keywords
-├── Id
-├── Name: string                 — 标准化名称
-├── Aliases: [string]            — 别名列表（喜欢/爱喝/常喝 → 同一关键词）
-├── Category: Person | Topic | Behavior | Place | Event
-├── UseCount: int
-└── CreatedAt / LastUsedAt
-
-FragmentKeywords（关联表）
-├── FragmentId
-└── KeywordId
-```
-
-关键词标定由维护期巡逻完成，不要求模型在写入时手动填。
 
 ## 检索
 
 无 Collection、无组、无叙事线、无关联图。检索靠关键词 + 时间窗口。
 
-- 关键词匹配碎片
+- 关键词匹配 Claims / Journals
 - Journal: 按时间排列，时间窗口补相邻碎片
-- Claim: 按 Corroboration 降序 + 时间
-- 混合结果，标注类型
-- 同 ClaimKey 的多条碎片并排返回
+- Claim: 按来源链派生的印证度降序 + 时间
+- 混合结果，标注类型（Claim / Journal）
+- 同 utterance_id 的多条 Claim 并排返回
 
 模型自己从结果中感受模式和进展。模式 = 同一关键词在碎片中的密度 + 时间分布，是检索视图而非存储结构。
 
@@ -212,10 +231,10 @@ new = current + (target - current) × rate
 
 | 旧组件 | 新设计 |
 |---|---|
-| Memories 表 | Fragments (Type=Claim) |
+| Memories 表 | Claims 表（三元组断言） |
 | TempMemories 表 | 无（单库模式） |
 | MemoryLinks 表 | 无（关键词承担关联） |
-| PersonaMemories 表 | 合并到 Fragments 或独立表 |
+| PersonaMemories 表 | 合并到 Claims/Journals 或独立表 |
 | MemoryService/RecallAsync | 新检索服务（关键词+时间窗口） |
 | MemoryExtractionCore | 新提取逻辑 |
 | DreamEngine (Order+Patrol) | 新维护引擎（标定+归档+密度检测） |
@@ -226,7 +245,7 @@ new = current + (target - current) × rate
 | RelationClassificationCore | 不需要 |
 | MemoryDecay/ChangePropagation | 不需要 |
 | SleepTalkCore | 保留（与记忆库无关） |
-| ExtractionEngine | 降为轻量批量提取（攒批LLM扫描），仅出窄Claim |
+| ExtractionEngine | 合并进记忆引擎（伴随提取 + Session 善后两条链路） |
 
 ## 产生端：碎片从哪来
 
@@ -274,16 +293,15 @@ new = current + (target - current) × rate
 - 各轴框架乘数具体数值（maxInfluence 系数）
 - 自动事件 → 目标值映射表（工具失败 / 用户否定 / 任务完成等分别推哪些轴、什么值）
 - `journal` / `remember` 工具签名（journal 结构已定，参数 schema 待定）
-- 情绪快照历史（EmotionSnapshot 表）保留与否
 - 记忆引擎具体设计（引擎跟着经历/情绪设计走，需明确：伴随提取链路 + Session 善后链路 + 工具轨迹读取 + 提取/善后共用逻辑）
 - Session 善后流程细节（end_session / compact 归档后记忆引擎如何触发、读取哪些数据、产出规范）
+- 情绪快照历史（EmotionSnapshot 表已定，具体字段/触发细节待定）
 
 **记忆系统其余部分：**
 - 维护引擎的巡逻节奏和具体流程（标定关键词、密度检测、归档）
-- Corroboration 的自动推算公式（证据数量+类型→分数映射）
+- 印证度（Corroboration）的派生计算公式（数独立来源，按 utterance_id 去重）
 - 念头系统（产生/竞争/兑现）
 - `expect` 参数解析 → TimerEngine 注册 → 到期唤醒的具体链路
 - 信任/评价系统的去向（保留？简化？合并？）
-- 数据表最终结构（Fragments/Keywords/情绪配置JSON）
 - Express 伴随提取的具体触发参数（攒批 N 条 / 空闲 N 分钟）
 - Session 工具轨迹的读取与记忆判定策略（标记优先 vs 全量，token 成本控制）
