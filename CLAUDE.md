@@ -224,7 +224,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - Token 统计：Database/ModelCallLog.cs + ModelCallLogRepository.cs
 - 信号系统：Logging/Signal.cs（静态门面）+ Logging/LogDatabase.cs（独立 SQLite）+ Logging/LogWriter.cs（批量写入）
 - 信号查询：Logging/LogQuery.cs + Tool/Host/LogAccessImpl.cs（ILogAccess 桥接）
-- 工具管理：Tool/ToolRegistry.cs（注册/卸载/禁用）+ Component/ComponentConfig.cs（组件按引擎类型启用/禁用）+ Component/ComponentRegistry.cs（组件注册表 + LoopApplicability 适用性过滤）
+- 工具管理：Tool/ToolRegistry.cs（注册/卸载/禁用/引擎可见性 IsVisibleToEngine）+ Tool/EngineToolConfig.cs（引擎工具清单 EngineTools.json，express 白名单等）+ Component/ComponentConfig.cs（组件按引擎类型启用/禁用）+ Component/ComponentRegistry.cs（组件注册表 + LoopApplicability 适用性过滤）
 - 核心工具：Tool/Core/CoreTools.cs（wait + continue_loop）+ Tool/Core/EscalateTool.cs
 - 插件 SDK：AgentLilara.PluginSDK/（共享契约：ITool/IInjectProvider/服务接口/CardSchema）
 - 插件加载：Tool/Host/PluginLoader.cs（AssemblyLoadContext 隔离，多类型发现 + 构造注入）

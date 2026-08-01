@@ -80,7 +80,9 @@ namespace AgentCoreProcessor.Core
 
             if (mode == Engine.EngineMode.Express)
             {
-                var expressDefs = ToolRegistry.GetExpressToolDefinitions(EngineType);
+                var expressDefs = ToolRegistry.GetExpressToolDefinitions(EngineType)
+                    .Where(d => ToolRegistry.IsVisibleToEngine(d.Name, EngineType))
+                    .ToList();
                 // 图片工具过滤：DisableImageMessages 时移除需要模型"看"图片的工具
                 if (DisableImageMessages)
                     expressDefs.RemoveAll(d => ImageDependentTools.Contains(d.Name));
@@ -89,7 +91,7 @@ namespace AgentCoreProcessor.Core
                 {
                     foreach (var t in GlobalComponentTools)
                     {
-                        if (!IsExpressVisible(t)) continue;
+                        if (!IsVisibleToEngineOrGlobal(t)) continue;
                         if (DisableImageMessages && ImageDependentTools.Contains(t.Name)) continue;
                         if (expressDefs.Any(d => d.Name == t.Name)) continue;
                         expressDefs.Add(ToDefinition(t));
@@ -100,7 +102,7 @@ namespace AgentCoreProcessor.Core
                 {
                     foreach (var t in AdditionalTools)
                     {
-                        if (!IsExpressVisible(t)) continue;
+                        if (!IsVisibleToEngineOrGlobal(t)) continue;
                         if (DisableImageMessages && ImageDependentTools.Contains(t.Name)) continue;
                         if (expressDefs.Any(d => d.Name == t.Name)) continue;
                         expressDefs.Add(ToDefinition(t));
@@ -186,12 +188,13 @@ namespace AgentCoreProcessor.Core
 
         private async Task<(List<ToolCall> Calls, string? Thinking, Usage? Usage)> GenerateWithNativeToolsAsync()
         {
-            // 只取非组件工具（核心 + MCP + 纯插件），按引擎类型和模式过滤
+            // 只取非组件工具（核心 + MCP + 纯插件），按引擎类型、模式、引擎清单过滤
             var toolDefs = ToolRegistry.NonComponentToolNames
                 .Select(ToolRegistry.Get)
                 .Where(t => t != null && !ToolRegistry.IsDisabled(t.Name)
                             && ToolRegistry.IsApplicableToEngine(t.Name, EngineType)
                             && (ExcludedToolNames == null || !ExcludedToolNames.Contains(t.Name))
+                            && ToolRegistry.IsVisibleToEngine(t.Name, EngineType)
                             && !(DisableImageMessages && ImageDependentTools.Contains(t.Name)))
                 .Select(ToDefinition!)
                 .ToList();
@@ -257,17 +260,20 @@ namespace AgentCoreProcessor.Core
         }
 
         /// <summary>
-        /// Express 引擎工具可见性。工具显式声明 EngineTypes 时必须包含当前引擎（如 end_session 声明
-        /// ["session"] 就不会混入 Express）；未声明的组件工具信任组件级过滤（ComponentHost/GlobalComponentHost
-        /// 已按引擎适用性筛过）。Express 白名单收敛由引擎层配合 ToolRegistry 完成。
+        /// 工具对当前引擎的可见性判定。显式 EngineTypes 的工具必须包含当前引擎；
+        /// 未声明的组件工具信任组件级过滤（ComponentHost/GlobalComponentHost 已按引擎适用性筛过），
+        /// 但统一接受 EngineToolConfig 清单约束（express 白名单等）。
         /// </summary>
-        private bool IsExpressVisible(ITool t)
+        private bool IsVisibleToEngineOrGlobal(ITool t)
         {
             if (ToolRegistry.IsDisabled(t.Name)) return false;
             var meta = ToolRegistry.GetMeta(t.Name);
             if (meta?.EngineTypes is { Length: > 0 })
-                return meta.EngineTypes.Contains(EngineType);
-            return true;
+            {
+                if (EngineType != null && !meta.EngineTypes.Contains(EngineType))
+                    return false;
+            }
+            return ToolRegistry.IsVisibleToEngine(t.Name, EngineType);
         }
 
         private void MergeTools(List<ToolDefinition> defs, List<ITool>? tools)
@@ -275,7 +281,7 @@ namespace AgentCoreProcessor.Core
             if (tools == null) return;
             foreach (var t in tools)
             {
-                if (ToolRegistry.IsDisabled(t.Name)) continue;
+                if (!IsVisibleToEngineOrGlobal(t)) continue;
                 if (defs.Any(d => d.Name == t.Name)) continue;
                 defs.Add(ToDefinition(t));
             }

@@ -214,12 +214,13 @@ ChannelEngine (框架层全局单例，非 ISubEngine):
       触发后: impulse = min(impulse, PostResponseCap(20))
       发言后冷却 3s
 
-  Express 工具白名单（5 个）:
-    speak / send_media / escalate / wait / memory(只读)
+  Express 工具白名单（9 个，EngineTools.json 配置）:
+    speak / send_media / escalate / wait / memory(只读: get/list/search/stats/link_get)
+    由 EngineToolConfig 默认 `express.default=disabled` + tools 清单控制，可在 WebUI /p/plugins/engine-tools 编辑。
 
   Express 双模板（由睡眠状态控制）:
     清醒 → 正常语气
-    梦话 → 提示词注入"你正在睡觉"，相同 5 个工具
+    梦话 → 提示词注入"你正在睡觉"，相同 9 个工具
 
   escalate 行为:
     Express 调 escalate → SessionEngine.CreateSession("working", { channelId })
@@ -457,6 +458,14 @@ AgentLilara.PluginSDK (共享契约，独立类库):
   Host/MemoryAccessImpl      — IMemoryAccess 桥接（Repository + EmbeddingProvider）
   ToolRegistry               — 全局注册表（Register/Unregister/Get/禁用管理）
   ToolExecutor               — 顺序执行 + 权限检查 + OnToolExecuted 回调
+  EngineToolConfig           — 引擎工具清单（EngineTools.json）：express/session/review/task 各引擎的工具可用性控制
+
+  工具可用性优先级（从高到低）:
+    1. ToolConfig.json 全局禁用
+    2. EngineTools.json 引擎清单（default=disabled 白名单 / default=enabled 黑名单；未配置引擎不限制）
+    3. ToolMetaAttribute.EngineTypes 声明（仅核心工具；配置未指定时兜底）
+    4. 组件适用性（LoopApplicability + ComponentConfig 组件×引擎开关）
+  核心过滤点：ToolRegistry.IsVisibleToEngine(name, engineType)，AgentCore Express/native 两分支统一调用。
 
 插件项目 (独立 DLL，输出到 {BaseDirectory}/Plugins/):
   Plugin.BasicTools      — speak + send_media（输出能力）[GlobalComponent: basic-tools]

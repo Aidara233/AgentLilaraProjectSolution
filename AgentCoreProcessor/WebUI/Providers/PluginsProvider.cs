@@ -33,6 +33,7 @@ internal class PluginsProvider : IWebUIProvider
         BuildPluginDetailPage(),
         BuildToolsPage(),
         BuildComponentPermsPage(),
+        BuildEngineToolsPage(),
     };
 
     // ================ 1. 插件清单 ================
@@ -275,6 +276,90 @@ internal class PluginsProvider : IWebUIProvider
         {
             new() { Id = "perm-list", Source = new ComponentPermListSource(_engine) },
             new() { Id = "perm-toggles", Source = new ComponentPermTogglesSource(_engine) },
+        }
+    };
+
+    // ================ 5. 引擎工具清单 ================
+
+    private PageDefinition BuildEngineToolsPage() => new()
+    {
+        Route = "plugins/engine-tools",
+        Meta = new PageMeta { Title = "引擎工具清单", Icon = "bi-shield-check", Group = "插件", Order = 93 },
+        LayoutType = PageLayoutType.Sidebar,
+        Cards = new List<CardDefinition>
+        {
+            // 左侧：引擎类型列表
+            new()
+            {
+                Id = "et-list", Type = CardType.Table, DataSourceId = "et-list", Title = "引擎类型",
+                LinkEvent = "et-selected",
+                Schema = new TableSchema
+                {
+                    Columns = new()
+                    {
+                        new() { Field = "engineType", Header = "引擎" },
+                        new() { Field = "mode", Header = "模式", Width = "90px", Format = ColumnFormat.Badge },
+                        new() { Field = "toolCount", Header = "清单数", Width = "70px" },
+                    },
+                    Searchable = false, Paginated = false
+                },
+                Layout = new CardLayout { PreferredCols = 3, GridColumnStart = 1 }
+            },
+            // 右侧：引擎详情（模式切换）
+            new()
+            {
+                Id = "et-detail", Type = CardType.Status, DataSourceId = "et-detail",
+                Title = "引擎工具清单", ListenEvent = "et-selected",
+                Schema = new StatusSchema
+                {
+                    Fields = new()
+                    {
+                        new() { Field = "engineType", Label = "引擎" },
+                        new() { Field = "mode", Label = "模式", Type = StatusFieldType.Badge },
+                        new() { Field = "modeDesc", Label = "说明" },
+                        new() { Field = "toolCount", Label = "清单工具数" },
+                    },
+                    Actions = new()
+                    {
+                        new() { Id = "toggle-mode", Label = "切换模式" },
+                        new() { Id = "reset", Label = "恢复默认" },
+                    }
+                },
+                Layout = new CardLayout { PreferredCols = 9, GridColumnStart = 4 }
+            },
+            // 右侧：该引擎的全部工具 + 清单状态
+            new()
+            {
+                Id = "et-tools", Type = CardType.Table, DataSourceId = "et-tools",
+                Title = "工具清单（勾选 = 该引擎可见）", ListenEvent = "et-selected",
+                Schema = new TableSchema
+                {
+                    Columns = new()
+                    {
+                        new() { Field = "name", Header = "工具名" },
+                        new() { Field = "description", Header = "描述" },
+                        new() { Field = "source", Header = "来源", Width = "110px" },
+                        new() { Field = "inList", Header = "清单", Width = "70px" },
+                    },
+                    Filters = new()
+                    {
+                        new() { Field = "source", Label = "来源", Options = BuildSourceFilterOptions(), AllowEmpty = true },
+                    },
+                    RowActions = new()
+                    {
+                        new() { Id = "add", Label = "加入" },
+                        new() { Id = "remove", Label = "移出", Danger = true },
+                    },
+                    Searchable = true, Paginated = true, DefaultPageSize = 30
+                },
+                Layout = new CardLayout { PreferredCols = 9, GridColumnStart = 4 }
+            },
+        },
+        DataSources = new List<DataSourceDefinition>
+        {
+            new() { Id = "et-list", Source = new EngineToolsListSource() },
+            new() { Id = "et-detail", Source = new EngineToolsDetailSource() },
+            new() { Id = "et-tools", Source = new EngineToolsTableSource(_engine) },
         }
     };
 
@@ -857,5 +942,261 @@ internal class ComponentPermTogglesSource : IDataSource
         {
             return new ActionResult { Success = false, Message = $"切换失败: {ex.Message}" };
         }
+    }
+}
+
+// ================ 引擎工具清单数据源 ================
+
+/// <summary>已知引擎类型（对应 agentCore.EngineType / 配置 key）。</summary>
+internal static class EngineToolKnownEngines
+{
+    public static readonly string[] All = { "express", "session", "review", "task" };
+
+    public static string ModeLabel(bool whitelist) => whitelist ? "白名单" : "黑名单";
+    public static string ModeDesc(EngineToolEntry entry)
+        => entry.IsWhitelist ? "仅允许清单中的工具" : "清单中的工具被禁用";
+}
+
+internal class EngineToolsListSource : IDataSource
+{
+    public EngineToolsListSource() { }
+    public bool SupportsPush => false;
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        var cfg = EngineToolConfig.Load();
+        var arr = new JsonArray();
+        foreach (var et in EngineToolKnownEngines.All)
+        {
+            var hasEntry = cfg.Engines.TryGetValue(et, out var entry);
+            var whitelist = entry?.IsWhitelist ?? true;
+            arr.Add(new JsonObject
+            {
+                ["id"] = et,
+                ["engineType"] = et,
+                ["mode"] = EngineToolKnownEngines.ModeLabel(whitelist),
+                ["toolCount"] = entry?.Tools.Count ?? 0,
+            });
+        }
+        return Task.FromResult(new DataResult { Data = arr, TotalCount = arr.Count });
+    }
+
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+        => Task.FromResult(new ActionResult { Success = false });
+}
+
+internal class EngineToolsDetailSource : IDataSource
+{
+    private string _selectedEngine = "";
+
+    public EngineToolsDetailSource() { }
+    public bool SupportsPush => false;
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        if (query?.Extra is JsonObject extra)
+        {
+            var id = extra["id"]?.ToString();
+            if (!string.IsNullOrEmpty(id))
+                _selectedEngine = id;
+        }
+
+        if (string.IsNullOrEmpty(_selectedEngine))
+            return Task.FromResult(new DataResult
+            {
+                Data = new JsonObject
+                {
+                    ["engineType"] = "选择左侧引擎",
+                    ["mode"] = "—", ["modeDesc"] = "—", ["toolCount"] = "—",
+                }
+            });
+
+        var cfg = EngineToolConfig.Load();
+        cfg.Engines.TryGetValue(_selectedEngine, out var entry);
+        var whitelist = entry?.IsWhitelist ?? true;
+        var count = entry?.Tools.Count ?? 0;
+
+        return Task.FromResult(new DataResult
+        {
+            Data = new JsonObject
+            {
+                ["engineType"] = _selectedEngine,
+                ["mode"] = EngineToolKnownEngines.ModeLabel(whitelist),
+                ["modeDesc"] = EngineToolKnownEngines.ModeDesc(entry ?? new EngineToolEntry()),
+                ["toolCount"] = count.ToString(),
+            }
+        });
+    }
+
+    public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(_selectedEngine))
+            return new ActionResult { Success = false, Message = "未选择引擎" };
+
+        var cfg = EngineToolConfig.Load();
+        if (!cfg.Engines.TryGetValue(_selectedEngine, out var entry))
+        {
+            entry = new EngineToolEntry { Default = "disabled" };
+            cfg.Engines[_selectedEngine] = entry;
+        }
+
+        switch (action)
+        {
+            case "toggle-mode":
+                entry.Default = entry.IsWhitelist ? "enabled" : "disabled";
+                break;
+            case "reset":
+                cfg.Engines.Remove(_selectedEngine);
+                EngineToolConfig.Invalidate();
+                cfg = EngineToolConfig.Load();
+                break;
+            default:
+                return new ActionResult { Success = false, Message = $"未知操作: {action}" };
+        }
+
+        cfg.Save();
+        EngineToolConfig.Invalidate();
+        var mode = EngineToolKnownEngines.ModeLabel(cfg.Engines.TryGetValue(_selectedEngine, out var e) && e.IsWhitelist);
+        return new ActionResult { Success = true, Message = $"{_selectedEngine} → {mode}（已保存）" };
+    }
+}
+
+internal class EngineToolsTableSource : IDataSource
+{
+    private readonly MasterEngine _engine;
+    private string _selectedEngine = "";
+
+    public EngineToolsTableSource(MasterEngine engine) => _engine = engine;
+    public bool SupportsPush => false;
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        if (query?.Extra is JsonObject extra)
+        {
+            var id = extra["id"]?.ToString();
+            if (!string.IsNullOrEmpty(id))
+                _selectedEngine = id;
+        }
+
+        if (string.IsNullOrEmpty(_selectedEngine))
+            return Task.FromResult(new DataResult { Data = new JsonArray(), TotalCount = 0 });
+
+        var cfg = EngineToolConfig.Load();
+        var inList = cfg.Engines.TryGetValue(_selectedEngine, out var entry)
+            ? new HashSet<string>(entry.Tools, StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>();
+
+        // 全部工具（核心 + 组件 + 插件）
+        var allTools = ToolRegistry.All.Values
+            .Concat(_engine.GetAllComponentTools())
+            .GroupBy(t => t.Name)
+            .Select(g => g.First())
+            .ToList();
+
+        var sourceMap = BuildSourceMap();
+
+        var filtered = allTools.AsEnumerable();
+
+        var sourceFilter = query?.Filters?.FirstOrDefault(f => f.Field == "source")?.Value;
+        if (!string.IsNullOrEmpty(sourceFilter))
+        {
+            if (sourceFilter == "__core__")
+                filtered = filtered.Where(t => !sourceMap.ContainsKey(t.Name));
+            else
+                filtered = filtered.Where(t => sourceMap.TryGetValue(t.Name, out var s) && s == sourceFilter);
+        }
+
+        var search = query?.Search?.Trim();
+        if (!string.IsNullOrEmpty(search))
+        {
+            var kw = search.ToLowerInvariant();
+            filtered = filtered.Where(t =>
+                t.Name.Contains(kw, StringComparison.OrdinalIgnoreCase) ||
+                t.Description.Contains(kw, StringComparison.OrdinalIgnoreCase));
+        }
+
+        var arr = new JsonArray();
+        foreach (var tool in filtered.OrderBy(t => t.Name))
+        {
+            var inIt = inList.Contains(tool.Name);
+            arr.Add(new JsonObject
+            {
+                ["id"] = tool.Name,
+                ["name"] = tool.Name,
+                ["description"] = tool.Description.Length > 80 ? tool.Description[..80] + "..." : tool.Description,
+                ["source"] = sourceMap.TryGetValue(tool.Name, out var s) ? s : "核心",
+                ["inList"] = inIt ? "✓" : "—",
+            });
+        }
+        return Task.FromResult(new DataResult { Data = arr, TotalCount = arr.Count });
+    }
+
+    public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+    {
+        var toolName = data?["_row_id"]?.ToString() ?? "";
+        if (string.IsNullOrEmpty(toolName))
+            return new ActionResult { Success = false, Message = "未指定工具" };
+        if (string.IsNullOrEmpty(_selectedEngine))
+            return new ActionResult { Success = false, Message = "未选择引擎" };
+
+        var cfg = EngineToolConfig.Load();
+        if (!cfg.Engines.TryGetValue(_selectedEngine, out var entry))
+        {
+            entry = new EngineToolEntry { Default = "disabled" };
+            cfg.Engines[_selectedEngine] = entry;
+        }
+
+        switch (action)
+        {
+            case "add":
+                if (!entry.Tools.Contains(toolName, StringComparer.OrdinalIgnoreCase))
+                    entry.Tools.Add(toolName);
+                break;
+            case "remove":
+                entry.Tools.RemoveAll(t => t.Equals(toolName, StringComparison.OrdinalIgnoreCase));
+                break;
+            default:
+                return new ActionResult { Success = false, Message = $"未知操作: {action}" };
+        }
+
+        cfg.Save();
+        EngineToolConfig.Invalidate();
+        return new ActionResult { Success = true, Message = $"{toolName} × {_selectedEngine} 已更新" };
+    }
+
+    private Dictionary<string, string> BuildSourceMap()
+    {
+        var map = new Dictionary<string, string>();
+        foreach (var plugin in _engine.PluginLoader.LoadedPlugins)
+        {
+            var pluginName = plugin.PluginId;
+            foreach (var tn in plugin.ToolNames)
+                map[tn] = pluginName;
+            foreach (var cn in plugin.ComponentNames)
+            {
+                var reg = ComponentRegistry.Get(cn);
+                if (reg == null) continue;
+                foreach (var inst in _engine.GlobalComponentHost?.Instances ?? Enumerable.Empty<GlobalComponentInstance>())
+                {
+                    if (inst.Component.Meta.Name != cn) continue;
+                    foreach (var tool in inst.Component.Tools)
+                        map[tool.Name] = pluginName;
+                }
+                foreach (var inst in _engine.GetActiveEnginesSnapshot()
+                    .Select(e => e.ComponentHost).Where(h => h != null))
+                {
+                    foreach (var loopInst in inst!.Instances)
+                    {
+                        if (loopInst.Component.Meta.Name != cn) continue;
+                        foreach (var tool in loopInst.Component.Tools)
+                            map[tool.Name] = pluginName;
+                    }
+                }
+            }
+        }
+        return map;
     }
 }

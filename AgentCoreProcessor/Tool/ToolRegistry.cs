@@ -86,6 +86,19 @@ namespace AgentCoreProcessor.Tool
             return meta.EngineTypes.Contains(engineType);
         }
 
+        /// <summary>
+        /// 统一工具可见性判定（引擎工具清单层）。优先级：
+        ///   1. 全局禁用（ToolConfig）→ false
+        ///   2. 引擎有配置（EngineTools.json）→ 白名单/黑名单判定
+        ///   3. 引擎无配置 → true（不限制，信任引擎类型声明与组件适用性过滤）
+        /// </summary>
+        public static bool IsVisibleToEngine(string toolName, string? engineType)
+        {
+            if (IsDisabled(toolName)) return false;
+            if (string.IsNullOrEmpty(engineType)) return true;
+            return EngineToolConfig.Load().IsVisible(engineType, toolName);
+        }
+
         // ---- 描述生成（JSON 降级路径用） ----
 
         public static string GenerateDescriptions(
