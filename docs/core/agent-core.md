@@ -92,3 +92,12 @@ Session 与 Core 解耦：session 一组配置文件（决定组件/上下文）
 - **持久化**：`state.json` 加 `activeCoreConfig` 字段，重启/compact 承接活跃核；`CreateFromCompact` 用 `SetActiveCore` 静默继承。
 - **单核类型**（task 默认）不注入 `switch_core`、无切换入口，完全零回归。
 - **轮内硬化**：`RuntimeSession` 每轮锁 `roundCore = _agentCore`，格式化标志（UseNativeTools 等）与产出该轮的核一致，外置切换不破坏进行中的轮。
+
+### Review 对齐状态（待重构，配置已就位）
+
+`Storage/Session/review.json` 已补齐会话类型档案字段（Type/DefaultCoreConfig/AllowedCores/DefaultComponents/PermissionGroup），配置形态与 channel/task 一致。**运行时尚未接入**：
+
+- `SessionType` 枚举仍只有 `Channel/Task`，`SessionTypeProfiles` 只加载这两类文件——review.json 的档案字段当前是惰性占位（`PermissionService` 只取权限部分）。
+- `ReviewEngine.cs:86` 仍硬编码 `new AgentCore("ReviewCore")`，不走白名单、不可运行时换核。
+
+**待办**（Review 重构时实施）：枚举加 `Review` → `SessionTypeProfiles` 加 `Review` 档案 → `ReviewEngine` 改走 `ConfigureCores`。届时 review 复用与 channel 同构的白名单机制（如"快速浏览 flash / 深度评价 pro"双核）。

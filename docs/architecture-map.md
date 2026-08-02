@@ -611,7 +611,7 @@ Storage/
 │     ├── channel.json               会话类型 Channel（核心/组件/权限组/AllowedCores 白名单）+ 工具黑白名单
 │     ├── task.json                  会话类型 Task（核心/组件/权限组/AllowedCores 白名单）+ 工具黑白名单
 │     ├── express.json               Express 框架循环工具白名单（+ DefaultCoreConfig）
-│     └── review.json                Review 复盘工具白名单
+│     └── review.json                Review 复盘工具白名单（+ 会话类型档案字段，待 Review 重构接入）
 ├── Adapter/
 │     └── *.json  适配器实例配置（多实例，config-driven）
 │         qq-main.json: OneBotAdapter 配置(WS地址/token/白名单/botNames)
