@@ -459,7 +459,7 @@ AgentLilara.PluginSDK (共享契约，独立类库):
   ToolRegistry               — 全局注册表（Register/Unregister/Get/禁用管理）
   ToolExecutor               — 顺序执行 + 权限组硬校验 + OnToolExecuted 回调
   PermissionService          — 工具权限组裁决（Storage/Session/{express,channel,task,review}.json 黑白名单）
-  SessionTypeProfiles        — 会话类型档案（Storage/Session/{channel,task}.json：核心/组件/权限组）
+  SessionTypeProfiles        — 会话类型配置库（Storage/Session/{type}.json，字符串类型键：channel/task/review，任意新类型=新 JSON）
 
   工具可用性（权限控制组，单一裁决源）:
     1. ToolConfig.json 全局禁用
@@ -607,11 +607,11 @@ Storage/
 │     ├── TrustProgressionConfig.json 信任升降阈值+警报冷却配置
 │     ├── VisionEngineConfig.json    视觉引擎并发/批量/重试配置
 │     └── ComponentConfig.json       组件按权限组启用/禁用状态
-├── Session/
-│     ├── channel.json               会话类型 Channel（核心/组件/权限组/AllowedCores 白名单）+ 工具黑白名单
-│     ├── task.json                  会话类型 Task（核心/组件/权限组/AllowedCores 白名单）+ 工具黑白名单
-│     ├── express.json               Express 框架循环工具白名单（+ DefaultCoreConfig）
-│     └── review.json                Review 复盘工具白名单（+ 会话类型档案字段，待 Review 重构接入）
+├── Session/（会话类型配置库：类型键=文件名，字符串驱动，`SessionTypeProfiles.All()` 可枚举）
+│     ├── channel.json               会话类型 channel（核心/组件/权限组/AllowedCores 白名单）+ 工具黑白名单
+│     ├── task.json                  会话类型 task（核心/组件/权限组/AllowedCores 白名单）+ 工具黑白名单
+│     ├── express.json               Express 框架循环工具白名单（纯权限文件，无 Type 字段，非会话类型）
+│     └── review.json                Review 复盘工具白名单（+ 会话类型档案字段，`Get("review")` 已可加载，运行时待重构接入）
 ├── Adapter/
 │     └── *.json  适配器实例配置（多实例，config-driven）
 │         qq-main.json: OneBotAdapter 配置(WS地址/token/白名单/botNames)
