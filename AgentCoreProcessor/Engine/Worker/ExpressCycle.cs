@@ -42,15 +42,18 @@ namespace AgentCoreProcessor.Engine
             }
 
             agentCore.EngineType = "express";
-            // Loop 组件工具（speak 等）。核心工具（escalate/wait/continue_loop）由 AgentCore 内部通过
-            // GetExpressToolDefinitions("express") 收集。这里不再 Concat(ToolRegistry.All.Values) 全量合并，
-            // 否则会把 session 专用/全局工具无差别注入 Express 工具表。
+            // Express 工具装配统一走 express 权限组配置（Storage/Session/express.json 白名单）：
+            // Loop 组件工具 + 全局组件工具在此按组过滤，核心工具（escalate/wait/continue_loop）
+            // 由 AgentCore 内部 GetExpressToolDefinitions("express") 收集、同样受组约束。
             var componentTools = componentHost?.GetVisibleTools() ?? Enumerable.Empty<ITool>();
             agentCore.AdditionalTools = componentTools
-                .Where(t => !ToolRegistry.IsDisabled(t.Name))
+                .Where(t => !ToolRegistry.IsDisabled(t.Name)
+                            && PermissionService.IsAllowed("express", t.Name))
                 .DistinctBy(t => t.Name)
                 .ToList();
-            agentCore.GlobalComponentTools = ctx.GlobalComponentHost?.GetVisibleTools("channel").ToList();
+            agentCore.GlobalComponentTools = (ctx.GlobalComponentHost?.GetVisibleTools("channel") ?? Enumerable.Empty<ITool>())
+                .Where(t => PermissionService.IsAllowed("express", t.Name))
+                .ToList();
 
             // 诊断：输出当前可用的 Express 工具
             var allExpressDefs = ToolRegistry.GetExpressToolDefinitions("express");

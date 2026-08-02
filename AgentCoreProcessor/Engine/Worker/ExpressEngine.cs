@@ -71,8 +71,10 @@ namespace AgentCoreProcessor.Engine
         private ChannelContextState _ctxState = null!;
         private ChannelContextService _ctxService = null!;
 
-        // Core 实例
-        private readonly AgentCore agentCore = new("ChannelCore");
+        // Core 实例。默认 core 从 express 权限组配置读取（Storage/Session/express.json 的 DefaultCoreConfig），
+        // 缺省回退 ChannelCore（旧默认），保证配置缺失也能启动。
+        private readonly AgentCore agentCore =
+            new(PermissionService.GetCoreConfig("express") is { Length: > 0 } coreCfg ? coreCfg : "ChannelCore");
 
         // ── 统一循环（Phase 1）──
         private Gate gate = null!;
@@ -649,7 +651,8 @@ namespace AgentCoreProcessor.Engine
             LastCompletionTime = LastCompletionTime,
             TotalRounds = loopControlModule.TotalRounds,
             SilentRounds = loopControlModule.SilentRounds,
-            AuthorizedToolCount = ctx.GlobalComponentHost?.GetVisibleTools("channel").Count() ?? 0,
+            AuthorizedToolCount = (ctx.GlobalComponentHost?.GetVisibleTools("channel")
+                .Count(t => PermissionService.IsAllowed("express", t.Name)) ?? 0),
             ParticipantCount = 0, // 参与者数量现由 ChannelContextService 动态派生，无累积计数
             ProcessedMessageCount = processedMessageCount,
             TotalErrorCount = totalErrorCount,

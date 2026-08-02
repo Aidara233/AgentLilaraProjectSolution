@@ -49,6 +49,13 @@ internal static class PermissionService
         return entry?.PermissionMode ?? "whitelist";
     }
 
+    /// <summary>取某组的默认 Core 配置名（express.json 的 DefaultCoreConfig；channel/task 亦支持）。</summary>
+    public static string GetCoreConfig(string group)
+    {
+        var entry = GetOrLoad(group);
+        return string.IsNullOrEmpty(entry?.DefaultCoreConfig) ? "" : entry.DefaultCoreConfig;
+    }
+
     /// <summary>已知权限组（express/channel/task/review）。供 WebUI 展示。</summary>
     public static readonly string[] KnownGroups = { "express", "channel", "task", "review" };
 
@@ -129,12 +136,15 @@ internal static class PermissionService
     }
 }
 
-/// <summary>单个权限组的配置（文件内 PermissionMode + PermissionTools 字段；会话类型文件中的其余字段被忽略）。</summary>
+/// <summary>单个权限组的配置（文件内 PermissionMode + PermissionTools + DefaultCoreConfig；会话类型文件中的其余字段被忽略）。</summary>
 internal sealed class PermissionGroupEntry
 {
     public string PermissionMode { get; set; } = "whitelist";
 
     public List<string> PermissionTools { get; set; } = new();
+
+    /// <summary>该组加载的默认 Core 配置名（express.json 使用；channel/task 由 SessionTypeProfiles 读取）。</summary>
+    public string DefaultCoreConfig { get; set; } = "";
 
     public bool IsWhitelist =>
         string.Equals(PermissionMode, "whitelist", StringComparison.OrdinalIgnoreCase);

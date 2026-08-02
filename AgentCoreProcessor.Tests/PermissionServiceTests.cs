@@ -110,6 +110,9 @@ public class PermissionServiceTests
         Assert.True(PermissionService.IsAllowed("review", "memory_search"));
         Assert.False(PermissionService.IsAllowed("review", "end_session"));
         Assert.False(PermissionService.IsAllowed("review", "send_email"));
+
+        // express：默认 Core 配置从 express.json 读取（ExpressCore）
+        Assert.Equal("ExpressCore", PermissionService.GetCoreConfig("express"));
     }
 
     [Fact]
