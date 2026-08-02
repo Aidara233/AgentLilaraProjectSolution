@@ -214,9 +214,9 @@ ChannelEngine (框架层全局单例，非 ISubEngine):
       触发后: impulse = min(impulse, PostResponseCap(20))
       发言后冷却 3s
 
-  Express 工具白名单（9 个，EngineTools.json 配置）:
-    speak / send_media / escalate / wait / memory(只读: get/list/search/stats/link_get)
-    由 EngineToolConfig 默认 `express.default=disabled` + tools 清单控制，可在 WebUI /p/plugins/engine-tools 编辑。
+  Express 工具白名单（Storage/Session/express.json 配置，白名单模式）:
+    speak / thinking / send_media / send_file / adapter_action / escalate / wait / memory(只读: get/list/search/stats/link_get)
+    由 PermissionService 按 express 组清单控制，可在 WebUI /p/plugins/engine-tools 编辑。
 
   Express 双模板（由睡眠状态控制）:
     清醒 → 正常语气
@@ -457,15 +457,17 @@ AgentLilara.PluginSDK (共享契约，独立类库):
   Host/ToolContextImpl       — IToolContext 实现（ConcurrentDictionary 服务容器）
   Host/MemoryAccessImpl      — IMemoryAccess 桥接（Repository + EmbeddingProvider）
   ToolRegistry               — 全局注册表（Register/Unregister/Get/禁用管理）
-  ToolExecutor               — 顺序执行 + 权限检查 + OnToolExecuted 回调
-  EngineToolConfig           — 引擎工具清单（EngineTools.json）：express/session/review/task 各引擎的工具可用性控制
+  ToolExecutor               — 顺序执行 + 权限组硬校验 + OnToolExecuted 回调
+  PermissionService          — 工具权限组裁决（Storage/Session/{express,channel,task,review}.json 黑白名单）
+  SessionTypeProfiles        — 会话类型档案（Storage/Session/{channel,task}.json：核心/组件/权限组）
 
-  工具可用性优先级（从高到低）:
+  工具可用性（权限控制组，单一裁决源）:
     1. ToolConfig.json 全局禁用
-    2. EngineTools.json 引擎清单（default=disabled 白名单 / default=enabled 黑名单；未配置引擎不限制）
-    3. ToolMetaAttribute.EngineTypes 声明（仅核心工具；配置未指定时兜底）
-    4. 组件适用性（LoopApplicability + ComponentConfig 组件×引擎开关）
-  核心过滤点：ToolRegistry.IsVisibleToEngine(name, engineType)，AgentCore Express/native 两分支统一调用。
+    2. PermissionService 权限组（Storage/Session/{group}.json，default=disabled 白名单 / default=enabled 黑名单）
+    3. 组件装配（ComponentConfig.json 组件×组开关；LoopApplicability / ToolMeta.EngineTypes 已 inert）
+  AgentCore.EngineType = 当前权限组 key（express/channel/task/review）。
+  核心过滤点：ToolRegistry.IsVisibleToEngine(name, engineType) → PermissionService.IsAllowed；
+  执行期：ToolExecutor.PermissionGroup 对组外工具硬拒绝。
 
 插件项目 (独立 DLL，输出到 {BaseDirectory}/Plugins/):
   Plugin.BasicTools      — speak + send_media（输出能力）[GlobalComponent: basic-tools]
@@ -604,7 +606,12 @@ Storage/
 │     ├── ImpulseConfig.json         冲动值全参数配置
 │     ├── TrustProgressionConfig.json 信任升降阈值+警报冷却配置
 │     ├── VisionEngineConfig.json    视觉引擎并发/批量/重试配置
-│     └── ComponentConfig.json       组件按引擎类型启用/禁用状态
+│     └── ComponentConfig.json       组件按权限组启用/禁用状态
+├── Session/
+│     ├── channel.json               会话类型 Channel（核心/组件/权限组）+ 工具黑白名单
+│     ├── task.json                  会话类型 Task（核心/组件/权限组）+ 工具黑白名单
+│     ├── express.json               Express 框架循环工具白名单
+│     └── review.json                Review 复盘工具白名单
 ├── Adapter/
 │     └── *.json  适配器实例配置（多实例，config-driven）
 │         qq-main.json: OneBotAdapter 配置(WS地址/token/白名单/botNames)

@@ -120,7 +120,7 @@ dotnet build
 | 工具注册失败（名称冲突） | 同名工具已被其他插件注册 | 改工具名，或检查是否重复加载 |
 | 组件工具不生效 | DLL 有 `[Component]` 时独立 ITool 不被注册 | 把工具放进组件的 `Tools` 属性 |
 | 构造注入拿不到服务 | 服务类型不在 `InstantiateWithInjection` 的 resolver 字典里 | 用 `IServiceProvider` 参数 + `GetService<T>()` |
-| Loop 组件在某个引擎不出现 | `[LoopApplicability]` 设了 `Disabled`/`NotApplicable` | 检查属性配置 |
+| Loop 组件在某个权限组不出现 | `ComponentConfig.json` 未启用该组件 × 组 | 在 `Storage/Engine/ComponentConfig.json` 开启；`[LoopApplicability]` 已 inert |
 | `OnEnabledAsync()` 初始化时没调用 | 设计如此，首次初始化只调 `OnInitAsync()` | 初始化逻辑放 `OnInitAsync()` |
 | 文件路径不对 | 用 `..` 跳出 `GlobalDirectory` 访问 Workspace | 用 `IPluginStorage.WorkspaceDirectory` |
 | 以为插件 DLL 在 Storage 下 | 插件 DLL 在 `{BaseDirectory}/Plugins/`，不在 Storage 下 | 读 [path-config.md](path-config.md) |
@@ -145,5 +145,6 @@ AgentCoreProcessor/Component/ComponentHost.cs   ← Loop 组件宿主
 AgentCoreProcessor/Component/GlobalComponentHost.cs ← 全局组件宿主
 
 # 配置
-Storage/Engine/ComponentConfig.json             ← 组件按引擎类型启用/禁用状态
+Storage/Engine/ComponentConfig.json             ← 组件按权限组（channel/task/review）启用/禁用状态
+Storage/Session/{channel,task,express,review}.json ← 会话类型 + 工具权限黑白名单（PermissionService 裁决）
 ```

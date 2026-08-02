@@ -607,14 +607,14 @@ IDisposable? Subscribe(Action<JsonNode?> callback);
 
 ### [LoopApplicability]
 
-声明组件在哪些类型的循环中可用。仅对 Loop 组件有效。
+> **已 inert**：自权限组重构起，运行时不再据此裁决组件归属。组件在哪个权限组装配由
+> `Storage/Engine/ComponentConfig.json` 决定。属性仅保留编译兼容。
 
 | 属性 | 类型 | 默认 | 说明 |
 |------|------|------|------|
-| `Channel` | Applicability | `Enabled` | 频道循环中是否可用 |
-| `System` | Applicability | `Enabled` | 系统循环中是否可用 |
-| `Review` | Applicability | `Enabled` | 复盘循环中是否可用 |
-| `SubAgent` | Applicability | `Enabled` | 子 agent 中是否可用 |
+| `Channel` | Applicability | `Enabled` | 原频道循环适用性（inert） |
+| `Review` | Applicability | `Enabled` | 原复盘循环适用性（inert） |
+| `Task` | Applicability | `Enabled` | 原子 agent 循环适用性（inert） |
 
 ### [ToolVisibility]
 

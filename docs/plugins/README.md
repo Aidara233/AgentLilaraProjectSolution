@@ -121,14 +121,17 @@ AgentLilaraProjectSolution/
     Plugin.FileTools/             ← 文件操作（read_text, write_text, list_dir, move, delete, copy）— Global
     Plugin.FileOps/               ← 高级文件操作（archive_create/extract/list, search_files, grep, file_info, file_hash, compare）— Global
     Plugin.SystemTools/           ← 子 session 管理（system-ops 组件：create_sub_agent/stop_sub_agent/send_instruction/list_sub_agents/wait_sub/get_sub_info；sub-agent-runtime 组件：report_to_parent）
-    Plugin.ReviewTools/           ← 复盘工具（15个 review_* 工具）— Global, review only
-    Plugin.CrossLoopTools/        ← 跨循环消息（send_message + list_loops）— Loop, channel + system
-    Plugin.ScheduledTasks/        ← 定时任务（schedule/cancel/list）— Loop, channel only
+    Plugin.ReviewTools/           ← 复盘工具（12个 review_* 工具）— Global, review group
+    Plugin.CrossLoopTools/        ← 跨循环消息（send_message + list_loops）— Loop, channel + task
+    Plugin.ScheduledTasks/        ← 定时任务（schedule/cancel/list）— Loop, channel
     Plugin.Email/                 ← 邮件收发（send_email, check_unread, check_email, read_email, search_email, download_attachment, delete_email, mark_all_read, list_folders）— Global
     Plugin.SkillTools/            ← 技能工具（casual-chat, code-review, system-maintenance）
     Plugin.NetworkTools/          ← 网络工具（http_request, download_file + Playwright 浏览器自动化 10 个工具）— Global + Loop
     Plugin.SshTools/              ← SSH 工具
     Plugin.WebSearch/             ← 网页搜索
+    Plugin.GitTools/              ← Git/GitHub 操作（git_*, github_*）— Loop + Global
+    Plugin.Currency/              ← 货币工具 — Global
+    Plugin.CampusPrint/           ← 校园打印 — Global
     Plugin.DicePool/              ← 骰子系统
     Plugin.ExternalDice/          ← 外部骰子
     Plugin.ImageTools/            ← 图片读取与OCR
@@ -159,7 +162,8 @@ AgentLilaraProjectSolution/
 - **组件优先**：如果 DLL 中有 `[Component]` 标记的类，工具由组件管理而非独立注册
 - **AssemblyLoadContext 隔离**：每个插件 DLL 运行在自己的 ALC 中，支持热重载（卸载后重新扫描）
 - **服务定位器模式**：插件通过 `GetService<T>()` 获取宿主服务（IMemoryAccess、IAgentMessaging 等），不直接引用宿主程序集
-- **无清单文件**：所有元数据通过 C# 属性声明（`[Component]`、`[ToolMeta]`、`[LoopApplicability]` 等）
+- **无清单文件**：所有元数据通过 C# 属性声明（`[Component]`、`[ToolMeta]` 等）
+- **插件不声明权限**：`[ToolMeta] EngineTypes` 与 `[LoopApplicability]` 的引擎维度已 **inert**（运行时不再裁决）。工具可见性由程序配置统一决定——`Storage/Session/{express,channel,task,review}.json` 的权限黑白名单（工具级） + `Storage/Engine/ComponentConfig.json`（组件×权限组装配）。插件只需提供工具，不决定谁能用。
 - **参数名必须英文**：这是 Bedrock 代理的硬性限制
 - **Workspace 路径**：文件工具通过 `IPluginStorage.WorkspaceDirectory` 访问共享沙箱，不要用 `..` 跳转
 - **共享代码**：跨插件复用抽到独立类库（如 `FileToolKit.Shared/`），不用链接文件

@@ -124,7 +124,7 @@ using AgentLilara.PluginSDK;
 namespace Plugin.MyFirst;
 
 [Component(Name = "counter", Scope = ComponentScope.Loop)]
-[LoopApplicability(Channel = Applicability.Enabled, System = Applicability.Disabled)]
+// LoopApplicability 引擎维度已 inert，组件归属由 Storage/Engine/ComponentConfig.json 决定
 [ToolVisibility(Default = Visibility.AlwaysVisible)]
 public class CounterComponent : LoopComponentBase
 {

@@ -210,7 +210,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 复盘配置：Engine/Dream/ReviewConfig.cs + Storage/Dream/ReviewConfig.json
 - 评价引擎：Engine/Dream/EvaluationEngine.cs（边界阻力公式，session取平均）
 - 复盘进度：Engine/Dream/ReviewProgress.cs + Storage/Dream/ReviewProgress.json
-- 复盘工具：Plugins/Plugin.ReviewTools/（15个工具，review-tools 组件）
+- 复盘工具：Plugins/Plugin.ReviewTools/（12个工具，review-tools 组件）
 - 复盘SDK：AgentLilara.PluginSDK/Services/IReviewAccess.cs + IBeaconAccess.cs + IReviewControl.cs
 - 复盘宿主：Tool/Host/ReviewAccessImpl.cs + BeaconAccessImpl.cs + ReviewControlImpl.cs
 - 评价存储：Database/EvaluationScore.cs + EvaluationScoreRepository.cs
@@ -224,7 +224,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - Token 统计：Database/ModelCallLog.cs + ModelCallLogRepository.cs
 - 信号系统：Logging/Signal.cs（静态门面）+ Logging/LogDatabase.cs（独立 SQLite）+ Logging/LogWriter.cs（批量写入）
 - 信号查询：Logging/LogQuery.cs + Tool/Host/LogAccessImpl.cs（ILogAccess 桥接）
-- 工具管理：Tool/ToolRegistry.cs（注册/卸载/禁用/引擎可见性 IsVisibleToEngine）+ Tool/EngineToolConfig.cs（引擎工具清单 EngineTools.json，express 白名单等）+ Component/ComponentConfig.cs（组件按引擎类型启用/禁用）+ Component/ComponentRegistry.cs（组件注册表 + LoopApplicability 适用性过滤）
+- 工具管理：Tool/ToolRegistry.cs（注册/卸载/禁用）+ Tool/PermissionService.cs（权限组裁决，Storage/Session/{express,channel,task,review}.json 黑白名单）+ Engine/Session/SessionTypeProfiles.cs（会话类型档案）+ Component/ComponentConfig.cs（组件按权限组启用/禁用，LoopApplicability/EngineTypes 已 inert）
 - 核心工具：Tool/Core/CoreTools.cs（wait + continue_loop）+ Tool/Core/EscalateTool.cs
 - 插件 SDK：AgentLilara.PluginSDK/（共享契约：ITool/IInjectProvider/服务接口/CardSchema）
 - 插件加载：Tool/Host/PluginLoader.cs（AssemblyLoadContext 隔离，多类型发现 + 构造注入）
@@ -245,13 +245,16 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 -           Plugins/Plugin.GroupFileTools/（分组文件操作）
 -           Plugins/Plugin.CrossLoopTools/（send_message + list_loops，跨循环单发消息 fire-and-forget）
 -           Plugins/Plugin.SystemTools/（子 session 管理：create_sub_agent / stop_sub_agent / send_instruction / list_sub_agents / wait_sub / get_sub_info；子侧回报：report_to_parent）— system-ops（父侧 LoopComponent）+ sub-agent-runtime（子侧 LoopComponent）
--           Plugins/Plugin.ReviewTools/（review_* 15个复盘工具）
+-           Plugins/Plugin.ReviewTools/（review_* 12个复盘工具）
 -           Plugins/Plugin.ScheduledTasks/（定时任务，插件化实现）
 -           Plugins/Plugin.Email/（邮件收发：send_email, check_unread, check_email, read_email, search_email, download_attachment, delete_email, mark_all_read, list_folders）— Global
 -           Plugins/Plugin.SkillTools/（技能工具：casual-chat / code-review / system-maintenance）
 -           Plugins/Plugin.NetworkTools/（http_request + download_file + Playwright 浏览器自动化 10 个工具：navigate/click/fill/extract/screenshot/js/cookies/wait/close）— Global + Loop
 -           Plugins/Plugin.SshTools/（SSH 工具）
 -           Plugins/Plugin.WebSearch/（网页搜索）
+-           Plugins/Plugin.GitTools/（git_* + github_* 仓库操作）— Loop + Global
+-           Plugins/Plugin.Currency/（货币工具）— Global
+-           Plugins/Plugin.CampusPrint/（校园打印）— Global
 -           Plugins/Plugin.DicePool/（骰子系统）
 -           Plugins/Plugin.ExternalDice/（外部骰子）
 -           Plugins/Plugin.ImageTools/（图片处理工具）

@@ -133,6 +133,13 @@ internal static class SessionTypeProfiles
         "review_update_person"
     };
 
+    /// <summary>memory 工具集：review 白名单等复用。</summary>
+    internal static readonly string[] MemoryToolSeed =
+    {
+        "memory_store", "memory_get", "memory_search", "memory_list", "memory_stats",
+        "memory_delete", "memory_link_create", "memory_link_delete", "memory_link_get", "memory_update"
+    };
+
     /// <summary>Session 配置文件 DTO。DefaultComponents 对应 record 的 DefaultComponentIds。</summary>
     private sealed class SessionProfileFile
     {

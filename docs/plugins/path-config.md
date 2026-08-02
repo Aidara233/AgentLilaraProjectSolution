@@ -134,7 +134,8 @@ public MyTool(IToolContext ctx)
 | `Program.cs:61` | `{StoragePath}/FileAdapter/` | 文件适配器测试目录 |
 | `Program.cs:335` | `{StoragePath}/Images/` | 图片缓存 |
 | `ToolRegistry.cs:24` | `{StoragePath}/ToolConfig.json` | 工具配置 |
-| `ComponentConfig.cs` | `{StoragePath}/Engine/ComponentConfig.json` | 组件按引擎类型启用/禁用状态 |
+| `ComponentConfig.cs` | `{StoragePath}/Engine/ComponentConfig.json` | 组件按权限组（channel/task/review）启用/禁用状态 |
+| `PermissionService.cs` | `{StoragePath}/Session/{express,channel,task,review}.json` | 会话类型 + 工具权限黑白名单（唯一裁决源） |
 
 ## Claude 常见错误
 

@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Logging;
 
@@ -47,6 +48,56 @@ internal static class PermissionService
         var entry = GetOrLoad(group);
         return entry?.PermissionMode ?? "whitelist";
     }
+
+    /// <summary>已知权限组（express/channel/task/review）。供 WebUI 展示。</summary>
+    public static readonly string[] KnownGroups = { "express", "channel", "task", "review" };
+
+    /// <summary>
+    /// 保存某权限组的模式与工具清单。仅改写文件内 PermissionMode/PermissionTools 字段，
+    /// 保留其余字段（channel/task 的 Type/Core/Components）。写后双缓存失效。
+    /// </summary>
+    public static void Save(string group, string mode, IEnumerable<string> tools)
+    {
+        var path = Path.Combine(Dir, $"{group}.json");
+        var node = File.Exists(path)
+            ? (JsonNode.Parse(File.ReadAllText(path)) as JsonObject ?? new JsonObject())
+            : new JsonObject();
+
+        node["PermissionMode"] = string.Equals(mode, "blacklist", StringComparison.OrdinalIgnoreCase)
+            ? "blacklist" : "whitelist";
+        var arr = new JsonArray();
+        foreach (var t in tools.Distinct(StringComparer.OrdinalIgnoreCase))
+            arr.Add(t);
+        node["PermissionTools"] = arr;
+
+        try
+        {
+            Directory.CreateDirectory(Dir);
+            File.WriteAllText(path, node.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            Invalidate();
+            Engine.Session.SessionTypeProfiles.Invalidate();
+        }
+        catch (Exception ex)
+        {
+            Signal.Warn(LogGroup.Engine, "权限组配置保存失败", new { group, path, error = ex.Message });
+        }
+    }
+
+    /// <summary>取某权限组的默认（恢复默认用）。channel/task 与 SessionTypeProfiles 种子一致。</summary>
+    public static (string Mode, string[] Tools) GetDefault(string group) => group switch
+    {
+        "express" => ("whitelist", new[]
+        {
+            "speak", "thinking", "send_media", "send_file", "adapter_action",
+            "escalate", "wait",
+            "memory_get", "memory_list", "memory_search", "memory_stats", "memory_link_get"
+        }),
+        "channel" => ("blacklist", new[] { "escalate" }.Concat(Engine.Session.SessionTypeProfiles.ReviewToolSeed).ToArray()),
+        "task" => ("whitelist", Engine.Session.SessionTypeProfiles.TaskToolSeed),
+        "review" => ("whitelist", Engine.Session.SessionTypeProfiles.ReviewToolSeed
+            .Concat(Engine.Session.SessionTypeProfiles.MemoryToolSeed).ToArray()),
+        _ => ("whitelist", Array.Empty<string>())
+    };
 
     public static void Invalidate() => _cache.Clear();
 

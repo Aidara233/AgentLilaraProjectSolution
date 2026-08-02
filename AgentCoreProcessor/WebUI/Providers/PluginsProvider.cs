@@ -279,25 +279,25 @@ internal class PluginsProvider : IWebUIProvider
         }
     };
 
-    // ================ 5. 引擎工具清单 ================
+    // ================ 5. 工具权限组 ================
 
     private PageDefinition BuildEngineToolsPage() => new()
     {
         Route = "plugins/engine-tools",
-        Meta = new PageMeta { Title = "引擎工具清单", Icon = "bi-shield-check", Group = "插件", Order = 93 },
+        Meta = new PageMeta { Title = "工具权限组", Icon = "bi-shield-check", Group = "插件", Order = 93 },
         LayoutType = PageLayoutType.Sidebar,
         Cards = new List<CardDefinition>
         {
-            // 左侧：引擎类型列表
+            // 左侧：权限组列表
             new()
             {
-                Id = "et-list", Type = CardType.Table, DataSourceId = "et-list", Title = "引擎类型",
+                Id = "et-list", Type = CardType.Table, DataSourceId = "et-list", Title = "权限组",
                 LinkEvent = "et-selected",
                 Schema = new TableSchema
                 {
                     Columns = new()
                     {
-                        new() { Field = "engineType", Header = "引擎" },
+                        new() { Field = "engineType", Header = "权限组" },
                         new() { Field = "mode", Header = "模式", Width = "90px", Format = ColumnFormat.Badge },
                         new() { Field = "toolCount", Header = "清单数", Width = "70px" },
                     },
@@ -309,12 +309,12 @@ internal class PluginsProvider : IWebUIProvider
             new()
             {
                 Id = "et-detail", Type = CardType.Status, DataSourceId = "et-detail",
-                Title = "引擎工具清单", ListenEvent = "et-selected",
+                Title = "工具权限组", ListenEvent = "et-selected",
                 Schema = new StatusSchema
                 {
                     Fields = new()
                     {
-                        new() { Field = "engineType", Label = "引擎" },
+                        new() { Field = "engineType", Label = "权限组" },
                         new() { Field = "mode", Label = "模式", Type = StatusFieldType.Badge },
                         new() { Field = "modeDesc", Label = "说明" },
                         new() { Field = "toolCount", Label = "清单工具数" },
@@ -331,7 +331,7 @@ internal class PluginsProvider : IWebUIProvider
             new()
             {
                 Id = "et-tools", Type = CardType.Table, DataSourceId = "et-tools",
-                Title = "工具清单（勾选 = 该引擎可见）", ListenEvent = "et-selected",
+                Title = "工具清单（勾选 = 该权限组可见）", ListenEvent = "et-selected",
                 Schema = new TableSchema
                 {
                     Columns = new()
@@ -945,16 +945,17 @@ internal class ComponentPermTogglesSource : IDataSource
     }
 }
 
-// ================ 引擎工具清单数据源 ================
+// ================ 权限组清单数据源 ================
 
-/// <summary>已知引擎类型（对应 agentCore.EngineType / 配置 key）。</summary>
+/// <summary>已知权限组（对应 AgentCore.EngineType / Storage/Session/{group}.json）。</summary>
 internal static class EngineToolKnownEngines
 {
-    public static readonly string[] All = { "express", "session", "review", "task" };
+    public static readonly string[] All = PermissionService.KnownGroups;
 
     public static string ModeLabel(bool whitelist) => whitelist ? "白名单" : "黑名单";
-    public static string ModeDesc(EngineToolEntry entry)
-        => entry.IsWhitelist ? "仅允许清单中的工具" : "清单中的工具被禁用";
+    public static string ModeDesc(string group)
+        => string.Equals(PermissionService.GetMode(group), "blacklist", StringComparison.OrdinalIgnoreCase)
+            ? "黑名单：清单中的工具被禁用" : "白名单：仅允许清单中的工具";
 }
 
 internal class EngineToolsListSource : IDataSource
@@ -965,18 +966,16 @@ internal class EngineToolsListSource : IDataSource
 
     public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
-        var cfg = EngineToolConfig.Load();
         var arr = new JsonArray();
         foreach (var et in EngineToolKnownEngines.All)
         {
-            var hasEntry = cfg.Engines.TryGetValue(et, out var entry);
-            var whitelist = entry?.IsWhitelist ?? true;
+            var whitelist = !string.Equals(PermissionService.GetMode(et), "blacklist", StringComparison.OrdinalIgnoreCase);
             arr.Add(new JsonObject
             {
                 ["id"] = et,
                 ["engineType"] = et,
                 ["mode"] = EngineToolKnownEngines.ModeLabel(whitelist),
-                ["toolCount"] = entry?.Tools.Count ?? 0,
+                ["toolCount"] = PermissionService.GetTools(et).Count,
             });
         }
         return Task.FromResult(new DataResult { Data = arr, TotalCount = arr.Count });
@@ -1008,15 +1007,14 @@ internal class EngineToolsDetailSource : IDataSource
             {
                 Data = new JsonObject
                 {
-                    ["engineType"] = "选择左侧引擎",
+                    ["engineType"] = "选择左侧权限组",
                     ["mode"] = "—", ["modeDesc"] = "—", ["toolCount"] = "—",
                 }
             });
 
-        var cfg = EngineToolConfig.Load();
-        cfg.Engines.TryGetValue(_selectedEngine, out var entry);
-        var whitelist = entry?.IsWhitelist ?? true;
-        var count = entry?.Tools.Count ?? 0;
+        var mode = PermissionService.GetMode(_selectedEngine);
+        var whitelist = !string.Equals(mode, "blacklist", StringComparison.OrdinalIgnoreCase);
+        var count = PermissionService.GetTools(_selectedEngine).Count;
 
         return Task.FromResult(new DataResult
         {
@@ -1024,42 +1022,35 @@ internal class EngineToolsDetailSource : IDataSource
             {
                 ["engineType"] = _selectedEngine,
                 ["mode"] = EngineToolKnownEngines.ModeLabel(whitelist),
-                ["modeDesc"] = EngineToolKnownEngines.ModeDesc(entry ?? new EngineToolEntry()),
+                ["modeDesc"] = EngineToolKnownEngines.ModeDesc(_selectedEngine),
                 ["toolCount"] = count.ToString(),
             }
         });
     }
 
-    public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(_selectedEngine))
-            return new ActionResult { Success = false, Message = "未选择引擎" };
-
-        var cfg = EngineToolConfig.Load();
-        if (!cfg.Engines.TryGetValue(_selectedEngine, out var entry))
-        {
-            entry = new EngineToolEntry { Default = "disabled" };
-            cfg.Engines[_selectedEngine] = entry;
-        }
+            return Task.FromResult(new ActionResult { Success = false, Message = "未选择权限组" });
 
         switch (action)
         {
             case "toggle-mode":
-                entry.Default = entry.IsWhitelist ? "enabled" : "disabled";
-                break;
+            {
+                var mode = PermissionService.GetMode(_selectedEngine);
+                var flipped = string.Equals(mode, "blacklist", StringComparison.OrdinalIgnoreCase) ? "whitelist" : "blacklist";
+                PermissionService.Save(_selectedEngine, flipped, PermissionService.GetTools(_selectedEngine));
+                return Task.FromResult(new ActionResult { Success = true, Message = $"{_selectedEngine} → {EngineToolKnownEngines.ModeLabel(flipped != "blacklist")}（已保存）" });
+            }
             case "reset":
-                cfg.Engines.Remove(_selectedEngine);
-                EngineToolConfig.Invalidate();
-                cfg = EngineToolConfig.Load();
-                break;
+            {
+                var (dMode, dTools) = PermissionService.GetDefault(_selectedEngine);
+                PermissionService.Save(_selectedEngine, dMode, dTools);
+                return Task.FromResult(new ActionResult { Success = true, Message = $"{_selectedEngine} 已恢复默认（{EngineToolKnownEngines.ModeLabel(dMode != "blacklist")}）" });
+            }
             default:
-                return new ActionResult { Success = false, Message = $"未知操作: {action}" };
+                return Task.FromResult(new ActionResult { Success = false, Message = $"未知操作: {action}" });
         }
-
-        cfg.Save();
-        EngineToolConfig.Invalidate();
-        var mode = EngineToolKnownEngines.ModeLabel(cfg.Engines.TryGetValue(_selectedEngine, out var e) && e.IsWhitelist);
-        return new ActionResult { Success = true, Message = $"{_selectedEngine} → {mode}（已保存）" };
     }
 }
 
@@ -1084,10 +1075,7 @@ internal class EngineToolsTableSource : IDataSource
         if (string.IsNullOrEmpty(_selectedEngine))
             return Task.FromResult(new DataResult { Data = new JsonArray(), TotalCount = 0 });
 
-        var cfg = EngineToolConfig.Load();
-        var inList = cfg.Engines.TryGetValue(_selectedEngine, out var entry)
-            ? new HashSet<string>(entry.Tools, StringComparer.OrdinalIgnoreCase)
-            : new HashSet<string>();
+        var inList = new HashSet<string>(PermissionService.GetTools(_selectedEngine), StringComparer.OrdinalIgnoreCase);
 
         // 全部工具（核心 + 组件 + 插件）
         var allTools = ToolRegistry.All.Values
@@ -1134,37 +1122,33 @@ internal class EngineToolsTableSource : IDataSource
         return Task.FromResult(new DataResult { Data = arr, TotalCount = arr.Count });
     }
 
-    public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
     {
         var toolName = data?["_row_id"]?.ToString() ?? "";
         if (string.IsNullOrEmpty(toolName))
-            return new ActionResult { Success = false, Message = "未指定工具" };
+            return Task.FromResult(new ActionResult { Success = false, Message = "未指定工具" });
         if (string.IsNullOrEmpty(_selectedEngine))
-            return new ActionResult { Success = false, Message = "未选择引擎" };
+            return Task.FromResult(new ActionResult { Success = false, Message = "未选择权限组" });
 
-        var cfg = EngineToolConfig.Load();
-        if (!cfg.Engines.TryGetValue(_selectedEngine, out var entry))
-        {
-            entry = new EngineToolEntry { Default = "disabled" };
-            cfg.Engines[_selectedEngine] = entry;
-        }
+        var tools = PermissionService.GetTools(_selectedEngine).ToList();
+        var mode = PermissionService.GetMode(_selectedEngine);
 
         switch (action)
         {
             case "add":
-                if (!entry.Tools.Contains(toolName, StringComparer.OrdinalIgnoreCase))
-                    entry.Tools.Add(toolName);
+                if (tools.Contains(toolName, StringComparer.OrdinalIgnoreCase))
+                    return Task.FromResult(new ActionResult { Success = false, Message = $"「{toolName}」已在清单中" });
+                tools.Add(toolName);
                 break;
             case "remove":
-                entry.Tools.RemoveAll(t => t.Equals(toolName, StringComparison.OrdinalIgnoreCase));
+                tools.RemoveAll(t => t.Equals(toolName, StringComparison.OrdinalIgnoreCase));
                 break;
             default:
-                return new ActionResult { Success = false, Message = $"未知操作: {action}" };
+                return Task.FromResult(new ActionResult { Success = false, Message = $"未知操作: {action}" });
         }
 
-        cfg.Save();
-        EngineToolConfig.Invalidate();
-        return new ActionResult { Success = true, Message = $"{toolName} × {_selectedEngine} 已更新" };
+        PermissionService.Save(_selectedEngine, mode, tools);
+        return Task.FromResult(new ActionResult { Success = true, Message = $"{toolName} × {_selectedEngine} 已更新" });
     }
 
     private Dictionary<string, string> BuildSourceMap()

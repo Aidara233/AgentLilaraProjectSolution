@@ -185,30 +185,6 @@ internal class GlobalComponentHost
 
     public IEnumerable<ITool> GetAllTools() => _tools.Values;
 
-    /// <summary>获取指定引擎类型下所有可见工具的名称白名单（供子agent等场景使用）。</summary>
-    public HashSet<string> GetToolWhitelist(string engineType)
-    {
-        var names = new HashSet<string>();
-        foreach (var inst in _components)
-        {
-            var applicability = engineType switch
-            {
-                "channel" => inst.Registration.ChannelApplicability,
-                "review" => inst.Registration.ReviewApplicability,
-                "task" => inst.Registration.TaskApplicability,
-                _ => Applicability.Enabled
-            };
-            if (!_config.IsEnabled(inst.Component.Meta.Name, engineType, inst.Component.Meta.DefaultEnabled, applicability))
-                continue;
-            foreach (var tool in inst.Component.Tools)
-            {
-                if (!ToolRegistry.IsDisabled(tool.Name))
-                    names.Add(tool.Name);
-            }
-        }
-        return names;
-    }
-
     private void RegisterTools(GlobalComponentInstance inst)
     {
         foreach (var tool in inst.Component.Tools)
