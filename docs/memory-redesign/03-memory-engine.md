@@ -25,7 +25,8 @@ MemoryEngine
 ├── EmotionService         # 五轴状态 + 实时应用 + EmotionState.json 持久化 + 快照
 ├── EventSink              # 订阅总线 → 判定 L0/L1 + 情绪目标值映射（映射表待定）
 ├── RetrieveService        # 关键词 + 时间窗口检索，印证度按 utterance_id 去重派生
-└── MaintenanceEngine      # 标定关键词 / 密度检测 / 归档（巡逻节奏待定）
+├── DreamExplorer          # 轻量探索者：无 session，切片驱动，建推断断言 + 入队移交（见下）
+└── MaintenanceEngine      # 标定关键词 / 密度检测 / 归档 + 巡逻触发 Dream（节奏待定）
 ```
 
 ## Writer 写协议
@@ -228,6 +229,53 @@ Review 启动 → 从 ReviewQueue 认领（Pending → UnderReview，替代旧�
 - **归一化是最后手段**：仅当 Review 判定"没有实际证据，纯为消冲突"才等比缩放，默认不自动归一化
 - **跨等级碾压自动处理**：stated 直接压 inferred，不建工单（见 05 4.6）
 - 结果全靠可信度分配表达，**无四态枚举**（一真一假/合并/全假/未解决都只是分布形态）
+
+### Dream 探索者（轻量切片）
+
+Dream 是记忆库的**探索者**（与 Review 验证者分工）：找关联和问题、建推断断言，需要验证的移交 Review。**无 session 循环**，由 MaintenanceEngine 巡逻触发。核心已定：切片 + 统一产出去向；具体切片清单见下，调度节奏待定（见 04）。
+
+#### 切片（Slice）
+
+每个探索方向是一个**切片**：纯函数式单元，输入一批记忆线索，输出候选推断。统一基类：
+
+```csharp
+abstract class DreamSlice
+{
+    public abstract string Name { get; }                       // 切片标识
+    public abstract Task<IReadOnlyList<DreamCandidate>>
+        ExploreAsync(CancellationToken ct);                    // 线索 → 候选
+}
+
+class DreamCandidate
+{
+    public ClaimSpec Claim;        // 推断断言（三元组 + strength + 推断确定度）
+    public string Reason;          // 推断理由（审计/展示）
+    public bool NeedsReview;       // true → 入 ReviewQueue（Source=Dream）
+}
+```
+
+- 切片**无状态、不跑循环**：一次 Explore 一次返回，候选由 Dream 出口统一判定
+- 新探索方向 = 新增一个 `DreamSlice` 实现 + 注册，不改核心
+
+#### 默认切片
+
+| 切片 | 探索方向 | 产出示例 |
+|---|---|---|
+| A1 同主体聚类 | 同一 subject 的多个断言之间 | S 频繁对 O 表态 → 推断 S 对 O 的偏好 |
+| A2 同客体聚类 | 同一 object 被多个 subject 引用 | 多 subject 提到 O → 推断 subject 之间相关 |
+| A3 桥接 | S₁→O 且 S₂→O，S₁/S₂ 无直接边 | 推断 S₁ 与 S₂ 存在未表达的关系 |
+| B1 传递 | A→B 且 B→C | 推断 A→C（低确定度） |
+| C1 支持链检查 | 支持边链两侧矛盾 | 支持边本身可信度存疑 → 入队 |
+| C2 悬空引用 | 断言引用不存在的实体/断言 | 标记悬空 → 入队清理 |
+
+#### 产出去向
+
+Dream 出口统一判定候选：
+- **直接落库**：不涉及冲突槽位、确定度够 → 落为推断断言（`IsInference=true`，锚点 = 推断确定度 0.4~0.7，见 05）
+- **入队移交**：涉及排他属性槽位 / 确定度低 / 支持链矛盾 → 入 ReviewQueue（Source=Dream），Review 验证
+- **一轮结束**：框架生成一条日志式 L3 Journal（"本轮 Dream 发现了什么"）；经历正文主要由 Review 写
+
+> 冲突检测复用 ConflictService：落库时若触发冲突组（同 subject + 排他属性不同值）自动入队，与 Dream 自身逻辑无关（见 05）。
 
 ### 框架事件
 

@@ -79,5 +79,6 @@ Lilara 记忆系统的**整体推倒重来**。旧系统是纯"事实仓库"—�
 - 产生端全链路（Express 伴随提取 + wait + Session 复活善后 + 框架事件启停）
 - 提取协议 JSON 契约
 - **Review 消费流程**（ReviewQueue 统一工作源 + 暂存区 + git 式提交 + preview 预览）——见 05 6.0
+- **Dream 探索者（切片）**——轻量无 session，切片驱动，推断断言落库 + 队列移交——见 03
 
 **待定**：见 [04-migration-todos.md](04-migration-todos.md) — 数值类配置、事件映射表、维护引擎、Dream 探索者、评价映射、念头系统、检索细节等。
