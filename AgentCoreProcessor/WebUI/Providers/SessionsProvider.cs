@@ -53,6 +53,7 @@ internal class SessionsProvider : IWebUIProvider
                     {
                         new() { Field = "sessionId", Header = "会话ID", Width = "140px" },
                         new() { Field = "status", Header = "状态", Width = "100px", Format = ColumnFormat.Badge },
+                        new() { Field = "core", Header = "核心", Width = "110px" },
                         new() { Field = "components", Header = "组件" },
                         new() { Field = "parent", Header = "父会话", Width = "140px" },
                         new() { Field = "rounds", Header = "轮次", Width = "60px" }
@@ -66,11 +67,26 @@ internal class SessionsProvider : IWebUIProvider
                     Paginated = false
                 },
                 Layout = new CardLayout { PreferredCols = 12 }
+            },
+            new()
+            {
+                Id = "core-switch", Type = CardType.Form, DataSourceId = "core-switch", Title = "切换核心",
+                Schema = new FormSchema
+                {
+                    ShowSubmit = true,
+                    Fields = new()
+                    {
+                        new() { Field = "sessionId", Label = "会话ID", Type = FormFieldType.Text, Required = true, Placeholder = "从上方列表复制会话ID" },
+                        new() { Field = "coreName", Label = "目标核心", Type = FormFieldType.Select, Required = true, Options = CoreOptions() }
+                    }
+                },
+                Layout = new CardLayout { PreferredCols = 6, GridColumnStart = 1 }
             }
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "sessions-active", Source = new SessionsActiveSource(_engine) }
+            new() { Id = "sessions-active", Source = new SessionsActiveSource(_engine) },
+            new() { Id = "core-switch", Source = new CoreSwitchSource(_engine) }
         }
     };
 
@@ -155,6 +171,23 @@ internal class SessionsProvider : IWebUIProvider
         catch { }
         return 0;
     }
+
+    /// <summary>枚举 Storage/Core/*.json 的核心名，作为切换表单下拉选项（服务端按会话白名单再校验）。</summary>
+    private static List<SelectOption> CoreOptions()
+    {
+        try
+        {
+            var dir = Path.Combine(PathConfig.StoragePath, "Core");
+            if (!Directory.Exists(dir)) return new List<SelectOption>();
+            return Directory.GetFiles(dir, "*.json")
+                .Select(Path.GetFileNameWithoutExtension)
+                .Where(n => !string.IsNullOrEmpty(n))
+                .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+                .Select(n => new SelectOption { Value = n!, Label = n! })
+                .ToList();
+        }
+        catch { return new List<SelectOption>(); }
+    }
 }
 
 // ======== 数据源 ========
@@ -191,6 +224,7 @@ internal class SessionsActiveSource : IDataSource
                 ["sessionId"] = s.SessionId,
                 ["status"] = s.Status.ToString(),
                 ["type"] = (s is RuntimeSession rs ? rs.Type.ToString() : "—"),
+                ["core"] = (s is RuntimeSession rsCore ? rsCore.ActiveCoreConfig : "—"),
                 ["children"] = s.ChildSessionIds.Count.ToString(),
                 ["components"] = components,
                 ["parent"] = s.ParentSessionId ?? "—",
@@ -245,6 +279,46 @@ internal class SessionsActiveSource : IDataSource
             default:
                 return Task.FromResult(new ActionResult { Success = false, Message = $"未知操作: {action}" });
         }
+    }
+}
+
+/// <summary>
+/// 切换核心表单。sessionId + coreName → SessionEngine.SwitchSessionCore。
+/// </summary>
+internal class CoreSwitchSource : IDataSource
+{
+    private readonly MasterEngine _engine;
+    public CoreSwitchSource(MasterEngine engine) => _engine = engine;
+    public bool SupportsPush => false;
+
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        var formDefaults = new JsonObject
+        {
+            ["sessionId"] = "",
+            ["coreName"] = ""
+        };
+        return Task.FromResult(new DataResult { Data = formDefaults });
+    }
+
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+    {
+        if (action != "save" || data is not JsonObject obj)
+            return Task.FromResult(new ActionResult { Success = false, Message = "无效请求" });
+
+        var sessionId = obj["sessionId"]?.ToString() ?? "";
+        var coreName = obj["coreName"]?.ToString() ?? "";
+        if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(coreName))
+            return Task.FromResult(new ActionResult { Success = false, Message = "会话ID与目标核心均必填" });
+
+        var se = _engine.GetActiveEnginesSnapshot().OfType<SessionEngine>().FirstOrDefault();
+        if (se == null)
+            return Task.FromResult(new ActionResult { Success = false, Message = "SessionEngine 不可用" });
+
+        var (ok, msg) = se.SwitchSessionCore(sessionId.Trim(), coreName.Trim());
+        return Task.FromResult(new ActionResult { Success = ok, Message = msg });
     }
 }
 

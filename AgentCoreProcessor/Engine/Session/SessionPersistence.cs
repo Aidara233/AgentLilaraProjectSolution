@@ -79,6 +79,7 @@ namespace AgentCoreProcessor.Engine.Session
                 waitUntil = state.WaitUntil,
                 lastActivity = state.LastActivity,
                 compressionTier = state.CompressionTier,
+                activeCoreConfig = state.ActiveCoreConfig,
                 connectedChannelId = state.ConnectedChannelId,
                 connectedMode = state.ConnectedMode,
                 channelCursors = state.ChannelCursors,
@@ -244,6 +245,7 @@ namespace AgentCoreProcessor.Engine.Session
                     WaitUntil = wrapper.WaitUntil,
                     LastActivity = wrapper.LastActivity,
                     CompressionTier = wrapper.CompressionTier ?? "None",
+                    ActiveCoreConfig = wrapper.ActiveCoreConfig ?? "",
                     ConnectedChannelId = wrapper.ConnectedChannelId,
                     ConnectedMode = wrapper.ConnectedMode,
                     ChannelCursors = cursors,
@@ -316,6 +318,7 @@ namespace AgentCoreProcessor.Engine.Session
         public DateTime? WaitUntil { get; set; }
         public DateTime LastActivity { get; set; } = DateTime.UtcNow;
         public string CompressionTier { get; set; } = "None";
+        public string ActiveCoreConfig { get; set; } = "";
         public string? ConnectedChannelId { get; set; }
         public string? ConnectedMode { get; set; }
         public Dictionary<int, int> ChannelCursors { get; set; } = new();
@@ -353,6 +356,7 @@ namespace AgentCoreProcessor.Engine.Session
         [JsonProperty("waitUntil")] public DateTime? WaitUntil;
         [JsonProperty("lastActivity")] public DateTime LastActivity;
         [JsonProperty("compressionTier")] public string? CompressionTier;
+        [JsonProperty("activeCoreConfig")] public string? ActiveCoreConfig;
         [JsonProperty("connectedChannelId")] public string? ConnectedChannelId;
         [JsonProperty("connectedMode")] public string? ConnectedMode;
         // JSON 键可能为字符串，反序列化为 string→int 便于解析

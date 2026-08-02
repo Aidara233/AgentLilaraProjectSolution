@@ -56,6 +56,13 @@ internal class RuntimeSession : IRuntimeSession
     private string _componentLoopType = "channel";
     private ICurrencyService? _currency;
     private AgentCore? _agentCore;
+
+    // ── 多核支持：白名单（来自会话类型配置）+ 活跃核 + 按核懒建缓存 ──
+    private string _activeCoreConfig = "";
+    private readonly List<string> _allowedCoreConfigs = new();
+    private readonly Dictionary<string, AgentCore> _coreInstances = new(StringComparer.OrdinalIgnoreCase);
+    private ITool? _switchCoreTool;
+
     private MessageEngine? _messageEngine;
     private SessionEngine? _sessionEngine;
     private readonly ConnectedChannelState _connected = new();
@@ -117,7 +124,94 @@ internal class RuntimeSession : IRuntimeSession
     // ── 依赖注入 ──
 
     public void SetCurrency(ICurrencyService currency) => _currency = currency;
-    public void SetAgentCore(AgentCore core) => _agentCore = core;
+
+    /// <summary>
+    /// 配置本 session 可用的 Core 白名单并选定活跃核。取代旧的 SetAgentCore。
+    /// 白名单来自会话类型配置（Storage/Session/{type}.json 的 AllowedCores），实例在列表内切换。
+    /// 核实例懒建缓存：切核时 get-or-create new AgentCore(name)（fixedMode 锁配置）。
+    /// </summary>
+    public void ConfigureCores(IReadOnlyList<string>? allowedCoreConfigs, string defaultCore, string? activeOverride = null)
+    {
+        _allowedCoreConfigs.Clear();
+        if (allowedCoreConfigs != null && allowedCoreConfigs.Count > 0)
+            _allowedCoreConfigs.AddRange(allowedCoreConfigs);
+        if (_allowedCoreConfigs.Count == 0)
+            _allowedCoreConfigs.Add(defaultCore);
+
+        var active = activeOverride != null
+            && _allowedCoreConfigs.Contains(activeOverride, StringComparer.OrdinalIgnoreCase)
+            ? activeOverride : defaultCore;
+        if (!_allowedCoreConfigs.Contains(active, StringComparer.OrdinalIgnoreCase))
+            active = _allowedCoreConfigs[0];
+
+        _activeCoreConfig = active;
+        _agentCore = GetOrCreateCore(active);
+
+        // 多核时注入 switch_core 工具（channel 黑名单默认放行；单核类型不注入，行为不变）
+        if (_allowedCoreConfigs.Count > 1 && _switchCoreTool == null)
+        {
+            _switchCoreTool = new Tool.Core.SwitchCoreTool(this);
+            if (!_tools.ContainsKey(_switchCoreTool.Name))
+            {
+                _tools[_switchCoreTool.Name] = _switchCoreTool;
+                _activeTools.Add(_switchCoreTool.Name);
+            }
+        }
+    }
+
+    /// <summary>当前活跃 Core 配置名。</summary>
+    public string ActiveCoreConfig => _activeCoreConfig;
+
+    /// <summary>本 session 可用的 Core 配置名白名单（来自会话类型配置）。</summary>
+    public IReadOnlyList<string> AllowedCoreConfigs => _allowedCoreConfigs;
+
+    /// <summary>
+    /// 运行时切换活跃 Core。模型（switch_core 工具）与外部（命令/WebUI）共用。
+    /// 校验在白名单内 → 换核（懒建缓存）→ 注入系统消息 + 持久化 + 日志。
+    /// </summary>
+    public bool SwitchCore(string configName)
+    {
+        if (string.IsNullOrEmpty(configName)
+            || !_allowedCoreConfigs.Contains(configName, StringComparer.OrdinalIgnoreCase))
+            return false;
+
+        _activeCoreConfig = configName;
+        _agentCore = GetOrCreateCore(configName);
+
+        // 立即重设工具装配（外置切换发生在两轮之间也安全；轮中切换由 roundCore 硬化隔离）
+        _agentCore.EngineType = _componentLoopType;
+        _agentCore.AdditionalTools = _tools.Values.ToList();
+
+        // 经 _pendingInjections 注入切换通知：下一轮开头 flush 进 _history 并持久化，
+        // 不会像直接 _history.Add 那样被轮内 FormatAssistant 的 _history[^1] 覆盖。
+        InjectExternal($"[核心切换] 已切换到 {_activeCoreConfig}，可用核心：{string.Join(", ", _allowedCoreConfigs)}");
+        PersistStateAsync().GetAwaiter().GetResult();
+
+        Signal.Event(LogGroup.Engine, "Session 切换 Core",
+            new { sessionId = SessionId, core = _activeCoreConfig, allowed = _allowedCoreConfigs.ToArray() });
+        return true;
+    }
+
+    /// <summary>静默换核（恢复 / compact 承接）：不注入历史消息、不持久化。非法名忽略。</summary>
+    internal void SetActiveCore(string configName)
+    {
+        if (string.IsNullOrEmpty(configName)
+            || !_allowedCoreConfigs.Contains(configName, StringComparer.OrdinalIgnoreCase))
+            return;
+        _activeCoreConfig = configName;
+        _agentCore = GetOrCreateCore(configName);
+    }
+
+    /// <summary>按配置名 get-or-create 核实例（懒建：首次切到该核才 new AgentCore）。</summary>
+    private AgentCore GetOrCreateCore(string configName)
+    {
+        if (_coreInstances.TryGetValue(configName, out var existing))
+            return existing;
+        var core = new AgentCore(configName); // fixedMode 锁配置到该核
+        _coreInstances[configName] = core;
+        return core;
+    }
+
     public void SetMessageEngine(MessageEngine me) => _messageEngine = me;
     public void SetSessionEngine(SessionEngine se) => _sessionEngine = se;
 
@@ -173,6 +267,12 @@ internal class RuntimeSession : IRuntimeSession
         {
             _tools["compact"] = _compactTool;
             _activeTools.Add("compact");
+        }
+        // 多核会话的 switch_core 工具（权限裁决在 AgentCore 装配期 + ToolExecutor 执行期）
+        if (_switchCoreTool != null && !_tools.ContainsKey(_switchCoreTool.Name))
+        {
+            _tools[_switchCoreTool.Name] = _switchCoreTool;
+            _activeTools.Add(_switchCoreTool.Name);
         }
     }
 
@@ -788,6 +888,10 @@ internal class RuntimeSession : IRuntimeSession
                 _agentCore!.EngineType = _componentLoopType;  // 权限组（channel/task）
                 _agentCore!.AdditionalTools = _tools.Values.ToList();
 
+                // 硬化：本轮锁定的核引用。外置切换（命令/WebUI）可能在本轮中途发生，
+                // 整轮用 roundCore 保证格式化标志（UseNativeTools 等）与产出本轮的核一致。
+                var roundCore = _agentCore;
+
                 agentRound++;
 
                 // 中途注入：每轮推理前检查端口是否有新消息，有就立即注入上下文（不阻塞等待）
@@ -833,7 +937,7 @@ internal class RuntimeSession : IRuntimeSession
                 ModelOutput output;
                 try
                 {
-                    output = await _agentCore.InvokeAsync(_history, EngineMode.Working);
+                    output = await roundCore.InvokeAsync(_history, EngineMode.Working);
                 }
                 catch (Exception ex)
                 {
@@ -863,11 +967,11 @@ internal class RuntimeSession : IRuntimeSession
                     // assistant 轮：保留 tool_use ContentParts（携带 tool_use_id），与下方 tool_result 严格配对
                     // 替换上面那条空文本 assistant，避免模型看不到自己调用了工具（runaway 根因）
                     _history[_history.Count - 1] = NativeToolMessageFormatter.FormatAssistant(
-                        output, _agentCore.UseNativeTools, resolver);
+                        output, roundCore.UseNativeTools, resolver);
 
                     // tool_result 轮：一条消息按 tool_use_id 配对全部 call→result
                     var resultMsg = NativeToolMessageFormatter.FormatToolResults(
-                        output.ToolCalls, results, _agentCore.UseNativeTools, !_agentCore.DisableImageMessages);
+                        output.ToolCalls, results, roundCore.UseNativeTools, !roundCore.DisableImageMessages);
                     _history.Add(resultMsg);
 
                     // 每轮持久化：assistant turn + tool_result turn 一起写
@@ -1139,6 +1243,7 @@ internal class RuntimeSession : IRuntimeSession
         WaitUntil = WaitUntil,
         LastActivity = _lastActivity,
         CompressionTier = _compression?.CurrentTier.ToString() ?? "None",
+        ActiveCoreConfig = _activeCoreConfig,
         ConnectedChannelId = _connected.CurrentChannelId > 0 ? _connected.CurrentChannelId.ToString() : null,
         ConnectedMode = _connected.Mode != ConnectionMode.None ? _connected.Mode.ToString() : null,
         ChannelCursors = BuildChannelCursors(),

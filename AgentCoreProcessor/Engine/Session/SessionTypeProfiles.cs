@@ -49,11 +49,15 @@ internal static class SessionTypeProfiles
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 if (file != null)
                 {
+                    var defaultCore = string.IsNullOrEmpty(file.DefaultCoreConfig)
+                        ? DefaultFor(type).DefaultCoreConfig : file.DefaultCoreConfig;
                     return new SessionTypeProfile
                     {
                         Type = type,
-                        DefaultCoreConfig = string.IsNullOrEmpty(file.DefaultCoreConfig)
-                            ? DefaultFor(type).DefaultCoreConfig : file.DefaultCoreConfig,
+                        DefaultCoreConfig = defaultCore,
+                        // 白名单缺省回退单核：仅默认核
+                        AllowedCoreConfigs = file.AllowedCores?.Length > 0
+                            ? file.AllowedCores : new[] { defaultCore },
                         DefaultComponentIds = file.DefaultComponentIds?.Length > 0
                             ? file.DefaultComponentIds : DefaultFor(type).DefaultComponentIds,
                         PermissionGroup = string.IsNullOrEmpty(file.PermissionGroup)
@@ -80,6 +84,7 @@ internal static class SessionTypeProfiles
         {
             Type = SessionType.Channel,
             DefaultCoreConfig = "ChannelCore",
+            AllowedCoreConfigs = new[] { "ChannelCore" },
             DefaultComponentIds = new[]
             {
                 "basic-tools", "working-tools", "file-tools", "file-ops",
@@ -93,6 +98,7 @@ internal static class SessionTypeProfiles
         {
             Type = SessionType.Task,
             DefaultCoreConfig = "TaskCore",
+            AllowedCoreConfigs = new[] { "TaskCore" },
             DefaultComponentIds = new[]
             {
                 "basic-tools", "file-tools", "memory-tools", "cross-loop",
@@ -144,6 +150,7 @@ internal static class SessionTypeProfiles
     private sealed class SessionProfileFile
     {
         public string DefaultCoreConfig { get; set; } = "";
+        public string[] AllowedCores { get; set; } = Array.Empty<string>();
         [JsonPropertyName("DefaultComponents")]
         public string[] DefaultComponentIds { get; set; } = Array.Empty<string>();
         public string PermissionGroup { get; set; } = "";

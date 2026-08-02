@@ -18,6 +18,12 @@ public record SessionTypeProfile
     public string DefaultCoreConfig { get; init; } = "";
     public string[] DefaultComponentIds { get; init; } = Array.Empty<string>();
 
+    /// <summary>
+    /// 该会话类型可用的 Core 配置名白名单（实例在列表内选择）。
+    /// 空数组 → 仅 DefaultCoreConfig 单核（当前行为）。运行时切换见 RuntimeSession.SwitchCore。
+    /// </summary>
+    public string[] AllowedCoreConfigs { get; init; } = Array.Empty<string>();
+
     /// <summary>权限组 key（"channel"/"task"），对应 Storage/Session/{key}.json 的工具黑白名单。</summary>
     public string PermissionGroup { get; init; } = "";
 

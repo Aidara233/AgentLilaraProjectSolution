@@ -29,6 +29,7 @@ namespace AgentCoreProcessor.Command
                 new PersonaCommand(),
                 new TrustCommand(),
                 new ConfigCommand(),
+                new CoreCommand(),
             };
             _commands = list.ToDictionary(c => c.Name.ToLowerInvariant());
         }

@@ -118,11 +118,10 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
 
         _sessions[session.SessionId] = session;
 
-        // 注入 AgentCore（使用 spec 指定的 Core 配置名）和 MessageEngine
-        var agentCore = new Core.AgentCore(profile.DefaultCoreConfig);
+        // 注入多核配置（白名单 + 默认核）和 MessageEngine
+        session.ConfigureCores(profile.AllowedCoreConfigs, profile.DefaultCoreConfig);
         var messageEngine = _ctx.GetActiveEnginesSnapshot()
             .OfType<Messaging.MessageEngine>().FirstOrDefault();
-        session.SetAgentCore(agentCore);
         if (messageEngine != null) session.SetMessageEngine(messageEngine);
 
         // 根据 PortSpec 创建输入端口并订阅 MessageEngine
@@ -270,6 +269,9 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
         };
 
         var newSession = (RuntimeSession)CreateSession(oldSpec);
+
+        // 承接旧 session 的活跃核（同类型白名单必然包含）
+        newSession.SetActiveCore(oldSession.ActiveCoreConfig);
 
         // 接续旧 session 的轮次计数，避免新 session 从 0 重新跑 free round
         newSession.InheritRoundCount(oldSession.GetRoundCountForCompact());
@@ -466,6 +468,32 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
         var bareId = active.Substring("session:".Length);
         if (_sessions.TryGetValue(bareId, out var session))
             session.WakeUp();
+    }
+
+    /// <summary>
+    /// 外部切换 session 活跃 Core（命令 / WebUI 触发）。返回 (成功, 消息)。
+    /// 跨 compact forward 解析到当前活跃 session，校验白名单后切换并唤醒。
+    /// </summary>
+    public (bool Success, string Message) SwitchSessionCore(string sessionId, string coreName)
+    {
+        var active = ResolveActiveSession($"session:{sessionId}");
+        if (active == null)
+            return (false, $"会话 {sessionId} 不存在或已结束。");
+
+        var bareId = active.Substring("session:".Length);
+        if (!_sessions.TryGetValue(bareId, out var session) || session is not RuntimeSession rs)
+            return (false, $"会话 {bareId} 不可用。");
+
+        if (!rs.AllowedCoreConfigs.Contains(coreName, StringComparer.OrdinalIgnoreCase))
+            return (false, $"核心 {coreName} 不在会话 {bareId} 可用列表内（{string.Join(", ", rs.AllowedCoreConfigs)}）。");
+
+        if (!rs.SwitchCore(coreName))
+            return (false, $"切换核心失败：{coreName}。");
+
+        rs.WakeUp();
+        Signal.Event(LogGroup.Engine, "外部切换 Session Core",
+            new { sessionId = bareId, core = rs.ActiveCoreConfig, trigger = "external" });
+        return (true, $"会话 {bareId} 已切换到核心 {rs.ActiveCoreConfig}。");
     }
 
     // 注册表对外入口
@@ -764,9 +792,9 @@ InitialState = $"执行定时任务: {task.Description}"
 
             _sessions[session.SessionId] = session;
 
-            var agentCore = new Core.AgentCore(SessionTypeProfiles.Get(spec.Type).DefaultCoreConfig);
+            var profile = SessionTypeProfiles.Get(spec.Type);
+            session.ConfigureCores(profile.AllowedCoreConfigs, profile.DefaultCoreConfig, state.ActiveCoreConfig);
             var messageEngine = _ctx.GetActiveEnginesSnapshot().OfType<Messaging.MessageEngine>().FirstOrDefault();
-            session.SetAgentCore(agentCore);
             if (messageEngine != null) session.SetMessageEngine(messageEngine);
 
             // ⑤ 重建输入端口 + 订阅（不重新订阅会丢消息）

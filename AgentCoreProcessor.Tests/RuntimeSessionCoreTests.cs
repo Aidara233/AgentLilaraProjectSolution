@@ -1,0 +1,122 @@
+// AgentCoreProcessor.Tests/RuntimeSessionCoreTests.cs
+using System;
+using System.IO;
+using System.Reflection;
+using AgentCoreProcessor.Config;
+using AgentCoreProcessor.Engine.Session;
+using AgentLilara.PluginSDK;
+using Xunit;
+
+namespace AgentCoreProcessor.Tests;
+
+/// <summary>
+/// RuntimeSession 多核支持（ConfigureCores / SwitchCore 白名单校验）测试。
+/// 用临时 StoragePath 隔离，避免把测试 session 写到真实存档目录。
+/// </summary>
+public class RuntimeSessionCoreTests
+{
+    private static IDisposable PointToTempStorage()
+    {
+        var tmp = Path.Combine(Path.GetTempPath(), "lilara-core-test-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(tmp);
+        var prop = typeof(PathConfig).GetProperty("StoragePath",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+        var old = (string)prop!.GetValue(null)!;
+        prop.SetValue(null, tmp);
+        return new Disposable(() =>
+        {
+            prop.SetValue(null, old);
+            try { Directory.Delete(tmp, true); } catch { }
+        });
+    }
+
+    private sealed class Disposable(Action onDispose) : IDisposable
+    {
+        public void Dispose() => onDispose();
+    }
+
+    private static RuntimeSession NewChannelSession()
+        => new(new CreateSessionSpec { Type = SessionType.Channel }, new[] { "basic-tools" });
+
+    [Fact]
+    public void SwitchCore_ValidatesAgainstWhitelist()
+    {
+        using var _ = PointToTempStorage();
+        var rs = NewChannelSession();
+        rs.ConfigureCores(new[] { "ChannelCore", "ExpressCore" }, "ChannelCore");
+
+        Assert.Equal("ChannelCore", rs.ActiveCoreConfig);
+        Assert.Equal(2, rs.AllowedCoreConfigs.Count);
+
+        // 白名单内切换成功
+        Assert.True(rs.SwitchCore("ExpressCore"));
+        Assert.Equal("ExpressCore", rs.ActiveCoreConfig);
+
+        // 白名单外拒绝，保持原核
+        Assert.False(rs.SwitchCore("NotACore"));
+        Assert.Equal("ExpressCore", rs.ActiveCoreConfig);
+    }
+
+    [Fact]
+    public void ConfigureCores_EmptyAllowed_FallsBackToSingleDefault()
+    {
+        using var _ = PointToTempStorage();
+        var rs = NewChannelSession();
+        rs.ConfigureCores(Array.Empty<string>(), "TaskCore");
+
+        Assert.Single(rs.AllowedCoreConfigs);
+        Assert.Equal("TaskCore", rs.ActiveCoreConfig);
+        // 单核不注入 switch_core 工具
+        Assert.DoesNotContain("switch_core", rs.ActiveTools);
+    }
+
+    [Fact]
+    public void ConfigureCores_ActiveOverride_Precedence()
+    {
+        using var _ = PointToTempStorage();
+        var rs = NewChannelSession();
+        rs.ConfigureCores(new[] { "ChannelCore", "ExpressCore" }, "ChannelCore", activeOverride: "ExpressCore");
+        Assert.Equal("ExpressCore", rs.ActiveCoreConfig);
+
+        // 非法 override 回退默认
+        rs.ConfigureCores(new[] { "ChannelCore", "ExpressCore" }, "ChannelCore", activeOverride: "Bogus");
+        Assert.Equal("ChannelCore", rs.ActiveCoreConfig);
+    }
+
+    [Fact]
+    public void ConfigureCores_MultiCore_InjectsSwitchCoreTool()
+    {
+        using var _ = PointToTempStorage();
+        var rs = NewChannelSession();
+        rs.ConfigureCores(new[] { "ChannelCore", "ExpressCore" }, "ChannelCore");
+        Assert.Contains("switch_core", rs.ActiveTools);
+    }
+
+    [Fact]
+    public async Task Persistence_RoundTrips_ActiveCoreConfig()
+    {
+        using var _ = PointToTempStorage();
+        var sessionId = "coretest1";
+        var persister = new SessionPersistence(sessionId);
+        await persister.SaveSpecAsync(new CreateSessionSpec { Type = SessionType.Channel }, DateTime.UtcNow);
+
+        await persister.SaveStateAsync(new SessionStateSnapshot
+        {
+            SessionId = sessionId,
+            Status = SessionStatus.Running,
+            ActiveCoreConfig = "ExpressCore"
+        });
+
+        var loaded = persister.Load().State;
+        Assert.Equal("ExpressCore", loaded.ActiveCoreConfig);
+
+        // 旧存档（无该字段）回退空串，不抛错
+        await persister.SaveStateAsync(new SessionStateSnapshot
+        {
+            SessionId = sessionId,
+            Status = SessionStatus.Running
+        });
+        var loaded2 = persister.Load().State;
+        Assert.Equal("", loaded2.ActiveCoreConfig);
+    }
+}

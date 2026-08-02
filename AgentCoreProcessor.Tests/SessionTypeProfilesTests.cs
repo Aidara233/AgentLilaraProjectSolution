@@ -62,6 +62,26 @@ public class SessionTypeProfilesTests
     }
 
     [Fact]
+    public void ChannelProfile_AllowedCores_ContainsChannelAndExpress()
+    {
+        using var _ = PointToRealStorage();
+        var profile = SessionTypeProfiles.Get(SessionType.Channel);
+        Assert.Contains("ChannelCore", profile.AllowedCoreConfigs);
+        Assert.Contains("ExpressCore", profile.AllowedCoreConfigs);
+        Assert.Contains(profile.DefaultCoreConfig, profile.AllowedCoreConfigs);
+    }
+
+    [Fact]
+    public void TaskProfile_AllowedCores_FallsBackToSingleDefault()
+    {
+        using var _ = PointToRealStorage();
+        var profile = SessionTypeProfiles.Get(SessionType.Task);
+        // task.json 显式单核；即便缺省也应回退到默认核
+        Assert.Equal(new[] { "TaskCore" }, profile.AllowedCoreConfigs);
+        Assert.Single(profile.AllowedCoreConfigs);
+    }
+
+    [Fact]
     public void ComponentConfig_SeededByGroup()
     {
         using var _ = PointToRealStorage();
