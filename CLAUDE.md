@@ -93,6 +93,14 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - `docs/architecture-map.md` — **架构全景图**（引擎生态/消息流/做梦/记忆/工具/WebUI/日志/MCP），冷启动第一站
 - `docs/review-engine-redesign.md` — ReviewEngine 自由探索模式重设计
 
+**记忆重构计划（`docs/memory-redesign/`）：**
+- `docs/memory-redesign/README.md` — 计划总纲（命名/核心决策/架构总览/文件导航）
+- `docs/memory-redesign/01-storage-model.md` — 存储模型：6 表 + 1 JSON、矛盾表达、记录层级、检索
+- `docs/memory-redesign/02-emotion-model.md` — 情绪模型：五轴、运动公式、框架调控、SDK 边界
+- `docs/memory-redesign/03-memory-engine.md` — **记忆引擎整体规划**：Writer 协议、产生端、复活善后
+- `docs/memory-redesign/04-migration-todos.md` — 旧系统对照、废弃清单、待定项、实施路线
+- `docs/断言存储系统设计决定.md` — 断言侧唯一权威（Claims 遵循此文档）
+
 **Signal 日志系统（`docs/signal/`）：**
 - `docs/signal/signal-logging-guide.md` — Signal API 快速参考（Begin/Continue/Open/Close/Event/Error）
 - `docs/signal/signal-instrumentation-guide.md` — 埋点指南：在哪放日志、怎么放（给子 agent 用）
