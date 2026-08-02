@@ -1,16 +1,16 @@
-# 记忆引擎整体规划
+# 心智引擎整体规划
 
 > 记忆重构计划 · 文件 03
 > 状态：**骨架定稿** — 2026-08-02（Writer 协议、产生端、复活善后已定；EventSink 映射等实现细节待定）
 
 ## 定位
 
-记忆引擎持有情绪服务，是**唯一写入口 + 唯一情绪写入者**。提取、事件、模型工具调用产出的数据全部汇入 Writer 统一落库、统一应用情绪。消费端（工具/插件）不得直接碰表。
+心智引擎持有情绪服务，是**唯一写入口 + 唯一情绪写入者**。提取、事件、模型工具调用产出的数据全部汇入 Writer 统一落库、统一应用情绪。消费端（工具/插件）不得直接碰表。
 
 ## 模块结构
 
 ```
-MemoryEngine
+MindEngine
 ├── Writer                 # 统一写入口（提取产物 + 模型 journal 都走这）
 │   ├── ClaimWriter        # 槽位解析 + 关键词关联 + utterance_id + 同源 + 可信度锚点写入
 │   ├── JournalWriter      # 补元数据（Source/锚点/时间戳），EmotionSignals 转交情绪服务
@@ -31,7 +31,7 @@ MemoryEngine
 
 ## Writer 写协议
 
-**Writer 是记忆引擎内部唯一写入口**。提取器、`wait`/`remember` 的 journal 参数产出的数据全部汇入 Writer，由它统一解析落库、统一应用情绪。
+**Writer 是心智引擎内部唯一写入口**。提取器、`wait`/`remember` 的 journal 参数产出的数据全部汇入 Writer，由它统一解析落库、统一应用情绪。
 
 ### 统一入参（WriteBatch）
 
@@ -89,7 +89,7 @@ WriteBatch 进入
 
 ## 产生端：碎片从哪来
 
-提取能力**全部收敛进记忆引擎**。两条链路共用同一套提取逻辑，只是触发时机不同。
+提取能力**全部收敛进心智引擎**。两条链路共用同一套提取逻辑，只是触发时机不同。
 
 ### 双模式分工
 
@@ -98,7 +98,7 @@ WriteBatch 进入
 | **Express 伴随提取** | 消息攒批 + 空闲补一次 | 窄 Claim（用户说了X） | 不涉及 |
 | **Express wait** | 模型主动调 wait 带 journal 参数 | L2 Journal | 实时 |
 | **Session 运行期** | 暂停伴随提取；模型可随时调 journal | L2/L3 Journal | 实时 |
-| **Session 善后** | end_session / compact 归档后记忆引擎复活该 session 整理 | Claim + L2/L3 Journal | 由记忆引擎统一写 |
+| **Session 善后** | end_session / compact 归档后心智引擎复活该 session 整理 | Claim + L2/L3 Journal | 由心智引擎统一写 |
 | **框架事件** | 工具失败 / 超时 / 用户否定等 | L0/L1 + 情绪信号 | 实时 |
 
 ### Express 模式（伴随提取 + wait）
@@ -111,11 +111,11 @@ WriteBatch 进入
 ### Session 模式（运行期暂停 + 善后复活）
 
 - **运行期不做伴随提取**（暂停这条链路），模型可随时调 `journal` 记当下（L2）
-- **善后 = 记忆引擎复活已结束的 session**（不是 finalizing 态、不是新会话）：
+- **善后 = 心智引擎复活已结束的 session**（不是 finalizing 态、不是新会话）：
 
   ```
   end_session / compact 成功 → session 真正结束（Status=Completed，存档留档）
-    └─ 记忆引擎监听 OnCompleted（或扫描 Completed 存档）
+    └─ 心智引擎监听 OnCompleted（或扫描 Completed 存档）
          └─ 复活：从存档重建 session 实例
               ├─ 加载旧历史（history.jsonl）——上下文真实连续，模型自带全部记忆
               ├─ 重定义工具集 → 记忆工具组（journal / remember / claim / archive）
@@ -132,7 +132,7 @@ WriteBatch 进入
     ```
     compact(summary)
       ├─ 新 session 承接摘要，继续对话（现有逻辑不变）
-      └─ 旧 session Completed → 记忆引擎复活 → 整理完归档
+      └─ 旧 session Completed → 心智引擎复活 → 整理完归档
     ```
 
   - 产出：
@@ -211,7 +211,7 @@ WriteBatch 进入
 
 ### Review 消费（待验证队列 + 暂存提交）
 
-Review 是记忆引擎的验证者：处理记忆库里的待验证项（冲突、可疑推断、手动标记），验证真伪，让信息更明确。完整机制见 [05-credibility-conflict-model.md](05-credibility-conflict-model.md) 6.0。
+Review 是心智引擎的验证者：处理记忆库里的待验证项（冲突、可疑推断、手动标记），验证真伪，让信息更明确。完整机制见 [05-credibility-conflict-model.md](05-credibility-conflict-model.md) 6.0。
 
 ```
 Review 启动 → 从 ReviewQueue 认领（Pending → UnderReview，替代旧信标自动生成部分）

@@ -19,11 +19,11 @@
 | ReviewEngine | 验证者——处理 ReviewQueue，git 式暂存提交，拉开可信度差距（见 03/05） |
 | Beacon 自动生成部分 | ReviewQueue 自动入队（Conflict/Dream/Manual 统一来源，见 05 6.0） |
 | Beacon 工作端标记 | 保留（mark_for_review → ReviewQueue Source=Manual） |
-| EvaluationEngine/EvaluationScores | 并入记忆引擎，派生自断言（主体=用户时按断言性质驱动评价，见 06 待定） |
+| EvaluationEngine/EvaluationScores | 并入心智引擎，派生自断言（主体=用户时按断言性质驱动评价，见 06 待定） |
 | RelationClassificationCore | 不需要 |
 | MemoryDecay/ChangePropagation | 不需要 |
 | SleepTalkCore | 保留（与记忆库无关） |
-| ExtractionEngine | 合并进记忆引擎（伴随提取 + Session 善后两条链路） |
+| ExtractionEngine | 合并进心智引擎（伴随提取 + Session 善后两条链路） |
 
 ## 废弃清单
 
@@ -43,7 +43,7 @@
 - 各轴框架乘数具体数值（maxInfluence 系数）
 - 自动事件 → 目标值映射表（工具失败 / 用户否定 / 任务完成等分别推哪些轴、什么值）
 - `journal` / `remember` 工具签名（journal 结构已定，参数 schema 待定）
-- 记忆引擎：模块结构 + Writer 写协议 + 善后复活已定（见 03），待定：ExtractService 两链路的具体实现、EventSink 事件映射表
+- 心智引擎：模块结构 + Writer 写协议 + 善后复活已定（见 03），待定：ExtractService 两链路的具体实现、EventSink 事件映射表
 - 复活整理的配置（MaxFinalizeRounds 轮次上限、从存档重建时如何注入整理任务等，具体字段待定）
 - 情绪快照历史（EmotionSnapshot 表已定，具体字段/触发细节待定）
 
@@ -83,7 +83,7 @@
 
 - **矛盾不建表**：冲突组 + 可信度表达（见 05，取代旧"反驳"断言方案）
 - **属性允许多值**：无唯一性约束，模型写时把握；**排他属性例外**（Keywords `IsExclusive=true`，同槽位触发冲突组）（见 01/05）
-- **善后 = 复活**：不做拦截，end_session 成功即真结束，记忆引擎复活（见 03）
+- **善后 = 复活**：不做拦截，end_session 成功即真结束，心智引擎复活（见 03）
 - **Express 伴随提取单轮**：不开 session（见 03）
 - **可信度是断言属性**：写入者定初值，Review 可改；推翻 9.2"无 confidence"（体系性修正，见 05）
 - **强度与可信度正交**：`爱+0.9` 可低可信（见 05）

@@ -40,7 +40,7 @@ new = current + (target - current) × rate
 
 - **实时应用**：任何来源提交 EmotionSignal → 立即同步计算新值 + 更新内存当前值 + 持久化
 - **全局唯一 EmotionService**：唯一写入入口，事务内"读最新值 → 计算 → 写"；锁保证并发一致，避免多个来源基于同一旧值覆盖彼此
-- 由**记忆引擎**持有 EmotionService，兼顾情绪系统
+- 由**心智引擎（MindEngine）**持有 EmotionService，兼顾情绪系统
 - 信号实时应用（不等待升级）；L0/L1/L2/L3 都可携带 EmotionSignals
 - 初始值 0.0，当前值持久化到 `EmotionState.json`（原子写，重启加载）
 

@@ -97,7 +97,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - `docs/memory-redesign/README.md` — 计划总纲（命名/核心决策/架构总览/文件导航）
 - `docs/memory-redesign/01-storage-model.md` — 存储模型：6 表 + 1 JSON、矛盾表达、记录层级、检索
 - `docs/memory-redesign/02-emotion-model.md` — 情绪模型：五轴、运动公式、框架调控、SDK 边界
-- `docs/memory-redesign/03-memory-engine.md` — **记忆引擎整体规划**：Writer 协议、产生端、复活善后
+- `docs/memory-redesign/03-memory-engine.md` — **心智引擎整体规划**：Writer 协议、产生端、复活善后
 - `docs/memory-redesign/04-migration-todos.md` — 旧系统对照、废弃清单、待定项、实施路线
 - `docs/memory-redesign/05-credibility-conflict-model.md` — **可信度与冲突模型**：Credibility/strength、支持/反对边、noisy-OR、冲突组、Review
 - `docs/断言存储系统设计决定.md` — 断言侧唯一权威（Claims 遵循此文档）
