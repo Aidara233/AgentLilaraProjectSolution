@@ -170,7 +170,7 @@ RuntimeSession 内部（取代旧 Channel/System 引擎内循环）:
 
   Session 持久化（三件套，重启续跑 + 死的不加载）
     ├── Storage/Sessions/{sessionId}/spec.json    — 创建时一次写：组件/端口/InitActions/InitialState/Limits
-    ├── Storage/Sessions/{sessionId}/state.json   — 每轮原子重写：status/roundCount/WaitUntil/连接/channelCursors
+    ├── Storage/Sessions/{sessionId}/state.json   — 每轮原子重写：status/roundCount/WaitUntil/连接/channelCursors/activeCoreConfig
     └── Storage/Sessions/{sessionId}/history.jsonl — 每轮追加：assistant + tool_result 一起写
     恢复时仅加载 status ∈ {Running, Crashed} 的存档；Completed 留档不加载
 ```
@@ -608,9 +608,9 @@ Storage/
 │     ├── VisionEngineConfig.json    视觉引擎并发/批量/重试配置
 │     └── ComponentConfig.json       组件按权限组启用/禁用状态
 ├── Session/
-│     ├── channel.json               会话类型 Channel（核心/组件/权限组）+ 工具黑白名单
-│     ├── task.json                  会话类型 Task（核心/组件/权限组）+ 工具黑白名单
-│     ├── express.json               Express 框架循环工具白名单
+│     ├── channel.json               会话类型 Channel（核心/组件/权限组/AllowedCores 白名单）+ 工具黑白名单
+│     ├── task.json                  会话类型 Task（核心/组件/权限组/AllowedCores 白名单）+ 工具黑白名单
+│     ├── express.json               Express 框架循环工具白名单（+ DefaultCoreConfig）
 │     └── review.json                Review 复盘工具白名单
 ├── Adapter/
 │     └── *.json  适配器实例配置（多实例，config-driven）

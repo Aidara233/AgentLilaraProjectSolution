@@ -17,6 +17,7 @@
 - 睡眠打断分级：走神被@醒、小睡需@+关键词叫醒（仅@触发梦话）、大睡仅 force-wake 信号可唤醒
 - Prompt Caching：Claude 系 Core 启用 promptCaching，中转站已验证兼容
 - Session 持久化（已实现）：三件套 spec.json（创建一次写）/ state.json（每轮原子重写）/ history.jsonl（每轮追加），重启续跑 + 死的不加载（仅恢复 status ∈ {Running, Crashed} 的存档，Completed 留档）
+- 会话多核切换（已实现）：session 与 core 解耦，`Storage/Session/{type}.json` 的 `AllowedCores` 白名单（缺省=仅默认核，零回归）；`RuntimeSession` 运行时换核（模型 `switch_core` 工具 / `!core` 命令 / WebUI 切换表单），只换模型配置执行器、不碰历史/端口/组件；`state.json.activeCoreConfig` 持久化，compact/重启承接
 - 上下文压缩（已激活）：compact 工具不是扳机而是接管——模型调 compact(summary) → 旧 session 退出 + 新 session 创建承接摘要。三层阈值 L1=80k / L2=130k / L3=150k（基于 200k 上下文模型），L3 锁定工具表只剩 compact
 - Token 统计：ModelCallLog 数据库表记录每次调用（含 usage + caller tag）。WebUI 已有 LogsProvider（`/p/logs/tokens` 和 `/p/logs/model`）提供可视化。
   - CallerTag 标识调用来源：Channel:{id} / Session:{sessionId} / Task:{sessionId} / Review:{mode} / Dream:{phase}
@@ -179,6 +180,8 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 提取引擎：Engine/Extraction/ExtractionEngine.cs（记忆提取+监听检测，共用 LLM 调用）
 - 监听任务：Engine/Extraction/EavesdropTask.cs（关键词粗筛+LLM判定，一次性短命会话）
 - 会话规格：AgentLilara.PluginSDK/CreateSessionSpec.cs（组件列表+端口配置+初始状态）
+- 会话类型档案：Engine/Session/SessionTypeProfiles.cs（读 Storage/Session/{type}.json：默认核/组件/权限组/AllowedCores 白名单）
+- 会话多核：Engine/Session/RuntimeSession.cs（ConfigureCores/SwitchCore/SetActiveCore + 懒建缓存）+ Tool/Core/SwitchCoreTool.cs（模型 switch_core）+ Command/CoreCommand.cs（!core）+ state.json.activeCoreConfig
 - 跨循环消息：Engine/Core/LoopMessage.cs（单发消息 DTO，fire-and-forget）+ Engine/Core/DelegationBus.cs（定向/广播路由，纯内存）
 - 统一通信：Engine/Core/LoopId.cs（循环 ID 格式）
 - 循环闸门：Engine/Core/Gate.cs（delegate 驱动，组合不继承）+ Engine/Worker/LoopGate.cs（auto-reset 信号）

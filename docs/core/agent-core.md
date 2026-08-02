@@ -77,3 +77,18 @@ Task<ModelOutput> InvokeWithHistoryAsync(List<Message> messages, string? profile
 | `ChannelEngine.cs:73` | `new AgentCore()` | `"Channel:{id}"` |
 | `RuntimeSession`（SessionEngine.CreateSession） | `new AgentCore(spec.CoreConfigName)` | `"Session:{sessionId}"` |
 | `ReviewEngine.cs:90` | `new AgentCore("ReviewCore", false)` | `"Review:{mode}"` |
+
+### Session 多核切换（运行时）
+
+Session 与 Core 解耦：session 一组配置文件（决定组件/上下文），core 一组配置文件（决定模型）。
+每个会话类型在 `Storage/Session/{type}.json` 声明 `AllowedCores` 白名单（缺省 = 仅默认核，行为不变）。
+
+- **白名单配置**：`channel.json` 的 `"AllowedCores": ["ChannelCore", "ExpressCore"]`；`task.json` 单核 `["TaskCore"]`。加载器见 `SessionTypeProfiles.Load`。
+- **切换入口**（三路）：
+  - 模型工具：`switch_core(name)` — 会话多核时自动注入工具表，模型自主升级/降级核。
+  - 频道命令：`!core`（查看）/ `!core <name>`（切换）— 按频道 Full 占用解出会话。
+  - WebUI：会话页「切换核心」表单（core 列 + sessionId/coreName 下拉）。
+- **机制**：`RuntimeSession.ConfigureCores`（白名单 + 默认核 + 可选 activeOverride）取代旧 `SetAgentCore`；`SwitchCore` 校验白名单 → 懒建核实例缓存 → 换 `_agentCore` → 经 `_pendingInjections` 注入切换通知（下一轮 flush，防被轮内格式化覆盖）→ 持久化 `state.json.activeCoreConfig`。
+- **持久化**：`state.json` 加 `activeCoreConfig` 字段，重启/compact 承接活跃核；`CreateFromCompact` 用 `SetActiveCore` 静默继承。
+- **单核类型**（task 默认）不注入 `switch_core`、无切换入口，完全零回归。
+- **轮内硬化**：`RuntimeSession` 每轮锁 `roundCore = _agentCore`，格式化标志（UseNativeTools 等）与产出该轮的核一致，外置切换不破坏进行中的轮。
