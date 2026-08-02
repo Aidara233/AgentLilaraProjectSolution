@@ -12,12 +12,14 @@
 ```
 MemoryEngine
 ├── Writer                 # 统一写入口（提取产物 + 模型 journal 都走这）
-│   ├── ClaimWriter        # 槽位解析 + 关键词关联 + utterance_id + 同源/矛盾检测
+│   ├── ClaimWriter        # 槽位解析 + 关键词关联 + utterance_id + 同源 + 可信度锚点写入
 │   ├── JournalWriter      # 补元数据（Source/锚点/时间戳），EmotionSignals 转交情绪服务
 │   └── EventWriter        # L0/L1 落表 + 情绪信号转交（SubmitEvent 通道）
 ├── ExtractService         # 提取核心（两条链路共用一套逻辑，产出 JSON）
 │   ├── ExpressExtractor   # 伴随提取：消息攒批 + 空闲补一次（沉默监听，单轮调用）
 │   └── Resurrector        # 善后复活：监听 OnCompleted → 从存档重建 session → 换记忆工具组 → 注入整理任务
+├── EvidenceEngine         # 证据聚合：noisy-OR + logit/sigmoid，算实际可信度 c_actual（见 05）
+├── ConflictService        # 冲突检测 + 建组/入组 + 组内和约束 + 触发 Review（见 05）
 ├── EmotionService         # 五轴状态 + 实时应用 + EmotionState.json 持久化 + 快照
 ├── EventSink              # 订阅总线 → 判定 L0/L1 + 情绪目标值映射（映射表待定）
 ├── RetrieveService        # 关键词 + 时间窗口检索，印证度按 utterance_id 去重派生
@@ -53,11 +55,14 @@ WriteBatch 进入
 2. 关键词关联    keyword/attribute 槽位 + journal.keywords → 匹配/新建 Keywords → FragmentKeywords
                 （entity 只存 index 不归并；literal 直存；assertion 引用断言 id）
 3. 断言处理     同 utterance_id 分组（同源防重复计分）
-               矛盾检测（同 subject+predicate 比对）→ 自动生成"反驳"断言挂起，不仲裁
-               覆盖遵循断言文档（几乎不覆盖，同源明确更正才覆盖）
-4. 情绪应用     收集全部 journals 的 emotion_signals → EmotionService.ApplyAsync
-5. 落库         Claims / Journals / Keywords / FragmentKeywords / EmotionSnapshot 一次事务
-6. 提交；失败回滚（EmotionState.json 事务成功后原子写）
+               写入可信度锚点（写入者定初值：stated≈1.0 / inferred=推断度，见 05）
+4. 冲突检测     同 subject+排他属性槽位取值不同 → ConflictService 建组/入组（见 05）
+               支持/反对边（assertion 槽位）→ 收集证据边
+5. 情绪应用     收集全部 journals 的 emotion_signals → EmotionService.ApplyAsync
+6. 证据重算     EvidenceEngine 重算受影响断言的 c_actual（noisy-OR + logit，见 05）
+                 └─ 冲突组内和 >1 → 触发 Review
+7. 落库         Claims / Journals / Keywords / FragmentKeywords / EmotionSnapshot / 冲突组 一次事务
+8. 提交；失败回滚（EmotionState.json 事务成功后原子写）
 ```
 
 **原子性的意义**：一次提取的多条断言共享 utterance_id，必须整体成功或整体回滚，否则孤儿断言破坏同源分组。
@@ -191,9 +196,33 @@ WriteBatch 进入
 | Claim.entity 槽位 | 只存 index 作显示/原文返回，不匹配不归并 |
 | Claim.raw | 整句存储，召回直接返回 |
 | Claim.source | Evidence 引用（消息/经历/事件） |
+| Claim.Credibility | **写入者定初值**（stated≈1.0 / inferred=推断度），Review 可改，见 05 |
+| Claim.IsInference | 推断标记（驱动跨等级碾压 + 召回"推断"标签） |
+| Claim.strength | 程度值（态度方向强度，或支持边强度），见 05 |
+| Claim 支持/反对边 | assertion 槽位 → 收集为证据边（subject/object 引用断言 id），见 05 |
 | Journal.keywords | 匹配/新建 Keywords → FragmentKeywords |
 | Journal.emotion_signals | **事务内转交 EmotionService**（读最新→算→写→快照） |
 | Journal.content | 正文存储，元数据（recorded_at 等）由 Writer 补全 |
+
+**冲突接入（见 05）**：写入时 ConflictService 检查同（subject + 排他属性）槽位——取值不同则建组/入组；支持/反对边写入后 EvidenceEngine 重算受影响断言的 `c_actual`；冲突组内和 >1 → 触发 Review。
+
+### Review 消费（验证冲突组）
+
+Review 是记忆引擎的验证者：处理记忆库里已存在的冲突，验证真伪，让信息更明确。
+
+```
+Review 启动 → 拉取组内 c_actual 和 >1 的冲突组（替代旧信标自动生成部分）
+  └─ 对每个冲突组：
+       ├─ 查证（EvidenceRefs：源消息/经历/相关断言）
+       ├─ 调锚点：断言A 的 Credibility → x，断言B 的 Credibility → x
+       ├─ 重算 c_actual → 检查组内和是否修复（≤1）
+       └─ 通过，完成（组标 ResolvedAt）
+```
+
+- Review 目的**不是"A 赢 B 输"**，而是把可信度**拉开差距**，让信息明确
+- **归一化是最后手段**：仅当 Review 判定"没有实际证据，纯为消冲突"才等比缩放，默认不自动归一化
+- **跨等级碾压自动处理**：stated 直接压 inferred，不建工单（见 05 4.6）
+- 结果全靠可信度分配表达，**无四态枚举**（一真一假/合并/全假/未解决都只是分布形态）
 
 ### 框架事件
 
