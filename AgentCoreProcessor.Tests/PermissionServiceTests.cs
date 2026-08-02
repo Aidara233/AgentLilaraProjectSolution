@@ -1,9 +1,14 @@
 // AgentCoreProcessor.Tests/PermissionServiceTests.cs
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using System.Threading;
+using System.Threading.Tasks;
 using AgentCoreProcessor.Config;
+using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Tool;
+using AgentLilara.PluginSDK;
 using Xunit;
 
 namespace AgentCoreProcessor.Tests;
@@ -103,5 +108,35 @@ public class PermissionServiceTests
         Assert.True(PermissionService.IsAllowed("review", "memory_search"));
         Assert.False(PermissionService.IsAllowed("review", "end_session"));
         Assert.False(PermissionService.IsAllowed("review", "send_email"));
+    }
+
+    [Fact]
+    public async Task ToolExecutor_DeniesOutOfGroupTool()
+    {
+        using var _ = PointToRealStorage();
+        var executor = new ToolExecutor(name => new StubTool(name)) { PermissionGroup = "express" };
+        var results = await executor.ExecuteAsync(new List<ToolCall> { new() { Tool = "end_session" } });
+        Assert.Equal("failed", results[0].Status);
+        Assert.Contains("权限组", results[0].Error);
+    }
+
+    [Fact]
+    public async Task ToolExecutor_AllowsInGroupTool()
+    {
+        using var _ = PointToRealStorage();
+        var executor = new ToolExecutor(name => new StubTool(name)) { PermissionGroup = "express" };
+        var results = await executor.ExecuteAsync(new List<ToolCall> { new() { Tool = "speak" } });
+        Assert.Equal("success", results[0].Status);
+    }
+
+    /// <summary>最小 ITool 桩：任何名字都成功执行。</summary>
+    private sealed class StubTool(string name) : ITool
+    {
+        public string Name => name;
+        public string Description => "stub";
+        public IReadOnlyList<ToolParameter> Parameters => Array.Empty<ToolParameter>();
+        public TimeSpan Timeout => TimeSpan.FromSeconds(1);
+        public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
+            => Task.FromResult(new ToolResult { Status = "success", Data = "ok" });
     }
 }

@@ -42,6 +42,9 @@ namespace AgentCoreProcessor.Engine
             set => _toolResolver = value ?? ToolRegistry.Get;
         }
 
+        /// <summary>当前权限组（express/channel/task/review）。透传给内部 ToolExecutor 做执行期硬校验。</summary>
+        public string? PermissionGroup { get; set; }
+
         /// <summary>工具执行完毕后的回调。Host 用此发布事件到总线。</summary>
         public Func<ToolCall, ToolResult, ITool?, Task>? OnToolExecuted { get; set; }
 
@@ -201,7 +204,7 @@ namespace AgentCoreProcessor.Engine
                         calls = output.ToolCalls.Select(c => new { c.Tool, c.Inputs, c.ToolUseId })
                     }))
                 {
-                    var executor = new ToolExecutor(_toolResolver);
+                    var executor = new ToolExecutor(_toolResolver) { PermissionGroup = PermissionGroup };
                     if (OnToolExecuted != null)
                     {
                         executor.OnToolExecuted = async (call, result) =>

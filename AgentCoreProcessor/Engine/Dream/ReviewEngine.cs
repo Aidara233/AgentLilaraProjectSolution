@@ -139,7 +139,10 @@ namespace AgentCoreProcessor.Engine
 
                 _core.EngineType = "review";
                 _core.GlobalComponentTools = _ctx.GlobalComponentHost?.GetVisibleTools("review").ToList();
-                _agent = new Agent(this, _core, agentConfig);
+                _agent = new Agent(this, _core, agentConfig)
+                {
+                    PermissionGroup = "review"
+                };
 
                 // 全量记录工具调用到 ReviewActions（摘要用参数，detail 存原始 JSON）
                 _agent.OnToolExecuted = (call, result, _) =>
