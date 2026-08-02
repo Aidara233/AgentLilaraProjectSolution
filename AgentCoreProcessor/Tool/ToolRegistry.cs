@@ -76,27 +76,22 @@ namespace AgentCoreProcessor.Tool
             get { lock (_nonComponentTools) return new HashSet<string>(_nonComponentTools); }
         }
 
-        /// <summary>检查工具是否适用于指定引擎类型。null = 仅 session 可用。</summary>
+        /// <summary>检查工具是否适用于指定权限组。权限组裁决（Storage/Session/{group}.json 黑白名单）。</summary>
         public static bool IsApplicableToEngine(string toolName, string? engineType)
         {
-            if (string.IsNullOrEmpty(engineType)) return true;
-            var meta = GetMeta(toolName);
-            if (meta?.EngineTypes == null)
-                return "session".Equals(engineType, StringComparison.OrdinalIgnoreCase);
-            return meta.EngineTypes.Contains(engineType);
+            return PermissionService.IsAllowed(engineType, toolName);
         }
 
         /// <summary>
-        /// 统一工具可见性判定（引擎工具清单层）。优先级：
+        /// 统一工具可见性判定。优先级：
         ///   1. 全局禁用（ToolConfig）→ false
-        ///   2. 引擎有配置（EngineTools.json）→ 白名单/黑名单判定
-        ///   3. 引擎无配置 → true（不限制，信任引擎类型声明与组件适用性过滤）
+        ///   2. 权限组裁决（Storage/Session/{group}.json）→ 白名单/黑名单
+        /// 组未配置时放行（信任组件装配过滤）。
         /// </summary>
         public static bool IsVisibleToEngine(string toolName, string? engineType)
         {
             if (IsDisabled(toolName)) return false;
-            if (string.IsNullOrEmpty(engineType)) return true;
-            return EngineToolConfig.Load().IsVisible(engineType, toolName);
+            return PermissionService.IsAllowed(engineType, toolName);
         }
 
         // ---- 描述生成（JSON 降级路径用） ----

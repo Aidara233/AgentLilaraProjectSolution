@@ -131,7 +131,7 @@ internal class RuntimeSession : IRuntimeSession
     /// </summary>
     public void InitComponents(string loopId, ModuleBus moduleBus, IServiceProvider services, Action wakeLoop)
     {
-        _componentLoopType = SessionTypeProfiles.Get(Type).LoopApplicabilityKey;
+        _componentLoopType = SessionTypeProfiles.Get(Type).PermissionGroup;
         // 注入 per-session 连接状态：发送工具据此决定目标频道并校验发言权限
         var perLoopServices = new Dictionary<Type, object>
         {
@@ -788,7 +788,7 @@ internal class RuntimeSession : IRuntimeSession
                     }
                 }
 
-                _agentCore!.EngineType = "session";
+                _agentCore!.EngineType = _componentLoopType;  // 权限组（channel/task）
                 _agentCore!.ExcludedToolNames = _sessionExcludedTools;
                 _agentCore!.AdditionalTools = _tools.Values.ToList();
 

@@ -260,19 +260,12 @@ namespace AgentCoreProcessor.Core
         }
 
         /// <summary>
-        /// 工具对当前引擎的可见性判定。显式 EngineTypes 的工具必须包含当前引擎；
-        /// 未声明的组件工具信任组件级过滤（ComponentHost/GlobalComponentHost 已按引擎适用性筛过），
-        /// 但统一接受 EngineToolConfig 清单约束（express 白名单等）。
+        /// 工具对当前权限组的可见性判定。统一走 ToolRegistry.IsVisibleToEngine
+        /// （全局禁用 + PermissionService 黑白名单裁决）。组件工具也接受同一裁决，
+        /// 不再依赖 ToolMeta.EngineTypes 声明（该声明已 inert）。
         /// </summary>
         private bool IsVisibleToEngineOrGlobal(ITool t)
         {
-            if (ToolRegistry.IsDisabled(t.Name)) return false;
-            var meta = ToolRegistry.GetMeta(t.Name);
-            if (meta?.EngineTypes is { Length: > 0 })
-            {
-                if (EngineType != null && !meta.EngineTypes.Contains(EngineType))
-                    return false;
-            }
             return ToolRegistry.IsVisibleToEngine(t.Name, EngineType);
         }
 

@@ -80,7 +80,7 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
             if (spec.ExcludedComponents != null) set.ExceptWith(spec.ExcludedComponents);
             var cfg = ComponentConfig.Load();
             finalComponents = set
-                .Where(c => cfg.IsEnabled(c, profile.LoopApplicabilityKey, defaultEnabled: true))
+                .Where(c => cfg.IsEnabled(c, profile.PermissionGroup, defaultEnabled: true))
                 .ToArray();
         }
 
