@@ -19,7 +19,9 @@ MemoryEngine
 │   ├── ExpressExtractor   # 伴随提取：消息攒批 + 空闲补一次（沉默监听，单轮调用）
 │   └── Resurrector        # 善后复活：监听 OnCompleted → 从存档重建 session → 换记忆工具组 → 注入整理任务
 ├── EvidenceEngine         # 证据聚合：noisy-OR + logit/sigmoid，算实际可信度 c_actual（见 05）
-├── ConflictService        # 冲突检测 + 建组/入组 + 组内和约束 + 触发 Review（见 05）
+├── ConflictService        # 冲突检测 + 建组/入组 + 组内和约束（见 05）
+├── ReviewQueueService     # 待验证队列：入队（Conflict/Dream/Manual）+ 认领 + 状态 + 崩溃恢复（见 05 6.0）
+├── ReviewStage            # Review 暂存区：git 式暂存 + preview 预览 + commit 提交（见 05 6.0）
 ├── EmotionService         # 五轴状态 + 实时应用 + EmotionState.json 持久化 + 快照
 ├── EventSink              # 订阅总线 → 判定 L0/L1 + 情绪目标值映射（映射表待定）
 ├── RetrieveService        # 关键词 + 时间窗口检索，印证度按 utterance_id 去重派生
@@ -206,20 +208,23 @@ WriteBatch 进入
 
 **冲突接入（见 05）**：写入时 ConflictService 检查同（subject + 排他属性）槽位——取值不同则建组/入组；支持/反对边写入后 EvidenceEngine 重算受影响断言的 `c_actual`；冲突组内和 >1 → 触发 Review。
 
-### Review 消费（验证冲突组）
+### Review 消费（待验证队列 + 暂存提交）
 
-Review 是记忆引擎的验证者：处理记忆库里已存在的冲突，验证真伪，让信息更明确。
+Review 是记忆引擎的验证者：处理记忆库里的待验证项（冲突、可疑推断、手动标记），验证真伪，让信息更明确。完整机制见 [05-credibility-conflict-model.md](05-credibility-conflict-model.md) 6.0。
 
 ```
-Review 启动 → 拉取组内 c_actual 和 >1 的冲突组（替代旧信标自动生成部分）
-  └─ 对每个冲突组：
+Review 启动 → 从 ReviewQueue 认领（Pending → UnderReview，替代旧信标自动生成部分）
+  └─ 逐项处理：
        ├─ 查证（EvidenceRefs：源消息/经历/相关断言）
-       ├─ 调锚点：断言A 的 Credibility → x，断言B 的 Credibility → x
-       ├─ 重算 c_actual → 检查组内和是否修复（≤1）
-       └─ 通过，完成（组标 ResolvedAt）
+       ├─ 调锚点进暂存区：断言A 的 Credibility → x，断言B 的 Credibility → x
+       ├─ review_preview 预览影响（dry-run 重算 c_actual，不写库）
+       ├─ 满意 → review_commit（原子事务落库 + 重算 + 校验和≤1）
+       └─ 队列项 Done；冲突组 ResolvedAt
 ```
 
+- **ReviewQueue 是唯一工作源**：冲突组超预算、Dream 发现、手动 mark 都入队（见 05 6.0）
 - Review 目的**不是"A 赢 B 输"**，而是把可信度**拉开差距**，让信息明确
+- **git 式提交**：改动进暂存区，模型显式 `review_commit`（暂存区持久化，崩溃不丢）
 - **归一化是最后手段**：仅当 Review 判定"没有实际证据，纯为消冲突"才等比缩放，默认不自动归一化
 - **跨等级碾压自动处理**：stated 直接压 inferred，不建工单（见 05 4.6）
 - 结果全靠可信度分配表达，**无四态枚举**（一真一假/合并/全假/未解决都只是分布形态）

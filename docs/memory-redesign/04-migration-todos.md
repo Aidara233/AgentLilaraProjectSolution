@@ -15,10 +15,10 @@
 | MemoryExtractionCore | 新提取逻辑 |
 | 矛盾边（Support 负值） | 冲突组 + 支持/反对边 + 可信度（见 05） |
 | "反驳"谓词（9.2 推理型） | 取消——反对 = `支持 + 负 strength`（见 05） |
-| DreamEngine (Order+Patrol) | 新维护引擎（标定+密度检测+归档）+ 探索者（找关联/问题） |
-| ReviewEngine | 验证者——处理冲突组，拉开可信度差距（见 03/05） |
-| Beacon 自动生成部分 | 冲突组超预算触发（见 05） |
-| Beacon 工作端标记 | 保留（mark_for_review，`我觉得值得看`） |
+| DreamEngine (Order+Patrol) | 新维护引擎（标定+密度检测+归档）+ 探索者（找关联/问题，见 06 待定） |
+| ReviewEngine | 验证者——处理 ReviewQueue，git 式暂存提交，拉开可信度差距（见 03/05） |
+| Beacon 自动生成部分 | ReviewQueue 自动入队（Conflict/Dream/Manual 统一来源，见 05 6.0） |
+| Beacon 工作端标记 | 保留（mark_for_review → ReviewQueue Source=Manual） |
 | EvaluationEngine/EvaluationScores | 并入记忆引擎，派生自断言（主体=用户时按断言性质驱动评价，见 06 待定） |
 | RelationClassificationCore | 不需要 |
 | MemoryDecay/ChangePropagation | 不需要 |
@@ -31,8 +31,9 @@
 
 **可信度模型落地后的新增废弃**：
 - "反驳"谓词取消（反对 = `支持 + 负 strength`）
-- 旧信标的自动生成部分取消（框架自动验证信号 = 冲突组超预算）
+- 旧信标的自动生成部分取消（框架自动验证信号 = ReviewQueue 自动入队）
 - 旧"矛盾检测 = LLM 关系分类顺带"取消（新检测 = 确定性排他属性检查，不靠 LLM）
+- 旧"冲突直接触发 Review"取消（冲突组超预算 → 入 ReviewQueue，Review 消费队列而非直接消费冲突组）
 
 ## 待定
 
@@ -50,8 +51,10 @@
 
 - 支持/反对边谓词的完整清单（"支持"之外还有哪些证据谓词，如"依据/来源/反证"）
 - 非冲突可信度变化的具体规则（同槽位新 stated 证据抬高？来源失信连带压低？具体触发待定）
-- 冲突组超预算的 Review 调度策略（批量认领？按 SubjectKey 归组展示？）
 - 多方冲突（同组 >2 断言）的可信度分配策略
+- ReviewQueue 的具体调度策略（Review 会话何时启动、认领批大小、优先级排序）
+- review_preview 预览的具体输出格式（哪些变动、冲突组超预算提示的呈现）
+- Review 结束触发（review_complete 强制提交剩余暂存 + 队列收尾的具体语义）
 
 ### 记忆系统其余部分
 
@@ -68,9 +71,9 @@
 
 > 按依赖顺序分阶段，每阶段可独立交付验证。详细实施计划待 writing-plans 流程产出。
 
-**阶段 0 · 建库**：新增表（Claims/Journals/Keywords/FragmentKeywords/EmotionSnapshot/FrameworkEvents + ConflictGroups/ConflictGroupMembers）+ EmotionState.json，迁移配置
+**阶段 0 · 建库**：新增表（Claims/Journals/Keywords/FragmentKeywords/EmotionSnapshot/FrameworkEvents + ConflictGroups/ConflictGroupMembers + ReviewQueue）+ EmotionState.json，迁移配置
 **阶段 1 · 情绪服务**：EmotionService（五轴 + 锁 + 实时 + 持久化 + 快照），IEmotionAccess SDK
-**阶段 2 · Writer + 冲突**：WriteBatch 原子批次、关键词关联、可信度锚点写入、ConflictService（排他检测/建组入组）、EvidenceEngine（noisy-OR + logit）、情绪转交
+**阶段 2 · Writer + 冲突 + 队列**：WriteBatch 原子批次、关键词关联、可信度锚点写入、ConflictService（排他检测/建组入组）、EvidenceEngine（noisy-OR + logit）、ReviewQueueService（入队/认领/恢复）、情绪转交
 **阶段 3 · 产生端**：Express 伴随提取（单轮）+ wait journal 参数 + 框架事件启停
 **阶段 4 · 复活善后**：监听 OnCompleted → 从存档重建 → 换记忆工具组 → 注入整理任务
 **阶段 5 · 检索 + Review + 维护**：RetrieveService（可信度门控）、Review 验证流程、MaintenanceEngine、Dream 探索者
@@ -88,3 +91,6 @@
 - **组内和 ≤1 恒定**：冲突各方瓜分信念预算，解决后也成立（见 05）
 - **归一化 = Review 最后手段**：默认不自动，仅无实际证据时等比缩放（见 05）
 - **跨等级碾压自动处理**：stated 直接压 inferred，不建工单（见 05 4.6）
+- **ReviewQueue 统一工作源**：冲突组超预算、Dream 发现、手动 mark 都入队；冲突组退化为纯数值约束（见 05 6.0）
+- **git 式提交**：Review 改动进暂存区（持久化），review_preview 预览影响（dry-run），review_commit 显式提交（原子事务 + 重算 + 校验）（见 05 6.0）
+- **Dream 轻量**：无 session 循环；产物 = 推断断言（IsInference=true）+ ReviewQueue 入队；经历主要由 Review 写，Dream 结束框架生成日志式 L3

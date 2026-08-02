@@ -173,6 +173,45 @@ ConflictGroupMembers
 
 ## 六、Review 验证流程
 
+### 6.0 Review 工作流（队列 + 暂存区 + git 式提交）
+
+**Review 是 session**（复用 RuntimeSession，三件套持久化），消费**持久化的待验证队列**（ReviewQueue），改动经**暂存区 + 显式提交**落库。
+
+```
+ReviewQueue（待验证队列，持久化表）——唯一的 Review 工作源
+├── Id
+├── TargetRef                     -- 目标：断言Id / 消息Id / 冲突组Id / JournalId
+├── TargetKind: Claim|Message|ConflictGroup|Journal
+├── Reason                         -- 为什么进队列（排他冲突/悬空推断/手动标记/支持链矛盾）
+├── Source: Conflict|Dream|Manual|Framework
+├── Priority: Low|Normal|High
+├── Status: Pending|UnderReview|Done|Dropped
+├── CreatedAt / ClaimedAt? / DoneAt?
+└── ResultRef?                    -- 处理结果关联（可选）
+```
+
+- **统一框架**：所有来源都进这一个队列（冲突组超预算自动入队、Dream 发现入队、手动 mark 入队）。冲突组退化为**纯数值约束** + 队列的一个 Source，不再直接是"Review 候选"
+- **崩溃恢复**：`Status=UnderReview` 的项重启后重置回 `Pending`（保留 `InterruptedAt` 时间戳），Review 重新认领——最多重做一批，不丢工作
+
+```
+Review session 处理队列项
+  ├─ 每项处理 → 改动进【暂存区】（不落库）
+  ├─ 预览：模型调 review_preview，看"如果合并了，我的改动会导致什么"
+  ├─ 模型满意 → review_commit（显式提交，落库 + 重算）
+  ├─ 不满意 → 调整暂存区 → 再预览 → 再提交
+  └─ review_complete → 强制提交剩余暂存 + 队列收尾
+```
+
+- **暂存区持久化**：`Status=UnderReview` 项 + 暂存区随 review session 持久化（state.json），崩溃不丢未提交工作
+- **预览（git diff 式）**：模型对暂存区调 `review_preview` → 引擎构造**临时 batch**（暂存改动 + 现有证据边），跑 EvidenceEngine 只算**不写库**，输出"改动会导致哪些 c_actual 变动、哪些冲突组超预算"——**先看影响再决定**，避免盲改
+- **提交 = 原子事务**：全部暂存改动落库 + EvidenceEngine 重算 c_actual + 校验组内和 ≤1
+
+**Review 工具链**（进 `review_*` 系列）：
+- `review_preview` — 预览暂存区改动的可信度影响（dry-run，不写库）
+- `review_commit` — 显式提交暂存区（原子事务落库 + 重算 + 校验）
+- `review_list_queue` — 查看待验证队列
+- `review_resolve` — 认领/处理队列项（调锚点 → 进暂存区）
+
 ### 6.1 目标：拉开可信度差距
 
 Review 的目的**不是"A 赢了 B 输了"**，而是：
@@ -198,11 +237,11 @@ Review 的目的**不是"A 赢了 B 输了"**，而是：
 
 ```
 写入 → 触发冲突检测 → 建组（或入组）→ 证据引擎重算 c_actual
-  └─ 组内和 >1 ──→ Review 认领该组
-       ├─ 查证（EvidenceRefs：源消息/经历/相关断言）
-       ├─ 调锚点：A 的 Credibility → x，B 的 Credibility → x
-       ├─ 重算 c_actual → 检查组内和是否修复（≤1）
-       └─ 通过，完成。组标 ResolvedAt。
+  └─ 组内和 >1 ──→ 自动产生 ReviewQueue 项（Source=Conflict）
+       └─ Review session 认领（ReviewQueue）→ 查证 → 调锚点进暂存区
+            ├─ review_preview 看影响 → review_commit 提交
+            ├─ 重算 c_actual → 检查组内和是否修复（≤1）
+            └─ 通过，完成。组标 ResolvedAt，队列项 Done。
 ```
 
 ## 七、与旧设计的关系
@@ -222,3 +261,5 @@ Review 的目的**不是"A 赢了 B 输了"**，而是：
 6. **强度与可信度正交**：`爱+0.9` 可以是低可信
 7. **Review 拉开差距**：语义结果靠可信度分布，无四态枚举
 8. **归一化是最后手段**：默认不自动，Review 决策才用
+9. **队列统一工作源**：ReviewQueue 是 Review 唯一的待处理清单，冲突组只是其一个 Source
+10. **git 式提交**：Review 改动进暂存区，模型 `review_preview` 预览影响后 `review_commit` 显式提交（原子事务 + 重算 + 校验）
