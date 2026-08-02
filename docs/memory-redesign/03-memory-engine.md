@@ -248,8 +248,10 @@ abstract class DreamSlice
 
 class DreamCandidate
 {
-    public ClaimSpec Claim;        // 推断断言（三元组 + strength + 推断确定度）
-    public string Reason;          // 推断理由（审计/展示）
+    public CandidateKind Kind;     // Inference（新推断）| Issue（现存断言疑点）
+    public ClaimSpec Claim;        // Kind=Inference 有：三元组 + strength + 推断确定度
+    public TargetRef Target;       // Kind=Issue 有：指向已存在断言/实体
+    public string Reason;          // 推断理由 / 疑点描述（审计/展示）
     public bool NeedsReview;       // true → 入 ReviewQueue（Source=Dream）
 }
 ```
@@ -259,23 +261,47 @@ class DreamCandidate
 
 #### 默认切片
 
-| 切片 | 探索方向 | 产出示例 |
+| 切片 | 探索方向 | 产出 | 执行 |
+|---|---|---|---|
+| A1 同主体聚类 | 同一 subject 的多个断言之间 | Inference（S 对 O 的偏好） | 确定性 |
+| A2 同客体聚类 | 同一 object 被多个 subject 引用 | Inference（subject 相关） | 语义 |
+| A3 桥接 | S₁→O 且 S₂→O，S₁/S₂ 无直接边 | Inference（S₁↔S₂ 关系） | 语义 |
+| B1 传递 | A→B 且 B→C | Inference（A→C，低确定度） | 确定性 |
+| C1 支持链检查 | 支持边链两侧矛盾 | Issue（支持边可信度存疑） | 确定性 |
+| C2 悬空引用 | 断言引用不存在的实体/断言 | Issue（标记悬空） | 确定性 |
+
+#### 产出去向（统一出口）
+
+**候选 = 半成品**：切片只负责"发现什么"，"怎么入体系"是引擎职责。全部候选进 Dream 出口逐条处理：
+
+```
+ExploreAsync() → List<DreamCandidate>（空 = 跳过，跑下一切片）
+  └─ 按 Kind 分叉：
+     Inference → 1.过滤重复（同 subject+predicate+object 已存在）→ 丢弃
+                 2.补全   IsInference=true, Credibility=confidence,
+                          source={who:dream, slice, hits}
+                 3.落库   Writer.WriteBatch —— 复用冲突检测 + 证据重算 + 事务
+                 4.移交   NeedsReview=true 或 落库顶爆冲突组 → ReviewQueue(Source=Dream)
+     Issue     → 不入库，直接构造 ReviewQueue 项（TargetRef=现有断言, Reason=疑点描述）
+  └─ 一轮结束  框架生成日志式 L3 Journal（"本轮 Dream 发现了什么"）
+```
+
+- **`needsReview` 是切片意图**（太脆/主动挂），**ConflictService 是系统强制**（数值顶爆自动挂），两者独立并存
+- **冲突不聚批**：多条候选逐条独立走管线，一条顶爆不影响同轮其他条继续落库
+- 重复过滤的判据与可信度正交——新证据不覆盖旧断言，直接跳过（见"几乎不覆盖"核心决策）
+
+#### 执行路径（直接接 Core，不经 session）
+
+Dream 不建 RuntimeSession 实例，按切片性质分两路：
+
+| 路 | 切片 | 执行 |
 |---|---|---|
-| A1 同主体聚类 | 同一 subject 的多个断言之间 | S 频繁对 O 表态 → 推断 S 对 O 的偏好 |
-| A2 同客体聚类 | 同一 object 被多个 subject 引用 | 多 subject 提到 O → 推断 subject 之间相关 |
-| A3 桥接 | S₁→O 且 S₂→O，S₁/S₂ 无直接边 | 推断 S₁ 与 S₂ 存在未表达的关系 |
-| B1 传递 | A→B 且 B→C | 推断 A→C（低确定度） |
-| C1 支持链检查 | 支持边链两侧矛盾 | 支持边本身可信度存疑 → 入队 |
-| C2 悬空引用 | 断言引用不存在的实体/断言 | 标记悬空 → 入队清理 |
+| **确定性** | A1 / B1 / C1 / C2 | 纯代码 + 检索服务（SQL / 图遍历），完全不碰模型 |
+| **语义** | A2 / A3 | 直接调 Core **单轮**（无工具表、无状态、无持久化），让模型补全关系名/定性/写 raw |
 
-#### 产出去向
-
-Dream 出口统一判定候选：
-- **直接落库**：不涉及冲突槽位、确定度够 → 落为推断断言（`IsInference=true`，锚点 = 推断确定度 0.4~0.7，见 05）
-- **入队移交**：涉及排他属性槽位 / 确定度低 / 支持链矛盾 → 入 ReviewQueue（Source=Dream），Review 验证
-- **一轮结束**：框架生成一条日志式 L3 Journal（"本轮 Dream 发现了什么"）；经历正文主要由 Review 写
-
-> 冲突检测复用 ConflictService：落库时若触发冲突组（同 subject + 排他属性不同值）自动入队，与 Dream 自身逻辑无关（见 05）。
+- 语义切片每轮一次单轮调用，模型只要一个输出，不需要多轮推理
+- 落库路径与"Core 还是 Session"无关：切片产物统一进 `Writer.WriteBatch`，单写入口不破
+- 与 Express 伴随提取同构（单轮、无 session）；Review 才用 session（查证/调锚点/暂存提交），Dream 用不上那个重量级
 
 ### 框架事件
 
