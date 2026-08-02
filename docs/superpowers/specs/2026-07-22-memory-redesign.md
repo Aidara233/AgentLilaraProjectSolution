@@ -110,16 +110,19 @@ FrameworkEvents
 └── Timestamp
 ```
 
-### Conflicts（矛盾挂起，遵循断言文档）
+### 矛盾的表达（不建 Conflicts 表）
 
-```sql
-Conflicts
-├── Id
-├── ClaimAId / ClaimBId             -- 互相矛盾的断言
-├── Predicate                       -- 矛盾所在谓词
-├── Status: Unresolved|Resolved
-└── DetectedAt
+矛盾检测的产物本身是一条显式断言，无需单开表。Writer 检测到新断言 B 与已有断言 A（同 subject+predicate、object 不同）矛盾时，自动生成：
+
 ```
+Claims: { subject:   {type: assertion, ref: 断言B},
+          predicate: {type: relation, index: "反驳"},
+          object:    {type: assertion, ref: 断言A} }
+```
+
+- "反驳"是 9.2 已定的推理型谓词，方向约定：新断言反驳旧断言，系统不仲裁谁对
+- 矛盾本身可检索、可引用为 Evidence、可被后续断言覆盖（新信息=新增碎片），无需 status 字段
+- 被反驳者不特殊标记，查询层印证度派生时自然降权（反驳链路本身就是证据链的一部分）
 
 Journal 的 Evidence 可引用 FrameworkEvent / Claims / Journals / 消息 Id。
 
@@ -140,6 +143,7 @@ Journal 的 Evidence 可引用 FrameworkEvent / Claims / Journals / 消息 Id。
 - 三元组结构 `subject/predicate/object`，槽位 `{type, index}`，index 存表面词
 - 遵循《断言存储系统设计决定.md》：无 polarity/confidence，否定靠 strength 负数，可靠性靠来源链派生
 - 覆盖/同源/矛盾检测规则遵循该文档（不自动仲裁，同 utterance_id 防重复计分）
+- 属性**允许多值、无唯一性约束**：同一事物可有多个相同属性值（如"颜色"白+黑），多条断言并存；单值/多值语义由模型写时把握，系统不强制（实体不合并已消除跨实体误并，语义矛盾靠查询层 + 反驳链路自然收敛）
 
 ## 记录层级（L0-L3）
 
@@ -411,10 +415,10 @@ WriteBatch 进入
 2. 关键词关联    keyword/attribute 槽位 + journal.keywords → 匹配/新建 Keywords → FragmentKeywords
                 （entity 只存 index 不归并；literal 直存；assertion 引用断言 id）
 3. 断言处理     同 utterance_id 分组（同源防重复计分）
-               矛盾检测（同 subject+predicate 比对）→ Conflicts 表挂起，不自动仲裁
+               矛盾检测（同 subject+predicate 比对）→ 自动生成"反驳"断言挂起，不仲裁
                覆盖遵循断言文档（几乎不覆盖，同源明确更正才覆盖）
 4. 情绪应用     收集全部 journals 的 emotion_signals → EmotionService.ApplyAsync
-5. 落库         Claims / Journals / Keywords / FragmentKeywords / Conflicts / EmotionSnapshot 一次事务
+5. 落库         Claims / Journals / Keywords / FragmentKeywords / EmotionSnapshot 一次事务
 6. 提交；失败回滚（EmotionState.json 事务成功后原子写）
 ```
 
