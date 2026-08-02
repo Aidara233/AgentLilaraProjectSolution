@@ -273,7 +273,7 @@ new = current + (target - current) × rate
 | **Express 伴随提取** | 消息攒批 + 空闲补一次 | 窄 Claim（用户说了X） | 不涉及 |
 | **Express wait** | 模型主动调 wait 带 journal 参数 | L2 Journal | 实时 |
 | **Session 运行期** | 暂停伴随提取；模型可随时调 journal | L2/L3 Journal | 实时 |
-| **Session 善后** | end_session / compact 归档后旧 session 进入 finalizing 态接续整理 | Claim + L2/L3 Journal | 由记忆引擎统一写 |
+| **Session 善后** | end_session / compact 归档后记忆引擎复活该 session 整理 | Claim + L2/L3 Journal | 由记忆引擎统一写 |
 | **框架事件** | 工具失败 / 超时 / 用户否定等 | L0/L1 + 情绪信号 | 实时 |
 
 ### Express 模式（伴随提取 + wait）
@@ -283,35 +283,38 @@ new = current + (target - current) × rate
 - 主要用途：**沉默监听**——即使不说话，也在默默积累对频道用户的了解
 - 触发节奏：消息攒批为主 + 空闲补一次，保证监听及时又不漏尾巴
 
-### Session 模式（运行期暂停 + 善后接续）
+### Session 模式（运行期暂停 + 善后复活）
 
 - **运行期不做伴随提取**（暂停这条链路），模型可随时调 `journal` 记当下（L2）
-- **善后 = 旧 session 自身的 finalizing 态**（不是另开整理会话）：
+- **善后 = 记忆引擎复活已结束的 session**（不是 finalizing 态、不是新会话）：
 
   ```
-  end_session / compact 归档
-    └─ 旧 session 不销毁，进入 finalizing（善后）态
-         ├─ 对外：已结束 —— 释放频道占用、不回复用户、WebUI 显示"归档中"
-         ├─ 对内：续命 —— 注入整理指令 + 记忆工具组
-         │       历史、工具轨迹本来就在它的上下文里，模型直接整理
-         └─ 跑多轮 → 达轮次上限 → 真正归档销毁
+  end_session / compact 成功 → session 真正结束（Status=Completed，存档留档）
+    └─ 记忆引擎监听 OnCompleted（或扫描 Completed 存档）
+         └─ 复活：从存档重建 session 实例
+              ├─ 加载旧历史（history.jsonl）——上下文真实连续，模型自带全部记忆
+              ├─ 重定义工具集 → 记忆工具组（journal / remember / claim / archive）
+              ├─ 保留原 profile（Core / 组件 / 权限）——之前的部分依然保留
+              ├─ 不注入初始化提示词 —— 它不是新会话，无需 BuildStart 初始化
+              └─ 注入整理任务 → 跑多轮 → 完成 → 再次归档（或删除存档）
   ```
 
-  - **上下文是真实连续的，不是搬运的**：单独开整理会话得把旧历史摘要/重放进去，接续则模型从头到尾都看得见——它自己调过什么工具、说过什么、经过什么，就是它自己的记忆，对应关系天然成立，无需 parent 链接维系
-  - **compact 特例**：compact 本来就是"旧 session 退出 + 新 session 承接摘要"。现在两者并存各司其职——对话交给新的，记忆交给旧的：
+  - **"真正结束就是 end_session 成功"**：不做拦截、不做 finalizing 前置。session 真被结束了，我们只看它是否真的结束
+  - **必须定义为 session**：因为要重定义工具集（工具 = session 的工具集）。它是"复活"——从存档重建，非全新创建
+  - **上下文是真实连续的，不是搬运的**：从 history.jsonl 加载，模型从头到尾看得见——它自己调过什么工具、说过什么、经过什么，就是它自己的记忆，对应关系天然成立，无需 parent 链接
+  - **compact 特例**：compact 本来就让旧 session 退出 + 新 session 承接摘要。对话交给新的，记忆交给旧的（复活）——两者并存各司其职：
 
     ```
     compact(summary)
       ├─ 新 session 承接摘要，继续对话（现有逻辑不变）
-      └─ 旧 session 进入 finalizing，续命做善后 → 整理完归档
+      └─ 旧 session Completed → 记忆引擎复活 → 整理完归档
     ```
 
   - 产出：
     - Claim（用户陈述 + 验证结论）
     - Journal（L2 当时经历 + L3 事后反思）
   - Session 的工具调用结果是高价值记忆源，集中到善后一次性深度处理（而不是运行期轻量链路浪费）
-  - 工具权限：finalizing 态临时注入记忆工具组（journal / remember / claim / archive），结束后回收
-  - 需新增配置：**finalizing 轮次上限**（MaxFinalizeRounds，防无限整理，超限强制归档）
+  - 需新增配置：**复活整理轮次上限**（MaxFinalizeRounds，防无限整理，超限强制归档）
 
 ### wait 工具（兼顾 Express 与 Session）
 
@@ -400,7 +403,7 @@ MemoryEngine
 │   └── EventWriter        # L0/L1 落表 + 情绪信号转交（SubmitEvent 通道）
 ├── ExtractService         # 提取核心（两条链路共用一套逻辑，产出 JSON）
 │   ├── ExpressExtractor   # 伴随提取：消息攒批 + 空闲补一次（沉默监听，单轮调用）
-│   └── FinalizeInjector   # 善后注入：finalizing 态注入整理指令 + 记忆工具组（接续，非另开会话）
+│   └── Resurrector        # 善后复活：监听 OnCompleted → 从存档重建 session → 换记忆工具组 → 注入整理任务
 ├── EmotionService         # 五轴状态 + 实时应用 + EmotionState.json 持久化 + 快照
 ├── EventSink              # 订阅总线 → 判定 L0/L1 + 情绪目标值映射（映射表待定）
 ├── RetrieveService        # 关键词 + 时间窗口检索，印证度按 utterance_id 去重派生
@@ -469,8 +472,8 @@ WriteBatch 进入
 - 各轴框架乘数具体数值（maxInfluence 系数）
 - 自动事件 → 目标值映射表（工具失败 / 用户否定 / 任务完成等分别推哪些轴、什么值）
 - `journal` / `remember` 工具签名（journal 结构已定，参数 schema 待定）
-- 记忆引擎：模块结构 + Writer 写协议 + 善后接续已定（见"记忆引擎"/"产生端"章节），待定：ExtractService 两链路的具体实现、EventSink 事件映射表
-- finalizing 态的配置（MaxFinalizeRounds 轮次上限等，具体字段待定）
+- 记忆引擎：模块结构 + Writer 写协议 + 善后复活已定（见"记忆引擎"/"产生端"章节），待定：ExtractService 两链路的具体实现、EventSink 事件映射表
+- 复活整理的配置（MaxFinalizeRounds 轮次上限、从存档重建时如何注入整理任务等，具体字段待定）
 - 情绪快照历史（EmotionSnapshot 表已定，具体字段/触发细节待定）
 
 **记忆系统其余部分：**
