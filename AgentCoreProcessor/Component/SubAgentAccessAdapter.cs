@@ -81,7 +81,7 @@ internal class SubAgentAccessAdapter : ISubAgentAccess, AgentLilara.PluginSDK.Se
 
         var spec = new CreateSessionSpec
         {
-            Type = SessionType.Task,
+            Type = "task",
             InitialState = options.InitialState ?? instruction,
             ParentSessionId = options.ParentLoopId,
             AdditionalComponents = additionalComps,

@@ -36,7 +36,7 @@ public class RuntimeSessionCoreTests
     }
 
     private static RuntimeSession NewChannelSession()
-        => new(new CreateSessionSpec { Type = SessionType.Channel }, new[] { "basic-tools" });
+        => new(new CreateSessionSpec { Type = "channel" }, new[] { "basic-tools" });
 
     [Fact]
     public void SwitchCore_ValidatesAgainstWhitelist()
@@ -98,7 +98,7 @@ public class RuntimeSessionCoreTests
         using var _ = PointToTempStorage();
         var sessionId = "coretest1";
         var persister = new SessionPersistence(sessionId);
-        await persister.SaveSpecAsync(new CreateSessionSpec { Type = SessionType.Channel }, DateTime.UtcNow);
+        await persister.SaveSpecAsync(new CreateSessionSpec { Type = "channel" }, DateTime.UtcNow);
 
         await persister.SaveStateAsync(new SessionStateSnapshot
         {

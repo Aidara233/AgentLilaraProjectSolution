@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using AgentCoreProcessor.Config;
@@ -11,18 +12,19 @@ using AgentLilara.PluginSDK;
 namespace AgentCoreProcessor.Engine.Session;
 
 /// <summary>
-/// 会话类型档案加载器。从 Storage/Session/{type}.json 读取（channel.json / task.json），
-/// 缓存 + Invalidate。替代旧 PluginSDK 中硬编码的 SessionTypeProfiles。
+/// 会话类型档案加载器（会话类型配置库）。从 Storage/Session/{type}.json 读取（channel.json / task.json / review.json ...），
+/// 类型键为字符串，任意新类型只需新增一个 JSON 文件，无需改代码。缓存 + Invalidate。
 /// 文件缺失或损坏时回退到内置默认（与种子一致），保证冷启动可用。
 /// </summary>
 internal static class SessionTypeProfiles
 {
     private static string Dir => Path.Combine(PathConfig.StoragePath, "Session");
 
-    private static readonly ConcurrentDictionary<SessionType, SessionTypeProfile> _cache = new();
+    private static readonly ConcurrentDictionary<string, SessionTypeProfile> _cache = new(StringComparer.OrdinalIgnoreCase);
 
-    public static SessionTypeProfile Get(SessionType type)
+    public static SessionTypeProfile Get(string type)
     {
+        if (string.IsNullOrEmpty(type)) type = "channel";
         if (_cache.TryGetValue(type, out var cached)) return cached;
         var profile = Load(type);
         _cache[type] = profile;
@@ -31,16 +33,33 @@ internal static class SessionTypeProfiles
 
     public static void Invalidate() => _cache.Clear();
 
-    public static string KeyFor(SessionType type) => type switch
+    /// <summary>会话类型配置库枚举：内置默认（channel/task）+ Storage/Session 目录下声明 Type 的类型档案。
+    /// 纯权限文件（express.json 无 Type 字段）不计数。</summary>
+    public static IReadOnlyList<string> All()
     {
-        SessionType.Channel => "channel",
-        SessionType.Task => "task",
-        _ => type.ToString().ToLowerInvariant()
-    };
+        var keys = new SortedSet<string>(StringComparer.OrdinalIgnoreCase) { "channel", "task" };
+        if (Directory.Exists(Dir))
+        {
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            foreach (var f in Directory.GetFiles(Dir, "*.json"))
+            {
+                var name = Path.GetFileNameWithoutExtension(f);
+                try
+                {
+                    var file = JsonSerializer.Deserialize<SessionProfileFile>(File.ReadAllText(f), opts);
+                    if (file != null && !string.IsNullOrEmpty(file.Type)
+                        && string.Equals(file.Type.Trim(), name, StringComparison.OrdinalIgnoreCase))
+                        keys.Add(name);
+                }
+                catch { /* 坏文件跳过 */ }
+            }
+        }
+        return keys.ToArray();
+    }
 
-    private static SessionTypeProfile Load(SessionType type)
+    private static SessionTypeProfile Load(string type)
     {
-        var path = Path.Combine(Dir, $"{KeyFor(type)}.json");
+        var path = Path.Combine(Dir, $"{type}.json");
         if (File.Exists(path))
         {
             try
@@ -61,7 +80,7 @@ internal static class SessionTypeProfiles
                         DefaultComponentIds = file.DefaultComponentIds?.Length > 0
                             ? file.DefaultComponentIds : DefaultFor(type).DefaultComponentIds,
                         PermissionGroup = string.IsNullOrEmpty(file.PermissionGroup)
-                            ? KeyFor(type) : file.PermissionGroup,
+                            ? type : file.PermissionGroup,
                         PermissionMode = string.IsNullOrEmpty(file.PermissionMode)
                             ? "whitelist" : file.PermissionMode,
                         PermissionTools = file.PermissionTools ?? Array.Empty<string>()
@@ -71,18 +90,18 @@ internal static class SessionTypeProfiles
             catch (Exception ex)
             {
                 Signal.Warn(LogGroup.Engine, "会话类型配置加载失败，使用默认",
-                    new { type = type.ToString(), path, error = ex.Message });
+                    new { type, path, error = ex.Message });
             }
         }
         return DefaultFor(type);
     }
 
-    /// <summary>内置默认：与 Storage/Session 种子一致，文件缺失时兜底。</summary>
-    private static SessionTypeProfile DefaultFor(SessionType type) => type switch
+    /// <summary>内置默认：与 Storage/Session 种子一致，文件缺失时兜底。未知类型不在配置库中 → 抛异常。</summary>
+    private static SessionTypeProfile DefaultFor(string type) => type switch
     {
-        SessionType.Channel => new SessionTypeProfile
+        "channel" => new SessionTypeProfile
         {
-            Type = SessionType.Channel,
+            Type = type,
             DefaultCoreConfig = "ChannelCore",
             AllowedCoreConfigs = new[] { "ChannelCore" },
             DefaultComponentIds = new[]
@@ -94,9 +113,9 @@ internal static class SessionTypeProfiles
             PermissionMode = "blacklist",
             PermissionTools = new[] { "escalate" }.Concat(ReviewToolSeed).ToArray()
         },
-        SessionType.Task => new SessionTypeProfile
+        "task" => new SessionTypeProfile
         {
-            Type = SessionType.Task,
+            Type = type,
             DefaultCoreConfig = "TaskCore",
             AllowedCoreConfigs = new[] { "TaskCore" },
             DefaultComponentIds = new[]
@@ -108,7 +127,8 @@ internal static class SessionTypeProfiles
             PermissionMode = "whitelist",
             PermissionTools = TaskToolSeed
         },
-        _ => throw new ArgumentOutOfRangeException(nameof(type))
+        _ => throw new ArgumentOutOfRangeException(nameof(type), type,
+            $"会话类型不在配置库中：Storage/Session/{type}.json 不存在且无内置默认。可用类型：{string.Join(", ", All())}")
     };
 
     /// <summary>task 组白名单种子：Task profile 组件工具 + 核心 session 工具（不含全局工具）。</summary>
@@ -146,9 +166,10 @@ internal static class SessionTypeProfiles
         "memory_delete", "memory_link_create", "memory_link_delete", "memory_link_get", "memory_update"
     };
 
-    /// <summary>Session 配置文件 DTO。DefaultComponents 对应 record 的 DefaultComponentIds。</summary>
+    /// <summary>Session 配置文件 DTO。Type 声明会话类型键（与文件名一致）；DefaultComponents 对应 record 的 DefaultComponentIds。</summary>
     private sealed class SessionProfileFile
     {
+        public string Type { get; set; } = "";
         public string DefaultCoreConfig { get; set; } = "";
         public string[] AllowedCores { get; set; } = Array.Empty<string>();
         [JsonPropertyName("DefaultComponents")]

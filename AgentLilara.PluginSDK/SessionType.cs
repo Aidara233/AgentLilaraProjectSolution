@@ -1,20 +1,16 @@
 // AgentLilara.PluginSDK/SessionType.cs
-using System;
-
 namespace AgentLilara.PluginSDK;
 
 /// <summary>
-/// Session 类型枚举。决定默认组件集、Core 配置、权限组。
-/// </summary>
-public enum SessionType { Channel, Task }
-
-/// <summary>
-/// Session 类型配置档案。由宿主从 Storage/Session/{type}.json 加载（见 AgentCoreProcessor/Engine/Session/SessionTypeProfiles.cs），
-/// 本 record 仅承载数据。每个会话类型内嵌自己的工具权限组（PermissionMode + PermissionTools）。
+/// Session 类型配置档案。由宿主从 Storage/Session/{type}.json 配置库加载（见 AgentCoreProcessor/Engine/Session/SessionTypeProfiles.cs），
+/// 本 record 仅承载数据。类型键 = 配置库文件名（"channel"/"task"/"review" 等），任意新类型只需新增一个 JSON 文件。
+/// 每个会话类型内嵌自己的工具权限组（PermissionMode + PermissionTools）。
 /// </summary>
 public record SessionTypeProfile
 {
-    public SessionType Type { get; init; }
+    /// <summary>会话类型键，与 Storage/Session/{type}.json 文件名一致。</summary>
+    public string Type { get; init; } = "";
+
     public string DefaultCoreConfig { get; init; } = "";
     public string[] DefaultComponentIds { get; init; } = Array.Empty<string>();
 

@@ -38,7 +38,7 @@ internal class RuntimeSession : IRuntimeSession
     public string? ParentSessionId { get; private set; }
     public string? EffectiveParentId { get; private set; }
     public IReadOnlyList<string> ChildSessionIds => _childSessionIds;
-    public SessionType Type { get; }
+    public string Type { get; }
     public string? ForwardedTo { get; private set; }
 
     private readonly List<string> _componentIds = new();

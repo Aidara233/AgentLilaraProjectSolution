@@ -223,7 +223,7 @@ internal class SessionsActiveSource : IDataSource
             {
                 ["sessionId"] = s.SessionId,
                 ["status"] = s.Status.ToString(),
-                ["type"] = (s is RuntimeSession rs ? rs.Type.ToString() : "—"),
+                ["type"] = (s is RuntimeSession rs ? rs.Type : "—"),
                 ["core"] = (s is RuntimeSession rsCore ? rsCore.ActiveCoreConfig : "—"),
                 ["children"] = s.ChildSessionIds.Count.ToString(),
                 ["components"] = components,

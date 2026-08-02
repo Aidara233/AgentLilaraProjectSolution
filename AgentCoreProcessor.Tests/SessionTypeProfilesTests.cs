@@ -41,7 +41,7 @@ public class SessionTypeProfilesTests
     public void ChannelProfile_UsesSystemOps_NotSystemTools()
     {
         using var _ = PointToRealStorage();
-        var profile = SessionTypeProfiles.Get(SessionType.Channel);
+        var profile = SessionTypeProfiles.Get("channel");
         Assert.Contains("system-ops", profile.DefaultComponentIds);
         Assert.DoesNotContain("system-tools", profile.DefaultComponentIds);
         Assert.Equal("channel", profile.PermissionGroup);
@@ -52,7 +52,7 @@ public class SessionTypeProfilesTests
     public void TaskProfile_IsMinimalWhitelist()
     {
         using var _ = PointToRealStorage();
-        var profile = SessionTypeProfiles.Get(SessionType.Task);
+        var profile = SessionTypeProfiles.Get("task");
         Assert.Equal("task", profile.PermissionGroup);
         Assert.Equal("whitelist", profile.PermissionMode);
         Assert.Contains("report_to_parent", profile.PermissionTools);
@@ -65,7 +65,7 @@ public class SessionTypeProfilesTests
     public void ChannelProfile_AllowedCores_ContainsChannelAndExpress()
     {
         using var _ = PointToRealStorage();
-        var profile = SessionTypeProfiles.Get(SessionType.Channel);
+        var profile = SessionTypeProfiles.Get("channel");
         Assert.Contains("ChannelCore", profile.AllowedCoreConfigs);
         Assert.Contains("ExpressCore", profile.AllowedCoreConfigs);
         Assert.Contains(profile.DefaultCoreConfig, profile.AllowedCoreConfigs);
@@ -75,10 +75,42 @@ public class SessionTypeProfilesTests
     public void TaskProfile_AllowedCores_FallsBackToSingleDefault()
     {
         using var _ = PointToRealStorage();
-        var profile = SessionTypeProfiles.Get(SessionType.Task);
+        var profile = SessionTypeProfiles.Get("task");
         // task.json 显式单核；即便缺省也应回退到默认核
         Assert.Equal(new[] { "TaskCore" }, profile.AllowedCoreConfigs);
         Assert.Single(profile.AllowedCoreConfigs);
+    }
+
+    [Fact]
+    public void All_DiscoversConfigLibrary_ExcludesPurePermissionFile()
+    {
+        using var _ = PointToRealStorage();
+        var all = SessionTypeProfiles.All();
+        // 内置 channel/task + review.json 档案自动被发现
+        Assert.Contains("channel", all);
+        Assert.Contains("task", all);
+        Assert.Contains("review", all);
+        // express.json 是纯权限文件（无 Type 字段），不作为会话类型
+        Assert.DoesNotContain("express", all);
+    }
+
+    [Fact]
+    public void ReviewProfile_LoadsFromConfigLibrary()
+    {
+        using var _ = PointToRealStorage();
+        var profile = SessionTypeProfiles.Get("review");
+        Assert.Equal("review", profile.Type);
+        Assert.Equal("ReviewCore", profile.DefaultCoreConfig);
+        Assert.Equal("review", profile.PermissionGroup);
+        Assert.Equal("whitelist", profile.PermissionMode);
+        Assert.Contains("review-tools", profile.DefaultComponentIds);
+    }
+
+    [Fact]
+    public void UnknownType_NotInConfigLibrary_Throws()
+    {
+        using var _ = PointToRealStorage();
+        Assert.Throws<ArgumentOutOfRangeException>(() => SessionTypeProfiles.Get("__nonexistent__"));
     }
 
     [Fact]

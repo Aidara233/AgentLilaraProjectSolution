@@ -178,7 +178,7 @@ namespace AgentCoreProcessor.Engine
                             // 频道占用 + 历史载入由 InitActions 的 connect_channel 在 session 启动时完成
                             sessionEngine.CreateSession(new CreateSessionSpec
                             {
-                                Type = SessionType.Channel,
+                                Type = "channel",
                                 InitActions = new List<ToolCall>
                                 {
                                     new() { Tool = "connect_channel", Inputs = new List<string> { channelId.ToString() } }

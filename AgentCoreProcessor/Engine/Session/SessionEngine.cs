@@ -600,7 +600,7 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
                         task.Status = "executing";
                         CreateSession(new CreateSessionSpec
                         {
-                            Type = SessionType.Task,
+                            Type = "task",
 InitialState = $"执行定时任务: {task.Description}"
                             });
 
@@ -626,7 +626,7 @@ InitialState = $"执行定时任务: {task.Description}"
                             todo.Status = "executing";
                             CreateSession(new CreateSessionSpec
                             {
-                                Type = SessionType.Task,
+                                Type = "task",
                                 InitialState = $"待办事项: {todo.Description}"
                             });
                         }

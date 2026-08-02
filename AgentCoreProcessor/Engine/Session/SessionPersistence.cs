@@ -46,7 +46,7 @@ namespace AgentCoreProcessor.Engine.Session
                 formatVersion = SpecFormatVersion,
                 sessionId = Path.GetFileName(_dir),
                 createdAt,
-                type = spec.Type.ToString(),
+                type = spec.Type,
                 additionalComponents = spec.AdditionalComponents,
                 excludedComponents = spec.ExcludedComponents,
                 resolvedComponentIds = spec.ResolvedComponentIds,
@@ -175,7 +175,7 @@ namespace AgentCoreProcessor.Engine.Session
 
             var spec = new CreateSessionSpec
             {
-                Type = Enum.TryParse<SessionType>(wrapper.Type, true, out var t) ? t : SessionType.Channel,
+                Type = string.IsNullOrEmpty(wrapper.Type) ? "channel" : wrapper.Type,
                 AdditionalComponents = wrapper.AdditionalComponents,
                 ExcludedComponents = wrapper.ExcludedComponents,
                 ResolvedComponentIds = wrapper.ResolvedComponentIds,
