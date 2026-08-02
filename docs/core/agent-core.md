@@ -95,8 +95,18 @@ Session 与 Core 解耦：session 一组配置文件（决定组件/上下文）
 
 ### Review 对齐状态（配置已生效，运行时待重构）
 
-`Storage/Session/review.json` 已补齐会话类型档案字段（Type/DefaultCoreConfig/AllowedCores/DefaultComponents/PermissionGroup），配置形态与 channel/task 一致。**Session 类型已字符串化**：`SessionTypeProfiles.Get("review")` 可正常加载档案（`All()` 也会枚举 review）——配置侧已彻底激活，**运行时尚未接入**：
+`Storage/Session/review.json` 已补齐会话类型档案字段（Type/DefaultCoreConfig/AllowedCores/DefaultComponents/PromptFiles/PermissionGroup），配置形态与 channel/task 一致。**Session 类型已字符串化**：`SessionTypeProfiles.Get("review")` 可正常加载档案（`All()` 也会枚举 review）——配置侧已彻底激活，**运行时尚未接入**：
 
 - `ReviewEngine.cs:86` 仍硬编码 `new AgentCore("ReviewCore")`，不走白名单、不可运行时换核。
+- `ReviewCore.json` 因 ReviewEngine 未 session 化而暂保留 `promptFiles`（`ReviewPrompt.txt` 已迁至 `Session/Prompts`，靠 PromptLoader 双目录加载）；review 重构时随 ReviewEngine 迁移删除。
 
-**待办**（Review 重构时实施）：`ReviewEngine` 改走 `ConfigureCores`（`Get("review")` 取白名单）。届时 review 复用与 channel 同构的白名单机制（如"快速浏览 flash / 深度评价 pro"双核）。
+**待办**（Review 重构时实施）：`ReviewEngine` 改走 `ConfigureCores`（`Get("review")` 取白名单 + PromptFiles 取提示词）。届时 review 复用与 channel 同构的白名单机制（如"快速浏览 flash / 深度评价 pro"双核）。
+
+### 提示词归属（session 定身份，core 定模型）
+
+会话身份提示词由 **session 类型配置的 `PromptFiles`** 声明（`Storage/Session/Prompts/`），不再由 core 配置提供：
+
+- `SessionTypeProfile.PromptFiles` → `RuntimeSession.BuildSessionPrompt()` 拼接 → `AgentCore.SessionPrompt`，在 `SetConversationHistory` 覆盖 core 的 `BasePrompt`。
+- `SwitchCore`/`ConfigureCores`/`SetActiveCore` 换核时把同一 `SessionPrompt` 绑定到新核 —— **换核只换模型配置执行器，会话身份提示词不变**。
+- `PromptLoader.Load(file, storageRoot, ...)` 双目录搜索：`Session/Prompts`（session 主库）→ `Core/Prompts`（Express/System/记忆等非 session 核心），templates 对应释放。
+- 非 session 核心（Express 框架循环/System/记忆/梦话）提示词仍跟 core 走（`Core/Prompts` + core 配置 `promptFiles`），无换核场景。

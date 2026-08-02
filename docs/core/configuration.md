@@ -108,6 +108,8 @@ Storage/Core/{CoreName}.json
 
 Persona.txt 作为普通 prompt 文件处理。需要 Persona 的 Core 在 `promptFiles` 数组首项加入 `"Persona.txt"`，由 `PromptLoader` 统一按序加载。不需要 Persona 的 Core（工具性核心如 SummarizationCore、MemoryExtractionCore 等）不在 `promptFiles` 中包含即可。
 
+> **session 会话的提示词不走 core 的 `promptFiles`**：channel/task/review 的身份提示词由会话类型配置（`Storage/Session/{type}.json` 的 `PromptFiles`，文件在 `Storage/Session/Prompts/`）决定，`RuntimeSession` 构建后经 `AgentCore.SessionPrompt` 注入，**换核不换提示词**。core 配置的 `promptFiles` 仅服务于非 session 核心（Express/System/记忆/梦话）。加载统一走 `PromptLoader` 双目录（Session/Prompts → Core/Prompts）。
+
 ---
 
 ## 当前配置分布

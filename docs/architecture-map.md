@@ -592,8 +592,8 @@ CommandSpawnCheck 拦截 → CommandRegistry 路由
 
 ```
 Storage/
-├── Core/*.json          各Core的LLM配置+系统提示词
-├── Core/Prompts/       各Core的系统提示词文件（.txt），通过 promptFiles 数组加载
+├── Core/*.json          各Core的LLM配置（连接+采样+协议，不含 session 提示词）
+├── Core/Prompts/        非 session 核心提示词（Express/System/记忆/梦话），通过 core 配置 promptFiles 加载
 ├── Core/VisionProvider.json  视觉模型配置(apiKey/endpoint/model)
 ├── Core/OcrProvider.json     OCR模型配置(apiKey/endpoint/model)
 ├── Dream/
@@ -608,10 +608,11 @@ Storage/
 │     ├── VisionEngineConfig.json    视觉引擎并发/批量/重试配置
 │     └── ComponentConfig.json       组件按权限组启用/禁用状态
 ├── Session/（会话类型配置库：类型键=文件名，字符串驱动，`SessionTypeProfiles.All()` 可枚举）
-│     ├── channel.json               会话类型 channel（核心/组件/权限组/AllowedCores 白名单）+ 工具黑白名单
-│     ├── task.json                  会话类型 task（核心/组件/权限组/AllowedCores 白名单）+ 工具黑白名单
+│     ├── channel.json               会话类型 channel（核心/组件/权限组/AllowedCores 白名单/PromptFiles）+ 工具黑白名单
+│     ├── task.json                  会话类型 task（核心/组件/权限组/AllowedCores 白名单/PromptFiles）+ 工具黑白名单
 │     ├── express.json               Express 框架循环工具白名单（纯权限文件，无 Type 字段，非会话类型）
-│     └── review.json                Review 复盘工具白名单（+ 会话类型档案字段，`Get("review")` 已可加载，运行时待重构接入）
+│     ├── review.json                Review 复盘工具白名单（+ 会话类型档案字段，`Get("review")` 已可加载，运行时待重构接入）
+│     └── Prompts/                   session 提示词主库（会话身份，SessionTypeProfile.PromptFiles 引用；换核不换提示词）
 ├── Adapter/
 │     └── *.json  适配器实例配置（多实例，config-driven）
 │         qq-main.json: OneBotAdapter 配置(WS地址/token/白名单/botNames)

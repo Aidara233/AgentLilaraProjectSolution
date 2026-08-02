@@ -16,6 +16,5 @@
   "extraBody": {
     "thinking": {"type": "disabled"}
   },
-  "n": 1,
-  "promptFiles": ["identity.txt", "style.txt", "architecture_overview.txt", "tech_rules.txt", "task_workflow.txt"]
+  "n": 1
 }
