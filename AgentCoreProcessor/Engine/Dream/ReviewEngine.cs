@@ -1062,9 +1062,8 @@ namespace AgentCoreProcessor.Engine
 
         private static string BuildSystemPrompt()
         {
-            var coreDir = PathConfig.CoreConfigPath;
             var templatesDir = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "templates"));
-            return PromptLoader.Load("ReviewPrompt.txt", coreDir, templatesDir)
+            return PromptLoader.Load("ReviewPrompt.txt", PathConfig.StoragePath, templatesDir)
                    ?? "你是 Lilara 的复盘模块。";
         }
 

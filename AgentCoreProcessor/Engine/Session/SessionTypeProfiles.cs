@@ -77,6 +77,8 @@ internal static class SessionTypeProfiles
                         // 白名单缺省回退单核：仅默认核
                         AllowedCoreConfigs = file.AllowedCores?.Length > 0
                             ? file.AllowedCores : new[] { defaultCore },
+                        PromptFiles = file.PromptFiles?.Length > 0
+                            ? file.PromptFiles : DefaultFor(type).PromptFiles,
                         DefaultComponentIds = file.DefaultComponentIds?.Length > 0
                             ? file.DefaultComponentIds : DefaultFor(type).DefaultComponentIds,
                         PermissionGroup = string.IsNullOrEmpty(file.PermissionGroup)
@@ -104,6 +106,11 @@ internal static class SessionTypeProfiles
             Type = type,
             DefaultCoreConfig = "ChannelCore",
             AllowedCoreConfigs = new[] { "ChannelCore" },
+            PromptFiles = new[]
+            {
+                "identity.txt", "style.txt", "social.txt",
+                "architecture_overview.txt", "tech_rules.txt", "channel_workflow.txt"
+            },
             DefaultComponentIds = new[]
             {
                 "basic-tools", "working-tools", "file-tools", "file-ops",
@@ -118,6 +125,11 @@ internal static class SessionTypeProfiles
             Type = type,
             DefaultCoreConfig = "TaskCore",
             AllowedCoreConfigs = new[] { "TaskCore" },
+            PromptFiles = new[]
+            {
+                "identity.txt", "style.txt", "architecture_overview.txt",
+                "tech_rules.txt", "task_workflow.txt", "SubAgentPrompt.txt"
+            },
             DefaultComponentIds = new[]
             {
                 "basic-tools", "file-tools", "memory-tools", "cross-loop",
@@ -172,6 +184,7 @@ internal static class SessionTypeProfiles
         public string Type { get; set; } = "";
         public string DefaultCoreConfig { get; set; } = "";
         public string[] AllowedCores { get; set; } = Array.Empty<string>();
+        public string[] PromptFiles { get; set; } = Array.Empty<string>();
         [JsonPropertyName("DefaultComponents")]
         public string[] DefaultComponentIds { get; set; } = Array.Empty<string>();
         public string PermissionGroup { get; set; } = "";

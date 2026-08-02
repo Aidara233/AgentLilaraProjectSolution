@@ -63,6 +63,9 @@ internal class RuntimeSession : IRuntimeSession
     private readonly Dictionary<string, AgentCore> _coreInstances = new(StringComparer.OrdinalIgnoreCase);
     private ITool? _switchCoreTool;
 
+    // ── 会话本体提示词（来自会话类型配置 PromptFiles，换核不变）──
+    private string? _sessionPrompt;
+
     private MessageEngine? _messageEngine;
     private SessionEngine? _sessionEngine;
     private readonly ConnectedChannelState _connected = new();
@@ -146,6 +149,8 @@ internal class RuntimeSession : IRuntimeSession
 
         _activeCoreConfig = active;
         _agentCore = GetOrCreateCore(active);
+        _sessionPrompt ??= BuildSessionPrompt();
+        AttachSessionPrompt(_agentCore);
 
         // 多核时注入 switch_core 工具（channel 黑名单默认放行；单核类型不注入，行为不变）
         if (_allowedCoreConfigs.Count > 1 && _switchCoreTool == null)
@@ -157,6 +162,32 @@ internal class RuntimeSession : IRuntimeSession
                 _activeTools.Add(_switchCoreTool.Name);
             }
         }
+    }
+
+    /// <summary>会话本体提示词（测试访问器）。</summary>
+    internal string? SessionPrompt => _sessionPrompt;
+
+    /// <summary>从会话类型配置的 PromptFiles 加载拼接提示词（Storage/Session/Prompts → Core/Prompts 双目录）。</summary>
+    private string? BuildSessionPrompt()
+    {
+        var profile = SessionTypeProfiles.Get(Type);
+        if (profile.PromptFiles == null || profile.PromptFiles.Length == 0) return null;
+        var templatesDir = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "templates"));
+        var parts = new List<string>();
+        foreach (var file in profile.PromptFiles)
+        {
+            var content = PromptLoader.Load(file, PathConfig.StoragePath, templatesDir);
+            if (!string.IsNullOrEmpty(content))
+                parts.Add(content);
+        }
+        return parts.Count > 0 ? string.Join("\n\n", parts) : null;
+    }
+
+    /// <summary>把会话提示词绑定到核实例（换核不换提示词的关键注入点）。</summary>
+    private void AttachSessionPrompt(AgentCore core)
+    {
+        if (core != null && !string.IsNullOrEmpty(_sessionPrompt))
+            core.SessionPrompt = _sessionPrompt;
     }
 
     /// <summary>当前活跃 Core 配置名。</summary>
@@ -177,6 +208,7 @@ internal class RuntimeSession : IRuntimeSession
 
         _activeCoreConfig = configName;
         _agentCore = GetOrCreateCore(configName);
+        AttachSessionPrompt(_agentCore);
 
         // 立即重设工具装配（外置切换发生在两轮之间也安全；轮中切换由 roundCore 硬化隔离）
         _agentCore.EngineType = _componentLoopType;
@@ -200,6 +232,7 @@ internal class RuntimeSession : IRuntimeSession
             return;
         _activeCoreConfig = configName;
         _agentCore = GetOrCreateCore(configName);
+        AttachSessionPrompt(_agentCore);
     }
 
     /// <summary>按配置名 get-or-create 核实例（懒建：首次切到该核才 new AgentCore）。</summary>

@@ -20,6 +20,10 @@ public record SessionTypeProfile
     /// </summary>
     public string[] AllowedCoreConfigs { get; init; } = Array.Empty<string>();
 
+    /// <summary>该会话类型的提示词文件列表（相对 Storage/Session/Prompts/），决定会话身份与行为。
+    /// 由 session 本体持有 —— core 只定模型配置，换核不影响提示词。</summary>
+    public string[] PromptFiles { get; init; } = Array.Empty<string>();
+
     /// <summary>权限组 key（"channel"/"task"），对应 Storage/Session/{key}.json 的工具黑白名单。</summary>
     public string PermissionGroup { get; init; } = "";
 

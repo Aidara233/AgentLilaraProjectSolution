@@ -106,7 +106,8 @@ namespace AgentCoreProcessor.Core
             var parts = new List<string>();
             foreach (var file in cfg.PromptFiles)
             {
-                var content = PromptLoader.Load(file, cfgDirectoryPath, templatesDir);
+                // storageRoot = Storage 根，PromptLoader 内部按 Session/Prompts → Core/Prompts 双目录搜索
+                var content = PromptLoader.Load(file, PathConfig.StoragePath, templatesDir);
                 if (!string.IsNullOrEmpty(content))
                     parts.Add(content);
             }

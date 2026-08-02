@@ -47,6 +47,12 @@ namespace AgentCoreProcessor.Core
         /// <summary>当前引擎类型（如 "channel"、"system"、"review"、"sub-agent"），用于工具过滤。</summary>
         public string? EngineType { get; set; }
 
+        /// <summary>
+        /// session 本体提示词（由 RuntimeSession 从会话类型配置的 PromptFiles 构建）。
+        /// 非空时覆盖 core 配置的 BasePrompt —— 换核只换模型配置，不换会话身份。
+        /// </summary>
+        public string? SessionPrompt { get; set; }
+
         public AgentCore() : base("SessionCore")
         {
         }
@@ -247,13 +253,15 @@ namespace AgentCoreProcessor.Core
 
         /// <summary>
         /// 设置对话历史（供 ExpressEngine 在每轮准备阶段调用）。
-        /// 自动 prepend Processor 加载的基础提示词。
+        /// 自动 prepend 基础提示词：session 场景优先 SessionPrompt（会话本体，换核不变），
+        /// 否则用 Processor 从 core 配置加载的 BasePrompt。
         /// </summary>
         public void SetConversationHistory(List<Message> messages)
         {
             var final = new List<Message>();
-            if (!string.IsNullOrEmpty(processor.BasePrompt))
-                final.Add(new Message { Role = "system", Content = processor.BasePrompt });
+            var prompt = !string.IsNullOrEmpty(SessionPrompt) ? SessionPrompt : processor.BasePrompt;
+            if (!string.IsNullOrEmpty(prompt))
+                final.Add(new Message { Role = "system", Content = prompt });
             final.AddRange(messages);
             processor.Client.ClearConversationHistory();
             processor.Client.SetConversationHistory(final);

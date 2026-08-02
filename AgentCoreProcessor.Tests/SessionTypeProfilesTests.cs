@@ -107,6 +107,34 @@ public class SessionTypeProfilesTests
     }
 
     [Fact]
+    public void ChannelProfile_PromptFiles_IncludeWorkflow()
+    {
+        using var _ = PointToRealStorage();
+        var profile = SessionTypeProfiles.Get("channel");
+        Assert.Contains("identity.txt", profile.PromptFiles);
+        Assert.Contains("channel_workflow.txt", profile.PromptFiles);
+        Assert.DoesNotContain("express_workflow.txt", profile.PromptFiles);
+    }
+
+    [Fact]
+    public void TaskProfile_PromptFiles_IncludeSubAgent()
+    {
+        using var _ = PointToRealStorage();
+        var profile = SessionTypeProfiles.Get("task");
+        Assert.Contains("task_workflow.txt", profile.PromptFiles);
+        Assert.Contains("SubAgentPrompt.txt", profile.PromptFiles);
+        Assert.Contains("identity.txt", profile.PromptFiles);
+    }
+
+    [Fact]
+    public void ReviewProfile_PromptFiles_IncludeReviewPrompt()
+    {
+        using var _ = PointToRealStorage();
+        var profile = SessionTypeProfiles.Get("review");
+        Assert.Contains("ReviewPrompt.txt", profile.PromptFiles);
+    }
+
+    [Fact]
     public void UnknownType_NotInConfigLibrary_Throws()
     {
         using var _ = PointToRealStorage();

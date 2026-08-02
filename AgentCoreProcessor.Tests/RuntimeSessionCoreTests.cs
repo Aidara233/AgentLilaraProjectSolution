@@ -23,9 +23,11 @@ public class RuntimeSessionCoreTests
             BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
         var old = (string)prop!.GetValue(null)!;
         prop.SetValue(null, tmp);
+        SessionTypeProfiles.Invalidate();
         return new Disposable(() =>
         {
             prop.SetValue(null, old);
+            SessionTypeProfiles.Invalidate();
             try { Directory.Delete(tmp, true); } catch { }
         });
     }
@@ -118,5 +120,28 @@ public class RuntimeSessionCoreTests
         });
         var loaded2 = persister.Load().State;
         Assert.Equal("", loaded2.ActiveCoreConfig);
+    }
+
+    [Fact]
+    public void SwitchCore_PreservesSessionPrompt()
+    {
+        using var _ = PointToTempStorage();
+        // 布置临时 Storage：会话类型配置声明 PromptFiles + 提示词文件
+        var sessionDir = Path.Combine(PathConfig.StoragePath, "Session");
+        var promptsDir = Path.Combine(sessionDir, "Prompts");
+        Directory.CreateDirectory(promptsDir);
+        File.WriteAllText(Path.Combine(sessionDir, "channel.json"),
+            "{\"Type\":\"channel\",\"DefaultCoreConfig\":\"ChannelCore\"," +
+            "\"AllowedCores\":[\"ChannelCore\",\"ExpressCore\"],\"PromptFiles\":[\"test_prompt.txt\"]}");
+        File.WriteAllText(Path.Combine(promptsDir, "test_prompt.txt"), "测试会话提示词：channel 身份");
+
+        var rs = NewChannelSession();
+        rs.ConfigureCores(new[] { "ChannelCore", "ExpressCore" }, "ChannelCore");
+        Assert.NotNull(rs.SessionPrompt);
+        Assert.Contains("channel 身份", rs.SessionPrompt);
+
+        // 换核不换提示词：切到 ExpressCore 后 SessionPrompt 仍来自 channel 类型配置
+        rs.SwitchCore("ExpressCore");
+        Assert.Contains("channel 身份", rs.SessionPrompt);
     }
 }

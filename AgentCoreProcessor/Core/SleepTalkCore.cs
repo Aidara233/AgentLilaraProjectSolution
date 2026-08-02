@@ -26,9 +26,8 @@ namespace AgentCoreProcessor.Core
 
         private static string LoadPromptTemplate()
         {
-            var coreDir = PathConfig.CoreConfigPath;
             var templatesDir = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "templates"));
-            return PromptLoader.Load("SleepTalkPrompt.txt", coreDir, templatesDir)
+            return PromptLoader.Load("SleepTalkPrompt.txt", PathConfig.StoragePath, templatesDir)
                    ?? "你正在睡觉做梦。下面是一些乱七八糟的碎片：\n{{FRAGMENTS}}\n\n请把它们搅在一起说一句梦话。";
         }
     }
