@@ -331,6 +331,8 @@ namespace AgentCoreProcessor.Engine
             // 卸载并重新加载 DLL
             PluginLoader.ReloadSingle(pluginName);
             ComponentConfig.Invalidate();
+            Engine.Session.SessionTypeProfiles.Invalidate();
+            Tool.PermissionService.Invalidate();
 
             // 为新注册的 Global 组件创建实例
             if (GlobalComponentHost != null)
@@ -344,10 +346,10 @@ namespace AgentCoreProcessor.Engine
                         var reg = ComponentRegistry.Get(compName);
                         if (reg != null && reg.Scope == ComponentScope.Global)
                         {
-                            // 尊重配置：如果该组件对任何引擎类型都未禁用，则创建
-                            if (config.IsEnabled(compName, "channel", true, reg.ChannelApplicability) ||
-                                config.IsEnabled(compName, "task", true, reg.TaskApplicability) ||
-                                config.IsEnabled(compName, "review", true, reg.ReviewApplicability))
+                            // 尊重配置：该组件对任一权限组启用则创建（LoopApplicability 已 inert）
+                            if (config.IsEnabled(compName, "channel", true) ||
+                                config.IsEnabled(compName, "task", true) ||
+                                config.IsEnabled(compName, "review", true))
                             {
                                 await GlobalComponentHost.CreateAndEnableComponentAsync(compName);
                             }

@@ -69,13 +69,13 @@ internal class ComponentHost
     {
         if (finalComponentIds != null)
         {
-            // 仅加载指定列表内的组件
+            // 仅加载指定列表内的组件（归属由 ComponentConfig 决定，LoopApplicability 已 inert）
             var nameSet = new HashSet<string>(finalComponentIds, StringComparer.OrdinalIgnoreCase);
             foreach (var reg in ComponentRegistry.GetLoopComponents(_loopType))
             {
                 var compName = ComponentAttribute.GetFrom(reg.Type)?.Name ?? reg.Type.Name;
                 if (!nameSet.Contains(compName)) continue;
-                if (!_config.IsEnabled(compName, _loopType, reg.DefaultEnabled, GetApplicability(reg)))
+                if (!_config.IsEnabled(compName, _loopType, reg.DefaultEnabled))
                     continue;
                 var instance = CreateInstance(reg);
                 if (instance == null) continue;
@@ -93,7 +93,7 @@ internal class ComponentHost
             try
             {
                 var compName = ComponentAttribute.GetFrom(reg.Type)?.Name ?? reg.Type.Name;
-                if (!_config.IsEnabled(compName, _loopType, reg.DefaultEnabled, GetApplicability(reg)))
+                if (!_config.IsEnabled(compName, _loopType, reg.DefaultEnabled))
                     continue;
                 var instance = CreateInstance(reg);
                 if (instance == null) continue;
@@ -109,18 +109,7 @@ internal class ComponentHost
         }
     }
 
-    /// <summary>解析组件在当前循环类型下的适用性（与 GlobalComponentHost.GetVisibleTools 一致）。</summary>
-    private Applicability GetApplicability(ComponentRegistration reg)
-    {
-        return _loopType switch
-        {
-            "channel" => reg.ChannelApplicability,
-            "review" => reg.ReviewApplicability,
-            "task" => reg.TaskApplicability,
-            _ => Applicability.Enabled
-        };
-    }
-
+    /// <summary>当前循环内已加载 Loop 组件的可见工具。</summary>
     public IEnumerable<ITool> GetVisibleTools()
     {
         foreach (var inst in _loopComponents)
@@ -131,21 +120,14 @@ internal class ComponentHost
         }
     }
 
-    /// <summary>获取全局组件工具（按引擎类型过滤） + 本循环 Loop 组件工具。</summary>
+    /// <summary>获取全局组件工具（按权限组过滤） + 本循环 Loop 组件工具。</summary>
     public IEnumerable<ITool> GetAllVisibleTools()
     {
         if (GlobalHost != null)
         {
             foreach (var inst in GlobalHost.Instances)
             {
-                var applicability = _loopType switch
-                {
-                    "channel" => inst.Registration.ChannelApplicability,
-                    "review" => inst.Registration.ReviewApplicability,
-                    "task" => inst.Registration.TaskApplicability,
-                    _ => Applicability.Enabled
-                };
-                if (!_config.IsEnabled(inst.Component.Meta.Name, _loopType, inst.Component.Meta.DefaultEnabled, applicability))
+                if (!_config.IsEnabled(inst.Component.Meta.Name, _loopType, inst.Component.Meta.DefaultEnabled))
                     continue;
                 foreach (var tool in inst.Component.Tools)
                     yield return tool;

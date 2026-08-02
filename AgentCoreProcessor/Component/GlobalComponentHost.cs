@@ -58,14 +58,7 @@ internal class GlobalComponentHost
         foreach (var inst in _components)
         {
             if (!inst.Context.IsEnabled) continue;
-            var applicability = loopType switch
-            {
-                "channel" => inst.Registration.ChannelApplicability,
-                "review" => inst.Registration.ReviewApplicability,
-                "task" => inst.Registration.TaskApplicability,
-                _ => Applicability.Enabled
-            };
-            if (!_config.IsEnabled(inst.Component.Meta.Name, loopType, inst.Component.Meta.DefaultEnabled, applicability))
+            if (!_config.IsEnabled(inst.Component.Meta.Name, loopType, inst.Component.Meta.DefaultEnabled))
                 continue;
             foreach (var tool in inst.Component.Tools)
                 yield return tool;

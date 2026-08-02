@@ -61,20 +61,12 @@ internal static class ComponentRegistry
     public static IEnumerable<ComponentRegistration> GetGlobals() =>
         _registrations.Values.Where(r => r.Scope == ComponentScope.Global);
 
+    /// <summary>
+    /// 获取全部 Loop 组件。组件在哪个权限组加载由 ComponentConfig 决定（LoopApplicability 已 inert）。
+    /// </summary>
     public static IEnumerable<ComponentRegistration> GetLoopComponents(string loopType)
     {
-        return _registrations.Values.Where(r =>
-        {
-            if (r.Scope != ComponentScope.Loop) return false;
-            var applicability = loopType switch
-            {
-                "channel" => r.ChannelApplicability,
-                "review" => r.ReviewApplicability,
-                "task" => r.TaskApplicability,
-                _ => Applicability.Enabled
-            };
-            return applicability != Applicability.NotApplicable;
-        });
+        return _registrations.Values.Where(r => r.Scope == ComponentScope.Loop);
     }
 
     public static void Clear() => _registrations.Clear();

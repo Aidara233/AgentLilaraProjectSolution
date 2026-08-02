@@ -28,7 +28,9 @@ internal class ComponentConfig
         try
         {
             var json = File.ReadAllText(ConfigPath);
-            _cached = JsonSerializer.Deserialize<ComponentConfig>(json) ?? new();
+            // 大小写不敏感：兼容手写小写 key（channel/task/review）与 WebUI 序列化的 PascalCase（Channel/Task/Review）
+            _cached = JsonSerializer.Deserialize<ComponentConfig>(json,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
         }
         catch
         {
@@ -39,26 +41,24 @@ internal class ComponentConfig
 
     public static void Invalidate() => _cached = null;
 
-    /// <summary>检查组件是否对指定引擎类型启用。</summary>
+    /// <summary>检查组件是否对指定权限组启用。未配置条目 = 不启用（config-required）。</summary>
     public bool IsEnabled(string componentName, string engineType, bool defaultEnabled = true)
     {
         if (Components.TryGetValue(componentName, out var entry))
             return entry.IsEnabled(engineType);
-        return defaultEnabled;
+        return false;
     }
 
-    /// <summary>检查组件是否对指定引擎类型启用，尊重 LoopApplicability 声明。</summary>
+    /// <summary>
+    /// 检查组件是否对指定权限组启用。applicability 参数已 inert（LoopApplicability 不再参与运行时裁决），
+    /// 仅保留签名兼容；组件归属完全由本配置决定。
+    /// </summary>
     public bool IsEnabled(string componentName, string engineType, bool defaultEnabled, Applicability applicability)
     {
+        _ = applicability; // inert：LoopApplicability 不再参与裁决
         if (Components.TryGetValue(componentName, out var entry))
             return entry.IsEnabled(engineType);
-        return applicability switch
-        {
-            Applicability.Enabled => defaultEnabled,
-            Applicability.Disabled => false,
-            Applicability.NotApplicable => false,
-            _ => defaultEnabled
-        };
+        return false;
     }
 
     /// <summary>修改组件在指定引擎类型下的启用状态并持久化。</summary>

@@ -87,7 +87,7 @@ internal static class SessionTypeProfiles
             },
             PermissionGroup = "channel",
             PermissionMode = "blacklist",
-            PermissionTools = new[] { "escalate" }
+            PermissionTools = new[] { "escalate" }.Concat(ReviewToolSeed).ToArray()
         },
         SessionType.Task => new SessionTypeProfile
         {
@@ -122,6 +122,15 @@ internal static class SessionTypeProfiles
         // 核心 session 工具
         "end_session", "wait", "compact", "connect_channel", "listen_channel",
         "disconnect_channel", "get_image_text", "refine_image", "continue_loop"
+    };
+
+    /// <summary>review 工具集：channel 黑名单与 review 白名单共用（Working 会话不可用复盘工具）。</summary>
+    internal static readonly string[] ReviewToolSeed =
+    {
+        "review_browse", "review_complete", "review_evaluate", "review_focus",
+        "review_get_person", "review_list_beacons", "review_log", "review_remove_beacon",
+        "review_save_progress", "review_search_messages", "review_thinking_notes",
+        "review_update_person"
     };
 
     /// <summary>Session 配置文件 DTO。DefaultComponents 对应 record 的 DefaultComponentIds。</summary>

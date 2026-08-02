@@ -87,9 +87,11 @@ public class PermissionServiceTests
         Assert.False(PermissionService.IsAllowed("express", "continue_loop"));
         Assert.False(PermissionService.IsAllowed("express", "end_session"));
 
-        // channel：黑名单，仅 escalate 被禁，其余（含全局工具）放行
+        // channel：黑名单，escalate + review 工具被禁，其余（含全局工具）放行
         Assert.Equal("blacklist", PermissionService.GetMode("channel"));
         Assert.False(PermissionService.IsAllowed("channel", "escalate"));
+        Assert.False(PermissionService.IsAllowed("channel", "review_browse"));
+        Assert.False(PermissionService.IsAllowed("channel", "review_evaluate"));
         Assert.True(PermissionService.IsAllowed("channel", "speak"));
         Assert.True(PermissionService.IsAllowed("channel", "send_email"));
         Assert.True(PermissionService.IsAllowed("channel", "end_session"));
