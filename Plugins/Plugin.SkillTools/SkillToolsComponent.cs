@@ -1,5 +1,4 @@
 using AgentLilara.PluginSDK;
-using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.SkillTools;
 
@@ -47,10 +46,6 @@ public class SkillToolsComponent : GlobalComponentBase
         _loadFile = new LoadSkillFileTool(getSkill);
         _listSkills = new ListSkillsTool(getSkills);
         _listFiles = new ListSkillFilesTool(getSkill);
-
-        var diceReg = context.GetService<IDiceRegistry>();
-        if (diceReg != null)
-            SkillDiceFaces.Register(diceReg, _skills);
 
         return Task.CompletedTask;
     }

@@ -438,7 +438,6 @@ protected string DetectFormat(string filePath)
 | **GetInputSchema 覆写** | 工具参数需要非 string 类型或详细 JSON Schema 描述 | `Plugin.CrossLoopTools/SendMessageTool.cs` |
 | **Atomic File Save**（.tmp + Move） | 任何 JSON 持久化写入，防止崩溃导致数据损坏 | 所有插件的 `SaveXxx` 方法 |
 | **BuildPromptSection 聚合** | 组件内多个工具各自贡献 prompt 片段 | `Plugin.WorkingTools/WorkingToolsComponent.cs` |
-| **IDiceRegistry** | 插件想向骰子池注册随机事件 | `Plugin.MemoryTools/MemoryDiceFaces.cs` |
 
 ---
 

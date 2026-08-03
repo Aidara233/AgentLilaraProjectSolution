@@ -268,8 +268,6 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 -           Plugins/Plugin.GitTools/（git_* + github_* 仓库操作）— Loop + Global
 -           Plugins/Plugin.Currency/（货币工具）— Global
 -           Plugins/Plugin.CampusPrint/（校园打印）— Global
--           Plugins/Plugin.DicePool/（骰子系统）
--           Plugins/Plugin.ExternalDice/（外部骰子）
 -           Plugins/Plugin.ImageTools/（图片处理工具）
 -           Plugins/Plugin.SvgTools/（SVG 渲染）
 -           Plugins/Plugin.DocumentTools/（文档处理）

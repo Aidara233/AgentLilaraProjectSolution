@@ -42,8 +42,6 @@
 | **Plugin.NetworkTools** | 网络工具 |
 | **Plugin.SshTools** | SSH 工具 |
 | **Plugin.WebSearch** | 网页搜索 |
-| **Plugin.DicePool** | 骰子 |
-| **Plugin.ExternalDice** | 外部骰子 |
 | **Plugin.ImageTools** | 图片读取与OCR |
 | **Plugin.SvgTools** | SVG 渲染（render_svg） |
 | **Plugin.DocumentTools** | 文档处理 |
@@ -100,7 +98,7 @@ var messaging = context.GetService<IAgentMessaging>();
 var log = context.GetService<ILogAccess>();
 ```
 
-常用服务：`IMemoryAccess`, `IChannelAccess`, `IAgentMessaging`, `IEngineAccess`, `ILogAccess`, `ISleepAccess`, `IAdapterAccess`, `IPersonAccess`, `IReviewAccess`, `IBeaconAccess`, `IDiceRegistry`
+常用服务：`IMemoryAccess`, `IChannelAccess`, `IAgentMessaging`, `IEngineAccess`, `ILogAccess`, `ISleepAccess`, `IAdapterAccess`, `IPersonAccess`, `IReviewAccess`, `IBeaconAccess`
 
 ### 5. 编译 + 验证
 

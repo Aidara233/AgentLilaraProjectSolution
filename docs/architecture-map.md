@@ -53,8 +53,6 @@ AgentLilaraProjectSolution/
       ├── Plugin.NetworkTools/    网络工具 + Playwright 浏览器自动化
       ├── Plugin.SshTools/        SSH 工具
       ├── Plugin.WebSearch/       网页搜索
-      ├── Plugin.DicePool/        骰子系统
-      ├── Plugin.ExternalDice/    外部骰子
       ├── Plugin.ImageTools/      图片处理
       ├── Plugin.DocumentTools/   文档处理
       ├── Plugin.QuickActions/    快捷操作
@@ -487,8 +485,6 @@ AgentLilara.PluginSDK (共享契约，独立类库):
   Plugin.NetworkTools    — http_request + download_file [LoopComponent: network-tools] + Playwright 浏览器自动化 10 工具 [GlobalComponent: browser + LoopComponent: browser-tools]
   Plugin.SshTools        — SSH 工具
   Plugin.WebSearch       — 网页搜索
-  Plugin.DicePool        — 骰子系统
-  Plugin.ExternalDice    — 外部骰子
   Plugin.ImageTools      — 图片处理
   Plugin.DocumentTools   — 文档处理
   Plugin.QuickActions    — 快捷操作

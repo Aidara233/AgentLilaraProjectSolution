@@ -36,11 +36,6 @@ public class MemoryToolsComponent : GlobalComponentBase
         _tools.Add(new MemoryLinkGetTool(memoryAccess));
         _tools.Add(new MemoryStatsTool(memoryAccess));
 
-        // 注册骰子面
-        var diceReg = context.GetService<IDiceRegistry>();
-        if (diceReg != null && memoryAccess != null)
-            MemoryDiceFaces.Register(diceReg, memoryAccess);
-
         return Task.CompletedTask;
     }
 }

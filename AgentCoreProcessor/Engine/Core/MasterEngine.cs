@@ -621,9 +621,6 @@ namespace AgentCoreProcessor.Engine
                 new Tool.Host.BeaconAccessImpl(Beacons));
             _toolContext.Register<AgentLilara.PluginSDK.Services.IAdapterAccess>(
                 new Tool.Host.AdapterAccessImpl(adapterManager));
-            var dicePool = new Tool.Host.DicePoolImpl();
-            _toolContext.Register<AgentLilara.PluginSDK.Services.IDiceRegistry>(dicePool);
-            _toolContext.Register<AgentLilara.PluginSDK.Services.IDiceService>(dicePool);
             _pluginLoader = new Tool.Host.PluginLoader(_toolContext, ProviderRegistry);
 
             // === Phase 2: 并行初始化（插件链 + MCP） ===
@@ -644,8 +641,6 @@ namespace AgentCoreProcessor.Engine
                     new Tool.Host.ChannelAccessImpl(this));
                 componentServices.Register<AgentLilara.PluginSDK.Services.IAdapterAccess>(
                     new Tool.Host.AdapterAccessImpl(adapterManager));
-                componentServices.Register<AgentLilara.PluginSDK.Services.IDiceRegistry>(dicePool);
-                componentServices.Register<AgentLilara.PluginSDK.Services.IDiceService>(dicePool);
                 if (_signalLogger != null)
                     componentServices.Register<ISignalLogger>(_signalLogger);
 

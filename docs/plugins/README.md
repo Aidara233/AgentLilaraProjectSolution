@@ -132,8 +132,6 @@ AgentLilaraProjectSolution/
     Plugin.GitTools/              ← Git/GitHub 操作（git_*, github_*）— Loop + Global
     Plugin.Currency/              ← 货币工具 — Global
     Plugin.CampusPrint/           ← 校园打印 — Global
-    Plugin.DicePool/              ← 骰子系统
-    Plugin.ExternalDice/          ← 外部骰子
     Plugin.ImageTools/            ← 图片读取与OCR
     Plugin.SvgTools/              ← SVG 渲染（render_svg）— Global
     Plugin.DocumentTools/         ← 文档处理
