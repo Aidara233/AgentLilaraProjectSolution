@@ -100,6 +100,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - `docs/memory-redesign/03-memory-engine.md` — **心智引擎整体规划**：Writer 协议、产生端、复活善后
 - `docs/memory-redesign/04-migration-todos.md` — 旧系统对照、废弃清单、待定项、实施路线
 - `docs/memory-redesign/05-credibility-conflict-model.md` — **可信度与冲突模型**：Credibility/strength、支持/反对边、noisy-OR、冲突组、Review
+- `docs/memory-redesign/06-pending-todos.md` — **待定与暂缓清单**：待定（需决策未定）+ 暂缓（明确首版不做）
 - `docs/断言存储系统设计决定.md` — 断言侧唯一权威（Claims 遵循此文档）
 
 **Signal 日志系统（`docs/signal/`）：**

@@ -15,11 +15,11 @@
 | MemoryExtractionCore | 新提取逻辑 |
 | 矛盾边（Support 负值） | 冲突组 + 支持/反对边 + 可信度（见 05） |
 | "反驳"谓词（9.2 推理型） | 取消——反对 = `支持 + 负 strength`（见 05） |
-| DreamEngine (Order+Patrol) | 新维护引擎（标定+密度检测+归档）+ 探索者（找关联/问题，见 06 待定） |
+| DreamEngine (Order+Patrol) | 新维护引擎（标定+密度检测+归档）+ 探索者（找关联/问题，见 06） |
 | ReviewEngine | 验证者——处理 ReviewQueue，git 式暂存提交，拉开可信度差距（见 03/05） |
 | Beacon 自动生成部分 | ReviewQueue 自动入队（Conflict/Dream/Manual 统一来源，见 05 6.0） |
 | Beacon 工作端标记 | 保留（mark_for_review → ReviewQueue Source=Manual） |
-| EvaluationEngine/EvaluationScores | 并入心智引擎，派生自断言（主体=用户时按断言性质驱动评价，见 06 待定） |
+| EvaluationEngine/EvaluationScores | 并入心智引擎，派生自断言（主体=用户时按断言性质驱动评价，见 06） |
 | RelationClassificationCore | 不需要 |
 | MemoryDecay/ChangePropagation | 不需要 |
 | SleepTalkCore | 保留（与记忆库无关） |
@@ -35,37 +35,11 @@
 - 旧"矛盾检测 = LLM 关系分类顺带"取消（新检测 = 确定性排他属性检查，不靠 LLM）
 - 旧"冲突直接触发 Review"取消（冲突组超预算 → 入 ReviewQueue，Review 消费队列而非直接消费冲突组）
 
-## 待定
+## 待定与暂缓
 
-### 经历 + 情绪部分
+**完整清单见 [06-pending-todos.md](06-pending-todos.md)**（待定 = 需决策未定；暂缓 = 明确首版不做）。
 
-- 各轴 rate 初值与热容 JSON schema（当前值存 EmotionState.json 已定，rate 数值待定）
-- 各轴框架乘数具体数值（maxInfluence 系数）
-- 自动事件 → 目标值映射表（工具失败 / 用户否定 / 任务完成等分别推哪些轴、什么值）
-- `journal` / `remember` 工具签名（journal 结构已定，参数 schema 待定）
-- 心智引擎：模块结构 + Writer 写协议 + 善后复活已定（见 03），待定：ExtractService 两链路的具体实现、EventSink 事件映射表
-- 复活整理的配置（MaxFinalizeRounds 轮次上限、从存档重建时如何注入整理任务等，具体字段待定）
-- 情绪快照历史（EmotionSnapshot 表已定，具体字段/触发细节待定）
-
-### 可信度 + 冲突（05 落地后剩余）
-
-- 支持/反对边谓词的完整清单（"支持"之外还有哪些证据谓词，如"依据/来源/反证"）
-- 非冲突可信度变化的具体规则（同槽位新 stated 证据抬高？来源失信连带压低？具体触发待定）
-- 多方冲突（同组 >2 断言）的可信度分配策略
-- ReviewQueue 的具体调度策略（Review 会话何时启动、认领批大小、优先级排序）
-- review_preview 预览的具体输出格式（哪些变动、冲突组超预算提示的呈现）
-- Review 结束触发（review_complete 强制提交剩余暂存 + 队列收尾的具体语义）
-
-### 记忆系统其余部分
-
-- 维护引擎的巡逻节奏和具体流程（标定关键词、密度检测、归档）+ Dream 巡逻触发节奏（关联 03"Dream 探索者"）
-- 印证度（Corroboration）与可信度的关系（可信度已是断言属性，印证度是否还需独立计算？待定）
-- 念头系统（产生/竞争/兑现）
-- `expect` 参数解析 → TimerEngine 注册 → 到期唤醒的具体链路
-- **信任/评价系统的去向**：评价依赖断言运行（主体=用户时按断言性质自动驱动评价变动），具体谓词→评价映射表待定（人物与账号已定稿，见 03"人物与账号"；情绪注入已定稿，见 03"心智插件"）
-- 人物/账号 WebUI 视图：人物列表 + 信任评估断言可视化 + 账号列表 + 归属查询（见 03"人物与账号"）
-- Express 伴随提取的具体触发参数（攒批 N 条 / 空闲 N 分钟）
-- Session 工具轨迹的读取与记忆判定策略（标记优先 vs 全量，token 成本控制）
+本文件保留与旧系统迁移直接相关的对照、废弃、路线。
 
 ## 实施路线（草稿）
 

@@ -62,6 +62,7 @@ Lilara 记忆系统的**整体推倒重来**。旧系统是纯"事实仓库"—�
 | [03-memory-engine.md](03-memory-engine.md) | **心智引擎整体规划**：模块结构、Writer 写协议、产生端、复活善后、Review 消费 | 定稿（骨架） |
 | [04-migration-todos.md](04-migration-todos.md) | 旧系统对照、废弃清单、待定项、实施路线 | 待定为主 |
 | [05-credibility-conflict-model.md](05-credibility-conflict-model.md) | **可信度与冲突模型**：Credibility/strength 正交、支持/反对边、noisy-OR + logit、冲突组、ReviewQueue + git 式提交 | 定稿 |
+| [06-pending-todos.md](06-pending-todos.md) | **待定与暂缓清单**：待定（需决策未定）+ 暂缓（明确首版不做） | 动态 |
 
 ## 关联文档
 
@@ -82,5 +83,7 @@ Lilara 记忆系统的**整体推倒重来**。旧系统是纯"事实仓库"—�
 - **Dream 探索者（切片）**——轻量无 session，切片驱动，推断断言落库 + 队列移交——见 03
 - **人物与账号**——账号=框架轻量实体，人物=普通实体节点，信任=Review 校准的评估断言——见 03
 - **心智插件（注入）**——情绪/经历注入插件化，多组件解耦，注入带频道倾向而检索中立——见 03
+- **检索排序**——命中关键词数量为绝对优先级 + 运算可信度 c_actual 降序 + 二跳内子证据，最大 N 条——见 01
+- **暂缓项**——事件映射表 / 来源失信 / 推断被否定 / 多方冲突分配（无额外策略，和≤1 已覆盖）——见 06
 
-**待定**：见 [04-migration-todos.md](04-migration-todos.md) — 数值类配置、事件映射表、维护引擎、Dream 探索者、评价映射、念头系统、检索细节等。
+**待定**：见 [06-pending-todos.md](06-pending-todos.md) — 数值类配置、Review 调度细节、念头系统、expect 链路、维护引擎、评价映射等。
