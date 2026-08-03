@@ -192,7 +192,26 @@ ReviewQueue（待验证队列，持久化表）——唯一的 Review 工作源
 ```
 
 - **统一框架**：所有来源都进这一个队列（冲突组超预算自动入队、Dream 发现入队、手动 mark 入队）。冲突组退化为**纯数值约束** + 队列的一个 Source，不再直接是"Review 候选"
-- **崩溃恢复**：`Status=UnderReview` 的项重启后重置回 `Pending`（保留 `InterruptedAt` 时间戳），Review 重新认领——最多重做一批，不丢工作
+- **崩溃恢复**：`Status=UnderReview` 的项重启后重置回 `Pending`（保留 `InterruptedAt` 时间戳），Review 重新认领——最多重做一项，不丢工作
+
+### Review 触发（队列有活即激活，非轮询）
+
+```
+冲突组超预算 / Dream 发现 / 手动 mark
+  → 入队（ReviewQueue, Source 区分）
+  → 全局开关开着 + 队列有活 → 启动 review session（自动按需）
+  → 按 Priority 认领【单个】项（High > Normal > Low）
+  → 查证 → 调锚点进暂存区 → preview 预览 → commit 提交
+  → 队列空 → review 退出
+```
+
+- **按需激活**：队列有活才启动，不等轮询；处理完队列空即退出
+- **一次认领一个**：专注解决单个问题，不贪多（批大小 = 1）
+- **优先级**：High（冲突组超预算）> Normal > Low，按 Priority 认领
+- **总开关分级**：
+  - **全局开关** `ReviewConfig.Enabled`：关掉后 Review 不激活（冲突照常入队记账，只是不自动处理）
+  - **单次手动强制**：管理员需要时手动触发一次 review（对应旧 `force-review`，可续跑不清进度）
+- **开关管激活、不管入队**：关了开关冲突照样入队，不丢待办，只是不自动处理
 
 ```
 Review session 处理队列项
