@@ -65,6 +65,13 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
     // ── Session CRUD ──
 
     public IRuntimeSession CreateSession(CreateSessionSpec spec)
+        => CreateSession(spec, fixedSessionId: null);
+
+    /// <summary>
+    /// 创建会话。fixedSessionId 仅供 compact 承接用（新 session 在创建前已由池 TakeOver 预定 id，
+    /// 必须与池中一致，否则 connect_channel 的幂等 claim 不命中）。其余路径传 null（自动生成）。
+    /// </summary>
+    internal IRuntimeSession CreateSession(CreateSessionSpec spec, string? fixedSessionId)
     {
         var profile = SessionTypeProfiles.Get(spec.Type);
         // 计算 finalComponents
@@ -84,7 +91,9 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
                 .ToArray();
         }
 
-        var session = new RuntimeSession(spec, finalComponents);
+        var session = fixedSessionId != null
+            ? new RuntimeSession(spec, fixedSessionId, finalComponents)
+            : new RuntimeSession(spec, finalComponents);
         session.SetCurrency(_currency!);
         session.SetSessionEngine(this);
 
@@ -242,13 +251,13 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
     /// </summary>
     public async Task<IRuntimeSession> CreateFromCompact(RuntimeSession oldSession, string summary)
     {
-        // 先释放旧 session 的频道 claim，让新 session 能成功 ClaimChannel。
-        // 旧 session 即将由 compact 工具触发 EndSession 退出 RunAsync，不再需要 claim；
-        // 旧 session 退出时 Task.Run 包装层 finally 会再次 ReleaseSessionClaims（幂等）。
-        // 不释放的话：CreateSession 内 ClaimChannel 会撞上旧 claim → 返回 false →
-        // 新 session 没有 Full claim → 入向消息落回 ExpressEngine Express、
-        // speak 与 Express 抢话、整体路由错乱。
-        ReleaseSessionClaims(oldSession.SessionId);
+        // 同池换活跃 session：找到旧 session 所在的池，把活跃 session 预定为新 session id。
+        // 占用状态原地不动（不释放、不重取）——这是"占用状态在池里"的核心语义。
+        // 新 session 创建后 connect_channel 会幂等命中（SessionPool.Claim 同 id 重入成功），
+        // 不再有 claim 短暂释放的中间态（原 ReleaseSessionClaims → 重新 claim）。
+        var newId = Guid.NewGuid().ToString("N")[..12];
+        var oldPool = FindPoolBySession(oldSession.SessionId);
+        oldPool?.TakeOver(newId);
 
         // spec.InputPorts 留空：build port spec 全靠 InitActions.connect_channel 在 BootstrapAsync
         // 阶段一次性完成 claim + 订阅 + 频道上下文载入 —— 与 escalate 路径行为对齐，
@@ -268,7 +277,7 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
             ParentSessionId = oldSession.SessionId,
         };
 
-        var newSession = (RuntimeSession)CreateSession(oldSpec);
+        var newSession = (RuntimeSession)CreateSession(oldSpec, fixedSessionId: newId);
 
         // 承接旧 session 的活跃核（同类型白名单必然包含）
         newSession.SetActiveCore(oldSession.ActiveCoreConfig);
@@ -304,6 +313,13 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
             new { oldId = oldSession.SessionId, newId = newSession.SessionId, summaryLen = summary.Length });
 
         return newSession;
+    }
+
+    /// <summary>按活跃 session 查找其所在池（compact TakeOver 用）。无池返回 null。</summary>
+    private SessionPool? FindPoolBySession(string sessionId)
+    {
+        lock (_poolLock)
+            return _pools.Values.FirstOrDefault(p => p.ActiveSessionId == sessionId);
     }
 
     public StopResult StopSession(string id, string reason)

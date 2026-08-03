@@ -61,6 +61,22 @@ public class SessionPoolTests
     }
 
     [Fact]
+    public void Claim_after_takeover_is_idempotent()
+    {
+        // compact 场景：池 TakeOver 到新 session id 后，新 session connect_channel 幂等命中
+        var engine = TestHost.BuildSessionEngineWithFakeSession("old", alive: true);
+        engine.ClaimChannel("old", 1, ClaimLevel.Full);
+
+        engine.TakeOverChannelPool(1, "new"); // compact 换活跃 session，claim 原地不动
+
+        // 新 session 的 connect_channel 走 ClaimChannel → 幂等成功（不撞已有占用）
+        var claimed = engine.ClaimChannel("new", 1, ClaimLevel.Full);
+
+        Assert.True(claimed);
+        Assert.Equal("new", engine.GetFullClaimer(1));
+    }
+
+    [Fact]
     public void ReleaseChannel_returns_unclaimed()
     {
         var engine = TestHost.BuildSessionEngineWithFakeSession("S1", alive: true);

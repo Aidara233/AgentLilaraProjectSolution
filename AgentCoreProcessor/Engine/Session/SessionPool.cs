@@ -28,9 +28,10 @@ internal sealed class SessionPool
     /// <summary>Listen 占用（旁听 session，只读消息流，多个可并存）。</summary>
     public List<string> ListenSessionIds { get; } = new();
 
-    /// <summary>Full claim 一个 session。已有占用返回 false。</summary>
+    /// <summary>Full claim 一个 session。已有占用返回 false。同 session 重入视为成功（幂等，供 TakeOver 后续接）。</summary>
     public bool Claim(string sessionId)
     {
+        if (ActiveSessionId == sessionId) return true; // 幂等：compact/escalate TakeOver 后同 session 重入
         if (HasFullClaim) return false;
         ActiveSessionId = sessionId;
         return true;
