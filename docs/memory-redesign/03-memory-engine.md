@@ -363,6 +363,44 @@ Claims: { subject:   {entity, Lilara},
 
 细节实现待定（见 04）。
 
+## 心智插件（注入）
+
+情绪注入、经历注入做成**插件**（消费端自治），不塞进 MindEngine 核心。核心只生产状态（EmotionService），消费由各 Session 按自己性质决定（对话型注入、审查型 Review 不注入）。
+
+**一个 DLL，多个 `[Component]`**——注入与工具天然分离，各组件在 ComponentConfig.json 独立启停：
+
+```
+Plugin.MindTools/
+├── MindEmotionComponent    [Global 组件]  → BuildPromptSection：读情绪 → 生成状态片段
+├── MindExperienceComponent [Global 组件]  → BuildPromptSection：读经历 → 生成经历片段
+└── 心智工具                独立 ITool     → PermissionService 黑白名单（工具级）
+```
+
+- 注入用组件装配控制（ComponentConfig），工具用权限组控制（Storage/Session/{group}.json）——两套控制面
+- 情绪组件按 `caller.LoopType` 区分：Working/Express 注入、Review 不注入（冷静验证不带情绪偏置）
+
+### 情绪注入（MindEmotionComponent）
+
+- 读 `IEmotionAccess.GetCurrentAsync()`，生成状态描述片段（非五轴原始数值，02）
+- 每轮注入（情绪是动态的），状态变化即更新
+
+### 经历注入（MindExperienceComponent）
+
+- 复用 RetrieveService（关键词 + 时间窗口），不碰表
+- **L1/L0 不主动注入**（FrameworkEvents，仅作 Evidence 被引用）
+- **来源优先于类型**：标签 `[相对时间 · 来源]`，来源 = 本频道 / 频道名 / 复盘·内部
+- **初建（BuildStartInject）按 L 等级扩展时间窗**：
+  - L3（反思）宽窗，时间久也纳入（信息密度高，值得穿透）
+  - L2（经历）窄窗，仅最近 N 天（流水账容易吵）
+  - 预算：L3 2~3 条 + L2 3~5 条，同级内按时间倒序（可调配置）
+- **后续轮（BuildRoundInject）只注入新增 L3**：L2 太嘈杂不值得每轮刷新，L3 是浓缩信号（防互相干扰）
+- **本频道权重**：注入时本频道经历优先纳入，跨频道降权（框架替模型做上下文判断）
+
+### 注入 vs 检索的边界
+
+- **注入是框架塞给模型的**——可以有频道倾向（替模型判断当前上下文）
+- **检索是模型自己查的**——**中立公平，不做频道奖励**；模型显式加"仅限频道X"条件才过滤
+
 ## 与现有系统的接缝
 
 - **OnCompleted 事件**（`RuntimeSession.cs`）已存在，复活监听直接订阅
