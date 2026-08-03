@@ -30,16 +30,12 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
     private readonly ConcurrentDictionary<string, RuntimeSession> _sessions = new();
     /// <summary>顶层资源池：channelId → 池。频道占用状态在池里（Full claim + Listen 旁听）。</summary>
     private readonly ConcurrentDictionary<int, SessionPool> _pools = new();
+    /// <summary>sessionId → 所在池（含全部 member：活跃 + 被 compact 换掉的旧 id）。寻址权威索引。</summary>
+    private readonly ConcurrentDictionary<string, SessionPool> _poolByMember = new();
     private readonly List<ScheduledTask> _scheduledTasks = new();
     private readonly List<TodoItem> _todoItems = new();
     private ICurrencyService? _currency;
     private DateTime _lastTodoScan = DateTime.MinValue;
-
-    // 父子链条（阶段 2 迁入池的层级树，当前保留）
-    private readonly ConcurrentDictionary<string, HashSet<string>> _activeChildren = new();
-    private readonly ConcurrentDictionary<string, string> _childToParent = new();
-    private readonly ConcurrentDictionary<string, string> _forwards = new();
-    private readonly object _childLinkLock = new();
 
     // session-scoped 子资源注册表（子 agent / 下载 / SSH 共用）
     private readonly SessionResourceRegistry _sessionResources = new();
@@ -228,19 +224,30 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
             }
         });
 
-        // 父子表登记（仅当 ParentSessionId 非空）
-        if (!string.IsNullOrEmpty(spec.ParentSessionId))
-        {
-            lock (_childLinkLock)
-            {
-                _childToParent[session.SessionId] = spec.ParentSessionId;
-                if (!_activeChildren.ContainsKey(spec.ParentSessionId))
-                    _activeChildren[spec.ParentSessionId] = new HashSet<string>();
-                _activeChildren[spec.ParentSessionId].Add(session.SessionId);
-            }
-        }
+        // 池树登记（仅当 ParentSessionId 非空）：子 agent → 新建子池挂到父会话所在池。
+        // compact 场景（fixedSessionId 已在创建前 TakeOver 进同池）_poolByMember 已含新 id → 跳过。
+        if (!string.IsNullOrEmpty(spec.ParentSessionId)
+            && !_poolByMember.ContainsKey(session.SessionId))
+            CreateSubPool(session.SessionId, spec.ParentSessionId);
 
         return session;
+    }
+
+    /// <summary>
+    /// 为子 agent 创建子池：挂到父会话所在的池（直接父池），子池 ActiveSession = 子 agent。
+    /// 子池 ChannelId=0（无频道、不持 claim），独享自己的池。
+    /// </summary>
+    internal void CreateSubPool(string childId, string parentSessionId)
+    {
+        lock (_poolLock)
+        {
+            if (_poolByMember.ContainsKey(childId)) return;
+            if (!_poolByMember.TryGetValue(parentSessionId, out var parentPool)) return;
+            var sub = new SessionPool(0) { Parent = parentPool };
+            sub.Claim(childId);
+            parentPool.ChildPools.Add(sub);
+            _poolByMember[childId] = sub;
+        }
     }
 
     /// <summary>
@@ -285,25 +292,17 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
         // 接续旧 session 的轮次计数，避免新 session 从 0 重新跑 free round
         newSession.InheritRoundCount(oldSession.GetRoundCountForCompact());
 
-        // 子链迁移：compact → 所有子 session 的 parent 从旧 session 指向新 session
-        lock (_childLinkLock)
+        // 子链自动跟随：子 agent 池的 Parent 指向池对象（不指向 session id），compact 换活跃 session
+        // 后子 agent 找父自动拿到新 session，无需迁移。仅持久化子 session 的 effectiveParentId 到 state.json
+        // （供重启后子链重建参考）。
+        foreach (var childId in (GetActiveChildren(oldSession.SessionId) ?? Array.Empty<string>()))
         {
-            if (_activeChildren.TryRemove(oldSession.SessionId, out var childrenOfOld))
+            try
             {
-                _activeChildren[newSession.SessionId] = childrenOfOld;
-                foreach (var childId in childrenOfOld)
-                {
-                    if (_childToParent.ContainsKey(childId))
-                        _childToParent[childId] = newSession.SessionId;
-                    try
-                    {
-                        var childPersister = new SessionPersistence(childId);
-                        childPersister.UpdateEffectiveParentAsync(childId, newSession.SessionId).GetAwaiter().GetResult();
-                    }
-                    catch { }
-                }
+                var childPersister = new SessionPersistence(childId);
+                childPersister.UpdateEffectiveParentAsync(childId, newSession.SessionId).GetAwaiter().GetResult();
             }
-            _forwards[oldSession.SessionId] = newSession.SessionId;
+            catch { }
         }
 
         // 通知所有 ISessionResource：loopId 从旧 session rebind 到新 session
@@ -319,7 +318,7 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
     private SessionPool? FindPoolBySession(string sessionId)
     {
         lock (_poolLock)
-            return _pools.Values.FirstOrDefault(p => p.ActiveSessionId == sessionId);
+            return _poolByMember.TryGetValue(sessionId, out var pool) ? pool : null;
     }
 
     public StopResult StopSession(string id, string reason)
@@ -357,51 +356,64 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
     public IRuntimeSession? GetSession(string id) =>
         _sessions.TryGetValue(id, out var s) ? s : null;
 
-    // ── 父子链查询 ──
+    // ── 子链查询（资源池树）──
 
+    /// <summary>某会话的活跃子 agent 列表。走池树：所在池的 ChildPools 的活跃 session。</summary>
     public IReadOnlyCollection<string>? GetActiveChildren(string sessionId)
     {
-        return _activeChildren.TryGetValue(sessionId, out var s) ? s : null;
+        lock (_poolLock)
+        {
+            if (!_poolByMember.TryGetValue(sessionId, out var pool)) return null;
+            var children = pool.ChildPools
+                .Where(cp => !string.IsNullOrEmpty(cp.ActiveSessionId))
+                .Select(cp => cp.ActiveSessionId)
+                .ToList();
+            return children.Count > 0 ? children : null;
+        }
     }
 
     /// <summary>
-    /// 跨 0 或多次 compact 转发解析 loopId 当前的活跃 session ID。
-    /// loopId 非 session: 返回原值。session 已死且无 forward: 返回 null。
+    /// 跨 0 或多次 compact 转发解析 loopId 当前的活跃 session ID（走资源池树：引用 → 所在池 → 池活跃 session）。
+    /// 非 session: 引用（channel: / task: / review:）原样返回（兼容，阶段 3 统一寻址后移除）。
     /// </summary>
     public string? ResolveActiveSession(string loopId)
     {
         if (loopId == null) return null;
         if (!loopId.StartsWith("session:", System.StringComparison.OrdinalIgnoreCase))
             return loopId; // channel: / task: / review: 原样返回
-
         var current = loopId.Substring("session:".Length);
-        while (_forwards.TryGetValue(current, out var forwarded))
-            current = forwarded;
-        if (_sessions.ContainsKey(current)) return $"session:{current}";
+        if (_poolByMember.TryGetValue(current, out var pool) && !string.IsNullOrEmpty(pool.ActiveSessionId))
+            return $"session:{pool.ActiveSessionId}";
         return null;
     }
 
-    /// <summary>子 agent 兼容入口，返回 effective parent session ID（无前缀）。内部委托 ResolveActiveSession。</summary>
+    /// <summary>子 agent 兼容入口：返回 childId 的直接父 session ID。沿池树：子池 → 父池 → 父池活跃 session。</summary>
     public string? ResolveEffectiveParent(string childId)
     {
-        var resolved = ResolveActiveSession($"session:{childId}");
-        return resolved?.Substring("session:".Length);
+        if (_poolByMember.TryGetValue(childId, out var pool) && pool.Parent != null)
+            return pool.Parent.ActiveSessionId;
+        return null;
     }
 
     public void OnChildCompleted(string childId)
     {
-        lock (_childLinkLock)
+        lock (_poolLock)
         {
-            if (_childToParent.TryRemove(childId, out var parentId))
+            if (!_poolByMember.TryGetValue(childId, out var sub)) return;
+            var parentPool = sub.Parent;
+            if (parentPool != null)
             {
-                if (_activeChildren.TryGetValue(parentId, out var siblings))
+                parentPool.ChildPools.Remove(sub);
+                var parentId = parentPool.ActiveSessionId;
+                if (!string.IsNullOrEmpty(parentId))
                 {
-                    siblings.Remove(childId);
-                    if (siblings.Count == 0) _activeChildren.TryRemove(parentId, out _);
+                    var parent = GetSession(parentId) as RuntimeSession;
+                    parent?.RemoveChildFromState(childId);
                 }
-                var parent = GetSession(parentId) as RuntimeSession;
-                parent?.RemoveChildFromState(childId);
             }
+            // 清理子池成员索引（子 agent 已结束）
+            foreach (var m in sub.Members)
+                _poolByMember.TryRemove(m, out _);
         }
     }
 
@@ -445,11 +457,13 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
             if (level == ClaimLevel.Full)
             {
                 if (!pool.Claim(sessionId)) return false;
+                _poolByMember[sessionId] = pool;
             }
             else
             {
                 if (!pool.ListenSessionIds.Contains(sessionId))
                     pool.ListenSessionIds.Add(sessionId);
+                _poolByMember[sessionId] = pool;
             }
             return true;
         }
@@ -466,6 +480,7 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
             if (!_pools.TryGetValue(channelId, out var pool) || !pool.HasFullClaim)
                 return false;
             pool.TakeOver(newSessionId);
+            _poolByMember[newSessionId] = pool;
             return true;
         }
     }
@@ -477,8 +492,7 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
             if (!_pools.TryGetValue(channelId, out var pool)) return;
             pool.Release(sessionId);
             pool.ListenSessionIds.RemoveAll(x => x == sessionId);
-            if (pool.IsEmpty)
-                _pools.TryRemove(channelId, out _);
+            RemoveEmptyPool(pool);
         }
     }
 
@@ -543,18 +557,29 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
     internal System.Threading.Tasks.Task NotifyResourcesFreedAsync(string id) => _sessionResources.NotifyFreedAsync(id);
     internal bool AnyResourceBlocksExit(string sessionId) => _sessionResources.AnyHasActiveResources(sessionId);
 
-    private void ReleaseSessionClaims(string sessionId)
+    internal void ReleaseSessionClaims(string sessionId)
     {
         lock (_poolLock)
         {
-            foreach (var (channelId, pool) in _pools)
+            if (!_poolByMember.TryGetValue(sessionId, out var pool)) return;
+            if (pool.ActiveSessionId == sessionId)
             {
                 pool.Release(sessionId);
-                pool.ListenSessionIds.RemoveAll(x => x == sessionId);
-                if (pool.IsEmpty)
-                    _pools.TryRemove(channelId, out _);
+                RemoveEmptyPool(pool);
             }
         }
+    }
+
+    /// <summary>空池回收：顶层池从 _pools 移除 / 子池从父移除，并清空其成员索引（成员已全部死亡）。</summary>
+    private void RemoveEmptyPool(SessionPool pool)
+    {
+        if (!pool.IsEmpty) return;
+        if (pool.IsRoot)
+            _pools.TryRemove(pool.ChannelId, out _);
+        else
+            pool.Parent?.ChildPools.Remove(pool);
+        foreach (var m in pool.Members)
+            _poolByMember.TryRemove(m, out _);
     }
 
     // ── ScheduledTask ──
@@ -896,6 +921,19 @@ InitialState = $"执行定时任务: {task.Description}"
                     ReleaseSessionClaims(session.SessionId);
                 }
             });
+        }
+
+        // 第二遍：重建子 agent 的池树。父 session 可能晚于子 session 恢复，必须等全部 session 就位后
+        // 才能把子 agent 挂到父池（否则父池不存在，子池建不出）。
+        foreach (var (_, session) in _sessions)
+        {
+            var specParent = session.ParentSessionId;
+            if (!string.IsNullOrEmpty(specParent) && !_poolByMember.ContainsKey(session.SessionId))
+            {
+                // 优先用 effectiveParentId（compact 后的当前父）；无则用 spec.ParentSessionId（原始父）
+                var parentId = session.EffectiveParentId ?? specParent;
+                CreateSubPool(session.SessionId, parentId);
+            }
         }
 
         // RestoreAll 完成：放行消息路由中等待的 claim 检查

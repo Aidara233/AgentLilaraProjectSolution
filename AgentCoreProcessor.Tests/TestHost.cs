@@ -23,8 +23,10 @@ namespace AgentCoreProcessor.Tests;
 /// </summary>
 internal static class TestHost
 {
-    /// <summary>构造一个 SessionEngine 实例，预置一个 fake session，用于 ResolveActiveSession 等纯状态测试。</summary>
-    public static SessionEngine BuildSessionEngineWithFakeSession(string sessionId, bool alive)
+    /// <summary>构造一个 SessionEngine 实例，预置一个 fake session，用于 ResolveActiveSession 等纯状态测试。
+    /// alive=true 时默认把 session 注册进资源池（_poolByMember，channel 1），使寻址能解析到它。
+    /// registerInPool=false 时跳过自动注册，供需要完全控制 claim 状态的测试使用。</summary>
+    public static SessionEngine BuildSessionEngineWithFakeSession(string sessionId, bool alive, bool registerInPool = true)
     {
         var ctx = new FakeSystemContext();
         var engine = new SessionEngine(ctx);
@@ -33,6 +35,8 @@ internal static class TestHost
         {
             var session = CreateFakeRuntimeSession(sessionId, SessionStatus.Running);
             GetSessions(engine)[sessionId] = session;
+            if (registerInPool)
+                engine.ClaimChannel(sessionId, 1, ClaimLevel.Full);
         }
 
         return engine;
@@ -74,16 +78,13 @@ internal static class TestHost
         return new MasterEngineTestFacade(master, sessionEngine, recordingCheck);
     }
 
-    /// <summary>在 engine 的 _forwards 字典中注入一条转发记录。</summary>
+    /// <summary>在资源池树中注入一条 compact 转发：oldId 成为 newId 所在池的 retired member。</summary>
     public static void SeedForward(this SessionEngine engine, string oldId, string newId)
     {
-        GetForwards(engine)[oldId] = newId;
-    }
-
-    /// <summary>模拟 compact 路径：调用 NotifyResourcesCompactingAsync 并同步等待。</summary>
-    public static void SimulateCompact(this SessionEngine engine, string oldId, string newId)
-    {
-        engine.NotifyResourcesCompactingAsync(oldId, newId).GetAwaiter().GetResult();
+        var pool = GetPoolByMember(engine, newId);
+        if (pool == null) return;
+        pool.Members.Add(oldId);
+        GetPoolByMemberDict(engine)[oldId] = pool;
     }
 
     /// <summary>检查指定 session 是否被 WakeUp 调用过。</summary>
@@ -109,13 +110,19 @@ internal static class TestHost
         return (ConcurrentDictionary<string, RuntimeSession>)field.GetValue(engine)!;
     }
 
-    private static ConcurrentDictionary<string, string> GetForwards(SessionEngine engine)
+    private static SessionPool? GetPoolByMember(SessionEngine engine, string sessionId)
     {
-        var field = typeof(SessionEngine).GetField("_forwards",
+        var dict = GetPoolByMemberDict(engine);
+        return dict.TryGetValue(sessionId, out var pool) ? pool : null;
+    }
+
+    private static ConcurrentDictionary<string, SessionPool> GetPoolByMemberDict(SessionEngine engine)
+    {
+        var field = typeof(SessionEngine).GetField("_poolByMember",
             BindingFlags.NonPublic | BindingFlags.Instance);
         if (field == null)
-            throw new InvalidOperationException("SessionEngine._forwards 字段未找到");
-        return (ConcurrentDictionary<string, string>)field.GetValue(engine)!;
+            throw new InvalidOperationException("SessionEngine._poolByMember 字段未找到");
+        return (ConcurrentDictionary<string, SessionPool>)field.GetValue(engine)!;
     }
 
     /// <summary>

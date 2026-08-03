@@ -356,7 +356,7 @@ internal class SubAgentAccessAdapter : ISubAgentAccess, AgentLilara.PluginSDK.Se
 
     public Task OnSessionCompactingAsync(string oldSessionId, string newSessionId)
     {
-        // Sub-agent parent chain is already handled by SessionEngine._forwards
+        // Sub-agent parent chain is already handled by SessionEngine's resource pool tree
         // No-op: child mailboxes keyed by childId, not parentId
         return Task.CompletedTask;
     }

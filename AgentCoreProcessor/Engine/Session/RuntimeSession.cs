@@ -345,6 +345,7 @@ internal class RuntimeSession : IRuntimeSession
         WaitUntil = state.WaitUntil;
         _lastActivity = state.LastActivity;
         _history = history ?? new List<Message>();
+        EffectiveParentId = state.EffectiveParentId;
 
         // 恢复连接频道状态（仅 Full 占用级，Listen 由 RestoreAll 单独重建订阅）
         if (!string.IsNullOrEmpty(state.ConnectedChannelId)

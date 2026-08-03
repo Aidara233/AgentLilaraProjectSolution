@@ -4,10 +4,16 @@ using System.Collections.Generic;
 namespace AgentCoreProcessor.Engine.Session;
 
 /// <summary>
-/// 资源池。会话体系的统一抽象：一个频道 = 一个顶层池，持有频道占用（Full claim）与当前活跃 session。
+/// 资源池。会话体系的统一抽象，一棵树：
+/// - 顶层池 = 一个频道，持有频道占用（Full claim），活跃 session = 占用频道的 express/working。
+/// - 子池 = 一个子 agent，挂在父会话所在池下，活跃 session = 子 agent 自己（独享）。
+///
 /// 一个池只能有一个活跃 session：express escalate 到 working / compact 时**同池换活跃 session**，
-/// 占用状态原地不动（不释放、不重取）——这是"占用状态在池里"的核心语义。
-/// 子 agent = 子池（阶段 2 扩展 Parent/Children 层级）。
+/// 占用状态原地不动（不释放、不重取）。
+///
+/// 关键语义：**claim 只属于顶层池**（ChannelId > 0）。子池无频道（ChannelId = 0），只有活跃 session，
+/// 永不误判占用。子 agent "属于父池"（父池.ChildPools 有它）+ "是自己池的根"（子池.ActiveSession = 它）
+/// 是两个维度，互不冲突。
 /// </summary>
 internal sealed class SessionPool
 {
@@ -16,16 +22,28 @@ internal sealed class SessionPool
         ChannelId = channelId;
     }
 
-    /// <summary>顶层池对应的频道。</summary>
+    /// <summary>顶层池对应的频道；子池为 0（无频道，不持有 claim）。</summary>
     public int ChannelId { get; }
 
-    /// <summary>当前占用该频道的活跃 session（express 或 working）。空 = 无 Full 占用。</summary>
+    /// <summary>当前活跃 session（顶层池 = 占用频道的 express/working；子池 = 子 agent 自己）。</summary>
     public string ActiveSessionId { get; private set; } = "";
 
-    /// <summary>是否持有 Full claim（有活跃 session 即占用）。</summary>
-    public bool HasFullClaim => !string.IsNullOrEmpty(ActiveSessionId);
+    /// <summary>曾活跃于此池的所有 session（含被 compact 换掉的旧 id），用于寻址历史引用。</summary>
+    public HashSet<string> Members { get; } = new();
 
-    /// <summary>Listen 占用（旁听 session，只读消息流，多个可并存）。</summary>
+    /// <summary>父池：子池 → 直接父会话所在的池；顶层池 → null。</summary>
+    public SessionPool? Parent { get; set; }
+
+    /// <summary>直接子池（子 agent 的池）。</summary>
+    public List<SessionPool> ChildPools { get; } = new();
+
+    /// <summary>是否顶层池（有频道）。</summary>
+    public bool IsRoot => ChannelId > 0;
+
+    /// <summary>是否持有 Full claim：仅顶层池且活跃 session 非空。</summary>
+    public bool HasFullClaim => IsRoot && !string.IsNullOrEmpty(ActiveSessionId);
+
+    /// <summary>Listen 占用（仅顶层池，旁听只读消息流，多个可并存）。</summary>
     public List<string> ListenSessionIds { get; } = new();
 
     /// <summary>Full claim 一个 session。已有占用返回 false。同 session 重入视为成功（幂等，供 TakeOver 后续接）。</summary>
@@ -34,13 +52,15 @@ internal sealed class SessionPool
         if (ActiveSessionId == sessionId) return true; // 幂等：compact/escalate TakeOver 后同 session 重入
         if (HasFullClaim) return false;
         ActiveSessionId = sessionId;
+        Members.Add(sessionId);
         return true;
     }
 
-    /// <summary>同池换活跃 session（escalate/compact）：claim 保持，不释放不重取。</summary>
+    /// <summary>同池换活跃 session（escalate/compact）：claim 保持，不释放不重取。旧 id 保留在 Members 供历史寻址。</summary>
     public void TakeOver(string newSessionId)
     {
         ActiveSessionId = newSessionId;
+        Members.Add(newSessionId);
     }
 
     /// <summary>释放某 session 的 Full claim（仅当它是当前活跃 session）。</summary>
@@ -54,6 +74,6 @@ internal sealed class SessionPool
         return false;
     }
 
-    /// <summary>池是否空（无 Full claim 无 Listen）。空池可回收。</summary>
-    public bool IsEmpty => !HasFullClaim && ListenSessionIds.Count == 0;
+    /// <summary>池是否空（无 Full claim 无 Listen，且无活跃子池）。空池可回收。</summary>
+    public bool IsEmpty => !HasFullClaim && ListenSessionIds.Count == 0 && ChildPools.Count == 0;
 }

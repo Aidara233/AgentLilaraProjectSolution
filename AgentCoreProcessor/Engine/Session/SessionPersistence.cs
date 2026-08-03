@@ -112,6 +112,9 @@ namespace AgentCoreProcessor.Engine.Session
         /// <summary>
         /// 改写指定子 session 的 state.json 的 effectiveParentId 字段。
         /// </summary>
+        /// <summary>
+        /// 改写指定子 session 的 state.json 的 effectiveParentId 字段。
+        /// </summary>
         public async Task UpdateEffectiveParentAsync(string childId, string newParentId)
         {
             var childDir = Path.Combine(PathConfig.StoragePath, "Sessions", childId);
@@ -123,16 +126,6 @@ namespace AgentCoreProcessor.Engine.Session
             var tmp = childStatePath + ".tmp";
             await File.WriteAllTextAsync(tmp, jo.ToString(Formatting.Indented));
             File.Move(tmp, childStatePath, overwrite: true);
-        }
-
-        /// <summary>
-        /// 写 forwards 索引持久化（与 SessionEngine 内存表同步）。
-        /// </summary>
-        public async Task AppendForwardAsync(string oldId, string newId)
-        {
-            var forwardsPath = Path.Combine(PathConfig.StoragePath, "Sessions", "_forwards.jsonl");
-            var entry = JsonConvert.SerializeObject(new { oldId, newId, at = DateTime.UtcNow });
-            await File.AppendAllTextAsync(forwardsPath, entry + "\n");
         }
 
         // ═══════════════════════════════════════════════════════════

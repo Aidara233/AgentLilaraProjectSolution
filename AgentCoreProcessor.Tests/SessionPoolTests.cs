@@ -52,7 +52,7 @@ public class SessionPoolTests
     [Fact]
     public void TakeOver_unclaimed_pool_rejected()
     {
-        var engine = TestHost.BuildSessionEngineWithFakeSession("S1", alive: true);
+        var engine = TestHost.BuildSessionEngineWithFakeSession("S1", alive: true, registerInPool: false);
 
         var taken = engine.TakeOverChannelPool(1, "S1"); // 无占用
 
@@ -92,7 +92,7 @@ public class SessionPoolTests
     [Fact]
     public void Multiple_listen_sessions_coexist()
     {
-        var engine = TestHost.BuildSessionEngineWithFakeSession("S1", alive: true);
+        var engine = TestHost.BuildSessionEngineWithFakeSession("S1", alive: true, registerInPool: false);
 
         Assert.True(engine.ClaimChannel("S1", 1, ClaimLevel.Listen));
         Assert.True(engine.ClaimChannel("S2", 1, ClaimLevel.Listen));
@@ -114,5 +114,56 @@ public class SessionPoolTests
         engine.ReleaseChannel("S2", 1); // 非持有者释放
 
         Assert.Equal("S1", engine.GetFullClaimer(1)); // claim 保留
+    }
+
+    // ── 资源池树（子 agent 语义）──
+
+    [Fact]
+    public void SubPool_child_resolves_to_direct_parent()
+    {
+        // working 占频道（顶层池），子 agent 建子池挂父池
+        var engine = TestHost.BuildSessionEngineWithFakeSession("working", alive: true); // channel 1
+
+        engine.CreateSubPool("child", "working");
+
+        Assert.Equal("working", engine.ResolveEffectiveParent("child")); // 直接父
+        Assert.Equal("session:child", engine.ResolveActiveSession("session:child")); // 子 agent 是自己池的活跃
+    }
+
+    [Fact]
+    public void SubPool_grandchild_parent_is_child_not_top()
+    {
+        // 孙 agent：父是子 agent，不是顶层 working
+        var engine = TestHost.BuildSessionEngineWithFakeSession("working", alive: true);
+        engine.CreateSubPool("child", "working");
+
+        engine.CreateSubPool("grandchild", "child");
+
+        Assert.Equal("child", engine.ResolveEffectiveParent("grandchild")); // 直接父 = child
+    }
+
+    [Fact]
+    public void SubPool_parent_compact_child_follows_new_parent()
+    {
+        // 父 working compact → 顶层池换活跃 session，子 agent 找父自动跟随新 working
+        var engine = TestHost.BuildSessionEngineWithFakeSession("working", alive: true); // channel 1
+        engine.CreateSubPool("child", "working");
+
+        engine.TakeOverChannelPool(1, "working2");
+
+        Assert.Equal("working2", engine.ResolveEffectiveParent("child"));
+        // 子 agent 仍是自己池的活跃，未受影响
+        Assert.Equal("session:child", engine.ResolveActiveSession("session:child"));
+    }
+
+    [Fact]
+    public void SubPool_release_child_removes_from_parent()
+    {
+        var engine = TestHost.BuildSessionEngineWithFakeSession("working", alive: true);
+        engine.CreateSubPool("child", "working");
+
+        engine.ReleaseSessionClaims("child");
+
+        Assert.Null(engine.ResolveEffectiveParent("child")); // 子池已从父移除
     }
 }
