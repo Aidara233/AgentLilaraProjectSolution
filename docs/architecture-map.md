@@ -1,6 +1,6 @@
 # Agent Lilara 架构地图
 
-多平台 AI Agent 框架。三层架构：框架层（ChannelEngine）+ 引擎层（8个 ISubEngine）+ 会话层（RuntimeSession 统一 agent 循环）。
+多平台 AI Agent 框架。三层架构：框架层（ExpressEngine）+ 引擎层（8个 ISubEngine）+ 会话层（RuntimeSession 统一 agent 循环）。
 
 技术栈：.NET 8 / C# / SQLite-net-pcl / Anthropic SDK (Claude) / OpenAI SDK / SiliconFlow API / bge-large-zh-v1.5 embedding
 
@@ -26,7 +26,7 @@ AgentLilaraProjectSolution/
 │     │     ├── Messaging/ MessageEngine（双向消息枢纽+去重分发）
 │     │     ├── AdapterEng/ AdapterEngine（适配器生命周期+频道融合）
 │     │     ├── Extraction/ ExtractionEngine + EavesdropTask（记忆提取+监听检测）
-│     │     ├── Worker/   ChannelEngine（框架层，Express响应）
+│     │     ├── Worker/   ExpressEngine（框架层，Express响应）
 │     │     ├── Timer/    TimerEngine（心跳30s）
 │     │     ├── Dream/    DreamEngine + ReviewEngine + EvaluationEngine
 │     │     ├── Vision/   VisionEngine（图片描述+OCR）
@@ -80,11 +80,11 @@ PluginLoader 扫描子目录 → 读 `plugin.json` → 加载 `entry` DLL。无�
 
 ## 引擎生态
 
-三层架构：框架层（ChannelEngine，常驻 Express 响应）→ 引擎层（8个 ISubEngine）→ 会话层（RuntimeSession，按需创建）。
+三层架构：框架层（ExpressEngine，常驻 Express 响应）→ 引擎层（8个 ISubEngine）→ 会话层（RuntimeSession，按需创建）。
 
 ### 上下文机制
 
-**ChannelContextService** 为 ChannelEngine 与 RuntimeSession 共用的上下文构建服务，统一格式化频道上下文。该服务输出 `ChannelContextState`，包含当前频道会话的完整上下文快照：
+**ChannelContextService** 为 ExpressEngine 与 RuntimeSession 共用的上下文构建服务，统一格式化频道上下文。该服务输出 `ChannelContextState`，包含当前频道会话的完整上下文快照：
 - **参与者信息**：从数据库派生（实时查询），无累积状态，反映当前频道活跃用户
 - **消息历史**：按规则保留（最近 N 条+关键事件）
 - **系统上下文**：频道配置+睡眠状态+模式标记
@@ -95,7 +95,7 @@ PluginLoader 扫描子目录 → 读 `plugin.json` → 加载 `entry` DLL。无�
 
 这种设计避免参与者累积过期状态，同时支持 Session 跨多个频道关联信息。
 框架层（非 ISubEngine，随进程启动）:
-  ChannelEngine — Express 响应 + 冲动值决策 + escalate → 创建 WorkingSession
+  ExpressEngine — Express 响应 + 冲动值决策 + escalate → 创建 WorkingSession
 
 基础设施引擎层（ISubEngine，SpawnCheck 托管生命周期）:
   MasterEngine (内核，实现 ISystemContext)
@@ -105,7 +105,7 @@ PluginLoader 扫描子目录 → 读 `plugin.json` → 加载 `entry` DLL。无�
     │     Adapter    → AdapterEngine (适配器管理+频道融合，IsInfrastructure=true)
     │     Session    → SessionEngine (会话生命周期+频道占用，IsInfrastructure=true)
     │     Extraction → ExtractionEngine (记忆提取+监听检测，IsInfrastructure=true)
-    │     Channel    → ChannelEngine (每活跃频道一个，Express 响应)
+    │     Channel    → ExpressEngine (每活跃频道一个，Express 响应)
     │     Dream      → DreamEngine (走神/小睡/大睡)
     │     Review     → ReviewEngine (自由探索复盘)
     │     Vision     → VisionEngine (图片描述+OCR，IsInfrastructure=true)
@@ -181,7 +181,7 @@ RuntimeSession 内部（取代旧 Channel/System 引擎内循环）:
 入向:
 适配器 ──► AdapterEngine ──► MessageEngine (入库+去重+标记+分发)
                                   │
-                                  ├── ChannelEngine (冲动值决策 + Express 响应)
+                                  ├── ExpressEngine (冲动值决策 + Express 响应)
                                   ├── ExtractionEngine (记忆提取 + 监听检测)
                                   └── WorkingSession (IRuntimeSession, agent 循环)
 
@@ -197,7 +197,7 @@ MessageEngine: 双向枢纽
   子流: 每条频道按 tag 拆 normal / mention / command
   订阅: Subscribe(channelId, subStream) → IInputPort，按权重(mention=100/normal=5)激活 Session
 
-ChannelEngine (框架层全局单例，非 ISubEngine):
+ExpressEngine (框架层全局单例，非 ISubEngine):
   职责:
     - 冲动值计算: 每条消息查最近 20 条 → 计算冲动值（不持久化，纯计算）
     - Express 响应: 冲动值 > Express 阈值 → 执行 Express agent 循环
@@ -224,8 +224,8 @@ ChannelEngine (框架层全局单例，非 ISubEngine):
 
   escalate 行为:
     Express 调 escalate → SessionEngine.CreateSession("working", { channelId })
-    → WorkingSession 创建，Full 占用频道 → ChannelEngine 停止该频道的 Express 响应
-    WorkingSession 结束或 deescalate → 释放占用 → ChannelEngine 恢复
+    → WorkingSession 创建，Full 占用频道 → ExpressEngine 停止该频道的 Express 响应
+    WorkingSession 结束或 deescalate → 释放占用 → ExpressEngine 恢复
 
   禁言阻断:
     收到 SystemEventSubType="ban" → _isBanned=true → 跳过唤醒
@@ -245,7 +245,7 @@ SessionEngine (ISubEngine, IsInfrastructure=true):
   创建: IRuntimeSession CreateSession(CreateSessionSpec spec)
   停止: StopResult StopSession(id, reason) — 子未停阻塞，ForceKill 可强杀整个树
   占用: ClaimChannel(sessionId, channelId, ClaimLevel.Full/Listen)
-        Full → 接管 reply 端口 + 抑制 ChannelEngine
+        Full → 接管 reply 端口 + 抑制 ExpressEngine
         Listen → 只读消息流
         同一频道允许多个 Listen，最多一个 Full
   自动占用: WorkingSession 创建时自动 Full 占用归属频道
@@ -255,7 +255,7 @@ SessionEngine (ISubEngine, IsInfrastructure=true):
 
 ExtractionEngine (ISubEngine, IsInfrastructure=true):
   引擎无关，从入向唯一咽喉喂数据（HandleMessageAsync 入库后 OnMessage），
-  覆盖 ChannelEngine 与 session 占用两条路（不再随 Express 循环停摆）:
+  覆盖 ExpressEngine 与 session 占用两条路（不再随 Express 循环停摆）:
     每频道独立计数，累计若干条 → 触发该频道 ChannelExtractionWorker:
       活跃/潜水阈值靠"最近 5 分钟内有无 bot 出向消息"判定（GetLatestBotMessageTimeAsync）
       一次 LLM 调用完成记忆提取（现有流程）→ 存入记忆库
@@ -440,13 +440,12 @@ AgentLilara.PluginSDK (共享契约，独立类库):
   IToolContext: GetService<T>() / Storage
   IPluginStorage: GlobalDirectory / InstanceDirectory
   IPromptContributor: SectionKey / Priority / BuildSection()
-  ToolMetaAttribute: Group / ContinueLoop / AllowSubAgent / CapabilitySummary / Permission / Scope / OutputOnly
+  ToolMetaAttribute: Group / ContinueLoop / OutputOnly
   ToolParameter: Name / Description / Index / IsRequired（控制 JSON Schema required 数组）
-  EngineMode: Express（SDK 枚举）
   Services/: IMemoryAccess（完整数据访问：语义搜索/向量操作/批量读取/临时库/关联图）
              IAgentMessaging / IChannelAccess / ISubAgentAccess
              IChannelAccess / IAdapterAccess / IEngineAccess
-             ISleepAccess / IEventBusAccess / IToolHistoryAccess / ILoopControl
+             ISleepAccess / IEventBusAccess / IToolHistoryAccess
              IReviewAccess（游标/浏览/评价/笔记/进度）/ IReviewControl（预算/完成）
              IBeaconAccess（信标创建）/ IPersonAccess（人物查询/更新）
 
@@ -464,7 +463,7 @@ AgentLilara.PluginSDK (共享契约，独立类库):
   工具可用性（权限控制组，单一裁决源）:
     1. ToolConfig.json 全局禁用
     2. PermissionService 权限组（Storage/Session/{group}.json，default=disabled 白名单 / default=enabled 黑名单）
-    3. 组件装配（ComponentConfig.json 组件×组开关；LoopApplicability / ToolMeta.EngineTypes 已 inert）
+    3. 组件装配（ComponentConfig.json 组件×组开关；LoopApplicability / ToolMeta.EngineTypes 已删除）
   AgentCore.EngineType = 当前权限组 key（express/channel/task/review）。
   核心过滤点：ToolRegistry.IsVisibleToEngine(name, engineType) → PermissionService.IsAllowed；
   执行期：ToolExecutor.PermissionGroup 对组外工具硬拒绝。
@@ -499,7 +498,7 @@ ToolCall: 原生 tool_use (Claude API) 为主路径
   参数名必须英文（Bedrock 代理不支持非 ASCII schema 属性名）
 
 循环控制:
-  ChannelEngine (Express): 每轮自动继续，模型调 wait 显式结束
+  ExpressEngine (Express): 每轮自动继续，模型调 wait 显式结束
     安全上限: MaxRounds=8
   RuntimeSession (Working/Task/Eavesdrop): 端口权重驱动或 Wait 超时激活
     无强制上限：仅由模型 end_session / 外部 RequestStop / CTS 取消终止（已移除 MaxLifetime/IdleTimeout 机制）
@@ -548,7 +547,7 @@ MCP Client 集成（Model Context Protocol）:
 
 ToolRegistry 动态注册:
   Register(ITool) / Unregister(string) — ConcurrentDictionary 线程安全
-  MCP 工具与内置工具共享 GenerateDescriptions/GenerateCapabilitySummary
+  MCP 工具与内置工具共享 GenerateDescriptions
 ```
 
 ## 用户系统

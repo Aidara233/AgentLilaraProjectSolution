@@ -17,21 +17,21 @@
 
 ### Loop 组件（每循环一个实例）
 
-| 插件 | 适用引擎 | 工具 | 关键文件 |
+| 插件 | 会话类型 | 工具 | 关键文件 |
 |------|----------|------|----------|
-| **Plugin.BasicTools** | channel | `speak`, `send_media`, `send_file`, `adapter_action` | `BasicToolsComponent.cs` |
-| **Plugin.WorkingTools** | channel | `pinboard`, `thinking_notes`, `retain_list`, `task_list`, `mark_for_review` | `WorkingComponent.cs` |
-| **Plugin.CrossLoopTools** | channel + system | `send_message`, `list_loops` | `CrossLoopComponent.cs` |
-| **Plugin.ScheduledTasks** | channel | `schedule_task`, `cancel_task`, `list_tasks` | `ScheduledTasksComponent.cs` |
+| **Plugin.BasicTools** | 所有会话类型（装配由 ComponentConfig 决定） | `speak`, `send_media`, `send_file`, `adapter_action` | `BasicToolsComponent.cs` |
+| **Plugin.WorkingTools** | 所有会话类型（装配由 ComponentConfig 决定） | `pinboard`, `thinking_notes`, `retain_list`, `task_list`, `mark_for_review` | `WorkingToolsComponent.cs` |
+| **Plugin.CrossLoopTools** | 所有会话类型（装配由 ComponentConfig 决定） | `send_message`, `list_loops` | `CrossLoopComponent.cs` |
+| **Plugin.ScheduledTasks** | 所有会话类型（装配由 ComponentConfig 决定） | `schedule_task`, `cancel_task`, `list_tasks` | `ScheduledTasksComponent.cs` |
 
 ### Global 组件（全局单例）
 
-| 插件 | 适用引擎 | 工具 | 关键文件 |
+| 插件 | 会话类型 | 工具 | 关键文件 |
 |------|----------|------|----------|
-| **Plugin.MemoryTools** | 所有 | `memory_store`, `memory_get`, `memory_update`, `memory_delete`, `memory_search`, `memory_list`, `memory_link_create/delete/get`, `memory_stats` | `MemoryComponent.cs` |
-| **Plugin.FileTools** | 所有 | `read_text`, `write_text`, `list_dir`, `move`, `delete`, `copy` | `FileToolsComponent.cs` |
-| **Plugin.FileOps** | 所有 | `archive_create`, `archive_extract`, `archive_list`, `search_files`, `grep_files`, `file_info`, `file_hash`, `compare_files` | `FileOpsComponent.cs` |
-| **Plugin.ReviewTools** | review only | `review_browse`, `review_search`, `review_evaluate`, `review_save_progress` 等 15 个 | `ReviewComponent.cs` |
+| **Plugin.MemoryTools** | 所有会话类型（装配由 ComponentConfig 决定） | `memory_store`, `memory_get`, `memory_update`, `memory_delete`, `memory_search`, `memory_list`, `memory_link_create/delete/get`, `memory_stats` | `MemoryComponent.cs` |
+| **Plugin.FileTools** | 所有会话类型（装配由 ComponentConfig 决定） | `read_text`, `write_text`, `list_dir`, `move`, `delete`, `copy` | `FileToolsComponent.cs` |
+| **Plugin.FileOps** | 所有会话类型（装配由 ComponentConfig 决定） | `archive_create`, `archive_extract`, `archive_list`, `search_files`, `grep_files`, `file_info`, `file_hash`, `compare_files` | `FileOpsComponent.cs` |
+| **Plugin.ReviewTools** | 所有会话类型（装配由 ComponentConfig 决定） | `review_browse`, `review_search`, `review_evaluate`, `review_save_progress` 等 15 个 | `ReviewComponent.cs` |
 
 ### 独立工具（无组件，直接注册到 ToolRegistry）
 
@@ -84,9 +84,7 @@ csproj 必须：
 ```csharp
 [ToolMeta(
     Group = "my-group",              // WebUI 分组
-    ContinueLoop = true,             // 执行后触发下一轮
-    ExpressAvailable = true,         // Express 模式可用
-    Permission = ToolPermission.Default
+    ContinueLoop = true              // 执行后触发下一轮
 )]
 ```
 
@@ -102,7 +100,7 @@ var messaging = context.GetService<IAgentMessaging>();
 var log = context.GetService<ILogAccess>();
 ```
 
-常用服务：`IMemoryAccess`, `IChannelAccess`, `IAgentMessaging`, `IEngineAccess`, `ILoopControl`, `ILogAccess`, `ISleepAccess`, `IAdapterAccess`, `IPersonAccess`, `IReviewAccess`, `IBeaconAccess`, `IDiceRegistry`
+常用服务：`IMemoryAccess`, `IChannelAccess`, `IAgentMessaging`, `IEngineAccess`, `ILogAccess`, `ISleepAccess`, `IAdapterAccess`, `IPersonAccess`, `IReviewAccess`, `IBeaconAccess`, `IDiceRegistry`
 
 ### 5. 编译 + 验证
 
@@ -120,7 +118,7 @@ dotnet build
 | 工具注册失败（名称冲突） | 同名工具已被其他插件注册 | 改工具名，或检查是否重复加载 |
 | 组件工具不生效 | DLL 有 `[Component]` 时独立 ITool 不被注册 | 把工具放进组件的 `Tools` 属性 |
 | 构造注入拿不到服务 | 服务类型不在 `InstantiateWithInjection` 的 resolver 字典里 | 用 `IServiceProvider` 参数 + `GetService<T>()` |
-| Loop 组件在某个权限组不出现 | `ComponentConfig.json` 未启用该组件 × 组 | 在 `Storage/Engine/ComponentConfig.json` 开启；`[LoopApplicability]` 已 inert |
+| Loop 组件在某个权限组不出现 | `ComponentConfig.json` 未启用该组件 × 组 | 在 `Storage/Engine/ComponentConfig.json` 开启（插件已不声明引擎适用性） |
 | `OnEnabledAsync()` 初始化时没调用 | 设计如此，首次初始化只调 `OnInitAsync()` | 初始化逻辑放 `OnInitAsync()` |
 | 文件路径不对 | 用 `..` 跳出 `GlobalDirectory` 访问 Workspace | 用 `IPluginStorage.WorkspaceDirectory` |
 | 以为插件 DLL 在 Storage 下 | 插件 DLL 在 `{BaseDirectory}/Plugins/`，不在 Storage 下 | 读 [path-config.md](path-config.md) |
@@ -134,7 +132,7 @@ dotnet build
 # 插件 SDK（所有接口定义）
 AgentLilara.PluginSDK/ITool.cs
 AgentLilara.PluginSDK/ComponentBase.cs          ← GlobalComponentBase / LoopComponentBase
-AgentLilara.PluginSDK/ComponentAttribute.cs     ← [Component] / [LoopApplicability]
+AgentLilara.PluginSDK/ComponentAttribute.cs     ← [Component]
 AgentLilara.PluginSDK/ToolMetaAttribute.cs      ← [ToolMeta] / [PluginDependency]
 AgentLilara.PluginSDK/Services/                 ← 18 个服务接口
 
@@ -146,5 +144,5 @@ AgentCoreProcessor/Component/GlobalComponentHost.cs ← 全局组件宿主
 
 # 配置
 Storage/Engine/ComponentConfig.json             ← 组件按权限组（channel/task/review）启用/禁用状态
-Storage/Session/{channel,task,express,review}.json ← 会话类型 + 工具权限黑白名单（PermissionService 裁决）
+Storage/Session/{channel,task,express,review}.json ← 会话类型 + 工具权限黑白名单（PermissionService 裁决；express 是纯权限文件，无会话类型档案）
 ```

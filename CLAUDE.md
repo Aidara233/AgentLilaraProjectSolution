@@ -3,13 +3,13 @@
 ## 项目状态
 
 **核心特性**：
-- 三层架构：框架层（ChannelEngine，Express 响应+冲动值）、基础设施引擎层（8个 ISubEngine）、会话层（RuntimeSession，统一 agent 循环）
+- 三层架构：框架层（ExpressEngine，Express 响应+冲动值）、基础设施引擎层（8个 ISubEngine）、会话层（RuntimeSession，统一 agent 循环）
 - 基础设施引擎：SessionEngine（会话生命周期+频道占用+30s循环）、MessageEngine（双向消息枢纽，入向去重+分发、出向入库+路由）、AdapterEngine（适配器管理+频道融合+消息分段）、ExtractionEngine（记忆提取+监听检测）、DreamEngine（秩序+巡逻）、ReviewEngine（自由探索）、VisionEngine（图片描述+OCR）、TimerEngine（定时触发）
 - 统一会话：RuntimeSession 不分子类，行为由 CreateSessionSpec（组件列表+端口配置+初始状态）驱动。场景：Working（频道全功能，由 escalate 创建）、Task（任务执行，禁止套娃）、Eavesdrop（监听判定）
 - 无强制 stop：Session 不设 MaxLifetime/IdleTimeout 上限，仅由模型调 end_session / 外部 RequestStop / CTS 取消终止
-- ChannelEngine：框架层全局单例，仅 Express 响应（冲动值决策+escalate），不实现 IRuntimeSession。WorkingSession 由 Express 的 escalate 工具触发 SessionEngine.CreateSession 创建
+- ExpressEngine：框架层全局单例，仅 Express 响应（冲动值决策+escalate），不实现 IRuntimeSession。WorkingSession 由 Express 的 escalate 工具触发 SessionEngine.CreateSession 创建
 - 端口模型：Session 通过 IInputPort（注入上下文）和 IOutputPort（工具写端口）与外界交互，端口决定工具注册
-- 消息流：AdapterEngine → MessageEngine（入向去重+分发）→ 订阅者（ChannelEngine/Session/ExtractionEngine）；出向 Session → MessageEngine → AdapterEngine
+- 消息流：AdapterEngine → MessageEngine（入向去重+分发）→ 订阅者（ExpressEngine/Session/ExtractionEngine）；出向 Session → MessageEngine → AdapterEngine
 - 引擎容错：API 调用失败不杀循环，连续失败 exponential backoff，SpawnCheck 检测死亡自动重启
 - 优雅退出：ApplicationStopping 钩子 → 停适配器 → 停引擎（signal gate + CTS）→ 等 30s → 强杀兜底 → close startupSignal
 - 引擎生命周期信号：每个引擎 RunAsync 用 Signal.Continue 创建 lifecycle span（scope=自己），退出时 Close 带 reason
@@ -180,8 +180,8 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 数据库：Database/DbManager.cs（初始化 + 迁移）+ 13 张业务表 + logs.db
 - 会话管理：Engine/Core/SessionManager.cs（用户映射 + 频道映射 + 消息入库）
 - 引擎内核：Engine/Core/MasterEngine.cs（SpawnCheck 注册表 + 活跃引擎表 + 全局组件宿主）
-- 引擎孵化：Engine/Worker/ChannelEngineSpawnCheck.cs（频道引擎生命周期 + 睡眠拦截）
-- 频道循环：Engine/Worker/ChannelEngine.cs（框架层全局单例，Express 响应+冲动值决策）
+- 引擎孵化：Engine/Worker/ExpressEngineSpawnCheck.cs（频道引擎生命周期 + 睡眠拦截）
+- 频道循环：Engine/Worker/ExpressEngine.cs（框架层全局单例，Express 响应+冲动值决策）
 - 会话引擎：Engine/Session/SessionEngine.cs（30s监控循环，ScheduledTask/TODO扫描，频道占用管理）
 - 统一会话：Engine/Session/RuntimeSession.cs（IRuntimeSession 实现，行为由 CreateSessionSpec 驱动）
 - 消息枢纽：Engine/Messaging/MessageEngine.cs（双向枢纽，入向去重+分发，出向入库+路由）
@@ -207,7 +207,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 信号类型：Engine/Core/ChannelSignal.cs（NewMessageSignal/BusEventSignal/CompressionSignal/ModeSwitchSignal）
 - 模块总线：Engine/Core/ModuleBus.cs（每引擎独立 pub/sub）
 - 频道持久化：Engine/Worker/ChannelContextPersistence.cs（per-channel JSON 原子写入）
-- 上下文构建：Engine/Context/ChannelContextService.cs（ChannelEngine 与 RuntimeSession 共用的上下文格式化）
+- 上下文构建：Engine/Context/ChannelContextService.cs（ExpressEngine 与 RuntimeSession 共用的上下文格式化）
 - 上下文状态：Engine/Context/ChannelContextState.cs（频道完整上下文快照：参与者+历史+系统信息）
 - 会话宿主：Engine/Session/SessionAgentHost.cs（RuntimeSession 端口驱动的 Agent 宿主实现）
 - 统一模型调用：Core/AgentCore.cs（Express 响应 + 原生 tool_use；SessionCore 原名 WorkingCore）
@@ -236,7 +236,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - Token 统计：Database/ModelCallLog.cs + ModelCallLogRepository.cs
 - 信号系统：Logging/Signal.cs（静态门面）+ Logging/LogDatabase.cs（独立 SQLite）+ Logging/LogWriter.cs（批量写入）
 - 信号查询：Logging/LogQuery.cs + Tool/Host/LogAccessImpl.cs（ILogAccess 桥接）
-- 工具管理：Tool/ToolRegistry.cs（注册/卸载/禁用）+ Tool/PermissionService.cs（权限组裁决，Storage/Session/{express,channel,task,review}.json 黑白名单）+ Engine/Session/SessionTypeProfiles.cs（会话类型档案）+ Component/ComponentConfig.cs（组件按权限组启用/禁用，LoopApplicability/EngineTypes 已 inert）
+- 工具管理：Tool/ToolRegistry.cs（注册/卸载/禁用）+ Tool/PermissionService.cs（权限组裁决，Storage/Session/{express,channel,task,review}.json 黑白名单）+ Engine/Session/SessionTypeProfiles.cs（会话类型档案）+ Component/ComponentConfig.cs（组件按权限组启用/禁用，LoopApplicability/EngineTypes 已删除）
 - 核心工具：Tool/Core/CoreTools.cs（wait + continue_loop）+ Tool/Core/EscalateTool.cs
 - 插件 SDK：AgentLilara.PluginSDK/（共享契约：ITool/IInjectProvider/服务接口/CardSchema）
 - 插件加载：Tool/Host/PluginLoader.cs（AssemblyLoadContext 隔离，多类型发现 + 构造注入）

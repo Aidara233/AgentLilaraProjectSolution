@@ -23,7 +23,7 @@ public interface ITool
 
 ### ILoopComponent
 
-循环作用域组件。每个引擎循环（ChannelEngine / RuntimeSession / ReviewEngine）各自创建一个实例。
+循环作用域组件。每个引擎循环（ExpressEngine / RuntimeSession）各自创建一个实例。
 
 ```csharp
 public interface ILoopComponent
@@ -109,7 +109,7 @@ public interface IInjectProvider
 }
 
 // InjectContext 携带：
-//   string Mode           — "express" / "working"
+//   string Mode           — "express" / "working"（宿主侧概念，插件不应依赖）
 //   int CurrentRound      — 当前轮次
 //   int MaxRounds         — 最大轮次
 //   int EstimatedTokens   — 估算 token 数
@@ -143,7 +143,7 @@ public interface IEngineLifecycle
 public interface ILoopComponentContext
 {
     string LoopId { get; }
-    string LoopType { get; }         // "channel" / "system" / "review" / "sub-agent"
+    string LoopType { get; }         // "channel" / "task" / "review"（对应会话类型档案）
 
     bool IsEnabled { get; }
     void Enable();
@@ -419,16 +419,6 @@ class ActionParamInfo {
 
 `GetAvailableActions()` 返回适配器支持的完整操作列表（标签、描述、参数元数据）。`GetAdapterIdForChannel()` 按频道 ID 查找对应的适配器实例 ID。`ExecuteActionAsync` 的 `paramsJson` 为 JSON 对象字符串如 `{"user_id":"123456"}`。
 
-### ILoopControl
-
-循环模式控制。
-
-```csharp
-EngineMode CurrentMode { get; }
-void SetMode(EngineMode mode, string? reason = null);
-void Signal();                       // 唤醒循环
-```
-
 ### IPersonAccess
 
 人物数据查询和更新。
@@ -456,15 +446,17 @@ class UserAccount {
 
 ### ISubAgentAccess
 
-子 agent 生命周期管理（系统循环用）。
+子 agent 生命周期管理。
 
 ```csharp
-SubAgentInfo Create(string instruction);
-SubAgentInfo Create(string instruction, string? delegationId);
+SubAgentInfo Create(string instruction, SubAgentOptions? options = null);
 SubAgentInfo? Get(string sessionId);
 Task<bool> SendInstructionAsync(string sessionId, string instruction);
-void RequestStop(string sessionId);
-List<SubAgentInfo> List();
+SubAgentStopResult RequestStop(string sessionId);
+List<SubAgentInfo> List(string? parentLoopId = null);
+SubAgentDetail? GetDetail(string sessionId);
+bool ReportToParent(string callerLoopId, string content, ReportState state);
+Task<bool> WaitAsync(string sessionId, int timeoutMs);
 ```
 
 ### IBeaconAccess
@@ -605,25 +597,6 @@ IDisposable? Subscribe(Action<JsonNode?> callback);
 | `Name` | string | 必填 | 组件唯一标识 |
 | `Scope` | ComponentScope | `Global` | 组件作用域 |
 
-### [LoopApplicability]
-
-> **已 inert**：自权限组重构起，运行时不再据此裁决组件归属。组件在哪个权限组装配由
-> `Storage/Engine/ComponentConfig.json` 决定。属性仅保留编译兼容。
-
-| 属性 | 类型 | 默认 | 说明 |
-|------|------|------|------|
-| `Channel` | Applicability | `Enabled` | 原频道循环适用性（inert） |
-| `Review` | Applicability | `Enabled` | 原复盘循环适用性（inert） |
-| `Task` | Applicability | `Enabled` | 原子 agent 循环适用性（inert） |
-
-### [ToolVisibility]
-
-控制工具的默认可见性策略。
-
-| 属性 | 类型 | 默认 | 说明 |
-|------|------|------|------|
-| `Default` | Visibility | `FollowState` | AlwaysVisible / FollowState / AlwaysHidden |
-
 ### [ToolMeta]
 
 标记工具类，声明运行行为元数据。
@@ -632,10 +605,6 @@ IDisposable? Subscribe(Action<JsonNode?> callback);
 |------|------|------|------|
 | `Group` | string? | null | 工具组名（WebUI 分组，null=默认组始终可见） |
 | `ContinueLoop` | bool | false | 执行后是否触发下一轮 AI |
-| `AllowSubAgent` | bool | true | 子 agent 是否可使用此工具 |
-| `CapabilitySummary` | string? | null | 能力摘要（Express 模式注入），null=不暴露 |
-| `Permission` | ToolPermission | `Default` | 所需权限等级：Default / Elevated / Admin |
-| `ExpressAvailable` | bool | false | Express 模式是否可用 |
 | `OutputOnly` | bool | false | 纯输出工具，不触发下一轮 |
 
 ### [PluginDependency]
@@ -665,22 +634,6 @@ IDisposable? Subscribe(Action<JsonNode?> callback);
 | `Global` | 全局单例，整个应用一个实例 |
 | `Loop` | 每个引擎循环一个实例 |
 
-### Applicability
-
-| 值 | 说明 |
-|----|------|
-| `Enabled` | 可用 |
-| `Disabled` | 禁用 |
-| `NotApplicable` | 不适用 |
-
-### Visibility
-
-| 值 | 说明 |
-|----|------|
-| `AlwaysVisible` | 始终可见 |
-| `FollowState` | 跟随组件启用/禁用状态 |
-| `AlwaysHidden` | 始终隐藏 |
-
 ### ShutdownReason
 
 | 值 | 说明 |
@@ -695,20 +648,7 @@ IDisposable? Subscribe(Action<JsonNode?> callback);
 | `Fresh` | 首次初始化 |
 | `Reload` | 热重载后重新初始化 |
 
-### ToolPermission
-
-| 值 | 说明 |
-|----|------|
-| `Default` | 默认权限，所有工具可用 |
-| `Elevated` | 需要提升权限 |
-| `Admin` | 仅管理员 |
-
-### EngineMode
-
-| 值 | 说明 |
-|----|------|
-| `Express` | 快速模式（fire-and-forget，不续轮） |
-| `Working` | 工作模式（多轮推理） |
+> 宿主侧仍有 Express/Working 模式枚举（`AgentCoreProcessor.Engine.EngineMode`），但不属于插件契约。
 
 ### SleepState
 
@@ -731,17 +671,6 @@ IDisposable? Subscribe(Action<JsonNode?> callback);
 | `Wandering` (1) | 走神 |
 | `Napping` (2) | 小睡 |
 | `DeepSleep` (3) | 深度睡眠 |
-
-### CrossRequestResponseType
-
-| 值 | 说明 |
-|----|------|
-| `Accept` | 接受请求 |
-| `Reject` | 拒绝请求 |
-| `Progress` | 进度更新 |
-| `Complete` | 完成 |
-| `Failed` | 失败 |
-| `Ignore` | 忽略（仅广播） |
 
 ---
 

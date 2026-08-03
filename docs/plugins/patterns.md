@@ -280,7 +280,7 @@ public override string? BuildPromptSection()
 
 ### 问题
 
-`IEngineSpawnCheck` 接口将"判断是否创建引擎"（`ShouldSpawnAsync`）和"创建引擎"（`Create`）拆成两个方法。`ChannelEngineSpawnCheck` 曾用实例字段 `pendingContext`/`pendingMessage` 在两个方法间传参。但 `MasterEngine` 的事件处理是 fire-and-forget（`_ = HandleEventAsync(e)`），两个并发事件会**同时调用同一 SpawnCheck 实例**，覆盖对方的 pending 数据，导致 `NullReferenceException`。
+`IEngineSpawnCheck` 接口将"判断是否创建引擎"（`ShouldSpawnAsync`）和"创建引擎"（`Create`）拆成两个方法。`ExpressEngineSpawnCheck` 曾用实例字段 `pendingContext`/`pendingMessage` 在两个方法间传参。但 `MasterEngine` 的事件处理是 fire-and-forget（`_ = HandleEventAsync(e)`），两个并发事件会**同时调用同一 SpawnCheck 实例**，覆盖对方的 pending 数据，导致 `NullReferenceException`。
 
 ### 方案
 
@@ -321,7 +321,7 @@ public ISubEngine Create(ISystemContext ctx)
     pendingContext = null;
     pendingMessage = null;
 
-    var engine = new ChannelEngine(ctx, sc, msg);
+    var engine = new ExpressEngine(ctx, sc, msg);
     activeChannels[sc.Channel.Id] = engine;
     _pendingSpawns.Remove(sc.Channel.Id);  // 释放预留
     return engine;

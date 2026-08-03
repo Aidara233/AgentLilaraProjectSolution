@@ -46,7 +46,6 @@ using AgentLilara.PluginSDK;
 namespace Plugin.MyFirst;
 
 [Component(Name = "my-first", Scope = ComponentScope.Global)]
-[ToolVisibility(Default = Visibility.FollowState)]
 public class MyFirstComponent : GlobalComponentBase
 {
     private readonly List<ITool> _tools = new();
@@ -79,10 +78,7 @@ namespace Plugin.MyFirst;
 
 [ToolMeta(
     Group = "hello",                    // 工具组名（WebUI 分组显示）
-    ContinueLoop = true,                // 执行后触发下一轮 AI
-    CapabilitySummary = "打招呼工具",    // Express 模式下展示
-    Permission = ToolPermission.Default,
-    ExpressAvailable = true             // 可在 Express 模式使用
+    ContinueLoop = true                 // 执行后触发下一轮 AI
 )]
 public class HelloTool : ITool
 {
@@ -124,8 +120,7 @@ using AgentLilara.PluginSDK;
 namespace Plugin.MyFirst;
 
 [Component(Name = "counter", Scope = ComponentScope.Loop)]
-// LoopApplicability 引擎维度已 inert，组件归属由 Storage/Engine/ComponentConfig.json 决定
-[ToolVisibility(Default = Visibility.AlwaysVisible)]
+// 组件归属由 Storage/Engine/ComponentConfig.json 决定（插件已不声明引擎适用性）
 public class CounterComponent : LoopComponentBase
 {
     private CounterTool? _counter;
