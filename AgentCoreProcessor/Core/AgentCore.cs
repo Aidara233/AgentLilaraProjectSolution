@@ -240,18 +240,6 @@ namespace AgentCoreProcessor.Core
         }
 
         /// <summary>
-        /// 复用 Processor 实例，直接设置历史并调用。
-        /// </summary>
-        public async Task<ModelOutput> InvokeWithHistoryAsync(List<Message> messages)
-        {
-            processor ??= new Processor(currentMode);
-            processor.Client.ClearConversationHistory();
-            processor.Client.SetConversationHistory(messages);
-            var (calls, thinking, usage) = await GenerateToolCallsWithThinkingAsync();
-            return ModelOutput.FromTools(calls, thinking, usage);
-        }
-
-        /// <summary>
         /// 设置对话历史（供 ExpressEngine 在每轮准备阶段调用）。
         /// 自动 prepend 基础提示词：session 场景优先 SessionPrompt（会话本体，换核不变），
         /// 否则用 Processor 从 core 配置加载的 BasePrompt。
