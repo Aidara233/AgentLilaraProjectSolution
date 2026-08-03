@@ -137,28 +137,26 @@ internal class EngineListSource : IDataSource
     {
         var arr = new JsonArray();
 
-        // Channel 引擎（多实例）
-        var workerCheck = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
-        if (workerCheck != null)
+        // Channel 会话（express/working 承载频道响应，替代原 ExpressEngine）
+        var sessionEngine = _engine.GetActiveEnginesSnapshot()
+            .OfType<AgentCoreProcessor.Engine.Session.SessionEngine>().FirstOrDefault();
+        if (sessionEngine != null)
         {
-            foreach (var (_, w) in workerCheck.GetActiveChannels())
+            foreach (var snap in sessionEngine.GetChannelSessionSnapshots())
             {
-                if (!w.IsAlive) continue;
-                var snap = w.GetSnapshot();
+                if (!snap.IsAlive) continue;
                 arr.Add(new JsonObject
                 {
-                    ["type"] = "Express",
-                    ["name"] = snap.ChannelName ?? $"#{snap.ChannelId}",
-                    ["status"] = snap.IsBusy ? "处理中" : "等待",
-                    ["detail"] = $"冲动 {snap.Impulse:F1} | 轮次 {snap.TotalRounds} | Express",
-                    ["_link"] = $"/p/engines/channel_{snap.ChannelId}"
+                    ["type"] = snap.Type == "express" ? "Express" : "Working",
+                    ["name"] = $"#{snap.ChannelId}",
+                    ["status"] = "活跃",
+                    ["detail"] = $"类型 {snap.Type} | 轮次 {snap.RoundCount} | 会话",
+                    ["_link"] = $"/p/sessions/{snap.SessionId}"
                 });
             }
         }
 
         // Session 引擎
-        var sessionEngine = _engine.GetActiveEnginesSnapshot()
-            .OfType<AgentCoreProcessor.Engine.Session.SessionEngine>().FirstOrDefault();
         if (sessionEngine?.IsAlive == true)
         {
             var sessions = sessionEngine.GetActiveSessions();

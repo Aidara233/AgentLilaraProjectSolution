@@ -8,57 +8,28 @@ using AgentCoreProcessor.Logging;
 namespace AgentCoreProcessor.Engine
 {
     /// <summary>
-    /// ExpressEngine 的创建条件检查。接管 SessionManager 调用和频道路由。
-    /// 维护活跃频道引擎表，按 ChannelId 路由消息。
-    /// 睡眠行为由 ExpressEngine 内部处理，此处不拦截。
+    /// ExpressEngineSpawnCheck 的创建条件检查。接管 SessionManager 调用和频道路由。
+    /// express 会话化后：无占用频道消息 → 创建 Type="express" 会话（AutoClaim Full）承载响应，
+    /// 不再创建 ExpressEngine（引擎）。睡眠/禁言行为由 express 会话承接（后续阶段）。
     /// </summary>
     internal class ExpressEngineSpawnCheck : IEngineSpawnCheck
     {
         public string EngineType => "Express";
 
-        /// <summary>活跃频道引擎表（ChannelId → ChannelEngine）。</summary>
-        private readonly Dictionary<int, ExpressEngine> activeChannels = new();
-
-        /// <summary>保护 ShouldSpawn→Create 序列的并发安全。</summary>
-        private readonly object _spawnLock = new();
-        /// <summary>正在创建中的频道 ID 集合，防止并发重复创建。</summary>
-        private readonly HashSet<int> _pendingSpawns = new();
-
         public Task OnEventAsync(EngineEvent e, ISystemContext ctx)
         {
-            // 清理已死亡的频道引擎
-            lock (_spawnLock)
-            {
-                var dead = activeChannels.Where(kv => !kv.Value.IsAlive).Select(kv => kv.Key).ToList();
-                foreach (var key in dead)
-                {
-                    activeChannels.Remove(key);
-                    _pendingSpawns.Remove(key);
-                }
-            }
             return Task.CompletedTask;
         }
 
         /// <summary>
-        /// 直接消息路由入口（绕过 EventBus）。处理消息入库 + 频道引擎孵化 / 转发。
+        /// 直接消息路由入口（绕过 EventBus）。处理消息入库 + 频道占用判定 / express 会话孵化。
         /// </summary>
         public async Task HandleMessageAsync(IncomingMessage msg, ISystemContext ctx)
         {
-            // 清理已死亡的频道引擎
-            lock (_spawnLock)
-            {
-                var dead = activeChannels.Where(kv => !kv.Value.IsAlive).Select(kv => kv.Key).ToList();
-                foreach (var key in dead)
-                {
-                    activeChannels.Remove(key);
-                    _pendingSpawns.Remove(key);
-                }
-            }
-
             // SessionManager：用户映射、频道、消息入库
             var sessionContext = await ctx.Session.OnMessageAsync(msg);
 
-            // 自产消息（bot 自身行为触发的 notice 回执）：已入库但不触发引擎孵化
+            // 自产消息（bot 自身行为触发的 notice 回执）：已入库但不触发孵化
             if (msg.IsSelfTriggered) return;
 
             // 记忆提取计数（入向唯一咽喉，覆盖 ExpressEngine 与 session 占用两条路）
@@ -87,67 +58,51 @@ namespace AgentCoreProcessor.Engine
                 await ctx.Session.UpdatePersonAsync(sessionContext.Person);
             }
 
-            // 入向接通：频道被 session full-claim → 改投 session 端口，不碰 ChannelEngine。
+            // 入向接通：频道被 session full-claim → 改投 session 端口，不孵化新会话。
             // 消息已由 OnMessageAsync 完整入库+身份映射，这里只分发已入库的 UserMessage。
             //
             // ⚠ 冷启动时序：SessionEngine 通过 Task.Run 启动，RestoreAll 在 RunAsync 开头执行。
-            // 如果消息在 RestoreAll 完成前到达，claim 字典还是空的，消息会错误地走 Express 路径。
+            // 如果消息在 RestoreAll 完成前到达，claim 字典还是空的，消息会错误地走 express 孵化。
             // 因此先 await WaitRestoredAsync 确保 claim 恢复完成（带 5s 超时兜底）。
             var sessionEngine = ctx.GetActiveEnginesSnapshot()
                 .OfType<Session.SessionEngine>().FirstOrDefault();
-            if (sessionEngine != null && sessionContext.IncomingMessage != null)
-            {
-                // 等待 RestoreAll 完成，确保冷启动恢复的 claim 已落地
-                await sessionEngine.WaitRestoredAsync(TimeSpan.FromSeconds(5));
+            if (sessionEngine == null || sessionContext.IncomingMessage == null)
+                return;
 
-                var claimerId = sessionEngine.GetFullClaimer(channelId);
-                var claimerAlive = claimerId != null && sessionEngine.GetSession(claimerId)?.IsAlive == true;
-                Signal.Debug(LogGroup.Engine, "入向投递判定",
-                    new { channelId, msgId = sessionContext.IncomingMessage.Id, claimer = claimerId, alive = claimerAlive });
-                if (claimerId != null && claimerAlive)
-                {
-                    var messageEngine = ctx.GetActiveEnginesSnapshot()
-                        .OfType<Messaging.MessageEngine>().FirstOrDefault();
-                    if (messageEngine != null)
-                    {
-                        // 私聊视同提及：投 mention 子流即时激活 session（否则 normal 子流要攒满 20 条权重才醒）。
-                        // 与 express 路径一致（ImpulseTracker 对 IsPrivate/IsMentioned 都即时响应）。
-                        var deliverAsMention = msg.IsMentioned || msg.IsPrivate;
-                        messageEngine.DeliverToSession(channelId, sessionContext.IncomingMessage, deliverAsMention);
-                        Signal.Event(LogGroup.Engine, "入向已投递到 session 端口",
-                            new { channelId, msgId = sessionContext.IncomingMessage.Id, sessionId = claimerId, asMention = deliverAsMention });
-                        return;
-                    }
-                    Signal.Warn(LogGroup.Engine, "claimer 命中但 MessageEngine 未找到，回退 ExpressEngine",
-                        new { channelId, sessionId = claimerId });
-                }
+            // 等待 RestoreAll 完成，确保冷启动恢复的 claim 已落地
+            await sessionEngine.WaitRestoredAsync(TimeSpan.FromSeconds(5));
+
+            var messageEngine = ctx.GetActiveEnginesSnapshot()
+                .OfType<Messaging.MessageEngine>().FirstOrDefault();
+            if (messageEngine == null) return;
+
+            var claimerId = sessionEngine.GetFullClaimer(channelId);
+            var claimerAlive = claimerId != null && sessionEngine.GetSession(claimerId)?.IsAlive == true;
+            Signal.Debug(LogGroup.Engine, "入向投递判定",
+                new { channelId, msgId = sessionContext.IncomingMessage.Id, claimer = claimerId, alive = claimerAlive });
+            if (claimerId != null && claimerAlive)
+            {
+                // 私聊视同提及：投 mention 子流即时激活 session（否则 normal 子流要攒满 20 条权重才醒）。
+                // express 会话与 working 会话同走此路径（DeliverToSession → 端口权重激活）。
+                var deliverAsMention = msg.IsMentioned || msg.IsPrivate;
+                messageEngine.DeliverToSession(channelId, sessionContext.IncomingMessage, deliverAsMention);
+                Signal.Event(LogGroup.Engine, "入向已投递到 session 端口",
+                    new { channelId, msgId = sessionContext.IncomingMessage.Id, sessionId = claimerId, asMention = deliverAsMention });
+                return;
             }
 
-            ISubEngine? newEngine = null;
-
-            lock (_spawnLock)
+            // 无占用 → 孵化 express 会话（AutoClaim Full 接管频道），再投递本条消息。
+            // express 会话按端口权重激活（mention 立即 / normal 攒 20 条 / 私聊视同提及）。
+            var expressSession = sessionEngine.CreateExpressSessionForChannel(channelId);
+            if (expressSession == null)
             {
-                // 已有活跃的频道引擎 → 无条件转发
-                if (activeChannels.TryGetValue(channelId, out var existing) && existing.IsAlive)
-                {
-                    existing.EnqueueMessage(msg, sessionContext, null);
-                    return;
-                }
-
-                // 已有并发流程正在为此频道创建引擎 → 不重复创建
-                if (!_pendingSpawns.Add(channelId))
-                    return;
-
-                // 创建新引擎
-                var engine = new ExpressEngine(ctx, sessionContext, msg);
-                activeChannels[channelId] = engine;
-                _pendingSpawns.Remove(channelId);
-                newEngine = engine;
+                Signal.Warn(LogGroup.Engine, "express 会话创建失败或频道已被占用", new { channelId });
+                return;
             }
-
-            // 在锁外启动引擎
-            if (newEngine != null)
-                ctx.StartEngine(newEngine);
+            var expressDeliverAsMention = msg.IsMentioned || msg.IsPrivate;
+            messageEngine.DeliverToSession(channelId, sessionContext.IncomingMessage, expressDeliverAsMention);
+            Signal.Event(LogGroup.Engine, "express 会话孵化 + 投递",
+                new { channelId, msgId = sessionContext.IncomingMessage.Id, sessionId = expressSession.SessionId, asMention = expressDeliverAsMention });
         }
 
         public Task<bool> ShouldSpawnAsync(EngineEvent e, ISystemContext ctx)
@@ -158,29 +113,8 @@ namespace AgentCoreProcessor.Engine
 
         public ISubEngine Create(ISystemContext ctx)
         {
-            // 不再通过 EventBus 触发，Create 备用（TryColdStart 仍然使用）
-            throw new System.InvalidOperationException("ExpressEngine should be created via HandleMessageAsync or TryColdStart");
+            // 不再通过 EventBus 触发，Create 备用（TryColdStart 已随引擎移除）
+            throw new System.InvalidOperationException("express 会话化后不再创建 ExpressEngine，消息经 HandleMessageAsync 孵化 express 会话");
         }
-
-        internal IReadOnlyDictionary<int, ExpressEngine> GetActiveChannels() => activeChannels;
-
-        /// <summary>冷启动频道引擎（无消息触发）。返回 null 表示引擎已活跃。</summary>
-        internal ExpressEngine? TryColdStart(Database.Channel channel, ISystemContext ctx)
-        {
-            lock (_spawnLock)
-            {
-                if (activeChannels.TryGetValue(channel.Id, out var existing) && existing.IsAlive)
-                    return null;
-
-                if (!_pendingSpawns.Add(channel.Id))
-                    return null;
-            }
-
-            var engine = new ExpressEngine(ctx, channel);
-            activeChannels[channel.Id] = engine;
-            _pendingSpawns.Remove(channel.Id);
-            return engine;
-        }
-
     }
 }

@@ -321,6 +321,66 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
             return _poolByMember.TryGetValue(sessionId, out var pool) ? pool : null;
     }
 
+    /// <summary>
+    /// 为频道创建 express 会话（频道层调度：无占用消息到达 / 冷启动）。
+    /// express 会话 AutoClaim Full → 顶层池持有 claim。频道已被会话占用则返回 null。
+    /// </summary>
+    public IRuntimeSession? CreateExpressSessionForChannel(int channelId)
+    {
+        if (channelId <= 0) return null;
+        lock (_poolLock)
+        {
+            if (_pools.TryGetValue(channelId, out var pool) && pool.HasFullClaim)
+                return null;
+        }
+        return CreateSession(new CreateSessionSpec
+        {
+            Type = "express",
+            AutoClaimChannel = true,
+            InputPorts = new Dictionary<string, PortSpec>(StringComparer.OrdinalIgnoreCase),
+            OutputPorts = new Dictionary<string, string>(),
+            InitActions = new List<ToolCall>
+            {
+                new() { Tool = "connect_channel", Inputs = new List<string> { channelId.ToString() } }
+            },
+            InitialState = "[轻量对话模式]\n你是这个频道的轻量对话助手，被动响应。用 speak 简短回复；需要复杂操作（查记忆/管理文件/委托任务）时用 escalate 切换到工作模式。",
+        });
+    }
+
+    /// <summary>
+    /// express 会话 escalate → 同池换活跃 session 为 working 会话。claim 原地不动（不释放、不重取）。
+    /// 镜像 CreateFromCompact：先 TakeOver 预定新 working id，CreateSession(fixedSessionId) 幂等承接。
+    /// </summary>
+    public async Task<IRuntimeSession> CreateFromEscalateAsync(RuntimeSession expressSession, string reason)
+    {
+        var newId = Guid.NewGuid().ToString("N")[..12];
+        var channelId = expressSession.ConnectedChannel.CurrentChannelId;
+        if (channelId <= 0)
+            throw new InvalidOperationException($"express 会话 {expressSession.SessionId} escalate 时未连接频道");
+
+        TakeOverChannelPool(channelId, newId);
+
+        var spec = new CreateSessionSpec
+        {
+            Type = "channel",
+            AutoClaimChannel = true,
+            InputPorts = new Dictionary<string, PortSpec>(StringComparer.OrdinalIgnoreCase),
+            OutputPorts = new Dictionary<string, string>(),
+            InitActions = new List<ToolCall>
+            {
+                new() { Tool = "connect_channel", Inputs = new List<string> { channelId.ToString() } }
+            },
+            InitialState = $"用户请求切换到工作模式，原因：{reason}\n（保持在工作模式陪用户继续；只有确实不再需要工作模式时才用 end_session 退回轻量对话。需要等人回复时用 wait 挂起。）",
+            ParentSessionId = expressSession.SessionId,
+        };
+
+        var working = (RuntimeSession)CreateSession(spec, fixedSessionId: newId);
+
+        Signal.Event(LogGroup.Engine, "express escalate → working（同池换活跃 session）",
+            new { channelId, expressId = expressSession.SessionId, workingId = working.SessionId });
+        return working;
+    }
+
     public StopResult StopSession(string id, string reason)
     {
         if (!_sessions.TryGetValue(id, out var session))
@@ -509,6 +569,42 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
             return _pools.TryGetValue(channelId, out var pool) && pool.HasFullClaim;
     }
 
+    /// <summary>单频道会话快照（WebUI 频道引擎监控改读会话）。</summary>
+    public record ChannelSessionSnapshot(
+        int ChannelId, string SessionId, string Type,
+        bool IsAlive, DateTime LastActivity, int RoundCount);
+
+    /// <summary>某频道的活跃会话快照（express/working）。无占用返回 null。</summary>
+    public ChannelSessionSnapshot? GetChannelSessionSnapshot(int channelId)
+    {
+        lock (_poolLock)
+        {
+            if (!_pools.TryGetValue(channelId, out var pool) || !pool.HasFullClaim) return null;
+            if (!_sessions.TryGetValue(pool.ActiveSessionId, out var s)) return null;
+            return new ChannelSessionSnapshot(
+                channelId, s.SessionId, s.Type, s.IsAlive,
+                s.LastActivityInternal, (s as RuntimeSession)?.RoundCountInternal ?? 0);
+        }
+    }
+
+    /// <summary>所有频道的活跃会话快照。</summary>
+    public List<ChannelSessionSnapshot> GetChannelSessionSnapshots()
+    {
+        lock (_poolLock)
+        {
+            var list = new List<ChannelSessionSnapshot>();
+            foreach (var pool in _pools.Values)
+            {
+                if (!pool.HasFullClaim) continue;
+                if (!_sessions.TryGetValue(pool.ActiveSessionId, out var s)) continue;
+                list.Add(new ChannelSessionSnapshot(
+                    pool.ChannelId, s.SessionId, s.Type, s.IsAlive,
+                    s.LastActivityInternal, (s as RuntimeSession)?.RoundCountInternal ?? 0));
+            }
+            return list;
+        }
+    }
+
     /// <summary>通过外部信号唤醒指定 session（异步任务完成等）。自动跨 compact forward。</summary>
     public void WakeUpSession(string sessionId)
     {
@@ -582,6 +678,30 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
             _poolByMember.TryRemove(m, out _);
     }
 
+    /// <summary>
+    /// express 会话空闲回收（30s 监控循环调用）。空闲超时 = ImpulseConfig.ColdTimeoutSeconds（默认 600s）。
+    /// 只杀 Type="express" 会话，绝不误伤 working/task。回收后池释放 claim，频道回无占用。
+    /// </summary>
+    private void ReclaimIdleExpressSessions()
+    {
+        var idleThreshold = TimeSpan.FromSeconds(_ctx.ImpulseConfig.ColdTimeoutSeconds);
+        var now = DateTime.UtcNow;
+        List<RuntimeSession> idle;
+        lock (_sessions)
+        {
+            idle = _sessions.Values
+                .Where(s => s.Type == "express" && s.IsAlive)
+                .Where(s => (now - s.LastActivityInternal) > idleThreshold)
+                .ToList();
+        }
+        foreach (var rs in idle)
+        {
+            Signal.Event(LogGroup.Engine, "express 会话空闲回收",
+                new { sessionId = rs.SessionId, idleSeconds = (int)(now - rs.LastActivityInternal).TotalSeconds });
+            rs.RequestStop("express idle reclaim");
+        }
+    }
+
     // ── ScheduledTask ──
 
     public void AddScheduledTask(ScheduledTask task)
@@ -645,7 +765,11 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
                 {
                     await Task.Delay(TimeSpan.FromSeconds(30));
 
-                    // 1. 检查 WaitUntil 超时 → SessionEngine 的注入由 RuntimeSession 内部处理
+                    // 1. express 会话空闲回收：空闲超时（ColdTimeoutSeconds）直接杀，释放 claim。
+                    //    express 无长期状态（记忆只读+突发语义），回收即"频道回无占用"，下次消息重新孵化。
+                    ReclaimIdleExpressSessions();
+
+                    // 2. 检查 WaitUntil 超时 → SessionEngine 的注入由 RuntimeSession 内部处理
                     // Session 的 WaitForActivationAsync 会自行检测 WaitUntil 到期
 
                     // 2. 检查 ScheduledTask

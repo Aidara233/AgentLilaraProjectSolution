@@ -147,13 +147,13 @@ internal class ConsoleChannelSource : IDataSource
     public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
         var channels = await _engine.Session.GetAllChannelsAsync();
-        var check = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
-        var active = check?.GetActiveChannels();
+        var sessionEngine = _engine.GetActiveEnginesSnapshot()
+            .OfType<AgentCoreProcessor.Engine.Session.SessionEngine>().FirstOrDefault();
 
         var arr = new JsonArray();
         foreach (var ch in channels.OrderByDescending(c => c.Id))
         {
-            var hasEngine = active?.ContainsKey(ch.Id) == true;
+            var hasEngine = sessionEngine?.GetChannelSessionSnapshot(ch.Id)?.IsAlive == true;
             arr.Add(new JsonObject
             {
                 ["name"] = $"#{ch.Id} {ch.Name}",
@@ -196,9 +196,9 @@ internal class ConsoleEngineSource : IDataSource
             };
         }
 
-        var check = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
-        var active = check?.GetActiveChannels();
-        var hasEngine = active?.TryGetValue(_selectedChannelId, out var chEngine) == true && chEngine.IsAlive;
+        var sessionEngine = _engine.GetActiveEnginesSnapshot()
+            .OfType<AgentCoreProcessor.Engine.Session.SessionEngine>().FirstOrDefault();
+        var hasEngine = sessionEngine?.GetChannelSessionSnapshot(_selectedChannelId)?.IsAlive == true;
         var msgCount = await _engine.Session.GetMessageCountByChannelAsync(_selectedChannelId);
 
         return new DataResult
@@ -210,7 +210,7 @@ internal class ConsoleEngineSource : IDataSource
                 ["messageCount"] = msgCount,
                 ["_disabled_actions"] = hasEngine
                     ? new JsonArray { "force-start" }
-                    : new JsonArray { "force-stop", "force-compress" },
+                    : new JsonArray { "force-stop" },
             }
         };
     }
@@ -221,7 +221,6 @@ internal class ConsoleEngineSource : IDataSource
         {
             "force-start" => await ForceStart(),
             "force-stop" => await ForceStop(),
-            "force-compress" => await ForceCompress(),
             _ => new ActionResult { Success = false, Message = $"未知操作: {action}" },
         };
     }
@@ -229,45 +228,34 @@ internal class ConsoleEngineSource : IDataSource
     private async Task<ActionResult> ForceStart()
     {
         if (_selectedChannelId == 0) return Fail("未选择频道");
-        var check = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
-        var active = check?.GetActiveChannels();
-        if (active?.ContainsKey(_selectedChannelId) == true)
-            return new ActionResult { Success = true, Message = "引擎已在运行" };
+        var sessionEngine = _engine.GetActiveEnginesSnapshot()
+            .OfType<AgentCoreProcessor.Engine.Session.SessionEngine>().FirstOrDefault();
+        if (sessionEngine == null) return Fail("SessionEngine 未运行");
+        if (sessionEngine.GetChannelSessionSnapshot(_selectedChannelId)?.IsAlive == true)
+            return new ActionResult { Success = true, Message = "频道已有活跃会话" };
 
         var ch = await _engine.Session.GetChannelByIdAsync(_selectedChannelId);
         if (ch == null) return Fail($"频道 #{_selectedChannelId} 不存在");
 
-        var engine = check!.TryColdStart(ch, _engine);
-        if (engine == null) return new ActionResult { Success = true, Message = "引擎已在运行" };
-
-        _engine.StartEngine(engine);
-        return new ActionResult { Success = true, Message = "引擎已冷启动" };
+        var session = sessionEngine.CreateExpressSessionForChannel(_selectedChannelId);
+        return session == null
+            ? new ActionResult { Success = true, Message = "频道已有活跃会话" }
+            : new ActionResult { Success = true, Message = "express 会话已创建" };
     }
 
-    private Task<ActionResult> ForceStop()
+    private async Task<ActionResult> ForceStop()
     {
-        if (_selectedChannelId == 0) return Task.FromResult(Fail("未选择频道"));
-        var check = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
-        var active = check?.GetActiveChannels();
-        if (active?.TryGetValue(_selectedChannelId, out var chEngine) == true && chEngine.IsAlive)
+        if (_selectedChannelId == 0) return Fail("未选择频道");
+        var sessionEngine = _engine.GetActiveEnginesSnapshot()
+            .OfType<AgentCoreProcessor.Engine.Session.SessionEngine>().FirstOrDefault();
+        if (sessionEngine == null) return Fail("SessionEngine 未运行");
+        var snap = sessionEngine.GetChannelSessionSnapshot(_selectedChannelId);
+        if (snap?.IsAlive == true)
         {
-            chEngine.RequestStop();
-            return Task.FromResult(new ActionResult { Success = true, Message = "引擎已请求停止" });
+            sessionEngine.StopSession(snap.SessionId, "console force-stop");
+            return new ActionResult { Success = true, Message = "会话已请求停止" };
         }
-        return Task.FromResult(Fail("引擎未运行"));
-    }
-
-    private Task<ActionResult> ForceCompress()
-    {
-        if (_selectedChannelId == 0) return Task.FromResult(Fail("未选择频道"));
-        var check = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
-        var active = check?.GetActiveChannels();
-        if (active?.TryGetValue(_selectedChannelId, out var chEngine) == true && chEngine.IsAlive)
-        {
-            chEngine.SignalGate();
-            return Task.FromResult(new ActionResult { Success = true, Message = "压缩信号已发送" });
-        }
-        return Task.FromResult(Fail("引擎未运行"));
+        return Fail("无活跃会话");
     }
 
     private static ActionResult Fail(string msg) => new() { Success = false, Message = msg };
@@ -367,10 +355,10 @@ internal class ConsoleChatSource : IDataSource
 
         try
         {
-            // 自动启动引擎
-            var check = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
-            var active = check?.GetActiveChannels();
-            if (active?.ContainsKey(_channelId) != true)
+            // 自动启动会话：无活跃会话时注入一条消息（路由会孵化 express 会话）
+            var sessionEngine = _engine.GetActiveEnginesSnapshot()
+                .OfType<AgentCoreProcessor.Engine.Session.SessionEngine>().FirstOrDefault();
+            if (sessionEngine?.GetChannelSessionSnapshot(_channelId)?.IsAlive != true)
             {
                 var kickMsg = new IncomingMessage
                 {

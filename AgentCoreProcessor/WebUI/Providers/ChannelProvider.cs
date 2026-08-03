@@ -154,21 +154,19 @@ internal class ChannelListSource : IDataSource
         var allChannels = await _engine.Session.GetAllChannelsAsync();
         _provider.RefreshCache(allChannels);
 
-        var channelCheck = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
-        var activeEngines = channelCheck?.GetActiveChannels();
+        var sessionEngine = _engine.GetActiveEnginesSnapshot()
+            .OfType<AgentCoreProcessor.Engine.Session.SessionEngine>().FirstOrDefault();
 
         var arr = new JsonArray();
         foreach (var ch in allChannels)
         {
-            ExpressEngine? eng = null;
-            var hasEngine = activeEngines != null
-                && activeEngines.TryGetValue(ch.Id, out eng) && eng.IsAlive;
+            var snap = sessionEngine?.GetChannelSessionSnapshot(ch.Id);
+            var hasEngine = snap != null && snap.IsAlive;
 
             string engineStatus;
             if (hasEngine)
             {
-                var snap = eng!.GetSnapshot();
-                engineStatus = snap.IsBusy ? "Express" : "Express（空闲）";
+                engineStatus = snap!.Type == "express" ? "Express" : "Working";
             }
             else
             {
@@ -210,15 +208,15 @@ internal class ChannelInfoSource : IDataSource
         var config = ChannelStateManager.LoadConfig(_channelId, channel.Affinity);
         var msgCount = await _engine.Session.GetMessageCountByChannelAsync(_channelId);
 
-        var channelCheck = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
-        ExpressEngine? eng = null;
-        var hasEngine = channelCheck?.GetActiveChannels().TryGetValue(_channelId, out eng) == true && eng!.IsAlive;
+        var sessionEngine = _engine.GetActiveEnginesSnapshot()
+            .OfType<AgentCoreProcessor.Engine.Session.SessionEngine>().FirstOrDefault();
+        var snap = sessionEngine?.GetChannelSessionSnapshot(_channelId);
+        var hasEngine = snap != null && snap.IsAlive;
 
         string engineStatus;
         if (hasEngine)
         {
-            var snap = eng!.GetSnapshot();
-            engineStatus = snap.IsBusy ? "Express" : "Express（空闲）";
+            engineStatus = snap!.Type == "express" ? "Express" : "Working";
         }
         else
         {
@@ -255,15 +253,16 @@ internal class ChannelInfoSource : IDataSource
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
     {
-        var channelCheck = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
-        ExpressEngine? eng = null;
-        var hasEngine = channelCheck?.GetActiveChannels().TryGetValue(_channelId, out eng) == true && eng!.IsAlive;
+        var sessionEngine = _engine.GetActiveEnginesSnapshot()
+            .OfType<AgentCoreProcessor.Engine.Session.SessionEngine>().FirstOrDefault();
+        var snap = sessionEngine?.GetChannelSessionSnapshot(_channelId);
+        var hasEngine = snap != null && snap.IsAlive;
 
         if (action == "view-engine")
         {
             if (hasEngine)
-                return Task.FromResult(new ActionResult { Success = true, Message = $"/p/engines/channel_{_channelId}" });
-            return Task.FromResult(new ActionResult { Success = false, Message = "引擎未启动" });
+                return Task.FromResult(new ActionResult { Success = true, Message = $"/p/sessions/{snap!.SessionId}" });
+            return Task.FromResult(new ActionResult { Success = false, Message = "无活跃会话" });
         }
         if (action == "force-extraction")
         {

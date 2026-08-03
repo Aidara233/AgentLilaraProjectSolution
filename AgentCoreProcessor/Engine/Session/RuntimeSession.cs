@@ -79,6 +79,9 @@ internal class RuntimeSession : IRuntimeSession
     private CancellationTokenSource? _cts;
     /// <summary>外部唤醒信号（异步任务完成、跨循环通知等）。</summary>
     private volatile bool _wakeSignaled;
+    /// <summary>是否正处在一个突发（burst）的处理中（agent 推理进行中）。供 --test / WebUI 判断会话忙碌。</summary>
+    private volatile bool _isBusy;
+    public bool IsBusy => _isBusy;
 
     /// <summary>end_session 强制退出计数：0=未触发，>=1=已拦截过一次。</summary>
     private int _forceExitAttempts;
@@ -605,6 +608,22 @@ internal class RuntimeSession : IRuntimeSession
                     mins = parsed;
                 SetWaitUntil(DateTime.UtcNow.AddMinutes(mins));
                 return new ToolEffect(true, false);
+            case "escalate":
+                // 仅 express 会话：同池换活跃 session → working，结束 express 会话。
+                // 非 express 会话调用 escalate 视为 no-op（权限组已过滤，此处兜底）。
+                if (Type != "express" || _sessionEngine == null)
+                    return default;
+                try
+                {
+                    await _sessionEngine.CreateFromEscalateAsync(this, result.Data ?? "");
+                    return new ToolEffect(EndBurst: false, EndSession: true);
+                }
+                catch (Exception ex)
+                {
+                    Signal.Warn(LogGroup.Engine, "escalate 创建 working 失败",
+                        new { sessionId = SessionId, error = ex.Message });
+                    return new ToolEffect(EndBurst: false, EndSession: false);
+                }
             case "connect_channel":
                 if (int.TryParse(result.Data, out var connId))
                     await ConnectChannelAsync(connId, ConnectionMode.Full);
@@ -767,7 +786,10 @@ internal class RuntimeSession : IRuntimeSession
         int agentRound = 0;
         // 首轮已有 BuildStartAsync 的初始上下文，直接处理；之后每突发结束置 true 回到等待
         // 恢复的 session：_history 已有完整历史，但不立即激活——等新消息到达再唤醒
-        bool awaitingInput = _isRestored || _history.Count == 0;
+        // express 会话：强制等待输入（awaitingInput=true），按端口权重激活——被动响应，不因 InitialState
+        //   立即推理（否则第一条普通消息就触发响应，绕过权重节流）。背景上下文（参与者/历史/InitialState）
+        //   在 _history 中，激活后由 BuildRoundAsync 追加新消息。
+        bool awaitingInput = _isRestored || _history.Count == 0 || Type == "express";
 
         try
         {
@@ -783,6 +805,7 @@ internal class RuntimeSession : IRuntimeSession
                     TouchActivity();
                     SetWaitUntil(null);
                     awaitingInput = false;
+                    _isBusy = true; // 突发开始（agent 推理进行中）
 
                     // 新突发开始：重置突发内轮次计数
                     agentRound = 0;
@@ -1033,12 +1056,14 @@ internal class RuntimeSession : IRuntimeSession
 
                     if (endSession)
                     {
+                        _isBusy = false;
                         Signal.Event(LogGroup.Engine, "endSession：退出循环释放 claim", new { sessionId = SessionId });
                         endReason = "end_session";
                         break;
                     }
                     if (endBurst)
                     {
+                        _isBusy = false;
                         Signal.Event(LogGroup.Engine, "endBurst：回等待保活",
                             new { sessionId = SessionId, historyCount = _history.Count, waitUntil = WaitUntil });
                         _forceExitAttempts = 0;
@@ -1064,6 +1089,7 @@ internal class RuntimeSession : IRuntimeSession
         }
         finally
         {
+            _isBusy = false;
             if (Status == SessionStatus.Running)
                 Status = SessionStatus.Completed;
             lifeCtx.Close(new { sessionId = SessionId, reason = endReason, status = Status.ToString() });

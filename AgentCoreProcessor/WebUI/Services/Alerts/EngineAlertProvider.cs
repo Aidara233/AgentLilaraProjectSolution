@@ -53,30 +53,18 @@ namespace AgentCoreProcessor.WebUI.Services.Alerts
                 }
             }
 
-            // 频道循环 API 错误
-            var workerCheck = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
-            var workers = new List<WorkerSnapshot>();
-            if (workerCheck != null)
+            // 会话崩溃告警（express 会话化后无频道引擎，错误经 Signal/会话状态追踪）
+            var crashed = sessionEngine?.GetActiveSessions()
+                .Where(s => s.Status == AgentLilara.PluginSDK.SessionStatus.Crashed)
+                .ToList();
+            if (crashed != null && crashed.Count > 0)
             {
-                foreach (var (_, w) in workerCheck.GetActiveChannels())
-                {
-                    if (!w.IsAlive) continue;
-                    workers.Add(w.GetSnapshot());
-                }
-            }
-
-            var errorWorkers = workers.Where(w => w.HasRecentError).ToList();
-            if (errorWorkers.Count > 0)
-            {
-                var worst = errorWorkers.OrderByDescending(w => w.ConsecutiveFailures).First();
                 yield return new AlertItem
                 {
-                    Level = worst.ConsecutiveFailures >= 3 ? AlertLevel.Error : AlertLevel.Warning,
-                    Source = "频道循环",
-                    Message = errorWorkers.Count == 1
-                        ? $"频道 #{worst.ChannelId} API 失败 {worst.ConsecutiveFailures} 次"
-                        : $"{errorWorkers.Count} 个频道出现 API 错误",
-                    LinkHref = $"/p/channels/{worst.ChannelId}"
+                    Level = AlertLevel.Warning,
+                    Source = "会话",
+                    Message = $"{crashed.Count} 个会话处于崩溃状态",
+                    LinkHref = "/p/sessions"
                 };
             }
         }

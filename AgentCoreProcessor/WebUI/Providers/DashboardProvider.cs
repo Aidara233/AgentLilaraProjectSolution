@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Engine;
+using AgentCoreProcessor.Engine.Session;
 using AgentCoreProcessor.Engine.Vision;
 using AgentLilara.PluginSDK;
 using AgentLilara.PluginSDK.WebUI;
@@ -237,23 +238,22 @@ internal class DashboardChannelSource : IDataSource
 
     public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
-        var workerCheck = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
+        var sessionEngine = _engine.GetActiveEnginesSnapshot()
+            .OfType<SessionEngine>().FirstOrDefault();
         var arr = new JsonArray();
 
-        if (workerCheck != null)
+        if (sessionEngine != null)
         {
-            foreach (var (_, w) in workerCheck.GetActiveChannels())
+            foreach (var snap in sessionEngine.GetChannelSessionSnapshots())
             {
-                if (!w.IsAlive) continue;
-                var snap = w.GetSnapshot();
+                if (!snap.IsAlive) continue;
                 arr.Add(new JsonObject
                 {
                     ["channelId"] = snap.ChannelId,
-                    ["name"] = snap.ChannelName ?? $"#{snap.ChannelId}",
-                    ["mode"] = "Express",
-                    ["status"] = snap.IsBusy ? "处理中" : "等待",
-                    ["impulse"] = snap.Impulse.ToString("F1"),
-                    ["rounds"] = snap.TotalRounds
+                    ["name"] = $"#{snap.ChannelId}",
+                    ["mode"] = snap.Type == "express" ? "Express" : "Working",
+                    ["status"] = snap.IsAlive ? "活跃" : "结束",
+                    ["rounds"] = snap.RoundCount
                 });
             }
         }

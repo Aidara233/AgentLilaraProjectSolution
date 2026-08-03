@@ -82,16 +82,33 @@ public class SessionTypeProfilesTests
     }
 
     [Fact]
-    public void All_DiscoversConfigLibrary_ExcludesPurePermissionFile()
+    public void All_DiscoversConfigLibrary_SessionTypes()
     {
         using var _ = PointToRealStorage();
         var all = SessionTypeProfiles.All();
-        // 内置 channel/task + review.json 档案自动被发现
+        // 内置 channel/task/express + review.json 档案自动被发现
         Assert.Contains("channel", all);
         Assert.Contains("task", all);
         Assert.Contains("review", all);
-        // express.json 是纯权限文件（无 Type 字段），不作为会话类型
-        Assert.DoesNotContain("express", all);
+        Assert.Contains("express", all); // express.json 已升级为会话类型（Type 字段）
+    }
+
+    [Fact]
+    public void ExpressProfile_IsFullSessionType()
+    {
+        using var _ = PointToRealStorage();
+        var profile = SessionTypeProfiles.Get("express");
+        Assert.Equal("express", profile.Type);
+        Assert.Equal("ExpressCore", profile.DefaultCoreConfig);
+        Assert.Equal("express", profile.PermissionGroup);
+        Assert.Equal("whitelist", profile.PermissionMode);
+        Assert.Contains("basic-tools", profile.DefaultComponentIds);
+        // 白名单工具集
+        Assert.Contains("escalate", profile.PermissionTools);
+        Assert.Contains("speak", profile.PermissionTools);
+        // 记忆只读：无写工具
+        Assert.DoesNotContain("memory_store", profile.PermissionTools);
+        Assert.DoesNotContain("memory_update", profile.PermissionTools);
     }
 
     [Fact]

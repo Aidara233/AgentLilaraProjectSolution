@@ -37,7 +37,7 @@ internal static class SessionTypeProfiles
     /// 纯权限文件（express.json 无 Type 字段）不计数。</summary>
     public static IReadOnlyList<string> All()
     {
-        var keys = new SortedSet<string>(StringComparer.OrdinalIgnoreCase) { "channel", "task" };
+        var keys = new SortedSet<string>(StringComparer.OrdinalIgnoreCase) { "channel", "task", "express" };
         if (Directory.Exists(Dir))
         {
             var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
@@ -138,6 +138,29 @@ internal static class SessionTypeProfiles
             PermissionGroup = "task",
             PermissionMode = "whitelist",
             PermissionTools = TaskToolSeed
+        },
+        "express" => new SessionTypeProfile
+        {
+            Type = type,
+            DefaultCoreConfig = "ExpressCore",
+            AllowedCoreConfigs = new[] { "ExpressCore" },
+            PromptFiles = new[]
+            {
+                "identity.txt", "style.txt", "social.txt",
+                "architecture_overview.txt", "tech_rules.txt", "express_workflow.txt"
+            },
+            DefaultComponentIds = new[]
+            {
+                "basic-tools"
+            },
+            PermissionGroup = "express",
+            PermissionMode = "whitelist",
+            PermissionTools = new[]
+            {
+                "speak", "thinking", "send_media", "send_file", "adapter_action",
+                "escalate", "wait",
+                "memory_get", "memory_list", "memory_search", "memory_stats", "memory_link_get"
+            }
         },
         _ => throw new ArgumentOutOfRangeException(nameof(type), type,
             $"会话类型不在配置库中：Storage/Session/{type}.json 不存在且无内置默认。可用类型：{string.Join(", ", All())}")

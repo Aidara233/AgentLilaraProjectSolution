@@ -159,10 +159,21 @@ namespace AgentCoreProcessor.Engine
             lock (engineLock) { return activeEngines.Any(e => e.EngineType == engineType && e.IsAlive); }
         }
 
-        /// <summary>是否有正在处理消息的 ChannelEngine（常驻 Channel 忙碌中）。</summary>
+        /// <summary>是否有正在处理的会话（express/working 任一在突发处理中）。express 会话化后无频道引擎。</summary>
         public bool HasBusyWorker()
         {
-            lock (engineLock) { return activeEngines.Any(e => e is ExpressEngine w && w.IsAlive && w.IsBusy); }
+            lock (engineLock)
+            {
+                foreach (var e in activeEngines)
+                {
+                    if (e is Session.SessionEngine se)
+                    {
+                        if (se.GetActiveSessions().Any(s => s is Session.RuntimeSession rs && rs.IsBusy))
+                            return true;
+                    }
+                }
+                return false;
+            }
         }
 
         public int GetActiveEngineCount(string engineType)
@@ -874,24 +885,12 @@ namespace AgentCoreProcessor.Engine
                             sessionEngine.WakeUpSession(claimer);
                             return;
                         }
-                        // claimer 已死 → 落回 Express（claim 在 ReleaseSessionClaims 中会被清，这里 race 兜底）
+                        // claimer 已死 → claim 在 ReleaseSessionClaims 中会被清，这里 race 兜底
                     }
                 }
 
-                // 没 claim → 走 Express
-                var check = GetSpawnCheck<ExpressEngineSpawnCheck>();
-                if (check != null)
-                {
-                    var channels = check.GetActiveChannels();
-                    if (channels.TryGetValue(channelId, out var engine) && engine.IsAlive)
-                    {
-                        engine.SignalGate();
-                    }
-                    else
-                    {
-                        _ = ColdStartChannelAsync(channelId, check);
-                    }
-                }
+                // 没 claim → 无会话可唤醒。express 会话由消息到达时经 ExpressEngineSpawnCheck 孵化，
+                // 不再冷启动引擎（原 ColdStartChannelAsync / ExpressEngine 冷启动已随引擎移除）。
                 return;
             }
 
@@ -905,29 +904,6 @@ namespace AgentCoreProcessor.Engine
             }
 
             // task: / review: — 不直接唤醒，由各自的 Gate 管理
-        }
-
-        private async Task ColdStartChannelAsync(int channelId, ExpressEngineSpawnCheck check)
-        {
-            try
-            {
-                var channel = await Session.GetChannelByIdAsync(channelId);
-                if (channel == null)
-                {
-                    Signal.Warn(LogGroup.Engine, "冷启动失败：频道不存在", new { channelId });
-                    return;
-                }
-
-                var engine = check.TryColdStart(channel, this);
-                if (engine == null) return;
-
-                StartEngine(engine);
-                Signal.Event(LogGroup.Engine, "频道引擎冷启动", new { channelId, channelName = channel.Name });
-            }
-            catch (Exception ex)
-            {
-                Signal.Error(LogGroup.Engine, "冷启动异常", new { channelId, error = ex.Message });
-            }
         }
 
         /// <summary>关闭 GlobalComponentHost 和 OCR 提供者（由外部调用或 Dispose 时）。</summary>

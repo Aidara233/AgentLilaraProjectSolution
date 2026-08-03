@@ -225,12 +225,12 @@ namespace AgentCoreProcessor
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 var deadline = TimeSpan.FromSeconds(timeoutSeconds);
 
-                // 等引擎开始工作（有 Worker 引擎启动）
-                while (!engine.HasActiveEngine("Worker") && sw.Elapsed < deadline)
+                // 等引擎开始工作（会话引擎就绪；express 会话化后频道响应由会话承载）
+                while (engine.GetActiveEngineCount("Session") == 0 && sw.Elapsed < deadline)
                     await Task.Delay(200);
 
-                // 等 Worker 处理完成。Worker 是常驻的（一直 alive），
-                // 所以改为检查 IsBusy：先等缓冲窗口过去，再连续 5 次 Worker 不忙确认稳定
+                // 等会话处理完成。会话处理完突发后回等待（IsBusy=false），
+                // 连续 5 次不忙确认稳定
                 var remainMs = (int)(deadline - sw.Elapsed).TotalMilliseconds;
                 if (remainMs > 0)
                     await Task.Delay(Math.Min(4000, remainMs));

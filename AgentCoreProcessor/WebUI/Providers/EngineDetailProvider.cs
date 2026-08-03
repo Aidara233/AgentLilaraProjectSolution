@@ -32,16 +32,8 @@ internal class EngineDetailProvider : IWebUIProvider
         {
             var pages = new List<PageDefinition>();
 
-            // Channel (multi-instance) — 引擎监视页面
-            var channelCheck = _engine.GetSpawnCheck<ExpressEngineSpawnCheck>();
-            if (channelCheck != null)
-            {
-                foreach (var (id, ch) in channelCheck.GetActiveChannels())
-                {
-                    if (!ch.IsAlive) continue;
-                    pages.Add(BuildChannelEnginePage(ch, id));
-                }
-            }
+            // Channel 引擎监视页面已移除：express 会话化后频道响应由 express/working 会话承载，
+            // 详情统一在 /p/sessions 查看（SessionEngine 快照），不再有 per-channel ExpressEngine。
 
             // Dream
             if (_engine.HasActiveEngine("Dream"))
@@ -65,28 +57,6 @@ internal class EngineDetailProvider : IWebUIProvider
             return pages;
         }
     }
-    private PageDefinition BuildChannelEnginePage(ExpressEngine ch, int channelId)
-    {
-        var snap = ch.GetSnapshot();
-        var name = snap.ChannelName ?? $"#{channelId}";
-        return new PageDefinition
-        {
-            Route = $"engines/channel_{channelId}",
-            Meta = new PageMeta { Title = $"频道引擎: {name}", Icon = "bi-chat-dots", Group = "", Order = -88, ShowInNav = false },
-            Cards = new List<CardDefinition>
-            {
-                StatusCard("engine-status", "引擎状态", "engine-detail-status"),
-                ActionCard("engine-actions", "操作", "engine-detail-actions")
-            },
-            DataSources = new List<DataSourceDefinition>
-            {
-                new() { Id = "engine-detail-status", Source = new ChannelEngineStatusSource(ch) },
-                new() { Id = "engine-detail-actions", Source = new EngineActionSource(
-                    () => ch.ForceWake()) }
-            }
-        };
-    }
-
     private PageDefinition BuildDreamPage(DreamEngineSpawnCheck check)
     {
         return new PageDefinition
@@ -172,48 +142,8 @@ internal class EngineDetailProvider : IWebUIProvider
         },
         Layout = new CardLayout { PreferredCols = 12, Height = "600px" }
     };
-
-    private static CardDefinition ActionCard(string id, string title, string dsId) => new()
-    {
-        Id = id, Type = CardType.Status, DataSourceId = dsId, Title = title,
-        Schema = new StatusSchema
-        {
-            Fields = new() { new() { Field = "info", Label = "可用操作" } },
-            Actions = new()
-            {
-                new() { Id = "force-wake", Label = "强制唤醒", Confirm = "确认强制唤醒引擎？" }
-            }
-        },
-        Layout = new CardLayout { PreferredCols = 12 }
-    };
 }
 // ---- 数据源 ----
-
-internal class ChannelEngineStatusSource : IDataSource
-{
-    private readonly ExpressEngine _ch;
-    public ChannelEngineStatusSource(ExpressEngine ch) => _ch = ch;
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
-
-    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-    {
-        var snap = _ch.GetSnapshot();
-        var data = new JsonObject
-        {
-            ["state"] = snap.IsBusy ? "处理中" : "等待",
-            ["rounds"] = $"{snap.TotalRounds} (静默 {snap.SilentRounds})",
-            ["tokens"] = "—",
-            ["compression"] = "—",
-            ["backoff"] = snap.ConsecutiveFailures > 0 ? $"失败{snap.ConsecutiveFailures}次" : "正常",
-            ["extra"] = $"Express | 冲动 {snap.Impulse:F1}/{snap.Threshold:F1} | 工具 {snap.AuthorizedToolCount} | 参与者 {snap.ParticipantCount}"
-        };
-        return Task.FromResult(new DataResult { Data = data });
-    }
-
-    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-        => Task.FromResult(new ActionResult { Success = true });
-}
 
 internal class DreamDetailStatusSource : IDataSource
 {
@@ -358,33 +288,4 @@ internal class EngineContextSource : IDataSource
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
         => Task.FromResult(new ActionResult { Success = true });
 }
-
-internal class EngineActionSource : IDataSource
-{
-    private readonly Action _forceWake;
-    public EngineActionSource(Action forceWake)
-    { _forceWake = forceWake; }
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
-
-    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-    {
-        var data = new JsonObject { ["info"] = "强制唤醒" };
-        return Task.FromResult(new DataResult { Data = data });
-    }
-
-    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-    {
-        switch (action)
-        {
-            case "force-wake":
-                _forceWake();
-                return Task.FromResult(new ActionResult { Success = true, Message = "已发送唤醒信号" });
-            default:
-                return Task.FromResult(new ActionResult { Success = false, Message = $"未知操作: {action}" });
-        }
-    }
-}
-
-
 
