@@ -28,14 +28,14 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
 
     private readonly ISystemContext _ctx;
     private readonly ConcurrentDictionary<string, RuntimeSession> _sessions = new();
-    private readonly Dictionary<int, string> _channelFullClaims = new();
-    private readonly List<(int channelId, string sessionId)> _channelListens = new();
+    /// <summary>顶层资源池：channelId → 池。频道占用状态在池里（Full claim + Listen 旁听）。</summary>
+    private readonly ConcurrentDictionary<int, SessionPool> _pools = new();
     private readonly List<ScheduledTask> _scheduledTasks = new();
     private readonly List<TodoItem> _todoItems = new();
     private ICurrencyService? _currency;
     private DateTime _lastTodoScan = DateTime.MinValue;
 
-    // 父子链条
+    // 父子链条（阶段 2 迁入池的层级树，当前保留）
     private readonly ConcurrentDictionary<string, HashSet<string>> _activeChildren = new();
     private readonly ConcurrentDictionary<string, string> _childToParent = new();
     private readonly ConcurrentDictionary<string, string> _forwards = new();
@@ -394,11 +394,14 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
 
     public bool HasActiveWorking(int channelId)
     {
-        lock (_channelFullClaims)
-            return _channelFullClaims.ContainsKey(channelId);
+        lock (_poolLock)
+            return _pools.TryGetValue(channelId, out var pool) && pool.HasFullClaim;
     }
 
-    // ── 频道占用 ──
+    // ── 频道占用（占用状态在资源池里）──
+
+    /// <summary>池字典与池内状态的互斥锁（频道占用变更频率低，全局锁足够安全）。</summary>
+    private readonly object _poolLock = new();
 
     /// <summary>供 RuntimeSession 连接动作查询频道名称。</summary>
     public Task<Database.Channel?> GetChannelByIdAsync(int channelId)
@@ -420,44 +423,60 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
 
     public bool ClaimChannel(string sessionId, int channelId, ClaimLevel level)
     {
-        if (level == ClaimLevel.Full)
+        lock (_poolLock)
         {
-            lock (_channelFullClaims)
+            var pool = _pools.GetOrAdd(channelId, _ => new SessionPool(channelId));
+            if (level == ClaimLevel.Full)
             {
-                if (_channelFullClaims.ContainsKey(channelId))
-                    return false;
-                _channelFullClaims[channelId] = sessionId;
+                if (!pool.Claim(sessionId)) return false;
             }
+            else
+            {
+                if (!pool.ListenSessionIds.Contains(sessionId))
+                    pool.ListenSessionIds.Add(sessionId);
+            }
+            return true;
         }
-        else
+    }
+
+    /// <summary>
+    /// 同池换活跃 session（escalate / compact 专用）：占用状态原地不动，不释放、不重取。
+    /// express escalate 到 working 时两者共享同一池，claim 从 express 平滑移交 working。
+    /// </summary>
+    public bool TakeOverChannelPool(int channelId, string newSessionId)
+    {
+        lock (_poolLock)
         {
-            lock (_channelListens)
-                _channelListens.Add((channelId, sessionId));
+            if (!_pools.TryGetValue(channelId, out var pool) || !pool.HasFullClaim)
+                return false;
+            pool.TakeOver(newSessionId);
+            return true;
         }
-        return true;
     }
 
     public void ReleaseChannel(string sessionId, int channelId)
     {
-        lock (_channelFullClaims)
+        lock (_poolLock)
         {
-            if (_channelFullClaims.TryGetValue(channelId, out var holder) && holder == sessionId)
-                _channelFullClaims.Remove(channelId);
+            if (!_pools.TryGetValue(channelId, out var pool)) return;
+            pool.Release(sessionId);
+            pool.ListenSessionIds.RemoveAll(x => x == sessionId);
+            if (pool.IsEmpty)
+                _pools.TryRemove(channelId, out _);
         }
-        lock (_channelListens)
-            _channelListens.RemoveAll(x => x.channelId == channelId && x.sessionId == sessionId);
     }
 
     public string? GetFullClaimer(int channelId)
     {
-        lock (_channelFullClaims)
-            return _channelFullClaims.TryGetValue(channelId, out var s) ? s : null;
+        lock (_poolLock)
+            return _pools.TryGetValue(channelId, out var pool) && pool.HasFullClaim
+                ? pool.ActiveSessionId : null;
     }
 
     public bool IsChannelClaimed(int channelId)
     {
-        lock (_channelFullClaims)
-            return _channelFullClaims.ContainsKey(channelId);
+        lock (_poolLock)
+            return _pools.TryGetValue(channelId, out var pool) && pool.HasFullClaim;
     }
 
     /// <summary>通过外部信号唤醒指定 session（异步任务完成等）。自动跨 compact forward。</summary>
@@ -510,14 +529,16 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
 
     private void ReleaseSessionClaims(string sessionId)
     {
-        lock (_channelFullClaims)
+        lock (_poolLock)
         {
-            var keys = _channelFullClaims.Where(kv => kv.Value == sessionId).Select(kv => kv.Key).ToList();
-            foreach (var key in keys)
-                _channelFullClaims.Remove(key);
+            foreach (var (channelId, pool) in _pools)
+            {
+                pool.Release(sessionId);
+                pool.ListenSessionIds.RemoveAll(x => x == sessionId);
+                if (pool.IsEmpty)
+                    _pools.TryRemove(channelId, out _);
+            }
         }
-        lock (_channelListens)
-            _channelListens.RemoveAll(x => x.sessionId == sessionId);
     }
 
     // ── ScheduledTask ──
