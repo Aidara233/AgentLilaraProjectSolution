@@ -87,18 +87,11 @@ namespace AgentCoreProcessor.Engine
         // 事件总线 + 内务模块
         private readonly LoopBus bus = new();
         private readonly LoopControlModule loopControlModule = new();
-        private readonly DelegationNotificationModule delegationNotificationModule = new();
         private List<EngineModule> modules = null!;
 
         // 已处理消息标记
         private readonly LinkedList<long> processedTicks = new();
         private const int MaxProcessedTicksWindow = 50;
-
-        // 跨循环请求队列
-        private readonly ConcurrentQueue<LoopMessage> _pendingLoopMessages = new();
-        internal IAgentMessaging? _messaging;
-        private SignalFilterConfig _signalFilter = new();
-
 
         // 记忆提取计数（用于退出时判断是否需要收尾提取）
         private int processedMessageCount = 0;
@@ -241,8 +234,7 @@ namespace AgentCoreProcessor.Engine
             loopControlModule.ChannelId = channelId.ToString();
             modules = new List<EngineModule>
             {
-                loopControlModule,
-                delegationNotificationModule
+                loopControlModule
             };
             foreach (var m in modules) m.Attach(bus);
 
@@ -357,22 +349,6 @@ namespace AgentCoreProcessor.Engine
         /// <summary>唤醒闸门（供外部触发，如 ConsoleProvider 压缩信号）。</summary>
         internal void SignalGate() => gate.Signal();
 
-        /// <summary>DelegationBus 回调：接收到定向消息或广播。</summary>
-        private void OnLoopMessageReceived(LoopMessage msg)
-        {
-            _pendingLoopMessages.Enqueue(msg);
-            gate.Signal();
-        }
-
-        /// <summary>Drain 跨循环消息队列。</summary>
-        internal List<LoopMessage> DrainLoopMessages()
-        {
-            var list = new List<LoopMessage>();
-            while (_pendingLoopMessages.TryDequeue(out var msg))
-                list.Add(msg);
-            return list;
-        }
-
 
         public async Task RunAsync()
         {
@@ -387,21 +363,11 @@ namespace AgentCoreProcessor.Engine
             _injectProviders.Clear();
             _injectProviders.AddRange(modules);  // EngineModule : IInjectProvider
 
-            // 注册到委托总线
-            var myLoopId = LoopId.ForChannel(channelId);
-            _messaging = new Component.AgentMessagingImpl(myLoopId, ctx.DelegationBus,
-                () => gate.Signal(), loopId => ctx.DelegationBus.IsLoopActive(loopId),
-                () => ctx.DelegationBus.GetActiveLoopIds().ToList());
-            delegationNotificationModule.SetMessaging(_messaging);
-            _signalFilter = ctx.SignalFilters.GetConfig("channel");
-            delegationNotificationModule.SetFilterConfig(_signalFilter);
-            ctx.DelegationBus.RegisterLoop(myLoopId, OnLoopMessageReceived);
-
             // 初始化 ComponentHost（加载 Express 相关 LoopComponent）
+            var myLoopId = LoopId.ForChannel(channelId);
             componentHost = new Component.ComponentHost(
                 myLoopId, "channel", _moduleBus, ctx.ComponentServices,
-                () => gate.ForceWake(),
-                new Dictionary<Type, object> { [typeof(IAgentMessaging)] = _messaging });
+                () => gate.ForceWake());
             componentHost.GlobalHost = ctx.GlobalComponentHost;
             await componentHost.InitAsync();
 
@@ -435,14 +401,6 @@ namespace AgentCoreProcessor.Engine
                 }
 
                 _totalGateCycles++;
-
-                // 排空跨循环消息队列，转为一次性通知（防止同会话每轮重复注入）
-                var incomingCross = DrainLoopMessages();
-                if (incomingCross.Count > 0 && _messaging is Component.AgentMessagingImpl impl)
-                {
-                    foreach (var msg in incomingCross)
-                        impl.EnqueueIncoming(msg);
-                }
 
                 // ② 状态准备：从 DB 检查新消息
                 bool hasNewMessages;
@@ -577,10 +535,6 @@ namespace AgentCoreProcessor.Engine
                     Interlocked.Exchange(ref _completionTicks, DateTime.Now.Ticks);
                 }
             }
-
-            // 注销委托总线
-            ctx.DelegationBus.UnregisterLoop(LoopId.ForChannel(channelId));
-            (_messaging as Component.AgentMessagingImpl)?.Detach();
 
             // 清理模块状态
             foreach (var m in modules) m.Reset();

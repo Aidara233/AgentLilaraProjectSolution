@@ -21,7 +21,6 @@
 |------|----------|------|----------|
 | **Plugin.BasicTools** | 所有会话类型（装配由 ComponentConfig 决定） | `speak`, `send_media`, `send_file`, `adapter_action` | `BasicToolsComponent.cs` |
 | **Plugin.WorkingTools** | 所有会话类型（装配由 ComponentConfig 决定） | `pinboard`, `thinking_notes`, `retain_list`, `task_list`, `mark_for_review` | `WorkingToolsComponent.cs` |
-| **Plugin.CrossLoopTools** | 所有会话类型（装配由 ComponentConfig 决定） | `send_message`, `list_loops` | `CrossLoopComponent.cs` |
 | **Plugin.ScheduledTasks** | 所有会话类型（装配由 ComponentConfig 决定） | `schedule_task`, `cancel_task`, `list_tasks` | `ScheduledTasksComponent.cs` |
 
 ### Global 组件（全局单例）
@@ -94,11 +93,10 @@ csproj 必须：
 // 组件 OnInitAsync 中
 var memory = context.GetService<IMemoryAccess>();
 var channel = context.GetService<IChannelAccess>();
-var messaging = context.GetService<IAgentMessaging>();
 var log = context.GetService<ILogAccess>();
 ```
 
-常用服务：`IMemoryAccess`, `IChannelAccess`, `IAgentMessaging`, `IEngineAccess`, `ILogAccess`, `ISleepAccess`, `IAdapterAccess`, `IPersonAccess`, `IReviewAccess`, `IBeaconAccess`
+常用服务：`IMemoryAccess`, `IChannelAccess`, `IEngineAccess`, `ILogAccess`, `ISleepAccess`, `IAdapterAccess`, `IPersonAccess`, `IReviewAccess`, `IBeaconAccess`
 
 ### 5. 编译 + 验证
 

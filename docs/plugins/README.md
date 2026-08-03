@@ -122,7 +122,6 @@ AgentLilaraProjectSolution/
     Plugin.FileOps/               ← 高级文件操作（archive_create/extract/list, search_files, grep, file_info, file_hash, compare）— Global
     Plugin.SystemTools/           ← 子 session 管理（system-ops 组件：create_sub_agent/stop_sub_agent/send_instruction/list_sub_agents/wait_sub/get_sub_info；sub-agent-runtime 组件：report_to_parent）
     Plugin.ReviewTools/           ← 复盘工具（12个 review_* 工具）— Global
-    Plugin.CrossLoopTools/        ← 跨循环消息（send_message + list_loops）— Loop
     Plugin.ScheduledTasks/        ← 定时任务（schedule/cancel/list）— Loop
     Plugin.Email/                 ← 邮件收发（send_email, check_unread, check_email, read_email, search_email, download_attachment, delete_email, mark_all_read, list_folders）— Global
     Plugin.SkillTools/            ← 技能工具（casual-chat, code-review, system-maintenance）
@@ -159,7 +158,7 @@ AgentLilaraProjectSolution/
 
 - **组件优先**：如果 DLL 中有 `[Component]` 标记的类，工具由组件管理而非独立注册
 - **AssemblyLoadContext 隔离**：每个插件 DLL 运行在自己的 ALC 中，支持热重载（卸载后重新扫描）
-- **服务定位器模式**：插件通过 `GetService<T>()` 获取宿主服务（IMemoryAccess、IAgentMessaging 等），不直接引用宿主程序集
+- **服务定位器模式**：插件通过 `GetService<T>()` 获取宿主服务（IMemoryAccess、IChannelAccess 等），不直接引用宿主程序集
 - **无清单文件**：所有元数据通过 C# 属性声明（`[Component]`、`[ToolMeta]` 等）
 - **插件不声明权限/引擎适用性**：`[ToolMeta] EngineTypes` 与 `[LoopApplicability]` 的引擎维度已 **删除**。工具/组件可见性完全由程序本体裁决——`Storage/Session/{express,channel,task,review}.json` 的权限黑白名单（工具级） + `Storage/Engine/ComponentConfig.json`（组件×权限组装配）。插件只需提供工具，不决定谁能用。
 - **参数名必须英文**：这是 Bedrock 代理的硬性限制

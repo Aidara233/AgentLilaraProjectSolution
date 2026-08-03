@@ -114,7 +114,7 @@ internal static class SessionTypeProfiles
             DefaultComponentIds = new[]
             {
                 "basic-tools", "working-tools", "file-tools", "file-ops",
-                "memory-tools", "system-ops", "cross-loop"
+                "memory-tools", "system-ops"
             },
             PermissionGroup = "channel",
             PermissionMode = "blacklist",
@@ -132,7 +132,7 @@ internal static class SessionTypeProfiles
             },
             DefaultComponentIds = new[]
             {
-                "basic-tools", "file-tools", "memory-tools", "cross-loop",
+                "basic-tools", "file-tools", "memory-tools",
                 "sub-agent-runtime"
             },
             PermissionGroup = "task",
@@ -153,8 +153,6 @@ internal static class SessionTypeProfiles
         // memory-tools
         "memory_store", "memory_get", "memory_search", "memory_list", "memory_stats",
         "memory_delete", "memory_link_create", "memory_link_delete", "memory_link_get", "memory_update",
-        // cross-loop
-        "send_message", "list_loops",
         // sub-agent-runtime
         "report_to_parent",
         // 核心 session 工具

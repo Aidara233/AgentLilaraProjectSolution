@@ -182,13 +182,11 @@ internal static class TestHost
         public string? CurrentDreamPhase { get; set; }
         public DateTime? DreamStartTime { get; set; }
         public McpServerManager? McpManager => null;
-        public DelegationBus DelegationBus => null!;
         public ModuleBus ModuleBus => null!;
         public GlobalComponentHost? GlobalComponentHost => null;
         public IServiceProvider ComponentServices => null!;
         public Tool.Host.PluginLoader PluginLoader => null!;
         public Tool.Host.ToolContextImpl ToolContext => null!;
-        public SignalFilterManager SignalFilters => null!;
     }
 }
 

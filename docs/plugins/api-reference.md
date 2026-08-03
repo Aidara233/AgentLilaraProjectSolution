@@ -338,32 +338,6 @@ class MessageSummary {
 }
 ```
 
-### IAgentMessaging
-
-跨循环消息接口，所有循环间通信的唯一入口。fire-and-forget，无状态机、无 response。
-
-```csharp
-// 向目标循环发送一条消息。target_id=null 表示广播。返回 messageId（仅供日志用）。
-string SendMessage(string? targetId, string content);
-
-// 读取并清空本循环待处理的消息（手动查看收件箱）。
-List<LoopMessageInfo> Receive(int maxCount = 10);
-
-// 排出待注入的通知消息（由通知模块消费，全清）。
-List<LoopMessageInfo> DrainNotifications();
-
-// 获取所有活跃循环的 ID 列表。
-List<string> GetActiveLoopIds();
-```
-
-关联 DTO：
-
-```csharp
-class LoopMessageInfo {
-    string MessageId; string InitiatorId; string? TargetId; string Content; DateTime Timestamp;
-}
-```
-
 ### IEngineAccess
 
 引擎管理接口。
@@ -582,7 +556,7 @@ IDisposable? Subscribe(Action<JsonNode?> callback);
 
 ### IDelegationAccess
 
-> **已删除**。原委托系统（CrossRequestRegistry + 8 状态机 + JSONL 持久化）已整体移除，由 `IAgentMessaging`（单发消息模型）取代。
+> **已删除**。原委托系统（CrossRequestRegistry + 8 状态机 + JSONL 持久化）已整体移除；其后的跨循环单发消息接口 `IAgentMessaging` 亦已移除。跨循环通讯已废弃，session 间通讯走子 agent 邮箱（`ISubAgentAccess`）。
 
 ---
 

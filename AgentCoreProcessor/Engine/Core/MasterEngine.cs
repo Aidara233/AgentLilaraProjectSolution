@@ -104,7 +104,6 @@ namespace AgentCoreProcessor.Engine
         public string? CurrentDreamPhase { get; set; }
         public DateTime? DreamStartTime { get; set; }
         public McpServerManager? McpManager => mcpManager;
-        public DelegationBus DelegationBus { get; private set; } = null!;
 
         // ---- ISystemContext: Component 系统 ----
         public ModuleBus ModuleBus => _moduleBus;
@@ -114,9 +113,6 @@ namespace AgentCoreProcessor.Engine
         // ---- ISystemContext: Plugin 系统 ----
         public Tool.Host.PluginLoader PluginLoader => _pluginLoader;
         public Tool.Host.ToolContextImpl ToolContext => _toolContext;
-
-        // ---- ISystemContext: 信号过滤器 ----
-        public SignalFilterManager SignalFilters { get; private set; } = null!;
 
         // ---- 引擎注册表 ----
         private readonly List<IEngineSpawnCheck> spawnChecks = new();
@@ -587,13 +583,6 @@ namespace AgentCoreProcessor.Engine
                 Path.Combine(PathConfig.StoragePath, "Engine", "ImpulseConfig.json"));
             TrustConfig = TrustProgressionConfig.Load(
                 Path.Combine(PathConfig.StoragePath, "Engine", "TrustProgressionConfig.json"));
-
-            // 信号过滤器配置
-            SignalFilters = new SignalFilterManager(
-                Path.Combine(PathConfig.StoragePath, "Engine", "SignalFilter.json"));
-
-            // 创建循环消息总线（替代旧 CrossRequestRegistry）
-            DelegationBus = new DelegationBus();
 
             // 注册核心工具（不可卸载的循环控制工具）
             Tool.ToolRegistry.Register(new Tool.Core.ContinueLoopTool(), isNonComponent: true);

@@ -36,7 +36,6 @@ internal class ConfigProvider : IWebUIProvider
         ["ImpulseConfig"] = "Engine/ImpulseConfig.json",
         ["TrustProgression"] = "Engine/TrustProgressionConfig.json",
         ["VisionEngine"] = "Engine/VisionEngineConfig.json",
-        ["SignalFilter"] = "Engine/SignalFilter.json",
         ["DreamConfig"] = "Dream/DreamConfig.json",
         ["ComponentConfig"] = "Engine/ComponentConfig.json",
     };

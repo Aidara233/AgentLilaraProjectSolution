@@ -128,9 +128,6 @@ namespace AgentCoreProcessor.Engine
         /// <summary>MCP Server 管理器（可能为 null，如果 MCP 未初始化）。</summary>
         McpServerManager? McpManager { get; }
 
-        /// <summary>循环间消息路由总线。定向投递 + 广播，纯内存。</summary>
-        DelegationBus DelegationBus { get; }
-
         /// <summary>模块间通信总线（全局单例）。替代 ComponentEventBus。</summary>
         ModuleBus ModuleBus { get; }
 
@@ -145,8 +142,5 @@ namespace AgentCoreProcessor.Engine
 
         /// <summary>插件工具上下文（服务容器）。引擎可动态注册/注销服务。</summary>
         Tool.Host.ToolContextImpl ToolContext { get; }
-
-        /// <summary>信号过滤器管理器。控制各引擎类型的唤醒/可见性过滤。</summary>
-        SignalFilterManager SignalFilters { get; }
     }
 }
