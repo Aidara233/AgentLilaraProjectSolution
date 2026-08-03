@@ -8,11 +8,10 @@ using AgentLilara.PluginSDK.Services;
 namespace Plugin.SystemTools;
 
 /// <summary>
-/// 父侧子 agent 管理组件。挂载于所有 WorkingSession（loopType=channel）。
+/// 父侧子 agent 管理组件。挂载于所有 channel 会话（RuntimeSession）。
 /// 工具：create_sub_agent / stop_sub_agent / send_instruction / list_sub_agents / wait_sub / get_sub_info。
 /// </summary>
 [Component(Name = "system-ops", Scope = ComponentScope.Loop)]
-[LoopApplicability(Channel = Applicability.Enabled)]
 public class SystemOpsComponent : LoopComponentBase
 {
     private ILoopComponentContext? _ctx;
@@ -91,7 +90,6 @@ public class SystemOpsComponent : LoopComponentBase
 /// SubAgentAccessAdapter.Create 默认组件列表包含本组件，使子 agent 可主动回报。
 /// </summary>
 [Component(Name = "sub-agent-runtime", Scope = ComponentScope.Loop)]
-[LoopApplicability(Channel = Applicability.Enabled)]
 public class SubAgentRuntimeComponent : LoopComponentBase
 {
     private ReportToParentTool? _reportTool;

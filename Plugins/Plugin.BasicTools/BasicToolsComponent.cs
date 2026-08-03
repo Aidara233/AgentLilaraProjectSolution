@@ -5,7 +5,6 @@ using AgentLilara.PluginSDK.Services;
 namespace Plugin.BasicTools;
 
 [Component(Name = "basic-tools", Scope = ComponentScope.Loop)]
-[LoopApplicability(Channel = Applicability.Enabled)]
 public class BasicToolsComponent : LoopComponentBase
 {
     private SpeakTool? _speak;
@@ -40,7 +39,7 @@ public class BasicToolsComponent : LoopComponentBase
         var channelId = ParseChannelId(context.LoopId);
         var speakGuard = context.GetService<ISpeakGuard>();
         // 连接驱动：session 注入 IConnectedChannel，发送工具据此运行期决定目标频道并校验发言权限。
-        // express（ChannelEngine）无此服务，回退到 loopId 解析的固定 channelId。
+        // ExpressEngine 无此服务，回退到 loopId 解析的固定 channelId。
         var connected = context.GetService<IConnectedChannel>();
 
         if (channelAccess != null)

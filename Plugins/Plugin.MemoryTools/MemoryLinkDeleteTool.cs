@@ -7,7 +7,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.MemoryTools;
 
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "记忆关联删除：删除两条记忆之间的关联")]
+[ToolMeta(ContinueLoop = true)]
 public class MemoryLinkDeleteTool : ITool
 {
     private readonly IMemoryAccess? memory;

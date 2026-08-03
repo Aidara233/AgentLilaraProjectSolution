@@ -3,7 +3,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.Currency;
 
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "交易记录查询：查看货币收支流水")]
+[ToolMeta(ContinueLoop = true)]
 public class TransactionHistoryTool : ITool
 {
     private readonly ICurrencyService? _currency;

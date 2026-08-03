@@ -6,7 +6,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.SystemTools;
 
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "创建子agent执行任务")]
+[ToolMeta(ContinueLoop = true)]
 public class CreateSubAgentTool : ITool
 {
     private readonly ISubAgentAccess _subAgents;

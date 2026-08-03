@@ -9,9 +9,6 @@ namespace AgentCoreProcessor.Component;
 internal record ComponentRegistration(
     Type Type,
     ComponentScope Scope,
-    Applicability ChannelApplicability,
-    Applicability ReviewApplicability,
-    Applicability TaskApplicability,
     Assembly SourceAssembly,
     bool DefaultEnabled);
 
@@ -23,8 +20,6 @@ internal static class ComponentRegistry
     {
         var attr = type.GetCustomAttribute<ComponentAttribute>();
         if (attr == null) return false;
-
-        var loopAttr = type.GetCustomAttribute<LoopApplicabilityAttribute>();
 
         var defaultEnabled = true;
         try
@@ -39,9 +34,6 @@ internal static class ComponentRegistry
         var reg = new ComponentRegistration(
             Type: type,
             Scope: attr.Scope,
-            ChannelApplicability: loopAttr?.Channel ?? Applicability.Enabled,
-            ReviewApplicability: loopAttr?.Review ?? Applicability.Enabled,
-            TaskApplicability: loopAttr?.Task ?? Applicability.Enabled,
             SourceAssembly: type.Assembly,
             DefaultEnabled: defaultEnabled);
 
@@ -62,7 +54,7 @@ internal static class ComponentRegistry
         _registrations.Values.Where(r => r.Scope == ComponentScope.Global);
 
     /// <summary>
-    /// 获取全部 Loop 组件。组件在哪个权限组加载由 ComponentConfig 决定（LoopApplicability 已 inert）。
+    /// 获取全部 Loop 组件。组件在哪个权限组加载由 ComponentConfig 决定。
     /// </summary>
     public static IEnumerable<ComponentRegistration> GetLoopComponents(string loopType)
     {

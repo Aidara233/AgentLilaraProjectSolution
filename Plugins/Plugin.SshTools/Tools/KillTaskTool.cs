@@ -3,7 +3,7 @@ using AgentLilara.PluginSDK;
 
 namespace Plugin.SshTools;
 
-[ToolMeta(Group = "ssh", ContinueLoop = true, CapabilitySummary = "杀掉异步SSH任务")]
+[ToolMeta(Group = "ssh", ContinueLoop = true)]
 public class KillTaskTool : ITool
 {
     private readonly SshGlobalComponent _global;

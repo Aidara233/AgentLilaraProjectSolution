@@ -8,7 +8,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.MemoryTools;
 
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "记忆列表：条件筛选和分页浏览记忆")]
+[ToolMeta(ContinueLoop = true)]
 public class MemoryListTool : ITool
 {
     private readonly IMemoryAccess? memory;

@@ -4,7 +4,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.CrossLoopTools;
 
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "向其他循环发送单发消息（或广播）")]
+[ToolMeta(ContinueLoop = true)]
 public class SendMessageTool : ITool
 {
     private readonly IAgentMessaging _messaging;
@@ -14,7 +14,7 @@ public class SendMessageTool : ITool
     public string Name => "send_message";
     public string Description =>
         "向指定目标循环发送一条单发消息（fire-and-forget，无回应状态机）。\n" +
-        "target_id 留空 = 广播给所有活跃循环；填 system = 向系统循环发起；填 channel:N = 向指定频道循环发起；填 session:xxx = 向指定 session 发起。\n" +
+        "target_id 留空 = 广播给所有活跃循环；填 channel:N = 向指定频道循环发起；填 session:xxx = 向指定 session 发起；填 task:xxx = 向指定任务发起；填 review:xxx = 向复盘会话发起。\n" +
         "对方循环在下一轮上下文中将收到 [循环消息] 注入。回复就是对方再发一条新消息（target_id 填你的 loopId）。";
 
     public IReadOnlyList<ToolParameter> Parameters =>

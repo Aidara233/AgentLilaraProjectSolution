@@ -7,7 +7,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.MemoryTools;
 
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "记忆关联创建：在两个记忆之间建立关联")]
+[ToolMeta(ContinueLoop = true)]
 public class MemoryLinkCreateTool : ITool
 {
     private readonly IMemoryAccess? memory;

@@ -5,7 +5,7 @@ using Svg.Skia;
 
 namespace Plugin.SvgTools;
 
-[ToolMeta(Group = "svg", ContinueLoop = true, CapabilitySummary = "将 SVG 代码渲染为 PNG 图片")]
+[ToolMeta(Group = "svg", ContinueLoop = true)]
 public class RenderSvgTool : ITool
 {
     private readonly IPluginStorage _storage;

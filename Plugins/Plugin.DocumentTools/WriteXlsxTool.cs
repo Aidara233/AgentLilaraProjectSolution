@@ -13,7 +13,7 @@ using FileToolKit.Shared;
 
 namespace Plugin.DocumentTools;
 
-[ToolMeta(Group = "document", ContinueLoop = true, CapabilitySummary = "创建或追加 Excel 表格")]
+[ToolMeta(Group = "document", ContinueLoop = true)]
 public class WriteXlsxTool : FileToolBase
 {
     public WriteXlsxTool(string workspaceDir) : base(workspaceDir) { }

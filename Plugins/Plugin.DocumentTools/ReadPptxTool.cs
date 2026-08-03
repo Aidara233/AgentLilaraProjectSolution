@@ -14,7 +14,7 @@ using FileToolKit.Shared;
 
 namespace Plugin.DocumentTools;
 
-[ToolMeta(Group = "document", ContinueLoop = true, CapabilitySummary = "读取 PowerPoint 幻灯片内容")]
+[ToolMeta(Group = "document", ContinueLoop = true)]
 public class ReadPptxTool : FileToolBase
 {
     private const int MaxOutputLen = 10000;

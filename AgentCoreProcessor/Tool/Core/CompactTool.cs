@@ -16,8 +16,7 @@ namespace AgentCoreProcessor.Tool.Core
     ///
     /// 工具表锁定：RuntimeSession 在 L3 触发后清空 _tools 只留 compact，模型别无选择只能调用。
     /// </summary>
-    [ToolMeta(EngineTypes = new[] { "session" }, ContinueLoop = false,
-        CapabilitySummary = "compact: 用你提供的摘要接管当前会话，启动新会话承接你的总结继续工作")]
+    [ToolMeta(ContinueLoop = false)]
     internal class CompactTool : ITool
     {
         private readonly RuntimeSession _session;

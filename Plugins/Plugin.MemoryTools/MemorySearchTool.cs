@@ -9,7 +9,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.MemoryTools;
 
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "记忆搜索：语义搜索记忆（支持主库/临时库/两者）")]
+[ToolMeta(ContinueLoop = true)]
 public class MemorySearchTool : ITool
 {
     private readonly IMemoryAccess? memory;

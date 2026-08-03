@@ -8,7 +8,7 @@ using Plugin.GitTools.Core;
 
 namespace Plugin.GitTools.Tools;
 
-[ToolMeta(Group = "git", ContinueLoop = true, CapabilitySummary = "查看 git 差异")]
+[ToolMeta(Group = "git", ContinueLoop = true)]
 public class GitDiffTool : GitToolBase
 {
     public GitDiffTool(string workspaceDir, GitRunner runner) : base(workspaceDir, runner) { }

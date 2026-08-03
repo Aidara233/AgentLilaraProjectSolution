@@ -3,7 +3,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.Currency;
 
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "货币消费：bot 使用货币申请或消耗资源")]
+[ToolMeta(ContinueLoop = true)]
 public class SpendCurrencyTool : ITool
 {
     private readonly ICurrencyService? _currency;

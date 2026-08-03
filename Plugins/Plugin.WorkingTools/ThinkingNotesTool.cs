@@ -9,9 +9,9 @@ namespace Plugin.WorkingTools
 {
     /// <summary>
     /// 思考笔记工具。每个 notebook 独立存储，互不干扰。
-    /// notebook 参数由调用方指定（系统循环用 "system"，频道循环用 channelId）。
+    /// notebook 参数由调用方指定（频道循环用 channelId）。
     /// </summary>
-    [ToolMeta(Group = null, ContinueLoop = true, CapabilitySummary = "思考笔记：记录推理过程和待办事项")]
+    [ToolMeta(Group = null, ContinueLoop = true)]
     public class ThinkingNotesTool : ITool, AgentCoreProcessor.Engine.IInjectProvider
     {
         private readonly string _baseDir;
@@ -23,7 +23,7 @@ namespace Plugin.WorkingTools
         public IReadOnlyList<ToolParameter> Parameters =>
         [
             new("action", "操作类型：append / read / clear / replace", 0),
-            new("notebook", "笔记本标识（系统循环用 system，频道循环用频道ID）", 1),
+            new("notebook", "笔记本标识（频道循环用频道ID）", 1),
             new("content", "笔记内容（append/replace 时必填）", 2, isRequired: false)
         ];
         public TimeSpan Timeout => TimeSpan.FromSeconds(5);

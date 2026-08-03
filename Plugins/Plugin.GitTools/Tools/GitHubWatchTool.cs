@@ -12,7 +12,7 @@ using Plugin.GitTools.Models;
 
 namespace Plugin.GitTools.Tools;
 
-[ToolMeta(Group = "github", ContinueLoop = true, CapabilitySummary = "管理 GitHub Webhook 订阅")]
+[ToolMeta(Group = "github", ContinueLoop = true)]
 public class GitHubWatchTool : GitToolBase
 {
     private readonly string _instanceDir;

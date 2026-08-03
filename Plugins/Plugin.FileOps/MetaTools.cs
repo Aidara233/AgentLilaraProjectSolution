@@ -11,7 +11,7 @@ using FileToolKit.Shared;
 
 namespace Plugin.FileOps
 {
-    [ToolMeta(Group = "file", ContinueLoop = true, CapabilitySummary = "获取文件详细信息")]
+    [ToolMeta(Group = "file", ContinueLoop = true)]
     public class FileInfoTool : FileToolBase
     {
         public FileInfoTool(string workspaceDir) : base(workspaceDir) { }
@@ -123,7 +123,7 @@ namespace Plugin.FileOps
         };
     }
 
-    [ToolMeta(Group = "file", ContinueLoop = true, CapabilitySummary = "计算文件哈希值")]
+    [ToolMeta(Group = "file", ContinueLoop = true)]
     public class FileHashTool : FileToolBase
     {
         public FileHashTool(string workspaceDir) : base(workspaceDir) { }
@@ -168,7 +168,7 @@ namespace Plugin.FileOps
         }
     }
 
-    [ToolMeta(Group = "file", ContinueLoop = true, CapabilitySummary = "对比两个文本文件")]
+    [ToolMeta(Group = "file", ContinueLoop = true)]
     public class CompareFilesTool : FileToolBase
     {
         public CompareFilesTool(string workspaceDir) : base(workspaceDir) { }

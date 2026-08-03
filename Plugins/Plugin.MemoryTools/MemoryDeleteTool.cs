@@ -7,7 +7,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.MemoryTools;
 
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "记忆删除：按 ID 删除主记忆或临时记忆")]
+[ToolMeta(ContinueLoop = true)]
 public class MemoryDeleteTool : ITool
 {
     private readonly IMemoryAccess? memory;

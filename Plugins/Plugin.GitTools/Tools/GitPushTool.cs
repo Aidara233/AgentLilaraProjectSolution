@@ -8,7 +8,7 @@ using Plugin.GitTools.Core;
 
 namespace Plugin.GitTools.Tools;
 
-[ToolMeta(Group = "git", ContinueLoop = true, CapabilitySummary = "推送 git 更改到远端")]
+[ToolMeta(Group = "git", ContinueLoop = true)]
 public class GitPushTool : GitToolBase
 {
     public GitPushTool(string workspaceDir, GitRunner runner) : base(workspaceDir, runner) { }

@@ -4,7 +4,6 @@ using AgentLilara.PluginSDK.Services;
 namespace Plugin.ReviewTools;
 
 [Component(Name = "review-tools", Scope = ComponentScope.Global)]
-[LoopApplicability(Channel = Applicability.NotApplicable)]
 public class ReviewToolsComponent : GlobalComponentBase
 {
     private readonly List<ITool> _tools = new();

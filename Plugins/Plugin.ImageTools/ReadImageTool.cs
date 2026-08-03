@@ -3,7 +3,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.ImageTools;
 
-[ToolMeta(Group = "image", ContinueLoop = true, CapabilitySummary = "读取图片，将真实像素传入模型上下文")]
+[ToolMeta(Group = "image", ContinueLoop = true)]
 public class ReadImageTool : ITool
 {
     private readonly IImageAccess _imageAccess;

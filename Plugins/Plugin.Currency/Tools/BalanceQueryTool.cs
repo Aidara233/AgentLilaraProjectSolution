@@ -3,7 +3,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.Currency;
 
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "货币余额查询：查看 bot 当前可用预算")]
+[ToolMeta(ContinueLoop = true)]
 public class BalanceQueryTool : ITool
 {
     private readonly ICurrencyService? _currency;

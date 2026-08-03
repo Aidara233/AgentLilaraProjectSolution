@@ -7,7 +7,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.SystemTools;
 
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "停止子agent")]
+[ToolMeta(ContinueLoop = true)]
 public class StopSubAgentTool : ITool
 {
     private readonly ISubAgentAccess _subAgents;

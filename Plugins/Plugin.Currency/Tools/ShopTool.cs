@@ -3,7 +3,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.Currency;
 
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "商品浏览：查看可购买的虚拟商品货架")]
+[ToolMeta(ContinueLoop = true)]
 public class ShopTool : ITool
 {
     private readonly IProductRegistry? _registry;

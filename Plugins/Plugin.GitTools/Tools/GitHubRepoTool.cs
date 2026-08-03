@@ -10,7 +10,7 @@ using Plugin.GitTools.Core;
 
 namespace Plugin.GitTools.Tools;
 
-[ToolMeta(Group = "github", ContinueLoop = true, CapabilitySummary = "查询 GitHub 仓库信息")]
+[ToolMeta(Group = "github", ContinueLoop = true)]
 public class GitHubRepoTool : GitToolBase
 {
     private readonly GitHubClient _gh;

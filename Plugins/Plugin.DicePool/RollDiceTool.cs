@@ -4,7 +4,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.DicePool;
 
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "摇骰子：从大骰子随机摇 N 个面，用随机碎片碰撞灵感")]
+[ToolMeta(ContinueLoop = true)]
 public class RollDiceTool : ITool
 {
     private readonly IDiceService? _dice;

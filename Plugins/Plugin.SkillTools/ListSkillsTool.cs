@@ -2,7 +2,7 @@ using AgentLilara.PluginSDK;
 
 namespace Plugin.SkillTools;
 
-[ToolMeta(ContinueLoop = false, CapabilitySummary = "技能：列出所有可用技能")]
+[ToolMeta(ContinueLoop = false)]
 public class ListSkillsTool : ITool
 {
     private readonly Func<IReadOnlyList<SkillEntry>> _getSkills;

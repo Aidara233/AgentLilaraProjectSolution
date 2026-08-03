@@ -6,7 +6,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.SystemTools;
 
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "向运行中的子agent追加指令")]
+[ToolMeta(ContinueLoop = true)]
 public class SendInstructionTool : ITool
 {
     private readonly ISubAgentAccess _subAgents;

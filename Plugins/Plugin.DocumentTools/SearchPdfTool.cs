@@ -11,7 +11,7 @@ using UglyToad.PdfPig;
 
 namespace Plugin.DocumentTools;
 
-[ToolMeta(Group = "document", ContinueLoop = true, CapabilitySummary = "在 PDF 文档中搜索关键词")]
+[ToolMeta(Group = "document", ContinueLoop = true)]
 public class SearchPdfTool : FileToolBase
 {
     private const int ContextWindow = 80;

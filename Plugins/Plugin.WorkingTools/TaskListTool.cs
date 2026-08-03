@@ -12,7 +12,7 @@ namespace Plugin.WorkingTools
     /// <summary>
     /// 任务管理工具。创建和追踪待办任务，内容每轮自动注入上下文。
     /// </summary>
-    [ToolMeta(Group = null, ContinueLoop = true, CapabilitySummary = "任务管理：创建和追踪待办任务")]
+    [ToolMeta(Group = null, ContinueLoop = true)]
     public class TaskListTool : ITool, AgentCoreProcessor.Engine.IInjectProvider
     {
         private readonly string _filePath;

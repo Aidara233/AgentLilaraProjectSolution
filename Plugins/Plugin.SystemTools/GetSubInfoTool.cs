@@ -10,7 +10,7 @@ namespace Plugin.SystemTools;
 /// <summary>
 /// 查询子 agent 详细状态：轮次、存活时长、最终输出预览。
 /// </summary>
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "查询子agent详情")]
+[ToolMeta(ContinueLoop = true)]
 public class GetSubInfoTool : ITool
 {
     private readonly ISubAgentAccess _subAgents;

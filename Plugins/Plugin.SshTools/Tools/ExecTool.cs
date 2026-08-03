@@ -6,7 +6,7 @@ using AgentLilara.PluginSDK;
 
 namespace Plugin.SshTools;
 
-[ToolMeta(Group = "ssh", ContinueLoop = true, CapabilitySummary = "在远程服务器上执行命令")]
+[ToolMeta(Group = "ssh", ContinueLoop = true)]
 public class ExecTool : ITool
 {
     private readonly SshGlobalComponent _global;

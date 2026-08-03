@@ -8,7 +8,7 @@ using Plugin.GitTools.Core;
 
 namespace Plugin.GitTools.Tools;
 
-[ToolMeta(Group = "git", ContinueLoop = true, CapabilitySummary = "查看 git 仓库状态")]
+[ToolMeta(Group = "git", ContinueLoop = true)]
 public class GitStatusTool : GitToolBase
 {
     public GitStatusTool(string workspaceDir, GitRunner runner) : base(workspaceDir, runner) { }

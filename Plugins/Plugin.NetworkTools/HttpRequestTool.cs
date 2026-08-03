@@ -6,7 +6,7 @@ using AgentLilara.PluginSDK;
 
 namespace Plugin.NetworkTools;
 
-[ToolMeta(Group = "network", ContinueLoop = true, CapabilitySummary = "发送HTTP请求获取网页/API响应")]
+[ToolMeta(Group = "network", ContinueLoop = true)]
 public class HttpRequestTool : ITool
 {
     private readonly HttpClient _http;

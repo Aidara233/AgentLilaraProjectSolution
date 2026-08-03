@@ -10,7 +10,7 @@ namespace AgentCoreProcessor.Tool.Core
     /// 循环继续信号。执行后触发下一轮循环。
     /// 当模型需要在非 ContinueLoop 工具操作后继续工作时使用。
     /// </summary>
-    [ToolMeta(ContinueLoop = true, EngineTypes = new[] { "express", "session" })]
+    [ToolMeta(ContinueLoop = true)]
     internal class ContinueLoopTool : ITool
     {
         public string Name => "continue_loop";
@@ -27,7 +27,7 @@ namespace AgentCoreProcessor.Tool.Core
     /// <summary>
     /// 循环挂起信号。Working 模式下显式停止循环。不调用则默认继续下一轮。
     /// </summary>
-    [ToolMeta(ContinueLoop = false, EngineTypes = new[] { "express", "session" })]
+    [ToolMeta(ContinueLoop = false)]
     internal class WaitTool : ITool
     {
         public string Name => "wait";

@@ -44,7 +44,7 @@ namespace AgentCoreProcessor.Core
         /// </summary>
         public IReadOnlySet<string>? ExcludedToolNames { get; set; }
 
-        /// <summary>当前引擎类型（如 "channel"、"system"、"review"、"sub-agent"），用于工具过滤。</summary>
+        /// <summary>当前引擎类型（如 "channel"、"task"、"review"），用于工具过滤。</summary>
         public string? EngineType { get; set; }
 
         /// <summary>
@@ -240,7 +240,7 @@ namespace AgentCoreProcessor.Core
         }
 
         /// <summary>
-        /// 系统循环专用：复用 Processor 实例，直接设置历史并调用。
+        /// 复用 Processor 实例，直接设置历史并调用。
         /// </summary>
         public async Task<ModelOutput> InvokeWithHistoryAsync(List<Message> messages)
         {
@@ -269,8 +269,7 @@ namespace AgentCoreProcessor.Core
 
         /// <summary>
         /// 工具对当前权限组的可见性判定。统一走 ToolRegistry.IsVisibleToEngine
-        /// （全局禁用 + PermissionService 黑白名单裁决）。组件工具也接受同一裁决，
-        /// 不再依赖 ToolMeta.EngineTypes 声明（该声明已 inert）。
+        /// （全局禁用 + PermissionService 黑白名单裁决）。组件工具也接受同一裁决。
         /// </summary>
         private bool IsVisibleToEngineOrGlobal(ITool t)
         {

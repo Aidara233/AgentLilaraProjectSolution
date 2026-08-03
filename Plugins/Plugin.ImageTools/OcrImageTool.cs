@@ -3,7 +3,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.ImageTools;
 
-[ToolMeta(Group = "image", ContinueLoop = true, CapabilitySummary = "对图片执行OCR文字识别")]
+[ToolMeta(Group = "image", ContinueLoop = true)]
 public class OcrImageTool : ITool
 {
     private readonly IImageAccess _imageAccess;

@@ -4,7 +4,7 @@ using AgentLilara.PluginSDK;
 
 namespace Plugin.SshTools;
 
-[ToolMeta(Group = "ssh", ContinueLoop = true, CapabilitySummary = "查询异步SSH任务状态")]
+[ToolMeta(Group = "ssh", ContinueLoop = true)]
 public class CheckTaskTool : ITool
 {
     private readonly SshGlobalComponent _global;

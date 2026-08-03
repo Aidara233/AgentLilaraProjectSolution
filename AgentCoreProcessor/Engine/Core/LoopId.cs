@@ -7,8 +7,6 @@ namespace AgentCoreProcessor.Engine;
 /// </summary>
 public static class LoopId
 {
-    public const string System = "system";
-
     public static string ForChannel(int channelId) => $"channel:{channelId}";
     public static string ForTask(string sessionId) => $"task:{sessionId}";
     public static string ForReview(string reviewType) => $"review:{reviewType}";
@@ -24,15 +22,6 @@ public static class LoopId
         return false;
     }
 
-    public static bool IsSystem(string loopId) => loopId == System;
     public static bool IsTask(string loopId) => loopId != null && loopId.StartsWith("task:");
     public static bool IsReview(string loopId) => loopId != null && loopId.StartsWith("review:");
-
-    public static string ExtractLoopType(string loopId)
-    {
-        if (loopId == System) return "system";
-        if (loopId == null) return "unknown";
-        int colonIdx = loopId.IndexOf(':');
-        return colonIdx > 0 ? loopId[..colonIdx] : loopId;
-    }
 }

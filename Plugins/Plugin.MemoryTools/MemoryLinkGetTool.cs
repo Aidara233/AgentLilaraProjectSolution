@@ -8,7 +8,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.MemoryTools;
 
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "记忆关联查询：查看与某条记忆关联的所有记忆")]
+[ToolMeta(ContinueLoop = true)]
 public class MemoryLinkGetTool : ITool
 {
     private readonly IMemoryAccess? memory;

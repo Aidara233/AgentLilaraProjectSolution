@@ -2,7 +2,7 @@ using AgentLilara.PluginSDK;
 
 namespace Plugin.SkillTools;
 
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "技能：调用预定义技能获取指导内容")]
+[ToolMeta(ContinueLoop = true)]
 public class InvokeSkillTool : ITool
 {
     private readonly Func<string, SkillEntry?> _getSkill;

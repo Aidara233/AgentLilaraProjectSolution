@@ -10,7 +10,7 @@ using FileToolKit.Shared;
 
 namespace Plugin.FileOps
 {
-    [ToolMeta(Group = "file", ContinueLoop = true, CapabilitySummary = "按文件名模式搜索文件")]
+    [ToolMeta(Group = "file", ContinueLoop = true)]
     public class SearchFilesTool : FileToolBase
     {
         public SearchFilesTool(string workspaceDir) : base(workspaceDir) { }
@@ -70,7 +70,7 @@ namespace Plugin.FileOps
         }
     }
 
-    [ToolMeta(Group = "file", ContinueLoop = true, CapabilitySummary = "在文件内容中搜索文本")]
+    [ToolMeta(Group = "file", ContinueLoop = true)]
     public class GrepFilesTool : FileToolBase
     {
         public GrepFilesTool(string workspaceDir) : base(workspaceDir) { }

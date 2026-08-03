@@ -3,7 +3,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.ImageTools;
 
-[ToolMeta(Group = "image", ContinueLoop = true, CapabilitySummary = "获取图片的缓存OCR结果")]
+[ToolMeta(Group = "image", ContinueLoop = true)]
 public class GetOcrTool : ITool
 {
     private readonly IImageAccess _imageAccess;

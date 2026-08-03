@@ -2,7 +2,7 @@ using AgentLilara.PluginSDK;
 
 namespace Plugin.SkillTools;
 
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "技能：加载技能的辅助文件")]
+[ToolMeta(ContinueLoop = true)]
 public class LoadSkillFileTool : ITool
 {
     private readonly Func<string, SkillEntry?> _getSkill;

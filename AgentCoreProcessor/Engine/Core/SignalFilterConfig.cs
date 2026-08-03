@@ -147,21 +147,7 @@ public class SignalFilterManager
     {
         return new ConcurrentDictionary<string, SignalFilterConfig>
         {
-            ["channel"] = new SignalFilterConfig(),
-            ["system"] = new SignalFilterConfig
-            {
-                WakeFilter = new HashSet<SignalCategory>
-                {
-                    SignalCategory.Delegation,
-                    SignalCategory.SystemEvent
-                },
-                VisibilityFilter = new HashSet<SignalCategory>
-                {
-                    SignalCategory.Delegation,
-                    SignalCategory.SystemEvent,
-                    SignalCategory.WatchSignal
-                }
-            }
+            ["channel"] = new SignalFilterConfig()
         };
     }
 }

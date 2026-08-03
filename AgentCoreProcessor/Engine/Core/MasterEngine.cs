@@ -346,7 +346,7 @@ namespace AgentCoreProcessor.Engine
                         var reg = ComponentRegistry.Get(compName);
                         if (reg != null && reg.Scope == ComponentScope.Global)
                         {
-                            // 尊重配置：该组件对任一权限组启用则创建（LoopApplicability 已 inert）
+                            // 尊重配置：该组件对任一权限组启用则创建（组件归属由 ComponentConfig 决定）
                             if (config.IsEnabled(compName, "channel", true) ||
                                 config.IsEnabled(compName, "task", true) ||
                                 config.IsEnabled(compName, "review", true))
@@ -873,11 +873,6 @@ namespace AgentCoreProcessor.Engine
         /// <summary>唤醒指定 loopId 的循环（供 GlobalComponentHost / 委托系统 / 子 agent 回报使用）。</summary>
         internal void WakeLoop(string loopId)
         {
-            if (LoopId.IsSystem(loopId))
-            {
-                return;
-            }
-
             if (LoopId.IsChannel(loopId, out var channelId))
             {
                 // 优先查 SessionEngine 是否 Full-claim 了这个频道

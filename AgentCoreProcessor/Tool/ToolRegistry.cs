@@ -125,26 +125,6 @@ namespace AgentCoreProcessor.Tool
             return sb.ToString().TrimEnd();
         }
 
-        public static string GenerateCapabilitySummary(Func<ITool, bool>? filter = null)
-        {
-            var source = filter != null ? _tools.Values.Where(filter) : _tools.Values;
-            var capabilities = source
-                .Select(t => GetMeta(t.Name)?.CapabilitySummary)
-                .Where(c => c != null)
-                .Distinct()
-                .ToList();
-
-            if (capabilities.Count == 0) return "";
-
-            var sb = new StringBuilder();
-            sb.AppendLine("你当前处于轻量对话模式。如果对话涉及以下任何能力，输出 [ESCALATE]你要做什么 切换到工作模式：");
-            foreach (var cap in capabilities)
-                sb.AppendLine($"- {cap}");
-            sb.AppendLine("- 任何需要实际操作而非纯对话的场景");
-            sb.AppendLine("注意：[ESCALATE]后面写上你打算做什么，例如 [ESCALATE]帮你查一下记忆里有没有相关内容");
-            return sb.ToString().TrimEnd();
-        }
-
         private static string GenerateExample(ITool tool)
         {
             var example = new

@@ -12,7 +12,7 @@ namespace Plugin.SystemTools;
 /// 注意：长等待会消耗本 session 工具执行时间；推荐 timeout_ms 在 1-30 秒内。
 /// 若需要异步等待，不调用本工具即可——子 agent 完成时会自动注入 [子会话 N 已完成] 通知。
 /// </summary>
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "等待子agent完成")]
+[ToolMeta(ContinueLoop = true)]
 public class WaitSubTool : ITool
 {
     private readonly ISubAgentAccess _subAgents;

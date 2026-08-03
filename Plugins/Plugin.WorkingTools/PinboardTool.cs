@@ -9,9 +9,9 @@ using AgentLilara.PluginSDK;
 namespace Plugin.WorkingTools
 {
     /// <summary>
-    /// 便签板工具。全局共享的 key-value 存储，系统循环和频道循环都可读写。
+    /// 便签板工具。全局共享的 key-value 存储，所有循环都可读写。
     /// </summary>
-    [ToolMeta(Group = null, ContinueLoop = true, CapabilitySummary = "便签板：持久化的笔记板，可跨轮次保留关键信息")]
+    [ToolMeta(Group = null, ContinueLoop = true)]
     public class PinboardTool : ITool, AgentCoreProcessor.Engine.IInjectProvider
     {
         private readonly string _filePath;

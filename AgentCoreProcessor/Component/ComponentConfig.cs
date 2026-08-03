@@ -1,7 +1,6 @@
 // AgentCoreProcessor/Component/ComponentConfig.cs
 using System.Text.Json;
 using AgentCoreProcessor.Config;
-using AgentLilara.PluginSDK;
 
 namespace AgentCoreProcessor.Component;
 
@@ -49,18 +48,6 @@ internal class ComponentConfig
         return false;
     }
 
-    /// <summary>
-    /// 检查组件是否对指定权限组启用。applicability 参数已 inert（LoopApplicability 不再参与运行时裁决），
-    /// 仅保留签名兼容；组件归属完全由本配置决定。
-    /// </summary>
-    public bool IsEnabled(string componentName, string engineType, bool defaultEnabled, Applicability applicability)
-    {
-        _ = applicability; // inert：LoopApplicability 不再参与裁决
-        if (Components.TryGetValue(componentName, out var entry))
-            return entry.IsEnabled(engineType);
-        return false;
-    }
-
     /// <summary>修改组件在指定引擎类型下的启用状态并持久化。</summary>
     public void SetEnabled(string componentName, string engineType, bool enabled)
     {
@@ -72,9 +59,6 @@ internal class ComponentConfig
         entry.SetEnabled(engineType, enabled);
         Save();
     }
-
-    /// <summary>获取所有已知引擎类型。</summary>
-    public static readonly string[] EngineTypes = ["channel", "task", "review"];
 
     private void Save()
     {

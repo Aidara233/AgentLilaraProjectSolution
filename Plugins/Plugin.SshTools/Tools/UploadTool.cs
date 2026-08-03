@@ -3,7 +3,7 @@ using AgentLilara.PluginSDK;
 
 namespace Plugin.SshTools;
 
-[ToolMeta(Group = "ssh", ContinueLoop = true, CapabilitySummary = "上传文件到远程服务器")]
+[ToolMeta(Group = "ssh", ContinueLoop = true)]
 public class UploadTool : ITool
 {
     private readonly SshGlobalComponent _global;

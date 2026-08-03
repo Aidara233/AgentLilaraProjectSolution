@@ -4,7 +4,7 @@ using AgentLilara.PluginSDK;
 
 namespace Plugin.NetworkTools;
 
-[ToolMeta(Group = "network", ContinueLoop = true, CapabilitySummary = "异步下载文件到Workspace")]
+[ToolMeta(Group = "network", ContinueLoop = true)]
 public class DownloadFileTool : ITool
 {
     private readonly HttpClient _http;

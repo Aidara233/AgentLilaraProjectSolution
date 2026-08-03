@@ -4,7 +4,7 @@ using Renci.SshNet;
 
 namespace Plugin.SshTools;
 
-[ToolMeta(Group = "ssh", ContinueLoop = true, CapabilitySummary = "从远程服务器下载文件")]
+[ToolMeta(Group = "ssh", ContinueLoop = true)]
 public class DownloadTool : ITool
 {
     private readonly SshGlobalComponent _global;

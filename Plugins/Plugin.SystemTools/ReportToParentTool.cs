@@ -11,7 +11,7 @@ namespace Plugin.SystemTools;
 /// 调用方为子 agent 自身（callerLoopId = "session:xxx"），SubAgentAccessAdapter 据此反查自己的 sessionId，
 /// 通过 RuntimeSession.InjectExternal 直接注入父 session 的下一轮上下文。
 /// </summary>
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "向父会话回报进度/完成")]
+[ToolMeta(ContinueLoop = true)]
 public class ReportToParentTool : ITool
 {
     private readonly ISubAgentAccess _subAgents;

@@ -5,7 +5,6 @@ using AgentLilara.PluginSDK.Services;
 namespace Plugin.GroupFileTools;
 
 [Component(Name = "group-file-tools", Scope = ComponentScope.Loop)]
-[LoopApplicability(Channel = Applicability.Enabled)]
 public class GroupFileToolsComponent : LoopComponentBase
 {
     private ILoopComponentContext _ctx = null!;

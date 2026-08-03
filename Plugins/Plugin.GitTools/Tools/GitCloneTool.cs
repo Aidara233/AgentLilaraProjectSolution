@@ -10,7 +10,7 @@ using Plugin.GitTools.Core;
 
 namespace Plugin.GitTools.Tools;
 
-[ToolMeta(Group = "git", ContinueLoop = true, CapabilitySummary = "克隆 git 仓库到 Workspace")]
+[ToolMeta(Group = "git", ContinueLoop = true)]
 public class GitCloneTool : GitToolBase
 {
     private readonly RepoRegistry _repos;

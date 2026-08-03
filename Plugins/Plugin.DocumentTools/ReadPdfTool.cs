@@ -13,7 +13,7 @@ using UglyToad.PdfPig.Outline;
 
 namespace Plugin.DocumentTools;
 
-[ToolMeta(Group = "document", ContinueLoop = true, CapabilitySummary = "读取 PDF 文档内容")]
+[ToolMeta(Group = "document", ContinueLoop = true)]
 public class ReadPdfTool : FileToolBase
 {
     private const int MaxOutputLen = 10000;

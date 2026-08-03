@@ -4,7 +4,6 @@ using AgentLilara.PluginSDK.Services;
 namespace Plugin.DicePool;
 
 [Component(Name = "dice-pool", Scope = ComponentScope.Global)]
-[LoopApplicability(Channel = Applicability.NotApplicable, Review = Applicability.NotApplicable, Task = Applicability.NotApplicable)]
 public class DicePoolComponent : GlobalComponentBase
 {
     private RollDiceTool? _tool;

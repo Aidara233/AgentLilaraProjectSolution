@@ -8,7 +8,7 @@ using Plugin.GitTools.Core;
 
 namespace Plugin.GitTools.Tools;
 
-[ToolMeta(Group = "git", ContinueLoop = true, CapabilitySummary = "提交 git 更改")]
+[ToolMeta(Group = "git", ContinueLoop = true)]
 public class GitCommitTool : GitToolBase
 {
     public GitCommitTool(string workspaceDir, GitRunner runner) : base(workspaceDir, runner) { }

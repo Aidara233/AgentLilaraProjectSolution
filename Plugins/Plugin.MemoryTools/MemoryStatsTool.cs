@@ -7,7 +7,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.MemoryTools;
 
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "记忆统计：查看记忆库容量")]
+[ToolMeta(ContinueLoop = true)]
 public class MemoryStatsTool : ITool
 {
     private readonly IMemoryAccess? memory;

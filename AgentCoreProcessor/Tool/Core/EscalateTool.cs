@@ -6,7 +6,7 @@ using AgentLilara.PluginSDK;
 
 namespace AgentCoreProcessor.Tool.Core
 {
-    [ToolMeta(ContinueLoop = false, EngineTypes = new[] { "express" })]
+    [ToolMeta(ContinueLoop = false)]
     internal class EscalateTool : ITool
     {
         public string Name => "escalate";

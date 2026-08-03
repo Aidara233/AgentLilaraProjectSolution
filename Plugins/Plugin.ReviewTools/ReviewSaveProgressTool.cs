@@ -3,7 +3,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.ReviewTools;
 
-[ToolMeta(Group = "review", EngineTypes = new[] { "review" })]
+[ToolMeta(Group = "review")]
 public class ReviewSaveProgressTool : ITool
 {
     private readonly IToolContext _ctx;

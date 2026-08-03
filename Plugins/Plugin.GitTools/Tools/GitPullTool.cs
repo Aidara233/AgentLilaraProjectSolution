@@ -8,7 +8,7 @@ using Plugin.GitTools.Core;
 
 namespace Plugin.GitTools.Tools;
 
-[ToolMeta(Group = "git", ContinueLoop = true, CapabilitySummary = "从远端拉取 git 更改")]
+[ToolMeta(Group = "git", ContinueLoop = true)]
 public class GitPullTool : GitToolBase
 {
     public GitPullTool(string workspaceDir, GitRunner runner) : base(workspaceDir, runner) { }

@@ -7,7 +7,6 @@ public class SkillEntry
 {
     public required string Name { get; init; }
     public required string Description { get; init; }
-    public string? Engines { get; init; }
     public required string DirectoryPath { get; init; }
 
     /// <summary>主文件路径（SKILL.md）。</summary>
@@ -18,16 +17,6 @@ public class SkillEntry
     {
         var text = File.ReadAllText(MainFilePath);
         return StripFrontmatter(text);
-    }
-
-    /// <summary>检查此 skill 是否对指定引擎类型可用。</summary>
-    public bool IsAvailableFor(string engineType)
-    {
-        if (string.IsNullOrWhiteSpace(Engines))
-            return true;
-
-        var parts = Engines.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        return parts.Any(p => p.Equals(engineType, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>列出目录中的辅助文件（排除 SKILL.md）。</summary>
@@ -67,7 +56,7 @@ public class SkillEntry
         if (!File.Exists(mainFile)) return null;
 
         var text = File.ReadAllText(mainFile);
-        var (name, description, engines) = ParseFrontmatter(text);
+        var (name, description) = ParseFrontmatter(text);
 
         if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(description))
             return null;
@@ -76,21 +65,20 @@ public class SkillEntry
         {
             Name = name,
             Description = description,
-            Engines = engines,
             DirectoryPath = skillDirectory
         };
     }
 
-    private static (string? name, string? description, string? engines) ParseFrontmatter(string text)
+    private static (string? name, string? description) ParseFrontmatter(string text)
     {
         if (!text.StartsWith("---"))
-            return (null, null, null);
+            return (null, null);
 
         var end = text.IndexOf("---", 3);
-        if (end < 0) return (null, null, null);
+        if (end < 0) return (null, null);
 
         var frontmatter = text[3..end];
-        string? name = null, description = null, engines = null;
+        string? name = null, description = null;
 
         foreach (var line in frontmatter.Split('\n'))
         {
@@ -107,11 +95,10 @@ public class SkillEntry
             {
                 case "name": name = value; break;
                 case "description": description = value; break;
-                case "engines": engines = value; break;
             }
         }
 
-        return (name, description, engines);
+        return (name, description);
     }
 
     private static string StripFrontmatter(string text)

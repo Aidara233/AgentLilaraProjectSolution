@@ -14,7 +14,7 @@ using SharpCompress.Writers;
 
 namespace Plugin.FileOps
 {
-    [ToolMeta(Group = "file", ContinueLoop = true, CapabilitySummary = "创建压缩归档")]
+    [ToolMeta(Group = "file", ContinueLoop = true)]
     public class ArchiveCreateTool : FileToolBase
     {
         public ArchiveCreateTool(string workspaceDir) : base(workspaceDir) { }
@@ -142,7 +142,7 @@ namespace Plugin.FileOps
         }
     }
 
-    [ToolMeta(Group = "file", ContinueLoop = true, CapabilitySummary = "解压归档文件")]
+    [ToolMeta(Group = "file", ContinueLoop = true)]
     public class ArchiveExtractTool : FileToolBase
     {
         public ArchiveExtractTool(string workspaceDir) : base(workspaceDir) { }
@@ -228,7 +228,7 @@ namespace Plugin.FileOps
         }
     }
 
-    [ToolMeta(Group = "file", ContinueLoop = true, CapabilitySummary = "列出归档内容")]
+    [ToolMeta(Group = "file", ContinueLoop = true)]
     public class ArchiveListTool : FileToolBase
     {
         public ArchiveListTool(string workspaceDir) : base(workspaceDir) { }

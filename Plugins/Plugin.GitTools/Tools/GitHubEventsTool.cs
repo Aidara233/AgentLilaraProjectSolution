@@ -12,7 +12,7 @@ using Plugin.GitTools.Models;
 
 namespace Plugin.GitTools.Tools;
 
-[ToolMeta(Group = "github", ContinueLoop = true, CapabilitySummary = "查看 GitHub Webhook 事件")]
+[ToolMeta(Group = "github", ContinueLoop = true)]
 public class GitHubEventsTool : GitToolBase
 {
     private readonly string _instanceDir;

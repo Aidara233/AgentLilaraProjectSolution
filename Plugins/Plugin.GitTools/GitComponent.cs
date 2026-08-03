@@ -12,7 +12,6 @@ using Plugin.GitTools.Tools;
 namespace Plugin.GitTools;
 
 [Component(Name = "git-tools", Scope = ComponentScope.Loop)]
-[LoopApplicability(Channel = Applicability.Enabled, Review = Applicability.Disabled, Task = Applicability.Enabled)]
 public class GitComponent : LoopComponentBase
 {
     private ILoopComponentContext _ctx = null!;

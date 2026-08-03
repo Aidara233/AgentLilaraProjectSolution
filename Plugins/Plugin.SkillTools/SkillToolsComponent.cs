@@ -4,7 +4,6 @@ using AgentLilara.PluginSDK.Services;
 namespace Plugin.SkillTools;
 
 [Component(Name = "skill-tools", Scope = ComponentScope.Global)]
-[LoopApplicability(Review = Applicability.NotApplicable)]
 public class SkillToolsComponent : GlobalComponentBase
 {
     private readonly Dictionary<string, SkillEntry> _skills = new(StringComparer.OrdinalIgnoreCase);
@@ -58,14 +57,11 @@ public class SkillToolsComponent : GlobalComponentBase
 
     public override string? BuildPromptSection(LoopInfo caller)
     {
-        var available = _skills.Values
-            .Where(s => s.IsAvailableFor(caller.LoopType))
-            .ToList();
-
-        if (available.Count == 0)
+        _ = caller;
+        if (_skills.Count == 0)
             return null;
 
-        var lines = available.Select(s => $"  - {s.Name}: {s.Description}");
+        var lines = _skills.Values.Select(s => $"  - {s.Name}: {s.Description}");
         return $"可用技能（通过 invoke_skill 调用）:\n{string.Join("\n", lines)}";
     }
 

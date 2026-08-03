@@ -4,10 +4,8 @@ using AgentLilara.PluginSDK.Services;
 namespace Plugin.CrossLoopTools;
 
 [Component(Name = "cross-loop", Scope = ComponentScope.Loop)]
-[LoopApplicability(Channel = Applicability.Enabled)]
 public class CrossLoopComponent : LoopComponentBase
 {
-    private ILoopComponentContext _ctx = null!;
     private IAgentMessaging? _messaging;
     private SendMessageTool? _sendMessage;
     private ListLoopsTool? _listLoops;
@@ -31,17 +29,11 @@ public class CrossLoopComponent : LoopComponentBase
 
     public override Task OnInitAsync(ILoopComponentContext context, InitReason reason)
     {
-        _ctx = context;
         _messaging = context.GetService<IAgentMessaging>();
 
         if (_messaging != null)
         {
             _sendMessage = new SendMessageTool(_messaging);
-        }
-
-        // list_loops 仅系统循环可用
-        if (_ctx.LoopType == "system" && _messaging != null)
-        {
             _listLoops = new ListLoopsTool(_messaging);
         }
 

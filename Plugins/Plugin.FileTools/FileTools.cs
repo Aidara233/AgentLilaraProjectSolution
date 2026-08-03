@@ -8,7 +8,7 @@ using FileToolKit.Shared;
 
 namespace Plugin.FileTools
 {
-    [ToolMeta(Group = "file", ContinueLoop = true, CapabilitySummary = "读取文本文件内容")]
+    [ToolMeta(Group = "file", ContinueLoop = true)]
     public class ReadTextTool : FileToolBase
     {
         public ReadTextTool(string workspaceDir) : base(workspaceDir) { }
@@ -98,7 +98,7 @@ namespace Plugin.FileTools
         }
     }
 
-    [ToolMeta(Group = "file", ContinueLoop = true, CapabilitySummary = "写入或追加文本文件")]
+    [ToolMeta(Group = "file", ContinueLoop = true)]
     public class WriteTextTool : FileToolBase
     {
         public WriteTextTool(string workspaceDir) : base(workspaceDir) { }
@@ -146,7 +146,7 @@ namespace Plugin.FileTools
         }
     }
 
-    [ToolMeta(Group = "file", ContinueLoop = true, CapabilitySummary = "列出目录内容")]
+    [ToolMeta(Group = "file", ContinueLoop = true)]
     public class ListDirTool : FileToolBase
     {
         public ListDirTool(string workspaceDir) : base(workspaceDir) { }
@@ -318,7 +318,7 @@ namespace Plugin.FileTools
         }
     }
 
-    [ToolMeta(Group = "file", ContinueLoop = true, CapabilitySummary = "局部修改文本文件")]
+    [ToolMeta(Group = "file", ContinueLoop = true)]
     public class UpdateTextTool : FileToolBase
     {
         public UpdateTextTool(string workspaceDir) : base(workspaceDir) { }

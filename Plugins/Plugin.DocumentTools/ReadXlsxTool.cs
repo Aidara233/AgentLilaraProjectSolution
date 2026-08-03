@@ -13,7 +13,7 @@ using FileToolKit.Shared;
 
 namespace Plugin.DocumentTools;
 
-[ToolMeta(Group = "document", ContinueLoop = true, CapabilitySummary = "读取 Excel 表格内容")]
+[ToolMeta(Group = "document", ContinueLoop = true)]
 public class ReadXlsxTool : FileToolBase
 {
     private const int MaxCells = 5000;

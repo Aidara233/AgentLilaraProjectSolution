@@ -7,7 +7,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.SystemTools;
 
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "列出活跃的子agent")]
+[ToolMeta(ContinueLoop = true)]
 public class ListSubAgentsTool : ITool
 {
     private readonly ISubAgentAccess _subAgents;

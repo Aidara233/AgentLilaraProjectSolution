@@ -10,7 +10,7 @@ using Plugin.GitTools.Core;
 
 namespace Plugin.GitTools.Tools;
 
-[ToolMeta(Group = "github", ContinueLoop = true, CapabilitySummary = "管理 GitHub Pull Requests")]
+[ToolMeta(Group = "github", ContinueLoop = true)]
 public class GitHubPrTool : GitToolBase
 {
     private readonly GitHubClient _gh;

@@ -8,7 +8,7 @@ using Plugin.GitTools.Core;
 
 namespace Plugin.GitTools.Tools;
 
-[ToolMeta(Group = "git", ContinueLoop = true, CapabilitySummary = "管理 git 分支")]
+[ToolMeta(Group = "git", ContinueLoop = true)]
 public class GitBranchTool : GitToolBase
 {
     public GitBranchTool(string workspaceDir, GitRunner runner) : base(workspaceDir, runner) { }

@@ -13,7 +13,7 @@ using FileToolKit.Shared;
 
 namespace Plugin.DocumentTools;
 
-[ToolMeta(Group = "document", ContinueLoop = true, CapabilitySummary = "读取 Word 文档内容")]
+[ToolMeta(Group = "document", ContinueLoop = true)]
 public class ReadDocxTool : FileToolBase
 {
     private const int MaxOutputLen = 10000;

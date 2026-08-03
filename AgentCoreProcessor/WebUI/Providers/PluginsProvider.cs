@@ -661,18 +661,20 @@ internal class PluginComponentsSource : IDataSource
         if (plugin == null)
             return Task.FromResult(new DataResult { Data = new JsonArray() });
 
+        var config = ComponentConfig.Load();
         var arr = new JsonArray();
         foreach (var compName in plugin.ComponentNames)
         {
             var reg = ComponentRegistry.Get(compName);
             if (reg == null) continue;
+            var defaultEnabled = reg.DefaultEnabled;
 
             arr.Add(new JsonObject
             {
                 ["componentName"] = compName,
                 ["scope"] = reg.Scope.ToString(),
-                ["channel"] = reg.ChannelApplicability.ToString(),
-                ["system"] = reg.TaskApplicability.ToString(),
+                ["channel"] = config.IsEnabled(compName, "channel", defaultEnabled) ? "启用" : "禁用",
+                ["task"] = config.IsEnabled(compName, "task", defaultEnabled) ? "启用" : "禁用",
             });
         }
         return Task.FromResult(new DataResult { Data = arr, TotalCount = arr.Count });
@@ -896,9 +898,9 @@ internal class ComponentPermTogglesSource : IDataSource
         var data = new JsonObject
         {
             ["componentName"] = _selectedComponent,
-            ["channel"] = config.IsEnabled(_selectedComponent, "channel", defaultEnabled, reg?.ChannelApplicability ?? Applicability.Enabled) ? "启用" : "禁用",
-            ["task"] = config.IsEnabled(_selectedComponent, "task", defaultEnabled, reg?.TaskApplicability ?? Applicability.Enabled) ? "启用" : "禁用",
-            ["review"] = config.IsEnabled(_selectedComponent, "review", defaultEnabled, reg?.ReviewApplicability ?? Applicability.Enabled) ? "启用" : "禁用",
+            ["channel"] = config.IsEnabled(_selectedComponent, "channel", defaultEnabled) ? "启用" : "禁用",
+            ["task"] = config.IsEnabled(_selectedComponent, "task", defaultEnabled) ? "启用" : "禁用",
+            ["review"] = config.IsEnabled(_selectedComponent, "review", defaultEnabled) ? "启用" : "禁用",
         };
         return Task.FromResult(new DataResult { Data = data });
     }
@@ -922,14 +924,7 @@ internal class ComponentPermTogglesSource : IDataSource
         var config = ComponentConfig.Load();
         var reg = ComponentRegistry.Get(_selectedComponent);
         var defaultEnabled = reg?.DefaultEnabled ?? true;
-        var applicability = engineType switch
-        {
-            "channel" => reg?.ChannelApplicability ?? Applicability.Enabled,
-            "task" => reg?.TaskApplicability ?? Applicability.Enabled,
-            "review" => reg?.ReviewApplicability ?? Applicability.Enabled,
-            _ => Applicability.Enabled
-        };
-        var current = config.IsEnabled(_selectedComponent, engineType, defaultEnabled, applicability);
+        var current = config.IsEnabled(_selectedComponent, engineType, defaultEnabled);
         var target = !current;
 
         try

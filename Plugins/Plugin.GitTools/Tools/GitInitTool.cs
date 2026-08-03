@@ -9,7 +9,7 @@ using Plugin.GitTools.Core;
 
 namespace Plugin.GitTools.Tools;
 
-[ToolMeta(Group = "git", ContinueLoop = true, CapabilitySummary = "初始化一个新的 git 仓库")]
+[ToolMeta(Group = "git", ContinueLoop = true)]
 public class GitInitTool : GitToolBase
 {
     private readonly RepoRegistry _repos;

@@ -13,7 +13,7 @@ using FileToolKit.Shared;
 
 namespace Plugin.DocumentTools;
 
-[ToolMeta(Group = "document", ContinueLoop = true, CapabilitySummary = "在 Word 文档中搜索关键词")]
+[ToolMeta(Group = "document", ContinueLoop = true)]
 public class SearchDocxTool : FileToolBase
 {
     private const int ContextWindow = 50;

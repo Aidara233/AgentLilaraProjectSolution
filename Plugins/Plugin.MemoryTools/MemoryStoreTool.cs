@@ -7,7 +7,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.MemoryTools;
 
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "记忆存储：写入主记忆库或临时记忆库")]
+[ToolMeta(ContinueLoop = true)]
 public class MemoryStoreTool : ITool
 {
     private readonly IMemoryAccess? memory;

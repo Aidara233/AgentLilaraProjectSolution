@@ -12,7 +12,7 @@ using FileToolKit.Shared;
 
 namespace Plugin.DocumentTools;
 
-[ToolMeta(Group = "document", ContinueLoop = true, CapabilitySummary = "创建或覆盖 Word 文档")]
+[ToolMeta(Group = "document", ContinueLoop = true)]
 public class WriteDocxTool : FileToolBase
 {
     public WriteDocxTool(string workspaceDir) : base(workspaceDir) { }

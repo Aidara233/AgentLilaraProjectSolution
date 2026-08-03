@@ -10,7 +10,7 @@ namespace AgentCoreProcessor.Tool.Core
     /// 连接到频道（Full 占用）：抢占频道、停其 express，订阅消息（normal+mention），可发言。
     /// 实际的 claim/订阅/状态更新由 RuntimeSession 在工具副作用段执行（工具本身够不到 session 私有状态）。
     /// </summary>
-    [ToolMeta(ContinueLoop = true, EngineTypes = new[] { "session" })]
+    [ToolMeta(ContinueLoop = true)]
     internal class ConnectChannelTool : ITool
     {
         public string Name => "connect_channel";
@@ -35,7 +35,7 @@ namespace AgentCoreProcessor.Tool.Core
     /// 旁听频道（Listen，非独占）：订阅消息但不占用、不打断该频道 express，<b>不能发言</b>。
     /// 适合只看不说的观察场景。
     /// </summary>
-    [ToolMeta(ContinueLoop = true, EngineTypes = new[] { "session" })]
+    [ToolMeta(ContinueLoop = true)]
     internal class ListenChannelTool : ITool
     {
         public string Name => "listen_channel";
@@ -59,7 +59,7 @@ namespace AgentCoreProcessor.Tool.Core
     /// <summary>
     /// 断开当前频道连接：释放占用（恢复该频道 express）、退订消息。断开后无法发言直到再次连接。
     /// </summary>
-    [ToolMeta(ContinueLoop = true, EngineTypes = new[] { "session" })]
+    [ToolMeta(ContinueLoop = true)]
     internal class DisconnectChannelTool : ITool
     {
         public string Name => "disconnect_channel";

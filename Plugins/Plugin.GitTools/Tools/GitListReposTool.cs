@@ -10,7 +10,7 @@ using Plugin.GitTools.Core;
 
 namespace Plugin.GitTools.Tools;
 
-[ToolMeta(Group = "git", ContinueLoop = true, CapabilitySummary = "列出已注册的本地仓库")]
+[ToolMeta(Group = "git", ContinueLoop = true)]
 public class GitListReposTool : GitToolBase
 {
     private readonly RepoRegistry _repos;

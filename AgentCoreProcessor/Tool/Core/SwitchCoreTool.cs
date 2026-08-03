@@ -12,8 +12,7 @@ namespace AgentCoreProcessor.Tool.Core
     /// 可用核列表由会话类型白名单（Storage/Session/{type}.json 的 AllowedCores）决定，
     /// 切换只换模型配置执行器，不碰历史/端口/组件（session 定上下文、core 定模型）。
     /// </summary>
-    [ToolMeta(EngineTypes = new[] { "channel", "task" }, ContinueLoop = true,
-        CapabilitySummary = "switch_core: 切换到本会话可用的另一个核心配置（换模型/提示词）")]
+    [ToolMeta(ContinueLoop = true)]
     internal class SwitchCoreTool : ITool
     {
         private readonly RuntimeSession _session;

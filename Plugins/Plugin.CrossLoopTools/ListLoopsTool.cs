@@ -4,7 +4,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.CrossLoopTools;
 
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "列出活跃循环（仅系统循环可用）")]
+[ToolMeta(ContinueLoop = true)]
 public class ListLoopsTool : ITool
 {
     private readonly IAgentMessaging _messaging;
@@ -12,7 +12,7 @@ public class ListLoopsTool : ITool
     public ListLoopsTool(IAgentMessaging messaging) => _messaging = messaging;
 
     public string Name => "list_loops";
-    public string Description => "列出当前系统内所有活跃循环的 ID。仅系统循环可调用此工具。";
+    public string Description => "列出当前所有活跃循环的 ID。";
 
     public IReadOnlyList<ToolParameter> Parameters => [];
 
@@ -28,7 +28,7 @@ public class ListLoopsTool : ITool
         var lines = loopIds.OrderBy(id =>
         {
             var t = id.Contains(':') ? id[..id.IndexOf(':')] : id;
-            return t switch { "system" => "0", "channel" => "1", "task" => "2", _ => "9" } + id;
+            return t switch { "channel" => "1", "task" => "2", _ => "9" } + id;
         }).Select(id => $"  {id}");
 
         return Task.FromResult(new ToolResult

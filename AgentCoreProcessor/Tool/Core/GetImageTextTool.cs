@@ -8,7 +8,7 @@ using AgentLilara.PluginSDK;
 
 namespace AgentCoreProcessor.Tool.Core
 {
-    [ToolMeta(ContinueLoop = true, EngineTypes = new[] { "session" })]
+    [ToolMeta(ContinueLoop = true)]
     internal class GetImageTextTool : ITool
     {
         public string Name => "get_image_text";

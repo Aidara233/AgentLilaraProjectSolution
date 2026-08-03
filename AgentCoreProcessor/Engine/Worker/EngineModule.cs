@@ -1,7 +1,5 @@
 using System;
-using System.Collections.Generic;
 using System.Threading.Tasks;
-using AgentCoreProcessor.Tool;
 
 namespace AgentCoreProcessor.Engine
 {
@@ -43,8 +41,6 @@ namespace AgentCoreProcessor.Engine
         // ── 保留接口 ──
 
         public virtual void Attach(ILoopBus bus) { }
-
-        public virtual IEnumerable<ITool> GetTools(EngineMode mode) => [];
 
         public virtual void Reset() { }
     }

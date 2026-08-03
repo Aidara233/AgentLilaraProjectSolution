@@ -3,7 +3,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.Currency;
 
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "商品购买：使用货币购买虚拟商品（即买即用）")]
+[ToolMeta(ContinueLoop = true)]
 public class BuyTool : ITool
 {
     private readonly IProductRegistry? _registry;

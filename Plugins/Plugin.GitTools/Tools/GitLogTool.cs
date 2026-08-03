@@ -8,7 +8,7 @@ using Plugin.GitTools.Core;
 
 namespace Plugin.GitTools.Tools;
 
-[ToolMeta(Group = "git", ContinueLoop = true, CapabilitySummary = "查看 git 提交历史")]
+[ToolMeta(Group = "git", ContinueLoop = true)]
 public class GitLogTool : GitToolBase
 {
     public GitLogTool(string workspaceDir, GitRunner runner) : base(workspaceDir, runner) { }

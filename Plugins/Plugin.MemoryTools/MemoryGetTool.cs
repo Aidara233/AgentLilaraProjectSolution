@@ -7,7 +7,7 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.MemoryTools;
 
-[ToolMeta(ContinueLoop = true, CapabilitySummary = "记忆查询：按 ID 获取单条记忆")]
+[ToolMeta(ContinueLoop = true)]
 public class MemoryGetTool : ITool
 {
     private readonly IMemoryAccess? memory;

@@ -13,7 +13,7 @@ using FileToolKit.Shared;
 
 namespace Plugin.DocumentTools;
 
-[ToolMeta(Group = "document", ContinueLoop = true, CapabilitySummary = "在 Excel 表格中搜索关键词")]
+[ToolMeta(Group = "document", ContinueLoop = true)]
 public class SearchXlsxTool : FileToolBase
 {
     private const int MaxResults = 50;

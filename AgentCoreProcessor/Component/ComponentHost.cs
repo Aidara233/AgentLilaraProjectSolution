@@ -69,7 +69,7 @@ internal class ComponentHost
     {
         if (finalComponentIds != null)
         {
-            // 仅加载指定列表内的组件（归属由 ComponentConfig 决定，LoopApplicability 已 inert）
+            // 仅加载指定列表内的组件（组件归属由 ComponentConfig 决定）
             var nameSet = new HashSet<string>(finalComponentIds, StringComparer.OrdinalIgnoreCase);
             foreach (var reg in ComponentRegistry.GetLoopComponents(_loopType))
             {

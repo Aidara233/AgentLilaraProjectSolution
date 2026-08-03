@@ -13,7 +13,7 @@ namespace Plugin.WorkingTools
     /// 缓存列表工具。钉住工具返回的长文本结果，使其在后续轮次持续可见。
     /// 每个 notebook（频道/引擎）独立存储。
     /// </summary>
-    [ToolMeta(Group = null, ContinueLoop = true, CapabilitySummary = "缓存列表：钉住重要的工具结果，避免滚出上下文")]
+    [ToolMeta(Group = null, ContinueLoop = true)]
     public class RetainListTool : ITool, AgentCoreProcessor.Engine.IInjectProvider
     {
         private readonly string _baseDir;
