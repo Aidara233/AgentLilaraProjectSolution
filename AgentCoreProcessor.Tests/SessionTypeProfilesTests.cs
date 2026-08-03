@@ -106,6 +106,7 @@ public class SessionTypeProfilesTests
         // 白名单工具集
         Assert.Contains("escalate", profile.PermissionTools);
         Assert.Contains("speak", profile.PermissionTools);
+        Assert.Contains("connect_channel", profile.PermissionTools); // 初始化连接频道
         // 记忆只读：无写工具
         Assert.DoesNotContain("memory_store", profile.PermissionTools);
         Assert.DoesNotContain("memory_update", profile.PermissionTools);

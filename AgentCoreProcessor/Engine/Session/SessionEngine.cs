@@ -144,6 +144,10 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
         {
             var firstChannel = spec.InputPorts.First().Value.ChannelId;
             var claimed = ClaimChannel(session.SessionId, firstChannel, ClaimLevel.Full);
+            // 同步连接状态：speak 目标频道 + escalate 读 CurrentChannelId 都依赖 _connected。
+            // 无 connect_channel init-action 时（express 直连端口），此处是唯一设置点。
+            if (claimed)
+                session.ConnectedChannel.Set(firstChannel, ConnectionMode.Full);
             Signal.Event(LogGroup.Engine, "Session AutoClaim 频道",
                 new { sessionId = session.SessionId, channelId = firstChannel, claimed, claimer = GetFullClaimer(firstChannel) });
         }
@@ -324,6 +328,9 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
     /// <summary>
     /// 为频道创建 express 会话（频道层调度：无占用消息到达 / 冷启动）。
     /// express 会话 AutoClaim Full → 顶层池持有 claim。频道已被会话占用则返回 null。
+    /// 直接 claim + 订阅 normal/mention 端口（不走 connect_channel init-action——
+    /// 该工具需 permission 白名单且与 AutoClaim 重复；express 是轻量被动响应，端口即连接）。
+    /// 会话身份/模式提示词由 SessionTypeProfile.PromptFiles（express_workflow.txt）加载，InitialState 留空。
     /// </summary>
     public IRuntimeSession? CreateExpressSessionForChannel(int channelId)
     {
@@ -337,13 +344,14 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
         {
             Type = "express",
             AutoClaimChannel = true,
-            InputPorts = new Dictionary<string, PortSpec>(StringComparer.OrdinalIgnoreCase),
-            OutputPorts = new Dictionary<string, string>(),
-            InitActions = new List<ToolCall>
+            InputPorts = new Dictionary<string, PortSpec>(StringComparer.OrdinalIgnoreCase)
             {
-                new() { Tool = "connect_channel", Inputs = new List<string> { channelId.ToString() } }
+                // express 全量占用：normal 攒权重 + mention 即时。端口即连接（AutoClaim 用首个 channelId）。
+                ["ch0:normal"] = new PortSpec { ChannelId = channelId, SubStream = "normal", Weight = 5, PreloadHistory = false },
+                ["ch0:mention"] = new PortSpec { ChannelId = channelId, SubStream = "mention", Weight = 100, PreloadHistory = false },
             },
-            InitialState = "[轻量对话模式]\n你是这个频道的轻量对话助手，被动响应。用 speak 简短回复；需要复杂操作（查记忆/管理文件/委托任务）时用 escalate 切换到工作模式。",
+            OutputPorts = new Dictionary<string, string>(),
+            InitialState = null,
         });
     }
 
@@ -364,13 +372,15 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
         {
             Type = "channel",
             AutoClaimChannel = true,
-            InputPorts = new Dictionary<string, PortSpec>(StringComparer.OrdinalIgnoreCase),
-            OutputPorts = new Dictionary<string, string>(),
-            InitActions = new List<ToolCall>
+            InputPorts = new Dictionary<string, PortSpec>(StringComparer.OrdinalIgnoreCase)
             {
-                new() { Tool = "connect_channel", Inputs = new List<string> { channelId.ToString() } }
+                // working 全量占用：escalate 后同池已 TakeOver 到本 id，端口即连接（AutoClaim 幂等命中）
+                ["ch0:normal"] = new PortSpec { ChannelId = channelId, SubStream = "normal", Weight = 5, PreloadHistory = false },
+                ["ch0:mention"] = new PortSpec { ChannelId = channelId, SubStream = "mention", Weight = 100, PreloadHistory = false },
             },
-            InitialState = $"用户请求切换到工作模式，原因：{reason}\n（保持在工作模式陪用户继续；只有确实不再需要工作模式时才用 end_session 退回轻量对话。需要等人回复时用 wait 挂起。）",
+            OutputPorts = new Dictionary<string, string>(),
+            // 模式身份提示词由 channel.json PromptFiles 加载；此处只放实例特有声明的 escalate 原因
+            InitialState = $"用户请求切换到工作模式，原因：{reason}",
             ParentSessionId = expressSession.SessionId,
         };
 

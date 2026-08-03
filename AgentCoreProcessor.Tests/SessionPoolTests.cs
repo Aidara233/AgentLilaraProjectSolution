@@ -1,6 +1,7 @@
 // AgentCoreProcessor.Tests/SessionPoolTests.cs
 using AgentCoreProcessor.Engine.Session;
 using AgentLilara.PluginSDK;
+using AgentLilara.PluginSDK.Services;
 using Xunit;
 
 namespace AgentCoreProcessor.Tests;
@@ -165,5 +166,54 @@ public class SessionPoolTests
         engine.ReleaseSessionClaims("child");
 
         Assert.Null(engine.ResolveEffectiveParent("child")); // 子池已从父移除
+    }
+
+    // ── express escalate → working（同池换活跃 session，claim 原地不动）──
+
+    [Fact]
+    public async Task Escalate_same_pool_swap_claim_stays()
+    {
+        var engine = TestHost.BuildSessionEngineWithFakeSession("express", alive: true); // channel 1
+        var expressRs = TestHost.GetFakeSession(engine, "express");
+        // 用反射设置 _connected（fake session 未初始化该字段）
+        var connected = new ConnectedChannelState();
+        connected.Set(1, ConnectionMode.Full);
+        typeof(RuntimeSession).GetField("_connected", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+            ?.SetValue(expressRs, connected);
+
+        var working = await engine.CreateFromEscalateAsync(expressRs, "需要查文件");
+
+        // 同一池换活跃 session：claim 保持，活跃 session 变 working
+        Assert.Equal(working.SessionId, engine.GetFullClaimer(1));
+        Assert.True(engine.IsChannelClaimed(1));
+        // express 是 working 的 ParentSessionId（子链关系）
+        Assert.Equal("express", working.ParentSessionId);
+        // express 仍可解析到池（retired member），working 是活跃
+        Assert.Equal("session:" + working.SessionId, engine.ResolveActiveSession("session:express"));
+    }
+
+    [Fact]
+    public void CreateExpressSession_claims_channel()
+    {
+        var engine = TestHost.BuildSessionEngineWithFakeSession("unused", alive: false, registerInPool: false);
+
+        var session = engine.CreateExpressSessionForChannel(42);
+
+        Assert.NotNull(session);
+        var rs = Assert.IsType<RuntimeSession>(session);
+        Assert.Equal("express", rs.Type);
+        Assert.Equal(rs.SessionId, engine.GetFullClaimer(42)); // 顶层池持有 claim
+        Assert.True(engine.IsChannelClaimed(42));
+    }
+
+    [Fact]
+    public void CreateExpressSession_skips_when_channel_claimed()
+    {
+        var engine = TestHost.BuildSessionEngineWithFakeSession("working", alive: true); // channel 1
+
+        var session = engine.CreateExpressSessionForChannel(1); // 已被 working 占用
+
+        Assert.Null(session);
+        Assert.Equal("working", engine.GetFullClaimer(1));
     }
 }

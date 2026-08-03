@@ -101,6 +101,15 @@ internal static class TestHost
         return (bool)wakeField.GetValue(session)!;
     }
 
+    /// <summary>获取预置的 fake RuntimeSession 实例（供测试操作其连接状态等）。</summary>
+    public static RuntimeSession GetFakeSession(SessionEngine engine, string sessionId)
+    {
+        var sessions = GetSessions(engine);
+        if (!sessions.TryGetValue(sessionId, out var session))
+            throw new InvalidOperationException($"fake session {sessionId} 未找到");
+        return session;
+    }
+
     private static ConcurrentDictionary<string, RuntimeSession> GetSessions(SessionEngine engine)
     {
         var field = typeof(SessionEngine).GetField("_sessions",

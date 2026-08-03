@@ -159,6 +159,7 @@ internal static class SessionTypeProfiles
             {
                 "speak", "thinking", "send_media", "send_file", "adapter_action",
                 "escalate", "wait",
+                "connect_channel", "disconnect_channel",
                 "memory_get", "memory_list", "memory_search", "memory_stats", "memory_link_get"
             }
         },
