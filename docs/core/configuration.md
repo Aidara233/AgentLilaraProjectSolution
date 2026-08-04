@@ -133,7 +133,7 @@ Persona.txt 作为普通 prompt 文件处理。需要 Persona 的 Core 在 `prom
 | `RelationClassificationCore.json` | 模板占位 | 模板占位 | 关系分类（单中心 + N 候选 → support 值） |
 | `SleepTalkCore.json` | 模板占位 | 模板占位 | 梦话生成 |
 
-**遗留配置（对应 Core 类已删除，json 可清理）：** `CombineCore.json` / `ConsolidationCore.json` / `ConsolidationFinalCore.json` / `DedupCore.json` / `LinkCore.json` / `MemoryQueryCore.json` / `SummarizationCore.json` / `SystemCore.json`
+**遗留配置（对应 Core 类已删除，Storage/Core 下的 json 已清理，2026-08-04）：** `CombineCore` / `ConsolidationCore` / `ConsolidationFinalCore` / `DedupCore` / `LinkCore` / `MemoryQueryCore` / `SummarizationCore` / `SystemCore`。对应模板保留在 `templates/Core/` 归档，如有需要可从模板重建。
 
 > 注：`VisionProvider.json`、`OcrProvider.json`、`EmbeddingProvider.json` 不是 Core 配置，而是独立 Provider 的配置。
 
