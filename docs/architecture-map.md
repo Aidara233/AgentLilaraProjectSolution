@@ -1,6 +1,6 @@
 # Agent Lilara 架构地图
 
-多平台 AI Agent 框架。三层架构：框架层（ExpressEngine）+ 引擎层（8个 ISubEngine）+ 会话层（RuntimeSession 统一 agent 循环）。
+多平台 AI Agent 框架。会话体系：频道响应已全面会话化（express/working/task 都是 RuntimeSession，由 SessionEngine 的资源池树管理），基础设施引擎层（ISubEngine）+ 会话层（RuntimeSession 统一 agent 循环）。
 
 技术栈：.NET 8 / C# / SQLite-net-pcl / Anthropic SDK (Claude) / OpenAI SDK / SiliconFlow API / bge-large-zh-v1.5 embedding
 
@@ -26,7 +26,7 @@ AgentLilaraProjectSolution/
 │     │     ├── Messaging/ MessageEngine（双向消息枢纽+去重分发）
 │     │     ├── AdapterEng/ AdapterEngine（适配器生命周期+频道融合）
 │     │     ├── Extraction/ ExtractionEngine + EavesdropTask（记忆提取+监听检测）
-│     │     ├── Worker/   ExpressEngine（框架层，Express响应）
+│     │     ├── Worker/   ExpressEngineSpawnCheck（渠道层调度：express 会话孵化）
 │     │     ├── Timer/    TimerEngine（心跳30s）
 │     │     ├── Dream/    DreamEngine + ReviewEngine + EvaluationEngine
 │     │     ├── Vision/   VisionEngine（图片描述+OCR）
@@ -77,11 +77,11 @@ PluginLoader 扫描子目录 → 读 `plugin.json` → 加载 `entry` DLL。无�
 
 ## 引擎生态
 
-三层架构：框架层（ExpressEngine，常驻 Express 响应）→ 引擎层（8个 ISubEngine）→ 会话层（RuntimeSession，按需创建）。
+会话体系：基础设施引擎层（ISubEngine）+ 会话层（RuntimeSession，按需创建）。频道响应全面会话化（express 也是会话，无独立 ExpressEngine 引擎）。
 
 ### 上下文机制
 
-**ChannelContextService** 为 ExpressEngine 与 RuntimeSession 共用的上下文构建服务，统一格式化频道上下文。该服务输出 `ChannelContextState`，包含当前频道会话的完整上下文快照：
+**ChannelContextService** 为 express 与 working 等会话共用的上下文构建服务，统一格式化频道上下文。该服务输出 `ChannelContextState`，包含当前频道会话的完整上下文快照：
 - **参与者信息**：从数据库派生（实时查询），无累积状态，反映当前频道活跃用户
 - **消息历史**：按规则保留（最近 N 条+关键事件）
 - **系统上下文**：频道配置+睡眠状态+模式标记
@@ -91,8 +91,11 @@ PluginLoader 扫描子目录 → 读 `plugin.json` → 加载 `entry` DLL。无�
 - 初始状态（InitialState）：Session 创建时的指令，排在所有频道上下文之后，驱动 Session 行为
 
 这种设计避免参与者累积过期状态，同时支持 Session 跨多个频道关联信息。
-框架层（非 ISubEngine，随进程启动）:
-  ExpressEngine — Express 响应 + 冲动值决策 + escalate → 创建 WorkingSession
+会话层（IRuntimeSession，express/working/task 统一）:
+  RuntimeSession — 统一 agent 循环，行为由 CreateSessionSpec 驱动（Type 决定 profile）
+    express: 频道轻量对话（AutoClaim Full，权重触发，空闲回收）
+    channel: 工作模式（escalate 后接管频道）
+    task: 任务执行 / 子 agent
 
 基础设施引擎层（ISubEngine，SpawnCheck 托管生命周期）:
   MasterEngine (内核，实现 ISystemContext)
@@ -100,9 +103,9 @@ PluginLoader 扫描子目录 → 读 `plugin.json` → 加载 `entry` DLL。无�
     │     Timer      → TimerEngine (心跳30s，IsInfrastructure=true)
     │     Message    → MessageEngine (双向消息枢纽，IsInfrastructure=true)
     │     Adapter    → AdapterEngine (适配器管理+频道融合，IsInfrastructure=true)
-    │     Session    → SessionEngine (会话生命周期+频道占用，IsInfrastructure=true)
+    │     Session    → SessionEngine (会话生命周期+资源池，IsInfrastructure=true)
     │     Extraction → ExtractionEngine (记忆提取+监听检测，IsInfrastructure=true)
-    │     Channel    → ExpressEngine (每活跃频道一个，Express 响应)
+    │     Channel    → ExpressEngineSpawnCheck (无占用消息→孵化 express 会话)
     │     Dream      → DreamEngine (走神/小睡/大睡)
     │     Review     → ReviewEngine (自由探索复盘)
     │     Vision     → VisionEngine (图片描述+OCR，IsInfrastructure=true)
@@ -172,9 +175,9 @@ RuntimeSession 内部（取代旧 Channel/System 引擎内循环）:
 入向:
 适配器 ──► AdapterEngine ──► MessageEngine (入库+去重+标记+分发)
                                   │
-                                  ├── ExpressEngine (冲动值决策 + Express 响应)
+                                  ├── express/working 会话 (端口权重激活，频道 Full-claim 时)
                                   ├── ExtractionEngine (记忆提取 + 监听检测)
-                                  └── WorkingSession (IRuntimeSession, agent 循环)
+                                  └── ExpressEngineSpawnCheck (无占用→孵化 express 会话)
 
 出向:
 Session ── speak/send_media ──► MessageEngine (出向入库) ──► AdapterEngine (发送) ──► 适配器
@@ -188,44 +191,30 @@ MessageEngine: 双向枢纽
   子流: 每条频道按 tag 拆 normal / mention / command
   订阅: Subscribe(channelId, subStream) → IInputPort，按权重(mention=100/normal=5)激活 Session
 
-ExpressEngine (框架层全局单例，非 ISubEngine):
-  职责:
-    - 冲动值计算: 每条消息查最近 20 条 → 计算冲动值（不持久化，纯计算）
-    - Express 响应: 冲动值 > Express 阈值 → 执行 Express agent 循环
-    - 频道占用检查: 频道已被 Session Full 占用 → 跳过
-    - 消息分发: 调 MessageEngine 分发
+频道层调度（ExpressEngineSpawnCheck + express 会话）:
+  定位: 频道响应已全面会话化。无占用频道收到消息 → ExpressEngineSpawnCheck 孵化 Type="express" 会话
+    （AutoClaim Full 接管频道），express 会话按端口权重激活响应。不再有 ExpressEngine 引擎/冲动值。
 
-  冲动值决策 (per Channel, ImpulseConfig.json 全参数可配置):
-    私聊 → 缓冲聚合后一定回复
-    @提及 → 穿透冷却期，必回
-    群聊 → 冲动值 ≥ 阈值(100):
-      累加（加法模型）: BaseScore(10) + AffinityBonusMax(5) × channelAffinity - ParticipantDiscount(0/2/4/6)
-        @提及额外 +MentionBonus(30)
-      衰减: 指数衰减，半衰期 30s
-      触发后: impulse = min(impulse, PostResponseCap(20))
-      发言后冷却 3s
+  入向路由（ExpressEngineSpawnCheck.HandleMessageAsync）:
+    消息入库+身份映射 → 频道被会话 Full-claim？→ DeliverToSession 投会话端口
+    → 无占用 → CreateExpressSessionForChannel 孵化 express 会话（AutoClaim Full）→ 投递
+    私聊/提及 → 投 mention 端口（Weight=100 立即激活）；普通消息 → normal 端口（Weight=5 攒满 100）
 
-  Express 工具白名单（Storage/Session/express.json 配置，白名单模式）:
-    speak / thinking / send_media / send_file / adapter_action / escalate / wait / memory(只读: get/list/search/stats/link_get)
-    由 PermissionService 按 express 组清单控制，可在 WebUI /p/plugins/engine-tools 编辑。
+  express 会话（Type="express"，RuntimeSession）:
+    AutoClaim Full → 顶层资源池持有 claim。express 与后续 escalate 的 working **共享同一资源池**，
+    escalate 时同池换活跃 session（claim 原地不动，不释放不重取）。
+    被动响应: awaitingInput=true 强制，按端口权重激活，不因 InitialState 立即推理。
+    空闲回收: SessionEngine 30s 循环扫描 express 会话空闲超时（ImpulseConfig.ColdTimeoutSeconds）→
+      直接杀 + 释放 claim（频道回无占用）。express 记忆只读+历史突发语义，无长期状态可压缩。
+    工具白名单（Storage/Session/express.json，白名单模式）:
+      speak/thinking/send_media/send_file/adapter_action/escalate/wait/connect_channel/disconnect_channel
+      + memory 只读(get/list/search/stats/link_get)
+    身份提示词: SessionTypeProfile.PromptFiles（express_workflow.txt），InitialState 只放实例特有内容。
 
-  Express 双模板（由睡眠状态控制）:
-    清醒 → 正常语气
-    梦话 → 提示词注入"你正在睡觉"，相同 9 个工具
-
-  escalate 行为:
-    Express 调 escalate → SessionEngine.CreateSession("working", { channelId })
-    → WorkingSession 创建，Full 占用频道 → ExpressEngine 停止该频道的 Express 响应
-    WorkingSession 结束或 deescalate → 释放占用 → ExpressEngine 恢复
-
-  禁言阻断:
-    收到 SystemEventSubType="ban" → _isBanned=true → 跳过唤醒
-    SystemEventSubType="unban" → _isBanned=false → 强制唤醒 drain
-
-  Notice 事件分流 (OneBotMessageParser.ParseNoticeEvent):
-    系统事件转为 IncomingMessage(IsSystemEvent=true, SystemEventSubType=...)
-    已处理: poke/ban/unban/recall/upload
-    不计入冲动值 (ImpulseTracker 跳过了 IsSystemEvent)
+  escalate 行为（同池换活跃 session）:
+    express 会话调 escalate → SessionEngine.CreateFromEscalateAsync
+    → 同池 TakeOver 到新 working id（claim 原地不动）→ CreateSession("channel", fixedSessionId)
+    → working 接管频道，express 结束（ParentSessionId 记录父子关系）。
 
 SessionEngine (ISubEngine, IsInfrastructure=true):
   30s 监控循环:
@@ -235,18 +224,18 @@ SessionEngine (ISubEngine, IsInfrastructure=true):
 
   创建: IRuntimeSession CreateSession(CreateSessionSpec spec)
   停止: StopResult StopSession(id, reason) — 子未停阻塞，ForceKill 可强杀整个树
-  占用: ClaimChannel(sessionId, channelId, ClaimLevel.Full/Listen)
-        Full → 接管 reply 端口 + 抑制 ExpressEngine
+  占用: ClaimChannel(sessionId, channelId, ClaimLevel.Full/Listen) — 占用状态在资源池（SessionPool）
+        Full → 接管频道（消息投会话端口，无独立 express 引擎）
         Listen → 只读消息流
         同一频道允许多个 Listen，最多一个 Full
-  自动占用: WorkingSession 创建时自动 Full 占用归属频道
+  自动占用: express/working 会话创建时自动 Full 占用归属频道（AutoClaim）
 
   崩溃恢复:
     Storage/Sessions/{sessionId}/*.json → 扫描 → Running/Crashed → 恢复 → 继续运行
 
 ExtractionEngine (ISubEngine, IsInfrastructure=true):
   引擎无关，从入向唯一咽喉喂数据（HandleMessageAsync 入库后 OnMessage），
-  覆盖 ExpressEngine 与 session 占用两条路（不再随 Express 循环停摆）:
+  覆盖 express 会话与 working 会话两条路（入向统一咽喉）:
     每频道独立计数，累计若干条 → 触发该频道 ChannelExtractionWorker:
       活跃/潜水阈值靠"最近 5 分钟内有无 bot 出向消息"判定（GetLatestBotMessageTimeAsync）
       一次 LLM 调用完成记忆提取（现有流程）→ 存入记忆库
@@ -486,10 +475,10 @@ ToolCall: 原生 tool_use (Claude API) 为主路径
   参数名必须英文（Bedrock 代理不支持非 ASCII schema 属性名）
 
 循环控制:
-  ExpressEngine (Express): 每轮自动继续，模型调 wait 显式结束
-    安全上限: MaxRounds=8
-  RuntimeSession (Working/Task/Eavesdrop): 端口权重驱动或 Wait 超时激活
-    无强制上限：仅由模型 end_session / 外部 RequestStop / CTS 取消终止（已移除 MaxLifetime/IdleTimeout 机制）
+  RuntimeSession (express/working/task): 端口权重驱动激活（mention=100 立即 / normal 攒满 100 / wait 超时）
+    express 强制 awaitingInput（被动响应）；working 主动工作（end_session 终止）
+    express 空闲回收（ColdTimeoutSeconds）→ 直接杀 + 释放 claim
+    无强制上限：仅由模型 end_session / 外部 RequestStop / CTS 取消终止
 
 插件加载:
   目录: {程序目录}/Plugins/（跟程序走，不跟 Storage 走）
@@ -590,14 +579,14 @@ Storage/
 │     └── ReviewProgress.json 复盘进度存档（游标/评价缓冲/笔记）
 ├── Engine/
 │     ├── EngineConfig.json          自启动引擎列表 {"autoStart":["Timer"]}
-│     ├── ImpulseConfig.json         冲动值全参数配置
+│     ├── ImpulseConfig.json         仅 ColdTimeoutSeconds 用于 express 空闲回收（冲动值已删）
 │     ├── TrustProgressionConfig.json 信任升降阈值+警报冷却配置
 │     ├── VisionEngineConfig.json    视觉引擎并发/批量/重试配置
 │     └── ComponentConfig.json       组件按权限组启用/禁用状态
 ├── Session/（会话类型配置库：类型键=文件名，字符串驱动，`SessionTypeProfiles.All()` 可枚举）
 │     ├── channel.json               会话类型 channel（核心/组件/权限组/AllowedCores 白名单/PromptFiles）+ 工具黑白名单
 │     ├── task.json                  会话类型 task（核心/组件/权限组/AllowedCores 白名单/PromptFiles）+ 工具黑白名单
-│     ├── express.json               Express 框架循环工具白名单（纯权限文件，无 Type 字段，非会话类型）
+│     ├── express.json               会话类型 express（轻量对话，AutoClaim Full + 白名单工具 + express_workflow 提示词）
 │     ├── review.json                Review 复盘工具白名单（+ 会话类型档案字段，`Get("review")` 已可加载，运行时待重构接入）
 │     └── Prompts/                   session 提示词主库（会话身份，SessionTypeProfile.PromptFiles 引用；换核不换提示词）
 ├── Adapter/

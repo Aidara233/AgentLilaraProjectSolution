@@ -3,13 +3,13 @@
 ## 项目状态
 
 **核心特性**：
-- 三层架构：框架层（ExpressEngine，Express 响应+冲动值）、基础设施引擎层（8个 ISubEngine）、会话层（RuntimeSession，统一 agent 循环）
-- 基础设施引擎：SessionEngine（会话生命周期+频道占用+30s循环）、MessageEngine（双向消息枢纽，入向去重+分发、出向入库+路由）、AdapterEngine（适配器管理+频道融合+消息分段）、ExtractionEngine（记忆提取+监听检测）、DreamEngine（秩序+巡逻）、ReviewEngine（自由探索）、VisionEngine（图片描述+OCR）、TimerEngine（定时触发）
-- 统一会话：RuntimeSession 不分子类，行为由 CreateSessionSpec（组件列表+端口配置+初始状态）驱动。场景：Working（频道全功能，由 escalate 创建）、Task（任务执行，禁止套娃）、Eavesdrop（监听判定）
-- 无强制 stop：Session 不设 MaxLifetime/IdleTimeout 上限，仅由模型调 end_session / 外部 RequestStop / CTS 取消终止
-- ExpressEngine：框架层全局单例，仅 Express 响应（冲动值决策+escalate），不实现 IRuntimeSession。WorkingSession 由 Express 的 escalate 工具触发 SessionEngine.CreateSession 创建
+- 会话体系：频道响应全面会话化（express/working/task 都是 RuntimeSession）+ 基础设施引擎层（ISubEngine）+ 资源池树（SessionPool，频道占用在池里）
+- 基础设施引擎：SessionEngine（会话生命周期+资源池+30s循环+express 空闲回收）、MessageEngine（双向消息枢纽，入向去重+分发、出向入库+路由）、AdapterEngine（适配器管理+频道融合+消息分段）、ExtractionEngine（记忆提取+监听检测）、DreamEngine（秩序+巡逻）、ReviewEngine（自由探索）、VisionEngine（图片描述+OCR）、TimerEngine（定时触发）
+- 统一会话：RuntimeSession 不分子类，行为由 CreateSessionSpec（组件列表+端口配置+初始状态）+ Type（express/channel/task）驱动。express（轻量对话，权重触发）、Working（频道全功能，由 escalate 创建）、Task（任务执行，禁止套娃）
+- 无强制 stop：Session 不设 MaxLifetime/IdleTimeout 上限，仅由模型调 end_session / 外部 RequestStop / CTS 取消终止；express 会话空闲回收（ColdTimeoutSeconds）直接杀
+- express 会话化：无独立 ExpressEngine 引擎，无冲动值。无占用频道收到消息 → ExpressEngineSpawnCheck 孵化 Type="express" 会话（AutoClaim Full），按端口权重激活。escalate 同池换 working（claim 原地不动）
 - 端口模型：Session 通过 IInputPort（注入上下文）和 IOutputPort（工具写端口）与外界交互，端口决定工具注册
-- 消息流：AdapterEngine → MessageEngine（入向去重+分发）→ 订阅者（ExpressEngine/Session/ExtractionEngine）；出向 Session → MessageEngine → AdapterEngine
+- 消息流：AdapterEngine → MessageEngine（入向去重+分发）→ 订阅者（express/working 会话/ExtractionEngine）；出向 Session → MessageEngine → AdapterEngine
 - 引擎容错：API 调用失败不杀循环，连续失败 exponential backoff，SpawnCheck 检测死亡自动重启
 - 优雅退出：ApplicationStopping 钩子 → 停适配器 → 停引擎（signal gate + CTS）→ 等 30s → 强杀兜底 → close startupSignal
 - 引擎生命周期信号：每个引擎 RunAsync 用 Signal.Continue 创建 lifecycle span（scope=自己），退出时 Close 带 reason
@@ -181,18 +181,18 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 数据库：Database/DbManager.cs（初始化 + 迁移）+ 13 张业务表 + logs.db
 - 会话管理：Engine/Core/SessionManager.cs（用户映射 + 频道映射 + 消息入库）
 - 引擎内核：Engine/Core/MasterEngine.cs（SpawnCheck 注册表 + 活跃引擎表 + 全局组件宿主）
-- 引擎孵化：Engine/Worker/ExpressEngineSpawnCheck.cs（频道引擎生命周期 + 睡眠拦截）
-- 频道循环：Engine/Worker/ExpressEngine.cs（框架层全局单例，Express 响应+冲动值决策）
-- 会话引擎：Engine/Session/SessionEngine.cs（30s监控循环，ScheduledTask/TODO扫描，频道占用管理）
-- 统一会话：Engine/Session/RuntimeSession.cs（IRuntimeSession 实现，行为由 CreateSessionSpec 驱动）
+- 引擎孵化：Engine/Worker/ExpressEngineSpawnCheck.cs（入向路由：无占用频道 → 孵化 express 会话）
+- 频道响应：Type="express" RuntimeSession（AutoClaim Full，权重触发，空闲回收；无独立 ExpressEngine 引擎）
+- 会话引擎：Engine/Session/SessionEngine.cs（30s监控循环，ScheduledTask/TODO扫描，资源池树 + express 空闲回收）
+- 资源池：Engine/Session/SessionPool.cs（频道占用在池里：顶层池持有 claim，子 agent 子池；escalate/compact 同池换活跃 session，claim 原地不动）
+- 统一会话：Engine/Session/RuntimeSession.cs（IRuntimeSession 实现，行为由 CreateSessionSpec + Type 驱动）
 - 消息枢纽：Engine/Messaging/MessageEngine.cs（双向枢纽，入向去重+分发，出向入库+路由）
 - 适配器引擎：Engine/AdapterEng/AdapterEngine.cs（适配器生命周期+频道融合+消息分段）
 - 提取引擎：Engine/Extraction/ExtractionEngine.cs（记忆提取+监听检测，共用 LLM 调用）
 - 监听任务：Engine/Extraction/EavesdropTask.cs（关键词粗筛+LLM判定，一次性短命会话）
 - 会话规格：AgentLilara.PluginSDK/CreateSessionSpec.cs（组件列表+端口配置+初始状态）
-- 会话类型档案：Engine/Session/SessionTypeProfiles.cs（读 Storage/Session/{type}.json：默认核/组件/权限组/AllowedCores 白名单）
+- 会话类型档案：Engine/Session/SessionTypeProfiles.cs（读 Storage/Session/{type}.json：默认核/组件/权限组/AllowedCores 白名单；express/channel/task 内置）
 - 会话多核：Engine/Session/RuntimeSession.cs（ConfigureCores/SwitchCore/SetActiveCore + 懒建缓存）+ Tool/Core/SwitchCoreTool.cs（模型 switch_core）+ Command/CoreCommand.cs（!core）+ state.json.activeCoreConfig
-- 统一通信：Engine/Core/LoopId.cs（循环 ID 格式）
 - 循环闸门：Engine/Core/Gate.cs（delegate 驱动，组合不继承）+ Engine/Worker/LoopGate.cs（auto-reset 信号）
 - Agent 循环：Engine/Core/Agent.cs（多轮推理，退避策略）
 - Agent 宿主接口：Engine/Core/IAgentHost.cs（BuildStartInjectAsync/BuildRoundInjectAsync）
@@ -207,7 +207,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 信号类型：Engine/Core/ChannelSignal.cs（NewMessageSignal/BusEventSignal/CompressionSignal/ModeSwitchSignal）
 - 模块总线：Engine/Core/ModuleBus.cs（每引擎独立 pub/sub）
 - 频道持久化：Engine/Worker/ChannelContextPersistence.cs（per-channel JSON 原子写入）
-- 上下文构建：Engine/Context/ChannelContextService.cs（ExpressEngine 与 RuntimeSession 共用的上下文格式化）
+- 上下文构建：Engine/Context/ChannelContextService.cs（express/working 会话共用的上下文格式化）
 - 上下文状态：Engine/Context/ChannelContextState.cs（频道完整上下文快照：参与者+历史+系统信息）
 - 会话宿主：Engine/Session/SessionAgentHost.cs（RuntimeSession 端口驱动的 Agent 宿主实现）
 - 统一模型调用：Core/AgentCore.cs（Express 响应 + 原生 tool_use；SessionCore 原名 WorkingCore）
@@ -228,7 +228,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 评价存储：Database/EvaluationScore.cs + EvaluationScoreRepository.cs
 - 复盘日志：Database/ReviewLog.cs + ReviewLogRepository.cs
 - 睡眠状态：Engine/Core/SleepState.cs
-- 冲动值决策：Engine/Core/ImpulseDecider.cs + Storage/Engine/ImpulseConfig.json
+- express 空闲回收：Storage/Engine/ImpulseConfig.json（仅 ColdTimeoutSeconds 阈值；冲动值已删，Express 不再有冲动决策）
 - 视觉引擎：Engine/Vision/VisionEngine.cs（图片描述+OCR调度）
 - 视觉模型：Client/SiliconFlowVisionProvider.cs + Storage/Core/VisionProvider.json
 - OCR模型：Client/SiliconFlowOcrProvider.cs + Storage/Core/OcrProvider.json
@@ -272,10 +272,10 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 -           Plugins/Plugin.QuickActions/（快捷操作）
 -           Plugins/FileToolKit.Shared/ — FileToolBase 抽象基类（路径解析/沙箱/快捷方法），文件类插件共享引用
 - 异步唤醒链路（session-scoped）：
-  后台任务完成 → GlobalComponent 回调 ISessionResourceAccess.ResolveActiveSession(loopId) 解出活跃 session → SessionEngine.WakeUpSession → RuntimeSession.WakeUp（_wakeSignaled）→ WaitForActivationAsync 检测 → 突发入口先跑 OnBeforeInvokeAsync + BuildPromptSections → 注入 _history → 进入 Agent 推理
-  - session-scoped 子资源：子 agent / 下载 / SSH 实装 ISessionResource，注册到 SessionEngine；compact 时 rebind loopId，session 死时通知清理
+  后台任务完成 → GlobalComponent 回调 ISessionResourceAccess.ResolveActiveSession(sessionId) 解出活跃 session → SessionEngine.WakeUpSession → RuntimeSession.WakeUp（_wakeSignaled）→ WaitForActivationAsync 检测 → 突发入口先跑 OnBeforeInvokeAsync + BuildPromptSections → 注入 _history → 进入 Agent 推理
+  - session-scoped 子资源：子 agent / 下载 / SSH 实装 ISessionResource，注册到 SessionEngine；compact 换根由资源池统一处理（任务键裸 sessionId，无手动 rebind），session 死时通知清理
   - end_session 拦截：子 agent + 任意 ISessionResource HasActiveResources=true 都阻止退出；二次 end_session force override
 - 异步唤醒链路（channel-scoped）：
-  定时任务到期 → ScheduledTasksTimerComponent 按 requires_work 路由 → MasterEngine.WakeLoop(channel:N)（内置 Session 占用优先检查）→ claim 则 wake session / 否则 wake Express / 冷启动 Express
+  定时任务到期 → ScheduledTasksTimerComponent 按 requires_work 路由 → MasterEngine.WakeLoop(sessionId) → SessionEngine.WakeUpSession（裸 sessionId，经池解析跨 compact forward）→ wake 活跃会话
 - 工具配置：Storage/Engine/ComponentConfig.json（组件按引擎类型启用/禁用）+ Storage/ToolConfig.json（全局工具禁用）
 - 配置文件：Storage/ 目录下
