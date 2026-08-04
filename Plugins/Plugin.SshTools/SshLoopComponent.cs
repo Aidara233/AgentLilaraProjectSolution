@@ -7,7 +7,7 @@ namespace Plugin.SshTools;
 [Component(Name = "ssh-tools", Scope = ComponentScope.Loop)]
 public class SshLoopComponent : LoopComponentBase
 {
-    private string _loopId = "";
+    private string _sessionId = "";
     private string _workDir = "";
     private List<SshTask> _pendingNotifications = new();
 
@@ -39,20 +39,20 @@ public class SshLoopComponent : LoopComponentBase
 
     public override Task OnInitAsync(ILoopComponentContext context, InitReason reason)
     {
-        _loopId = context.LoopId;
+        _sessionId = context.SessionId;
 
         var global = SshToolsAccessor.Global
             ?? throw new InvalidOperationException("SshGlobalComponent 未初始化");
 
         var workspaceDir = context.Storage.WorkspaceDirectory;
-        _workDir = $"/tmp/agent-lilara/{CleanLoopId(_loopId)}";
+        _workDir = $"/tmp/agent-lilara/{CleanSessionId(_sessionId)}";
 
         // 确保远端工作目录存在
         EnsureRemoteWorkDir(global, _workDir);
 
-        _exec = new ExecTool(global, _workDir, _loopId);
-        _upload = new UploadTool(global, _workDir, workspaceDir, _loopId);
-        _download = new DownloadTool(global, _workDir, workspaceDir, _loopId);
+        _exec = new ExecTool(global, _workDir, _sessionId);
+        _upload = new UploadTool(global, _workDir, workspaceDir, _sessionId);
+        _download = new DownloadTool(global, _workDir, workspaceDir, _sessionId);
         _check = new CheckTaskTool(global);
         _kill = new KillTaskTool(global);
 
@@ -64,7 +64,7 @@ public class SshLoopComponent : LoopComponentBase
         var global = SshToolsAccessor.Global;
         if (global != null)
         {
-            var completed = global.DrainCompletedTasks(_loopId);
+            var completed = global.DrainCompletedTasks(_sessionId);
             _pendingNotifications.AddRange(completed);
         }
         return Task.CompletedTask;
@@ -104,9 +104,8 @@ public class SshLoopComponent : LoopComponentBase
     {
         var global = SshToolsAccessor.Global;
         if (global == null) return Task.FromResult(true);
-        var bareId = _loopId.StartsWith("session:") ? _loopId[8..] : null;
-        if (bareId == null) return Task.FromResult(true);
-        return Task.FromResult(!global.HasActiveResources(bareId));
+        // _sessionId 为裸 sessionId（LoopId 前缀概念已移除）
+        return Task.FromResult(!global.HasActiveResources(_sessionId));
     }
 
     private static void EnsureRemoteWorkDir(SshGlobalComponent global, string workDir)
@@ -123,10 +122,10 @@ public class SshLoopComponent : LoopComponentBase
         catch { /* 首轮失败不阻塞 */ }
     }
 
-    private static string CleanLoopId(string loopId)
+    private static string CleanSessionId(string sessionId)
     {
         var sb = new StringBuilder();
-        foreach (var c in loopId)
+        foreach (var c in sessionId)
             sb.Append(char.IsLetterOrDigit(c) || c == '-' || c == '_' ? c : '_');
         return sb.ToString();
     }

@@ -37,13 +37,11 @@ public class GroupFileToolsComponent : LoopComponentBase
 
         var adapterAccess = context.GetService<IAdapterAccess>();
         var channelAccess = context.GetService<IChannelAccess>();
+        var connected = context.GetService<IConnectedChannel>();
         if (adapterAccess == null || channelAccess == null) return;
 
-        // 解析 channelId 和 adapterId
-        var loopId = context.LoopId;
-        var colonIdx = loopId.LastIndexOf(':');
-        if (colonIdx < 0 || !int.TryParse(loopId[(colonIdx + 1)..], out var channelId))
-            channelId = 0;
+        // 频道号取自连接状态（LoopId 前缀概念已移除，会话不持有 channel 号）
+        var channelId = connected?.CurrentChannelId ?? 0;
 
         var detail = await channelAccess.GetChannelDetailAsync(channelId);
         if (detail == null || string.IsNullOrEmpty(detail.Name)) return;
@@ -63,9 +61,9 @@ public class GroupFileToolsComponent : LoopComponentBase
 
         _listFiles = new ListGroupFilesTool(adapterAccess, adapterId);
         _downloadFile = new DownloadGroupFileTool(adapterAccess,
-            adapterId, workspaceDir, http, store, loopId);
+            adapterId, workspaceDir, http, store, context.SessionId);
         _downloadChatFile = new DownloadChatFileTool(adapterAccess,
-            adapterId, workspaceDir, store, loopId);
+            adapterId, workspaceDir, store, context.SessionId);
     }
 
     public override Task OnBeforeInvokeAsync()
@@ -73,7 +71,7 @@ public class GroupFileToolsComponent : LoopComponentBase
         var store = GroupFileToolsAccessor.Store;
         if (store != null)
         {
-            var notifications = store.DrainNotifications(_ctx.LoopId);
+            var notifications = store.DrainNotifications(_ctx.SessionId);
             _pendingNotifications.AddRange(notifications);
         }
         return Task.CompletedTask;

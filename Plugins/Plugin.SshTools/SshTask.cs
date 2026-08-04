@@ -6,8 +6,7 @@ public enum SshTaskStatus { Running, Completed, Failed, Killed, TimedOut }
 public class SshTask
 {
     public string TaskId { get; init; } = "";
-    public string LoopId { get; set; } = "";
-    public void RebindLoopId(string newLoopId) => LoopId = newLoopId;
+    public string SessionId { get; set; } = "";
     public string Command { get; init; } = "";
     public SshTaskStatus Status { get; set; } = SshTaskStatus.Running;
     /// <summary>异步任务输出文件（远端路径），同步完成时为 null</summary>

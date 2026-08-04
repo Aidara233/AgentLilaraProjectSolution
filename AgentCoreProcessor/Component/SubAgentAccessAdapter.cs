@@ -18,8 +18,8 @@ namespace AgentCoreProcessor.Component;
 ///
 /// 维护三张表：
 ///   _childMailboxes   childSessionId → MailboxInputPort（父→子指令注入）
-///   _parentLoopIds    childSessionId → 父 loopId（结果回传+唤醒）
-///   _loopIdToChildSession 反查（report_to_parent 从子 loopId 找到自己的 sessionId）
+///   _parentSessionIds childSessionId → 父 sessionId（结果回传+唤醒）
+///   _sessionIdToChildSession 反查（report_to_parent 从子 sessionId 找到自己的 sessionId）
 ///
 /// 父子通信路径（无 CrossRequest 镜像，纯消息驱动）：
 ///   - 父→子：send_instruction → mailbox.Writer.TryWrite → 下轮 WaitForActivation 立即激活
@@ -83,7 +83,7 @@ internal class SubAgentAccessAdapter : ISubAgentAccess, AgentLilara.PluginSDK.Se
         {
             Type = "task",
             InitialState = options.InitialState ?? instruction,
-            ParentSessionId = options.ParentLoopId,
+            ParentSessionId = options.ParentSessionId,
             AdditionalComponents = additionalComps,
             InputPorts = new()
         };
@@ -102,13 +102,13 @@ internal class SubAgentAccessAdapter : ISubAgentAccess, AgentLilara.PluginSDK.Se
             rsComplete.OnCompleted += OnChildSessionCompleted;
 
         Signal.Event(LogGroup.Engine, "子 agent 已创建",
-            new { sessionId, parentLoopId = options.ParentLoopId });
+            new { sessionId, parentSessionId = options.ParentSessionId });
 
         return new SubAgentInfo
         {
             SessionId = sessionId,
             IsAlive = session.IsAlive,
-            ParentLoopId = options.ParentLoopId
+            ParentSessionId = options.ParentSessionId
         };
     }
 
@@ -154,24 +154,14 @@ internal class SubAgentAccessAdapter : ISubAgentAccess, AgentLilara.PluginSDK.Se
         };
     }
 
-    public List<SubAgentInfo> List(string? parentLoopId = null)
+    public List<SubAgentInfo> List(string? parentSessionId = null)
     {
         EnsureResourceRegistered();
         var se = GetSessionEngine();
         if (se == null) return new List<SubAgentInfo>();
 
-        // 解析 parentLoopId → 纯 sessionId
-        var parentId = parentLoopId?.StartsWith("session:") == true
-            ? parentLoopId[8..]
-            : parentLoopId;
-
-        var children = parentId != null ? se.GetActiveChildren(parentId) : null;
-        // 如果 parentLoopId 是 "channel:N"，需要 SessionEngine 反查 Full claimer
-        if (parentId == null && parentLoopId != null && LoopId.IsChannel(parentLoopId, out var parsedCid))
-        {
-            var claimer = se.GetFullClaimer(parsedCid);
-            if (!string.IsNullOrEmpty(claimer)) children = se.GetActiveChildren(claimer);
-        }
+        // parentSessionId 为裸 sessionId（LoopId 前缀概念已移除）
+        var children = parentSessionId != null ? se.GetActiveChildren(parentSessionId) : null;
 
         var list = new List<SubAgentInfo>();
         if (children == null) return list;
@@ -196,7 +186,7 @@ internal class SubAgentAccessAdapter : ISubAgentAccess, AgentLilara.PluginSDK.Se
             SessionId = sessionId,
             IsAlive = session.IsAlive,
             Status = session.Status.ToString(),
-            ParentLoopId = session.ParentSessionId,
+            ParentSessionId = session.ParentSessionId,
             RoundCount = 0,
             CreatedAt = DateTime.UtcNow,
             LastActivity = DateTime.UtcNow
@@ -213,11 +203,11 @@ internal class SubAgentAccessAdapter : ISubAgentAccess, AgentLilara.PluginSDK.Se
         return detail;
     }
 
-    public bool ReportToParent(string callerLoopId, string content, ReportState state)
+    public bool ReportToParent(string callerSessionId, string content, ReportState state)
     {
         EnsureResourceRegistered();
-        // callerLoopId = "session:xxx"，取冒号后段为 childId
-        var childId = callerLoopId.StartsWith("session:") ? callerLoopId[8..] : callerLoopId;
+        // callerSessionId 为裸 sessionId（LoopId 前缀概念已移除）
+        var childId = callerSessionId;
 
         var effectiveParent = GetSessionEngine()?.ResolveEffectiveParent(childId);
         if (string.IsNullOrEmpty(effectiveParent))
@@ -308,37 +298,20 @@ internal class SubAgentAccessAdapter : ISubAgentAccess, AgentLilara.PluginSDK.Se
     }
 
     /// <summary>
-    /// 唤醒父 session 并向其上下文注入系统消息。
-    /// 三条路径：
-    ///   ① 父 loopId = "session:xxx" → 找到 RuntimeSession 直接 InjectExternal
-    ///   ② 父 loopId = "channel:N" 且频道被 WorkingSession Full 占用 → 注入到该 WorkingSession
-    ///   ③ 父 loopId = "channel:N" 且无 Full 占用 → 仅 WakeLoop 加速唤醒 ExpressEngine
+    /// 唤醒父 session 并向其上下文注入系统消息（CrossRequest 已移除，保留唤醒路径）。
+    /// 父引用为裸 sessionId（LoopId 前缀概念已移除）。
     /// </summary>
-    private void InjectToParent(string parentLoopId, string content)
+    private void InjectToParent(string parentSessionId, string content)
     {
-        RuntimeSession? target = null;
-
-        if (parentLoopId.StartsWith("session:", StringComparison.OrdinalIgnoreCase))
-        {
-            var sid = parentLoopId[8..];
-            target = GetSessionEngine()?.GetSession(sid) as RuntimeSession;
-        }
-        else if (LoopId.IsChannel(parentLoopId, out var cid))
-        {
-            var se = GetSessionEngine();
-            var claimer = se?.GetFullClaimer(cid);
-            if (!string.IsNullOrEmpty(claimer))
-                target = se?.GetSession(claimer) as RuntimeSession;
-        }
-
+        var target = GetSessionEngine()?.GetSession(parentSessionId) as RuntimeSession;
         if (target != null)
         {
             target.InjectExternal($"[系统通知]\n{content}");
             return;
         }
 
-        // 父不是 RuntimeSession（或频道未被 session 占用）：走 ExpressEngine 接力路径
-        _master.WakeLoop(parentLoopId);
+        // 父不在活跃会话表（可能已 compact/结束）：唤醒尝试
+        _master.WakeLoop(parentSessionId);
     }
 
     private SubAgentInfo ToInfo(IRuntimeSession session, string sessionId)
@@ -347,7 +320,7 @@ internal class SubAgentAccessAdapter : ISubAgentAccess, AgentLilara.PluginSDK.Se
         {
             SessionId = sessionId,
             IsAlive = session.IsAlive,
-            ParentLoopId = session.ParentSessionId
+            ParentSessionId = session.ParentSessionId
         };
         return info;
     }

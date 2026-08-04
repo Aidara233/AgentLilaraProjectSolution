@@ -8,7 +8,7 @@ namespace Plugin.NetworkTools;
 public class ListDownloadsTool : ITool
 {
     private readonly DownloadStore _store;
-    private readonly string _loopId;
+    private readonly string _sessionId;
 
     public string Name => "list_downloads";
     public string Description => "查看下载任务列表。可按状态筛选，默认仅显示本循环发起的下载。";
@@ -19,10 +19,10 @@ public class ListDownloadsTool : ITool
     ];
     public TimeSpan Timeout => TimeSpan.FromSeconds(5);
 
-    public ListDownloadsTool(DownloadStore store, string loopId)
+    public ListDownloadsTool(DownloadStore store, string sessionId)
     {
         _store = store;
-        _loopId = loopId;
+        _sessionId = sessionId;
     }
 
     public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
@@ -34,7 +34,7 @@ public class ListDownloadsTool : ITool
         if (filter is not ("all" or "active" or "completed" or "failed"))
             filter = "all";
 
-        var tasks = _store.GetAll(filter, loopOnly ? _loopId : null);
+        var tasks = _store.GetAll(filter, loopOnly ? _sessionId : null);
 
         if (tasks.Count == 0)
             return Ok("没有符合条件的下载任务");

@@ -15,8 +15,8 @@ public class SessionResourceRegistryTests
         var resource = new FakeResource();
         engine.RegisterSessionResource(resource);
 
-        var resolved = engine.ResolveActiveSession("session:S1");
-        Assert.Equal("session:S1", resolved);
+        var resolved = engine.ResolveActiveSession("S1");
+        Assert.Equal("S1", resolved);
     }
 
     [Fact]
@@ -24,24 +24,25 @@ public class SessionResourceRegistryTests
     {
         var engine = TestHost.BuildSessionEngineWithFakeSession("S2", alive: true);
         engine.SeedForward("S1", "S2"); // S1 compacted to S2
-        var resolved = engine.ResolveActiveSession("session:S1");
-        Assert.Equal("session:S2", resolved);
+        var resolved = engine.ResolveActiveSession("S1");
+        Assert.Equal("S2", resolved);
     }
 
     [Fact]
     public void ResolveActiveSession_returns_null_when_session_dead_and_not_forwarded()
     {
         var engine = TestHost.BuildSessionEngineWithFakeSession("SX", alive: false);
-        var resolved = engine.ResolveActiveSession("session:SX");
+        var resolved = engine.ResolveActiveSession("SX");
         Assert.Null(resolved);
     }
 
     [Fact]
-    public void ResolveActiveSession_returns_non_session_loopId_unchanged()
+    public void ResolveActiveSession_unknown_reference_returns_null()
     {
+        // LoopId 前缀概念已移除：未知引用（如 "channel:5"）直接 null，不再原样返回
         var engine = TestHost.BuildSessionEngineWithFakeSession("S1", alive: true);
         var resolved = engine.ResolveActiveSession("channel:5");
-        Assert.Equal("channel:5", resolved);
+        Assert.Null(resolved);
     }
 
     [Fact]

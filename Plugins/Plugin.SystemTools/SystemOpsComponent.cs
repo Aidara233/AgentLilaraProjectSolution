@@ -48,14 +48,14 @@ public class SystemOpsComponent : LoopComponentBase
     {
         _ctx = context;
         _subAgents = context.GetService<ISubAgentAccess>();
-        var parentLoopId = context.LoopId;
+        var parentSessionId = context.SessionId;
 
         if (_subAgents != null)
         {
-            _createTool = new CreateSubAgentTool(_subAgents, parentLoopId);
+            _createTool = new CreateSubAgentTool(_subAgents, parentSessionId);
             _stopTool = new StopSubAgentTool(_subAgents);
             _sendTool = new SendInstructionTool(_subAgents);
-            _listTool = new ListSubAgentsTool(_subAgents, parentLoopId);
+            _listTool = new ListSubAgentsTool(_subAgents, parentSessionId);
             _waitTool = new WaitSubTool(_subAgents);
             _getInfoTool = new GetSubInfoTool(_subAgents);
         }
@@ -70,7 +70,7 @@ public class SystemOpsComponent : LoopComponentBase
     public override string? BuildPromptSection()
     {
         if (_subAgents == null || _ctx == null) return null;
-        var list = _subAgents.List(_ctx.LoopId);
+        var list = _subAgents.List(_ctx.SessionId);
         if (list.Count == 0) return null;
 
         var sb = new StringBuilder();
@@ -114,7 +114,7 @@ public class SubAgentRuntimeComponent : LoopComponentBase
     {
         var subAccess = context.GetService<ISubAgentAccess>();
         if (subAccess != null)
-            _reportTool = new ReportToParentTool(subAccess, context.LoopId);
+            _reportTool = new ReportToParentTool(subAccess, context.SessionId);
         return Task.CompletedTask;
     }
 

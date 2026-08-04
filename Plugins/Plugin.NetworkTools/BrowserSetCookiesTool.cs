@@ -9,7 +9,7 @@ public class BrowserSetCookiesTool : ITool
 {
     private readonly BrowserComponent _component;
     private readonly SecurityConfig _security;
-    private readonly string _loopId;
+    private readonly string _sessionId;
 
     public string Name => "browser_set_cookies";
     public string Description => "设置浏览器Cookie。接收JSON格式的Cookie数组。";
@@ -19,11 +19,11 @@ public class BrowserSetCookiesTool : ITool
     ];
     public TimeSpan Timeout => TimeSpan.FromSeconds(10);
 
-    public BrowserSetCookiesTool(BrowserComponent component, SecurityConfig security, string loopId)
+    public BrowserSetCookiesTool(BrowserComponent component, SecurityConfig security, string sessionId)
     {
         _component = component;
         _security = security;
-        _loopId = loopId;
+        _sessionId = sessionId;
     }
 
     public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
@@ -40,7 +40,7 @@ public class BrowserSetCookiesTool : ITool
             if (sessionManager == null)
                 return Fail("浏览器组件未初始化");
 
-            var session = await sessionManager.GetOrCreateSessionAsync(_loopId);
+            var session = await sessionManager.GetOrCreateSessionAsync(_sessionId);
 
             // 解析 Cookie 数组
             var cookies = JsonSerializer.Deserialize<List<Cookie>>(cookiesJson);

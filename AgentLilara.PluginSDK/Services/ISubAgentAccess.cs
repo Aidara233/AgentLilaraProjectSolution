@@ -23,8 +23,8 @@ namespace AgentLilara.PluginSDK.Services
         /// <summary>请求停止子 agent。会先检查是否有未结束的子-子 agent。</summary>
         SubAgentStopResult RequestStop(string sessionId);
 
-        /// <summary>列出活跃的子 agent。可按 parentLoopId 过滤仅返回本父 session 的子 agent。</summary>
-        List<SubAgentInfo> List(string? parentLoopId = null);
+        /// <summary>列出活跃的子 agent。可按 parentSessionId 过滤仅返回本父 session 的子 agent。</summary>
+        List<SubAgentInfo> List(string? parentSessionId = null);
 
         /// <summary>查询子 agent 详细状态（轮次、存活时间、最终输出预览）。</summary>
         SubAgentDetail? GetDetail(string sessionId);
@@ -33,10 +33,10 @@ namespace AgentLilara.PluginSDK.Services
         /// 子 agent 主动向父 session 回报进度或完成。由 report_to_parent 工具调用。
         /// content 会注入到父 session 的下一轮上下文（[子会话回报] 系统消息）。
         /// </summary>
-        /// <param name="callerLoopId">调用方所在的 loopId（即子 agent 的 "session:xxx"）。</param>
+        /// <param name="callerSessionId">调用方子 agent 的 sessionId（裸，无 "session:" 前缀）。</param>
         /// <param name="content">回报内容文本。</param>
         /// <param name="state">done=Done 完成 / progress=Progress 进行中 / failed=Failed 失败。</param>
-        bool ReportToParent(string callerLoopId, string content, ReportState state);
+        bool ReportToParent(string callerSessionId, string content, ReportState state);
 
         /// <summary>
         /// 阻塞等待指定子 agent 完成（或超时）。供 wait_sub 工具调用。
@@ -47,8 +47,8 @@ namespace AgentLilara.PluginSDK.Services
     /// <summary>子 agent 创建参数。</summary>
     public class SubAgentOptions
     {
-        /// <summary>父 session 的 loopId（"channel:N" 或 "session:xxx"）。用于结果回传与唤醒。</summary>
-        public string? ParentLoopId { get; set; }
+        /// <summary>父 session 的 sessionId（裸，无前缀）。用于结果回传与唤醒。</summary>
+        public string? ParentSessionId { get; set; }
 
         /// <summary>子 agent 启用的组件 ID 列表。为空时使用默认组件集。</summary>
         public string[]? ComponentIds { get; set; }
@@ -70,8 +70,8 @@ namespace AgentLilara.PluginSDK.Services
     {
         public string SessionId { get; set; } = "";
         public bool IsAlive { get; set; }
-        /// <summary>父 loopId（谁创建的我）。</summary>
-        public string? ParentLoopId { get; set; }
+        /// <summary>父 sessionId（谁创建的我，裸无前缀）。</summary>
+        public string? ParentSessionId { get; set; }
     }
 
     /// <summary>子 agent 详细状态。</summary>
@@ -80,7 +80,7 @@ namespace AgentLilara.PluginSDK.Services
         public string SessionId { get; set; } = "";
         public bool IsAlive { get; set; }
         public string Status { get; set; } = "";
-        public string? ParentLoopId { get; set; }
+        public string? ParentSessionId { get; set; }
         public int RoundCount { get; set; }
         public System.DateTime CreatedAt { get; set; }
         public System.DateTime LastActivity { get; set; }

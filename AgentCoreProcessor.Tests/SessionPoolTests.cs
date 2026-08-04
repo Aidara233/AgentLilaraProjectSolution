@@ -128,7 +128,7 @@ public class SessionPoolTests
         engine.CreateSubPool("child", "working");
 
         Assert.Equal("working", engine.ResolveEffectiveParent("child")); // 直接父
-        Assert.Equal("session:child", engine.ResolveActiveSession("session:child")); // 子 agent 是自己池的活跃
+        Assert.Equal("child", engine.ResolveActiveSession("child")); // 子 agent 是自己池的活跃
     }
 
     [Fact]
@@ -154,7 +154,7 @@ public class SessionPoolTests
 
         Assert.Equal("working2", engine.ResolveEffectiveParent("child"));
         // 子 agent 仍是自己池的活跃，未受影响
-        Assert.Equal("session:child", engine.ResolveActiveSession("session:child"));
+        Assert.Equal("child", engine.ResolveActiveSession("child"));
     }
 
     [Fact]
@@ -189,7 +189,7 @@ public class SessionPoolTests
         // express 是 working 的 ParentSessionId（子链关系）
         Assert.Equal("express", working.ParentSessionId);
         // express 仍可解析到池（retired member），working 是活跃
-        Assert.Equal("session:" + working.SessionId, engine.ResolveActiveSession("session:express"));
+        Assert.Equal(working.SessionId, engine.ResolveActiveSession("express"));
     }
 
     [Fact]

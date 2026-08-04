@@ -256,10 +256,9 @@ internal class RuntimeSession : IRuntimeSession
 
     /// <summary>
     /// 从 ComponentRegistry 加载指定组件，构建 ComponentHost。
-    /// loopId 示例："channel:123"（单频道）或 "session:xxxx"（多端口/无端口），
-    /// loopType 从 loopId 提取（"channel"/"session" 等），用于组件白名单查找。
+    /// sessionId 为裸 GUID；loopType（权限组）用于组件白名单查找。
     /// </summary>
-    public void InitComponents(string loopId, ModuleBus moduleBus, IServiceProvider services, Action wakeLoop)
+    public void InitComponents(string sessionId, ModuleBus moduleBus, IServiceProvider services, Action wakeLoop)
     {
         _componentLoopType = SessionTypeProfiles.Get(Type).PermissionGroup;
         // 注入 per-session 连接状态：发送工具据此决定目标频道并校验发言权限
@@ -267,7 +266,7 @@ internal class RuntimeSession : IRuntimeSession
         {
             [typeof(IConnectedChannel)] = _connected
         };
-        _componentHost = new ComponentHost(loopId, _componentLoopType, moduleBus, services, wakeLoop, perLoopServices);
+        _componentHost = new ComponentHost(sessionId, _componentLoopType, moduleBus, services, wakeLoop, perLoopServices);
         _componentHost.InitAsync(_componentIds).GetAwaiter().GetResult();
 
         RefreshToolList();

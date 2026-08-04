@@ -38,10 +38,10 @@ namespace Plugin.WorkingTools
         }
 
         /// <summary>Component 模式构造函数</summary>
-        public ThinkingNotesTool(IPluginStorage storage, string loopId)
+        public ThinkingNotesTool(IPluginStorage storage, string sessionId)
         {
             _baseDir = Path.Combine(storage.InstanceDirectory, "notebooks");
-            _defaultNotebook = loopId;
+            _defaultNotebook = sessionId;
             Directory.CreateDirectory(_baseDir);
         }
 

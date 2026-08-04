@@ -9,7 +9,7 @@ public class BrowserNavigateTool : ITool
 {
     private readonly BrowserComponent _component;
     private readonly SecurityConfig _security;
-    private readonly string _loopId;
+    private readonly string _sessionId;
 
     public string Name => "browser_navigate";
     public string Description => "导航到指定URL。支持等待策略：load（默认）/domcontentloaded/networkidle。";
@@ -20,11 +20,11 @@ public class BrowserNavigateTool : ITool
     ];
     public TimeSpan Timeout => TimeSpan.FromSeconds(60);
 
-    public BrowserNavigateTool(BrowserComponent component, SecurityConfig security, string loopId)
+    public BrowserNavigateTool(BrowserComponent component, SecurityConfig security, string sessionId)
     {
         _component = component;
         _security = security;
-        _loopId = loopId;
+        _sessionId = sessionId;
     }
 
     public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
@@ -59,7 +59,7 @@ public class BrowserNavigateTool : ITool
             if (sessionManager == null || config == null)
                 return Fail("浏览器组件未初始化");
 
-            var session = await sessionManager.GetOrCreateSessionAsync(_loopId);
+            var session = await sessionManager.GetOrCreateSessionAsync(_sessionId);
 
             if (session.CurrentPage == null)
                 session.CurrentPage = await session.Context.NewPageAsync();

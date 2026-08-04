@@ -3,7 +3,8 @@ namespace AgentLilara.PluginSDK;
 
 public interface ILoopComponentContext
 {
-    string LoopId { get; }
+    /// <summary>当前会话实例的 sessionId（裸，无 "session:" 前缀）。LoopId 概念已移除。</summary>
+    string SessionId { get; }
     string LoopType { get; }
 
     bool IsEnabled { get; }

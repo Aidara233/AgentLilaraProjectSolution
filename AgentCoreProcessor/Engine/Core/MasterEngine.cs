@@ -660,7 +660,7 @@ namespace AgentCoreProcessor.Engine
 
                 globalComponentHost = new GlobalComponentHost(
                     _moduleBus, componentServices,
-                    loopId => WakeLoop(loopId));
+                    sessionId => WakeLoop(sessionId));
                 await globalComponentHost.InitAsync();
             });
 
@@ -865,45 +865,14 @@ namespace AgentCoreProcessor.Engine
             lock (engineLock) { return activeEngines.Count(e => e.IsAlive); }
         }
 
-        /// <summary>唤醒指定 loopId 的循环（供 GlobalComponentHost / 委托系统 / 子 agent 回报使用）。</summary>
-        internal void WakeLoop(string loopId)
+        /// <summary>唤醒指定会话（裸 sessionId，供 GlobalComponentHost / 委托系统 / 子 agent 回报使用）。
+        /// LoopId 前缀概念已移除，调用方传裸 sessionId；channel 寻址经 SessionEngine 池解析。</summary>
+        internal void WakeLoop(string sessionId)
         {
-            if (LoopId.IsChannel(loopId, out var channelId))
-            {
-                // 优先查 SessionEngine 是否 Full-claim 了这个频道
-                var sessionEngine = GetActiveEnginesSnapshot()
-                    .OfType<Session.SessionEngine>().FirstOrDefault();
-                if (sessionEngine != null)
-                {
-                    var claimer = sessionEngine.GetFullClaimer(channelId);
-                    if (!string.IsNullOrEmpty(claimer))
-                    {
-                        // claimer 是裸 sessionId
-                        var active = sessionEngine.ResolveActiveSession($"session:{claimer}");
-                        if (active != null)
-                        {
-                            sessionEngine.WakeUpSession(claimer);
-                            return;
-                        }
-                        // claimer 已死 → claim 在 ReleaseSessionClaims 中会被清，这里 race 兜底
-                    }
-                }
-
-                // 没 claim → 无会话可唤醒。express 会话由消息到达时经 ExpressEngineSpawnCheck 孵化，
-                // 不再冷启动引擎（原 ColdStartChannelAsync / ExpressEngine 冷启动已随引擎移除）。
-                return;
-            }
-
-            if (loopId.StartsWith("session:", StringComparison.OrdinalIgnoreCase))
-            {
-                var sid = loopId[8..];
-                var se = GetActiveEnginesSnapshot()
-                    .OfType<Session.SessionEngine>().FirstOrDefault();
-                se?.WakeUpSession(sid);
-                return;
-            }
-
-            // task: / review: — 不直接唤醒，由各自的 Gate 管理
+            var se = GetActiveEnginesSnapshot()
+                .OfType<Session.SessionEngine>().FirstOrDefault();
+            if (se == null || string.IsNullOrEmpty(sessionId)) return;
+            se.WakeUpSession(sessionId);
         }
 
         /// <summary>关闭 GlobalComponentHost 和 OCR 提供者（由外部调用或 Dispose 时）。</summary>

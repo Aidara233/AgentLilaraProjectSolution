@@ -8,19 +8,19 @@ namespace Plugin.SystemTools;
 
 /// <summary>
 /// 子 agent 专用工具：向父 session 回报进度或完成。仅在 sub-agent-runtime 组件中可见。
-/// 调用方为子 agent 自身（callerLoopId = "session:xxx"），SubAgentAccessAdapter 据此反查自己的 sessionId，
+/// 调用方为子 agent 自身（sessionId，裸无前缀），SubAgentAccessAdapter 据此反查父 session，
 /// 通过 RuntimeSession.InjectExternal 直接注入父 session 的下一轮上下文。
 /// </summary>
 [ToolMeta(ContinueLoop = true)]
 public class ReportToParentTool : ITool
 {
     private readonly ISubAgentAccess _subAgents;
-    private readonly string _callerLoopId;
+    private readonly string _callerSessionId;
 
-    public ReportToParentTool(ISubAgentAccess subAgents, string callerLoopId)
+    public ReportToParentTool(ISubAgentAccess subAgents, string callerSessionId)
     {
         _subAgents = subAgents;
-        _callerLoopId = callerLoopId;
+        _callerSessionId = callerSessionId;
     }
 
     public string Name => "report_to_parent";
@@ -54,13 +54,13 @@ public class ReportToParentTool : ITool
             _ => ReportState.Progress
         };
 
-        var ok = _subAgents.ReportToParent(_callerLoopId, content, state);
+        var ok = _subAgents.ReportToParent(_callerSessionId, content, state);
         return Task.FromResult(new ToolResult
         {
             Status = ok ? "success" : "failed",
             Data = ok
                 ? $"已向父会话回报 ({state})。父 will 在下一轮上下文看到本消息。"
-                : $"回报失败：调用方 ({_callerLoopId}) 未在子 agent 表中"
+                : $"回报失败：调用方 ({_callerSessionId}) 未在子 agent 表中"
         });
     }
 

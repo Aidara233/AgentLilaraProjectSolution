@@ -9,7 +9,7 @@ public class BrowserGetCookiesTool : ITool
 {
     private readonly BrowserComponent _component;
     private readonly SecurityConfig _security;
-    private readonly string _loopId;
+    private readonly string _sessionId;
 
     public string Name => "browser_get_cookies";
     public string Description => "获取浏览器Cookie。可指定URL过滤，省略则返回所有Cookie。";
@@ -19,11 +19,11 @@ public class BrowserGetCookiesTool : ITool
     ];
     public TimeSpan Timeout => TimeSpan.FromSeconds(10);
 
-    public BrowserGetCookiesTool(BrowserComponent component, SecurityConfig security, string loopId)
+    public BrowserGetCookiesTool(BrowserComponent component, SecurityConfig security, string sessionId)
     {
         _component = component;
         _security = security;
-        _loopId = loopId;
+        _sessionId = sessionId;
     }
 
     public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
@@ -37,7 +37,7 @@ public class BrowserGetCookiesTool : ITool
             if (sessionManager == null)
                 return Fail("浏览器组件未初始化");
 
-            var session = await sessionManager.GetOrCreateSessionAsync(_loopId);
+            var session = await sessionManager.GetOrCreateSessionAsync(_sessionId);
 
             // 获取 Cookie
             var cookies = string.IsNullOrEmpty(url)

@@ -9,7 +9,7 @@ public class UploadTool : ITool
     private readonly SshGlobalComponent _global;
     private readonly string _workDir;
     private readonly string _workspaceDir;
-    private readonly string _loopId;
+    private readonly string _sessionId;
 
     public string Name => "ssh_upload";
     public string Description => "上传本地 workspace 文件到远程服务器。"
@@ -24,12 +24,12 @@ public class UploadTool : ITool
 
     private const int DefaultTimeoutSeconds = 30;
 
-    public UploadTool(SshGlobalComponent global, string workDir, string workspaceDir, string loopId)
+    public UploadTool(SshGlobalComponent global, string workDir, string workspaceDir, string sessionId)
     {
         _global = global;
         _workDir = workDir;
         _workspaceDir = workspaceDir;
-        _loopId = loopId;
+        _sessionId = sessionId;
     }
 
     public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
@@ -100,7 +100,7 @@ public class UploadTool : ITool
     private string LaunchUploadAsync(Renci.SshNet.SshClient client, string local, string remote, string displayCmd)
     {
         var cts = new CancellationTokenSource();
-        var taskId = _global.RegisterTask(_loopId, displayCmd, cts);
+        var taskId = _global.RegisterTask(_sessionId, displayCmd, cts);
 
         Task.Run(() =>
         {

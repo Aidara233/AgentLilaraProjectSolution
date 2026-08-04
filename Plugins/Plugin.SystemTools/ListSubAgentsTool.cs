@@ -11,18 +11,18 @@ namespace Plugin.SystemTools;
 public class ListSubAgentsTool : ITool
 {
     private readonly ISubAgentAccess _subAgents;
-    private readonly string _parentLoopId;
+    private readonly string _parentSessionId;
 
-    public ListSubAgentsTool(ISubAgentAccess subAgents, string parentLoopId)
+    public ListSubAgentsTool(ISubAgentAccess subAgents, string parentSessionId)
     {
         _subAgents = subAgents;
-        _parentLoopId = parentLoopId;
+        _parentSessionId = parentSessionId;
     }
 
     public string Name => "list_sub_agents";
     public string Description =>
-        "列出当前活跃的子 agent。默认仅返回本会话创建的子 agent（按 loopId 过滤）。" +
-        "返回信息含 session_id、状态、父 loopId。";
+        "列出当前活跃的子 agent。默认仅返回本会话创建的子 agent（按父会话过滤）。" +
+        "返回信息含 session_id、状态、父会话。";
 
     public IReadOnlyList<ToolParameter> Parameters =>
     [
@@ -37,7 +37,7 @@ public class ListSubAgentsTool : ITool
             ? !string.Equals(resolvedInputs[0], "false", System.StringComparison.OrdinalIgnoreCase)
             : true;
 
-        var list = _subAgents.List(onlyMine ? _parentLoopId : null);
+        var list = _subAgents.List(onlyMine ? _parentSessionId : null);
         if (list.Count == 0)
             return Task.FromResult(new ToolResult
             {
@@ -49,7 +49,7 @@ public class ListSubAgentsTool : ITool
         foreach (var info in list)
         {
             var status = info.IsAlive ? "运行中" : "已终止";
-            var parent = string.IsNullOrEmpty(info.ParentLoopId) ? "(无)" : info.ParentLoopId;
+            var parent = string.IsNullOrEmpty(info.ParentSessionId) ? "(无)" : info.ParentSessionId;
             sb.AppendLine($"- session_id: {info.SessionId} | 状态: {status} | 父: {parent}");
         }
         return Task.FromResult(new ToolResult

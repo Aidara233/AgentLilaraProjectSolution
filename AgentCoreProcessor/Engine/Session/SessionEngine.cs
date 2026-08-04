@@ -93,24 +93,14 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
         session.SetCurrency(_currency!);
         session.SetSessionEngine(this);
 
-        // 确定 loopId：单频道端口时用 LoopId.ForChannel，让 BasicTools 能解析真实 channelId
-        string loopId;
-        int singleChannelId = -1;
-        if (spec.InputPorts.Count == 1)
-        {
-            singleChannelId = spec.InputPorts.First().Value.ChannelId;
-            loopId = LoopId.ForChannel(singleChannelId);
-        }
-        else
-        {
-            loopId = $"session:{session.SessionId}";
-        }
+        // 会话身份统一为裸 sessionId（LoopId 概念已移除，channel:N 前缀不再产生）。
+        var sessionId = session.SessionId;
 
         // 加载组件
         try
         {
             session.InitComponents(
-                loopId, // 单频道端口时传 "channel:N"，让 BasicToolsComponent.ParseChannelId 能解析
+                sessionId,
                 _ctx.ModuleBus,
                 _ctx.ComponentServices,
                 () => session.WakeUp());
@@ -170,7 +160,7 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
             var host = new SessionAgentHost(channelPorts, initialStateText, svc);
             session.SetAgentHost(host);
             Signal.Event(LogGroup.Engine, "Session AgentHost 就绪",
-                new { sessionId = session.SessionId, channelPorts = channelPorts.Count, loopId });
+                new { sessionId = session.SessionId, channelPorts = channelPorts.Count });
         }
         catch (Exception ex)
         {
@@ -443,17 +433,14 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
     }
 
     /// <summary>
-    /// 跨 0 或多次 compact 转发解析 loopId 当前的活跃 session ID（走资源池树：引用 → 所在池 → 池活跃 session）。
-    /// 非 session: 引用（channel: / task: / review:）原样返回（兼容，阶段 3 统一寻址后移除）。
+    /// 解析会话引用到当前活跃 session ID（走资源池树：引用 → 所在池 → 池活跃 session）。
+    /// 输入为裸 sessionId（LoopId 前缀概念已移除）。查不到返回 null。
     /// </summary>
-    public string? ResolveActiveSession(string loopId)
+    public string? ResolveActiveSession(string sessionId)
     {
-        if (loopId == null) return null;
-        if (!loopId.StartsWith("session:", System.StringComparison.OrdinalIgnoreCase))
-            return loopId; // channel: / task: / review: 原样返回
-        var current = loopId.Substring("session:".Length);
-        if (_poolByMember.TryGetValue(current, out var pool) && !string.IsNullOrEmpty(pool.ActiveSessionId))
-            return $"session:{pool.ActiveSessionId}";
+        if (string.IsNullOrEmpty(sessionId)) return null;
+        if (_poolByMember.TryGetValue(sessionId, out var pool) && !string.IsNullOrEmpty(pool.ActiveSessionId))
+            return pool.ActiveSessionId;
         return null;
     }
 
@@ -618,10 +605,9 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
     /// <summary>通过外部信号唤醒指定 session（异步任务完成等）。自动跨 compact forward。</summary>
     public void WakeUpSession(string sessionId)
     {
-        var active = ResolveActiveSession($"session:{sessionId}");
+        var active = ResolveActiveSession(sessionId);
         if (active == null) return;
-        var bareId = active.Substring("session:".Length);
-        if (_sessions.TryGetValue(bareId, out var session))
+        if (_sessions.TryGetValue(active, out var session))
             session.WakeUp();
     }
 
@@ -631,24 +617,23 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
     /// </summary>
     public (bool Success, string Message) SwitchSessionCore(string sessionId, string coreName)
     {
-        var active = ResolveActiveSession($"session:{sessionId}");
+        var active = ResolveActiveSession(sessionId);
         if (active == null)
             return (false, $"会话 {sessionId} 不存在或已结束。");
 
-        var bareId = active.Substring("session:".Length);
-        if (!_sessions.TryGetValue(bareId, out var session) || session is not RuntimeSession rs)
-            return (false, $"会话 {bareId} 不可用。");
+        if (!_sessions.TryGetValue(active, out var session) || session is not RuntimeSession rs)
+            return (false, $"会话 {active} 不可用。");
 
         if (!rs.AllowedCoreConfigs.Contains(coreName, StringComparer.OrdinalIgnoreCase))
-            return (false, $"核心 {coreName} 不在会话 {bareId} 可用列表内（{string.Join(", ", rs.AllowedCoreConfigs)}）。");
+            return (false, $"核心 {coreName} 不在会话 {active} 可用列表内（{string.Join(", ", rs.AllowedCoreConfigs)}）。");
 
         if (!rs.SwitchCore(coreName))
             return (false, $"切换核心失败：{coreName}。");
 
         rs.WakeUp();
         Signal.Event(LogGroup.Engine, "外部切换 Session Core",
-            new { sessionId = bareId, core = rs.ActiveCoreConfig, trigger = "external" });
-        return (true, $"会话 {bareId} 已切换到核心 {rs.ActiveCoreConfig}。");
+            new { sessionId = active, core = rs.ActiveCoreConfig, trigger = "external" });
+        return (true, $"会话 {active} 已切换到核心 {rs.ActiveCoreConfig}。");
     }
 
     // 注册表对外入口
@@ -969,16 +954,10 @@ InitialState = $"执行定时任务: {task.Description}"
 
             // ④ 走标准初始化路径（组件 / AgentCore / MessageEngine / AgentHost）
             //    跳过 BootstrapAsync：InitActions 已在旧 session 执行过，不重复 claim/订阅。
-            //    loopId 凭 restorePorts 推断：单频道端口 → "channel:N"，否则 → "session:{id}"。
-            string loopId;
-            if (restorePorts.Count == 1)
-                loopId = LoopId.ForChannel(restorePorts[0].spec.ChannelId);
-            else
-                loopId = $"session:{session.SessionId}";
-
+            //    会话身份统一为裸 sessionId（LoopId 概念已移除）。
             try
             {
-                session.InitComponents(loopId, _ctx.ModuleBus, _ctx.ComponentServices, () => session.WakeUp());
+                session.InitComponents(session.SessionId, _ctx.ModuleBus, _ctx.ComponentServices, () => session.WakeUp());
             }
             catch (Exception ex)
             {

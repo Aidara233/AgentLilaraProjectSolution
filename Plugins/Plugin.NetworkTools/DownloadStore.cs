@@ -40,12 +40,12 @@ public class DownloadStore : ISessionResource
         return task;
     }
 
-    public List<DownloadTask> GetAll(string? filter, string? loopId)
+    public List<DownloadTask> GetAll(string? filter, string? sessionId)
     {
         var query = _tasks.Values.AsEnumerable();
 
-        if (!string.IsNullOrEmpty(loopId))
-            query = query.Where(t => t.LoopId == loopId);
+        if (!string.IsNullOrEmpty(sessionId))
+            query = query.Where(t => t.SessionId == sessionId);
 
         query = filter switch
         {
@@ -72,7 +72,7 @@ public class DownloadStore : ISessionResource
         DecrementActive();
 
         EnqueueNotification(task, "cancelled", error: null);
-        NetworkToolsNotifier.NotifyCompleted(task.LoopId);
+        NetworkToolsNotifier.NotifyCompleted(task.SessionId);
         return true;
     }
 
@@ -85,7 +85,7 @@ public class DownloadStore : ISessionResource
         DecrementActive();
 
         EnqueueNotification(task, "completed", error: null);
-        NetworkToolsNotifier.NotifyCompleted(task.LoopId);
+        NetworkToolsNotifier.NotifyCompleted(task.SessionId);
     }
 
     public void MarkFailed(DownloadTask task, string error)
@@ -101,14 +101,14 @@ public class DownloadStore : ISessionResource
         catch { /* best effort */ }
 
         EnqueueNotification(task, "failed", error: error);
-        NetworkToolsNotifier.NotifyCompleted(task.LoopId);
+        NetworkToolsNotifier.NotifyCompleted(task.SessionId);
     }
 
     // ── Notification drain (called by Loop component) ──
 
-    public List<DownloadNotification> DrainNotifications(string loopId)
+    public List<DownloadNotification> DrainNotifications(string sessionId)
     {
-        if (!_notifications.TryGetValue(loopId, out var queue))
+        if (!_notifications.TryGetValue(sessionId, out var queue))
             return new List<DownloadNotification>();
 
         var result = new List<DownloadNotification>();
@@ -128,11 +128,11 @@ public class DownloadStore : ISessionResource
 
     private void EnqueueNotification(DownloadTask task, string status, string? error)
     {
-        var queue = _notifications.GetOrAdd(task.LoopId, _ => new ConcurrentQueue<DownloadNotification>());
+        var queue = _notifications.GetOrAdd(task.SessionId, _ => new ConcurrentQueue<DownloadNotification>());
         queue.Enqueue(new DownloadNotification
         {
             DownloadId = task.Id,
-            LoopId = task.LoopId,
+            SessionId = task.SessionId,
             FileName = task.FileName ?? Path.GetFileName(task.SavePath),
             RelativePath = task.RelativePath,
             Size = task.BytesDownloaded,
@@ -150,30 +150,20 @@ public class DownloadStore : ISessionResource
 
     public Task OnSessionCompactingAsync(string oldSessionId, string newSessionId)
     {
-        var oldLoopId = $"session:{oldSessionId}";
-        var newLoopId = $"session:{newSessionId}";
-        foreach (var task in _tasks.Values)
-        {
-            if (task.LoopId == oldLoopId)
-                task.RebindLoopId(newLoopId);
-        }
-        // 通知队列也要改 key
-        if (_notifications.TryRemove(oldLoopId, out var queue))
-            _notifications[newLoopId] = queue;
+        // 任务键为裸 sessionId，compact 换根由资源池统一处理。
+        // 通知队列按任务归属 sessionId 分桶，随任务键统一迁移（无需 rebind 字符串）。
         return Task.CompletedTask;
     }
 
     public Task OnSessionFreedAsync(string sessionId)
     {
-        var loopId = $"session:{sessionId}";
-        _notifications.TryRemove(loopId, out _);
+        _notifications.TryRemove(sessionId, out _);
         return Task.CompletedTask;
     }
 
     public bool HasActiveResources(string sessionId)
     {
-        var loopId = $"session:{sessionId}";
-        return _tasks.Values.Any(t => t.LoopId == loopId
+        return _tasks.Values.Any(t => t.SessionId == sessionId
             && (t.Status == DownloadStatus.Downloading || t.Status == DownloadStatus.Pending));
     }
 }
@@ -181,7 +171,7 @@ public class DownloadStore : ISessionResource
 public class DownloadNotification
 {
     public string DownloadId { get; init; } = "";
-    public string LoopId { get; init; } = "";
+    public string SessionId { get; init; } = "";
     public string FileName { get; init; } = "";
     public string RelativePath { get; init; } = "";
     public long Size { get; init; }
@@ -197,6 +187,6 @@ public static class NetworkToolsNotifier
     /// <summary>Global组件设置此回调：收到通知时调用WakeLoop。</summary>
     public static Action<string>? OnDownloadCompleted { get; set; }
 
-    public static void NotifyCompleted(string loopId)
-        => OnDownloadCompleted?.Invoke(loopId);
+    public static void NotifyCompleted(string sessionId)
+        => OnDownloadCompleted?.Invoke(sessionId);
 }

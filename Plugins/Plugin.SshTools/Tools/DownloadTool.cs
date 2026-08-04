@@ -10,7 +10,7 @@ public class DownloadTool : ITool
     private readonly SshGlobalComponent _global;
     private readonly string _workDir;
     private readonly string _workspaceDir;
-    private readonly string _loopId;
+    private readonly string _sessionId;
 
     public string Name => "ssh_download";
     public string Description => "从远程服务器下载文件到本地 workspace。"
@@ -25,12 +25,12 @@ public class DownloadTool : ITool
 
     private const int DefaultTimeoutSeconds = 30;
 
-    public DownloadTool(SshGlobalComponent global, string workDir, string workspaceDir, string loopId)
+    public DownloadTool(SshGlobalComponent global, string workDir, string workspaceDir, string sessionId)
     {
         _global = global;
         _workDir = workDir;
         _workspaceDir = workspaceDir;
-        _loopId = loopId;
+        _sessionId = sessionId;
     }
 
     public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
@@ -91,7 +91,7 @@ public class DownloadTool : ITool
     private string LaunchDownloadAsync(SshClient client, string remote, string local, string displayCmd)
     {
         var cts = new CancellationTokenSource();
-        var taskId = _global.RegisterTask(_loopId, displayCmd, cts);
+        var taskId = _global.RegisterTask(_sessionId, displayCmd, cts);
 
         Task.Run(() =>
         {

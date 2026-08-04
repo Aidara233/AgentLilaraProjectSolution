@@ -9,18 +9,18 @@ public class BrowserCloseSessionTool : ITool
 {
     private readonly BrowserComponent _component;
     private readonly SecurityConfig _security;
-    private readonly string _loopId;
+    private readonly string _sessionId;
 
     public string Name => "browser_close_session";
     public string Description => "关闭当前循环的浏览器会话，释放所有相关资源。下次调用将自动创建新会话。";
     public IReadOnlyList<ToolParameter> Parameters => Array.Empty<ToolParameter>();
     public TimeSpan Timeout => TimeSpan.FromSeconds(10);
 
-    public BrowserCloseSessionTool(BrowserComponent component, SecurityConfig security, string loopId)
+    public BrowserCloseSessionTool(BrowserComponent component, SecurityConfig security, string sessionId)
     {
         _component = component;
         _security = security;
-        _loopId = loopId;
+        _sessionId = sessionId;
     }
 
     public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
@@ -32,7 +32,7 @@ public class BrowserCloseSessionTool : ITool
             if (sessionManager == null)
                 return Fail("浏览器组件未初始化");
 
-            await sessionManager.CloseSessionAsync(_loopId);
+            await sessionManager.CloseSessionAsync(_sessionId);
 
             var result = new
             {

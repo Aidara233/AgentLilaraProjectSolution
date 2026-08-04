@@ -7,7 +7,7 @@ public interface IGlobalComponentContext
     void Enable();
     void Disable();
 
-    void WakeLoop(string loopId);
+    void WakeLoop(string sessionId);
 
     void PublishGlobal<TEvent>(TEvent e) where TEvent : class;
     void Subscribe<TEvent>(Func<TEvent, Task> handler) where TEvent : class;

@@ -14,7 +14,7 @@ namespace AgentCoreProcessor.Component;
 /// </summary>
 internal class ComponentHost
 {
-    private readonly string _loopId;
+    private readonly string _sessionId;
     private readonly string _loopType;
     private readonly ModuleBus _moduleBus;
     private readonly IServiceProvider _services;
@@ -29,14 +29,14 @@ internal class ComponentHost
     public GlobalComponentHost? GlobalHost { get; set; }
 
     public ComponentHost(
-        string loopId,
+        string sessionId,
         string loopType,
         ModuleBus moduleBus,
         IServiceProvider services,
         Action wakeLoop,
         Dictionary<Type, object>? perLoopServices = null)
     {
-        _loopId = loopId;
+        _sessionId = sessionId;
         _loopType = loopType;
         _moduleBus = moduleBus;
         _services = services;
@@ -282,12 +282,12 @@ internal class ComponentHost
         if (instance is not ILoopComponent component) return null;
 
         var defaultEnabled = _config.IsEnabled(component.Meta.Name, _loopType, component.Meta.DefaultEnabled);
-        var storage = new ComponentStorage(component.Meta.Name, _loopId);
+        var storage = new ComponentStorage(component.Meta.Name, _sessionId);
 
         var context = new LoopComponentContext(
-            _loopId, _loopType, _moduleBus, _effectiveServices, storage,
+            _sessionId, _loopType, _moduleBus, _effectiveServices, storage,
             _wakeLoop,
-            (loopId, enabled) =>
+            (sessionId, enabled) =>
             {
                 if (enabled) _ = EnableComponentAsync(component.Meta.Name);
                 else _ = DisableComponentAsync(component.Meta.Name);
@@ -318,17 +318,14 @@ internal record LoopComponentInstance(
 
 internal class ComponentStorage : IPluginStorage
 {
-    public ComponentStorage(string componentName, string loopId)
+    public ComponentStorage(string componentName, string sessionId)
     {
         GlobalDirectory = Path.Combine(PathConfig.StoragePath, "PluginData", componentName);
-        InstanceDirectory = Path.Combine(PathConfig.StoragePath, "PluginData", componentName,
-            SanitizeLoopId(loopId));
+        // 实例目录按裸 sessionId 隔离（LoopId 前缀概念已移除；sessionId 为 GUID 短码，无需 sanitize）
+        InstanceDirectory = Path.Combine(PathConfig.StoragePath, "PluginData", componentName, sessionId);
         Directory.CreateDirectory(GlobalDirectory);
         Directory.CreateDirectory(InstanceDirectory);
     }
-
-    private static string SanitizeLoopId(string loopId) =>
-        loopId.Replace(':', '_');
 
     public string GlobalDirectory { get; }
     public string InstanceDirectory { get; }

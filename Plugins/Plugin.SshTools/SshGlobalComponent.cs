@@ -46,9 +46,9 @@ public class SshGlobalComponent : GlobalComponentBase, ISessionResource
         _log = context.GetService<ISignalLogger>();
 
         // 注册唤醒回调：任务完成 → WakeLoop
-        OnTaskCompleted = loopId =>
+        OnTaskCompleted = sessionId =>
         {
-            _ctx.WakeLoop(loopId);
+            _ctx.WakeLoop(sessionId);
         };
 
         _configDir = Path.GetFullPath(Path.Combine(context.Storage.GlobalDirectory, ".."));
@@ -140,15 +140,15 @@ public class SshGlobalComponent : GlobalComponentBase, ISessionResource
         return Connect() ? _client : null;
     }
 
-    public string RegisterTask(string loopId, string command, CancellationTokenSource cts)
+    public string RegisterTask(string sessionId, string command, CancellationTokenSource cts)
     {
         if (_client == null) throw new InvalidOperationException("SSH 未连接");
 
-        var taskId = $"ssh-{loopId.Replace(':', '-')}-{Interlocked.Increment(ref _seq)}";
+        var taskId = $"ssh-{sessionId.Replace(':', '-')}-{Interlocked.Increment(ref _seq)}";
         var task = new SshTask
         {
             TaskId = taskId,
-            LoopId = loopId,
+            SessionId = sessionId,
             Command = command,
             Cts = cts
         };
@@ -175,7 +175,7 @@ public class SshGlobalComponent : GlobalComponentBase, ISessionResource
             ResetIdleTimer();
 
             // 唤醒对应 loop
-            OnTaskCompleted?.Invoke(task.LoopId);
+            OnTaskCompleted?.Invoke(task.SessionId);
         }
     }
 
@@ -188,12 +188,12 @@ public class SshGlobalComponent : GlobalComponentBase, ISessionResource
     public List<SshTask> GetAllRunningTasks() => _runningTasks.Values.ToList();
 
     /// <summary>为指定 loop 兑现已完成任务通知，调用后清空该 loop 的已完成队列。</summary>
-    public List<SshTask> DrainCompletedTasks(string loopId)
+    public List<SshTask> DrainCompletedTasks(string sessionId)
     {
         var result = new List<SshTask>();
         foreach (var kvp in _completedTasks)
         {
-            if (kvp.Value.LoopId == loopId)
+            if (kvp.Value.SessionId == sessionId)
             {
                 result.Add(kvp.Value);
                 _completedTasks.TryRemove(kvp.Key, out _);
@@ -206,12 +206,7 @@ public class SshGlobalComponent : GlobalComponentBase, ISessionResource
 
     public Task OnSessionCompactingAsync(string oldSessionId, string newSessionId)
     {
-        var oldLoopId = $"session:{oldSessionId}";
-        var newLoopId = $"session:{newSessionId}";
-        foreach (var kvp in _runningTasks)
-            if (kvp.Value.LoopId == oldLoopId) kvp.Value.RebindLoopId(newLoopId);
-        foreach (var kvp in _completedTasks)
-            if (kvp.Value.LoopId == oldLoopId) kvp.Value.RebindLoopId(newLoopId);
+        // 任务键为裸 sessionId，compact 换根由资源池统一处理，无需手动 rebind
         return Task.CompletedTask;
     }
 
@@ -222,8 +217,7 @@ public class SshGlobalComponent : GlobalComponentBase, ISessionResource
 
     public bool HasActiveResources(string sessionId)
     {
-        var loopId = $"session:{sessionId}";
-        return _runningTasks.Values.Any(t => t.LoopId == loopId);
+        return _runningTasks.Values.Any(t => t.SessionId == sessionId);
     }
 
     private void ResetIdleTimer()

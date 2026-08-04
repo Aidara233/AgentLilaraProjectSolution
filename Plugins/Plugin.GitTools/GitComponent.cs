@@ -74,7 +74,7 @@ public class GitComponent : LoopComponentBase
         var global = GitToolsAccessor.Global;
         if (global == null)
         {
-            _log?.Warn("git", "global-not-available", new { loopId = context.LoopId });
+            _log?.Warn("git", "global-not-available", new { sessionId = context.SessionId });
             return Task.CompletedTask;
         }
 
@@ -101,7 +101,7 @@ public class GitComponent : LoopComponentBase
 
         _log?.Event("git", "loop-init", new
         {
-            loopId = context.LoopId,
+            sessionId = context.SessionId,
             gitAvailable = runner.IsAvailable,
             githubConfigured = gh.IsConfigured
         });

@@ -9,7 +9,7 @@ public class BrowserExecuteJsTool : ITool
 {
     private readonly BrowserComponent _component;
     private readonly SecurityConfig _security;
-    private readonly string _loopId;
+    private readonly string _sessionId;
 
     public string Name => "browser_execute_js";
     public string Description => "在页面上下文中执行JavaScript代码。返回执行结果。超时限制由配置控制。";
@@ -20,11 +20,11 @@ public class BrowserExecuteJsTool : ITool
     ];
     public TimeSpan Timeout => TimeSpan.FromSeconds(30);
 
-    public BrowserExecuteJsTool(BrowserComponent component, SecurityConfig security, string loopId)
+    public BrowserExecuteJsTool(BrowserComponent component, SecurityConfig security, string sessionId)
     {
         _component = component;
         _security = security;
-        _loopId = loopId;
+        _sessionId = sessionId;
     }
 
     public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
@@ -46,7 +46,7 @@ public class BrowserExecuteJsTool : ITool
             if (sessionManager == null || config == null)
                 return Fail("浏览器组件未初始化");
 
-            var session = await sessionManager.GetOrCreateSessionAsync(_loopId);
+            var session = await sessionManager.GetOrCreateSessionAsync(_sessionId);
 
             if (session.CurrentPage == null)
                 return Fail("当前无活动页面，请先使用 browser_navigate");

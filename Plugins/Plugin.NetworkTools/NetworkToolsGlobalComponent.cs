@@ -52,9 +52,9 @@ public class NetworkToolsGlobalComponent : GlobalComponentBase
         _http.DefaultRequestHeaders.UserAgent.ParseAdd(_security.UserAgent);
 
         // 注册唤醒回调：Global收到下载完成信号 → WakeLoop
-        NetworkToolsNotifier.OnDownloadCompleted = loopId =>
+        NetworkToolsNotifier.OnDownloadCompleted = sessionId =>
         {
-            _ctx.WakeLoop(loopId);
+            _ctx.WakeLoop(sessionId);
         };
 
         // 暴露静态引用供Loop组件工具使用

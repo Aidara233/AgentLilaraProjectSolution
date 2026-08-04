@@ -11,20 +11,20 @@ public class DownloadGroupFileTool : ITool
     private readonly string _workspaceDir = "";
     private readonly HttpClient _http;
     private readonly GroupFileDownloadStore? _store;
-    private readonly string _loopId = "";
+    private readonly string _sessionId = "";
 
     public DownloadGroupFileTool() { _http = new HttpClient(); }
 
     public DownloadGroupFileTool(IAdapterAccess adapterAccess,
         string adapterId, string workspaceDir, HttpClient http,
-        GroupFileDownloadStore store, string loopId)
+        GroupFileDownloadStore store, string sessionId)
     {
         _adapterAccess = adapterAccess;
         _adapterId = adapterId;
         _workspaceDir = workspaceDir;
         _http = http;
         _store = store;
-        _loopId = loopId;
+        _sessionId = sessionId;
     }
 
     public string Name => "download_group_file";
@@ -69,11 +69,11 @@ public class DownloadGroupFileTool : ITool
 
         // 注册下载任务
         var store = _store;
-        var task = store?.Register(_loopId, saveName, destPath);
+        var task = store?.Register(_sessionId, saveName, destPath);
         var taskId = task?.Id ?? "";
 
         var http = _http;
-        var loopId = _loopId;
+        var sessionId = _sessionId;
         _ = Task.Run(async () =>
         {
             try

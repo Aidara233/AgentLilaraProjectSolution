@@ -12,12 +12,12 @@ public class GroupFileDownloadStore
     private readonly ConcurrentDictionary<string, GroupFileDownloadTask> _tasks = new();
     private readonly ConcurrentDictionary<string, ConcurrentQueue<GroupFileDownloadNotification>> _notifications = new();
 
-    public GroupFileDownloadTask Register(string loopId, string fileName, string savePath)
+    public GroupFileDownloadTask Register(string sessionId, string fileName, string savePath)
     {
         var task = new GroupFileDownloadTask
         {
             Id = $"{DateTime.UtcNow:yyyyMMddHHmmss}-{Interlocked.Increment(ref _seq):x4}",
-            LoopId = loopId,
+            SessionId = sessionId,
             FileName = fileName,
             SavePath = savePath,
             Status = "downloading",
@@ -35,7 +35,7 @@ public class GroupFileDownloadStore
         task.Size = size;
         task.CompletedAt = DateTime.UtcNow;
         EnqueueNotification(task, "completed", null);
-        GroupFileNotifier.NotifyCompleted(task.LoopId);
+        GroupFileNotifier.NotifyCompleted(task.SessionId);
     }
 
     public void MarkFailed(string taskId, string error)
@@ -48,12 +48,12 @@ public class GroupFileDownloadStore
         // 删除部分下载的文件
         try { if (File.Exists(task.SavePath)) File.Delete(task.SavePath); } catch { }
         EnqueueNotification(task, "failed", error);
-        GroupFileNotifier.NotifyCompleted(task.LoopId);
+        GroupFileNotifier.NotifyCompleted(task.SessionId);
     }
 
-    public List<GroupFileDownloadNotification> DrainNotifications(string loopId)
+    public List<GroupFileDownloadNotification> DrainNotifications(string sessionId)
     {
-        if (!_notifications.TryGetValue(loopId, out var queue))
+        if (!_notifications.TryGetValue(sessionId, out var queue))
             return new List<GroupFileDownloadNotification>();
 
         var result = new List<GroupFileDownloadNotification>();
@@ -64,11 +64,11 @@ public class GroupFileDownloadStore
 
     private void EnqueueNotification(GroupFileDownloadTask task, string status, string? error)
     {
-        var queue = _notifications.GetOrAdd(task.LoopId, _ => new ConcurrentQueue<GroupFileDownloadNotification>());
+        var queue = _notifications.GetOrAdd(task.SessionId, _ => new ConcurrentQueue<GroupFileDownloadNotification>());
         queue.Enqueue(new GroupFileDownloadNotification
         {
             TaskId = task.Id,
-            LoopId = task.LoopId,
+            SessionId = task.SessionId,
             FileName = task.FileName,
             SavePath = task.SavePath,
             Size = task.Size,
@@ -83,7 +83,7 @@ public class GroupFileDownloadStore
 public class GroupFileDownloadTask
 {
     public string Id { get; init; } = "";
-    public string LoopId { get; init; } = "";
+    public string SessionId { get; init; } = "";
     public string FileName { get; init; } = "";
     public string SavePath { get; set; } = "";
     public string Status { get; set; } = "pending";
@@ -96,7 +96,7 @@ public class GroupFileDownloadTask
 public class GroupFileDownloadNotification
 {
     public string TaskId { get; init; } = "";
-    public string LoopId { get; init; } = "";
+    public string SessionId { get; init; } = "";
     public string FileName { get; init; } = "";
     public string SavePath { get; init; } = "";
     public long Size { get; init; }
@@ -112,8 +112,8 @@ internal static class GroupFileNotifier
 {
     public static Action<string>? OnDownloadCompleted { get; set; }
 
-    public static void NotifyCompleted(string loopId)
-        => OnDownloadCompleted?.Invoke(loopId);
+    public static void NotifyCompleted(string sessionId)
+        => OnDownloadCompleted?.Invoke(sessionId);
 }
 
 /// <summary>

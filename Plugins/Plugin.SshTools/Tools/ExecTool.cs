@@ -11,7 +11,7 @@ public class ExecTool : ITool
 {
     private readonly SshGlobalComponent _global;
     private readonly string _workDir;
-    private readonly string _loopId;
+    private readonly string _sessionId;
 
     public string Name => "ssh_exec";
     public string Description => "在远程服务器上执行 shell 命令。"
@@ -28,11 +28,11 @@ public class ExecTool : ITool
     private const int DefaultTimeoutSeconds = 10;
     public const int MaxOutputChars = 4000;
 
-    public ExecTool(SshGlobalComponent global, string workDir, string loopId)
+    public ExecTool(SshGlobalComponent global, string workDir, string sessionId)
     {
         _global = global;
         _workDir = workDir;
-        _loopId = loopId;
+        _sessionId = sessionId;
     }
 
     public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
@@ -105,7 +105,7 @@ public class ExecTool : ITool
     private string LaunchAsync(Renci.SshNet.SshClient client, string fullCommand, string displayCmd)
     {
         var cts = new CancellationTokenSource();
-        var taskId = _global.RegisterTask(_loopId, displayCmd, cts);
+        var taskId = _global.RegisterTask(_sessionId, displayCmd, cts);
 
         Task.Run(() =>
         {
@@ -136,7 +136,7 @@ public class ExecTool : ITool
     private string ContinueInBackground(Renci.SshNet.SshCommand sshCmd, IAsyncResult asyncResult, string displayCmd)
     {
         var cts = new CancellationTokenSource();
-        var taskId = _global.RegisterTask(_loopId, displayCmd, cts);
+        var taskId = _global.RegisterTask(_sessionId, displayCmd, cts);
 
         Task.Run(() =>
         {

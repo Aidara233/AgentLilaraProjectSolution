@@ -9,9 +9,7 @@ public class DownloadTask
     public string Url { get; init; } = "";
     public string SavePath { get; init; } = "";     // 完整磁盘路径
     public string RelativePath { get; init; } = "";  // Agent 指定的相对路径（通知用）
-    public string LoopId { get; set; } = "";
-
-    public void RebindLoopId(string newLoopId) => LoopId = newLoopId;
+    public string SessionId { get; set; } = "";
     public DownloadStatus Status { get; set; } = DownloadStatus.Pending;
     public long BytesDownloaded { get; set; }
     public long? TotalBytes { get; set; }

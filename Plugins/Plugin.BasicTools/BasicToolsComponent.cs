@@ -36,11 +36,11 @@ public class BasicToolsComponent : LoopComponentBase
     public override async Task OnInitAsync(ILoopComponentContext context, InitReason reason)
     {
         var channelAccess = context.GetService<IChannelAccess>();
-        var channelId = ParseChannelId(context.LoopId);
         var speakGuard = context.GetService<ISpeakGuard>();
         // 连接驱动：session 注入 IConnectedChannel，发送工具据此运行期决定目标频道并校验发言权限。
-        // ExpressEngine 无此服务，回退到 loopId 解析的固定 channelId。
+        // 所有会话（express/working/task）都注入 IConnectedChannel，频道号取自 connected.CurrentChannelId。
         var connected = context.GetService<IConnectedChannel>();
+        var channelId = connected?.CurrentChannelId ?? 0;
 
         if (channelAccess != null)
         {
@@ -74,14 +74,5 @@ public class BasicToolsComponent : LoopComponentBase
             }
         }
 
-    }
-
-    private static int ParseChannelId(string loopId)
-    {
-        // loopId 格式: "channel:123"
-        var colonIndex = loopId.LastIndexOf(':');
-        if (colonIndex >= 0 && int.TryParse(loopId[(colonIndex + 1)..], out var id))
-            return id;
-        return 0;
     }
 }

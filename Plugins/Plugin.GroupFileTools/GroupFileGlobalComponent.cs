@@ -29,9 +29,9 @@ public class GroupFileGlobalComponent : GlobalComponentBase
 
         _store = new GroupFileDownloadStore();
 
-        GroupFileNotifier.OnDownloadCompleted = loopId =>
+        GroupFileNotifier.OnDownloadCompleted = sessionId =>
         {
-            _ctx.WakeLoop(loopId);
+            _ctx.WakeLoop(sessionId);
         };
 
         GroupFileToolsAccessor.Configure(_http, _store);

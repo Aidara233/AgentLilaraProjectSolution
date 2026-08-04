@@ -6,7 +6,7 @@ namespace Plugin.NetworkTools;
 [Component(Name = "browser-tools", Scope = ComponentScope.Loop)]
 public class BrowserToolsLoopComponent : LoopComponentBase
 {
-    private string _loopId = "";
+    private string _sessionId = "";
 
     private BrowserNavigateTool? _navigate;
     private BrowserClickTool? _click;
@@ -46,23 +46,23 @@ public class BrowserToolsLoopComponent : LoopComponentBase
 
     public override Task OnInitAsync(ILoopComponentContext context, InitReason reason)
     {
-        _loopId = context.LoopId;
+        _sessionId = context.SessionId;
 
         var browser = BrowserAccessor.Instance
             ?? throw new InvalidOperationException("BrowserComponent 未初始化");
         var security = NetworkToolsAccessor.Security
             ?? throw new InvalidOperationException("SecurityConfig 未加载（NetworkToolsGlobalComponent 未初始化）");
 
-        _navigate = new BrowserNavigateTool(browser, security, _loopId);
-        _click = new BrowserClickTool(browser, security, _loopId);
-        _fill = new BrowserFillTool(browser, security, _loopId);
-        _extract = new BrowserExtractTool(browser, security, _loopId);
-        _screenshot = new BrowserScreenshotTool(browser, security, _loopId);
-        _executeJs = new BrowserExecuteJsTool(browser, security, _loopId);
-        _getCookies = new BrowserGetCookiesTool(browser, security, _loopId);
-        _setCookies = new BrowserSetCookiesTool(browser, security, _loopId);
-        _waitFor = new BrowserWaitForTool(browser, security, _loopId);
-        _closeSession = new BrowserCloseSessionTool(browser, security, _loopId);
+        _navigate = new BrowserNavigateTool(browser, security, _sessionId);
+        _click = new BrowserClickTool(browser, security, _sessionId);
+        _fill = new BrowserFillTool(browser, security, _sessionId);
+        _extract = new BrowserExtractTool(browser, security, _sessionId);
+        _screenshot = new BrowserScreenshotTool(browser, security, _sessionId);
+        _executeJs = new BrowserExecuteJsTool(browser, security, _sessionId);
+        _getCookies = new BrowserGetCookiesTool(browser, security, _sessionId);
+        _setCookies = new BrowserSetCookiesTool(browser, security, _sessionId);
+        _waitFor = new BrowserWaitForTool(browser, security, _sessionId);
+        _closeSession = new BrowserCloseSessionTool(browser, security, _sessionId);
 
         return Task.CompletedTask;
     }

@@ -38,7 +38,7 @@ public class ScheduledTasksTimerComponent : GlobalComponentBase
 
         // Navigate to the Loop component's storage base:
         // Global storage = PluginData/scheduled-tasks-timer/
-        // Loop storage   = PluginData/scheduled-tasks/{loopId}/
+        // Loop storage   = PluginData/scheduled-tasks/{sessionId}/
         _pluginDataBase = Path.GetFullPath(Path.Combine(context.Storage.GlobalDirectory, "..", "scheduled-tasks"));
 
         _log?.Event(LogGroup, "global-timer-init", new { scanPath = _pluginDataBase });
@@ -93,7 +93,7 @@ public class ScheduledTasksTimerComponent : GlobalComponentBase
         {
             try
             {
-                var (nextFire, loopId, requiresWork) = FindEarliestTask();
+                var (nextFire, sessionId, requiresWork) = FindEarliestTask();
 
                 if (nextFire == null)
                 {
@@ -109,8 +109,8 @@ public class ScheduledTasksTimerComponent : GlobalComponentBase
                 var delay = nextFire.Value - DateTime.Now;
                 if (delay <= TimeSpan.Zero)
                 {
-                    _log?.Event(LogGroup, "global-timer-fire", new { loopId, overdue = -(int)delay.TotalSeconds, requiresWork });
-                    FireScheduledTask(loopId!, requiresWork);
+                    _log?.Event(LogGroup, "global-timer-fire", new { sessionId, overdue = -(int)delay.TotalSeconds, requiresWork });
+                    FireScheduledTask(sessionId!, requiresWork);
                     try { await Task.Delay(2000, shutdownCt); } catch { break; }
                     continue;
                 }
@@ -121,7 +121,7 @@ public class ScheduledTasksTimerComponent : GlobalComponentBase
 
                 _log?.Debug(LogGroup, "global-timer-waiting", new
                 {
-                    loopId,
+                    sessionId,
                     nextFire = nextFire.Value.ToString("HH:mm:ss"),
                     delaySeconds = (int)delay.TotalSeconds
                 });
@@ -131,8 +131,8 @@ public class ScheduledTasksTimerComponent : GlobalComponentBase
                 try
                 {
                     await Task.Delay(delay, delayCts.Token);
-                    _log?.Event(LogGroup, "global-timer-fire", new { loopId, requiresWork });
-                    FireScheduledTask(loopId!, requiresWork);
+                    _log?.Event(LogGroup, "global-timer-fire", new { sessionId, requiresWork });
+                    FireScheduledTask(sessionId!, requiresWork);
                 }
                 catch (OperationCanceledException) when (!shutdownCt.IsCancellationRequested)
                 {
@@ -150,13 +150,13 @@ public class ScheduledTasksTimerComponent : GlobalComponentBase
         _log?.Event(LogGroup, "global-timer-loop-stopped");
     }
 
-    private (DateTime? nextFire, string? loopId, bool requiresWork) FindEarliestTask()
+    private (DateTime? nextFire, string? sessionId, bool requiresWork) FindEarliestTask()
     {
         if (!Directory.Exists(_pluginDataBase))
             return (null, null, false);
 
         DateTime? earliest = null;
-        string? earliestLoopId = null;
+        string? earliestSessionId = null;
         bool earliestRequiresWork = false;
 
         foreach (var dir in Directory.GetDirectories(_pluginDataBase))
@@ -169,19 +169,19 @@ public class ScheduledTasksTimerComponent : GlobalComponentBase
             if (nextFire != null && (earliest == null || nextFire < earliest))
             {
                 earliest = nextFire;
-                // Reverse sanitize: directory name "channel_123" → "channel:123"
+                // 目录名即裸 sessionId（ComponentStorage 按裸 sessionId 建实例目录）
                 var dirName = Path.GetFileName(dir);
-                earliestLoopId = dirName.Replace('_', ':');
+                earliestSessionId = dirName;
                 earliestRequiresWork = requiresWork;
             }
         }
 
-        return (earliest, earliestLoopId, earliestRequiresWork);
+        return (earliest, earliestSessionId, earliestRequiresWork);
     }
 
-    private void FireScheduledTask(string loopId, bool requiresWork)
+    private void FireScheduledTask(string sessionId, bool requiresWork)
     {
-        _ctx.WakeLoop(loopId);
+        _ctx.WakeLoop(sessionId);
     }
 }
 

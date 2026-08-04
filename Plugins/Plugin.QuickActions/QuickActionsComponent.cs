@@ -32,12 +32,11 @@ public class QuickActionsComponent : LoopComponentBase
     {
         var adapterAccess = context.GetService<IAdapterAccess>();
         var channelAccess = context.GetService<IChannelAccess>();
+        var connected = context.GetService<IConnectedChannel>();
         if (adapterAccess == null || channelAccess == null) return;
 
-        var loopId = context.LoopId;
-        var colonIdx = loopId.LastIndexOf(':');
-        if (colonIdx < 0 || !int.TryParse(loopId[(colonIdx + 1)..], out var channelId))
-            channelId = 0;
+        // 频道号取自连接状态（LoopId 前缀概念已移除，会话不持有 channel 号）
+        var channelId = connected?.CurrentChannelId ?? 0;
 
         var detail = await channelAccess.GetChannelDetailAsync(channelId);
         if (detail == null) return;

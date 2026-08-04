@@ -10,12 +10,12 @@ namespace Plugin.SystemTools;
 public class CreateSubAgentTool : ITool
 {
     private readonly ISubAgentAccess _subAgents;
-    private readonly string _parentLoopId;
+    private readonly string _parentSessionId;
 
-    public CreateSubAgentTool(ISubAgentAccess subAgents, string parentLoopId)
+    public CreateSubAgentTool(ISubAgentAccess subAgents, string parentSessionId)
     {
         _subAgents = subAgents;
-        _parentLoopId = parentLoopId;
+        _parentSessionId = parentSessionId;
     }
 
     public string Name => "create_sub_agent";
@@ -44,7 +44,7 @@ public class CreateSubAgentTool : ITool
 
         var options = new SubAgentOptions
         {
-            ParentLoopId = _parentLoopId
+            ParentSessionId = _parentSessionId
         };
 
         // 解析 components
@@ -70,7 +70,7 @@ public class CreateSubAgentTool : ITool
             Status = "success",
             Data = $"子 agent 已创建并启动。\n" +
                    $"- session_id: {info.SessionId}\n" +
-                   $"- 父 loopId: {_parentLoopId}\n" +
+                   $"- 父会话: {_parentSessionId}\n" +
                    $"提示：使用 send_instruction 可追加指令，wait_sub 可阻塞等待完成，" +
                    $"list_sub_agents 可枚举所有子 agent。子 agent 完成时你将自动收到通知。"
         };

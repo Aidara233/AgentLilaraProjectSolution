@@ -222,7 +222,7 @@ internal class MasterEngineTestFacade
         _recordingCheck = recordingCheck;
     }
 
-    public void WakeLoop(string loopId) => _master.WakeLoop(loopId);
+    public void WakeLoop(string sessionId) => _master.WakeLoop(sessionId);
 
     /// <summary>检查指定 session 是否被 WakeUpSession 唤醒过。</summary>
     public bool SessionWasWoken(string sessionId)

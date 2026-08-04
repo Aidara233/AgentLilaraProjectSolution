@@ -6,7 +6,7 @@ namespace AgentCoreProcessor.Component;
 
 internal class LoopComponentContext : ILoopComponentContext
 {
-    private readonly string _loopId;
+    private readonly string _sessionId;
     private readonly string _loopType;
     private readonly ModuleBus _moduleBus;
     private readonly IServiceProvider _services;
@@ -18,7 +18,7 @@ internal class LoopComponentContext : ILoopComponentContext
     private bool _isEnabled;
 
     public LoopComponentContext(
-        string loopId,
+        string sessionId,
         string loopType,
         ModuleBus moduleBus,
         IServiceProvider services,
@@ -27,7 +27,7 @@ internal class LoopComponentContext : ILoopComponentContext
         Action<string, bool> setEnabled,
         bool initialEnabled)
     {
-        _loopId = loopId;
+        _sessionId = sessionId;
         _loopType = loopType;
         _moduleBus = moduleBus;
         _services = services;
@@ -37,7 +37,7 @@ internal class LoopComponentContext : ILoopComponentContext
         _isEnabled = initialEnabled;
     }
 
-    public string LoopId => _loopId;
+    public string SessionId => _sessionId;
     public string LoopType => _loopType;
     public bool IsEnabled => _isEnabled;
     public IPluginStorage Storage => _storage;
@@ -46,14 +46,14 @@ internal class LoopComponentContext : ILoopComponentContext
     {
         if (_isEnabled) return;
         _isEnabled = true;
-        _setEnabled(_loopId, true);
+        _setEnabled(_sessionId, true);
     }
 
     public void Disable()
     {
         if (!_isEnabled) return;
         _isEnabled = false;
-        _setEnabled(_loopId, false);
+        _setEnabled(_sessionId, false);
     }
 
     public void WakeLoop() => _wakeLoop();

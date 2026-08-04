@@ -9,7 +9,7 @@ public class BrowserScreenshotTool : ITool
 {
     private readonly BrowserComponent _component;
     private readonly SecurityConfig _security;
-    private readonly string _loopId;
+    private readonly string _sessionId;
 
     public string Name => "browser_screenshot";
     public string Description => "截取页面或元素截图。保存路径相对于Workspace目录。";
@@ -21,11 +21,11 @@ public class BrowserScreenshotTool : ITool
     ];
     public TimeSpan Timeout => TimeSpan.FromSeconds(60);
 
-    public BrowserScreenshotTool(BrowserComponent component, SecurityConfig security, string loopId)
+    public BrowserScreenshotTool(BrowserComponent component, SecurityConfig security, string sessionId)
     {
         _component = component;
         _security = security;
-        _loopId = loopId;
+        _sessionId = sessionId;
     }
 
     public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
@@ -48,7 +48,7 @@ public class BrowserScreenshotTool : ITool
             if (sessionManager == null || config == null || storage == null)
                 return Fail("浏览器组件未初始化");
 
-            var session = await sessionManager.GetOrCreateSessionAsync(_loopId);
+            var session = await sessionManager.GetOrCreateSessionAsync(_sessionId);
 
             if (session.CurrentPage == null)
                 return Fail("当前无活动页面，请先使用 browser_navigate");

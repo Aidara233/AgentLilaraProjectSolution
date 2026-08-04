@@ -9,7 +9,7 @@ public class BrowserWaitForTool : ITool
 {
     private readonly BrowserComponent _component;
     private readonly SecurityConfig _security;
-    private readonly string _loopId;
+    private readonly string _sessionId;
 
     public string Name => "browser_wait_for";
     public string Description => "等待元素达到指定状态。状态包括：visible（可见）/hidden（隐藏）/attached（存在）/detached（移除）。";
@@ -20,11 +20,11 @@ public class BrowserWaitForTool : ITool
     ];
     public TimeSpan Timeout => TimeSpan.FromSeconds(60);
 
-    public BrowserWaitForTool(BrowserComponent component, SecurityConfig security, string loopId)
+    public BrowserWaitForTool(BrowserComponent component, SecurityConfig security, string sessionId)
     {
         _component = component;
         _security = security;
-        _loopId = loopId;
+        _sessionId = sessionId;
     }
 
     public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
@@ -51,7 +51,7 @@ public class BrowserWaitForTool : ITool
             if (sessionManager == null || config == null)
                 return Fail("浏览器组件未初始化");
 
-            var session = await sessionManager.GetOrCreateSessionAsync(_loopId);
+            var session = await sessionManager.GetOrCreateSessionAsync(_sessionId);
 
             if (session.CurrentPage == null)
                 return Fail("当前无活动页面，请先使用 browser_navigate");

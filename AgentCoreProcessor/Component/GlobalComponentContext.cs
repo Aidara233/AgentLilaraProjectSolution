@@ -48,7 +48,7 @@ internal class GlobalComponentContext : IGlobalComponentContext
         _setEnabled(false);
     }
 
-    public void WakeLoop(string loopId) => _wakeLoop(loopId);
+    public void WakeLoop(string sessionId) => _wakeLoop(sessionId);
 
     public void PublishGlobal<TEvent>(TEvent e) where TEvent : class
         => _moduleBus.Publish(e);

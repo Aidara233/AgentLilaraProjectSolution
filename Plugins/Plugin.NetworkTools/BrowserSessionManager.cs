@@ -4,7 +4,7 @@ namespace Plugin.NetworkTools;
 
 public class BrowserSession
 {
-    public string LoopId { get; set; } = "";
+    public string SessionId { get; set; } = "";
     public IBrowserContext Context { get; set; } = null!;
     public IPage? CurrentPage { get; set; }
     public DateTime LastAccessTime { get; set; } = DateTime.UtcNow;
@@ -23,12 +23,12 @@ public class BrowserSessionManager
         _config = config;
     }
 
-    public async Task<BrowserSession> GetOrCreateSessionAsync(string loopId)
+    public async Task<BrowserSession> GetOrCreateSessionAsync(string sessionId)
     {
         await _lock.WaitAsync();
         try
         {
-            if (_sessions.TryGetValue(loopId, out var session))
+            if (_sessions.TryGetValue(sessionId, out var session))
             {
                 session.LastAccessTime = DateTime.UtcNow;
                 return session;
@@ -53,13 +53,13 @@ public class BrowserSessionManager
 
             var newSession = new BrowserSession
             {
-                LoopId = loopId,
+                SessionId = sessionId,
                 Context = context,
                 LastAccessTime = DateTime.UtcNow
             };
 
-            _sessions[loopId] = newSession;
-            Console.WriteLine($"[BrowserSession] 创建新会话: {loopId}");
+            _sessions[sessionId] = newSession;
+            Console.WriteLine($"[BrowserSession] 创建新会话: {sessionId}");
             return newSession;
         }
         finally
@@ -68,17 +68,17 @@ public class BrowserSessionManager
         }
     }
 
-    public async Task CloseSessionAsync(string loopId)
+    public async Task CloseSessionAsync(string sessionId)
     {
         await _lock.WaitAsync();
         try
         {
-            if (_sessions.Remove(loopId, out var session))
+            if (_sessions.Remove(sessionId, out var session))
             {
                 if (session.CurrentPage != null)
                     await session.CurrentPage.CloseAsync();
                 await session.Context.CloseAsync();
-                Console.WriteLine($"[BrowserSession] 关闭会话: {loopId}");
+                Console.WriteLine($"[BrowserSession] 关闭会话: {sessionId}");
             }
         }
         finally
@@ -99,23 +99,23 @@ public class BrowserSessionManager
                 .Select(kv => kv.Key)
                 .ToList();
 
-            foreach (var loopId in toRemove)
+            foreach (var sessionId in toRemove)
             {
                 try
                 {
-                    var session = _sessions[loopId];
+                    var session = _sessions[sessionId];
                     if (session.CurrentPage != null)
                         await session.CurrentPage.CloseAsync();
                     await session.Context.CloseAsync();
-                    Console.WriteLine($"[BrowserSession] 清理空闲会话: {loopId}");
+                    Console.WriteLine($"[BrowserSession] 清理空闲会话: {sessionId}");
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[BrowserSession] 清理会话失败 {loopId}: {ex.Message}");
+                    Console.WriteLine($"[BrowserSession] 清理会话失败 {sessionId}: {ex.Message}");
                 }
                 finally
                 {
-                    _sessions.Remove(loopId);  // 统一在 finally 中移除
+                    _sessions.Remove(sessionId);  // 统一在 finally 中移除
                 }
             }
         }
@@ -140,7 +140,7 @@ public class BrowserSessionManager
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[BrowserSession] 关闭会话失败 {session.LoopId}: {ex.Message}");
+                    Console.WriteLine($"[BrowserSession] 关闭会话失败 {session.SessionId}: {ex.Message}");
                 }
             }
             _sessions.Clear();

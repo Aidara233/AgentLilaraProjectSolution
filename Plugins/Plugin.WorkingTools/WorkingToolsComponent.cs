@@ -37,7 +37,7 @@ public class WorkingToolsComponent : LoopComponentBase
     public override Task OnInitAsync(ILoopComponentContext context, InitReason reason)
     {
         _ctx = context;
-        _thinkingNotes = new ThinkingNotesTool(context.Storage, context.LoopId);
+        _thinkingNotes = new ThinkingNotesTool(context.Storage, context.SessionId);
         _pinboard = new PinboardTool(context.Storage);
         _retainList = new RetainListTool(context.Storage);
         _taskList = new TaskListTool(context.Storage);

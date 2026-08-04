@@ -47,7 +47,7 @@ public class ScheduledTasksComponent : LoopComponentBase
         _log = context.GetService<ISignalLogger>();
         _store = new ScheduledTaskStore(context.Storage.InstanceDirectory);
 
-        _log?.Event(LogGroup, "init", new { loopId = context.LoopId, reason = reason.ToString() });
+        _log?.Event(LogGroup, "init", new { sessionId = context.SessionId, reason = reason.ToString() });
 
         _scheduleTool = new ScheduleTaskTool(_store);
         _cancelTool = new CancelTaskTool(_store);

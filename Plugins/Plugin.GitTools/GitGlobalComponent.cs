@@ -117,10 +117,11 @@ public class GitGlobalComponent : GlobalComponentBase
 
                     if (match != null)
                     {
-                        var loopId = Path.GetFileName(loopDir).Replace('_', ':');
+                        // 实例目录名即裸 sessionId（ComponentStorage 按裸 sessionId 建目录），无需还原前缀
+                        var sessionId = Path.GetFileName(loopDir);
                         EnqueueEvent(loopDir, evt);
-                        _ctx.WakeLoop(loopId);
-                        _log?.Event("git-webhook", "loop-woken", new { loopId, eventType });
+                        _ctx.WakeLoop(sessionId);
+                        _log?.Event("git-webhook", "loop-woken", new { sessionId, eventType });
                     }
                 }
                 catch (Exception ex)

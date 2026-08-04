@@ -9,7 +9,7 @@ public class BrowserFillTool : ITool
 {
     private readonly BrowserComponent _component;
     private readonly SecurityConfig _security;
-    private readonly string _loopId;
+    private readonly string _sessionId;
 
     public string Name => "browser_fill";
     public string Description => "填充表单字段。清空现有内容后输入新值。";
@@ -20,11 +20,11 @@ public class BrowserFillTool : ITool
     ];
     public TimeSpan Timeout => TimeSpan.FromSeconds(30);
 
-    public BrowserFillTool(BrowserComponent component, SecurityConfig security, string loopId)
+    public BrowserFillTool(BrowserComponent component, SecurityConfig security, string sessionId)
     {
         _component = component;
         _security = security;
-        _loopId = loopId;
+        _sessionId = sessionId;
     }
 
     public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
@@ -43,7 +43,7 @@ public class BrowserFillTool : ITool
             if (sessionManager == null || config == null)
                 return Fail("浏览器组件未初始化");
 
-            var session = await sessionManager.GetOrCreateSessionAsync(_loopId);
+            var session = await sessionManager.GetOrCreateSessionAsync(_sessionId);
 
             if (session.CurrentPage == null)
                 return Fail("当前无活动页面，请先使用 browser_navigate");

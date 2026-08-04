@@ -31,10 +31,9 @@ namespace AgentLilara.PluginSDK.Services
         void Unregister(ISessionResource resource);
 
         /// <summary>
-        /// 跨 0 或多次 compact 转发，解析 loopId 当前对应的活跃 session ID。
-        /// 若 loopId 本身不是 session（如 "channel:N"），原样返回。
-        /// 若 loopId 是已死的 session（不在 _sessions 且不在 _forwards），返回 null。
+        /// 跨 0 或多次 compact 转发，解析会话引用（裸 sessionId）当前对应的活跃 session ID。
+        /// 若引用是已死的 session（不在 _sessions 且不在池成员），返回 null。
         /// </summary>
-        string? ResolveActiveSession(string loopId);
+        string? ResolveActiveSession(string sessionId);
     }
 }

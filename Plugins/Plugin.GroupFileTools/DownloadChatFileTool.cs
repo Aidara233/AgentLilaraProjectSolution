@@ -10,19 +10,19 @@ public class DownloadChatFileTool : ITool
     private readonly string _adapterId = "";
     private readonly string _workspaceDir = "";
     private readonly GroupFileDownloadStore? _store;
-    private readonly string _loopId = "";
+    private readonly string _sessionId = "";
 
     public DownloadChatFileTool() { }
 
     public DownloadChatFileTool(IAdapterAccess adapterAccess,
         string adapterId, string workspaceDir,
-        GroupFileDownloadStore store, string loopId)
+        GroupFileDownloadStore store, string sessionId)
     {
         _adapterAccess = adapterAccess;
         _adapterId = adapterId;
         _workspaceDir = workspaceDir;
         _store = store;
-        _loopId = loopId;
+        _sessionId = sessionId;
     }
 
     public string Name => "download_chat_file";
@@ -57,7 +57,7 @@ public class DownloadChatFileTool : ITool
 
         // 注册下载任务
         var store = _store;
-        var task = store?.Register(_loopId, saveName, destPath);
+        var task = store?.Register(_sessionId, saveName, destPath);
         var taskId = task?.Id ?? "";
 
         var adapterAccess = _adapterAccess;

@@ -11,7 +11,7 @@ public class DownloadFileTool : ITool
     private readonly SecurityConfig _security;
     private readonly DownloadStore _store;
     private readonly string _workspaceDir;
-    private readonly string _loopId;
+    private readonly string _sessionId;
 
     public string Name => "download_file";
     public string Description => "启动异步文件下载，立即返回download_id。"
@@ -26,13 +26,13 @@ public class DownloadFileTool : ITool
     public TimeSpan Timeout => TimeSpan.FromSeconds(10);
 
     public DownloadFileTool(HttpClient http, SecurityConfig security, DownloadStore store,
-        string workspaceDir, string loopId)
+        string workspaceDir, string sessionId)
     {
         _http = http;
         _security = security;
         _store = store;
         _workspaceDir = workspaceDir;
-        _loopId = loopId;
+        _sessionId = sessionId;
     }
 
     public Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
@@ -91,7 +91,7 @@ public class DownloadFileTool : ITool
             Url = url,
             SavePath = fullPath,
             RelativePath = savePath,
-            LoopId = _loopId,
+            SessionId = _sessionId,
             FileName = fileName,
             Cts = cts
         };

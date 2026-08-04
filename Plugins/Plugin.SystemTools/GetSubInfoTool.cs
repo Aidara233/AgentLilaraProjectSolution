@@ -42,8 +42,8 @@ public class GetSubInfoTool : ITool
         var sb = new StringBuilder();
         sb.AppendLine($"- session_id: {d.SessionId}");
         sb.AppendLine($"- 状态: {d.Status} (alive={d.IsAlive})");
-        if (!string.IsNullOrEmpty(d.ParentLoopId))
-            sb.AppendLine($"- 父 loopId: {d.ParentLoopId}");
+        if (!string.IsNullOrEmpty(d.ParentSessionId))
+            sb.AppendLine($"- 父会话: {d.ParentSessionId}");
         sb.AppendLine($"- 轮次: {d.RoundCount}");
         var elapsed = System.DateTime.UtcNow - d.CreatedAt;
         sb.AppendLine($"- 创建时间: {d.CreatedAt:u}");
