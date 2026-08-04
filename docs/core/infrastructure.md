@@ -20,7 +20,6 @@
 | `processor` | `Processor` | 模型客户端包装器实例 |
 | `extraMessage` | `List<Message>` | 预设消息列表，通过 `ApplyExtraMessages()` 注入 |
 | `breakString` | `List<string>` | 流式生成断点标记，默认 `["<over>"]` |
-| `UsePersona` | `virtual bool` | 是否注入 Persona，默认 `true`，子类覆盖为 `false` 跳过角色扮演 |
 
 ### 构造函数
 
@@ -71,7 +70,6 @@ CoreBase(string cfgName)  // 指定配置文件名（不含 .json 后缀）
 |------|------|------|
 | `Client` | `IModelClient` | 当前模型客户端实例（只读） |
 | `CfgName` | `string` | 配置文件名，setter 触发从 `Storage/Core/{value}.json` 重新加载配置并创建新客户端 |
-| `UsePersona` | `bool` | 是否注入了 Persona（构造时设定） |
 
 ### CfgName setter 行为
 

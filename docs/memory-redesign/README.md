@@ -1,6 +1,6 @@
 # 记忆重构计划（Memory Redesign）
 
-> **状态：设计中，存储/经历/情绪/引擎骨架已定稿** — 2026-08-02
+> **状态：设计稿（未实现）** — 存储/经历/情绪/引擎骨架设计已定稿，但**当前代码仍是旧记忆库**：无 Claims / Journals / EmotionService / MindEngine 表与类。整套计划尚未开始实施。
 > 历史草案：`docs/superpowers/specs/2026-07-22-memory-redesign.md`（brainstorming 工作区，本目录为其正式化）
 
 ## 这是什么

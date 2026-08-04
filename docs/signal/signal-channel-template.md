@@ -1,5 +1,7 @@
 # Signal Instrumentation — Reference Template
 
+> **⚠ 历史模板（基于已删除的 ChannelEngine）**：本文基于 2026-05-21 ChannelEngine 的完整实现编写，而 ChannelEngine 已在 2026-08-04 express 会话化重构中**删除**（含其中的冲动值/Working 模式/System 循环埋点）。全文的引擎结构部分仅作历史参考；**Signal API 用法（Begin/Continue/Open/Close/Event/Error、cause_span_id、Restore 规则）仍然有效**。当前循环的埋点参考见 `signal-instrumentation-guide.md`（RuntimeSession 模式）与实际代码（RuntimeSession / DreamEngine / ExpressEngineSpawnCheck）。
+
 The *verified* pattern for instrumenting engine loops with Signal.
 Based on ChannelEngine's full implementation (2026-05-21).
 

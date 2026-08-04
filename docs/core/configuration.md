@@ -25,8 +25,12 @@ Storage/Core/{CoreName}.json
 | `stream` | bool | `true` | 是否流式输出 |
 | `n` | int | `1` | 候选回复数 |
 | `useNativeTools` | bool | `false` | 是否使用原生 tool_use/function_calling |
+| `forceToolCall` | bool | `false` | 强制 tool call（原生 tool_use 模式下） |
+| `disableImageMessages` | bool | `false` | 关闭图片消息（多模态） |
+| `enableCaching` | bool | `false` | 启用 prompt caching（`ShouldEnableCaching()` = enableCaching \|\| promptCaching） |
+| `promptFiles` | string[] | `[]` | 非 session 核心提示词文件（`Core/Prompts/`，按序加载） |
 | `extraBody` | dict? | `null` | 注入请求体的额外字段 |
-| `conversationHistory` | List\<Message\> | `[]` | 预设对话历史（系统提示词等） |
+| `conversationHistory` | List\<Message\> | `[]` | 预设对话历史（**已废弃，无读取点**，见文末） |
 | `provider` | string | `"openai"` | 协议选择（见下方） |
 
 ### Claude/Anthropic 专属字段
@@ -34,7 +38,7 @@ Storage/Core/{CoreName}.json
 | JSON 键 | 类型 | 默认值 | 说明 |
 |---------|------|--------|------|
 | `anthropicVersion` | string? | `null` | Anthropic API 版本头（如 `"2023-06-01"`） |
-| `promptCaching` | bool | `false` | 启用细粒度 prompt caching（system/user 消息自动加 `cache_control`） |
+| `promptCaching` | bool | `false` | 启用细粒度 prompt caching（system/user 消息自动加 `cache_control`）——`enableCaching` 的兼容别名，任一为 true 即启用 |
 
 ---
 
@@ -106,7 +110,7 @@ Storage/Core/{CoreName}.json
 
 ## Persona 注入
 
-Persona.txt 作为普通 prompt 文件处理。需要 Persona 的 Core 在 `promptFiles` 数组首项加入 `"Persona.txt"`，由 `PromptLoader` 统一按序加载。不需要 Persona 的 Core（工具性核心如 SummarizationCore、MemoryExtractionCore 等）不在 `promptFiles` 中包含即可。
+Persona.txt 作为普通 prompt 文件处理。需要 Persona 的 Core 在 `promptFiles` 数组首项加入 `"Persona.txt"`，由 `PromptLoader` 统一按序加载。不需要 Persona 的 Core（工具性核心如 MemoryExtractionCore、RelationClassificationCore 等）不在 `promptFiles` 中包含即可。
 
 > **session 会话的提示词不走 core 的 `promptFiles`**：channel/task/review 的身份提示词由会话类型配置（`Storage/Session/{type}.json` 的 `PromptFiles`，文件在 `Storage/Session/Prompts/`）决定，`RuntimeSession` 构建后经 `AgentCore.SessionPrompt` 注入，**换核不换提示词**。core 配置的 `promptFiles` 仅服务于非 session 核心（Express/System/记忆/梦话）。加载统一走 `PromptLoader` 双目录（Session/Prompts → Core/Prompts）。
 
@@ -114,23 +118,22 @@ Persona.txt 作为普通 prompt 文件处理。需要 Persona 的 Core 在 `prom
 
 ## 当前配置分布
 
-| 配置文件名 | provider | model | useNativeTools | 用途 |
-|-----------|----------|-------|:---:|------|
-| `Base.json` | openai | deepseek-v4-flash | - | 默认回退 + 工具核心共用 |
-| `SessionCore.json` | claude | claude-opus-4-6 | ✓ | RuntimeSession 多轮推理（原 WorkingCore） |
-| `ExpressCore.json` | claude | claude-sonnet-4-6 | ✓ | 频道循环 Express 模式 |
-| `SystemCore.json` | claude | claude-opus-4-6 | ✓ | 系统循环 |
-| `ReviewCore.json` | openai | deepseek-v4-pro | ✓ | 复盘引擎 |
-| `CombineCore.json` | openai | deepseek-v4-flash | - | 记忆组合 |
-| `LinkCore.json` | openai | deepseek-v4-flash | - | 关联分析 |
-| `ConsolidationCore.json` | openai | deepseek-v4-flash | - | 记忆整合第一轮 |
-| `ConsolidationFinalCore.json` | openai | deepseek-v4-flash | - | 记忆整合第二轮 |
-| `DedupCore.json` | openai | deepseek-v4-flash | - | 记忆去重 |
-| `WeightCore.json` | openai | deepseek-v4-flash | - | 权重评估 |
-| `MemoryExtractionCore.json` | openai | deepseek-v4-flash | - | 记忆提取 |
-| `MemoryQueryCore.json` | openai | deepseek-v4-flash | - | （已废弃） |
-| `SleepTalkCore.json` | openai | deepseek-v4-flash | - | 梦话生成 |
-| `SummarizationCore.json` | — | — | — | （已删除，模板归档于 templates/Core/） |
+> 注：工作区 `Storage/Core/*.json` 的 `model`/`apiKey`/`provider` 多为**模板占位**（空字符串，由启动/部署时替换，如走 LIGHT 中转）。下表区分活跃核心与遗留文件。
+
+**活跃核心配置：**
+
+| 配置文件名 | provider | model | 用途 |
+|-----------|----------|-------|------|
+| `Base.json` | 模板占位 | 模板占位 | 默认回退（文件缺失时兜底） |
+| `ExpressCore.json` | openai | deepseek-v4-flash | express 会话快速响应 |
+| `ChannelCore.json` | openai | deepseek-v4-pro | channel 会话多轮推理（escalate 后接管） |
+| `TaskCore.json` | openai | deepseek-v4-flash | task 会话执行 / 子 agent |
+| `ReviewCore.json` | 模板占位 | 模板占位 | ReviewEngine 复盘 |
+| `MemoryExtractionCore.json` | 模板占位 | 模板占位 | 记忆提取 |
+| `RelationClassificationCore.json` | 模板占位 | 模板占位 | 关系分类（单中心 + N 候选 → support 值） |
+| `SleepTalkCore.json` | 模板占位 | 模板占位 | 梦话生成 |
+
+**遗留配置（对应 Core 类已删除，json 可清理）：** `CombineCore.json` / `ConsolidationCore.json` / `ConsolidationFinalCore.json` / `DedupCore.json` / `LinkCore.json` / `MemoryQueryCore.json` / `SummarizationCore.json` / `SystemCore.json`
 
 > 注：`VisionProvider.json`、`OcrProvider.json`、`EmbeddingProvider.json` 不是 Core 配置，而是独立 Provider 的配置。
 
@@ -166,15 +169,4 @@ Persona.txt 作为普通 prompt 文件处理。需要 Persona 的 Core 在 `prom
 
 ## conversationHistory（预设消息）
 
-`conversationHistory` 用于注入固定的系统提示词和预设对话：
-
-```json
-{
-  "conversationHistory": [
-    { "role": "system", "content": "你是一个记忆管理助手..." },
-    { "role": "user", "content": "请开始处理。" }
-  ]
-}
-```
-
-消息在 `ApplyExtraMessages()` 中按顺序注入到客户端。
+> **⚠ 已废弃**：`conversationHistory`（映射 `ApiClientCfg.PresetMessages`）在代码中**无读取点**，是死字段。会话身份提示词改由 `Storage/Session/{type}.json` 的 `PromptFiles` 承载（经 `RuntimeSession.BuildSessionPrompt` → `AgentCore.SessionPrompt` 注入，换核不换）；非 session 核心用 `promptFiles` 数组加载 `Core/Prompts` 下的提示词文件。

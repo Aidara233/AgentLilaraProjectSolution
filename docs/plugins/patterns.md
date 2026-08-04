@@ -8,7 +8,7 @@
 
 ### 问题
 
-Global 组件（全局单例）和 Loop 组件（每循环一个实例）不能互相引用。但有些场景需要跨作用域协作：
+Global 组件（全局单例）和 Loop 组件（每个会话一个实例）不能互相引用。但有些场景需要跨作用域协作：
 - Global 组件持有共享资源（HttpClient、下载存储），Loop 组件需要使用
 - Global 组件的后台工作完成后，需要通知特定 Loop 组件
 
@@ -93,17 +93,17 @@ internal class DownloadStore
         _queues = new();
 
     // 后台下载完成时调用
-    public void EnqueueNotification(string loopId, DownloadNotification notification)
+    public void EnqueueNotification(string sessionId, DownloadNotification notification)
     {
-        var queue = _queues.GetOrAdd(loopId, _ => new());
+        var queue = _queues.GetOrAdd(sessionId, _ => new());
         queue.Enqueue(notification);
     }
 
     // Loop 侧 drain（一次性取出所有）
-    public List<DownloadNotification> DrainNotifications(string loopId)
+    public List<DownloadNotification> DrainNotifications(string sessionId)
     {
         var results = new List<DownloadNotification>();
-        if (_queues.TryGetValue(loopId, out var queue))
+        if (_queues.TryGetValue(sessionId, out var queue))
         {
             while (queue.TryDequeue(out var n)) results.Add(n);
         }
@@ -117,7 +117,7 @@ public override Task OnBeforeInvokeAsync()
     var store = NetworkToolsAccessor.Store;
     if (store != null)
     {
-        var notifications = store.DrainNotifications(_loopId);
+        var notifications = store.DrainNotifications(_ctx.SessionId);
         _pendingNotifications.AddRange(notifications);
     }
     return Task.CompletedTask;
@@ -135,7 +135,7 @@ public override string? BuildPromptSection()
 ### 要点
 
 - **OnBeforeInvokeAsync** 做 drain（副作用），**BuildPromptSection** 做展示（纯读取）
-- 队列按 loopId 隔离，每个 Loop 只消费自己的通知
+- 队列按 sessionId 隔离，每个会话只消费自己的通知
 - `ConcurrentQueue` + `TryDequeue` 保证线程安全（后台线程入队 + AI 轮次 drain）
 - 通知是一次性的（drain 后清除），不会重复注入
 - **参考实现**：`Plugin.NetworkTools/DownloadStore.cs` + `NetworkToolsLoopComponent.cs`、`Plugin.ScheduledTasks/ScheduledTasksTimerComponent.cs`
@@ -154,27 +154,27 @@ public override string? BuildPromptSection()
 
 ```
 Storage/PluginData/scheduled-tasks/
-├── per-channel-abc123/
-│   └── tasks.json          ← Loop 组件读写自己的文件
-├── per-channel-def456/
-│   └── tasks.json
+├── a1b2c3/                   ← Loop 组件（裸 sessionId）
+│   └── scheduled_tasks.json  ← Loop 组件读写自己的文件
+├── d4e5f6/
+│   └── scheduled_tasks.json
 └── _global/                 ← Global 组件扫描所有子目录
 ```
 
 ```csharp
 // === Global Timer 组件 ===
-private (DateTime? nextFire, string? loopId) FindEarliestTask()
+private (DateTime? nextFire, string? sessionId) FindEarliestTask()
 {
     var pluginDataDir = Path.Combine(PathConfig.StoragePath, "PluginData", "scheduled-tasks");
     DateTime? earliest = null;
-    string? earliestLoopId = null;
+    string? earliestSessionId = null;
 
     foreach (var dir in Directory.GetDirectories(pluginDataDir))
     {
-        var loopId = Path.GetFileName(dir);
-        if (loopId == "_global") continue;
+        var sessionId = Path.GetFileName(dir);
+        if (sessionId == "_global") continue;
 
-        var tasksFile = Path.Combine(dir, "tasks.json");
+        var tasksFile = Path.Combine(dir, "scheduled_tasks.json");
         if (!File.Exists(tasksFile)) continue;
 
         var tasks = LoadTasks(tasksFile);
@@ -183,26 +183,26 @@ private (DateTime? nextFire, string? loopId) FindEarliestTask()
             if (task.NextFireTime.HasValue && (!earliest.HasValue || task.NextFireTime < earliest))
             {
                 earliest = task.NextFireTime;
-                earliestLoopId = loopId;
+                earliestSessionId = sessionId;
             }
         }
     }
 
-    return (earliest, earliestLoopId);
+    return (earliest, earliestSessionId);
 }
 
 private async Task TimerLoop(CancellationToken ct)
 {
     while (!ct.IsCancellationRequested)
     {
-        var (nextFire, loopId) = FindEarliestTask();
+        var (nextFire, sessionId) = FindEarliestTask();
         if (!nextFire.HasValue) { await WaitForResignal(ct); continue; }
 
         var delay = nextFire.Value - DateTime.Now;
         if (delay > TimeSpan.Zero)
             await Task.WhenAny(Task.Delay(delay, ct), _rescheduleSignal.WaitAsync(ct));
         else
-            _ctx.WakeLoop(loopId!);  // 到期，唤醒对应循环
+            _ctx.WakeLoop(sessionId!);  // 到期，唤醒对应会话
     }
 }
 ```
@@ -225,23 +225,23 @@ public override string? BuildPromptSection()
 ### 要点
 
 - **目录扫描代替中心化注册表**：每个 Loop 的 JSON 文件就是唯一真相源，增删任务不需要通知 Timer
-- Timer 通过 `WakeLoop(loopId)` 精确唤醒目标循环，不是广播
+- Timer 通过 `WakeLoop(sessionId)` 精确唤醒目标会话，不是广播
 - **Loop 组件自己抬闸**：`CheckDueTasks`/`RecoverOverdueTasks` 发现到期任务后，调用 `_ctx.WakeLoop()` 抬闸。任务通知通过 `BuildPromptSection` 注入 prompt，但**不消费**——由模型显式调用 `dismiss_notification` 工具清除
 - `RecoverOverdueTasks` 启动时扫描，错过的任务立即触发
 - **参考实现**：`Plugin.ScheduledTasks/ScheduledTasksTimerComponent.cs`（Global）+ `ScheduledTasksComponent.cs`（Loop）
 
 ### Gate 开闸契约
 
-全局定时器扫描到的 LoopId 可能对应一个**不活跃**的频道（频道引擎已冷超时退出或从未创建）。此时 `WakeLoop(loopId)` 会触发 `ColdStartChannelAsync` 冷启动引擎。**冷启动不应该无条件抬闸**——应该等组件初始化后发现确实有内容再抬。
+全局定时器扫描到的 sessionId 可能对应一个**不活跃**的会话（express 空闲回收 / compact / 从未创建）。此时 `WakeLoop(sessionId)` 会唤醒会话（SessionEngine.WakeUpSession，裸 sessionId 经资源池解析跨 compact forward）。**唤醒不应该无条件抬闸**——应该等组件初始化后发现确实有内容再抬。
 
 ```
 正确的流程：
-  Timer 到期 → WakeLoop("channel:3") → 引擎不存在 → ColdStartChannelAsync → StartEngine
+  Timer 到期 → WakeLoop(sessionId) → SessionEngine.WakeUpSession → 会话激活
   → ScheduledTasksComponent.OnInitAsync → RecoverOverdueTasks 发现到期任务 → _ctx.WakeLoop()
   → Gate 打开 → 循环执行 → 通知注入 prompt
 
 错误的流程（已修复）：
-  Timer 到期 → WakeLoop → ColdStartChannelAsync → StartEngine → 等 200ms → 无条件 SignalGate()
+  Timer 到期 → WakeLoop → 无条件 SignalGate()
   → Gate 打开 → Guard 检查"有事吗？" → 没有消息 → continue → 通知丢失
 ```
 
@@ -253,7 +253,6 @@ public override string? BuildPromptSection()
 |--------|----------|
 | 缓冲定时器 (`FlushBuffer`) | 有缓冲消息 |
 | 组件 (`_ctx.WakeLoop()`) | 有待注入通知 |
-| 跨循环请求 | 有请求/通知 |
 | Signal 事件 | 有信号 |
 
 ```csharp
@@ -277,6 +276,8 @@ public override string? BuildPromptSection()
 ---
 
 ## 4. SpawnCheck 并发安全
+
+> ⚠ **ExpressEngineSpawnCheck 已不再适用此模式**（express 会话化后改为 `HandleMessageAsync` 直投 + 孵化 express 会话，`ShouldSpawnAsync` 恒 false、`Create` 抛异常）。但 `IEngineSpawnCheck` 接口仍在，Dream/Review/Session/Adapter 等 SpawnCheck 仍用 `ShouldSpawnAsync`/`Create` 双方法模式，以下并发安全要点对它们依然有效。下面示例是 ExpressEngineSpawnCheck 的历史写法，仅作模式说明。
 
 ### 问题
 
@@ -431,7 +432,7 @@ protected string DetectFormat(string filePath)
 
 | 模式 | 何时需要 | 参考实现 |
 |------|----------|----------|
-| **双构造函数兼容**（IToolContext vs IPluginStorage） | 迁移旧工具到组件系统，需同时支持两种注册方式 | `Plugin.WorkingTools/PinboardTool.cs` |
+| **双构造函数兼容**（IToolContext vs IPluginStorage） | 迁移旧工具到组件系统时的历史遗留；新代码统一用组件 + IPluginStorage | `Plugin.WorkingTools/PinboardTool.cs` |
 | **Require\<T\> vs GetService\<T\>** | 决定服务缺失时该崩溃还是降级。基础设施用 Require，可选服务用 GetService | `Plugin.ReviewTools`（Require）/ `Plugin.MemoryTools`（GetService） |
 | **TimeExpressionParser** | 需要解析用户自然语言时间表达式（"in 30m"、"每天 9 点"） | `Plugin.ScheduledTasks/TimeExpressionParser.cs` |
 | **Skill 目录发现** | 需要零配置扩展机制（文件夹 + markdown frontmatter） | `Plugin.SkillTools/SkillEntry.cs` |
@@ -447,7 +448,7 @@ protected string DetectFormat(string filePath)
 它们由某个 session 发起，完成后需要通知该 session（或其 compact 后继）。
 
 实装 ISessionResource 的三个方法：
-- OnSessionCompactingAsync(oldSessionId, newSessionId)：session compact 时被调用，改自己的 loopId
+- OnSessionCompactingAsync(oldSessionId, newSessionId)：session compact 时被调用，改自己的 sessionId
 - OnSessionFreedAsync(sessionId)：session 死亡时被调用，清理挂在该 session 的状态
 - HasActiveResources(sessionId)：end_session 时被查询，返回 true 阻止退出
 

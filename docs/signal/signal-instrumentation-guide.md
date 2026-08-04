@@ -28,8 +28,7 @@ This happens in exactly two cases:
 | Continuation | Scope | Gets trace from |
 |-------------|-------|-----------------|
 | Engine lifecycle starts | `{engine}:{id}` | SignalContext.Current (startup signal via AsyncLocal) |
-| ChannelEngine wakes | `channel:{channelId}` | EngineEvent.TraceSignalId (from adapter) |
-| RuntimeSession starts | `session:{sessionId}` | EngineEvent.TraceSignalId (from channel) or new signal (Task session) |
+| RuntimeSession 会话（含 express 孵化/working） | `session:{sessionId}` | EngineEvent.TraceSignalId (from adapter) 或 new signal (Task session) |
 | Sub-agent spawned | `subagent:{sessionId}` | Delegation.TraceSignalId (from channel) |
 | DreamEngine starts | `dream:{engineId}` | EngineEvent.TraceSignalId (from timer) |
 | VisionEngine processes | `vision:{engineId}` | (internal queue, Begin as fallback) |
@@ -66,7 +65,7 @@ public async Task RunAsync()
 **Key points:**
 - Lifecycle uses `Continue` from startup signal → creates `cause_span_id` link (diagonal line on trace page)
 - Lifecycle span lives in the engine's own scope (not the caller's scope)
-- **Lifecycle name MUST include engine type**: `"Channel引擎 [群名]"`, `"Session引擎"`, `"Timer引擎"` — not generic `"引擎运行"`
+- **Lifecycle name MUST include engine type**: `"Session引擎"`, `"Dream引擎"`, `"Timer引擎"` — not generic `"引擎运行"`
 - Per-iteration signals are independent (they replace `SignalContext.Current` but lifecycle is closed via `lifeCtx` variable)
 - On graceful shutdown: lifecycle closes with reason → green on trace page
 - On crash/kill: lifecycle never closes → red on trace page (distinguishes "crashed" from "in progress")
@@ -86,17 +85,17 @@ SignalContext.Restore(lifeCtx); // ← restore parent for subsequent Signal.Open
 
 This ensures gate evaluations, idle checks, and other between-session work appear under the lifecycle span, not the closed session span.
 
-**Close events automatically carry the open name.** `SignalContext.Close()` and `SpanHandle.Dispose()` now emit the open event's name in the close event. On the trace page, close nodes show `[完成] 频道会话` instead of blank `[完成] `. Detail fields carry supplementary data (counts, decisions, outcomes).
+**Close events automatically carry the open name.** `SignalContext.Close()` and `SpanHandle.Dispose()` now emit the open event's name in the close event. On the trace page, close nodes show `[完成] Session 会话` instead of blank `[完成] `. Detail fields carry supplementary data (counts, decisions, outcomes).
 
-## Channel Engine Session/Round Pattern
+## RuntimeSession 会话/轮次模式
 
-The channel engine's loop structure is the most heavily instrumented example:
+RuntimeSession 的统一 agent 循环是最典型的埋点示例：
 
 ```
-Channel引擎 [群名]          ← lifecycle, Continue from startup signal (independent signal_id)
-  └─ 频道会话                ← per-wakeup session, new signal_id, cause_span_id → adapter
-       ├─ 闸门评估            ← gate inside session (not outside)
-       ├─ 处理轮次            ← one round per model interaction
+Session引擎 [sessionId]        ← lifecycle, Continue from startup signal (independent signal_id)
+  └─ 会话                     ← per-wakeup, new signal_id, cause_span_id → adapter
+       ├─ 闸门等待             ← gate inside session (not outside)
+       ├─ 处理轮次             ← one round per model interaction
        │    ├─ 组装对话上下文
        │    ├─ AI模型调用
        │    └─ 执行工具
@@ -105,9 +104,9 @@ Channel引擎 [群名]          ← lifecycle, Continue from startup signal (ind
 
 Key patterns:
 - Session opens BEFORE gate evaluation (gate is inside session, visually connected)
-- Session spans multiple rounds in Working mode (single vertical line)
+- Session spans multiple rounds (single vertical line)
 - Each round adds `SetCloseDetail` with outcome (mode, toolCount, hadSpeak)
-- Session close detail includes reason ("循环挂起" for pause, "cold_timeout" for exit)
+- Session close detail includes reason ("循环挂起" for pause, "cold_timeout" for express 空闲回收)
 
 ## Trace Propagation Across Async Boundaries
 
@@ -147,7 +146,7 @@ Spans mark operations with duration. Use `using var span = Signal.Open(...)`.
 **Example — engine loop pattern:**
 ```csharp
 // Loop lifetime span
-using var loopSpan = Signal.Open(LogGroup.Engine, "频道循环", new { channelId });
+using var loopSpan = Signal.Open(LogGroup.Engine, "会话循环", new { sessionId });
 
 while (!ct.IsCancellationRequested)
 {
@@ -161,7 +160,7 @@ while (!ct.IsCancellationRequested)
 
 Point events mark instantaneous decisions or state changes. Place them at:
 
-- **Decision outcomes**: classification result, permission check result, impulse decision
+- **Decision outcomes**: classification result, permission check result, mode switch decision
 - **State transitions**: sleep state change, connection state change, mode switch
 - **Completion markers**: "memory extraction done", "context compression done"
 - **Handoff points**: delegation submitted, task completed, notification sent
@@ -178,7 +177,7 @@ Point events mark instantaneous decisions or state changes. Place them at:
 | Info | Key decision points, state transitions, completion markers | Yes | "分类结果: 任务", "Express→Working 升级" |
 | Warn | Controlled abnormal situation, bot raises alert | Yes | "连续失败 3 次，退避", "API 配额接近上限" |
 | Error | Unexpected failure (even if retrying) | Yes | "模型调用失败", "WebSocket 断开" |
-| Debug | Extremely detailed diagnostics for every branch | No (minLevel=Info) | "冲动值计算: base=0.3, mention=0.5, final=0.8" |
+| Debug | Extremely detailed diagnostics for every branch | No (minLevel=Info) | "意图分类候选: [任务, 闲聊], 得分=0.8/0.2" |
 
 **Error means a red dot on the trace graph** — even if the system recovers via retry, the error event is visible. This is intentional: you want to see that something went wrong at that point in time.
 
@@ -191,7 +190,7 @@ Format: `{engineType}:{instanceId}`
 | Owner | Scope format | Example |
 |-------|-------------|---------|
 | SystemEngine (已删除) | — | — |
-| ChannelEngine | `channel:{channelId}` | `channel:group_12345` |
+| ChannelEngine (已删除) | — | — |
 | DreamEngine | `dream:{engineId}` | `dream:main` |
 | VisionEngine | `vision:{engineId}` | `vision:main` |
 | TimerEngine | `timer:{engineId}` | `timer:heartbeat` |
@@ -214,7 +213,7 @@ Assign by **what the operation IS**, not who calls it:
 |-----------|----------|---------------------|
 | LLM API request/response | Model | Even if DreamEngine calls it |
 | Tool invocation | Tool | Even if RuntimeSession triggers it |
-| Memory read/write/embed | Memory | Even if ChannelEngine does it |
+| Memory read/write/embed | Memory | Even if RuntimeSession does it |
 | Message send/receive | Adapter | |
 | Plugin load/unload | Plugin | |
 | Everything else (state, lifecycle, decisions) | Engine | |
@@ -225,11 +224,11 @@ Include everything that helps diagnosis. No size limit.
 
 ```csharp
 // Good — rich context
-Signal.Event(LogGroup.Engine, "冲动决策", new
+Signal.Event(LogGroup.Engine, "端口激活", new
 {
-    channelId,
+    sessionId,
     decision = "respond",
-    impulse = 0.85,
+    channelId,
     reason = "direct_mention",
     messageCount = pendingMessages.Count,
     idleSeconds = idleDuration.TotalSeconds
@@ -261,7 +260,7 @@ Rationale: Signal logs go to a dedicated SQLite database. The trace page can ren
 
 ## Context Propagation Rules (Verified — 2026-05-17)
 
-These rules were validated by manually instrumenting ChannelEngine and verifying trace page correctness at each step.
+These rules were validated by manually instrumenting engine loops（ChannelEngine 时代 / 现 RuntimeSession）and verifying trace page correctness at each step.
 
 ### Signal isolation
 
@@ -295,7 +294,7 @@ These rules were validated by manually instrumenting ChannelEngine and verifying
 | Owner | Scope format | Example |
 |-------|-------------|---------|
 | Channel extraction | `extraction:channel:{id}` | `extraction:channel:group_12345` |
-| Channel lifecycle | `channel:{channelId}` | `channel:group_12345` |
+| Session 会话 | `session:{sessionId}` | `session:a3f2c1b8e9f2` |
 
 Background tasks get their own scope so they appear as separate columns, enabling
 parallelism visualization and preventing parent-close-before-child anomalies.

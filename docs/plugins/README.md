@@ -6,10 +6,10 @@ Agent Lilara 的插件系统允许通过独立的 DLL 扩展功能，无需修�
 
 插件的两层抽象：
 
-- **组件 (Component)** — 插件的顶层组织单元，管理生命周期、暴露工具列表、注入 prompt 片段。分为 `Global`（全局单例）和 `Loop`（每个引擎循环一个实例）两种作用域。
+- **组件 (Component)** — 插件的顶层组织单元，管理生命周期、暴露工具列表、注入 prompt 片段。分为 `Global`（全局单例）和 `Loop`（每个会话一个实例）两种作用域。
 - **工具 (Tool)** — 实际可被 AI 调用的功能单元。定义名称、描述、参数，通过 `ExecuteAsync` 执行。
 
-组件是容器，工具是内容。一个 DLL 可以只有一个组件 + 多个工具，也可以只有独立工具（无组件）。
+组件是容器，工具是内容。一个 DLL 可以有多个组件（如 NetworkTools 的 `network-tools` Loop 组件 + `network-tools-global` Global 组件）。当前所有插件均已组件化，不再有"无组件独立工具"模式。
 
 ## 运行时机制
 
@@ -74,15 +74,11 @@ Program.cs 启动
 | 阶段 | 谁持有 | 何时创建 |
 |------|--------|----------|
 | **GlobalComponentHost** | MasterEngine | 启动时 `InitAsync()`，扫描 `ComponentRegistry.GetGlobals()` |
-| **ComponentHost** | 每个 ExpressEngine/RuntimeSession | 引擎初始化时 `InitAsync()`，扫描 `ComponentRegistry.GetLoopComponents(loopType)` |
+| **ComponentHost** | 每个会话（RuntimeSession） | 引擎初始化时 `InitAsync()`，扫描 `ComponentRegistry.GetLoopComponents(loopType)` |
 
-构造函数注入优先级（`PluginLoader.InstantiateWithInjection`）：
-1. 含 `IToolContext` 参数的构造函数（独立工具）
-2. 含 `IPluginStorage` 参数的构造函数（组件内工具）
-3. 含 `IServiceProvider` 参数的构造函数（组件本身）
-4. 无参构造函数
+构造函数注入（`PluginLoader.InstantiateWithInjection`）：按**构造参数个数降序**尝试所有构造函数，逐个参数按内置 resolver 字典（`EventBus` / `ModuleBus` / `Gate` / `IMemoryAccess`）→ `IServiceProvider` → `GetService<T>()` 解析；首个参数全部可解析的构造被选中。
 
-可注入的服务：`EventBus`, `ModuleBus`, `Gate`, `IMemoryAccess`, 以及 `IServiceProvider` 能解析的任何类型。
+可注入的服务：`EventBus`, `ModuleBus`, `Gate`, `IMemoryAccess`, 以及 `IServiceProvider` 能解析的任何类型（含 `IToolContext`、`IPluginStorage`）。
 
 ### 工具解析链
 
@@ -115,14 +111,14 @@ WebUI `/p/plugins` 页面有"热重载"按钮。
 AgentLilaraProjectSolution/
   AgentLilara.PluginSDK/         ← 共享契约（引用此项目即可开发插件）
   Plugins/                        ← 所有插件项目
-    Plugin.BasicTools/            ← 基础通信（speak, send_media, send_file, adapter_action）— Loop
-    Plugin.WorkingTools/          ← 工作空间（pinboard, thinking_notes, retain_list, task_list, mark_for_review）— Loop
+    Plugin.BasicTools/            ← 基础通信（speak, thinking, send_media, send_file, adapter_action）— Loop
+    Plugin.WorkingTools/          ← 工作空间（pinboard, thinking_notes, retain_list, task_management, mark_for_review）— Loop
     Plugin.MemoryTools/           ← 记忆存储/检索/关联（10个工具）— Global
-    Plugin.FileTools/             ← 文件操作（read_text, write_text, list_dir, move, delete, copy）— Global
-    Plugin.FileOps/               ← 高级文件操作（archive_create/extract/list, search_files, grep, file_info, file_hash, compare）— Global
+    Plugin.FileTools/             ← 文件操作（read_text, write_text, update_text, list_dir, move_file, delete_file, copy_file）— Global
+    Plugin.FileOps/               ← 高级文件操作（archive_create/extract/list, search_files, grep_files, file_info, file_hash, compare_files）— Global
     Plugin.SystemTools/           ← 子 session 管理（system-ops 组件：create_sub_agent/stop_sub_agent/send_instruction/list_sub_agents/wait_sub/get_sub_info；sub-agent-runtime 组件：report_to_parent）
     Plugin.ReviewTools/           ← 复盘工具（12个 review_* 工具）— Global
-    Plugin.ScheduledTasks/        ← 定时任务（schedule/cancel/list）— Loop
+    Plugin.ScheduledTasks/        ← 定时任务（schedule_task/cancel_task/list_tasks/dismiss_notification）— Loop
     Plugin.Email/                 ← 邮件收发（send_email, check_unread, check_email, read_email, search_email, download_attachment, delete_email, mark_all_read, list_folders）— Global
     Plugin.SkillTools/            ← 技能工具（casual-chat, code-review, system-maintenance）
     Plugin.NetworkTools/          ← 网络工具（http_request, download_file + Playwright 浏览器自动化 10 个工具）— Global + Loop

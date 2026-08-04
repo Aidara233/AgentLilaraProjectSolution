@@ -48,9 +48,7 @@ void MarkL1Injected();                          // 标记 L1 已注入，避免�
 |------|------|
 | Name | `compact` |
 | Parameters | `summary`（必填，会话完整总结） |
-| EngineTypes | `["channel"]` |
 | ContinueLoop | false |
-| AllowSubAgent | false |
 
 **执行流：**
 1. 模型调 `compact(summary="...")`

@@ -1,6 +1,8 @@
 # Session 持久化 + 上下文压缩 完整实施计划
 
 > 状态：**已实施**。本文档整合持久化、压缩工具链重建、死代码清理三条线的完整方案。
+>
+> **⚠ 实施细节以代码为准**：本文写于 2026-07-11，落地后部分细节已演进——持久化三件套文件名/schema 以 `Engine/Session/SessionPersistence.cs` 为准（spec.json 现含 additionalComponents/excludedComponents/resolvedComponentIds，state.json 现含 activeCoreConfig/childSessionIds/effectiveParentId/connectedChannelId，formatVersion=2）；compact 已改为资源池**同池换活跃 session**（TakeOver 预定新 id），非新 GUID 从零创建；文中引用的 ChannelEngine / ChannelExpressCycle / ChannelContextBuilder 已在 2026-08-04 express 会话化重构中删除。
 
 ## 一、目标与背景
 

@@ -32,7 +32,7 @@ StoragePath (数据目录)
 ├── PluginData/                   ← 插件持久数据
 │   ├── memory-tools/             ← 按组件名隔离
 │   │   ├── _global/              ← Global 组件实例目录
-│   │   └── per-channel-xxx/      ← Loop 组件实例目录
+│   │   └── {sessionId}/          ← Loop 组件实例目录（裸 sessionId）
 │   ├── file-tools/
 │   └── ...
 ├── Engine/                       ← 引擎配置（ComponentConfig.json, ImpulseConfig.json）
@@ -78,9 +78,10 @@ internal static class PathConfig
 ```csharp
 public interface IPluginStorage
 {
-    string GlobalDirectory { get; }      // Storage/PluginData/{组件名}/
-    string InstanceDirectory { get; }    // Global 组件 = GlobalDirectory
-                                         // Loop 组件 = GlobalDirectory/{loopId}/
+    string GlobalDirectory { get; }      // Storage/PluginData/{组件名}/（该组件所有实例共享）
+    string InstanceDirectory { get; }    // 按裸 sessionId 隔离：
+                                         //   Loop 组件 = Storage/PluginData/{组件名}/{sessionId}
+                                         //   Global 组件 = Storage/PluginData/{组件名}/_global
     string WorkspaceDirectory { get; }   // Storage/Workspace/（所有插件共享）
 }
 ```
@@ -90,7 +91,7 @@ public interface IPluginStorage
 | 场景 | GlobalDirectory | InstanceDirectory |
 |------|-----------------|-------------------|
 | Global 组件 `memory-tools` | `Storage/PluginData/memory-tools/` | `Storage/PluginData/memory-tools/_global/` |
-| Loop 组件 `working-tools` (channel:abc) | `Storage/PluginData/working-tools/` | `Storage/PluginData/working-tools/per-channel-abc/` |
+| Loop 组件 `working-tools`（session a1b2c3） | `Storage/PluginData/working-tools/` | `Storage/PluginData/working-tools/a1b2c3/` |
 
 ### 插件怎么拿路径？
 
@@ -129,11 +130,11 @@ public MyTool(IToolContext ctx)
 
 | 位置 | 路径 | 说明 |
 |------|------|------|
-| `PluginLoader.cs:24` | `{BaseDirectory}/Plugins/` | 插件 DLL 扫描根目录 |
-| `Program.cs:283` | `{BaseDirectory}/WebUI/wwwroot/` | WebUI 前端静态资源 |
+| `PluginLoader.cs:22` | `{BaseDirectory}/Plugins/` | 插件 DLL 扫描根目录 |
+| `Program.cs:285` | `{BaseDirectory}/WebUI/wwwroot/` | WebUI 前端静态资源 |
 | `Program.cs:61` | `{StoragePath}/FileAdapter/` | 文件适配器测试目录 |
-| `Program.cs:335` | `{StoragePath}/Images/` | 图片缓存 |
-| `ToolRegistry.cs:24` | `{StoragePath}/ToolConfig.json` | 工具配置 |
+| `Program.cs:346` | `{StoragePath}/Images/` | 图片缓存 |
+| `ToolRegistry.cs:26` | `{StoragePath}/ToolConfig.json` | 工具配置 |
 | `ComponentConfig.cs` | `{StoragePath}/Engine/ComponentConfig.json` | 组件按权限组（channel/task/review）启用/禁用状态 |
 | `PermissionService.cs` | `{StoragePath}/Session/{express,channel,task,review}.json` | 会话类型 + 工具权限黑白名单（唯一裁决源） |
 

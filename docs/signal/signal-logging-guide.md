@@ -28,7 +28,7 @@ No DI needed — `Signal` is a static class. Works anywhere in `AgentCoreProcess
 
 For plugins, use the injected `ISignalLogger` interface (same methods, minus `Begin`/`Continue`).
 
-## The 4 Patterns
+## The 5 Patterns
 
 ### 1. Point Event (most common)
 

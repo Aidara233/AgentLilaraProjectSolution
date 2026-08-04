@@ -15,37 +15,49 @@
 
 ## 插件清单（速查版）
 
-### Loop 组件（每循环一个实例）
+> 所有插件均已组件化（无"无组件独立工具"模式）。作用域分 Global（全局单例，18 个组件）和 Loop（每个会话一个实例，12 个组件）。
 
-| 插件 | 会话类型 | 工具 | 关键文件 |
-|------|----------|------|----------|
-| **Plugin.BasicTools** | 所有会话类型（装配由 ComponentConfig 决定） | `speak`, `send_media`, `send_file`, `adapter_action` | `BasicToolsComponent.cs` |
-| **Plugin.WorkingTools** | 所有会话类型（装配由 ComponentConfig 决定） | `pinboard`, `thinking_notes`, `retain_list`, `task_list`, `mark_for_review` | `WorkingToolsComponent.cs` |
-| **Plugin.ScheduledTasks** | 所有会话类型（装配由 ComponentConfig 决定） | `schedule_task`, `cancel_task`, `list_tasks` | `ScheduledTasksComponent.cs` |
+### Loop 组件（12 个）
 
-### Global 组件（全局单例）
+| 组件 | 插件 | 工具（代表性） |
+|------|------|------|
+| `basic-tools` | Plugin.BasicTools | `speak`, `thinking`, `send_media`, `send_file`, `adapter_action` |
+| `working-tools` | Plugin.WorkingTools | `pinboard`, `thinking_notes`, `retain_list`, `task_management`, `mark_for_review` |
+| `scheduled-tasks` | Plugin.ScheduledTasks | `schedule_task`, `cancel_task`, `list_tasks`, `dismiss_notification` |
+| `system-ops` | Plugin.SystemTools | `create_sub_agent`, `stop_sub_agent`, `send_instruction`, `list_sub_agents`, `wait_sub`, `get_sub_info` |
+| `sub-agent-runtime` | Plugin.SystemTools | `report_to_parent` |
+| `network-tools` | Plugin.NetworkTools | `http_request`, `download_file` |
+| `browser-tools` | Plugin.NetworkTools | Playwright 浏览器自动化 10 个工具 |
+| `ssh-tools` | Plugin.SshTools | SSH 工具 |
+| `git-tools` | Plugin.GitTools | `git_*` 仓库操作 |
+| `web-search` | Plugin.WebSearch | 网页搜索 |
+| `group-file-tools` | Plugin.GroupFileTools | 分组文件操作 |
+| `quick-actions` | Plugin.QuickActions | 快捷操作 |
 
-| 插件 | 会话类型 | 工具 | 关键文件 |
-|------|----------|------|----------|
-| **Plugin.MemoryTools** | 所有会话类型（装配由 ComponentConfig 决定） | `memory_store`, `memory_get`, `memory_update`, `memory_delete`, `memory_search`, `memory_list`, `memory_link_create/delete/get`, `memory_stats` | `MemoryComponent.cs` |
-| **Plugin.FileTools** | 所有会话类型（装配由 ComponentConfig 决定） | `read_text`, `write_text`, `list_dir`, `move`, `delete`, `copy` | `FileToolsComponent.cs` |
-| **Plugin.FileOps** | 所有会话类型（装配由 ComponentConfig 决定） | `archive_create`, `archive_extract`, `archive_list`, `search_files`, `grep_files`, `file_info`, `file_hash`, `compare_files` | `FileOpsComponent.cs` |
-| **Plugin.ReviewTools** | 所有会话类型（装配由 ComponentConfig 决定） | `review_browse`, `review_search`, `review_evaluate`, `review_save_progress` 等 15 个 | `ReviewComponent.cs` |
+### Global 组件（18 个）
 
-### 独立工具（无组件，直接注册到 ToolRegistry）
+| 组件 | 插件 | 工具（代表性） |
+|------|------|------|
+| `memory-tools` | Plugin.MemoryTools | `memory_store`, `memory_get`, `memory_search`, `memory_list` 等（依赖 IMemoryAccess） |
+| `file-tools` | Plugin.FileTools | `read_text`, `write_text`, `update_text`, `list_dir`, `move_file`, `delete_file`, `copy_file` |
+| `file-ops` | Plugin.FileOps | `archive_create/extract/list`, `search_files`, `grep_files`, `file_info`, `file_hash`, `compare_files` |
+| `review-tools` | Plugin.ReviewTools | 12 个 `review_*` 工具 |
+| `email` | Plugin.Email | `send_email`, `check_unread`, `read_email`, `search_email` 等（9 个） |
+| `skill-tools` | Plugin.SkillTools | `invoke_skill`, `list_skills`, `load_skill_file`, `list_skill_files` |
+| `currency` | Plugin.Currency | 货币工具 |
+| `campus-print` | Plugin.CampusPrint | 校园打印 |
+| `image-tools` | Plugin.ImageTools | 图片读取与 OCR |
+| `svg-tools` | Plugin.SvgTools | `render_svg` |
+| `document-tools` | Plugin.DocumentTools | 文档处理 |
+| `browser` | Plugin.NetworkTools | 浏览器自动化 Global 面 |
+| `network-tools-global` | Plugin.NetworkTools | 网络工具 Global 面 |
+| `ssh-tools-global` | Plugin.SshTools | SSH Global 面 |
+| `git-tools-global` | Plugin.GitTools | `github_*` |
+| `web-search-global` | Plugin.WebSearch | 网页搜索 Global 面 |
+| `group-file-tools-global` | Plugin.GroupFileTools | 分组文件 Global 面 |
+| `scheduled-tasks-timer` | Plugin.ScheduledTasks | 定时触发 Global 面 |
 
-| 插件 | 工具 |
-|------|------|
-| **Plugin.SystemTools** | `create_sub_agent`, `stop_sub_agent`, `send_instruction`, `list_sub_agents`, `wait_sub`, `get_sub_info`（system-ops 组件）+ `report_to_parent`（sub-agent-runtime 组件） |
-| **Plugin.SkillTools** | `casual-chat`, `code-review`, `system-maintenance` |
-| **Plugin.NetworkTools** | 网络工具 |
-| **Plugin.SshTools** | SSH 工具 |
-| **Plugin.WebSearch** | 网页搜索 |
-| **Plugin.ImageTools** | 图片读取与OCR |
-| **Plugin.SvgTools** | SVG 渲染（render_svg） |
-| **Plugin.DocumentTools** | 文档处理 |
-| **Plugin.GroupFileTools** | 分组文件操作 |
-| **Plugin.QuickActions** | 快捷操作 |
+> 会话类型装配（哪些组件出现在 express/channel/task/review 会话）由 `Storage/Engine/ComponentConfig.json` 决定，插件自身不声明。
 
 ## 开发套路
 
@@ -74,7 +86,7 @@ csproj 必须：
 
 - **Global 组件**：`[Component(Scope = ComponentScope.Global)]` + 继承 `GlobalComponentBase`
 - **Loop 组件**：`[Component(Scope = ComponentScope.Loop)]` + 继承 `LoopComponentBase`
-- **独立工具**：直接实现 `ITool`，构造函数接收 `IToolContext`
+- 所有工具都已放入组件，不再有无组件独立工具模式
 
 ### 3. 工具元数据
 
@@ -96,7 +108,7 @@ var channel = context.GetService<IChannelAccess>();
 var log = context.GetService<ILogAccess>();
 ```
 
-常用服务：`IMemoryAccess`, `IChannelAccess`, `IEngineAccess`, `ILogAccess`, `ISleepAccess`, `IAdapterAccess`, `IPersonAccess`, `IReviewAccess`, `IBeaconAccess`
+常用服务：`IMemoryAccess`, `IChannelAccess`, `IEngineAccess`, `ILogAccess`, `IAdapterAccess`, `IPersonAccess`, `IReviewAccess`, `IBeaconAccess`, `IConnectedChannel`（完整清单见 [api-reference.md](api-reference.md)）
 
 ### 5. 编译 + 验证
 
@@ -130,7 +142,7 @@ AgentLilara.PluginSDK/ITool.cs
 AgentLilara.PluginSDK/ComponentBase.cs          ← GlobalComponentBase / LoopComponentBase
 AgentLilara.PluginSDK/ComponentAttribute.cs     ← [Component]
 AgentLilara.PluginSDK/ToolMetaAttribute.cs      ← [ToolMeta] / [PluginDependency]
-AgentLilara.PluginSDK/Services/                 ← 18 个服务接口
+AgentLilara.PluginSDK/Services/                 ← 17 个服务接口 + Product DTO
 
 # 宿主侧（加载 + 生命周期）
 AgentCoreProcessor/Tool/Host/PluginLoader.cs    ← 扫描 / 加载 / 热重载
@@ -140,5 +152,5 @@ AgentCoreProcessor/Component/GlobalComponentHost.cs ← 全局组件宿主
 
 # 配置
 Storage/Engine/ComponentConfig.json             ← 组件按权限组（channel/task/review）启用/禁用状态
-Storage/Session/{channel,task,express,review}.json ← 会话类型 + 工具权限黑白名单（PermissionService 裁决；express 是纯权限文件，无会话类型档案）
+Storage/Session/{channel,task,express,review}.json ← 会话类型档案（默认核/组件/AllowedCores/prompts）+ 工具权限黑白名单（PermissionService 裁决）
 ```

@@ -1,7 +1,7 @@
 # 迁移与待定
 
 > 记忆重构计划 · 文件 04
-> 状态：**待定为主** — 2026-08-02
+> 状态：**设计/待办（未实现）** — 2026-08-02。实施路线（阶段 0-6）尚未开始。
 
 ## 与旧系统的对照
 
@@ -15,7 +15,7 @@
 | MemoryExtractionCore | 新提取逻辑 |
 | 矛盾边（Support 负值） | 冲突组 + 支持/反对边 + 可信度（见 05） |
 | "反驳"谓词（9.2 推理型） | 取消——反对 = `支持 + 负 strength`（见 05） |
-| DreamEngine (Order+Patrol) | 新维护引擎（标定+密度检测+归档）+ 探索者（找关联/问题，见 06） |
+| DreamEngine (Order+Patrol) | 新维护引擎（标定+密度检测+归档）+ 探索者（找关联/问题，设计见 03，调度节奏待定见 06） |
 | ReviewEngine | 验证者——处理 ReviewQueue，git 式暂存提交，拉开可信度差距（见 03/05） |
 | Beacon 自动生成部分 | ReviewQueue 自动入队（Conflict/Dream/Manual 统一来源，见 05 6.0） |
 | Beacon 工作端标记 | 保留（mark_for_review → ReviewQueue Source=Manual） |

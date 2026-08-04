@@ -1,5 +1,7 @@
 # 模块1审计报告：引擎核心 (Engine Core)
 
+> **⚠ 历史快照（2026-05-26）**：本文审计的 LoopId / CrossRequest / CrossRequestRegistry / DelegationBus / IAgentSession / SignalFilterConfig / SignalCategory 等对象已在后续重构中删除，仅作历史记录，不代表当前代码。当前架构见 `docs/architecture-map.md`。
+
 审计时间：2026-05-26
 文件数：15 | 总行数：~2,500
 

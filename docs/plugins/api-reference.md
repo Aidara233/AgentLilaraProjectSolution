@@ -23,7 +23,7 @@ public interface ITool
 
 ### ILoopComponent
 
-循环作用域组件。每个引擎循环（ExpressEngine / RuntimeSession）各自创建一个实例。
+循环作用域组件。每个会话（RuntimeSession）各自创建一个实例。
 
 ```csharp
 public interface ILoopComponent
@@ -46,6 +46,9 @@ public interface ILoopComponent
 
     // Prompt 注入（null = 不注入）
     string? BuildPromptSection();
+
+    // 退出询问钩子：所属 session 准备 end_session 时被询问，返回 false 阻止退出（宿主注入提醒文本）
+    Task<bool> OnCanExitAsync();
 }
 ```
 
@@ -65,7 +68,7 @@ public interface IGlobalComponent
     Task OnEnabledAsync();
     Task OnDisabledAsync();
 
-    // LoopInfo 标识调用方（哪个循环）
+    // LoopInfo 标识调用方（哪个会话）
     string? BuildPromptSection(LoopInfo caller);
 }
 ```
@@ -142,8 +145,8 @@ public interface IEngineLifecycle
 ```csharp
 public interface ILoopComponentContext
 {
-    string LoopId { get; }
-    string LoopType { get; }         // "channel" / "task" / "review"（对应会话类型档案）
+    string SessionId { get; }        // 当前会话 sessionId（裸，无 "session:" 前缀；LoopId 概念已移除）
+    string LoopType { get; }         // "channel" / "task" / "express"（对应会话类型档案）
 
     bool IsEnabled { get; }
     void Enable();
@@ -171,7 +174,7 @@ public interface IGlobalComponentContext
     void Enable();
     void Disable();
 
-    void WakeLoop(string loopId);
+    void WakeLoop(string sessionId);
 
     void PublishGlobal<TEvent>(TEvent e) where TEvent : class;
     void Subscribe<TEvent>(Func<TEvent, Task> handler) where TEvent : class;
@@ -227,14 +230,15 @@ public interface IPluginStorage
 }
 ```
 
-- Global 组件：`GlobalDirectory = InstanceDirectory`
-- Loop 组件：`InstanceDirectory` 为每个循环独立（如 `per-channel-xxx/`）
-- **WorkspaceDirectory**：所有文件工具共享的沙箱目录。插件内需要访问 Workspace 时，优先使用此属性，**不要**通过 `GlobalDirectory` 做 `..` 相对跳转。
+- **GlobalDirectory**：`Storage/PluginData/{name}/`，该组件所有实例共享（配置、共享数据）
+- **InstanceDirectory**：按**裸 sessionId** 隔离。Loop 组件为 `Storage/PluginData/{name}/{sessionId}`；Global 组件固定 `Storage/PluginData/{name}/_global`
+- **WorkspaceDirectory**：所有文件工具共享的沙箱目录（`Storage/Workspace/`）。插件内需要访问 Workspace 时，优先使用此属性，**不要**通过 `GlobalDirectory` 做 `..` 相对跳转。
 
 路径示例：
 ```
 Storage/PluginData/file-tools/         ← GlobalDirectory
-Storage/PluginData/file-tools/per-channel-abc123/  ← InstanceDirectory (Loop)
+Storage/PluginData/file-tools/_global  ← InstanceDirectory (Global)
+Storage/PluginData/file-tools/3f2a9c   ← InstanceDirectory (Loop，裸 sessionId)
 Storage/Workspace/                     ← WorkspaceDirectory（所有文件插件共用）
 ```
 
@@ -243,6 +247,8 @@ Storage/Workspace/                     ← WorkspaceDirectory（所有文件插�
 ## 服务接口
 
 通过 `GetService<T>()` 获取。所有服务接口定义在 `AgentLilara.PluginSDK.Services` 命名空间下（`ILogAccess` / `ISignalLogger` 在 `Logging` 命名空间）。
+
+**完整服务接口清单**（`Services/` 下共 17 个接口 + `Product` DTO）：IAdapterAccess、IBeaconAccess、IChannelAccess、IConnectedChannel、ICurrencyService、IEngineAccess、IEventBusAccess、IImageAccess、IMemoryAccess、IPersonAccess、IProductRegistry、IReviewAccess、IReviewControl、ISessionResourceAccess、ISpeakGuard、ISubAgentAccess、IToolHistoryAccess。其中 IConnectedChannel / ICurrencyService / IImageAccess / ISpeakGuard / ISessionResourceAccess / IProductRegistry 的签名见下文「补充服务接口」。
 
 ### IMemoryAccess
 
@@ -261,7 +267,7 @@ Task DeleteAsync(int id);
 Task UpdateAsync(int id, string newContent);      // 自动重算 embedding
 
 // ===== 关联图 =====
-Task<List<MemoryEntry>> GetLinkedAsync(int memoryId);
+Task<List<LinkedMemoryEntry>> GetLinkedAsync(int memoryId);
 Task LinkAsync(int fromId, int toId, float relevance = 1.0f, float support = 1.0f, string linkType = "semantic");
 Task UnlinkAsync(int fromId, int toId);
 
@@ -304,7 +310,7 @@ class TempMemoryWriteRequest {
 class MemoryFilter {
     int? PersonId; int? ChannelId; string? Type; string? Subject;
     string? KeywordContains; DateTime? CreatedAfter; DateTime? CreatedBefore;
-    float? MinImportance; int Offset; int Limit;
+    float? MinImportance; float? MinCertainty; int Offset; int Limit;
 }
 ```
 
@@ -358,15 +364,47 @@ void Subscribe<T>(Action<T> handler) where T : class;
 void Unsubscribe<T>(Action<T> handler) where T : class;
 ```
 
-### ISleepAccess
+### 补充服务接口
 
-睡眠状态接口。
+以下接口定义在 `AgentLilara.PluginSDK.Services`，较常用，集中速查：
 
 ```csharp
-SleepLevel CurrentState { get; }
-void SetState(SleepLevel level);
+// IConnectedChannel — 当前 session 连接的频道状态（per-session 服务）
+// 发送工具（speak 等）读它决定目标频道；连接工具（connect_channel 等）通过 session 改它
+int CurrentChannelId { get; }   // 当前连接的频道 ID，0 = 未连接
+ConnectionMode Mode { get; }    // None / Listen / Full（enum：旁听 / 占用）
+bool CanSpeak { get; }          // 仅 Full 连接态可发言
 
-// SleepLevel 枚举：None=0, Wandering=1, Napping=2, DeepSleep=3
+// ICurrencyService — bot 内部单账户，资源消费 + 商品购买
+decimal Balance { get; }
+CurrencyTransaction Spend(decimal amount, string purpose);   // 余额不足抛 InvalidOperationException
+CurrencyTransaction Grant(decimal amount, string reason);    // 拨款（管理员操作）
+IReadOnlyList<CurrencyTransaction> GetTransactions(int limit = 50);
+
+// IImageAccess — 图片解析 + OCR（桥接内部 ImageStorage）
+Task<ImageResolveResult> ResolveImageAsync(string identifier, string source = "workspace");
+Task<ImageOcrResult> OcrImageAsync(string identifier, string source = "workspace");  // 始终调 API
+Task<ImageOcrResult> GetOcrAsync(string identifier, string source = "workspace");    // 只用缓存
+
+// ISpeakGuard — speak 防话唠守卫（追踪连续纯发言轮次）
+int ConsecutiveSpeakRounds { get; }
+bool IsBlocked { get; }
+
+// ISessionResource — 会话资源接口 + ISessionResourceAccess 注册表
+// 子 agent / 下载 / SSH 等 session-scoped 资源实现它；end_session 时 HasActiveResources=true 会阻止退出
+Task OnSessionCompactingAsync(string oldSessionId, string newSessionId);
+Task OnSessionFreedAsync(string sessionId);
+bool HasActiveResources(string sessionId);
+// ISessionResourceAccess:
+void Register(ISessionResource resource);
+void Unregister(ISessionResource resource);
+string? ResolveActiveSession(string sessionId);   // 经池树解出活跃 session
+
+// IProductRegistry — 商品注册表（插件 OnInitAsync 中注册商品）
+void Register(Product product);
+void Unregister(string productId);
+IReadOnlyList<Product> GetAll();
+Product? GetById(string id);
 ```
 
 ### IAdapterAccess
@@ -427,9 +465,9 @@ SubAgentInfo Create(string instruction, SubAgentOptions? options = null);
 SubAgentInfo? Get(string sessionId);
 Task<bool> SendInstructionAsync(string sessionId, string instruction);
 SubAgentStopResult RequestStop(string sessionId);
-List<SubAgentInfo> List(string? parentLoopId = null);
+List<SubAgentInfo> List(string? parentSessionId = null);
 SubAgentDetail? GetDetail(string sessionId);
-bool ReportToParent(string callerLoopId, string content, ReportState state);
+bool ReportToParent(string callerSessionId, string content, ReportState state);
 Task<bool> WaitAsync(string sessionId, int timeoutMs);
 ```
 
@@ -506,6 +544,17 @@ Task LogActionAsync(string actionType, string summary, string? detailJson = null
 // 访问追踪
 void TrackChannel(int channelId);
 void TrackPerson(int personId);
+
+// 消息定位
+Task<ReviewMessageDto?> GetMessageByIdAsync(int messageId);
+Task<int?> GetMessageOffsetAsync(int channelId, int baseMessageId, int offset);
+
+// 人物特质
+Task<List<PersonTraitDto>> GetPersonTraitsAsync(int personId, string? category = null);
+Task UpsertPersonTraitAsync(int personId, string category, string key, string value, float confidence, string? sourceHint = null);
+
+// 信任操作
+Task<TrustCriteriaDto> GetTrustCriteriaAsync(int personId);
 ```
 
 ### IReviewControl
@@ -635,16 +684,7 @@ IDisposable? Subscribe(Action<JsonNode?> callback);
 | `Nap` | 小睡（需 @ + 关键词叫醒） |
 | `DeepSleep` | 大睡（仅管理员/任务可唤醒） |
 
-### SleepLevel
-
-引擎级睡眠级别（`ISleepAccess` 使用）。
-
-| 值 | 说明 |
-|----|------|
-| `None` (0) | 未睡眠 |
-| `Wandering` (1) | 走神 |
-| `Napping` (2) | 小睡 |
-| `DeepSleep` (3) | 深度睡眠 |
+> 注：引擎级 `SleepLevel` 枚举（`ISleepAccess`）已随睡眠接口一并删除，此处只保留系统级 `SleepState`。
 
 ---
 
@@ -744,7 +784,7 @@ public static ShutdownResponse NotReady(string reason) { get; }
 ### LoopInfo
 
 ```csharp
-public record LoopInfo(string LoopId, string LoopType);
+public record LoopInfo(string SessionId, string LoopType);
 ```
 
 ---
@@ -780,7 +820,9 @@ class CardDefinition {
     required CardSchema Schema;
     CardLayout Layout = new();
     string? Title;
-    string? RowSelectEvent;            // 行选中事件名
+    string? LinkEvent;                 // 行选中/值变化时发出的事件名（Table/Tree/Form）
+    string? ListenEvent;               // 监听的事件名，触发时以 payload 作为 Extra 刷新数据源
+    string? InjectEvent;               // 提交时从 PageContext state 取此 key 的值合并进 payload
 }
 ```
 
@@ -797,6 +839,8 @@ class CardDefinition {
 | `DetailSchema` | `"detail"` | 详情展示（分区 + 字段列表、可折叠） |
 | `ActionCardSchema` | `"action"` | 操作卡片（带参数的操作提交） |
 | `PropertyGridSchema` | `"property-grid"` | 属性编辑（支持敏感字段掩码、只读） |
+
+`CardType` 枚举共 10 个值：Table / Status / Form / Stream / Chat / Tree / Detail / Action / PropertyGrid / **Custom**（自定义扩展预留）。
 
 ### DataSource
 
@@ -824,24 +868,24 @@ class DataFilter { required string Field; required string Operator; required str
 命名空间 `AgentLilara.PluginSDK.Events`，用于 `Subscribe<T>()` / `PublishLocal/Global<T>()`。
 
 ```csharp
-public record MessageReceived(string LoopId, string SenderId, string Content);
-public record LoopActivated(string LoopId, string Reason);
-public record LoopPausing(string LoopId);
+public record MessageReceived(string SessionId, string SenderId, string Content);
+public record LoopActivated(string SessionId, string Reason);
+public record LoopPausing(string SessionId);
 public record TaskArrived(string TaskId, string Description);
-public record ComponentStateChanged(string ComponentName, bool IsEnabled, string LoopId);
+public record ComponentStateChanged(string ComponentName, bool IsEnabled, string SessionId);
 ```
 
 ---
 
 ## 构造函数注入
 
-PluginLoader 按以下优先级选择构造函数：
+PluginLoader 按**构造参数个数降序**尝试所有构造函数，逐个参数按以下顺序解析：
 
-1. 含 `IToolContext` 参数的构造函数（独立工具模式）
-2. 含 `IPluginStorage` 参数的构造函数（Component 模式）
-3. 无参构造函数
+1. 内置 resolver 字典：`Engine.EventBus` / `Engine.ModuleBus` / `Engine.Gate` / `IMemoryAccess`
+2. `IServiceProvider`
+3. 从 `IServiceProvider.GetService(type)` 按类型解析（含 `IToolContext`、`IPluginStorage` 等服务）
 
-**推荐**：在 Component 管理的工具中使用 `IPluginStorage` 构造函数；无组件独立工具使用 `IToolContext`。
+首个参数全部可解析的构造函数被选中。**推荐**：工具类用无参构造或仅注入所需服务接口；组件类用 `IPluginStorage` 构造。
 
 ---
 

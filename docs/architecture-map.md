@@ -18,8 +18,8 @@ AgentLilaraProjectSolution/
 │     ├── Client/      IModelClient 抽象层（Claude/OpenAI 双协议）+ Embedding + IVisionProvider + IOcrProvider
 │     ├── Command/     框架指令系统（/help /status /config 等）
 │     ├── Config/      PathConfig 绝对路径管理
-│     ├── Core/        业务核心（AgentCore+PreprocessingCore+MemoryExtractionCore+RelationClassificationCore+WeightCore+SleepTalkCore等），继承 CoreBase，各自 JSON 配置
-│     ├── Database/    实体 + Repository（SQLite，13张表）
+│     ├── Core/        业务核心（AgentCore+PreprocessingCore+MemoryExtractionCore+RelationClassificationCore+SleepTalkCore等），继承 CoreBase，各自 JSON 配置
+│     ├── Database/    实体 + Repository（SQLite，18张表）
 │     ├── Engine/      引擎生态（MasterEngine内核 + 8个ISubEngine + Components + Modules）
 │     │     ├── Core/     MasterEngine内核 + Gate/Agent/ComponentHost等基类
 │     │     ├── Session/  SessionEngine + RuntimeSession（会话管理+频道占用）
@@ -39,21 +39,26 @@ AgentLilaraProjectSolution/
 │     ├── WebUI/       Blazor Server 管理面板（嵌入式，同进程）
 │     └── Program.cs   入口（WebApplication 宿主，默认启动 Web 服务器 + 适配器）
 └── Plugins/                    源码项目（每个含 plugin.json + CopyToHostPlugins 目标）
-      ├── Plugin.BasicTools/      speak + send_media
-      ├── Plugin.WorkingTools/    pinboard + thinking_notes + retain_list + mark_for_review
+      ├── Plugin.BasicTools/      speak + thinking + send_media + send_file + adapter_action
+      ├── Plugin.WorkingTools/    pinboard + thinking_notes + retain_list + task_management + mark_for_review
       ├── Plugin.MemoryTools/     memory（记忆读写，依赖 IMemoryAccess）
-      ├── Plugin.FileTools/       read_text + write_text + list_dir + move/delete/copy
-      ├── Plugin.FileOps/         archive + search/grep + file_info/hash/compare
+      ├── Plugin.FileTools/       read_text + write_text + update_text + list_dir + move_file/delete_file/copy_file
+      ├── Plugin.FileOps/         archive + search/grep_files + file_info/hash/compare_files
       ├── Plugin.GroupFileTools/  分组文件操作
       ├── Plugin.SystemTools/     子 session 管理：create_sub_agent / stop_sub_agent / send_instruction / list_sub_agents / wait_sub / get_sub_info（system-ops 组件）+ report_to_parent（sub-agent-runtime 组件）
-      ├── Plugin.ReviewTools/     review_* 15个复盘工具
+      ├── Plugin.ReviewTools/     review_* 12个复盘工具
       ├── Plugin.ScheduledTasks/  定时任务（插件化实现）
-      ├── Plugin.SkillTools/      casual-chat / code-review / system-maintenance
+      ├── Plugin.SkillTools/      invoke_skill / list_skills / load_skill_file / list_skill_files
       ├── Plugin.NetworkTools/    网络工具 + Playwright 浏览器自动化
       ├── Plugin.SshTools/        SSH 工具
       ├── Plugin.WebSearch/       网页搜索
       ├── Plugin.ImageTools/      图片处理
+      ├── Plugin.SvgTools/        SVG 渲染
       ├── Plugin.DocumentTools/   文档处理
+      ├── Plugin.Email/           邮件收发
+      ├── Plugin.Currency/        货币工具
+      ├── Plugin.CampusPrint/     校园打印
+      ├── Plugin.GitTools/        Git/GitHub 仓库操作
       ├── Plugin.QuickActions/    快捷操作
       └── FileToolKit.Shared/     FileToolBase 抽象基类（路径解析/沙箱）
 
@@ -112,7 +117,7 @@ PluginLoader 扫描子目录 → 读 `plugin.json` → 加载 `entry` DLL。无�
     │     Command    → CommandSpawnCheck (指令拦截)
     ├── 活跃引擎表 (List<ISubEngine>)
     ├── GlobalComponentHost + ComponentHost(per-session) + ModuleBus(per-session)
-    │     Component 系统: IGlobalComponent(全局) / ILoopComponent(per-session)
+    │     Component 系统: IGlobalComponent(全局) / ILoopComponent(per-session)（接口定义在 AgentLilara.PluginSDK/）
     │     ComponentRegistry: 类型注册，PluginLoader 扫描 [Component] 标记
     │     ComponentHost: 实例管理 + 工具注册/反注册 ToolRegistry + ModuleBus 订阅
     │     ModuleBus: 每引擎独立 pub/sub（替代旧 ILoopBus + ComponentEventBus）
@@ -266,10 +271,10 @@ RuntimeSession (统一 agent 循环, 无强制 stop):
     OutputPorts: 端口名 → 目标
     AutoClaimChannel: 自动 Full 占用归属频道
 
-  默认配置:
-    Working: basic-tools, working-tools, file-tools, file-ops, memory-tools, system-tools | AutoClaim=true
-    Task:    basic-tools, file-tools, file-ops, memory-tools | AutoClaim=false
-    Eavesdrop: basic-tools | AutoClaim=false
+  默认配置（SessionTypeProfiles 内置默认，Storage/Session/{type}.json 可覆盖）:
+    channel: basic-tools, working-tools, file-tools, file-ops, memory-tools, system-ops | AutoClaim Full
+    task:    basic-tools, file-tools, memory-tools, sub-agent-runtime | AutoClaim=false
+    express: basic-tools | AutoClaim Full（孵化时接管频道）
 
   激活:
     端口权重达阈值(mention=100 立即/normal=5 攒多条) → 激活
@@ -304,10 +309,10 @@ RuntimeSession (统一 agent 循环, 无强制 stop):
 ### Session-scoped 子资源 (ISessionResource)
 
 子 agent / 下载 / SSH 任务都实装 ISessionResource，注册到 SessionEngine。
-SessionEngine 持有 _sessionResources 注册表 + _forwards 转发表：
-- compact 时通知所有 ISessionResource.OnSessionCompacting(oldId, newId)，资源改自己的 loopId
+SessionEngine 持有 _sessionResources 注册表（任务键为裸 sessionId）：
+- compact 时通知所有 ISessionResource.OnSessionCompacting(oldId, newId)，资源改自己的 sessionId（compact 换根由资源池统一处理，无手动 rebind）
 - session 死时通知 OnSessionFreed，资源清理状态
-- 外部唤醒通过 ResolveActiveSession(loopId) 跨 forward 解出活跃 session
+- 外部唤醒通过 ResolveActiveSession(sessionId) 经资源池树解出活跃 session（引用 → 所在池 → 池活跃 session）
 - end_session 通过 ILoopComponent.OnCanExitAsync + SessionEngine.AnyResourceBlocksExit 阻塞有 in-flight 资源的退出
 
 VisionEngine (视觉引擎，单例，基础设施):
@@ -377,7 +382,7 @@ VisionEngine (视觉引擎，单例，基础设施):
 ChangePropagation: BFS单轮扩散，所有节点变更(实时/秩序/巡逻)统一终点
 
 ReviewEngine (由DreamEngine孵化，不注册SpawnCheck):
-  独立Agent循环 + 15个专用工具 + 自由探索模式（无固定目标）
+  独立Agent循环 + 12个专用工具（Plugin.ReviewTools）+ 自由探索模式（无固定目标）
   不变，同旧描述
 ```
 
@@ -408,9 +413,8 @@ ReviewEngine (由DreamEngine孵化，不注册SpawnCheck):
 关联边: Relevance(关联性) + Support(-1~+1，负值=矛盾)，矛盾边不删节点只降确定性
 ```
 
-12张表: Person / User / Channel / UserMessage / MemoryEntry / TempMemoryEntry / MemoryLink / PersonaMemoryEntry / Beacon / ImageRecord / EvaluationScore / (Topics 保留但不再使用)
+18张表: Person / User / Channel / UserMessage / Memory / TempMemory / MemoryLink / PersonaMemory / Beacon / Image / DreamSession / DreamFragment / DreamFragmentDetail / ModelCallLog / PersonTrait / EvaluationScore / ReviewSession / ReviewAction
 日志库(logs.db): events / token_usage
-复盘库(主库): ReviewSessions / ReviewActions
 
 ## 工具系统（插件化架构）
 
@@ -423,14 +427,15 @@ AgentLilara.PluginSDK (共享契约，独立类库):
   ToolMetaAttribute: Group / ContinueLoop / OutputOnly
   ToolParameter: Name / Description / Index / IsRequired（控制 JSON Schema required 数组）
   Services/: IMemoryAccess（完整数据访问：语义搜索/向量操作/批量读取/临时库/关联图）
-             IChannelAccess / ISubAgentAccess
-             IChannelAccess / IAdapterAccess / IEngineAccess
-             ISleepAccess / IEventBusAccess / IToolHistoryAccess
+             IChannelAccess / ISubAgentAccess / IAdapterAccess / IEngineAccess
+             IEventBusAccess / IToolHistoryAccess
              IReviewAccess（游标/浏览/评价/笔记/进度）/ IReviewControl（预算/完成）
              IBeaconAccess（信标创建）/ IPersonAccess（人物查询/更新）
+             IConnectedChannel（会话频道状态）/ ICurrencyService（货币）/ IImageAccess（图片+OCR）
+             ISpeakGuard（防话唠）/ ISessionResourceAccess（会话资源）/ IProductRegistry（商品注册）
 
 主程序 Tool/ (宿主层):
-  Core/CoreTools.cs          — 核心工具（continue_loop + wait + escalate），不可卸载
+  Core/CoreTools.cs          — 核心工具（continue_loop + wait），不可卸载
   Core/EscalateTool.cs       — Express escalate 工具，触发 SessionEngine.CreateSession
   Host/PluginLoader          — 扫描 {BaseDirectory}/Plugins/*.dll，AssemblyLoadContext 隔离加载
   Host/ToolContextImpl       — IToolContext 实现（ConcurrentDictionary 服务容器）
@@ -438,7 +443,7 @@ AgentLilara.PluginSDK (共享契约，独立类库):
   ToolRegistry               — 全局注册表（Register/Unregister/Get/禁用管理）
   ToolExecutor               — 顺序执行 + 权限组硬校验 + OnToolExecuted 回调
   PermissionService          — 工具权限组裁决（Storage/Session/{express,channel,task,review}.json 黑白名单）
-  SessionTypeProfiles        — 会话类型配置库（Storage/Session/{type}.json，字符串类型键：channel/task/review，任意新类型=新 JSON）
+  SessionTypeProfiles        — 会话类型配置库（Storage/Session/{type}.json，字符串类型键：内置 channel/task/express；任意新类型=新 JSON）
 
   工具可用性（权限控制组，单一裁决源）:
     1. ToolConfig.json 全局禁用
@@ -449,20 +454,20 @@ AgentLilara.PluginSDK (共享契约，独立类库):
   执行期：ToolExecutor.PermissionGroup 对组外工具硬拒绝。
 
 插件项目 (独立 DLL，输出到 {BaseDirectory}/Plugins/):
-  Plugin.BasicTools      — speak + send_media（输出能力）[GlobalComponent: basic-tools]
-  Plugin.WorkingTools    — pinboard + thinking_notes + retain_list + mark_for_review（工作状态+复盘标记）[LoopComponent: working-tools, IInjectProvider]
+  Plugin.BasicTools      — speak + thinking + send_media + send_file + adapter_action（基础通信）[LoopComponent: basic-tools]
+  Plugin.WorkingTools    — pinboard + thinking_notes + retain_list + task_management + mark_for_review（工作状态+复盘标记）[LoopComponent: working-tools, IInjectProvider]
   Plugin.MemoryTools     — memory（记忆读写，依赖 IMemoryAccess 服务）[GlobalComponent: memory-tools]
-  Plugin.FileTools       — read_text + write_text + list_dir + move/delete/copy（文件系统）[GlobalComponent: file-tools]
-  Plugin.FileOps         — archive_create/extract/list + search/grep + file_info/hash/compare
+  Plugin.FileTools       — read_text + write_text + update_text + list_dir + move_file/delete_file/copy_file（文件系统）[GlobalComponent: file-tools]
+  Plugin.FileOps         — archive_create/extract/list + search/grep_files + file_info/hash/compare_files
   Plugin.GroupFileTools  — 分组文件操作
   Plugin.SystemTools     — 子 session 管理（system-ops 组件：create_sub_agent/stop_sub_agent/send_instruction/list_sub_agents/wait_sub/get_sub_info；sub-agent-runtime 组件：report_to_parent）
                           SubAgentAccessAdapter 桥接 SessionEngine（无 CrossRequest 镜像，纯消息驱动）：
                             - 创建子 session 时附加 MailboxInputPort（父→子指令通道）
                             - 子 session OnCompleted 钩子 → 直接 InjectExternal 通知父 session + 触发 wait_sub
                             - report_to_parent 工具直接 InjectExternal 注入父 session 上下文（单条路径，无双轨）
-  Plugin.ReviewTools     — review_* 15个复盘工具
+  Plugin.ReviewTools     — review_* 12个复盘工具
   Plugin.ScheduledTasks  — 定时任务（插件化实现）
-  Plugin.SkillTools      — casual-chat / code-review / system-maintenance
+  Plugin.SkillTools      — invoke_skill / list_skills / load_skill_file / list_skill_files
   Plugin.NetworkTools    — http_request + download_file [LoopComponent: network-tools] + Playwright 浏览器自动化 10 工具 [GlobalComponent: browser + LoopComponent: browser-tools]
   Plugin.SshTools        — SSH 工具
   Plugin.WebSearch       — 网页搜索
@@ -579,7 +584,7 @@ Storage/
 │     └── ReviewProgress.json 复盘进度存档（游标/评价缓冲/笔记）
 ├── Engine/
 │     ├── EngineConfig.json          自启动引擎列表 {"autoStart":["Timer"]}
-│     ├── ImpulseConfig.json         仅 ColdTimeoutSeconds 用于 express 空闲回收（冲动值已删）
+│     ├── ImpulseConfig.json         仅 ColdTimeoutSeconds 被读取用于 express 空闲回收（其余冲动字段为死配置，不参与决策）
 │     ├── TrustProgressionConfig.json 信任升降阈值+警报冷却配置
 │     ├── VisionEngineConfig.json    视觉引擎并发/批量/重试配置
 │     └── ComponentConfig.json       组件按权限组启用/禁用状态
@@ -610,30 +615,32 @@ Storage/
 认证: Cookie Authentication，SHA256 密码哈希
 
 数据桥接:
-  SystemMonitor — 2s 周期采集 SystemSnapshot（引擎摘要/Worker快照/Dream状态）
-  快照方法: WorkerEngine.GetSnapshot() / DreamEngineSpawnCheck.GetDreamSnapshot()
-           MasterEngine.GetSpawnCheck<T>() / GetActiveEnginesSnapshot()
+  SystemMonitor — 触发告警采集（CollectAlerts + OnStateChanged 通知）
+  快照: 各 Provider 直接拉取（EnginesProvider 用 DreamEngineSpawnCheck.GetDreamSnapshot(true)、VisionEngine.GetSnapshot() 等）
+       MasterEngine.GetSpawnCheck<T>() / GetActiveEnginesSnapshot()
 
-页面 (卡片系统 Phase 3 已完成，旧独立页面全部删除):
+页面 (卡片系统 Phase 3 已完成；仍保留少量独立页面 Dashboard/LogTrace/Login/McpStatus/Memory_Graph):
   Dashboard    — 系统状态/引擎摘要/活跃频道表格/做梦状态/实时日志尾部
   Logs/Trace   — Signal 信号追踪（SVG渲染/虚拟化/实时推送/因果链高亮）
   Logs/Tokens  — Token 统计（按 Core / 按 Model 汇总）
   Logs/Model   — 模型调用历史 + 详情查看
   Console      — 频道选择/创建 + 聊天式消息流 + 模拟用户/替Bot说话/自定义发送者 + @提及/私聊模拟
-  其余页面全部通过卡片系统动态渲染（/p/{route}），不再使用独立 .razor 页面
+  McpStatus    — MCP Server 状态
+  Memory_Graph — 记忆关联图谱
+  其余页面通过卡片系统动态渲染（/p/{route}）
 
 启动行为:
   默认启动 Web 服务器（所有模式），--debug / --test 模式不启动 Web 服务器
   ASP.NET 日志压制到 Warning 级别，控制台输出干净
 
 卡片式数据驱动系统 (Phase 1+2 已实现):
-  SDK 接口: IWebUIProvider / IDataSource / CardSchema(7种) / IPageContext / DataQuery
-  Shell: ProviderRegistry + DynamicPage + CardGrid + CardHost + 7种卡片渲染器
+  SDK 接口: IWebUIProvider / IDataSource / CardSchema(9种) / IPageContext / DataQuery
+  Shell: ProviderRegistry + DynamicPage + CardGrid + CardHost + 9种卡片渲染器
   路由: /p/{route} → ProviderRegistry.FindPage → DynamicPage 渲染
   数据层: DataSourceManager (Fetch重试3次指数退避 + Subscribe推送)
   Provider 发现: PluginLoader 扫描 IWebUIProvider 实现类 (与 Component/ITool 同管道)
   热重载: ALC 卸载 → 反注册 → 重新加载 → 注册 → 侧边栏自动刷新
-  卡片类型: Table / Status / Form / Stream / Chat / Tree / Detail (+ Custom 预留)
+  卡片类型: Table / Status / Form / Stream / Chat / Tree / Detail / Action / PropertyGrid (+ Custom 预留)
   布局: CSS Grid 12列，CardLayout 声明 PreferredCols/MinWidth/Height，移动端自动单列
 ```
 

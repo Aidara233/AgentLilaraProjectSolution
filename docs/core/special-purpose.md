@@ -12,16 +12,13 @@
 
 ### 关键设计
 
-- 通过配置的 `promptFiles` 中加入 `Persona.txt` 来加载角色设定，保持角色一致性
+- 通过 `LoadPromptTemplate()` 加载内置模板（`SleepTalkPrompt.txt`）生成呓语，不走 core 的 `promptFiles`
 - 与其它记忆核心不同，它显式指定了配置文件名 `"SleepTalkCore"`（而非依赖 `CoreName` 自动匹配）
 
 ### GenerateAsync
 
 ```csharp
-Task<string> GenerateAsync(
-    string fragmentSummary,       // 当前梦到的内容摘要
-    string? recentContext = null  // 最近的对话片段（可选）
-)
+Task<string> GenerateAsync(List<string> fragments)  // 梦境片段列表
 ```
 
 ### 睡眠打断集成
@@ -30,7 +27,7 @@ Task<string> GenerateAsync(
 - 小睡期被 @ 触发梦话响应但不唤醒，需 @ + 关键词才能叫醒
 - 大睡期：不响应梦话
 
-详见 [`project_dream_talk.md`](../../memory/project_dream_talk.md)。
+详见 `docs/architecture-map.md` 做梦系统（睡眠分级与打断）。
 
 ---
 
@@ -68,4 +65,4 @@ Embedding 调用失败时默认返回 `false`（判定为聊天），不会阻�
 
 ### 分类结果用途
 
-分类结果影响频道循环后续的行为决策（如是否启动工具调用流程）。
+> **⚠ 死代码**：`PreprocessingCore` 在当前代码中**无任何调用点**（全仓仅类定义）。原设计影响频道循环行为决策，而频道循环已在 2026-08-04 express 会话化重构中删除。若需消息分类能力，需重新接线到 express/working 会话。

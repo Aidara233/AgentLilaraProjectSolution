@@ -1,8 +1,8 @@
 # 记忆处理核心
 
-记忆处理核心覆盖记忆的完整生命周期：提取 → 关系分类 → 权重评估。`MemoryExtractionCore` 在频道循环中触发，`RelationClassificationCore` 和 `WeightCore` 由 `DreamEngine` 在睡眠期调度（秩序/巡逻阶段），`RelationClassificationCore` 也由实时写入触发（异步）。
+记忆处理核心覆盖记忆的提取与关系分类。`MemoryExtractionCore` 由 `ExtractionEngine` 的 `ChannelExtractionWorker` 触发（每次提取批次临时创建）；`RelationClassificationCore` 由 `DreamEngine` 在睡眠期调度（秩序/巡逻阶段），也由实时写入异步触发。
 
-所有记忆核心均设置 `UsePersona = false`（纯工具性，无角色扮演），通过 `ResetProcessor()` 确保每次调用独立的对话上下文。
+记忆核心为纯工具性（无角色扮演），通过 `ResetProcessor()` 确保每次调用独立的对话上下文。
 
 ---
 
@@ -50,18 +50,6 @@ Task<List<ExtractionResult>> ExtractAsync(
 ### 输出解析
 
 JSON 数组：`[{"targetIndex": N, "support": -1.0~1.0}]`。无关的候选可省略不输出。
-
----
-
-## WeightCore（权重评估）
-
-**文件：** `Core/WeightCore.cs`
-**实例化：** `DreamEngine`（每睡眠 session 一个）
-**配置：** `Storage/Core/WeightCore.json`
-
-### 功能
-
-模型评估一批记忆的重要性（importance）和确定性（certainty）。秩序阶段用于给新入库记忆定初始值。巡逻阶段不直接调用（衰减由 MemoryDecay 纯公式计算）。
 
 ---
 

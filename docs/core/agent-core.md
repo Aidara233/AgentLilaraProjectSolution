@@ -4,41 +4,46 @@
 
 **文件：** `Core/AgentCore.cs`
 **继承：** `CoreBase`
-**实例化：** ChannelEngine（每频道一个）、RuntimeSession（按需创建）、ReviewEngine（一个）
+**实例化：** RuntimeSession（按需创建，会话化后频道响应由 express/working 会话驱动）、ReviewEngine（一个）
 
 ### 定位
 
 AgentCore 是系统中最关键的核心，负责所有 LLM 对话交互。它合并了原先 ExpressCore + SessionCore 两个独立核心的能力，统一处理两种引擎模式下的模型调用。SessionCore（原 WorkingCore）现已专供 RuntimeSession 的统一会话循环使用。
 
-### 模式切换
+### 核心配置映射
 
-| 模式 | 配置文件 | 用途 |
+会话类型在 `Storage/Session/{type}.json` 声明 `DefaultCoreConfig`，各会话类型默认核：
+
+| 会话类型 | 默认核配置 | 用途 |
 |------|----------|------|
-| Express | `ExpressCore.json` | 快速响应（fire-and-forget 工具，不续轮） |
-| Session | `SessionCore.json` | 多轮推理（工具调用结果回注，循环执行；RuntimeSession 专用） |
+| express | `ExpressCore.json` | 快速响应（fire-and-forget 工具，不续轮） |
+| channel | `ChannelCore.json` | 工作模式多轮推理（escalate 后接管频道） |
+| task | `TaskCore.json` | 任务执行 / 子 agent |
+| review | `ReviewCore.json` | ReviewEngine 复盘（尚未 session 化，运行时硬编码） |
 
-模式通过 `SwitchMode(EngineMode)` 自动切换，切换时重建 Processor 以加载不同配置。若构造时指定了 `cfgName`（固定模式），则 `SwitchMode` 不生效。
+模式通过 `SwitchMode(EngineMode)` 切换（EngineMode 为宿主侧概念，保留）。运行时换核走 `RuntimeSession.ConfigureCores / SwitchCore`（见下文"Session 多核切换"）。
 
 ### 关键属性
 
 | 属性 | 类型 | 说明 |
 |------|------|------|
 | `UseNativeTools` | `bool` | 从配置的 `useNativeTools` 读取，决定是否使用原生 tool_use |
-| `ProfileManager` | `ToolProfileManager?` | 工具 Profile 管理器（由引擎注入） |
 | `AdditionalTools` | `List<ITool>?` | 当前轮次的 loop 组件工具 |
 | `GlobalComponentTools` | `List<ITool>?` | 全局组件工具（所有轮次可见） |
+| `SessionPrompt` | `string?` | 会话身份提示词（由 SessionTypeProfile.PromptFiles 构建，换核不换） |
+| `EngineType` | `string?` | 当前权限组 key（express/channel/task/review） |
 
 ### 核心方法
 
 #### InvokeAsync — 统一入口
 
 ```csharp
-Task<ModelOutput> InvokeAsync(List<Message> messages, EngineMode mode, string? profileName)
+Task<ModelOutput> InvokeAsync(List<Message> messages, EngineMode mode)
 ```
 
 根据 `mode` 分流：
 - **Express 模式**：收集 Express 可用工具 → `UseNativeTools` 时走原生 tool_use，否则纯文本生成
-- **Working 模式**：通过 `ProfileManager` 获取工具定义 → `UseNativeTools` 时走原生 tool_use，否则文本 JSON 解析
+- **Working 模式**：收集组件工具 → `UseNativeTools` 时走原生 tool_use，否则文本 JSON 解析
 
 #### ChatAsync — 单次生成
 
@@ -48,35 +53,23 @@ Task<string> ChatAsync(string input, List<string>? imagePaths)
 
 Express 模式下的简单对话，支持多模态图片输入。
 
-#### InvokeWithHistoryAsync — 系统循环专用
-
-```csharp
-Task<ModelOutput> InvokeWithHistoryAsync(List<Message> messages, string? profileName)
-```
-
-复用 Processor 实例（不重建），直接设置历史并调用。用于系统循环的高频调用场景。
-
 ### 工具合并逻辑
 
 `MergeTools(defs, tools)` — 将组件工具合并到工具定义列表，自动跳过 `ToolRegistry.IsDisabled` 的工具和重名工具。
-
-`IsExpressAvailable(ITool)` — 检查工具是否标记了 `ToolMetaAttribute.ExpressAvailable = true`。
 
 ### 构造函数变体
 
 | 构造 | 说明 |
 |------|------|
-| `new AgentCore()` | 默认，配置="SessionCore"，`UsePersona=true`，模式可切换 |
-| `new AgentCore("SystemCore", usePersona: false)` | 系统循环用，固定模式，无 Persona |
-| `new AgentCore("ReviewCore", usePersona: false)` | 复盘用，固定模式，无 Persona |
+| `new AgentCore()` | 默认，配置="SessionCore"（遗留默认值；当前代码无调用点） |
+| `new AgentCore(cfgName)` | 按名称加载 `Storage/Core/{cfgName}.json`，如 `new AgentCore("ChannelCore")`、`new AgentCore("ReviewCore")` |
 
 ### 实例化位置
 
 | 位置 | 构造 | CallerTag |
 |------|------|-----------|
-| `ChannelEngine.cs:73` | `new AgentCore()` | `"Channel:{id}"` |
 | `RuntimeSession`（SessionEngine.CreateSession） | `new AgentCore(spec.CoreConfigName)` | `"Session:{sessionId}"` |
-| `ReviewEngine.cs:90` | `new AgentCore("ReviewCore", false)` | `"Review:{mode}"` |
+| `ReviewEngine.cs` | `new AgentCore("ReviewCore")` | `"Review:{mode}"` |
 
 ### Session 多核切换（运行时）
 

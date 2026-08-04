@@ -40,7 +40,7 @@ ReviewEngine 实例内存维护一个阅读游标（currentMessageId → 隐含 
 - search 输出带 db_id（`[ID:{db_id}]`），供 focus 跳转用
 - browse 永远正序，需要看前因时用 focus + offset 回退后再正序读
 
-## 工具集（13个）
+## 工具集（12个 review_* 工具 + 工作端 mark_for_review）
 
 ### 导航（6个）
 
@@ -51,6 +51,7 @@ ReviewEngine 实例内存维护一个阅读游标（currentMessageId → 隐含 
 | review_search_messages | query, channel_id?, person_id?, time_start?, time_end? | 按条件搜索消息，结果带 ID |
 | review_get_person | person_id | 查询人物详情（信任等级/维度分数/称呼/快速记忆/关联账号） |
 | review_list_beacons | (无) | 获取未处理信标列表（处理完初始种子后可主动拉取更多） |
+| review_remove_beacon | beacon_id | 标记信标为已处理（从待处理列表移除，ID 从 review_list_beacons 获取） |
 
 ### 行动（3个）
 
@@ -147,13 +148,13 @@ averaged_coefficient: 本次 review 中对该目标该维度所有评价的平�
 
 | 升级路径 | 硬性条件 | 维度条件 |
 |----------|----------|----------|
-| Unknown → Stranger | 消息数 ≥ 3 | 无 |
+| Unknown → Stranger | 首条消息（首次出现即升） | 无 |
 | Stranger → Understanding | 记忆 ≥ 5，互动天数 ≥ 3 | 任一维度 ≥ 8 |
 | Understanding → Familiarity | 互动天数 ≥ 14，无活跃警报 | 多数维度(3/4) ≥ 20 |
 | Familiarity → Trust | 互动天数 ≥ 30，无警报历史(近30天)，Review 至少评估过 3 次 | 所有维度 ≥ 35 |
 | Trust → AbsoluteTrust | — | — | 管理员手动 |
 
-"互动天数"= 实际发过消息的天数（非注册天数）。
+"天数" = 账号注册天数（自 `Person.CreatedAt` 起算的日历天数），非互动天数。
 降级自动执行（维度跌破门槛即降）。升级需要硬性条件 + 维度条件同时满足，由框架在 review_complete 时自动检查并执行。
 模型不直接调用升降级工具，只通过 review_evaluate 记录评价。当人物满足硬性条件但维度未达标时，框架自动生成信标引导 Review 评估。
 
@@ -245,23 +246,26 @@ LastEvaluatedAt DateTime
 如果觉得工作已可以收尾，直接调用 review_complete 完成。
 ```
 
-## 预算配置（DreamConfig）
+## 预算配置（ReviewConfig，Storage/Dream/ReviewConfig.json）
 
-- ReviewTokenBudget: 总 token 上限（输入+输出）
-- ReviewReserveBudget: 备用预算额度
-- ReviewCompressionThreshold: 触发压缩的 history token 阈值
+- TokenBudget: 总 token 上限（输入+输出）
+- ReserveBudget: 备用预算额度
+- CompressionThreshold: 触发压缩的 history token 阈值
+
+> DreamConfig 只含 `ReviewIntervalHours`（触发间隔），预算字段在 ReviewConfig，无 Review 前缀。
 
 ## 信标系统
 
-### 数据结构（扩展现有 ReviewHint）
+### 数据结构（Beacons 表，原 ReviewHint 已改名）
 
 ```
+Id            int       主键
 MessageId     int       标记位置
 ChannelId     int       所在频道
 PersonId      int?      相关人物（可选）
-Reason        string    标记原因
-CreatedAt     DateTime  标记时间
-Processed     bool      是否已被复盘消费
+Content       string    标记内容
+Consumer      string    消费方（默认 "review"，支持多消费者路由）
+IsProcessed   bool      是否已被消费
 Source        string    来源（"model" = 工作端标记, "framework" = 自动生成）
 ```
 
@@ -311,7 +315,7 @@ Source        string    来源（"model" = 工作端标记, "framework" = 自动
 - ReviewEngine 基本骨架（ISubEngine + IAgentHost + Agent 循环）
 - ReviewControlImpl（唤醒通知 + 备用预算 + 完成状态）
 - DreamEngine Phase 2 启动逻辑（ctx.StartEngine）
-- ToolProfile "review" 控制工具可见性
+- `PermissionGroup="review"` + `Storage/Session/review.json` 工具白名单控制工具可见性（无 ToolProfile 概念）
 - Plugin.ReviewTools 项目结构
 
 ### 删除/重写
@@ -336,7 +340,7 @@ Source        string    来源（"model" = 工作端标记, "framework" = 自动
 
 ## Signal 埋点
 
-遵循现有 Signal 规范（见 docs/signal-channel-template.md）：
+遵循现有 Signal 规范（见 docs/signal/signal-channel-template.md）：
 
 ### 生命周期 span
 - ReviewEngine 启动：`Signal.Continue(...)` scope="review:main"，detail 含种子类型

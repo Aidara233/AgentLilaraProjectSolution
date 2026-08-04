@@ -1,7 +1,7 @@
 # 心智引擎整体规划
 
 > 记忆重构计划 · 文件 03
-> 状态：**骨架定稿** — 2026-08-02（Writer 协议、产生端、复活善后已定；EventSink 映射等实现细节待定）
+> 状态：**设计定稿（未实现）** — 2026-08-02（Writer 协议、产生端、复活善后已定；EventSink 映射等实现细节待定）。当前代码无 MindEngine / Writer，本规划尚未实现。
 
 ## 定位：前额叶，不是海马体
 
@@ -242,7 +242,7 @@ Review 启动 → 从 ReviewQueue 认领（Pending → UnderReview，替代旧�
 
 ### Dream 探索者（轻量切片）
 
-Dream 是记忆库的**探索者**（与 Review 验证者分工）：找关联和问题、建推断断言，需要验证的移交 Review。**无 session 循环**，由 MaintenanceEngine 巡逻触发。核心已定：切片 + 统一产出去向；具体切片清单见下，调度节奏待定（见 04）。
+Dream 是记忆库的**探索者**（与 Review 验证者分工）：找关联和问题、建推断断言，需要验证的移交 Review。**无 session 循环**，由 MaintenanceEngine 巡逻触发。核心已定：切片 + 统一产出去向；具体切片清单见下，调度节奏待定（见 06）。
 
 #### 切片（Slice）
 

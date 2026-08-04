@@ -45,45 +45,14 @@
 
 ## 记忆文件索引
 
-Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，入口索引为 `MEMORY.md`。
+Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，入口索引为 `MEMORY.md`。历史设计决策记忆已随架构演进清理，当前仅保留近三轮重构的结论：
 
-**项目设计：**
-- `project_overview.md` — 项目概览，快速入口指针
-- `project_progress.md` — 开发进度 + 待办（每轮必读）
-- `project_engine_unification.md` — 引擎循环统一设计（Gate+Agent+堆叠上下文）
-- `project_system_loop.md` — 系统循环纯调度者定位 + 子agent体系
-- `project_loop_redesign.md` — 闸门模型 + 模块分层（已实现）
-- `project_dream_design.md` — 做梦机制：片段类型、数据域、睡眠分级
-- `project_dream_talk.md` — 梦话生成 + 睡眠打断分级
-- `project_memory_system.md` — 多维标签存储 + 检索设计（已被记忆重构取代）
-- `project_memory_redesign.md` — 存储/检索/提取全面重构
-- `project_tool_design.md` — 一切皆工具 + Agent 循环（已被插件化方案取代）
-- `project_tool_plugin_refactor.md` — Contract 接口 + PluginLoader + 插件化架构（已被引擎统一化方案取代）
-- `project_social_engagement.md` — 冲动值 + 提及检测 + 社交网关
-- `project_impulse_redesign.md` — 冲动值负反馈重设计
-- `project_user_system.md` — Person/User 双层模型 + 信任/权限分离
-- `project_webui.md` — WebUI 管理面板（卡片系统 Phase 1+2）
-- `project_webui_redesign.md` — 导航重排 + Shell/Provider 分层
-- `project_webui_context_viewer.md` — 频道详情上下文查看器（待开发）
-- `project_logging_redesign.md` — Signal 信号追踪模型 + 单表 events
-- `project_log_page_design.md` — 日志页 git-tree 风格 SVG 可视化
-- `project_signal_instrumentation.md` — Signal 埋点扩展模板
-- `project_expression_issues.md` — 模型编造经历问题 + Persona 约束
-- `project_qq_adapter.md` — OneBotAdapter QQ 平台接入
-- `project_channel_id_risk.md` — ChannelId 碰撞风险（暂缓）
-- `project_claude_proxy_issue.md` — 中转站兼容性问题
-- `project_future_plans.md` — 未来计划备忘
-- `project_worker_redesign.md` — WorkerEngine 设计（已被系统循环方案取代）
+- `project-session-architecture-review.md` — 2026-08-04 会话架构重构：express 会话化 + 资源池树 + LoopId 移除
+- `project-crossloop-removal.md` — 2026-08-03 跨循环消息通讯移除（session 间通讯走子 agent 邮箱）
+- `project-dice-removal.md` — 2026-08-03 骰子系统整体移除
+- `project-plugin-permission-cleanup.md` — 2026-08-03 插件不再参与权限/引擎配置
 
-**协作偏好：**
-- `feedback_collab.md` — 碰上问题先商量，不要过度拆分代码
-- `feedback_workflow.md` — 大型改动后主动 commit + 试运行
-- `feedback_webui_layout.md` — 复杂卡片用 flex Sidebar，避免 CSS Grid 行共享
-
-**参考信息：**
-- `reference_napcat.md` — NapCat QQ 协议端路径
-- `reference_webui_login.md` — WebUI 登录凭据
-- `reference_design_notes.md` — 用户设计灵感目录
+更早的设计决策已沉淀到 `docs/`（见下方索引）或随代码演进被废弃；如需追溯历史方案可查 git log。
 
 ## 文档索引
 
@@ -125,6 +94,13 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - `docs/core/special-purpose.md` — SleepTalkCore / PreprocessingCore
 - `docs/core/stream-handlers.md` — NativeToolCallHandler / ExpressToolCallHandler
 - `docs/core/configuration.md` — JSON 配置文件格式、协议选择、字段说明
+
+**历史与杂项：**
+- `docs/architecture-redesign-spec.md` — 6 月通用会话框架重设计**历史稿**（已被 architecture-map.md 取代，仅供参考）
+- `docs/session-persistence-design.md` — 会话持久化实施计划（**已实施**，实现细节以 `Engine/Session/SessionPersistence.cs` 为准）
+- `docs/dead-code-cleanup-tracker.md` — 截至 2026-05-24 的死代码清理记录（**历史快照**）
+- `docs/audit/` — 2026-05/06 模块审查快照（**历史归档**，不代表当前代码）
+- `docs/superpowers/` — subagent 计划/规格工作区（草稿 + 近期计划，非正式文档）
 
 ## 项目语言
 
@@ -178,8 +154,8 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 ## 关键路径
 
 - 入口：Program.cs（--file / --debug / --test / 默认 Web 服务器）
-- 数据库：Database/DbManager.cs（初始化 + 迁移）+ 13 张业务表 + logs.db
-- 会话管理：Engine/Core/SessionManager.cs（用户映射 + 频道映射 + 消息入库）
+- 数据库：Database/DbManager.cs（初始化 + 迁移）+ 18 张业务表 + logs.db
+- 会话管理：Engine/Worker/SessionManager.cs（用户映射 + 频道映射 + 消息入库）
 - 引擎内核：Engine/Core/MasterEngine.cs（SpawnCheck 注册表 + 活跃引擎表 + 全局组件宿主）
 - 引擎孵化：Engine/Worker/ExpressEngineSpawnCheck.cs（入向路由：无占用频道 → 孵化 express 会话）
 - 频道响应：Type="express" RuntimeSession（AutoClaim Full，权重触发，空闲回收；无独立 ExpressEngine 引擎）
@@ -197,9 +173,9 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - Agent 循环：Engine/Core/Agent.cs（多轮推理，退避策略）
 - Agent 宿主接口：Engine/Core/IAgentHost.cs（BuildStartInjectAsync/BuildRoundInjectAsync）
 - Agent 配置：Engine/Core/AgentConfig.cs（轮次/退避/压缩阈值）
-- 组件系统：Engine/Core/ComponentHost.cs（实例管理 + ModuleBus 订阅 + 工具注册）
-- 组件注册：Engine/Core/ComponentRegistry.cs（类型注册，PluginLoader 扫描）
-- 全局组件：Engine/Core/IGlobalComponent.cs / ILoopComponent.cs
+- 组件系统：Component/ComponentHost.cs（实例管理 + ModuleBus 订阅 + 工具注册）
+- 组件注册：Component/ComponentRegistry.cs（类型注册，PluginLoader 扫描）
+- 全局组件：AgentLilara.PluginSDK/IGlobalComponent.cs / ILoopComponent.cs（接口在 SDK）
 - 三层压缩：Engine/Modules/CompressionTierModule.cs（L1提示80k/L2催促130k/L3锁定150k，仅 Evaluate+GetInjectText）
 - 压缩工具：Tool/Core/CompactTool.cs（模型调 compact(summary)，新 session 接管旧 session）
 - 注入接口：Engine/Core/IInjectProvider.cs（BuildStartInjectAsync/BuildRoundInjectAsync）
@@ -213,7 +189,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 统一模型调用：Core/AgentCore.cs（Express 响应 + 原生 tool_use；SessionCore 原名 WorkingCore）
 - 记忆检索：Memory/MemoryService.cs（RecallAsync：全量扫描 + 向量精排 + 关联扩展）
 - 记忆提取：Core/MemoryExtractionCore.cs（每3条触发，独立 Worker）
-- Embedding：Client/EmbeddingProvider.cs（bge-large-zh-v1.5，SiliconFlow）
+- Embedding：Client/SiliconFlowEmbeddingProvider.cs（bge-large-zh-v1.5，SiliconFlow）+ Client/OnnxEmbeddingProvider.cs（本地模型）
 - 维护引擎触发：Engine/Dream/DreamEngineSpawnCheck.cs（仅响应 force-sleep 信号）
 - 维护引擎：Engine/Dream/DreamEngine.cs（常驻循环：秩序temp入库+巡逻衰减维护+三角闭合）
 - 记忆热度模型：TempMemoryEntry.Heat（目标逼近，被召回滚雪球，冷掉入库）
@@ -235,7 +211,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 图片存储：Adapter/ImageStorage.cs
 - Token 统计：Database/ModelCallLog.cs + ModelCallLogRepository.cs
 - 信号系统：Logging/Signal.cs（静态门面）+ Logging/LogDatabase.cs（独立 SQLite）+ Logging/LogWriter.cs（批量写入）
-- 信号查询：Logging/LogQuery.cs + Tool/Host/LogAccessImpl.cs（ILogAccess 桥接）
+- 信号查询：Logging/LogQuery.cs + Logging/LogAccessImpl.cs（ILogAccess 桥接）
 - 工具管理：Tool/ToolRegistry.cs（注册/卸载/禁用）+ Tool/PermissionService.cs（权限组裁决，Storage/Session/{express,channel,task,review}.json 黑白名单）+ Engine/Session/SessionTypeProfiles.cs（会话类型档案）+ Component/ComponentConfig.cs（组件按权限组启用/禁用，LoopApplicability/EngineTypes 已删除）
 - 核心工具：Tool/Core/CoreTools.cs（wait + continue_loop）+ Tool/Core/EscalateTool.cs
 - 插件 SDK：AgentLilara.PluginSDK/（共享契约：ITool/IInjectProvider/服务接口/CardSchema）
@@ -245,14 +221,14 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - OneBot 适配器：Adapter/OneBot/OneBotAdapter.cs（WS连接 + 消息映射 + QQ协议）
 - File 适配器：Adapter/File/FileAdapter.cs（文件轮询，测试用）
 - MCP 系统：MCP/McpServerManager.cs + McpBridgeTool.cs + McpConfig.cs
-- WebUI Shell：WebUI/ProviderRegistry.cs + DynamicPage.razor + CardGrid.razor + CardHost.razor
-- WebUI 数据层：WebUI/DataSourceManager.cs（Fetch重试 + Subscribe推送 + 路由参数注入）
-- WebUI 卡片类型：WebUI/Cards/（TableCard/StatusCard/FormCard/StreamCard/ChatCard/ActionCard/TreeCard）
-- WebUI Provider：WebUI/Providers/（Dashboard/Engines/EngineDetail/Channel/Dream/Review/Memory/Adapter/Plugins/Config/Console/Logs/Test/Delegation）
-- 插件项目：Plugins/Plugin.BasicTools/（speak + send_media）
--           Plugins/Plugin.WorkingTools/（pinboard + thinking_notes + retain_list + mark_for_review）
--           Plugins/Plugin.MemoryTools/（memory，依赖 IMemoryAccess）
--           Plugins/Plugin.FileTools/（read_text + write_text + list_dir + move/delete/copy）
+- WebUI Shell：WebUI/Shell/ProviderRegistry.cs + WebUI/Components/Shell/（DynamicPage/CardGrid/CardHost.razor）
+- WebUI 数据层：WebUI/Shell/DataSourceManager.cs（Fetch重试 + Subscribe推送 + 路由参数注入）
+- WebUI 卡片类型：WebUI/Components/Cards/（Table/Status/Form/Stream/Chat/Action/Tree/Detail/PropertyEditor 共 9 张 + Custom 预留）
+- WebUI Provider：WebUI/Providers/（Dashboard/Engines/EngineDetail/Sessions/Channel/Vision/Dream/Review/Memory/Adapter/Config/Console/Test/LogTrace/Plugins/Logs/Currency，17 个）
+- 插件项目：Plugins/Plugin.BasicTools/（speak + thinking + send_media + send_file + adapter_action）
+-           Plugins/Plugin.WorkingTools/（pinboard + thinking_notes + retain_list + mark_for_review + task_management）
+-           Plugins/Plugin.MemoryTools/（memory_*，依赖 IMemoryAccess）
+-           Plugins/Plugin.FileTools/（read_text + write_text + update_text + list_dir + move_file/delete_file/copy_file）
 -           Plugins/Plugin.FileOps/（archive_create/extract/list + search_files + grep_files + file_info + file_hash + compare_files）
 -           Plugins/Plugin.GroupFileTools/（分组文件操作）
 -           Plugins/Plugin.SystemTools/（子 session 管理：create_sub_agent / stop_sub_agent / send_instruction / list_sub_agents / wait_sub / get_sub_info；子侧回报：report_to_parent）— system-ops（父侧 LoopComponent）+ sub-agent-runtime（子侧 LoopComponent）

@@ -1,5 +1,7 @@
 # 模块2审计报告：频道循环 (Channel Loop)
 
+> **⚠ 历史快照（2026-05-26）**：本文审计的 ChannelEngine（1844 行）/ ChannelEngineSpawnCheck / ImpulseTracker / ChannelContextBuilder 等已在 **2026-08-04 express 会话化重构**中删除——频道响应现为 express/working RuntimeSession，无独立引擎、无冲动值。本文是对已删除代码的历史审查，仅作参考。当前架构见 `docs/architecture-map.md`。
+
 审计时间：2026-05-26
 文件数：15 | 总行数：~3,200（含 ChannelEngine 1844行）
 

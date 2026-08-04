@@ -1,5 +1,12 @@
 # 架构重构设计 — 通用会话框架
 
+> **⚠ 历史设计稿（2026-06-20）**：本文是"通用会话框架"重设计过程中的中间态方案，描述的是**当时的过渡架构**（ChannelEngine + 冲动值 + Express 非会话化），其中多数内容已在后续落地中被取代或推翻：
+> - ChannelEngine / 冲动值 / Express 非会话化 → 已被 2026-08-04 express 会话化重构删除（频道响应 = express/working RuntimeSession）
+> - SessionLimits（MaxLifetime/IdleTimeout）→ 未实现（无强制 stop）
+> - 轮次定价分级、ILoopComponent→ISessionComponent 迁移 → 设计细节未按原文落地
+>
+> **本文仅供参考，当前架构以 `docs/architecture-map.md` 为准。**
+
 > 日期：2026-06-20
 > 基于 arch-redesign-plan.md 及多轮讨论压缩细化
 

@@ -1,6 +1,14 @@
 # 代码审计 — 2026-05-26
 
-> **历史快照说明：** 本审计反映 2026-05-26 时点的代码状态。后续架构重构已删除 SystemEngine / SystemSession / CompressTool / SummarizationCore 等对象，审计文档中相关条目仅作历史记录，不再对应实际代码。
+> **历史快照说明：** 本目录是 **2026-05-26** 时点的代码审计快照，**不代表当前代码**。此后的多次架构重构已删除大量对象，审计文档中相关条目仅作历史记录：
+>
+> - 6 月统一会话重构：删除 SystemEngine / SystemSession / CompressTool / SummarizationCore 等，会话统一为 RuntimeSession
+> - 7 月会话持久化 + 会话类型字符串化：SessionType 枚举 → 字符串键（channel/task/express）
+> - 2026-08-03 插件权限清理：删除插件侧 `EngineTypes` / `LoopApplicability` / `CapabilitySummary` 声明
+> - 2026-08-03 骰子/跨循环移除：删除 Plugin.DicePool / Plugin.ExternalDice / Plugin.CrossLoopTools / IAgentMessaging / DelegationBus / SignalFilter 子系统
+> - 2026-08-04 express 会话化 + 资源池树 + LoopId 移除：删除 ChannelEngine / ExpressEngine / ExpressCycle / ChannelContextBuilder / ChannelMessageBuffer / ImpulseTracker / LoopId / CrossRequest / CrossRequestRegistry / IAgentSession / SignalFilterConfig / SignalCategory 等
+>
+> 下方「模块文件清单」包含上述已删除文件，仅用于还原审计时点的代码全景。**当前架构请读 `docs/architecture-map.md`。**
 
 总代码量 ~35,000 行 C#，分 10 个模块逐项检查。
 
