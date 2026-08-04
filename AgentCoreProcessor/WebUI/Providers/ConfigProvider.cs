@@ -15,11 +15,12 @@ internal class ConfigProvider : IWebUIProvider
     private readonly Dictionary<string, string> _coreFiles = new()
     {
         ["Base"] = "Core/Base.json",
+        ["ChannelCore"] = "Core/ChannelCore.json",
         ["ExpressCore"] = "Core/ExpressCore.json",
-        ["SessionCore"] = "Core/SessionCore.json",
-        ["SystemCore"] = "Core/SystemCore.json",
-        ["MemoryExtractionCore"] = "Core/MemoryExtractionCore.json",
+        ["TaskCore"] = "Core/TaskCore.json",
         ["ReviewCore"] = "Core/ReviewCore.json",
+        ["MemoryExtractionCore"] = "Core/MemoryExtractionCore.json",
+        ["RelationClassificationCore"] = "Core/RelationClassificationCore.json",
         ["SleepTalkCore"] = "Core/SleepTalkCore.json",
     };
 
