@@ -160,7 +160,7 @@ internal static class SessionTypeProfiles
                 "speak", "thinking", "send_media", "send_file", "adapter_action",
                 "escalate", "wait",
                 "connect_channel", "disconnect_channel",
-                "memory_get", "memory_list", "memory_search", "memory_stats", "memory_link_get"
+                "journal", "remember", "mind_status"
             }
         },
         _ => throw new ArgumentOutOfRangeException(nameof(type), type,
@@ -174,9 +174,8 @@ internal static class SessionTypeProfiles
         "speak", "thinking", "send_media", "send_file", "adapter_action",
         // file-tools
         "read_text", "write_text", "list_dir", "move_file", "delete_file", "copy_file", "update_text",
-        // memory-tools
-        "memory_store", "memory_get", "memory_search", "memory_list", "memory_stats",
-        "memory_delete", "memory_link_create", "memory_link_delete", "memory_link_get", "memory_update",
+        // mind-tools（心智工具）
+        "journal", "claim", "remember", "mind_status", "archive",
         // sub-agent-runtime
         "report_to_parent",
         // 核心 session 工具
@@ -187,17 +186,14 @@ internal static class SessionTypeProfiles
     /// <summary>review 工具集：channel 黑名单与 review 白名单共用（Working 会话不可用复盘工具）。</summary>
     internal static readonly string[] ReviewToolSeed =
     {
-        "review_browse", "review_complete", "review_evaluate", "review_focus",
-        "review_get_person", "review_list_beacons", "review_log", "review_remove_beacon",
-        "review_save_progress", "review_search_messages", "review_thinking_notes",
-        "review_update_person"
+        "review_list", "review_resolve", "review_preview", "review_commit",
+        "review_evidence"
     };
 
-    /// <summary>memory 工具集：review 白名单等复用。</summary>
+    /// <summary>memory 工具集：review 白名单等复用（新心智工具）。</summary>
     internal static readonly string[] MemoryToolSeed =
     {
-        "memory_store", "memory_get", "memory_search", "memory_list", "memory_stats",
-        "memory_delete", "memory_link_create", "memory_link_delete", "memory_link_get", "memory_update"
+        "journal", "claim", "remember", "mind_status", "archive"
     };
 
     /// <summary>Session 配置文件 DTO。Type 声明会话类型键（与文件名一致）；DefaultComponents 对应 record 的 DefaultComponentIds。</summary>

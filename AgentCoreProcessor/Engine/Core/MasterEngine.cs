@@ -752,6 +752,11 @@ namespace AgentCoreProcessor.Engine
                 var retrieveAccess = new Tool.Host.RetrieveAccessImpl(mindEngine.Retrieve);
                 _toolContext.Register<AgentLilara.PluginSDK.Services.IRetrieveAccess>(retrieveAccess);
                 componentServices.Register<AgentLilara.PluginSDK.Services.IRetrieveAccess>(retrieveAccess);
+
+                // Review 队列 + 暂存区桥（review 会话工具）
+                var queueAccess = new Tool.Host.ReviewQueueAccessImpl(mindEngine.Queue);
+                _toolContext.Register<AgentLilara.PluginSDK.Services.IReviewQueueAccess>(queueAccess);
+                componentServices.Register<AgentLilara.PluginSDK.Services.IReviewQueueAccess>(queueAccess);
             }
 
             // 注册 ISessionResourceAccess（SessionEngine 此时已启动）

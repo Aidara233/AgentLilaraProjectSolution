@@ -3,23 +3,24 @@ using AgentLilara.PluginSDK.Services;
 
 namespace Plugin.WorkingTools;
 
+/// <summary>
+/// 标记当前对话位置为待验证项（Manual 来源）。后端走 ReviewQueue（取代旧信标）。
+/// </summary>
 [ToolMeta(Group = "working")]
 public class MarkForReviewTool : ITool
 {
-    private readonly IBeaconAccess _beacon;
+    private readonly IReviewQueueAccess _queue;
 
-    public MarkForReviewTool(IBeaconAccess beacon)
+    public MarkForReviewTool(IReviewQueueAccess queue)
     {
-        _beacon = beacon;
+        _queue = queue;
     }
 
     public string Name => "mark_for_review";
-    public string Description => "标记当前对话位置为复盘信标。下次深度睡眠时复盘模块会关注这里。";
+    public string Description => "标记当前对话内容为待验证。Review 验证会话会关注这里并核实。";
     public IReadOnlyList<ToolParameter> Parameters =>
     [
-        new("reason", "标记原因（为什么值得复盘关注）", 0),
-        new("channel_id", "内部频道ID（见频道信息 频道ID）", 1, false),
-        new("person_id", "内部人物ID（见参与者列表 person_id）", 2, false)
+        new("reason", "标记原因（为什么值得验证）", 0)
     ];
     public TimeSpan Timeout => TimeSpan.FromSeconds(10);
 
@@ -29,12 +30,8 @@ public class MarkForReviewTool : ITool
         if (string.IsNullOrWhiteSpace(reason))
             return new ToolResult { Status = "failed", Error = "reason 不能为空" };
 
-        int? channelId = inputs.Count > 1 && int.TryParse(inputs[1], out var cid) ? cid : null;
-        int? personId = inputs.Count > 2 && int.TryParse(inputs[2], out var pid) ? pid : null;
-
-        await _beacon.CreateAsync(reason, source: "model", consumer: "review",
-            channelId: channelId, personId: personId);
-
-        return new ToolResult { Status = "success", Data = "已标记为复盘信标。" };
+        // 入队（Source=Manual，Normal 优先级）。TargetRef 用 reason（无具体断言时按文本标记）。
+        await _queue.EnqueueAsync(reason, "Manual", reason, "Manual", "Normal");
+        return new ToolResult { Status = "success", Data = "已标记为待验证项。" };
     }
 }

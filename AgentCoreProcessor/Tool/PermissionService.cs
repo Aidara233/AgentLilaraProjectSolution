@@ -97,7 +97,7 @@ internal static class PermissionService
         {
             "speak", "thinking", "send_media", "send_file", "adapter_action",
             "escalate", "wait",
-            "memory_get", "memory_list", "memory_search", "memory_stats", "memory_link_get"
+            "journal", "remember", "mind_status"
         }),
         "channel" => ("blacklist", new[] { "escalate" }.Concat(Engine.Session.SessionTypeProfiles.ReviewToolSeed).ToArray()),
         "task" => ("whitelist", Engine.Session.SessionTypeProfiles.TaskToolSeed),

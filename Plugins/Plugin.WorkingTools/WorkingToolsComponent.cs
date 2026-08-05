@@ -42,9 +42,9 @@ public class WorkingToolsComponent : LoopComponentBase
         _retainList = new RetainListTool(context.Storage);
         _taskList = new TaskListTool(context.Storage);
 
-        var beacon = context.GetService<IBeaconAccess>();
-        if (beacon != null)
-            _markForReview = new MarkForReviewTool(beacon);
+        var queue = context.GetService<IReviewQueueAccess>();
+        if (queue != null)
+            _markForReview = new MarkForReviewTool(queue);
 
         return Task.CompletedTask;
     }

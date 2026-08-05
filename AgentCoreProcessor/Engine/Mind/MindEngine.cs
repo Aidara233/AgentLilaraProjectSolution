@@ -44,6 +44,10 @@ namespace AgentCoreProcessor.Engine.Mind
         /// <summary>复活善后（订阅 session 完成 → 整理写入）。</summary>
         public Resurrector Resurrector { get; }
 
+        /// <summary>按 review 会话 Id 创建暂存区（一次一个 review 会话，天然串行）。</summary>
+        public ReviewStage CreateReviewStage(string sessionId)
+            => new(sessionId, _ctx.Claims, _ctx.ConflictGroups, Evidence);
+
         public MindEngine(ISystemContext ctx)
         {
             _ctx = ctx;
