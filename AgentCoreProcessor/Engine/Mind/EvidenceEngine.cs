@@ -122,10 +122,10 @@ namespace AgentCoreProcessor.Engine.Mind
                     // 支持/反对边：subject 是 assertion（支持者），object 是 assertion（被支持者）
                     var subj = ClaimSlot.FromJson(edge.SubjectJson);
                     var obj = ClaimSlot.FromJson(edge.ObjectJson);
-                    if (subj?.Ref.HasValue != true || obj?.Ref.HasValue != true) continue;
-                    if (obj.Ref.Value != target.Id) continue;
+                    if (subj?.Ref is not int subjRef || obj?.Ref is not int objRef) continue;
+                    if (objRef != target.Id) continue;
 
-                    var supporterId = subj.Ref.Value;
+                    var supporterId = subjRef;
                     if (!byId.ContainsKey(supporterId)) continue;
                     var supporter = byId[supporterId];
 
