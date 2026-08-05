@@ -1,6 +1,6 @@
 # 记忆重构计划（Memory Redesign）
 
-> **状态：设计稿（未实现）** — 存储/经历/情绪/引擎骨架设计已定稿，但**当前代码仍是旧记忆库**：无 Claims / Journals / EmotionService / MindEngine 表与类。整套计划尚未开始实施。
+> **状态：已实施（2026-08-05）** — 记忆重构完成：MindEngine（Writer/EmotionService/EvidenceEngine/ConflictService/ReviewQueueService/ReviewStage/RetrieveService/ExtractService/EventSink/Resurrector）+ 新心智数据表 + Plugin.MindTools 已落地；旧记忆/做梦/复盘系统整体移除。
 > 历史草案：`docs/superpowers/specs/2026-07-22-memory-redesign.md`（brainstorming 工作区，本目录为其正式化）
 
 ## 这是什么

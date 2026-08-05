@@ -4,16 +4,16 @@
 
 **核心特性**：
 - 会话体系：频道响应全面会话化（express/working/task 都是 RuntimeSession）+ 基础设施引擎层（ISubEngine）+ 资源池树（SessionPool，频道占用在池里）
-- 基础设施引擎：SessionEngine（会话生命周期+资源池+30s循环+express 空闲回收）、MessageEngine（双向消息枢纽，入向去重+分发、出向入库+路由）、AdapterEngine（适配器管理+频道融合+消息分段）、ExtractionEngine（记忆提取+监听检测）、DreamEngine（秩序+巡逻）、ReviewEngine（自由探索）、VisionEngine（图片描述+OCR）、TimerEngine（定时触发）
+- 基础设施引擎：SessionEngine（会话生命周期+资源池+30s循环+express 空闲回收）、MessageEngine（双向消息枢纽，入向去重+分发、出向入库+路由）、AdapterEngine（适配器管理+频道融合+消息分段）、ExtractionEngine（提取触发+进度标记，提取核心已并入心智）、MindEngine（心智引擎：唯一写入口 Writer+情绪+可信度仲裁+检索，常驻）、VisionEngine（图片描述+OCR）、TimerEngine（定时触发）
 - 统一会话：RuntimeSession 不分子类，行为由 CreateSessionSpec（组件列表+端口配置+初始状态）+ Type（express/channel/task）驱动。express（轻量对话，权重触发）、Working（频道全功能，由 escalate 创建）、Task（任务执行，禁止套娃）
 - 无强制 stop：Session 不设 MaxLifetime/IdleTimeout 上限，仅由模型调 end_session / 外部 RequestStop / CTS 取消终止；express 会话空闲回收（ColdTimeoutSeconds）直接杀
 - express 会话化：无独立 ExpressEngine 引擎，无冲动值。无占用频道收到消息 → ExpressEngineSpawnCheck 孵化 Type="express" 会话（AutoClaim Full），按端口权重激活。escalate 同池换 working（claim 原地不动）
 - 端口模型：Session 通过 IInputPort（注入上下文）和 IOutputPort（工具写端口）与外界交互，端口决定工具注册
-- 消息流：AdapterEngine → MessageEngine（入向去重+分发）→ 订阅者（express/working 会话/ExtractionEngine）；出向 Session → MessageEngine → AdapterEngine
+- 消息流：AdapterEngine → MessageEngine（入向去重+分发）→ 订阅者（express/working 会话/ExtractionEngine 触发提取 → MindEngine）；出向 Session → MessageEngine → AdapterEngine
 - 引擎容错：API 调用失败不杀循环，连续失败 exponential backoff，SpawnCheck 检测死亡自动重启
 - 优雅退出：ApplicationStopping 钩子 → 停适配器 → 停引擎（signal gate + CTS）→ 等 30s → 强杀兜底 → close startupSignal
 - 引擎生命周期信号：每个引擎 RunAsync 用 Signal.Continue 创建 lifecycle span（scope=自己），退出时 Close 带 reason
-- 睡觉系统：DreamEngine 常驻循环（秩序+巡逻），由 force-sleep 信号触发启动，小睡/大睡通过信号展开
+- 睡觉系统：旧 DreamEngine 已随记忆重构移除（force-sleep 信号仍发布，暂无消费引擎）；维护/做梦按 docs/memory-redesign/03 规划走 MaintenanceEngine + Dream 探索者，尚未实装
 - 睡眠打断分级：走神被@醒、小睡需@+关键词叫醒（仅@触发梦话）、大睡仅 force-wake 信号可唤醒
 - Prompt Caching：Claude 系 Core 启用 promptCaching，中转站已验证兼容
 - Session 持久化（已实现）：三件套 spec.json（创建一次写）/ state.json（每轮原子重写）/ history.jsonl（每轮追加），重启续跑 + 死的不加载（仅恢复 status ∈ {Running, Crashed} 的存档，Completed 留档）
@@ -60,7 +60,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 
 **架构：**
 - `docs/architecture-map.md` — **架构全景图**（引擎生态/消息流/做梦/记忆/工具/WebUI/日志/MCP），冷启动第一站
-- `docs/review-engine-redesign.md` — ReviewEngine 自由探索模式重设计
+- `docs/review-engine-redesign.md` — ReviewEngine 自由探索重设计**旧稿**（旧复盘系统已随记忆重构移除，仅供参考）
 
 **记忆重构计划（`docs/memory-redesign/`）：**
 - `docs/memory-redesign/README.md` — 计划总纲（命名/核心决策/架构总览/文件导航）
@@ -164,8 +164,8 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 统一会话：Engine/Session/RuntimeSession.cs（IRuntimeSession 实现，行为由 CreateSessionSpec + Type 驱动）
 - 消息枢纽：Engine/Messaging/MessageEngine.cs（双向枢纽，入向去重+分发，出向入库+路由）
 - 适配器引擎：Engine/AdapterEng/AdapterEngine.cs（适配器生命周期+频道融合+消息分段）
-- 提取引擎：Engine/Extraction/ExtractionEngine.cs（记忆提取+监听检测，共用 LLM 调用）
-- 监听任务：Engine/Extraction/EavesdropTask.cs（关键词粗筛+LLM判定，一次性短命会话）
+- 提取核心：Engine/Mind/ExtractService.cs（提取核心：伴随提取 + 善后复活，产出 JSON 交 Writer）+ Engine/Mind/ExpressExtractor.cs（伴随提取：消息攒批 N=5 + 空闲补一次，单轮不开 session）
+- 提取触发：Engine/Extraction/ExtractionEngine.cs（触发 + 进度标记，提取核心已退役到 ExtractService）+ Engine/Extraction/EavesdropTask.cs（监听检测壳，待实现）
 - 会话规格：AgentLilara.PluginSDK/CreateSessionSpec.cs（组件列表+端口配置+初始状态）
 - 会话类型档案：Engine/Session/SessionTypeProfiles.cs（读 Storage/Session/{type}.json：默认核/组件/权限组/AllowedCores 白名单；express/channel/task 内置）
 - 会话多核：Engine/Session/RuntimeSession.cs（ConfigureCores/SwitchCore/SetActiveCore + 懒建缓存）+ Tool/Core/SwitchCoreTool.cs（模型 switch_core）+ Command/CoreCommand.cs（!core）+ state.json.activeCoreConfig
@@ -187,22 +187,19 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 上下文状态：Engine/Context/ChannelContextState.cs（频道完整上下文快照：参与者+历史+系统信息）
 - 会话宿主：Engine/Session/SessionAgentHost.cs（RuntimeSession 端口驱动的 Agent 宿主实现）
 - 统一模型调用：Core/AgentCore.cs（Express 响应 + 原生 tool_use；SessionCore 原名 WorkingCore）
-- 记忆检索：Memory/MemoryService.cs（RecallAsync：全量扫描 + 向量精排 + 关联扩展）
-- 记忆提取：Core/MemoryExtractionCore.cs（每3条触发，独立 Worker）
+- 记忆检索：Engine/Mind/RetrieveService.cs（关键词 + 时间窗口 + 命中关键词数优先 + c_actual 降序 + 二跳内子证据）
+- 记忆写入口：Engine/Mind/Writer.cs（唯一写入口：WriteBatch 原子批次，关键词关联 + 同源分组 + 冲突检测 + 证据重算 + 情绪应用）
 - Embedding：Client/SiliconFlowEmbeddingProvider.cs（bge-large-zh-v1.5，SiliconFlow）+ Client/OnnxEmbeddingProvider.cs（本地模型）
-- 维护引擎触发：Engine/Dream/DreamEngineSpawnCheck.cs（仅响应 force-sleep 信号）
-- 维护引擎：Engine/Dream/DreamEngine.cs（常驻循环：秩序temp入库+巡逻衰减维护+三角闭合）
-- 记忆热度模型：TempMemoryEntry.Heat（目标逼近，被召回滚雪球，冷掉入库）
+- 记忆提取：Engine/Mind/ExtractService.cs（提取核心，产出 JSON 交 Writer）+ Engine/Mind/ExpressExtractor.cs（伴随提取：攒批 + 空闲补一次）
+- 复活善后：Engine/Mind/Resurrector.cs（订阅 session 完成 → 从存档重建 → 换记忆工具组 → 注入整理任务）
+- 情绪服务：Engine/Mind/EmotionService.cs（唯一情绪写入者：五轴 + 实时应用 + EmotionState.json 原子写 + 快照）
+- 事件接收：Engine/Mind/EventSink.cs（框架事件 → L0/L1 落库 FrameworkEvents）
+- 证据聚合：Engine/Mind/EvidenceEngine.cs（noisy-OR + logit/sigmoid 算 c_actual）+ Engine/Mind/EvidenceMath.cs
+- 冲突检测：Engine/Mind/ConflictService.cs（排他属性槽位冲突 → 建组/入组，组内 c_actual 和 ≤1）
+- 待验证队列：Engine/Mind/ReviewQueueService.cs（ReviewQueue 统一工作源：入队/认领/状态/崩溃恢复）
+- 暂存提交：Engine/Mind/ReviewStage.cs（git 式暂存区：review_preview 预览 + review_commit 提交）
+- 心智引擎：Engine/Mind/MindEngine.cs（持有 Writer/Emotion/Evidence/Conflicts/Queue/Retrieve/Events/Resurrector）+ Engine/Mind/MindEngineSpawnCheck.cs（响应系统启动，常驻 AutoStart）
 - 梦话生成：Core/SleepTalkCore.cs（被@时无关键词触发）
-- 复盘引擎：Engine/Dream/ReviewEngine.cs（自由探索模式，游标浏览，评价缓冲）
-- 复盘配置：Engine/Dream/ReviewConfig.cs + Storage/Dream/ReviewConfig.json
-- 评价引擎：Engine/Dream/EvaluationEngine.cs（边界阻力公式，session取平均）
-- 复盘进度：Engine/Dream/ReviewProgress.cs + Storage/Dream/ReviewProgress.json
-- 复盘工具：Plugins/Plugin.ReviewTools/（12个工具，review-tools 组件）
-- 复盘SDK：AgentLilara.PluginSDK/Services/IReviewAccess.cs + IBeaconAccess.cs + IReviewControl.cs
-- 复盘宿主：Tool/Host/ReviewAccessImpl.cs + BeaconAccessImpl.cs + ReviewControlImpl.cs
-- 评价存储：Database/EvaluationScore.cs + EvaluationScoreRepository.cs
-- 复盘日志：Database/ReviewLog.cs + ReviewLogRepository.cs
 - 睡眠状态：Engine/Core/SleepState.cs
 - express 空闲回收：Storage/Engine/ImpulseConfig.json（仅 ColdTimeoutSeconds 阈值；冲动值已删，Express 不再有冲动决策）
 - 视觉引擎：Engine/Vision/VisionEngine.cs（图片描述+OCR调度）
@@ -216,7 +213,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 核心工具：Tool/Core/CoreTools.cs（wait + continue_loop）+ Tool/Core/EscalateTool.cs
 - 插件 SDK：AgentLilara.PluginSDK/（共享契约：ITool/IInjectProvider/服务接口/CardSchema）
 - 插件加载：Tool/Host/PluginLoader.cs（AssemblyLoadContext 隔离，多类型发现 + 构造注入）
-- 记忆桥接：Tool/Host/MemoryAccessImpl.cs（IMemoryAccess → Repository + Embedding）
+- 心智桥接：Tool/Host/WriterAccessImpl.cs + RetrieveAccessImpl.cs + EmotionAccessImpl.cs（SDK 服务桥：IWriterAccess / IRetrieveAccess / IEmotionAccess）
 - 适配器接口：Adapter/IAdapter.cs + AdapterManager.cs + AdapterFactory.cs
 - OneBot 适配器：Adapter/OneBot/OneBotAdapter.cs（WS连接 + 消息映射 + QQ协议）
 - File 适配器：Adapter/File/FileAdapter.cs（文件轮询，测试用）
@@ -224,15 +221,15 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - WebUI Shell：WebUI/Shell/ProviderRegistry.cs + WebUI/Components/Shell/（DynamicPage/CardGrid/CardHost.razor）
 - WebUI 数据层：WebUI/Shell/DataSourceManager.cs（Fetch重试 + Subscribe推送 + 路由参数注入）
 - WebUI 卡片类型：WebUI/Components/Cards/（Table/Status/Form/Stream/Chat/Action/Tree/Detail/PropertyEditor 共 9 张 + Custom 预留）
-- WebUI Provider：WebUI/Providers/（Dashboard/Engines/EngineDetail/Sessions/Channel/Vision/Dream/Review/Memory/Adapter/Config/Console/Test/LogTrace/Plugins/Logs/Currency，17 个）
+- WebUI Provider：WebUI/Providers/（Dashboard/Engines/EngineDetail/Sessions/Channel/Vision/Dream/Review/Memory/Adapter/Config/Console/Test/LogTrace/Plugins/Logs/Currency，17 个；Dream=框架事件+推断断言，Review=ReviewQueue+冲突组，Memory=Claims/Journals/Keywords/情绪快照）
 - 插件项目：Plugins/Plugin.BasicTools/（speak + thinking + send_media + send_file + adapter_action）
 -           Plugins/Plugin.WorkingTools/（pinboard + thinking_notes + retain_list + mark_for_review + task_management）
--           Plugins/Plugin.MemoryTools/（memory_*，依赖 IMemoryAccess）
+-           Plugins/Plugin.MindTools/（journal/claim/remember/mind_status/archive + mind-emotion/mind-experience 注入组件）
 -           Plugins/Plugin.FileTools/（read_text + write_text + update_text + list_dir + move_file/delete_file/copy_file）
 -           Plugins/Plugin.FileOps/（archive_create/extract/list + search_files + grep_files + file_info + file_hash + compare_files）
 -           Plugins/Plugin.GroupFileTools/（分组文件操作）
 -           Plugins/Plugin.SystemTools/（子 session 管理：create_sub_agent / stop_sub_agent / send_instruction / list_sub_agents / wait_sub / get_sub_info；子侧回报：report_to_parent）— system-ops（父侧 LoopComponent）+ sub-agent-runtime（子侧 LoopComponent）
--           Plugins/Plugin.ReviewTools/（review_* 12个复盘工具）
+-           Plugins/Plugin.ReviewTools/（review_list/resolve/preview/commit/evidence 验证工具链，review-tools 组件）
 -           Plugins/Plugin.ScheduledTasks/（定时任务，插件化实现）
 -           Plugins/Plugin.Email/（邮件收发：send_email, check_unread, check_email, read_email, search_email, download_attachment, delete_email, mark_all_read, list_folders）— Global
 -           Plugins/Plugin.SkillTools/（技能工具：casual-chat / code-review / system-maintenance）

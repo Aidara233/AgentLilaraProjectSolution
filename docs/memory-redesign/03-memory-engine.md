@@ -1,7 +1,7 @@
 # 心智引擎整体规划
 
 > 记忆重构计划 · 文件 03
-> 状态：**设计定稿（未实现）** — 2026-08-02（Writer 协议、产生端、复活善后已定；EventSink 映射等实现细节待定）。当前代码无 MindEngine / Writer，本规划尚未实现。
+> 状态：**已实施（骨架）** — 2026-08-05。MindEngine / Writer / ExtractService / ExpressExtractor / Resurrector / EventSink 已落地；EventSink 映射、Dream 探索者、MaintenanceEngine 等实现细节仍待定（见 06）。
 
 ## 定位：前额叶，不是海马体
 

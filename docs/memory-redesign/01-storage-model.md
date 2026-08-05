@@ -1,7 +1,7 @@
 # 存储模型
 
 > 记忆重构计划 · 文件 01
-> 状态：**设计定稿（未实现）** — 2026-08-02（可信度/冲突模型于 08-02 更新，见 05）。当前代码仍是旧记忆库（无 Claims 等表），本存储模型尚未落库。
+> 状态：**已实施** — 2026-08-05。存储模型已按本文落库：Claims/Journals/Keywords/FragmentKeywords/EmotionSnapshot/FrameworkEvents/ConflictGroups/ReviewQueueItems（可信度/冲突语义见 05）。
 > 可信度与冲突的完整模型见 [05-credibility-conflict-model.md](05-credibility-conflict-model.md)。
 
 记忆侧拆**两张表**：Claims（断言，三元组）+ Journals（经历，正文式），本就是两类东西。共享 Keywords 关联。
