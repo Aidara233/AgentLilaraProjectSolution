@@ -739,6 +739,15 @@ namespace AgentCoreProcessor.Engine
                 var emotionAccess = new Tool.Host.EmotionAccessImpl(mindEngine.Emotion);
                 _toolContext.Register<AgentLilara.PluginSDK.Services.IEmotionAccess>(emotionAccess);
                 componentServices.Register<AgentLilara.PluginSDK.Services.IEmotionAccess>(emotionAccess);
+
+                // Writer + Retrieve 桥（心智工具走这里）
+                var writerAccess = new Tool.Host.WriterAccessImpl(mindEngine.Writer);
+                _toolContext.Register<AgentLilara.PluginSDK.Services.IWriterAccess>(writerAccess);
+                componentServices.Register<AgentLilara.PluginSDK.Services.IWriterAccess>(writerAccess);
+
+                var retrieveAccess = new Tool.Host.RetrieveAccessImpl(mindEngine.Retrieve);
+                _toolContext.Register<AgentLilara.PluginSDK.Services.IRetrieveAccess>(retrieveAccess);
+                componentServices.Register<AgentLilara.PluginSDK.Services.IRetrieveAccess>(retrieveAccess);
             }
 
             // 注册 ISessionResourceAccess（SessionEngine 此时已启动）

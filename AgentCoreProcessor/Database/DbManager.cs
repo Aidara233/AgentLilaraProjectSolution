@@ -500,5 +500,14 @@ namespace AgentCoreProcessor.Database
         /// <summary>执行原始 SQL（无返回值）。</summary>
         public Task ExecuteAsync(string sql, params object[] args)
             => db.ExecuteAsync(sql, args);
+
+        /// <summary>
+        /// 在单个数据库事务中执行一组写入（原子批次）。
+        /// 供 Writer 的 WriteBatch 使用——同 utterance_id 的多个断言必须整体成功或整体回滚。
+        /// </summary>
+        public async Task RunInTransactionAsync(Action<SQLiteConnection> action)
+        {
+            await db.RunInTransactionAsync(action);
+        }
     }
 }
