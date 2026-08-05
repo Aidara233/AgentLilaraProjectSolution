@@ -350,7 +350,6 @@ namespace AgentCoreProcessor.Tool.Host
             [typeof(Engine.EventBus)] = sp => sp.GetService(typeof(Engine.EventBus)),
             [typeof(Engine.ModuleBus)] = sp => sp.GetService(typeof(Engine.ModuleBus)),
             [typeof(Engine.Gate)] = sp => sp.GetService(typeof(Engine.Gate)),
-            [typeof(AgentLilara.PluginSDK.Services.IMemoryAccess)] = sp => sp.GetService(typeof(AgentLilara.PluginSDK.Services.IMemoryAccess)),
         };
 
         public object? InstantiateWithInjection(Type type, IServiceProvider services)

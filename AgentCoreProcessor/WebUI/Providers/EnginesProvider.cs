@@ -171,26 +171,6 @@ internal class EngineListSource : IDataSource
             });
         }
 
-        // Dream 引擎
-        var dreamCheck = _engine.GetSpawnCheck<DreamEngineSpawnCheck>();
-        var hasDream = _engine.HasActiveEngine("Dream");
-        if (hasDream && dreamCheck != null)
-        {
-            var dreamSnap = dreamCheck.GetDreamSnapshot(true);
-            var progress = dreamSnap.FragmentsTotal > 0
-                ? $"{dreamSnap.FragmentsCompleted}/{dreamSnap.FragmentsTotal}"
-                : "准备中";
-            var fragment = dreamSnap.CurrentFragment ?? "—";
-            arr.Add(new JsonObject
-            {
-                ["type"] = "Dream",
-                ["name"] = "做梦",
-                ["status"] = "进行中",
-                ["detail"] = $"片段 {progress} | 当前: {fragment}",
-                ["_link"] = "/p/engines/dream"
-            });
-        }
-
         // Vision 引擎
         var visionCheck = _engine.GetSpawnCheck<VisionEngineSpawnCheck>();
         var visionInstance = visionCheck?.ActiveInstance;
@@ -204,25 +184,6 @@ internal class EngineListSource : IDataSource
                 ["status"] = vSnap.IsBusy ? "处理中" : "空闲",
                 ["detail"] = $"已处理 {vSnap.TotalProcessed} | 错误 {vSnap.VisionErrors + vSnap.OcrErrors}",
                 ["_link"] = "/p/engines/vision"
-            });
-        }
-
-        // Review 引擎（通过 GetActiveEnginesSnapshot 找）
-        var allEngines = _engine.GetActiveEnginesSnapshot();
-        foreach (var eng in allEngines.Where(e => e.EngineType == "Review"))
-        {
-            var detail = "运行中";
-            if (eng is ReviewEngine review)
-            {
-                detail = $"token {review.TokensUsed / 1000}k | 游标 ch{review.CursorChannelId}";
-            }
-            arr.Add(new JsonObject
-            {
-                ["type"] = "Review",
-                ["name"] = "复盘",
-                ["status"] = "运行中",
-                ["detail"] = detail,
-                ["_link"] = "/p/engines/review"
             });
         }
 

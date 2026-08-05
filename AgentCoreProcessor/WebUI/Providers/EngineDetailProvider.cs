@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -35,45 +34,14 @@ internal class EngineDetailProvider : IWebUIProvider
             // Channel 引擎监视页面已移除：express 会话化后频道响应由 express/working 会话承载，
             // 详情统一在 /p/sessions 查看（SessionEngine 快照），不再有 per-channel ExpressEngine。
 
-            // Dream
-            if (_engine.HasActiveEngine("Dream"))
-            {
-                var dreamCheck = _engine.GetSpawnCheck<DreamEngineSpawnCheck>();
-                if (dreamCheck != null)
-                    pages.Add(BuildDreamPage(dreamCheck));
-            }
-
             // Vision
             var visionCheck = _engine.GetSpawnCheck<VisionEngineSpawnCheck>();
             if (visionCheck?.ActiveInstance != null)
                 pages.Add(BuildVisionPage(visionCheck));
 
-            // Review
-            var allEngines = _engine.GetActiveEnginesSnapshot();
-            var review = allEngines.OfType<ReviewEngine>().FirstOrDefault();
-            if (review != null)
-                pages.Add(BuildReviewPage(review));
-
             return pages;
         }
     }
-    private PageDefinition BuildDreamPage(DreamEngineSpawnCheck check)
-    {
-        return new PageDefinition
-        {
-            Route = "engines/dream",
-            Meta = new PageMeta { Title = "做梦引擎", Icon = "bi-moon-stars", Group = "", Order = -87, ShowInNav = false },
-            Cards = new List<CardDefinition>
-            {
-                StatusCard("engine-status", "引擎状态", "engine-detail-status")
-            },
-            DataSources = new List<DataSourceDefinition>
-            {
-                new() { Id = "engine-detail-status", Source = new DreamDetailStatusSource(check, _engine) }
-            }
-        };
-    }
-
     private PageDefinition BuildVisionPage(VisionEngineSpawnCheck check)
     {
         return new PageDefinition
@@ -87,25 +55,6 @@ internal class EngineDetailProvider : IWebUIProvider
             DataSources = new List<DataSourceDefinition>
             {
                 new() { Id = "engine-detail-status", Source = new VisionDetailStatusSource(check) }
-            }
-        };
-    }
-
-    private PageDefinition BuildReviewPage(ReviewEngine review)
-    {
-        return new PageDefinition
-        {
-            Route = "engines/review",
-            Meta = new PageMeta { Title = "复盘引擎", Icon = "bi-journal-check", Group = "", Order = -85, ShowInNav = false },
-            Cards = new List<CardDefinition>
-            {
-                StatusCard("engine-status", "引擎状态", "engine-detail-status"),
-                ContextCard("engine-context", "上下文", "engine-detail-context")
-            },
-            DataSources = new List<DataSourceDefinition>
-            {
-                new() { Id = "engine-detail-status", Source = new ReviewDetailStatusSource(review) },
-                new() { Id = "engine-detail-context", Source = new EngineContextSource(() => review.GetContextSnapshot()) }
             }
         };
     }
@@ -145,36 +94,6 @@ internal class EngineDetailProvider : IWebUIProvider
 }
 // ---- 数据源 ----
 
-internal class DreamDetailStatusSource : IDataSource
-{
-    private readonly DreamEngineSpawnCheck _check;
-    private readonly MasterEngine _engine;
-    public DreamDetailStatusSource(DreamEngineSpawnCheck check, MasterEngine engine)
-    { _check = check; _engine = engine; }
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
-
-    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-    {
-        var snap = _check.GetDreamSnapshot(_engine.HasActiveEngine("Dream"));
-        var data = new JsonObject
-        {
-            ["state"] = snap.HasActiveDream ? "做梦中" : "空闲",
-            ["rounds"] = "—",
-            ["tokens"] = "—",
-            ["compression"] = "—",
-            ["backoff"] = "—",
-            ["extra"] = snap.HasActiveDream
-                ? $"片段 {snap.FragmentsCompleted}/{snap.FragmentsTotal} | 当前: {snap.CurrentFragment ?? "—"}"
-                : "—"
-        };
-        return Task.FromResult(new DataResult { Data = data });
-    }
-
-    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-        => Task.FromResult(new ActionResult { Success = true });
-}
-
 internal class VisionDetailStatusSource : IDataSource
 {
     private readonly VisionEngineSpawnCheck _check;
@@ -203,31 +122,6 @@ internal class VisionDetailStatusSource : IDataSource
         => Task.FromResult(new ActionResult { Success = true });
 }
 
-internal class ReviewDetailStatusSource : IDataSource
-{
-    private readonly ReviewEngine _review;
-    public ReviewDetailStatusSource(ReviewEngine review) => _review = review;
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
-
-    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-    {
-        var ctx = _review.GetContextSnapshot();
-        var data = new JsonObject
-        {
-            ["state"] = _review.IsAlive ? "运行中" : "停止",
-            ["rounds"] = ctx?.TotalRounds.ToString() ?? "—",
-            ["tokens"] = $"已用 {_review.TokensUsed / 1000}k | 上下文 {(ctx?.EstimatedTokens ?? 0) / 1000}k",
-            ["compression"] = "规则压缩",
-            ["backoff"] = ctx?.IsInBackoff == true ? "退避中" : "正常",
-            ["extra"] = $"游标 ch{_review.CursorChannelId ?? 0}"
-        };
-        return Task.FromResult(new DataResult { Data = data });
-    }
-
-    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-        => Task.FromResult(new ActionResult { Success = true });
-}
 internal class EngineContextSource : IDataSource
 {
     private readonly Func<EngineContextSnapshot?> _getSnapshot;

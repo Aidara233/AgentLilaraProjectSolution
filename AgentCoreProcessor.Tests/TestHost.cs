@@ -12,7 +12,6 @@ using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Engine.Session;
 using AgentCoreProcessor.MCP;
-using AgentCoreProcessor.Memory;
 using AgentLilara.PluginSDK;
 
 namespace AgentCoreProcessor.Tests;
@@ -165,24 +164,13 @@ internal static class TestHost
     /// </summary>
     private class FakeSystemContext : ISystemContext
     {
-        public MemoryRepository Memories => null!;
-        public TempMemoryRepository TempMemories => null!;
-        public MemoryLinkRepository MemoryLinks => null!;
-        public MemoryService MemorySvc => null!;
-        public PersonaMemoryRepository PersonaMemories => null!;
         public SessionManager Session => null!;
         public IEmbeddingProvider Embedding => null!;
         public IVisionProvider? Vision => null;
         public IOcrProvider? Ocr => null;
         public AdapterManager Adapters => null!;
         public EventBus EventBus => null!;
-        public BeaconRepository Beacons => null!;
-        public PersonTraitRepository PersonTraits => null!;
-        public DreamLogRepository DreamLogs => null!;
-        public ReviewLogRepository ReviewLogs => null!;
-        public EvaluationScoreRepository EvaluationScores => null!;
         public ImpulseConfig ImpulseConfig => null!;
-        public TrustProgressionConfig TrustConfig => null!;
         public bool IsIdle => true;
         public TimeSpan IdleDuration => TimeSpan.Zero;
         public DateTime LastMessageTime => DateTime.MinValue;

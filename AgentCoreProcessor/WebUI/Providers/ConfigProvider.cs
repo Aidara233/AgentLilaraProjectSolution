@@ -19,8 +19,6 @@ internal class ConfigProvider : IWebUIProvider
         ["ExpressCore"] = "Core/ExpressCore.json",
         ["TaskCore"] = "Core/TaskCore.json",
         ["ReviewCore"] = "Core/ReviewCore.json",
-        ["MemoryExtractionCore"] = "Core/MemoryExtractionCore.json",
-        ["RelationClassificationCore"] = "Core/RelationClassificationCore.json",
         ["SleepTalkCore"] = "Core/SleepTalkCore.json",
     };
 
@@ -35,9 +33,7 @@ internal class ConfigProvider : IWebUIProvider
     {
         ["EngineConfig"] = "Engine/EngineConfig.json",
         ["ImpulseConfig"] = "Engine/ImpulseConfig.json",
-        ["TrustProgression"] = "Engine/TrustProgressionConfig.json",
         ["VisionEngine"] = "Engine/VisionEngineConfig.json",
-        ["DreamConfig"] = "Dream/DreamConfig.json",
         ["ComponentConfig"] = "Engine/ComponentConfig.json",
     };
 

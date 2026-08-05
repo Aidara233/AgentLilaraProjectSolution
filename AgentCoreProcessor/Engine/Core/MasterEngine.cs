@@ -12,7 +12,6 @@ using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.MCP;
-using AgentCoreProcessor.Memory;
 using AgentCoreProcessor.Engine.Modules;
 using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Tool.Host;
@@ -59,15 +58,6 @@ namespace AgentCoreProcessor.Engine
         private McpServerManager? mcpManager;
 
         // ---- ISystemContext 实现 ----
-        public MemoryRepository Memories { get; private set; } = null!;
-        public TempMemoryRepository TempMemories { get; private set; } = null!;
-        public MemoryLinkRepository MemoryLinks { get; private set; } = null!;
-        public PersonaMemoryRepository PersonaMemories { get; private set; } = null!;
-        public BeaconRepository Beacons { get; private set; } = null!;
-        public PersonTraitRepository PersonTraits { get; private set; } = null!;
-        public DreamLogRepository DreamLogs { get; private set; } = null!;
-        public ReviewLogRepository ReviewLogs { get; private set; } = null!;
-        public EvaluationScoreRepository EvaluationScores { get; private set; } = null!;
         public ModelCallLogRepository ModelCallLogs { get; private set; } = null!;
 
         // ---- 记忆重构新仓库 ----
@@ -82,7 +72,6 @@ namespace AgentCoreProcessor.Engine
 
         /// <summary>心智引擎（自启后由 SpawnCheck 设置）。</summary>
         public Mind.MindEngine? Mind { get; set; }
-        public MemoryService MemorySvc { get; private set; } = null!;
         public SessionManager Session { get; private set; } = null!;
         public IEmbeddingProvider Embedding => embeddingProvider!;
         public IVisionProvider? Vision => visionProvider;
@@ -90,7 +79,6 @@ namespace AgentCoreProcessor.Engine
         public AdapterManager Adapters => adapterManager;
         public EventBus EventBus => eventBus;
         public ImpulseConfig ImpulseConfig { get; private set; } = null!;
-        public TrustProgressionConfig TrustConfig { get; private set; } = null!;
 
         // WebUI
         public WebUI.Shell.ProviderRegistry? ProviderRegistry { get; set; }
@@ -151,8 +139,6 @@ namespace AgentCoreProcessor.Engine
             ("Session",     () => new SessionEngineSpawnCheck()),
             ("Extraction",  () => new ExtractionEngineSpawnCheck()),
             ("Express",     () => new ExpressEngineSpawnCheck()),
-            ("Dream",       () => new DreamEngineSpawnCheck()),
-            ("Review",      () => new ReviewEngineSpawnCheck()),
             ("Mind",        () => new MindEngineSpawnCheck()),
             ("Vision",      () => new Vision.VisionEngineSpawnCheck()),
         ];
@@ -404,15 +390,6 @@ namespace AgentCoreProcessor.Engine
             var users = new UserRepository(db, persons);
             var channels = new ChannelRepository(db);
             var messages = new MessageRepository(db);
-            Memories = new MemoryRepository(db);
-            TempMemories = new TempMemoryRepository(db);
-            MemoryLinks = new MemoryLinkRepository(db);
-            PersonaMemories = new PersonaMemoryRepository(db);
-            Beacons = new BeaconRepository(db);
-            PersonTraits = new PersonTraitRepository(db);
-            DreamLogs = new DreamLogRepository(db);
-            ReviewLogs = new ReviewLogRepository(db);
-            EvaluationScores = new EvaluationScoreRepository(db);
             var images = new ImageRepository(db);
             ImageStorage.Init(images, eventBus);
             ModelCallLogs = new ModelCallLogRepository(db);
@@ -610,14 +587,11 @@ namespace AgentCoreProcessor.Engine
             }
 
             // 服务
-            MemorySvc = new MemoryService(Memories, TempMemories, MemoryLinks, embeddingProvider!, PersonaMemories);
             Session = new SessionManager(users, persons, channels, messages);
 
             // 冲动值配置
             ImpulseConfig = ImpulseConfig.Load(
                 Path.Combine(PathConfig.StoragePath, "Engine", "ImpulseConfig.json"));
-            TrustConfig = TrustProgressionConfig.Load(
-                Path.Combine(PathConfig.StoragePath, "Engine", "TrustProgressionConfig.json"));
 
             // 注册核心工具（不可卸载的循环控制工具）
             Tool.ToolRegistry.Register(new Tool.Core.ContinueLoopTool(), isNonComponent: true);
@@ -635,14 +609,8 @@ namespace AgentCoreProcessor.Engine
 
             // 插件加载
             _toolContext = new Tool.Host.ToolContextImpl(new Tool.Host.PluginStorageImpl("_system"));
-            var memoryAccess = new Tool.Host.MemoryAccessImpl(Memories, TempMemories, MemoryLinks, Embedding);
-            _toolContext.Register<AgentLilara.PluginSDK.Services.IMemoryAccess>(memoryAccess);
-            _toolContext.Register<AgentLilara.PluginSDK.Services.IPersonAccess>(
-                new Tool.Host.PersonAccessImpl(this));
             _toolContext.Register<AgentLilara.PluginSDK.Services.IChannelAccess>(
                 new Tool.Host.ChannelAccessImpl(this));
-            _toolContext.Register<AgentLilara.PluginSDK.Services.IBeaconAccess>(
-                new Tool.Host.BeaconAccessImpl(Beacons));
             _toolContext.Register<AgentLilara.PluginSDK.Services.IAdapterAccess>(
                 new Tool.Host.AdapterAccessImpl(adapterManager));
             _pluginLoader = new Tool.Host.PluginLoader(_toolContext, ProviderRegistry);
@@ -658,9 +626,6 @@ namespace AgentCoreProcessor.Engine
                 componentServices.Register<AgentLilara.PluginSDK.Services.ISubAgentAccess>(
                     new Component.SubAgentAccessAdapter(this));
                 componentServices.Register<AgentLilara.PluginSDK.IToolContext>(_toolContext);
-                componentServices.Register<AgentLilara.PluginSDK.Services.IMemoryAccess>(memoryAccess);
-                componentServices.Register<AgentLilara.PluginSDK.Services.IBeaconAccess>(
-                    new Tool.Host.BeaconAccessImpl(Beacons));
                 componentServices.Register<AgentLilara.PluginSDK.Services.IChannelAccess>(
                     new Tool.Host.ChannelAccessImpl(this));
                 componentServices.Register<AgentLilara.PluginSDK.Services.IAdapterAccess>(

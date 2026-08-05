@@ -1,16 +1,21 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
-using AgentCoreProcessor.Config;
+using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine;
 using AgentLilara.PluginSDK.WebUI;
 
 namespace AgentCoreProcessor.WebUI.Providers;
 
+/// <summary>
+/// 心智维护数据提供器（原"做梦"引擎页）。
+/// 旧 DreamEngine / TempMemories 已废弃，改为读新心智数据：
+/// - 框架事件（FrameworkEvents）：L0/L1 运行标记
+/// - 推断断言（Claims IsInference=true）：模型推断出的三元组
+/// </summary>
 [WebUIProvider(BuiltIn = true)]
 internal class DreamProvider : IWebUIProvider
 {
@@ -26,256 +31,201 @@ internal class DreamProvider : IWebUIProvider
 
     public IReadOnlyList<PageDefinition> Pages => new List<PageDefinition>
     {
-        BuildStatusPage(),
-        BuildConfigPage()
+        BuildEventsPage(),
+        BuildClaimsPage()
     };
 
-    // ---- 状态页 ----
+    // ---- 框架事件页 ----
 
-    private PageDefinition BuildStatusPage() => new()
+    private PageDefinition BuildEventsPage() => new()
     {
         Route = "dream",
-        Meta = new PageMeta { Title = "状态", Icon = "bi-moon-stars", Group = "做梦引擎", Order = 50 },
+        Meta = new PageMeta { Title = "框架事件", Icon = "bi-moon-stars", Group = "心智维护", Order = 50 },
         LayoutType = PageLayoutType.Sidebar,
         Cards = new List<CardDefinition>
         {
             new()
             {
-                Id = "dream-status", Type = CardType.Status, DataSourceId = "dream-status", Title = "引擎状态",
-                Schema = new StatusSchema
+                Id = "dream-events", Type = CardType.Table, DataSourceId = "dream-events", Title = "框架事件",
+                Schema = new TableSchema
                 {
-                    Fields = new()
+                    Columns = new()
                     {
-                        new() { Field = "state", Label = "状态", Type = StatusFieldType.Indicator },
-                        new() { Field = "phase", Label = "当前阶段" },
-                        new() { Field = "steps", Label = "本轮进度" },
-                        new() { Field = "temp_total", Label = "临时记忆" },
-                        new() { Field = "temp_hot", Label = "热 (≥0.5)" },
-                        new() { Field = "temp_cold", Label = "冷 (<0.15)" },
-                        new() { Field = "temp_avg", Label = "平均热度" }
+                        new() { Field = "level", Header = "层级", Width = "90px", Format = ColumnFormat.Badge },
+                        new() { Field = "type", Header = "类型", Width = "180px" },
+                        new() { Field = "detail", Header = "详情" },
+                        new() { Field = "timestamp", Header = "时间", Width = "160px", Format = ColumnFormat.DateTime }
                     },
-                    Actions = new()
+                    Filters = new()
                     {
-                        new() { Id = "force-sleep", Label = "手动触发维护", Icon = "bi-moon" }
-                    }
+                        new() { Field = "level", Label = "全部层级", Options = new()
+                        {
+                            new() { Value = "L0", Label = "L0（机械日志）" },
+                            new() { Value = "L1", Label = "L1（重要标记）" }
+                        }},
+                    },
+                    Searchable = true,
+                    Paginated = true,
+                    DefaultPageSize = 30
                 },
-                Layout = new CardLayout { PreferredCols = 6, GridColumnStart = 1 }
-            },
-        },
-        DataSources = new List<DataSourceDefinition>
-        {
-            new() { Id = "dream-status", Source = new DreamStatusSource(_engine) }
-        }
-    };
-
-    // ---- 配置页 ----
-
-    private PageDefinition BuildConfigPage() => new()
-    {
-        Route = "dream/config",
-        Meta = new PageMeta { Title = "配置", Icon = "bi-sliders", Group = "做梦引擎", Order = 51 },
-        Cards = new List<CardDefinition>
-        {
-            new()
-            {
-                Id = "dream-config", Type = CardType.Form, DataSourceId = "dream-config", Title = "维护参数",
-                Schema = new FormSchema
-                {
-                    ShowSubmit = true,
-                    Fields = new()
-                    {
-                        new() { Field = "EmbedParallelLimit", Label = "Embed 并行数", Type = FormFieldType.Number },
-                        new() { Field = "MaxPatrolSteps", Label = "巡逻步数/轮", Type = FormFieldType.Number },
-                        new() { Field = "OrderClassifyMinCos", Label = "秩序分类最小余弦", Type = FormFieldType.Number },
-                        new() { Field = "OrderMergeMinSupport", Label = "自动合并阈值", Type = FormFieldType.Number },
-                        new() { Field = "TriangleClassifyMinCos", Label = "三角闭合最小余弦", Type = FormFieldType.Number },
-                        new() { Field = "TriangleBufferSize", Label = "三角缓冲大小", Type = FormFieldType.Number },
-                        new() { Field = "RelationBatchMaxTargets", Label = "LLM 分类批大小", Type = FormFieldType.Number },
-                        new() { Field = "DecayThreshold", Label = "衰减删除阈值", Type = FormFieldType.Number },
-                        new() { Field = "ColdStartPoolSize", Label = "冷启动池大小", Type = FormFieldType.Number },
-                        new() { Field = "ReviewIntervalHours", Label = "Review 间隔(小时)", Type = FormFieldType.Number },
-                    }
-                },
-                Layout = new CardLayout { PreferredCols = 6, GridColumnStart = 1 }
+                Layout = new CardLayout { PreferredCols = 12 }
             }
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "dream-config", Source = new DreamConfigSource(_engine) }
+            new() { Id = "dream-events", Source = new DreamEventsSource(_engine) }
+        }
+    };
+
+    // ---- 推断断言页 ----
+
+    private PageDefinition BuildClaimsPage() => new()
+    {
+        Route = "dream-claims",
+        Meta = new PageMeta { Title = "推断断言", Icon = "bi-lightbulb", Group = "心智维护", Order = 51 },
+        Cards = new List<CardDefinition>
+        {
+            new()
+            {
+                Id = "dream-claims", Type = CardType.Table, DataSourceId = "dream-claims", Title = "推断断言",
+                Schema = new TableSchema
+                {
+                    Columns = new()
+                    {
+                        new() { Field = "raw", Header = "断言原文" },
+                        new() { Field = "credibility", Header = "可信度", Width = "100px" },
+                        new() { Field = "recordedAt", Header = "记录时间", Width = "160px", Format = ColumnFormat.DateTime }
+                    },
+                    Searchable = true,
+                    Paginated = true,
+                    DefaultPageSize = 30
+                },
+                Layout = new CardLayout { PreferredCols = 12 }
+            }
+        },
+        DataSources = new List<DataSourceDefinition>
+        {
+            new() { Id = "dream-claims", Source = new DreamClaimsSource(_engine) }
         }
     };
 }
 
 // ======== 数据源 ========
 
-internal class DreamStatusSource : IDataSource
+/// <summary>
+/// 框架事件列表数据源。按 Level 过滤时走 GetByLevelAsync，否则取最近 N 条。
+/// </summary>
+internal class DreamEventsSource : IDataSource
 {
     private readonly MasterEngine _engine;
-    public DreamStatusSource(MasterEngine engine) => _engine = engine;
+    /// <summary>一次拉取上限（倒序取最近 N 条）。</summary>
+    private const int FetchLimit = 500;
+
+    public DreamEventsSource(MasterEngine engine) => _engine = engine;
     public bool SupportsPush => true;
 
     public IDisposable? Subscribe(Action<JsonNode?> callback)
     {
-        var timer = new Timer(_ => callback(null), null, 3000, 3000);
+        var timer = new Timer(_ => callback(null), null, 5000, 5000);
         return new TimerDisposable(timer);
     }
 
     public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
-        var hasActive = _engine.HasActiveEngine("Dream");
-        var check = _engine.GetSpawnCheck<DreamEngineSpawnCheck>();
-        var snap = check?.GetDreamSnapshot(hasActive);
+        // 按层级过滤：有明确层级时用 GetByLevelAsync，否则 GetRecentAsync
+        var level = query?.Filters?.FirstOrDefault(f => f.Field == "level")?.Value;
+        var events = !string.IsNullOrWhiteSpace(level) && level != "all"
+            ? await _engine.FrameworkEvents.GetByLevelAsync(level, FetchLimit)
+            : await _engine.FrameworkEvents.GetRecentAsync(FetchLimit);
 
-        if (!hasActive)
+        // 搜索：匹配类型或详情文本
+        if (!string.IsNullOrWhiteSpace(query?.Search))
         {
-            var idle = new JsonObject
-            {
-                ["state"] = "空闲",
-                ["phase"] = "—",
-                ["steps"] = "—",
-                ["temp_total"] = "—",
-                ["temp_hot"] = "—",
-                ["temp_cold"] = "—",
-                ["temp_avg"] = "—"
-            };
-
-            // 即使空闲也查 temp 统计
-            try
-            {
-                var temps = await _engine.TempMemories.GetAllAsync();
-                if (temps.Count > 0)
-                {
-                    float avgHeat = temps.Average(t => t.Heat);
-                    idle["temp_total"] = $"{temps.Count} 条";
-                    idle["temp_hot"] = $"{temps.Count(t => t.Heat >= 0.5f)} 条";
-                    idle["temp_cold"] = $"{temps.Count(t => t.Heat < 0.15f)} 条";
-                    idle["temp_avg"] = $"{avgHeat:F3}";
-                }
-            }
-            catch { }
-
-            return new DataResult { Data = idle };
+            var kw = query.Search.Trim();
+            events = events.Where(e =>
+                (e.Type ?? "").Contains(kw, StringComparison.OrdinalIgnoreCase) ||
+                (e.DetailJson ?? "").Contains(kw, StringComparison.OrdinalIgnoreCase)
+            ).ToList();
         }
 
-        // 活跃状态
-        var phase = snap?.CurrentFragment ?? "维护中";
-        var steps = snap?.FragmentsTotal > 0
-            ? $"{snap!.FragmentsCompleted}/{snap.FragmentsTotal}"
-            : "—";
+        var total = events.Count;
 
-        var data = new JsonObject
-        {
-            ["state"] = "运行中",
-            ["phase"] = phase,
-            ["steps"] = steps
-        };
+        // 分页
+        var page = query?.Page ?? 1;
+        var pageSize = query?.PageSize ?? 30;
+        var paged = events.Skip((page - 1) * pageSize).Take(pageSize);
 
-        try
+        var arr = new JsonArray();
+        foreach (var e in paged)
         {
-            var temps = await _engine.TempMemories.GetAllAsync();
-            if (temps.Count > 0)
+            arr.Add(new JsonObject
             {
-                float avgHeat = temps.Average(t => t.Heat);
-                data["temp_total"] = $"{temps.Count} 条";
-                data["temp_hot"] = $"{temps.Count(t => t.Heat >= 0.5f)} 条";
-                data["temp_cold"] = $"{temps.Count(t => t.Heat < 0.15f)} 条";
-                data["temp_avg"] = $"{avgHeat:F3}";
-            }
-            else
-            {
-                data["temp_total"] = "0";
-                data["temp_hot"] = "0";
-                data["temp_cold"] = "0";
-                data["temp_avg"] = "0";
-            }
-        }
-        catch
-        {
-            data["temp_total"] = "—";
-            data["temp_hot"] = "—";
-            data["temp_cold"] = "—";
-            data["temp_avg"] = "—";
+                ["id"] = e.Id,
+                ["level"] = e.Level,
+                ["type"] = e.Type,
+                ["detail"] = string.IsNullOrEmpty(e.DetailJson) ? "—" : e.DetailJson,
+                ["timestamp"] = e.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")
+            });
         }
 
-        return new DataResult { Data = data };
+        return new DataResult { Data = arr, TotalCount = total };
     }
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-    {
-        if (action == "force-sleep")
-        {
-            _engine.EventBus.PublishSignal("force-sleep", "deepsleep");
-            return Task.FromResult(new ActionResult { Success = true, Message = "已发送维护触发信号" });
-        }
-        return Task.FromResult(new ActionResult { Success = true });
-    }
+        => Task.FromResult(new ActionResult { Success = true });
 }
 
-internal class DreamConfigSource : IDataSource
+/// <summary>
+/// 推断断言列表数据源。筛选 IsInference=true 的 Claims（Raw + Credibility）。
+/// Claims 仓库暂无 IsInference 专用查询，先全量取回后内存过滤（简化版）。
+/// </summary>
+internal class DreamClaimsSource : IDataSource
 {
     private readonly MasterEngine _engine;
-    private static string ConfigPath => Path.Combine(PathConfig.StoragePath, "Dream", "DreamConfig.json");
 
-    public DreamConfigSource(MasterEngine engine) => _engine = engine;
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+    public DreamClaimsSource(MasterEngine engine) => _engine = engine;
+    public bool SupportsPush => true;
 
-    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    public IDisposable? Subscribe(Action<JsonNode?> callback)
     {
-        var check = _engine.GetSpawnCheck<DreamEngineSpawnCheck>();
-        var config = check?.GetConfig() ?? DreamConfig.Load(ConfigPath);
+        var timer = new Timer(_ => callback(null), null, 5000, 5000);
+        return new TimerDisposable(timer);
+    }
 
-        var data = new JsonObject
+    public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        var all = await _engine.Claims.GetAllAsync();
+        var claims = all.Where(c => c.IsInference).ToList();
+
+        // 搜索：匹配断言原文
+        if (!string.IsNullOrWhiteSpace(query?.Search))
         {
-            ["EmbedParallelLimit"] = config.EmbedParallelLimit,
-            ["MaxPatrolSteps"] = config.MaxPatrolSteps,
-            ["OrderClassifyMinCos"] = config.OrderClassifyMinCos,
-            ["OrderMergeMinSupport"] = config.OrderMergeMinSupport,
-            ["TriangleClassifyMinCos"] = config.TriangleClassifyMinCos,
-            ["TriangleBufferSize"] = config.TriangleBufferSize,
-            ["RelationBatchMaxTargets"] = config.RelationBatchMaxTargets,
-            ["DecayThreshold"] = config.DecayThreshold,
-            ["ColdStartPoolSize"] = config.ColdStartPoolSize,
-            ["ReviewIntervalHours"] = config.ReviewIntervalHours,
-        };
-        return Task.FromResult(new DataResult { Data = data });
+            var kw = query.Search.Trim();
+            claims = claims.Where(c => c.Raw.Contains(kw, StringComparison.OrdinalIgnoreCase)).ToList();
+        }
+
+        var total = claims.Count;
+
+        // 分页
+        var page = query?.Page ?? 1;
+        var pageSize = query?.PageSize ?? 30;
+        var paged = claims.Skip((page - 1) * pageSize).Take(pageSize);
+
+        var arr = new JsonArray();
+        foreach (var c in paged)
+        {
+            arr.Add(new JsonObject
+            {
+                ["id"] = c.Id,
+                ["raw"] = string.IsNullOrEmpty(c.Raw) ? "—" : c.Raw,
+                ["credibility"] = c.Credibility.ToString("F2"),
+                ["recordedAt"] = c.RecordedAt.ToString("yyyy-MM-dd HH:mm:ss")
+            });
+        }
+
+        return new DataResult { Data = arr, TotalCount = total };
     }
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-    {
-        if (action != "save" || data is not JsonObject payload)
-            return Task.FromResult(new ActionResult { Success = false, Message = "无效请求" });
-
-        try
-        {
-            var config = DreamConfig.Load(ConfigPath);
-
-            foreach (var (key, value) in payload)
-            {
-                var v = value?.ToString() ?? "";
-                switch (key)
-                {
-                    case "EmbedParallelLimit": if (int.TryParse(v, out var el)) config.EmbedParallelLimit = el; break;
-                    case "MaxPatrolSteps": if (int.TryParse(v, out var ms)) config.MaxPatrolSteps = ms; break;
-                    case "OrderClassifyMinCos": if (float.TryParse(v, out var oc)) config.OrderClassifyMinCos = oc; break;
-                    case "OrderMergeMinSupport": if (float.TryParse(v, out var om)) config.OrderMergeMinSupport = om; break;
-                    case "TriangleClassifyMinCos": if (float.TryParse(v, out var tc)) config.TriangleClassifyMinCos = tc; break;
-                    case "TriangleBufferSize": if (int.TryParse(v, out var tb)) config.TriangleBufferSize = tb; break;
-                    case "RelationBatchMaxTargets": if (int.TryParse(v, out var rb)) config.RelationBatchMaxTargets = rb; break;
-                    case "DecayThreshold": if (float.TryParse(v, out var dt)) config.DecayThreshold = dt; break;
-                    case "ColdStartPoolSize": if (int.TryParse(v, out var cp)) config.ColdStartPoolSize = cp; break;
-                    case "ReviewIntervalHours": if (int.TryParse(v, out var ri)) config.ReviewIntervalHours = ri; break;
-                }
-            }
-
-            config.Save(ConfigPath);
-            _engine.EventBus.PublishSignal("dream-config",
-                System.Text.Json.JsonSerializer.Serialize(config));
-            return Task.FromResult(new ActionResult { Success = true, Message = "配置已保存" });
-        }
-        catch (Exception ex)
-        {
-            return Task.FromResult(new ActionResult { Success = false, Message = $"保存失败: {ex.Message}" });
-        }
-    }
+        => Task.FromResult(new ActionResult { Success = true });
 }

@@ -5,7 +5,6 @@ using AgentCoreProcessor.Client;
 using AgentCoreProcessor.Component;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.MCP;
-using AgentCoreProcessor.Memory;
 using AgentCoreProcessor.Tool.Host;
 
 namespace AgentCoreProcessor.Engine
@@ -58,11 +57,6 @@ namespace AgentCoreProcessor.Engine
     internal interface ISystemContext
     {
         // 数据访问
-        MemoryRepository Memories { get; }
-        TempMemoryRepository TempMemories { get; }
-        MemoryLinkRepository MemoryLinks { get; }
-        MemoryService MemorySvc { get; }
-        PersonaMemoryRepository PersonaMemories { get; }
         SessionManager Session { get; }
         IEmbeddingProvider Embedding { get; }
 
@@ -78,21 +72,6 @@ namespace AgentCoreProcessor.Engine
         // 事件总线
         EventBus EventBus { get; }
 
-        // 复盘标记
-        BeaconRepository Beacons { get; }
-
-        // 人物特质
-        PersonTraitRepository PersonTraits { get; }
-
-        // 做梦日志
-        DreamLogRepository DreamLogs { get; }
-
-        // 复盘日志
-        ReviewLogRepository ReviewLogs { get; }
-
-        // 评价分数
-        EvaluationScoreRepository EvaluationScores { get; }
-
         // ---- 记忆重构新仓库 ----
         ClaimRepository Claims { get; }
         JournalRepository Journals { get; }
@@ -105,7 +84,6 @@ namespace AgentCoreProcessor.Engine
 
         // 配置
         ImpulseConfig ImpulseConfig { get; }
-        TrustProgressionConfig TrustConfig { get; }
 
         // 引擎状态查询
         bool IsIdle { get; }

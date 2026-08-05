@@ -3,11 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine.Context;
 using AgentCoreProcessor.Logging;
-using AgentCoreProcessor.Memory;
 
 namespace AgentCoreProcessor.Engine
 {
@@ -146,72 +144,13 @@ namespace AgentCoreProcessor.Engine
                     ? await ctx.Session.GetMessagesBeforeIdAsync(channelId, lastExtractedMessageId, limit: 20)
                     : new List<UserMessage>();
 
-                var recentMems = await ctx.TempMemories.GetRecentByChannelAsync(channelId, 10);
-                var recentMemContents = recentMems.Count > 0
-                    ? recentMems.ConvertAll(m => m.Content)
-                    : null;
-
-                var contextLines = contextMessages.Select(FormatMessageLine).ToList();
+                // 旧记忆提取内核已退役（记忆重构完成，MemoryExtractionCore/MemorySvc 已删）。
+                // 新伴随提取由 MindEngine.ExtractService 承担，这里仅推进进度标记。
                 var newLines = newMessages.Select(FormatMessageLine).ToList();
-
-                var participantNames = participants
-                    .Select(p => p.DisplayName)
-                    .Where(n => !string.IsNullOrEmpty(n))
-                    .Distinct().ToList();
-                if (participantNames.Count > 0)
-                    contextLines.Insert(0, $"[群聊参与者: {string.Join("、", participantNames)}]");
-
-                // about 解析失败时的归属人：该批最后发言的非 bot 用户（有总比没有强）
-                int? fallbackPersonId = await ResolveFallbackPersonId(newMessages);
-
-                // 每批提取 span
-                int count;
-                using (var batchSpan = Signal.Open(LogGroup.Memory, "提取批次",
-                    new { channelId, newMsgCount = newMessages.Count, contextMsgCount = contextMessages.Count }))
+                if (newLines.Count > 0)
                 {
-                    var core = new MemoryExtractionCore();
-                    var results = await core.ExtractAsync(contextLines, newLines, recentMemContents);
-
-                    count = 0;
-                    foreach (var item in results)
-                    {
-                        if (item.Type == "knowledge")
-                        {
-                            await ctx.MemorySvc.StoreAsync(item.Content,
-                                personId: null, channelId: null,
-                                confidence: item.Certainty >= 0.7f ? "high" : "low",
-                                type: MemoryType.Knowledge, subject: item.Subject);
-                        }
-                        else if (item.Type == "feedback" && item.Sentiment != null)
-                        {
-                            int? personId = ResolveAboutToPersonId(item.About, participants) ?? fallbackPersonId;
-                            if (personId != null)
-                                await ctx.MemorySvc.ApplyFeedbackAsync(
-                                    personId.Value, item.Content, item.Sentiment, item.Correction);
-                        }
-                        else
-                        {
-                            int? personId = ResolveAboutToPersonId(item.About, participants) ?? fallbackPersonId;
-                            string memType = item.Type ?? MemoryType.Fact;
-                            await ctx.MemorySvc.StoreAsync(item.Content,
-                                personId, channelId,
-                                confidence: item.Certainty >= 0.7f ? "high" : "low",
-                                type: memType, subject: item.Subject);
-                        }
-                        count++;
-                    }
-
-                    batchSpan.SetCloseDetail(new
-                    {
-                        extractedCount = count,
-                        results = results.Select(r => new
-                        {
-                            type = r.Type,
-                            content = r.Content,
-                            subject = r.Subject,
-                            certainty = r.Certainty
-                        })
-                    });
+                    Signal.Event(LogGroup.Memory, "提取(新链路待接入)",
+                        new { channelId, newMsgCount = newLines.Count });
                 }
 
                 lastExtractedMessageId = newMessages[^1].Id;

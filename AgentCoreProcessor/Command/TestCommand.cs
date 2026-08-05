@@ -36,9 +36,13 @@ namespace AgentCoreProcessor.Command
             var ctx = context.SystemContext;
             var personId = context.Person.Id;
 
-            var results = await ctx.MemorySvc.RecallAsync(
-                personId, channelId: 0,
-                query, topK: 10, includeLinks: true, includePersona: true);
+            // 经心智引擎检索服务召回（全局混合 Claim/Journal，无 person/频道偏置）。
+            var mind = ctx.Mind;
+            if (mind?.Retrieve == null)
+                return CommandResult.Fail("心智引擎未启动。");
+
+            var result = await mind.Retrieve.SearchAsync(query, 10);
+            var results = result.Hits;
 
             if (results.Count == 0)
                 return CommandResult.Ok($"召回 \"{query}\" — 无结果。");
@@ -48,10 +52,9 @@ namespace AgentCoreProcessor.Command
             foreach (var m in results)
             {
                 var flags = new StringBuilder();
-                if (m.IsTemp) flags.Append("[临时] ");
-                if (m.IsPersona) flags.Append("[人设] ");
-                if (m.Certainty < 0.5f) flags.Append("[低确定] ");
-                sb.AppendLine($"  {m.Score:F3} {flags}{m.Content}");
+                if (m.IsInference) flags.Append("[推断] ");
+                if (m.Credibility < 0.5f) flags.Append("[低可信] ");
+                sb.AppendLine($"  [{m.Kind}:{m.Id}] (可信度 {m.Credibility:F3}) {flags}{m.Raw}");
             }
             return CommandResult.Ok(sb.ToString().TrimEnd());
         }

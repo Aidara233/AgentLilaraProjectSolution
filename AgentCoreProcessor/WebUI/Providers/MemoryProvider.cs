@@ -4,16 +4,21 @@ using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
-using AgentCoreProcessor.Client;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine;
-using AgentCoreProcessor.Logging;
-using AgentCoreProcessor.Util;
-using AgentLilara.PluginSDK;
 using AgentLilara.PluginSDK.WebUI;
+using Newtonsoft.Json.Linq;
 
 namespace AgentCoreProcessor.WebUI.Providers;
 
+/// <summary>
+/// 记忆管理数据提供器（新心智数据版）。
+/// 旧记忆仓库已废弃，全部改为读取新心智引擎数据：
+/// - Claims（断言）：主库浏览页
+/// - Journals（经历）：经历页
+/// - Keywords（关键词）：关键词页
+/// - EmotionSnapshots（情绪快照）：情绪页
+/// </summary>
 [WebUIProvider(BuiltIn = true)]
 internal class MemoryProvider : IWebUIProvider
 {
@@ -30,11 +35,9 @@ internal class MemoryProvider : IWebUIProvider
     public IReadOnlyList<PageDefinition> Pages => new List<PageDefinition>
     {
         BuildMainPage(),
-        BuildDetailPage(),
-        BuildTempPage(),
-        BuildPersonaPage(),
-        BuildPeoplePage(),
-        BuildGraphPage(),
+        BuildJournalsPage(),
+        BuildKeywordsPage(),
+        BuildEmotionPage(),
     };
 
     // ================ 主库浏览 ================
@@ -52,67 +55,47 @@ internal class MemoryProvider : IWebUIProvider
                 {
                     Fields = new()
                     {
-                        new() { Field = "total", Label = "总数" },
-                        new() { Field = "type_dist", Label = "类型分布", IsMultiline = true }
+                        new() { Field = "claims_total", Label = "断言总数" },
+                        new() { Field = "journals_total", Label = "经历总数" },
+                        new() { Field = "claim_type_dist", Label = "断言类型", IsMultiline = true },
+                        new() { Field = "claim_status_dist", Label = "处理状态", IsMultiline = true },
+                        new() { Field = "claim_source_dist", Label = "来源分布", IsMultiline = true }
                     }
                 },
                 Layout = new CardLayout { PreferredCols = 6 }
             },
             new()
             {
-                Id = "embedding-rebuild", Type = CardType.Action, DataSourceId = "embedding-rebuild", Title = "向量模型重建",
-                Schema = new ActionCardSchema
-                {
-                    ActionId = "rebuild",
-                    ActionLabel = "重建全部 Embedding",
-                    Description = "使用当前 provider 重新计算全部记忆（主库+临时库+人设）的向量。切换 embedding 模型后必须执行此操作。",
-                    SubmitLabel = "开始重建",
-                    Params = new()
-                    {
-                        new() { Name = "batchSize", Label = "批大小", Type = "select", Required = true,
-                            Options = new()
-                            {
-                                new() { Value = "64", Label = "激进 (batch=64, 最快)" },
-                                new() { Value = "32", Label = "均衡 (batch=32, 默认)" },
-                                new() { Value = "16", Label = "温和 (batch=16, 留余量)" }
-                            }
-                        }
-                    }
-                },
-                Layout = new CardLayout { PreferredCols = 6 }
-            },
-            new()
-            {
-                Id = "main-table", Type = CardType.Table, DataSourceId = "main-table", Title = "主记忆库",
+                Id = "main-table", Type = CardType.Table, DataSourceId = "main-table", Title = "断言列表",
                 Schema = new TableSchema
                 {
                     Columns = new()
                     {
                         new() { Field = "id", Header = "ID", Width = "60px" },
-                        new() { Field = "type", Header = "类型", Width = "90px", Format = ColumnFormat.Badge },
-                        new() { Field = "subject", Header = "主题", Width = "120px" },
-                        new() { Field = "content", Header = "内容" },
-                        new() { Field = "importance", Header = "重要度", Width = "80px" },
-                        new() { Field = "certainty", Header = "确定性", Width = "60px", Format = ColumnFormat.Badge },
-                        new() { Field = "created", Header = "创建", Width = "100px" }
+                        new() { Field = "inference", Header = "类型", Width = "70px", Format = ColumnFormat.Badge },
+                        new() { Field = "subject", Header = "主体", Width = "110px" },
+                        new() { Field = "predicate", Header = "谓词", Width = "100px" },
+                        new() { Field = "object", Header = "客体", Width = "110px" },
+                        new() { Field = "raw", Header = "原文" },
+                        new() { Field = "credibility", Header = "可信度", Width = "80px", Format = ColumnFormat.Badge },
+                        new() { Field = "status", Header = "状态", Width = "90px", Format = ColumnFormat.Badge },
+                        new() { Field = "occurred", Header = "发生", Width = "100px" }
                     },
                     DefaultPageSize = 25,
                     Filters = new()
                     {
-                        new() { Field = "type", Label = "全部类型", Options = new()
+                        new() { Field = "inference", Label = "全部类型", Options = new()
                         {
-                            new() { Value = "knowledge", Label = "knowledge" },
-                            new() { Value = "fact", Label = "fact" },
-                            new() { Value = "feedback", Label = "feedback" },
-                            new() { Value = "inference", Label = "inference" },
-                            new() { Value = "event", Label = "event" },
-                            new() { Value = "state", Label = "state" },
-                            new() { Value = "preference", Label = "preference" }
+                            new() { Value = "inference", Label = "推断" },
+                            new() { Value = "stated", Label = "陈述" }
                         }},
-                    },
-                    RowActions = new()
-                    {
-                        new() { Id = "delete", Label = "删除", Danger = true, Confirm = "确认删除这条记忆？" }
+                        new() { Field = "status", Label = "全部状态", Options = new()
+                        {
+                            new() { Value = "Raw", Label = "Raw" },
+                            new() { Value = "Tagged", Label = "Tagged" },
+                            new() { Value = "Processed", Label = "Processed" },
+                            new() { Value = "Archived", Label = "Archived" }
+                        }},
                     }
                 },
                 Layout = new CardLayout { PreferredCols = 12 }
@@ -120,166 +103,42 @@ internal class MemoryProvider : IWebUIProvider
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "main-stats", Source = new MainMemoryStatsSource(_engine) },
-            new() { Id = "main-table", Source = new MainMemorySource(_engine) },
-            new() { Id = "embedding-rebuild", Source = new EmbeddingRebuildSource(_engine) }
+            new() { Id = "main-stats", Source = new MemoryStatsSource(_engine) },
+            new() { Id = "main-table", Source = new ClaimsSource(_engine) }
         }
     };
 
-    // ================ 记忆详情 ================
+    // ================ 经历 ================
 
-    private PageDefinition BuildDetailPage() => new()
+    private PageDefinition BuildJournalsPage() => new()
     {
-        Route = "memory/{id}",
-        Meta = new PageMeta { Title = "记忆详情", ShowInNav = false },
+        Route = "memory-journals",
+        Meta = new PageMeta { Title = "经历", Icon = "bi-journal-text", Group = "记忆", Order = 81 },
         Cards = new List<CardDefinition>
         {
             new()
             {
-                Id = "detail-info", Type = CardType.Status, DataSourceId = "detail-info", Title = "基本信息",
-                Schema = new StatusSchema
-                {
-                    Fields = new()
-                    {
-                        new() { Field = "content", Label = "内容", IsMultiline = true },
-                        new() { Field = "type", Label = "类型", Type = StatusFieldType.Badge },
-                        new() { Field = "subject", Label = "主题" },
-                        new() { Field = "importance", Label = "重要度" },
-                        new() { Field = "certainty", Label = "确定性", Type = StatusFieldType.Badge },
-                        new() { Field = "person_id", Label = "关联人物" },
-                        new() { Field = "channel_id", Label = "关联频道" },
-                        new() { Field = "is_derived", Label = "衍生记忆", Type = StatusFieldType.Badge },
-                        new() { Field = "is_persistent", Label = "持久", Type = StatusFieldType.Badge },
-                        new() { Field = "expires", Label = "过期时间" },
-                        new() { Field = "last_dream", Label = "最后做梦" },
-                        new() { Field = "last_access", Label = "最后访问" },
-                        new() { Field = "source_msg", Label = "来源消息" },
-                        new() { Field = "created", Label = "创建时间" }
-                    },
-                    Actions = new()
-                    {
-                        new() { Id = "delete", Label = "删除记忆", Danger = true, Confirm = "确认删除这条记忆？关联也会被清理。" }
-                    }
-                },
-                Layout = new CardLayout { PreferredCols = 6 }
-            },
-            new()
-            {
-                Id = "detail-source", Type = CardType.Table, DataSourceId = "detail-source", Title = "源记忆",
+                Id = "journals-table", Type = CardType.Table, DataSourceId = "journals-table", Title = "经历列表",
                 Schema = new TableSchema
                 {
                     Columns = new()
                     {
                         new() { Field = "id", Header = "ID", Width = "60px" },
-                        new() { Field = "type", Header = "类型", Width = "80px", Format = ColumnFormat.Badge },
-                        new() { Field = "content", Header = "内容" }
-                    },
-                    Paginated = false, Searchable = false
-                },
-                Layout = new CardLayout { PreferredCols = 6 }
-            },
-            new()
-            {
-                Id = "detail-derived", Type = CardType.Table, DataSourceId = "detail-derived", Title = "衍生记忆",
-                Schema = new TableSchema
-                {
-                    Columns = new()
-                    {
-                        new() { Field = "id", Header = "ID", Width = "60px" },
-                        new() { Field = "type", Header = "类型", Width = "80px", Format = ColumnFormat.Badge },
-                        new() { Field = "subject", Header = "主题", Width = "100px" },
-                        new() { Field = "content", Header = "内容" }
-                    },
-                    Paginated = false, Searchable = false
-                },
-                Layout = new CardLayout { PreferredCols = 6 }
-            },
-            new()
-            {
-                Id = "detail-links", Type = CardType.Table, DataSourceId = "detail-links", Title = "关联记忆",
-                Schema = new TableSchema
-                {
-                    Columns = new()
-                    {
-                        new() { Field = "id", Header = "ID", Width = "60px" },
-                        new() { Field = "type", Header = "类型", Width = "80px", Format = ColumnFormat.Badge },
-                        new() { Field = "link_type", Header = "关联类型", Width = "90px", Format = ColumnFormat.Badge },
-                        new() { Field = "relevance", Header = "强度", Width = "70px" },
-                        new() { Field = "content", Header = "内容" }
-                    },
-                    Paginated = false, Searchable = false
-                },
-                Layout = new CardLayout { PreferredCols = 12 }
-            }
-        },
-        DataSources = new List<DataSourceDefinition>
-        {
-            new() { Id = "detail-info", Source = new MemoryDetailInfoSource(_engine) },
-            new() { Id = "detail-source", Source = new MemoryDetailSourceSource(_engine) },
-            new() { Id = "detail-derived", Source = new MemoryDetailDerivedSource(_engine) },
-            new() { Id = "detail-links", Source = new MemoryDetailLinksSource(_engine) }
-        }
-    };
-
-    // ================ 临时库 ================
-
-    private PageDefinition BuildTempPage() => new()
-    {
-        Route = "memory/temp",
-        Meta = new PageMeta { Title = "临时库", Icon = "bi-clock-history", Group = "记忆", Order = 81 },
-        Cards = new List<CardDefinition>
-        {
-            new()
-            {
-                Id = "temp-stats", Type = CardType.Status, DataSourceId = "temp-stats", Title = "统计",
-                Schema = new StatusSchema
-                {
-                    Fields = new()
-                    {
-                        new() { Field = "total", Label = "总数" },
-                        new() { Field = "high_conf", Label = "高置信" },
-                        new() { Field = "low_conf", Label = "低置信" }
-                    },
-                    Actions = new()
-                    {
-                        new() { Id = "clear", Label = "清空全部", Danger = true, Confirm = "确认清空所有临时记忆？此操作不可撤销。" }
-                    }
-                },
-                Layout = new CardLayout { PreferredCols = 12 }
-            },
-            new()
-            {
-                Id = "temp-table", Type = CardType.Table, DataSourceId = "temp-table", Title = "临时记忆库",
-                Schema = new TableSchema
-                {
-                    Columns = new()
-                    {
-                        new() { Field = "id", Header = "ID", Width = "60px" },
-                        new() { Field = "type", Header = "类型", Width = "90px", Format = ColumnFormat.Badge },
-                        new() { Field = "subject", Header = "主题", Width = "120px" },
+                        new() { Field = "kind", Header = "类型", Width = "100px", Format = ColumnFormat.Badge },
+                        new() { Field = "source", Header = "来源", Width = "90px", Format = ColumnFormat.Badge },
                         new() { Field = "content", Header = "内容" },
-                        new() { Field = "certainty", Header = "确定性", Width = "60px", Format = ColumnFormat.Badge },
-                        new() { Field = "person_id", Header = "人物", Width = "60px" },
-                        new() { Field = "channel_id", Header = "频道", Width = "60px" },
-                        new() { Field = "created", Header = "创建", Width = "100px" }
+                        new() { Field = "channel_id", Header = "频道", Width = "70px" },
+                        new() { Field = "session_id", Header = "会话", Width = "70px" },
+                        new() { Field = "occurred", Header = "发生时间", Width = "110px" }
                     },
                     DefaultPageSize = 25,
                     Filters = new()
                     {
-                        new() { Field = "type", Label = "全部类型", Options = new()
+                        new() { Field = "kind", Label = "全部类型", Options = new()
                         {
-                            new() { Value = "knowledge", Label = "knowledge" },
-                            new() { Value = "fact", Label = "fact" },
-                            new() { Value = "feedback", Label = "feedback" },
-                            new() { Value = "inference", Label = "inference" },
-                            new() { Value = "event", Label = "event" },
-                            new() { Value = "state", Label = "state" },
-                            new() { Value = "preference", Label = "preference" }
+                            new() { Value = "Experience", Label = "Experience (L2)" },
+                            new() { Value = "Reflection", Label = "Reflection (L3)" }
                         }},
-                    },
-                    RowActions = new()
-                    {
-                        new() { Id = "delete", Label = "删除", Danger = true, Confirm = "确认删除？" }
                     }
                 },
                 Layout = new CardLayout { PreferredCols = 12 }
@@ -287,165 +146,108 @@ internal class MemoryProvider : IWebUIProvider
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "temp-stats", Source = new TempMemoryStatsSource(_engine) },
-            new() { Id = "temp-table", Source = new TempMemorySource(_engine) }
+            new() { Id = "journals-table", Source = new JournalsSource(_engine) }
         }
     };
 
-    // ================ 人设记忆 ================
+    // ================ 关键词 ================
 
-    private PageDefinition BuildPersonaPage() => new()
+    private PageDefinition BuildKeywordsPage() => new()
     {
-        Route = "memory/persona",
-        Meta = new PageMeta { Title = "人设记忆", Icon = "bi-person-badge", Group = "记忆", Order = 82 },
+        Route = "memory-keywords",
+        Meta = new PageMeta { Title = "关键词", Icon = "bi-tags", Group = "记忆", Order = 82 },
         Cards = new List<CardDefinition>
         {
             new()
             {
-                Id = "persona-add", Type = CardType.Form, DataSourceId = "persona-form", Title = "新增人设记忆",
-                Schema = new FormSchema
-                {
-                    Fields = new()
-                    {
-                        new() { Field = "category", Label = "分类", Type = FormFieldType.Text, Placeholder = "如：经历、偏好、背景" },
-                        new() { Field = "content", Label = "内容", Type = FormFieldType.TextArea, Placeholder = "人设记忆内容", Required = true }
-                    },
-                    ShowReset = true
-                },
-                Layout = new CardLayout { PreferredCols = 6 }
-            },
-            new()
-            {
-                Id = "persona-stats", Type = CardType.Status, DataSourceId = "persona-stats", Title = "统计",
-                Schema = new StatusSchema
-                {
-                    Fields = new()
-                    {
-                        new() { Field = "total", Label = "总数" },
-                        new() { Field = "categories", Label = "分类", IsMultiline = true }
-                    }
-                },
-                Layout = new CardLayout { PreferredCols = 6 }
-            },
-            new()
-            {
-                Id = "persona-table", Type = CardType.Table, DataSourceId = "persona-table", Title = "人设记忆库",
-                Schema = new TableSchema
-                {
-                    Columns = new()
-                    {
-                        new() { Field = "id", Header = "ID", Width = "60px" },
-                        new() { Field = "category", Header = "分类", Width = "100px", Format = ColumnFormat.Badge },
-                        new() { Field = "content", Header = "内容" },
-                        new() { Field = "created", Header = "创建", Width = "100px" }
-                    },
-                    DefaultPageSize = 25,
-                    Searchable = false,
-                    RowActions = new()
-                    {
-                        new() { Id = "edit", Label = "编辑" },
-                        new() { Id = "delete", Label = "删除", Danger = true, Confirm = "确认删除？" }
-                    }
-                },
-                Layout = new CardLayout { PreferredCols = 12 }
-            }
-        },
-        DataSources = new List<DataSourceDefinition>
-        {
-            new() { Id = "persona-form", Source = new PersonaFormSource(_engine) },
-            new() { Id = "persona-stats", Source = new PersonaStatsSource(_engine) },
-            new() { Id = "persona-table", Source = new PersonaTableSource(_engine) }
-        }
-    };
-
-    // ================ 自然人管理 ================
-
-    private PageDefinition BuildPeoplePage() => new()
-    {
-        Route = "memory/people",
-        Meta = new PageMeta { Title = "自然人管理", Icon = "bi-people", Group = "记忆", Order = 83 },
-        Cards = new List<CardDefinition>
-        {
-            new()
-            {
-                Id = "people-table", Type = CardType.Table, DataSourceId = "people-list", Title = "自然人列表",
-                LinkEvent = "people-selected",
+                Id = "keywords-table", Type = CardType.Table, DataSourceId = "keywords-table", Title = "关键词库",
                 Schema = new TableSchema
                 {
                     Columns = new()
                     {
                         new() { Field = "id", Header = "ID", Width = "60px" },
                         new() { Field = "name", Header = "名称" },
-                        new() { Field = "trustLevel", Header = "信任", Width = "90px", Format = ColumnFormat.Badge },
-                        new() { Field = "reliability", Header = "可靠", Width = "60px" },
-                        new() { Field = "respect", Header = "尊重", Width = "60px" },
-                        new() { Field = "value", Header = "价值", Width = "60px" },
-                        new() { Field = "stability", Header = "稳定", Width = "60px" },
-                        new() { Field = "alertLevel", Header = "警报", Width = "60px", Format = ColumnFormat.Badge },
-                        new() { Field = "fastMemory", Header = "速记" },
+                        new() { Field = "role", Header = "角色", Width = "90px", Format = ColumnFormat.Badge },
+                        new() { Field = "category", Header = "分类", Width = "100px" },
+                        new() { Field = "is_exclusive", Header = "排他", Width = "60px", Format = ColumnFormat.Badge },
+                        new() { Field = "use_count", Header = "使用次数", Width = "90px" },
+                        new() { Field = "last_used", Header = "上次使用", Width = "110px" }
                     },
-                    Searchable = true, Paginated = false
-                },
-                Layout = new CardLayout { PreferredCols = 7 }
-            },
-            new()
-            {
-                Id = "people-edit", Type = CardType.Form, DataSourceId = "people-edit", Title = "编辑自然信息",
-                ListenEvent = "people-selected",
-                Schema = new FormSchema
-                {
-                    Fields = new()
+                    DefaultPageSize = 25,
+                    Filters = new()
                     {
-                        new() { Field = "name", Label = "名称", Type = FormFieldType.Text },
-                        new() { Field = "aliases", Label = "别称", Type = FormFieldType.Text, Placeholder = "逗号分隔" },
-                        new() { Field = "reliability", Label = "可靠度", Type = FormFieldType.Number },
-                        new() { Field = "respect", Label = "尊重度", Type = FormFieldType.Number },
-                        new() { Field = "value", Label = "价值", Type = FormFieldType.Number },
-                        new() { Field = "stability", Label = "稳定度", Type = FormFieldType.Number },
-                        new() { Field = "trustLevel", Label = "信任等级", Type = FormFieldType.Select, Options = new()
+                        new() { Field = "role", Label = "全部角色", Options = new()
                         {
-                            new() { Value = "-2", Label = "敌对 (-2)" },
-                            new() { Value = "-1", Label = "警惕 (-1)" },
-                            new() { Value = "0", Label = "未知 (0)" },
-                            new() { Value = "1", Label = "陌生人 (1)" },
-                            new() { Value = "2", Label = "理解 (2)" },
-                            new() { Value = "3", Label = "熟悉 (3)" },
-                            new() { Value = "4", Label = "信任 (4)" },
-                            new() { Value = "5", Label = "绝对信任 (5)" },
+                            new() { Value = "attribute", Label = "attribute" },
+                            new() { Value = "keyword", Label = "keyword" }
                         }},
-                        new() { Field = "alertLevel", Label = "警报等级", Type = FormFieldType.Select, Options = new()
+                        new() { Field = "exclusive", Label = "全部排他", Options = new()
                         {
-                            new() { Value = "0", Label = "0 - 无" },
-                            new() { Value = "1", Label = "1 - 低" },
-                            new() { Value = "2", Label = "2 - 中" },
-                            new() { Value = "3", Label = "3 - 高" },
-                            new() { Value = "4", Label = "4 - 紧急" },
+                            new() { Value = "1", Label = "排他" },
+                            new() { Value = "0", Label = "非排他" }
                         }},
-                        new() { Field = "fastMemory", Label = "速记", Type = FormFieldType.TextArea, Placeholder = "一句话概括" },
-                        new() { Field = "accounts", Label = "绑定账号", Type = FormFieldType.TextArea, Readonly = true, Placeholder = "无绑定账号" },
-                    },
-                    ShowReset = false
+                    }
                 },
-                Layout = new CardLayout { PreferredCols = 5 }
+                Layout = new CardLayout { PreferredCols = 12 }
             }
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "people-list", Source = new PeopleListSource(_engine) },
-            new() { Id = "people-edit", Source = new PeopleEditSource(_engine) }
+            new() { Id = "keywords-table", Source = new KeywordsSource(_engine) }
         }
     };
 
-    // ================ 关联图谱（重定向） ================
+    // ================ 情绪快照 ================
 
-    private PageDefinition BuildGraphPage() => new()
+    private PageDefinition BuildEmotionPage() => new()
     {
-        Route = "memory/graph",
-        Meta = new PageMeta { Title = "关联图谱", Icon = "bi-diagram-3", Group = "记忆", Order = 86 },
-        Cards = new List<CardDefinition>(),
+        Route = "memory-emotion",
+        Meta = new PageMeta { Title = "情绪快照", Icon = "bi-activity", Group = "记忆", Order = 83 },
+        Cards = new List<CardDefinition>
+        {
+            new()
+            {
+                Id = "emotion-latest", Type = CardType.Status, DataSourceId = "emotion-latest", Title = "最新情绪",
+                Schema = new StatusSchema
+                {
+                    Fields = new()
+                    {
+                        new() { Field = "excitement", Label = "兴奋" },
+                        new() { Field = "joy", Label = "喜悦" },
+                        new() { Field = "alertness", Label = "敏觉" },
+                        new() { Field = "satisfaction", Label = "满足" },
+                        new() { Field = "optimism", Label = "积极" },
+                        new() { Field = "created", Label = "快照时间" }
+                    }
+                },
+                Layout = new CardLayout { PreferredCols = 6 }
+            },
+            new()
+            {
+                Id = "emotion-table", Type = CardType.Table, DataSourceId = "emotion-table", Title = "最近快照",
+                Schema = new TableSchema
+                {
+                    Columns = new()
+                    {
+                        new() { Field = "id", Header = "ID", Width = "60px" },
+                        new() { Field = "excitement", Header = "兴奋", Width = "80px" },
+                        new() { Field = "joy", Header = "喜悦", Width = "80px" },
+                        new() { Field = "alertness", Header = "敏觉", Width = "80px" },
+                        new() { Field = "satisfaction", Header = "满足", Width = "80px" },
+                        new() { Field = "optimism", Header = "积极", Width = "80px" },
+                        new() { Field = "created", Header = "创建时间", Width = "130px" }
+                    },
+                    DefaultPageSize = 25,
+                    Paginated = false,
+                    Searchable = false
+                },
+                Layout = new CardLayout { PreferredCols = 12 }
+            }
+        },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "graph-redirect", Source = new MemoryGraphRedirectSource() }
+            new() { Id = "emotion-latest", Source = new EmotionLatestSource(_engine) },
+            new() { Id = "emotion-table", Source = new EmotionSource(_engine) }
         }
     };
 }
@@ -453,27 +255,91 @@ internal class MemoryProvider : IWebUIProvider
 
 // ================ 主库数据源 ================
 
-internal class MainMemorySource : IDataSource
+/// <summary>
+/// 主库统计：断言/经历总数 + 断言类型分布（陈述 vs 推断）+ 处理状态分布 + 来源分布。
+/// </summary>
+internal class MemoryStatsSource : IDataSource
 {
     private readonly MasterEngine _engine;
-    private List<MemoryEntry> _allCache = new();
+    public MemoryStatsSource(MasterEngine engine) => _engine = engine;
+    public bool SupportsPush => false;
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        var claims = await _engine.Claims.GetAllAsync();
+        var journals = await _engine.Journals.GetAllAsync();
+
+        // 断言类型分布（陈述 vs 推断）
+        var typeDist = claims.GroupBy(c => c.IsInference ? "推断" : "陈述")
+            .OrderByDescending(g => g.Count())
+            .Select(g => $"{g.Key}: {g.Count()}")
+            .ToList();
+
+        // 处理状态分布
+        var statusDist = claims.GroupBy(c => string.IsNullOrEmpty(c.Status) ? "(未知)" : c.Status)
+            .OrderByDescending(g => g.Count())
+            .Select(g => $"{g.Key}: {g.Count()}")
+            .ToList();
+
+        // 来源分布（解析 SourceJson.who）
+        var sourceDist = claims.GroupBy(c => ParseSourceWho(c.SourceJson))
+            .OrderByDescending(g => g.Count())
+            .Select(g => $"{g.Key}: {g.Count()}")
+            .ToList();
+
+        var data = new JsonObject
+        {
+            ["claims_total"] = claims.Count.ToString(),
+            ["journals_total"] = journals.Count.ToString(),
+            ["claim_type_dist"] = typeDist.Count > 0 ? string.Join("\n", typeDist) : "（无数据）",
+            ["claim_status_dist"] = statusDist.Count > 0 ? string.Join("\n", statusDist) : "（无数据）",
+            ["claim_source_dist"] = sourceDist.Count > 0 ? string.Join("\n", sourceDist) : "（无数据）"
+        };
+        return new DataResult { Data = data };
+    }
+
+    /// <summary>从断言来源 JSON 中提取 who 字段。</summary>
+    private static string ParseSourceWho(string? sourceJson)
+    {
+        if (string.IsNullOrWhiteSpace(sourceJson) || sourceJson == "{}") return "未知";
+        try
+        {
+            var who = JObject.Parse(sourceJson)["who"]?.ToString();
+            return string.IsNullOrEmpty(who) ? "未知" : who;
+        }
+        catch { return "未知"; }
+    }
+
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+        => Task.FromResult(new ActionResult { Success = true });
+}
+
+/// <summary>
+/// 断言列表（全量缓存 + 内存过滤分页）。展示 Raw + Credibility + IsInference 标记 + 槽位表面词。
+/// Claims 仓库无 GetRecentAsync，这里 GetAllAsync 后按 RecordedAt 倒序。
+/// </summary>
+internal class ClaimsSource : IDataSource
+{
+    private readonly MasterEngine _engine;
+    private List<Claim> _allCache = new();
     private DateTime _cacheTime = DateTime.MinValue;
     private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(3);
 
-    public MainMemorySource(MasterEngine engine) => _engine = engine;
+    public ClaimsSource(MasterEngine engine) => _engine = engine;
     public bool SupportsPush => false;
     public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
 
     public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
-        // 缓存全量数据减少DB查询
+        // 缓存全量数据减少 DB 查询
         if ((DateTime.Now - _cacheTime) > CacheTtl)
         {
-            _allCache = await _engine.Memories.GetRecentAsync(10000);
+            _allCache = await _engine.Claims.GetAllAsync();
             _cacheTime = DateTime.Now;
         }
 
-        var filtered = Filter(_allCache, query);
+        var filtered = Filter(_allCache, query).ToList();
         var total = filtered.Count;
 
         var page = query?.Page ?? 1;
@@ -481,34 +347,40 @@ internal class MainMemorySource : IDataSource
         var paged = filtered.Skip((page - 1) * pageSize).Take(pageSize).ToList();
 
         var arr = new JsonArray();
-        foreach (var m in paged)
+        foreach (var c in paged)
         {
             arr.Add(new JsonObject
             {
-                ["id"] = m.Id,
-                ["type"] = m.Type,
-                ["subject"] = m.Subject ?? "",
-                ["content"] = m.Content,
-                ["importance"] = m.Importance.ToString("F2"),
-                ["certainty"] = m.Certainty.ToString("F2"),
-                ["person"] = m.PersonId?.ToString() ?? "—",
-                ["created"] = m.CreatedAt.ToString("MM-dd HH:mm"),
-                ["_link"] = $"/p/memory/{m.Id}"
+                ["id"] = c.Id,
+                ["inference"] = c.IsInference ? "推断" : "陈述",
+                ["subject"] = ClaimSlot.FromJson(c.SubjectJson)?.Index ?? "—",
+                ["predicate"] = ClaimSlot.FromJson(c.PredicateJson)?.Index ?? "—",
+                ["object"] = ClaimSlot.FromJson(c.ObjectJson)?.Index ?? "—",
+                ["raw"] = Truncate(c.Raw, 150),
+                ["credibility"] = c.Credibility.ToString("F2"),
+                ["status"] = string.IsNullOrEmpty(c.Status) ? "—" : c.Status,
+                ["occurred"] = c.OccurredAt?.ToString("MM-dd HH:mm") ?? "—"
             });
         }
         return new DataResult { Data = arr, TotalCount = total };
     }
 
-    private static List<MemoryEntry> Filter(List<MemoryEntry> all, DataQuery? query)
+    private static IEnumerable<Claim> Filter(IEnumerable<Claim> all, DataQuery? query)
     {
-        var result = all.AsEnumerable();
+        var result = all;
 
+        // 搜索：匹配原文或槽位表面词
         if (!string.IsNullOrWhiteSpace(query?.Search))
         {
             var kw = query.Search.Trim();
-            result = result.Where(m => m.Content.Contains(kw, StringComparison.OrdinalIgnoreCase));
+            result = result.Where(c =>
+                c.Raw.Contains(kw, StringComparison.OrdinalIgnoreCase) ||
+                (ClaimSlot.FromJson(c.SubjectJson)?.Index ?? "").Contains(kw, StringComparison.OrdinalIgnoreCase) ||
+                (ClaimSlot.FromJson(c.PredicateJson)?.Index ?? "").Contains(kw, StringComparison.OrdinalIgnoreCase) ||
+                (ClaimSlot.FromJson(c.ObjectJson)?.Index ?? "").Contains(kw, StringComparison.OrdinalIgnoreCase));
         }
 
+        // 过滤：类型（推断/陈述）+ 处理状态
         if (query?.Filters != null)
         {
             foreach (var f in query.Filters)
@@ -516,67 +388,204 @@ internal class MainMemorySource : IDataSource
                 if (string.IsNullOrEmpty(f.Value)) continue;
                 switch (f.Field)
                 {
-                    case "type":
-                        result = result.Where(m => m.Type == f.Value);
+                    case "inference":
+                        var isInfer = f.Value == "inference";
+                        result = result.Where(c => c.IsInference == isInfer);
                         break;
-                    case "certainty":
-                        if (float.TryParse(f.Value, out var certVal))
-                            result = result.Where(m => m.Certainty >= certVal);
-                        break;
-                    case "person":
-                        if (int.TryParse(f.Value, out var personId) && personId > 0)
-                            result = result.Where(m => m.PersonId == personId);
+                    case "status":
+                        result = result.Where(c => c.Status == f.Value);
                         break;
                 }
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(query?.SortBy) && query.SortBy == "importance")
-            return query.SortDesc ? result.OrderByDescending(m => m.Importance).ToList() : result.OrderBy(m => m.Importance).ToList();
-
-        return result.OrderByDescending(m => m.CreatedAt).ToList();
+        return result.OrderByDescending(c => c.RecordedAt);
     }
 
-    public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-    {
-        if (action == "delete" && data != null)
-        {
-            var id = data["id"]?.GetValue<int>() ?? 0;
-            if (id > 0)
-            {
-                var memory = await _engine.Memories.GetByIdAsync(id);
-                if (memory != null)
-                {
-                    await _engine.Memories.DeleteAsync(memory);
-                    await _engine.MemoryLinks.DeleteOrphanedForMemoryAsync(id);
-                    _cacheTime = DateTime.MinValue; // 失效缓存
-                    return new ActionResult { Success = true, Message = "已删除" };
-                }
-            }
-        }
-        return new ActionResult { Success = false, Message = "未知操作" };
-    }
+    private static string Truncate(string? s, int max)
+        => string.IsNullOrEmpty(s) ? "—" : (s.Length <= max ? s : s[..max] + "...");
+
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+        => Task.FromResult(new ActionResult { Success = true });
 }
 
-internal class MainMemoryStatsSource : IDataSource
+
+// ================ 经历数据源 ================
+
+/// <summary>
+/// 经历列表。按 Kind 过滤时走 GetByKindAsync，否则全量取回后内存过滤。
+/// </summary>
+internal class JournalsSource : IDataSource
 {
     private readonly MasterEngine _engine;
-    public MainMemoryStatsSource(MasterEngine engine) => _engine = engine;
+    public JournalsSource(MasterEngine engine) => _engine = engine;
     public bool SupportsPush => false;
     public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
 
     public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
-        var all = await _engine.Memories.GetRecentAsync(10000);
-        var typeDist = all.GroupBy(m => m.Type)
-            .OrderByDescending(g => g.Count())
-            .Select(g => $"{g.Key}: {g.Count()}")
-            .ToList();
+        // 有 Kind 过滤时走仓库优化查询，否则全量
+        var kind = MemoryQueryHelper.GetFilterValue(query, "kind");
+        var all = !string.IsNullOrEmpty(kind)
+            ? await _engine.Journals.GetByKindAsync(kind, 100000)
+            : await _engine.Journals.GetAllAsync();
+
+        var filtered = Filter(all, query).ToList();
+        var total = filtered.Count;
+
+        var page = query?.Page ?? 1;
+        var pageSize = query?.PageSize ?? 25;
+        var paged = filtered.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+        var arr = new JsonArray();
+        foreach (var j in paged)
+        {
+            arr.Add(new JsonObject
+            {
+                ["id"] = j.Id,
+                ["kind"] = j.Kind,
+                ["source"] = j.Source,
+                ["content"] = Truncate(j.Content, 200),
+                ["channel_id"] = j.ChannelId?.ToString() ?? "—",
+                ["session_id"] = j.SessionId?.ToString() ?? "—",
+                ["occurred"] = j.OccurredAt.ToString("MM-dd HH:mm")
+            });
+        }
+        return new DataResult { Data = arr, TotalCount = total };
+    }
+
+    private static IEnumerable<Journal> Filter(IEnumerable<Journal> all, DataQuery? query)
+    {
+        var result = all;
+
+        // 搜索：匹配正文
+        if (!string.IsNullOrWhiteSpace(query?.Search))
+        {
+            var kw = query.Search.Trim();
+            result = result.Where(j => j.Content.Contains(kw, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // 过滤：经历类型（已在仓库层优化，这里兜底再筛一次）
+        var kind = MemoryQueryHelper.GetFilterValue(query, "kind");
+        if (!string.IsNullOrEmpty(kind))
+            result = result.Where(j => j.Kind == kind);
+
+        return result.OrderByDescending(j => j.OccurredAt);
+    }
+
+    private static string Truncate(string? s, int max)
+        => string.IsNullOrEmpty(s) ? "—" : (s.Length <= max ? s : s[..max] + "...");
+
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+        => Task.FromResult(new ActionResult { Success = true });
+}
+
+
+// ================ 关键词数据源 ================
+
+/// <summary>
+/// 关键词库列表。展示 Name + Role + IsExclusive + UseCount，支持按角色/排他过滤。
+/// </summary>
+internal class KeywordsSource : IDataSource
+{
+    private readonly MasterEngine _engine;
+    public KeywordsSource(MasterEngine engine) => _engine = engine;
+    public bool SupportsPush => false;
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        var all = await _engine.Keywords.GetAllAsync();
+        var filtered = Filter(all, query).ToList();
+        var total = filtered.Count;
+
+        var page = query?.Page ?? 1;
+        var pageSize = query?.PageSize ?? 25;
+        var paged = filtered.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+        var arr = new JsonArray();
+        foreach (var k in paged)
+        {
+            arr.Add(new JsonObject
+            {
+                ["id"] = k.Id,
+                ["name"] = k.Name,
+                ["role"] = k.Role,
+                ["category"] = string.IsNullOrEmpty(k.Category) ? "—" : k.Category,
+                ["is_exclusive"] = k.IsExclusive ? "是" : "否",
+                ["use_count"] = k.UseCount,
+                ["last_used"] = k.LastUsedAt?.ToString("MM-dd HH:mm") ?? "—"
+            });
+        }
+        return new DataResult { Data = arr, TotalCount = total };
+    }
+
+    private static IEnumerable<Keyword> Filter(IEnumerable<Keyword> all, DataQuery? query)
+    {
+        var result = all;
+
+        // 搜索：匹配名称或别名
+        if (!string.IsNullOrWhiteSpace(query?.Search))
+        {
+            var kw = query.Search.Trim();
+            result = result.Where(k =>
+                k.Name.Contains(kw, StringComparison.OrdinalIgnoreCase) ||
+                (k.AliasesJson ?? "").Contains(kw, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // 过滤：角色 + 排他标记
+        if (query?.Filters != null)
+        {
+            foreach (var f in query.Filters)
+            {
+                if (string.IsNullOrEmpty(f.Value)) continue;
+                switch (f.Field)
+                {
+                    case "role":
+                        result = result.Where(k => k.Role == f.Value);
+                        break;
+                    case "exclusive":
+                        var isEx = f.Value == "1";
+                        result = result.Where(k => k.IsExclusive == isEx);
+                        break;
+                }
+            }
+        }
+
+        return result.OrderByDescending(k => k.UseCount).ThenBy(k => k.Name);
+    }
+
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+        => Task.FromResult(new ActionResult { Success = true });
+}
+
+
+// ================ 情绪快照数据源 ================
+
+/// <summary>
+/// 最新一条情绪快照（五轴值 + 时间），用于状态卡展示。
+/// </summary>
+internal class EmotionLatestSource : IDataSource
+{
+    private readonly MasterEngine _engine;
+    public EmotionLatestSource(MasterEngine engine) => _engine = engine;
+    public bool SupportsPush => false;
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        var latest = await _engine.EmotionSnapshots.GetLatestAsync();
+        if (latest == null)
+            return new DataResult { Data = new JsonObject { ["excitement"] = "（暂无快照）" } };
 
         var data = new JsonObject
         {
-            ["total"] = all.Count.ToString(),
-            ["type_dist"] = string.Join("\n", typeDist)
+            ["excitement"] = latest.Excitement.ToString("F2"),
+            ["joy"] = latest.Joy.ToString("F2"),
+            ["alertness"] = latest.Alertness.ToString("F2"),
+            ["satisfaction"] = latest.Satisfaction.ToString("F2"),
+            ["optimism"] = latest.Optimism.ToString("F2"),
+            ["created"] = latest.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")
         };
         return new DataResult { Data = data };
     }
@@ -585,688 +594,58 @@ internal class MainMemoryStatsSource : IDataSource
         => Task.FromResult(new ActionResult { Success = true });
 }
 
-
-// ================ 记忆详情数据源 ================
-
-/// <summary>从 RouteParams 提取记忆 ID 并加载 MemoryEntry，供所有详情子数据源复用。</summary>
-internal static class MemoryDetailHelper
-{
-    public static async Task<MemoryEntry?> GetMemoryAsync(MasterEngine engine, DataQuery? query)
-    {
-        var idStr = query?.RouteParams?.GetValueOrDefault("id");
-        if (!int.TryParse(idStr, out var id) || id <= 0) return null;
-        return await engine.Memories.GetByIdAsync(id);
-    }
-}
-
-internal class MemoryDetailInfoSource : IDataSource
+/// <summary>
+/// 最近 N 条情绪快照列表（五轴值 + CreatedAt），走 EmotionSnapshots.GetRecentAsync。
+/// </summary>
+internal class EmotionSource : IDataSource
 {
     private readonly MasterEngine _engine;
-    public MemoryDetailInfoSource(MasterEngine engine) => _engine = engine;
+    /// <summary>一次拉取上限。</summary>
+    private const int FetchLimit = 100;
+
+    public EmotionSource(MasterEngine engine) => _engine = engine;
     public bool SupportsPush => false;
     public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
 
     public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
-        var m = await MemoryDetailHelper.GetMemoryAsync(_engine, query);
-        if (m == null) return new DataResult { Data = new JsonObject { ["error"] = "记忆不存在" } };
-
-        var data = new JsonObject
-        {
-            ["content"] = m.Content,
-            ["type"] = m.Type,
-            ["subject"] = m.Subject ?? "—",
-            ["importance"] = m.Importance.ToString("F2"),
-            ["certainty"] = m.Certainty,
-            ["person_id"] = m.PersonId?.ToString() ?? "—",
-            ["channel_id"] = m.ChannelId?.ToString() ?? "—",
-            ["is_derived"] = m.IsDerived ? "是" : "否",
-            ["is_persistent"] = m.IsPersistent ? "是" : "否",
-            ["expires"] = m.ExpiresAt?.ToString("yyyy-MM-dd HH:mm") ?? "永不",
-            ["last_dream"] = m.LastDreamTime?.ToString("MM-dd HH:mm") ?? "未处理",
-            ["last_access"] = m.LastAccessedAt.ToString("MM-dd HH:mm"),
-            ["source_msg"] = m.SourceMessageId?.ToString() ?? "—",
-            ["created"] = m.CreatedAt.ToString("yyyy-MM-dd HH:mm")
-        };
-        return new DataResult { Data = data };
-    }
-
-    public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-    {
-        var m = await MemoryDetailHelper.GetMemoryAsync(_engine, null);
-        if (m == null) return new ActionResult { Success = false, Message = "记忆不存在" };
-
-        if (action == "delete")
-        {
-            await _engine.Memories.DeleteAsync(m);
-            await _engine.MemoryLinks.DeleteOrphanedForMemoryAsync(m.Id);
-            return new ActionResult { Success = true, Message = "/p/memory" };
-        }
-        return new ActionResult { Success = false, Message = $"未知操作: {action}" };
-    }
-}
-
-internal class MemoryDetailSourceSource : IDataSource
-{
-    private readonly MasterEngine _engine;
-    public MemoryDetailSourceSource(MasterEngine engine) => _engine = engine;
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
-
-    public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-    {
-        var m = await MemoryDetailHelper.GetMemoryAsync(_engine, query);
-        var arr = new JsonArray();
-        if (m != null && m.IsDerived && !string.IsNullOrEmpty(m.SourceMemoryIds))
-        {
-            try
-            {
-                var ids = System.Text.Json.JsonSerializer.Deserialize<List<int>>(m.SourceMemoryIds);
-                if (ids != null)
-                {
-                    var sources = await _engine.Memories.GetByIdsAsync(ids);
-                    foreach (var s in sources)
-                    {
-                        arr.Add(new JsonObject
-                        {
-                            ["id"] = s.Id,
-                            ["type"] = s.Type,
-                            ["content"] = s.Content.Length <= 120 ? s.Content : s.Content[..120] + "...",
-                            ["_link"] = $"/p/memory/{s.Id}"
-                        });
-                    }
-                }
-            }
-            catch { }
-        }
-        return new DataResult { Data = arr };
-    }
-
-    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-        => Task.FromResult(new ActionResult { Success = true });
-}
-
-internal class MemoryDetailDerivedSource : IDataSource
-{
-    private readonly MasterEngine _engine;
-    public MemoryDetailDerivedSource(MasterEngine engine) => _engine = engine;
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
-
-    public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-    {
-        var m = await MemoryDetailHelper.GetMemoryAsync(_engine, query);
-        var arr = new JsonArray();
-        if (m != null)
-        {
-            var all = await _engine.Memories.GetRecentAsync(5000);
-            var derived = all.Where(x => x.IsDerived && x.SourceMemoryIds != null
-                && x.SourceMemoryIds.Contains(m.Id.ToString())).ToList();
-            foreach (var d in derived)
-            {
-                arr.Add(new JsonObject
-                {
-                    ["id"] = d.Id,
-                    ["type"] = d.Type,
-                    ["subject"] = d.Subject ?? "",
-                    ["content"] = d.Content.Length <= 120 ? d.Content : d.Content[..120] + "...",
-                    ["_link"] = $"/p/memory/{d.Id}"
-                });
-            }
-        }
-        return new DataResult { Data = arr };
-    }
-
-    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-        => Task.FromResult(new ActionResult { Success = true });
-}
-
-internal class MemoryDetailLinksSource : IDataSource
-{
-    private readonly MasterEngine _engine;
-    public MemoryDetailLinksSource(MasterEngine engine) => _engine = engine;
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
-
-    public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-    {
-        var m = await MemoryDetailHelper.GetMemoryAsync(_engine, query);
-        var arr = new JsonArray();
-        if (m != null)
-        {
-            var links = await _engine.MemoryLinks.GetByMemoryIdAsync(m.Id);
-            foreach (var link in links.OrderByDescending(l => l.Relevance))
-            {
-                int otherId = link.SourceId == m.Id ? link.TargetId : link.SourceId;
-                var other = await _engine.Memories.GetByIdAsync(otherId);
-                if (other != null)
-                {
-                    arr.Add(new JsonObject
-                    {
-                        ["id"] = other.Id,
-                        ["type"] = other.Type,
-                        ["link_type"] = link.LinkType,
-                        ["relevance"] = link.Relevance.ToString("F2"),
-                        ["content"] = other.Content.Length <= 120 ? other.Content : other.Content[..120] + "...",
-                        ["_link"] = $"/p/memory/{other.Id}"
-                    });
-                }
-            }
-        }
-        return new DataResult { Data = arr };
-    }
-
-    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-        => Task.FromResult(new ActionResult { Success = true });
-}
-
-
-// ================ 临时库数据源 ================
-
-internal class TempMemoryStatsSource : IDataSource
-{
-    private readonly MasterEngine _engine;
-    public TempMemoryStatsSource(MasterEngine engine) => _engine = engine;
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
-
-    public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-    {
-        var all = await _engine.TempMemories.GetAllAsync();
-        var high = all.Count(t => t.Confidence == "high");
-        var low = all.Count(t => t.Confidence == "low");
-        return new DataResult
-        {
-            Data = new JsonObject
-            {
-                ["total"] = all.Count.ToString(),
-                ["high_conf"] = high.ToString(),
-                ["low_conf"] = low.ToString()
-            }
-        };
-    }
-
-    public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-    {
-        if (action == "clear")
-        {
-            await _engine.TempMemories.ClearAllAsync();
-            return new ActionResult { Success = true, Message = "已清空全部临时记忆" };
-        }
-        return new ActionResult { Success = false, Message = $"未知操作: {action}" };
-    }
-}
-
-internal class TempMemorySource : IDataSource
-{
-    private readonly MasterEngine _engine;
-    public TempMemorySource(MasterEngine engine) => _engine = engine;
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
-
-    public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-    {
-        var all = await _engine.TempMemories.GetAllAsync();
-        var filtered = Filter(all, query);
-        var total = filtered.Count;
-
-        var page = query?.Page ?? 1;
-        var pageSize = query?.PageSize ?? 25;
-        var paged = filtered.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        var recent = await _engine.EmotionSnapshots.GetRecentAsync(FetchLimit);
 
         var arr = new JsonArray();
-        foreach (var t in paged)
+        foreach (var s in recent)
         {
             arr.Add(new JsonObject
             {
-                ["id"] = t.Id,
-                ["type"] = t.Type,
-                ["subject"] = t.Subject ?? "",
-                ["content"] = t.Content,
-                ["certainty"] = t.Confidence,
-                ["person_id"] = t.PersonId?.ToString() ?? "—",
-                ["channel_id"] = t.ChannelId?.ToString() ?? "—",
-                ["created"] = t.CreatedAt.ToString("MM-dd HH:mm")
+                ["id"] = s.Id,
+                ["excitement"] = s.Excitement.ToString("F2"),
+                ["joy"] = s.Joy.ToString("F2"),
+                ["alertness"] = s.Alertness.ToString("F2"),
+                ["satisfaction"] = s.Satisfaction.ToString("F2"),
+                ["optimism"] = s.Optimism.ToString("F2"),
+                ["created"] = s.CreatedAt.ToString("MM-dd HH:mm:ss")
             });
         }
-        return new DataResult { Data = arr, TotalCount = total };
-    }
-
-    private static List<TempMemoryEntry> Filter(List<TempMemoryEntry> all, DataQuery? query)
-    {
-        var result = all.AsEnumerable();
-
-        if (!string.IsNullOrWhiteSpace(query?.Search))
-        {
-            var kw = query.Search.Trim();
-            result = result.Where(t => t.Content.Contains(kw, StringComparison.OrdinalIgnoreCase));
-        }
-
-        if (query?.Filters != null)
-        {
-            foreach (var f in query.Filters)
-            {
-                if (string.IsNullOrEmpty(f.Value)) continue;
-                switch (f.Field)
-                {
-                    case "type":
-                        result = result.Where(t => t.Type == f.Value);
-                        break;
-                    case "certainty":
-                        result = result.Where(t => t.Confidence == f.Value);
-                        break;
-                }
-            }
-        }
-
-        return result.OrderByDescending(t => t.CreatedAt).ToList();
-    }
-
-    public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-    {
-        if (action == "delete")
-        {
-            var id = data?["id"]?.GetValue<int>() ?? 0;
-            if (id > 0)
-            {
-                var all = await _engine.TempMemories.GetAllAsync();
-                var temp = all.FirstOrDefault(t => t.Id == id);
-                if (temp != null)
-                {
-                    await _engine.TempMemories.DeleteAsync(temp);
-                    return new ActionResult { Success = true, Message = "已删除" };
-                }
-            }
-            return new ActionResult { Success = false, Message = "未找到" };
-        }
-        return new ActionResult { Success = false, Message = $"未知操作: {action}" };
-    }
-}
-
-
-// ================ 人设记忆数据源 ================
-
-internal class PersonaFormSource : IDataSource
-{
-    private readonly MasterEngine _engine;
-    public PersonaFormSource(MasterEngine engine) => _engine = engine;
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
-
-    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-        => Task.FromResult(new DataResult { Data = new JsonObject() });
-
-    public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-    {
-        if (action == "save")
-        {
-            var content = data?["content"]?.ToString();
-            if (string.IsNullOrWhiteSpace(content))
-                return new ActionResult { Success = false, Message = "内容不能为空" };
-            var category = data?["category"]?.ToString();
-            if (string.IsNullOrWhiteSpace(category)) category = null;
-
-            byte[]? emb = null;
-            try
-            {
-                var vec = await _engine.Embedding.GetEmbeddingAsync(content);
-                emb = VectorUtil.FloatsToBytes(vec);
-            }
-            catch { Signal.Warn(LogGroup.Memory, "人设记忆embedding失败", new { content_length = content.Length }); }
-
-            await _engine.PersonaMemories.CreateAsync(content, emb, category,
-                embeddingModel: VectorUtil.EmbeddingModelTag);
-            return new ActionResult { Success = true, Message = "人设记忆已添加" };
-        }
-        return new ActionResult { Success = false, Message = $"未知操作: {action}" };
-    }
-}
-
-internal class PersonaStatsSource : IDataSource
-{
-    private readonly MasterEngine _engine;
-    public PersonaStatsSource(MasterEngine engine) => _engine = engine;
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
-
-    public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-    {
-        var all = await _engine.PersonaMemories.GetAllAsync();
-        var catDist = all.GroupBy(p => string.IsNullOrEmpty(p.Category) ? "(未分类)" : p.Category)
-            .OrderByDescending(g => g.Count())
-            .Select(g => $"{g.Key}: {g.Count()}")
-            .ToList();
-
-        return new DataResult
-        {
-            Data = new JsonObject
-            {
-                ["total"] = all.Count.ToString(),
-                ["categories"] = string.Join("\n", catDist)
-            }
-        };
+        return new DataResult { Data = arr, TotalCount = recent.Count };
     }
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
         => Task.FromResult(new ActionResult { Success = true });
 }
 
-internal class PersonaTableSource : IDataSource
+
+// ================ 通用辅助 ================
+
+/// <summary>从查询过滤条件中取指定字段的值（空值返回 null）。</summary>
+internal static class MemoryQueryHelper
 {
-    private readonly MasterEngine _engine;
-    public PersonaTableSource(MasterEngine engine) => _engine = engine;
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
-
-    public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    public static string? GetFilterValue(DataQuery? query, string field)
     {
-        var all = await _engine.PersonaMemories.GetAllAsync();
-        var filtered = all.AsEnumerable();
-
-        if (!string.IsNullOrWhiteSpace(query?.Search))
+        if (query?.Filters == null) return null;
+        foreach (var f in query.Filters)
         {
-            var kw = query.Search.Trim();
-            filtered = filtered.Where(p =>
-                p.Content.Contains(kw, StringComparison.OrdinalIgnoreCase) ||
-                (p.Category != null && p.Category.Contains(kw, StringComparison.OrdinalIgnoreCase)));
+            if (f.Field == field && !string.IsNullOrEmpty(f.Value))
+                return f.Value;
         }
-
-        var list = filtered.OrderByDescending(p => p.CreatedAt).ToList();
-        var total = list.Count;
-
-        var page = query?.Page ?? 1;
-        var pageSize = query?.PageSize ?? 25;
-        var paged = list.Skip((page - 1) * pageSize).Take(pageSize).ToList();
-
-        var arr = new JsonArray();
-        foreach (var p in paged)
-        {
-            arr.Add(new JsonObject
-            {
-                ["id"] = p.Id,
-                ["category"] = string.IsNullOrEmpty(p.Category) ? "未分类" : p.Category,
-                ["content"] = p.Content,
-                ["created"] = p.CreatedAt.ToString("MM-dd HH:mm")
-            });
-        }
-        return new DataResult { Data = arr, TotalCount = total };
-    }
-
-    public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-    {
-        if (action == "edit")
-        {
-            var editId = data?["id"]?.GetValue<int>() ?? 0;
-            var editContent = data?["content"]?.ToString();
-            var editCategory = data?["category"]?.ToString();
-            var all = await _engine.PersonaMemories.GetAllAsync();
-            var entry = all.FirstOrDefault(p => p.Id == editId);
-            if (entry == null)
-                return new ActionResult { Success = false, Message = "未找到" };
-            if (!string.IsNullOrWhiteSpace(editContent)) entry.Content = editContent;
-            if (editCategory != null) entry.Category = string.IsNullOrWhiteSpace(editCategory) ? null : editCategory;
-            await _engine.PersonaMemories.UpdateAsync(entry);
-            return new ActionResult { Success = true, Message = "已更新" };
-        }
-
-        if (action == "delete")
-        {
-            var delId = data?["id"]?.GetValue<int>() ?? 0;
-            var all = await _engine.PersonaMemories.GetAllAsync();
-            var delEntry = all.FirstOrDefault(p => p.Id == delId);
-            if (delEntry != null)
-            {
-                await _engine.PersonaMemories.DeleteAsync(delEntry);
-                return new ActionResult { Success = true, Message = "已删除" };
-            }
-            return new ActionResult { Success = false, Message = "未找到" };
-        }
-
-        return new ActionResult { Success = false, Message = $"未知操作: {action}" };
-    }
-}
-
-// ================ 自然人管理数据源 ================
-
-internal class PeopleListSource : IDataSource
-{
-    private readonly MasterEngine _engine;
-    public PeopleListSource(MasterEngine engine) => _engine = engine;
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
-
-    public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-    {
-        var persons = await _engine.Session.GetAllPersonsAsync();
-        var filtered = persons.AsEnumerable();
-
-        if (!string.IsNullOrWhiteSpace(query?.Search))
-        {
-            var kw = query.Search.Trim().ToLowerInvariant();
-            filtered = filtered.Where(p =>
-                p.Name.Contains(kw, StringComparison.OrdinalIgnoreCase) ||
-                (p.Aliases?.Contains(kw, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                (p.FastMemory?.Contains(kw, StringComparison.OrdinalIgnoreCase) ?? false));
-        }
-
-        // 批量获取所有人物的维度评分
-        var allScores = await _engine.EvaluationScores.GetAllByTypeAsync("person");
-        var scoreMap = allScores.GroupBy(s => s.TargetId)
-            .ToDictionary(g => g.Key, g => g.ToDictionary(s => s.Dimension, s => s.Value));
-
-        var list = filtered.OrderBy(p => p.Id).ToList();
-        var arr = new JsonArray();
-        foreach (var p in list)
-        {
-            var dims = scoreMap.TryGetValue(p.Id, out var map)
-                ? new Dictionary<string, string>
-                {
-                    ["reliability"] = map.TryGetValue("reliability", out var r) ? r.ToString("F1") : "—",
-                    ["respect"] = map.TryGetValue("respect", out var rs) ? rs.ToString("F1") : "—",
-                    ["value"] = map.TryGetValue("value", out var v) ? v.ToString("F1") : "—",
-                    ["stability"] = map.TryGetValue("stability", out var s) ? s.ToString("F1") : "—",
-                }
-                : new Dictionary<string, string> { ["reliability"] = "—", ["respect"] = "—", ["value"] = "—", ["stability"] = "—" };
-
-            arr.Add(new JsonObject
-            {
-                ["id"] = p.Id,
-                ["name"] = string.IsNullOrEmpty(p.Name) ? $"(无名称 #{p.Id})" : p.Name,
-                ["trustLevel"] = p.TrustLevel.ToString(),
-                ["reliability"] = dims["reliability"],
-                ["respect"] = dims["respect"],
-                ["value"] = dims["value"],
-                ["stability"] = dims["stability"],
-                ["alertLevel"] = p.AlertLevel.ToString(),
-                ["fastMemory"] = string.IsNullOrEmpty(p.FastMemory) ? "—" : (p.FastMemory.Length > 60 ? p.FastMemory[..60] + "..." : p.FastMemory),
-            });
-        }
-        return new DataResult { Data = arr, TotalCount = arr.Count };
-    }
-
-    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-        => Task.FromResult(new ActionResult { Success = false, Message = "不支持" });
-}
-
-internal class PeopleEditSource : IDataSource
-{
-    private readonly MasterEngine _engine;
-    private int _selectedId;
-    public PeopleEditSource(MasterEngine engine) => _engine = engine;
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
-
-        public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-    {
-        if (query?.Extra is JsonObject extra)
-            _selectedId = (int?)extra["id"] ?? _selectedId;
-
-        if (_selectedId == 0)
-            return new DataResult { Data = new JsonObject() };
-
-        var person = await _engine.Session.GetPersonByIdAsync(_selectedId);
-        if (person == null)
-            return new DataResult { Data = new JsonObject() };
-
-        var users = await _engine.Session.GetUsersByPersonIdAsync(_selectedId);
-        var accountsStr = users.Count == 0 ? "" : string.Join("\n",
-            users.Select(u => $"{u.Platform}: {u.PlatformId}" + (string.IsNullOrEmpty(u.DisplayName) ? "" : $" ({u.DisplayName})")));
-
-        // 查询维度评分
-        var scores = await _engine.EvaluationScores.GetByTargetAsync("person", _selectedId);
-        var dims = scores.ToDictionary(s => s.Dimension, s => s.Value.ToString("F1"));
-
-        return new DataResult
-        {
-            Data = new JsonObject
-            {
-                ["id"] = person.Id,
-                ["name"] = person.Name ?? "",
-                ["aliases"] = person.Aliases ?? "",
-                ["reliability"] = dims.TryGetValue("reliability", out var r) ? r : "0",
-                ["respect"] = dims.TryGetValue("respect", out var rs) ? rs : "0",
-                ["value"] = dims.TryGetValue("value", out var v) ? v : "0",
-                ["stability"] = dims.TryGetValue("stability", out var s) ? s : "0",
-                ["trustLevel"] = ((int)person.TrustLevel).ToString(),
-                ["alertLevel"] = person.AlertLevel.ToString(),
-                ["fastMemory"] = person.FastMemory ?? "",
-                ["accounts"] = accountsStr,
-            }
-        };
-    }
-
-    public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-    {
-        if (action != "save" || _selectedId == 0 || data is not JsonObject obj)
-            return new ActionResult { Success = false, Message = "无效请求" };
-
-        var person = await _engine.Session.GetPersonByIdAsync(_selectedId);
-        if (person == null)
-            return new ActionResult { Success = false, Message = "自然人不存在" };
-
-        if (obj.TryGetPropertyValue("name", out var nameNode))
-            person.Name = nameNode?.ToString() ?? "";
-        if (obj.TryGetPropertyValue("aliases", out var aliasesNode))
-            person.Aliases = aliasesNode?.ToString() ?? "";
-        if (obj.TryGetPropertyValue("trustLevel", out var tlNode) && int.TryParse(tlNode?.ToString(), out var tlVal) && Enum.IsDefined(typeof(TrustLevel), tlVal))
-            person.TrustLevel = (TrustLevel)tlVal;
-        if (obj.TryGetPropertyValue("alertLevel", out var alNode) && int.TryParse(alNode?.ToString(), out var alVal) && alVal >= 0 && alVal <= 4)
-            person.AlertLevel = alVal;
-        if (obj.TryGetPropertyValue("fastMemory", out var fmNode))
-            person.FastMemory = fmNode?.ToString() ?? "";
-
-        await _engine.Session.UpdatePersonAsync(person);
-
-        // 保存维度评分（直接写入 EvaluationScore）
-        foreach (var dim in new[] { "reliability", "respect", "value", "stability" })
-        {
-            if (obj.TryGetPropertyValue(dim, out var dimNode) && float.TryParse(dimNode?.ToString(), out var dimVal))
-            {
-                await _engine.EvaluationScores.UpsertAsync(new EvaluationScore
-                {
-                    TargetType = "person",
-                    TargetId = _selectedId,
-                    Dimension = dim,
-                    Value = Math.Clamp(dimVal, -50f, 50f),
-                    LastEvaluatedAt = DateTime.Now
-                });
-            }
-        }
-
-        return new ActionResult { Success = true, Message = "已保存" };
-    }
-}
-
-internal class MemoryGraphRedirectSource : IDataSource
-{
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
-
-    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-    {
-        return Task.FromResult(new DataResult
-        {
-            Data = new JsonObject(),
-            Meta = new JsonObject { ["redirect"] = "/memory/graph" }
-        });
-    }
-
-    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-        => Task.FromResult(new ActionResult { Success = false });
-}
-
-// ================ 向量重建数据源 ================
-
-internal class EmbeddingRebuildSource : IDataSource
-{
-    private readonly MasterEngine _engine;
-    public EmbeddingRebuildSource(MasterEngine engine) => _engine = engine;
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
-
-    private const string EmbeddingModelTag = "bge-large-zh-v1.5";
-
-    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-        => Task.FromResult(new DataResult { Data = new JsonObject() });
-
-    public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-    {
-        var actionId = data?["actionId"]?.ToString() ?? action;
-        if (actionId != "rebuild")
-            return new ActionResult { Success = false, Message = "未知操作" };
-
-        var batchSizeStr = data?["batchSize"]?.ToString() ?? "32";
-        if (!int.TryParse(batchSizeStr, out var batchSize) || batchSize < 1)
-            batchSize = 32;
-
-        try
-        {
-            // 收集所有待重建条目
-            var memStubs = await _engine.Memories.GetAllStubsAsync();
-            var tempStubs = await _engine.TempMemories.GetAllStubsAsync();
-            var personaStubs = await _engine.PersonaMemories.GetAllStubsAsync();
-
-            int total = memStubs.Count + tempStubs.Count + personaStubs.Count;
-            if (total == 0)
-                return new ActionResult { Success = true, Message = "没有需要重建的记忆" };
-
-            int processed = 0;
-
-            processed += await RebuildTableAsync(memStubs, batchSize,
-                (updates) => _engine.Memories.BatchUpdateEmbeddingsAsync(updates));
-            processed += await RebuildTableAsync(tempStubs, batchSize,
-                (updates) => _engine.TempMemories.BatchUpdateEmbeddingsAsync(updates));
-            processed += await RebuildTableAsync(personaStubs, batchSize,
-                (updates) => _engine.PersonaMemories.BatchUpdateEmbeddingsAsync(updates));
-
-            return new ActionResult { Success = true, Message = $"重建完成，共处理 {processed} 条记忆" };
-        }
-        catch (Exception ex)
-        {
-            Signal.Error(LogGroup.Memory, "Embedding 重建失败", new { error = ex.Message });
-            return new ActionResult { Success = false, Message = $"重建失败: {ex.Message}" };
-        }
-    }
-
-    private async Task<int> RebuildTableAsync(
-        List<StubEntry> stubs, int batchSize,
-        Func<List<(int Id, byte[] Embedding, string Model)>, Task> updateFunc)
-    {
-        int processed = 0;
-        for (int i = 0; i < stubs.Count; i += batchSize)
-        {
-            var batch = stubs.Skip(i).Take(batchSize).ToList();
-            var texts = batch.Select(s => s.Content).ToList();
-            var embeddings = await _engine.Embedding.GetEmbeddingsAsync(texts);
-
-            var updates = new List<(int Id, byte[] Embedding, string Model)>(batch.Count);
-            for (int j = 0; j < batch.Count; j++)
-            {
-                updates.Add((batch[j].Id, VectorUtil.FloatsToBytes(embeddings[j]), EmbeddingModelTag));
-            }
-            await updateFunc(updates);
-            processed += batch.Count;
-        }
-        return processed;
+        return null;
     }
 }
