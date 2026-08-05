@@ -93,6 +93,16 @@ namespace AgentCoreProcessor.Engine
         // 评价分数
         EvaluationScoreRepository EvaluationScores { get; }
 
+        // ---- 记忆重构新仓库 ----
+        ClaimRepository Claims { get; }
+        JournalRepository Journals { get; }
+        KeywordRepository Keywords { get; }
+        FragmentKeywordRepository FragmentKeywords { get; }
+        EmotionSnapshotRepository EmotionSnapshots { get; }
+        FrameworkEventRepository FrameworkEvents { get; }
+        ConflictGroupRepository ConflictGroups { get; }
+        ReviewQueueRepository ReviewQueue { get; }
+
         // 配置
         ImpulseConfig ImpulseConfig { get; }
         TrustProgressionConfig TrustConfig { get; }

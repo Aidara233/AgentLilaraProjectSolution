@@ -69,6 +69,16 @@ namespace AgentCoreProcessor.Engine
         public ReviewLogRepository ReviewLogs { get; private set; } = null!;
         public EvaluationScoreRepository EvaluationScores { get; private set; } = null!;
         public ModelCallLogRepository ModelCallLogs { get; private set; } = null!;
+
+        // ---- 记忆重构新仓库 ----
+        public ClaimRepository Claims { get; private set; } = null!;
+        public JournalRepository Journals { get; private set; } = null!;
+        public KeywordRepository Keywords { get; private set; } = null!;
+        public FragmentKeywordRepository FragmentKeywords { get; private set; } = null!;
+        public EmotionSnapshotRepository EmotionSnapshots { get; private set; } = null!;
+        public FrameworkEventRepository FrameworkEvents { get; private set; } = null!;
+        public ConflictGroupRepository ConflictGroups { get; private set; } = null!;
+        public ReviewQueueRepository ReviewQueue { get; private set; } = null!;
         public MemoryService MemorySvc { get; private set; } = null!;
         public SessionManager Session { get; private set; } = null!;
         public IEmbeddingProvider Embedding => embeddingProvider!;
@@ -403,6 +413,16 @@ namespace AgentCoreProcessor.Engine
             ImageStorage.Init(images, eventBus);
             ModelCallLogs = new ModelCallLogRepository(db);
             CoreBase.CallLogRepo = ModelCallLogs;
+
+            // 记忆重构新仓库
+            Claims = new ClaimRepository(db);
+            Journals = new JournalRepository(db);
+            Keywords = new KeywordRepository(db);
+            FragmentKeywords = new FragmentKeywordRepository(db);
+            EmotionSnapshots = new EmotionSnapshotRepository(db);
+            FrameworkEvents = new FrameworkEventRepository(db);
+            ConflictGroups = new ConflictGroupRepository(db);
+            ReviewQueue = new ReviewQueueRepository(db);
 
             // Embedding（独立配置，支持 siliconflow / onnx）
             var embConfigPath = Path.Combine(PathConfig.CoreConfigPath, "EmbeddingProvider.json");

@@ -288,6 +288,122 @@ namespace AgentCoreProcessor.Database
                 Detail TEXT
             )";
 
+        // ---- 记忆重构新表（Claims/Journals/Keywords/FragmentKeywords） ----
+
+        private const string T_CLAIM = @"
+            CREATE TABLE IF NOT EXISTS Claims (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                SubjectJson TEXT,
+                PredicateJson TEXT,
+                ObjectJson TEXT,
+                Raw TEXT,
+                SourceJson TEXT,
+                UtteranceId TEXT,
+                Strength REAL,
+                Credibility REAL,
+                IsInference INTEGER,
+                ValidFrom INTEGER,
+                ValidUntil INTEGER,
+                RecordedAt INTEGER,
+                OccurredAt INTEGER,
+                Status TEXT
+            )";
+
+        private const string T_JOURNAL = @"
+            CREATE TABLE IF NOT EXISTS Journals (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                Content TEXT,
+                Kind TEXT,
+                Source TEXT,
+                ChannelId INTEGER,
+                SessionId INTEGER,
+                EmotionSignalsJson TEXT,
+                ExpectRaw TEXT,
+                OccurredAt INTEGER,
+                CreatedAt INTEGER,
+                Status TEXT
+            )";
+
+        private const string T_KEYWORD = @"
+            CREATE TABLE IF NOT EXISTS Keywords (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                Name TEXT,
+                AliasesJson TEXT,
+                Role TEXT,
+                Category TEXT,
+                IsExclusive INTEGER,
+                UseCount INTEGER,
+                CreatedAt INTEGER,
+                LastUsedAt INTEGER
+            )";
+
+        private const string T_FRAGKEY = @"
+            CREATE TABLE IF NOT EXISTS FragmentKeywords (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                OwnerType INTEGER,
+                OwnerId INTEGER,
+                KeywordId INTEGER
+            )";
+
+        // ---- 记忆重构新表（EmotionSnapshot/FrameworkEvents/冲突组/ReviewQueue） ----
+
+        private const string T_EMOSNAP = @"
+            CREATE TABLE IF NOT EXISTS EmotionSnapshots (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                Excitement REAL,
+                Joy REAL,
+                Alertness REAL,
+                Satisfaction REAL,
+                Optimism REAL,
+                SourceRef TEXT,
+                CreatedAt INTEGER
+            )";
+
+        private const string T_FWEVENT = @"
+            CREATE TABLE IF NOT EXISTS FrameworkEvents (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                Level TEXT,
+                Type TEXT,
+                DetailJson TEXT,
+                EmotionSignalsJson TEXT,
+                Timestamp INTEGER
+            )";
+
+        private const string T_CONFLICTGROUP = @"
+            CREATE TABLE IF NOT EXISTS ConflictGroups (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                SubjectKey TEXT,
+                PredicateKey TEXT,
+                Reason TEXT,
+                DetectedAt INTEGER,
+                ResolvedAt INTEGER,
+                ResolvedBy TEXT
+            )";
+
+        private const string T_CONFLICTMEMBER = @"
+            CREATE TABLE IF NOT EXISTS ConflictGroupMembers (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                GroupId INTEGER,
+                ClaimId INTEGER,
+                JoinAt INTEGER
+            )";
+
+        private const string T_REVIEWQUEUE = @"
+            CREATE TABLE IF NOT EXISTS ReviewQueueItems (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                TargetRef TEXT,
+                TargetKind TEXT,
+                Reason TEXT,
+                Source TEXT,
+                Priority TEXT,
+                Status TEXT,
+                CreatedAt INTEGER,
+                ClaimedAt INTEGER,
+                DoneAt INTEGER,
+                InterruptedAt INTEGER,
+                ResultRef TEXT
+            )";
+
         public async Task InitAsync()
         {
             await SafeCreateTable(T_PERSON);
@@ -309,6 +425,17 @@ namespace AgentCoreProcessor.Database
             await SafeCreateTable(T_REVIEWSESSION);
             await SafeCreateTable(T_REVIEWACTION);
 
+            // 记忆重构新表
+            await SafeCreateTable(T_CLAIM);
+            await SafeCreateTable(T_JOURNAL);
+            await SafeCreateTable(T_KEYWORD);
+            await SafeCreateTable(T_FRAGKEY);
+            await SafeCreateTable(T_EMOSNAP);
+            await SafeCreateTable(T_FWEVENT);
+            await SafeCreateTable(T_CONFLICTGROUP);
+            await SafeCreateTable(T_CONFLICTMEMBER);
+            await SafeCreateTable(T_REVIEWQUEUE);
+
             // 索引（sqlite-net [Indexed] 属性的等价物）
             await db.ExecuteAsync("CREATE UNIQUE INDEX IF NOT EXISTS idx_ImageRecords_Hash ON ImageRecords(Hash)");
             await db.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_DreamFragments_SessionId ON DreamFragments(SessionId)");
@@ -318,6 +445,23 @@ namespace AgentCoreProcessor.Database
             await db.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_PersonTraits_PersonId ON PersonTraits(PersonId)");
             await db.ExecuteAsync("CREATE UNIQUE INDEX IF NOT EXISTS idx_EvaluationScores_Target ON EvaluationScores(TargetType, TargetId, Dimension)");
             await db.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_ReviewActions_SessionId ON ReviewActions(SessionId)");
+
+            // 记忆重构新表索引
+            await db.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_Claims_UtteranceId ON Claims(UtteranceId)");
+            await db.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_Claims_Status ON Claims(Status)");
+            await db.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_Journals_Kind ON Journals(Kind)");
+            await db.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_Journals_Status ON Journals(Status)");
+            await db.ExecuteAsync("CREATE UNIQUE INDEX IF NOT EXISTS idx_Keywords_Name ON Keywords(Name)");
+            await db.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_Keywords_Role ON Keywords(Role)");
+            await db.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_FragmentKeywords_Owner ON FragmentKeywords(OwnerType, OwnerId)");
+            await db.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_FragmentKeywords_Keyword ON FragmentKeywords(KeywordId)");
+            await db.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_EmotionSnapshots_CreatedAt ON EmotionSnapshots(CreatedAt)");
+            await db.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_ConflictGroups_Slot ON ConflictGroups(SubjectKey, PredicateKey)");
+            await db.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_ConflictGroups_ResolvedAt ON ConflictGroups(ResolvedAt)");
+            await db.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_ConflictMembers_Group ON ConflictGroupMembers(GroupId)");
+            await db.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_ConflictMembers_Claim ON ConflictGroupMembers(ClaimId)");
+            await db.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_ReviewQueue_Status ON ReviewQueueItems(Status)");
+            await db.ExecuteAsync("CREATE INDEX IF NOT EXISTS idx_ReviewQueue_Priority ON ReviewQueueItems(Priority)");
         }
 
         /// <summary>插入一条记录，返回受影响的行数。</summary>
