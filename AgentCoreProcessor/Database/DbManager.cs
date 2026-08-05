@@ -406,6 +406,20 @@ namespace AgentCoreProcessor.Database
 
         public async Task InitAsync()
         {
+            // 记忆重构：旧表 DROP（已废弃，仅保留新心智表）
+            await db.ExecuteAsync("DROP TABLE IF EXISTS Memories");
+            await db.ExecuteAsync("DROP TABLE IF EXISTS TempMemories");
+            await db.ExecuteAsync("DROP TABLE IF EXISTS MemoryLinks");
+            await db.ExecuteAsync("DROP TABLE IF EXISTS PersonaMemories");
+            await db.ExecuteAsync("DROP TABLE IF EXISTS Beacons");
+            await db.ExecuteAsync("DROP TABLE IF EXISTS DreamSessions");
+            await db.ExecuteAsync("DROP TABLE IF EXISTS DreamFragments");
+            await db.ExecuteAsync("DROP TABLE IF EXISTS DreamFragmentDetails");
+            await db.ExecuteAsync("DROP TABLE IF EXISTS ReviewSessions");
+            await db.ExecuteAsync("DROP TABLE IF EXISTS ReviewActions");
+            await db.ExecuteAsync("DROP TABLE IF EXISTS EvaluationScores");
+            await db.ExecuteAsync("DROP TABLE IF EXISTS PersonTraits");
+
             await SafeCreateTable(T_PERSON);
             await SafeCreateTable(T_USER);
             await SafeCreateTable(T_CHANNEL);
