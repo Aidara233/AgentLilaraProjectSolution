@@ -203,6 +203,14 @@ internal static class TestHost
         public IServiceProvider ComponentServices => null!;
         public Tool.Host.PluginLoader PluginLoader => null!;
         public Tool.Host.ToolContextImpl ToolContext => null!;
+        public ClaimRepository Claims => null!;
+        public JournalRepository Journals => null!;
+        public KeywordRepository Keywords => null!;
+        public FragmentKeywordRepository FragmentKeywords => null!;
+        public EmotionSnapshotRepository EmotionSnapshots => null!;
+        public FrameworkEventRepository FrameworkEvents => null!;
+        public ConflictGroupRepository ConflictGroups => null!;
+        public ReviewQueueRepository ReviewQueue => null!;
     }
 }
 

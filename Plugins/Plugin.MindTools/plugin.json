@@ -1,0 +1,9 @@
+{
+  "id": "mind-tools",
+  "name": "心智工具",
+  "version": "1.0.0",
+  "entry": "Plugin.MindTools.dll",
+  "description": "心智工具（journal/claim/remember/mind_status/archive）+ 情绪/经历注入组件",
+  "components": ["mind-tools", "mind-emotion", "mind-experience"],
+  "author": "Agent Lilara"
+}

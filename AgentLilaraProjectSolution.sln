@@ -55,6 +55,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Plugin.Currency", "Plugins\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentCoreProcessor.Tests", "AgentCoreProcessor.Tests\AgentCoreProcessor.Tests.csproj", "{EAE03B26-8F5D-4B69-9A64-9AC582A0E2C1}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Plugin.MindTools", "Plugins\Plugin.MindTools\Plugin.MindTools.csproj", "{0FC47596-11C9-4A28-8CFE-12BBCE48DCE0}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU

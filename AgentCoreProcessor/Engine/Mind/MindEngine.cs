@@ -38,6 +38,9 @@ namespace AgentCoreProcessor.Engine.Mind
         /// <summary>检索服务（关键词 + c_actual 排序 + 二跳子证据）。</summary>
         public RetrieveService Retrieve { get; }
 
+        /// <summary>事件接收（框架事件 → L0/L1 落库）。</summary>
+        public EventSink Events { get; }
+
         public MindEngine(ISystemContext ctx)
         {
             _ctx = ctx;
@@ -63,6 +66,9 @@ namespace AgentCoreProcessor.Engine.Mind
             // 检索
             Retrieve = new RetrieveService(
                 ctx.Claims, ctx.Journals, ctx.Keywords, ctx.FragmentKeywords);
+
+            // 事件接收
+            Events = new EventSink(ctx.FrameworkEvents);
         }
 
         public bool IsAlive => _isAlive;
@@ -73,7 +79,13 @@ namespace AgentCoreProcessor.Engine.Mind
 
         public void OnEvent(EngineEvent e)
         {
-            // 暂不响应事件；后续 EventSink 接入
+            // 框架事件 → L0/L1 落库（EventSink）
+            if (e is SystemEvent se && Events != null)
+            {
+                var version = typeof(MindEngine).Assembly.GetName().Version?.ToString() ?? "0.0.0.0";
+                var pid = Environment.ProcessId;
+                Events.HandleSystemEvent(se, version, pid);
+            }
         }
 
         public async Task RunAsync()

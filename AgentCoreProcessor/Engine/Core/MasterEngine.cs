@@ -79,6 +79,9 @@ namespace AgentCoreProcessor.Engine
         public FrameworkEventRepository FrameworkEvents { get; private set; } = null!;
         public ConflictGroupRepository ConflictGroups { get; private set; } = null!;
         public ReviewQueueRepository ReviewQueue { get; private set; } = null!;
+
+        /// <summary>心智引擎（自启后由 SpawnCheck 设置）。</summary>
+        public Mind.MindEngine? Mind { get; set; }
         public MemoryService MemorySvc { get; private set; } = null!;
         public SessionManager Session { get; private set; } = null!;
         public IEmbeddingProvider Embedding => embeddingProvider!;

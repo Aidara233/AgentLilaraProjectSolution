@@ -152,5 +152,8 @@ namespace AgentCoreProcessor.Engine
 
         /// <summary>插件工具上下文（服务容器）。引擎可动态注册/注销服务。</summary>
         Tool.Host.ToolContextImpl ToolContext { get; }
+
+        /// <summary>心智引擎（统一写入口 + 情绪 + 可信度服务）。可能为 null（未启动时）。</summary>
+        Mind.MindEngine? Mind { get; }
     }
 }

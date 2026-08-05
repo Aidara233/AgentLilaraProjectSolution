@@ -606,6 +606,12 @@ internal class RuntimeSession : IRuntimeSession
                 if (call.Inputs.Count > 1 && int.TryParse(call.Inputs[1], out var parsed))
                     mins = parsed;
                 SetWaitUntil(DateTime.UtcNow.AddMinutes(mins));
+
+                // 可选 journal：随手记当下经历（心智引擎 Writer）
+                if (call.Inputs.Count > 2 && !string.IsNullOrWhiteSpace(call.Inputs[2]))
+                {
+                    await WriteJournalFromWaitAsync(call.Inputs[2]);
+                }
                 return new ToolEffect(true, false);
             case "escalate":
                 // 仅 express 会话：同池换活跃 session → working，结束 express 会话。
@@ -636,6 +642,63 @@ internal class RuntimeSession : IRuntimeSession
                 return default;
             default:
                 return default;
+        }
+    }
+
+    /// <summary>
+    /// 把 wait 的 journal 参数写成经历（L2 + 情绪信号）。
+    /// 支持 "[情绪:轴:目标值] 正文" 前缀标记，解析成 EmotionSignals。
+    /// </summary>
+    private async Task WriteJournalFromWaitAsync(string raw)
+    {
+        try
+        {
+            var mind = _sessionEngine?.Mind;
+            if (mind?.Writer == null) return;
+
+            var content = raw.Trim();
+            string? signalsJson = null;
+
+            // 解析 "[情绪:轴:目标值] 正文"（可多个，如 [情绪:joy:0.4] [情绪:excitement:0.3] 正文）
+            if (content.StartsWith("[情绪:", StringComparison.Ordinal))
+            {
+                var signals = new List<string>();
+                var start = 0;
+                while (start < content.Length && content[start] == '[')
+                {
+                    var end = content.IndexOf(']', start);
+                    if (end < 0) break;
+                    var tag = content[(start + 1)..end];
+                    var segs = tag.Split(':');
+                    if (segs.Length == 3 && segs[0] == "情绪"
+                        && float.TryParse(segs[2], System.Globalization.CultureInfo.InvariantCulture, out var target))
+                    {
+                        signals.Add($"{{\"Axis\":\"{segs[1]}\",\"Target\":{target.ToString(System.Globalization.CultureInfo.InvariantCulture)},\"Reason\":\"wait journal\"}}");
+                    }
+                    start = end + 1;
+                }
+                content = content[start..].Trim();
+                if (signals.Count > 0)
+                    signalsJson = $"[{string.Join(",", signals)}]";
+            }
+
+            var req = new Mind.WriteJournalRequest
+            {
+                Content = content,
+                Kind = "Experience",
+                Source = "Session",
+                EmotionSignalsJson = signalsJson,
+                OccurredAt = DateTime.Now,
+            };
+            await mind.Writer.WriteBatchAsync(new Mind.WriteBatchRequest
+            {
+                Journals = new List<Mind.WriteJournalRequest> { req },
+            });
+        }
+        catch (Exception ex)
+        {
+            Signal.Warn(LogGroup.Engine, "wait journal 写入失败",
+                new { sessionId = SessionId, error = ex.Message });
         }
     }
 

@@ -56,6 +56,9 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
         _ctx = ctx;
     }
 
+    /// <summary>心智引擎（统一写入口 + 情绪 + 可信度服务）。</summary>
+    public Mind.MindEngine? Mind => _ctx.Mind;
+
     public void SetCurrency(ICurrencyService currency) => _currency = currency;
 
     // ── Session CRUD ──

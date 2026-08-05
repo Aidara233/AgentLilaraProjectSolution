@@ -26,6 +26,8 @@ namespace AgentCoreProcessor.Engine
         {
             var engine = new MindEngine(ctx);
             _active = engine;
+            if (ctx is MasterEngine me)
+                me.Mind = engine;
             return engine;
         }
 
