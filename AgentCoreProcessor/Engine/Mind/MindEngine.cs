@@ -41,6 +41,9 @@ namespace AgentCoreProcessor.Engine.Mind
         /// <summary>事件接收（框架事件 → L0/L1 落库）。</summary>
         public EventSink Events { get; }
 
+        /// <summary>复活善后（订阅 session 完成 → 整理写入）。</summary>
+        public Resurrector Resurrector { get; }
+
         public MindEngine(ISystemContext ctx)
         {
             _ctx = ctx;
@@ -69,6 +72,9 @@ namespace AgentCoreProcessor.Engine.Mind
 
             // 事件接收
             Events = new EventSink(ctx.FrameworkEvents);
+
+            // 复活善后
+            Resurrector = new Resurrector(this, Events);
         }
 
         public bool IsAlive => _isAlive;

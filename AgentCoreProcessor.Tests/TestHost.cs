@@ -211,6 +211,7 @@ internal static class TestHost
         public FrameworkEventRepository FrameworkEvents => null!;
         public ConflictGroupRepository ConflictGroups => null!;
         public ReviewQueueRepository ReviewQueue => null!;
+        public AgentCoreProcessor.Engine.Mind.MindEngine? Mind => null;
     }
 }
 

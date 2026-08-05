@@ -96,6 +96,10 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
         session.SetCurrency(_currency!);
         session.SetSessionEngine(this);
 
+        // 复活善后：订阅 session 完成事件（心智引擎整理写入）
+        if (Mind?.Resurrector != null)
+            Mind.Resurrector.Attach(session);
+
         // 会话身份统一为裸 sessionId（LoopId 概念已移除，channel:N 前缀不再产生）。
         var sessionId = session.SessionId;
 
@@ -954,6 +958,10 @@ InitialState = $"执行定时任务: {task.Description}"
             var session = new RuntimeSession(spec, state.SessionId);
             session.SetCurrency(_currency!);
             session.SetSessionEngine(this);
+
+            // 复活善后：订阅重建 session 的完成事件
+            if (Mind?.Resurrector != null)
+                Mind.Resurrector.Attach(session);
 
             // ④ 走标准初始化路径（组件 / AgentCore / MessageEngine / AgentHost）
             //    跳过 BootstrapAsync：InitActions 已在旧 session 执行过，不重复 claim/订阅。

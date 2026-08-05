@@ -686,6 +686,7 @@ namespace AgentCoreProcessor.Engine
                     _moduleBus, componentServices,
                     sessionId => WakeLoop(sessionId));
                 await globalComponentHost.InitAsync();
+                componentServices.Register(globalComponentHost);
             });
 
             Task mcpInitTask;

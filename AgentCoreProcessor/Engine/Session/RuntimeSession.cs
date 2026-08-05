@@ -68,6 +68,7 @@ internal class RuntimeSession : IRuntimeSession
 
     private MessageEngine? _messageEngine;
     private SessionEngine? _sessionEngine;
+    private IServiceProvider? _services;
     private readonly ConnectedChannelState _connected = new();
     /// <summary>当前连接频道的输入端口（normal + 可选 mention），断开时退订。</summary>
     private readonly List<IInputPort> _connectedPorts = new();
@@ -261,6 +262,7 @@ internal class RuntimeSession : IRuntimeSession
     public void InitComponents(string sessionId, ModuleBus moduleBus, IServiceProvider services, Action wakeLoop)
     {
         _componentLoopType = SessionTypeProfiles.Get(Type).PermissionGroup;
+        _services = services;
         // 注入 per-session 连接状态：发送工具据此决定目标频道并校验发言权限
         var perLoopServices = new Dictionary<Type, object>
         {
@@ -702,8 +704,31 @@ internal class RuntimeSession : IRuntimeSession
         }
     }
 
-    // ── 组件管理 ──
+    /// <summary>
+    /// 追加 Global 组件的 prompt 段（情绪/经历注入等）。Global 组件是单例，
+    /// 每轮注入一次（带 LoopInfo 区分调用方）。注入段与 Loop 段合并进 [组件通知]。
+    /// </summary>
+    private void AppendGlobalPromptSections(List<string> sections)
+    {
+        try
+        {
+            var globalHost = _services?.GetService(typeof(Component.GlobalComponentHost))
+                as Component.GlobalComponentHost;
+            if (globalHost == null) return;
 
+            var loopInfo = new LoopInfo(SessionId, _componentLoopType);
+            var globalSections = globalHost.BuildPromptSections(loopInfo);
+            if (globalSections != null)
+                sections.AddRange(globalSections);
+        }
+        catch (Exception ex)
+        {
+            Signal.Warn(LogGroup.Engine, "Global 组件注入失败",
+                new { sessionId = SessionId, error = ex.Message });
+        }
+    }
+
+    // ── 组件管理 ──
     // 运行时动态启用/卸载组件：尚未实现。
     // 当前 _componentHost 在 InitComponents 时一次性构建，运行期无法增删组件实例并重建工具表。
     // 真正实现需要：实例化新组件 → 注册其工具到 _componentHost → RefreshToolList。
@@ -881,6 +906,7 @@ internal class RuntimeSession : IRuntimeSession
                     {
                         await _componentHost.OnBeforeInvokeAsync();
                         var sections = _componentHost.BuildPromptSections();
+                        AppendGlobalPromptSections(sections);
                         if (sections.Count > 0)
                         {
                             var notifyMsg = new Message { Role = "user", Content = "[组件通知]\n" + string.Join("\n\n", sections) };
@@ -956,6 +982,7 @@ internal class RuntimeSession : IRuntimeSession
                 {
                     await _componentHost.OnBeforeInvokeAsync();
                     var sections = _componentHost.BuildPromptSections();
+                    AppendGlobalPromptSections(sections);
                     if (sections.Count > 0)
                     {
                         var notifyMsg = new Message { Role = "user", Content = "[组件通知]\n" + string.Join("\n\n", sections) };
