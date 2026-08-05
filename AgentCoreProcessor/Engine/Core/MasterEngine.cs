@@ -150,6 +150,7 @@ namespace AgentCoreProcessor.Engine
             ("Express",     () => new ExpressEngineSpawnCheck()),
             ("Dream",       () => new DreamEngineSpawnCheck()),
             ("Review",      () => new ReviewEngineSpawnCheck()),
+            ("Mind",        () => new MindEngineSpawnCheck()),
             ("Vision",      () => new Vision.VisionEngineSpawnCheck()),
         ];
 
@@ -729,6 +730,16 @@ namespace AgentCoreProcessor.Engine
             }
 
             Signal.Event(LogGroup.Engine, "引擎就绪");
+
+            // 注册 IEmotionAccess 桥（MindEngine 自启后）
+            var mindSpawn = GetSpawnCheck<MindEngineSpawnCheck>();
+            var mindEngine = mindSpawn?.Active;
+            if (mindEngine != null)
+            {
+                var emotionAccess = new Tool.Host.EmotionAccessImpl(mindEngine.Emotion);
+                _toolContext.Register<AgentLilara.PluginSDK.Services.IEmotionAccess>(emotionAccess);
+                componentServices.Register<AgentLilara.PluginSDK.Services.IEmotionAccess>(emotionAccess);
+            }
 
             // 注册 ISessionResourceAccess（SessionEngine 此时已启动）
             var sessionEngine = GetActiveEnginesSnapshot()
