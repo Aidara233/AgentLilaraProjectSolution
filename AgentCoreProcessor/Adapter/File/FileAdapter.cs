@@ -49,7 +49,10 @@ namespace AgentCoreProcessor.Adapter
             var content = $"[{DateTime.Now:HH:mm:ss}] channelId={message.ChannelId}\n{message.Content}\n";
             File.WriteAllText(Path.Combine(outputDir, fileName), content);
             Interlocked.Increment(ref messagesSent);
-            return Task.FromResult<string?>(null);
+            // 返回输出文件名作为消息 id：消息已成功写入 output/ 目录。
+            // 之前恒返回 null，会被 speak/send_file 等工具按 sentIds.Count==0 误判为"发送失败"，
+            // 引发模型反复重试 speak（runaway）。文件名按 seq 自增唯一，可用于溯源回复文件。
+            return Task.FromResult<string?>(fileName);
         }
 
         public async Task StartAsync(CancellationToken ct = default)
