@@ -749,11 +749,11 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
 
     public async Task RunAsync()
     {
-        // 引擎生命周期信号（Continue 从启动者 signal 建立因果连线，与其他引擎对齐）
+        // 引擎生命周期信号（Continue 从启动者 signal 建立因果连线，独立 signalId 不与启动者合并）
         var parentCtx = SignalContext.Current;
         var lifeCtx = Signal.Continue(
-            parentCtx?.SignalId ?? Signal.NewId(), parentCtx?.CurrentSpanId,
-            "session-engine", LogGroup.Engine, "Session引擎",
+            SignalContext.NewSignalId(), parentCtx?.CurrentSpanId,
+            "session-engine:main", LogGroup.Engine, "Session引擎",
             new { engineType = EngineType });
 
         // 恢复持久化的 sessions

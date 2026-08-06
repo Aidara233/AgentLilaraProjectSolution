@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Engine.Modules;
+using AgentCoreProcessor.Logging;
 using AgentLilara.PluginSDK;
 
 namespace AgentCoreProcessor.Tool
@@ -41,6 +42,18 @@ namespace AgentCoreProcessor.Tool
         }
 
         private async Task<ToolResult> RunSingleAsync(ToolCall call)
+        {
+            // 每个工具调用一条独立 span（open 带完整输入，close 带状态/数据/错误），
+            // 让 trace 页展示单个工具的完整流程与耗时，而不是整轮工具的笼统阶段。
+            using var span = Signal.Open(LogGroup.Tool, $"工具: {call.Tool}",
+                new { tool = call.Tool, toolUseId = call.ToolUseId, inputs = call.Inputs });
+
+            var result = await ExecuteToolCoreAsync(call);
+            span.SetCloseDetail(new { status = result.Status, data = result.Data, error = result.Error });
+            return result;
+        }
+
+        private async Task<ToolResult> ExecuteToolCoreAsync(ToolCall call)
         {
             var tool = toolResolver(call.Tool);
             if (tool == null)

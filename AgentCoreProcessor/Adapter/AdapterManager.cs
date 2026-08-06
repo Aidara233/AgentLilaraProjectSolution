@@ -61,7 +61,10 @@ namespace AgentCoreProcessor.Adapter
             adapter.OnMessageReceived += msg =>
             {
                 msg.AdapterId = adapter.Id;
-                using var ctx = Signal.Begin(
+                // 消息接收信号必须覆盖整个消息处理过程：handler 是 fire-and-forget，
+                // 若用 using var 会随 lambda 返回立即 close，下游处理挂到已关闭信号下。
+                // 因此 handler 完成后才 Dispose（写 close 事件）。
+                var ctx = Signal.Begin(
                     LogGroup.Adapter,
                     $"adapter:{adapter.Id}",
                     "消息接收",
@@ -69,7 +72,16 @@ namespace AgentCoreProcessor.Adapter
                 );
                 var handler = OnIncomingMessage;
                 if (handler != null)
-                    _ = handler(msg);
+                {
+                    Task task;
+                    try { task = handler(msg); }
+                    catch { ctx.Dispose(); throw; }
+                    _ = task.ContinueWith(_ => ctx.Dispose(), TaskScheduler.Default);
+                }
+                else
+                {
+                    ctx.Dispose();
+                }
             };
             adapters[adapter.Id] = adapter;
             enabledMap[adapter.Id] = enabled;

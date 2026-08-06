@@ -27,11 +27,15 @@ This happens in exactly two cases:
 
 | Continuation | Scope | Gets trace from |
 |-------------|-------|-----------------|
-| Engine lifecycle starts | `{engine}:{id}` | SignalContext.Current (startup signal via AsyncLocal) |
-| RuntimeSession 会话（含 express 孵化/working） | `session:{sessionId}` | EngineEvent.TraceSignalId (from adapter) 或 new signal (Task session) |
-| Sub-agent spawned | `subagent:{sessionId}` | Delegation.TraceSignalId (from channel) |
+| Engine lifecycle starts | `{engine}:{id}` | 独立 signal_id（`SignalContext.NewSignalId()`），cause_span_id ← `SignalContext.Current`（启动信号经 AsyncLocal） |
+| RuntimeSession 会话（express/working/task） | `session:{sessionId}` | EngineEvent.TraceSignalId (from adapter) 或 new signal (Task session) |
+| Sub-agent spawned | `session:{sessionId}`（task 会话，scope 与普通会话一致） | Delegation.TraceSignalId (from channel) |
 | DreamEngine starts | `dream:{engineId}` | EngineEvent.TraceSignalId (from timer) |
 | VisionEngine processes | `vision:{engineId}` | (internal queue, Begin as fallback) |
+
+> **引擎生命周期信号必须用 `SignalContext.NewSignalId()`，不要复用 `parentCtx?.SignalId`。**
+> 复用会把引擎生命周期树并进调用者（startup）信号，隐藏引擎内部结构。`cause_span_id`
+> 保留因果连线（对角线）。RuntimeSession / ChannelExtractionWorker 已正确实现，所有引擎统一此写法。
 
 ## Engine Lifecycle Pattern
 
@@ -89,24 +93,29 @@ This ensures gate evaluations, idle checks, and other between-session work appea
 
 ## RuntimeSession 会话/轮次模式
 
-RuntimeSession 的统一 agent 循环是最典型的埋点示例：
+RuntimeSession 的统一 agent 循环是最典型的埋点示例。**每个会话一个「Session 生命周期」信号**，
+承载该会话全部唤醒与轮次（不按唤醒拆新信号）：
 
 ```
-Session引擎 [sessionId]        ← lifecycle, Continue from startup signal (independent signal_id)
-  └─ 会话                     ← per-wakeup, new signal_id, cause_span_id → adapter
-       ├─ 闸门等待             ← gate inside session (not outside)
-       ├─ 处理轮次             ← one round per model interaction
-       │    ├─ 组装对话上下文
-       │    ├─ AI模型调用
-       │    └─ 执行工具
-       └─ (next round or close)
+Session 生命周期 [session:{id}]   ← per-session，独立 signal_id，cause_span_id → 触发信号（adapter/task）
+  ├─ Session 轮次 #1             ← 每轮一条 span（Engine，SetCloseDetail 带 tool 概要）
+  │    ├─ 模型调用               ← 每条模型 span（Model，detail 含 tokens/caller/cached_tokens）
+  │    └─ 工具: speak            ← 每个工具一条独立 span（Tool，open 带输入 / close 带 status/data/error）
+  │      工具: thinking
+  ├─ Session 轮次 #2
+  └─ (endBurst 回等待 / endSession 收尾 close)
 ```
 
 Key patterns:
-- Session opens BEFORE gate evaluation (gate is inside session, visually connected)
-- Session spans multiple rounds (single vertical line)
-- Each round adds `SetCloseDetail` with outcome (mode, toolCount, hadSpeak)
-- Session close detail includes reason ("循环挂起" for pause, "cold_timeout" for express 空闲回收)
+- Session 生命周期在 `RunAsync` 开始处打开（`SignalContext.NewSignalId()` + `parentCtx?.CurrentSpanId`），
+  `finally` 中 close（detail 带 endReason：end_session / 循环挂起 / cold_timeout）
+- 每轮一条 `Session 轮次 #N` span（open 带 toolCount，close 带本轮工具名+状态概要）
+- **工具粒度**：`ToolExecutor.RunSingleAsync` 为每个工具开独立 span，open 带完整输入、
+  close 带 `{status, data, error}` —— 未知工具/禁用/权限拒绝/超时也各成一条（status=failed）。
+  这是会话/子 agent/bootstrap 所有工具路径的唯一执行器，一处埋点全覆盖。
+- Session 各唤醒（burst）共享生命周期信号，轮次间以「endBurst：回等待保活」事件分隔
+- 闸门/激活等待走 Debug 级（`WaitForActivation 唤醒：...`），默认 Info 不落库，排查时把
+  `Storage/Logs/signalconfig.json` 的 `minLevel` 调 0 开启
 
 ## Trace Propagation Across Async Boundaries
 
@@ -183,21 +192,23 @@ Point events mark instantaneous decisions or state changes. Place them at:
 
 **Debug is off by default.** Use it for information that would be overwhelming in normal operation but invaluable when diagnosing a specific issue. Think: "if I were debugging this at 3am, what would I wish I could see?"
 
+**运行时开关**：`Storage/Logs/signalconfig.json` 的 `MinLevel`（Debug=0/Info=1/Warn=2/Error=3，默认 1）。
+排查问题把它改成 0 重启，Debug 事件（会话激活等待、消息分发判定等）即开始落库；平时保持 1 降低噪音。
+
 ## Scope Naming Convention
 
 Format: `{engineType}:{instanceId}`
 
 | Owner | Scope format | Example |
 |-------|-------------|---------|
-| SystemEngine (已删除) | — | — |
-| ChannelEngine (已删除) | — | — |
+| SessionEngine | `session-engine:main` | (单例) |
 | DreamEngine | `dream:{engineId}` | `dream:main` |
 | VisionEngine | `vision:{engineId}` | `vision:main` |
 | TimerEngine | `timer:{engineId}` | `timer:heartbeat` |
 | ReviewEngine | `review:{engineId}` | `review:nightly` |
-| OneBotAdapter | `adapter:{adapterId}` | `adapter:qq-main` |
-| RuntimeSession | `session:{sessionId}` | `session:a3f2c1b8e9f2` |
-| TaskSession | `subagent:{sessionId}` | `subagent:task-abc123` |
+| OneBotAdapter / FileAdapter | `adapter:{adapterId}` | `adapter:qq-main`（生命周期与消息接收同 scope） |
+| RuntimeSession（express/working/task 统一） | `session:{sessionId}` | `session:a3f2c1b8e9f2` |
+| Channel extraction | `extraction:channel:{id}` | `extraction:channel:group_12345` |
 | Program startup | `system:init` | (one-time) |
 
 Rules:

@@ -42,7 +42,7 @@ namespace AgentCoreProcessor.Engine
 
             var parentCtx = SignalContext.Current;
             var lifeCtx = Signal.Continue(
-                parentCtx?.SignalId ?? Signal.NewId(), parentCtx?.CurrentSpanId,
+                SignalContext.NewSignalId(), parentCtx?.CurrentSpanId,
                 "timer:heartbeat", LogGroup.Engine, "Timer引擎",
                 new { engineType = EngineType });
 

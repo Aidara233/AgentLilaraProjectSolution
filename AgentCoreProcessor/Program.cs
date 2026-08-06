@@ -36,7 +36,7 @@ namespace AgentCoreProcessor
             var logQuery = new LogQuery(logDb);
             var logAccess = new LogAccessImpl(logWriter, logQuery, spanTracker, logDb);
 
-            SignalContext.Init(logWriter);
+            SignalContext.Init(logWriter, Logging.SignalConfig.Load(Path.Combine(PathConfig.LogPath, "signalconfig.json")).MinLevel);
             var startupSignal = Signal.Begin(LogGroup.Engine, "system:init", "程序启动", new { version = "1.0.0" });
             Signal.Event(LogGroup.Engine, "配置加载完成");
 

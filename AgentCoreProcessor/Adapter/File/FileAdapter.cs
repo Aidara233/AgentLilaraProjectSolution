@@ -63,8 +63,8 @@ namespace AgentCoreProcessor.Adapter
 
             var parentCtx = SignalContext.Current;
             using var lifeCtx = Signal.Continue(
-                parentCtx?.SignalId ?? Signal.NewId(), parentCtx?.CurrentSpanId,
-                $"adapter:file:{Id}", LogGroup.Adapter, "FileAdapter",
+                SignalContext.NewSignalId(), parentCtx?.CurrentSpanId,
+                $"adapter:{Id}", LogGroup.Adapter, "FileAdapter",
                 new { id = Id });
 
             // 启动标记

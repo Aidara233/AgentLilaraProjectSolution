@@ -20,7 +20,7 @@
 - 会话多核切换（已实现）：session 与 core 解耦，`Storage/Session/{type}.json` 的 `AllowedCores` 白名单（缺省=仅默认核，零回归）；`RuntimeSession` 运行时换核（模型 `switch_core` 工具 / `!core` 命令 / WebUI 切换表单），只换模型配置执行器、不碰历史/端口/组件；`state.json.activeCoreConfig` 持久化，compact/重启承接
 - 上下文压缩（已激活）：compact 工具不是扳机而是接管——模型调 compact(summary) → 旧 session 退出 + 新 session 创建承接摘要。三层阈值 L1=80k / L2=130k / L3=150k（基于 200k 上下文模型），L3 锁定工具表只剩 compact
 - Token 统计：ModelCallLog 数据库表记录每次调用（含 usage + caller tag）。WebUI 已有 LogsProvider（`/p/logs/tokens` 和 `/p/logs/model`）提供可视化。
-  - CallerTag 标识调用来源：Channel:{id} / Session:{sessionId} / Task:{sessionId} / Review:{mode} / Dream:{phase}
+  - CallerTag 标识调用来源：Session:{sessionId}（express/working）/ Task:{sessionId}（task），在 RuntimeSession.GetOrCreateCore 注入 core；模型调用 span detail 的 `caller` 字段同步携带（TokenAggregator 键名为 caller/cached_tokens，勿改回）
 - 工具管理：ToolRegistry 动态注册/卸载 + WebUI /p/plugins 管理
 - 消息段交错：MessageSegment（Text/Image/At/Reply）按原文顺序排列。OutgoingMessage.Segments 优先于旧 Content+Attachments 路径。OneBotActions 直接消费 Segments 构建分段消息数组。
 - 图片发送：本地图片通过 base64:// 编码传给 NapCat（不依赖 file:/// 或裸路径）。
@@ -207,8 +207,9 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - OCR模型：Client/SiliconFlowOcrProvider.cs + Storage/Core/OcrProvider.json
 - 图片存储：Adapter/ImageStorage.cs
 - Token 统计：Database/ModelCallLog.cs + ModelCallLogRepository.cs
-- 信号系统：Logging/Signal.cs（静态门面）+ Logging/LogDatabase.cs（独立 SQLite）+ Logging/LogWriter.cs（批量写入）
+- 信号系统：Logging/Signal.cs（静态门面）+ Logging/LogDatabase.cs（独立 SQLite）+ Logging/LogWriter.cs（批量写入）+ Logging/SignalConfig.cs（MinLevel 运行时开关，Storage/Logs/signalconfig.json；Debug=0 排查用）
 - 信号查询：Logging/LogQuery.cs + Logging/LogAccessImpl.cs（ILogAccess 桥接）
+- 每工具 span：ToolExecutor.RunSingleAsync 为每个工具开 LogGroup.Tool span（输入→status/data/error），会话/子 agent/bootstrap 全覆盖
 - 工具管理：Tool/ToolRegistry.cs（注册/卸载/禁用）+ Tool/PermissionService.cs（权限组裁决，Storage/Session/{express,channel,task,review}.json 黑白名单）+ Engine/Session/SessionTypeProfiles.cs（会话类型档案）+ Component/ComponentConfig.cs（组件按权限组启用/禁用，LoopApplicability/EngineTypes 已删除）
 - 核心工具：Tool/Core/CoreTools.cs（wait + continue_loop）+ Tool/Core/EscalateTool.cs
 - 插件 SDK：AgentLilara.PluginSDK/（共享契约：ITool/IInjectProvider/服务接口/CardSchema）

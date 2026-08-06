@@ -245,6 +245,9 @@ internal class RuntimeSession : IRuntimeSession
         if (_coreInstances.TryGetValue(configName, out var existing))
             return existing;
         var core = new AgentCore(configName); // fixedMode 锁配置到该核
+        // CallerTag 标识调用来源：Session:{id}（express/working）/ Task:{id}（task）。
+        // 落进模型调用 span detail（caller）与 JSON 模型日志，token 统计据此归因。
+        core.CallerTag = Type == "task" ? $"Task:{SessionId}" : $"Session:{SessionId}";
         _coreInstances[configName] = core;
         return core;
     }

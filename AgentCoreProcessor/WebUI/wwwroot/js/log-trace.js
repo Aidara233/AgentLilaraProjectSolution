@@ -147,6 +147,8 @@ const SCOPE_PRIORITY = [
     'vision:',
     'review:',
     'adapter:',
+    'session-engine:',
+    'session:',
     'channel:'
 ];
 
@@ -279,6 +281,9 @@ function formatScopeName(scope) {
     if (map[scope]) return map[scope];
     if (scope.startsWith('channel:')) return '频道 ' + scope.substring(8);
     if (scope.startsWith('adapter:')) return '适配器 ' + scope.substring(8);
+    if (scope.startsWith('session-engine:')) return '会话引擎 ' + scope.substring(15);
+    if (scope.startsWith('session:')) return '会话 ' + scope.substring(8);
+    if (scope.startsWith('extraction:')) return '提取 ' + scope.substring(11);
     if (scope.startsWith('dream:')) return '做梦 ' + scope.substring(6);
     return scope;
 }

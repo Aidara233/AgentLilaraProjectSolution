@@ -59,6 +59,11 @@ using (var span = Signal.Open(LogGroup.Tool, "工具执行", new { tool = toolNa
 
 `SetCloseDetail` attaches data to the close event (e.g., outcome, metrics).
 
+> **工具调用无需手写埋点**：`ToolExecutor` 已为每个工具自动开 `LogGroup.Tool` span
+> （`"工具: {name}"`，open 带完整输入、close 带 `status/data/error`），所有走工具执行器的
+> 路径（会话轮次 / 子 agent / bootstrap）都会显示每个工具独立的耗时与结果。
+> 排查 trace 页看到整轮的 `Session 轮次` 下挂一串 `工具: xxx` 即此效果。
+
 ### 3. Level Variants
 
 ```csharp

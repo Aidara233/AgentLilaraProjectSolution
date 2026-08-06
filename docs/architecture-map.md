@@ -646,18 +646,20 @@ Signal API (静态门面，开发者入口)
   │     ├── events 表 (signal_id, scope, branch, parent_id, span_id, group, level, type, timestamp, name, detail)
   │     └── token_usage 表 (从 Model close 事件派生)
   ├── OpenSpanTracker (内存 ConcurrentDictionary，快速查"当前卡在哪")
-  ├── TokenAggregator (Model close → token_usage 聚合)
+  ├── TokenAggregator (Model close → token_usage 聚合；detail 键名 caller/cached_tokens)
+  ├── SignalConfig (Storage/Logs/signalconfig.json，MinLevel 运行时开关，Debug=0 排查用)
   └── LogQuery / LogAccessImpl (查询 + SDK ILogAccess 桥接)
 
 SDK 接口: ISignalLogger (写) / ILogAccess (读写，继承 ISignalLogger)
 
 信号模型:
   Signal.Begin → 新信号源◉（适配器收消息、Timer每tick独立信号）
-  Signal.Continue → 继承上游信号（引擎生命周期/频道会话，带cause_span_id斜线）
-  Signal.Open/Close → 操作跨度（闸门/轮次/模型调用/工具执行）
+  Signal.Continue → 继承上游信号（引擎生命周期/会话，带cause_span_id斜线；signalId 一律 NewSignalId 不与上游合并）
+  Signal.Open/Close → 操作跨度（轮次/模型调用/每个工具独立span/记忆检索）
   Signal.Event/Error → 时间点日志/异常
   Close节点自动携带open的name（[完成] 处理轮次）
   SignalContext.Restore → Close后恢复父context，防止后续Open挂到已关闭span下
+  每工具 span：ToolExecutor.RunSingleAsync 为每个工具开 LogGroup.Tool span（输入→status/data/error）
 
 WebUI 日志追踪页 (/logs/trace):
   独立实现（不走卡片系统），LogTraceProvider 仅注册导航

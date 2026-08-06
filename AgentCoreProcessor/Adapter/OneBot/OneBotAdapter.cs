@@ -80,8 +80,8 @@ namespace AgentCoreProcessor.Adapter
 
             var parentCtx = SignalContext.Current;
             using var lifeCtx = Signal.Continue(
-                parentCtx?.SignalId ?? Signal.NewId(), parentCtx?.CurrentSpanId,
-                $"adapter:onebot:{Id}", LogGroup.Adapter, "OneBot适配器",
+                SignalContext.NewSignalId(), parentCtx?.CurrentSpanId,
+                $"adapter:{Id}", LogGroup.Adapter, "OneBot适配器",
                 new { id = Id, wsUrl = config.WsUrl });
 
             try
