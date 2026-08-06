@@ -80,6 +80,13 @@ Program.cs 启动
 
 可注入的服务：`EventBus`, `ModuleBus`, `Gate`, `IMemoryAccess`, 以及 `IServiceProvider` 能解析的任何类型（含 `IToolContext`、`IPluginStorage`）。
 
+**初始化超时兜底（2026-08-06）**：组件 `OnInitAsync` 一律带超时，任何组件挂起都不会拖住启动或 session 创建——
+- Global 组件：`GlobalComponentHost.InitAsync` **并行**初始化，每组件超时 `GlobalInitTimeoutSeconds`（默认 10s）；超时组件跳过工具注册，其余照常。
+- Loop 组件：`ComponentHost.InitAsync` 每组件超时 `LoopInitTimeoutSeconds`（默认 5s）；超时跳过不抛异常，session 照常创建（express 会话在 `eventLock` 下创建，阻塞=卡整条消息路由）。
+- 超时值在 `Storage/Engine/ComponentConfig.json`（`GlobalInitTimeoutSeconds` / `LoopInitTimeoutSeconds`）。
+
+**重活组件应懒启动**：不要在 `OnInitAsync` 里做可能挂起的同步操作（网络连接、拉起浏览器等）。参照 `browser`（`EnsureStartedAsync()` 首次工具调用才拉 Playwright/Chromium）与 SSH（全局组件懒连接 + 远端目录后台创建）。
+
 ### 工具解析链
 
 引擎调用工具时，按以下优先级查找：

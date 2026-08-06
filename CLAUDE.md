@@ -250,5 +250,5 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
   - end_session 拦截：子 agent + 任意 ISessionResource HasActiveResources=true 都阻止退出；二次 end_session force override
 - 异步唤醒链路（channel-scoped）：
   定时任务到期 → ScheduledTasksTimerComponent 按 requires_work 路由 → MasterEngine.WakeLoop(sessionId) → SessionEngine.WakeUpSession（裸 sessionId，经池解析跨 compact forward）→ wake 活跃会话
-- 工具配置：Storage/Engine/ComponentConfig.json（组件按引擎类型启用/禁用）+ Storage/ToolConfig.json（全局工具禁用）
+- 工具配置：Storage/Engine/ComponentConfig.json（组件按引擎类型启用/禁用 + GlobalInitTimeoutSeconds/LoopInitTimeoutSeconds 组件初始化超时，防挂起阻塞启动/会话）+ Storage/ToolConfig.json（全局工具禁用）
 - 配置文件：Storage/ 目录下
