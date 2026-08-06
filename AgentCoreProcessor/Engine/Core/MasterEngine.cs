@@ -612,6 +612,8 @@ namespace AgentCoreProcessor.Engine
             _toolContext = new Tool.Host.ToolContextImpl(new Tool.Host.PluginStorageImpl("_system"));
             _toolContext.Register<AgentLilara.PluginSDK.Services.IChannelAccess>(
                 new Tool.Host.ChannelAccessImpl(this));
+            _toolContext.Register<AgentLilara.PluginSDK.Services.ISessionAccess>(
+                new Tool.Host.SessionAccessImpl(this));
             _toolContext.Register<AgentLilara.PluginSDK.Services.IAdapterAccess>(
                 new Tool.Host.AdapterAccessImpl(adapterManager));
             _pluginLoader = new Tool.Host.PluginLoader(_toolContext, ProviderRegistry);
@@ -629,6 +631,8 @@ namespace AgentCoreProcessor.Engine
                 componentServices.Register<AgentLilara.PluginSDK.IToolContext>(_toolContext);
                 componentServices.Register<AgentLilara.PluginSDK.Services.IChannelAccess>(
                     new Tool.Host.ChannelAccessImpl(this));
+                componentServices.Register<AgentLilara.PluginSDK.Services.ISessionAccess>(
+                    new Tool.Host.SessionAccessImpl(this));
                 componentServices.Register<AgentLilara.PluginSDK.Services.IAdapterAccess>(
                     new Tool.Host.AdapterAccessImpl(adapterManager));
                 if (_signalLogger != null)

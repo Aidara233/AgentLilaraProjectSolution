@@ -14,11 +14,13 @@ public class BasicToolsComponent : LoopComponentBase
     private AdapterActionTool? _adapterAction;
     private ListChannelsTool? _listChannels;
     private SearchChatHistoryTool? _searchChatHistory;
+    private ListSessionsTool? _listSessions;
+    private SendSessionMessageTool? _sendSessionMessage;
 
     public override ComponentMeta Meta => new()
     {
         Name = "basic-tools",
-        Description = "基础通信工具（speak, thinking, send_media, send_file, adapter_action, list_channels, search_chat_history）",
+        Description = "基础通信与状态工具（speak, thinking, send_media, send_file, adapter_action, list_channels, search_chat_history, list_sessions, send_session_message）",
         DefaultEnabled = true,
         PromptPriority = 100
     };
@@ -34,6 +36,8 @@ public class BasicToolsComponent : LoopComponentBase
             if (_adapterAction != null) yield return _adapterAction;
             if (_listChannels != null) yield return _listChannels;
             if (_searchChatHistory != null) yield return _searchChatHistory;
+            if (_listSessions != null) yield return _listSessions;
+            if (_sendSessionMessage != null) yield return _sendSessionMessage;
         }
     }
 
@@ -69,6 +73,18 @@ public class BasicToolsComponent : LoopComponentBase
             _searchChatHistory = new SearchChatHistoryTool();
         }
         _thinking = new ThinkingTool();
+
+        var sessionAccess = context.GetService<ISessionAccess>();
+        if (sessionAccess != null)
+        {
+            _listSessions = new ListSessionsTool(sessionAccess);
+            _sendSessionMessage = new SendSessionMessageTool(sessionAccess, context.SessionId);
+        }
+        else
+        {
+            _listSessions = new ListSessionsTool();
+            _sendSessionMessage = new SendSessionMessageTool();
+        }
 
         var adapterAccess = context.GetService<IAdapterAccess>();
         if (adapterAccess != null && channelAccess != null)
