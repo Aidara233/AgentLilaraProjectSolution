@@ -1,0 +1,18 @@
+{
+  "Type": "Channel",
+  "DefaultCoreConfig": "ChannelCore",
+  "AllowedCores": [
+    "ChannelCore",
+    "ExpressCore"
+  ],
+  "DefaultComponents": [
+    "basic-tools", "working-tools", "file-tools", "file-ops",
+    "mind-tools", "system-ops"
+  ],
+  "PermissionGroup": "channel",
+  "PermissionMode": "blacklist",
+  "PermissionTools": [
+    "escalate",
+    "review_list", "review_resolve", "review_preview", "review_commit", "review_evidence"
+  ]
+}

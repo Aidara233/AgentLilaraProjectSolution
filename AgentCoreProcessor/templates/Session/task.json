@@ -1,0 +1,21 @@
+{
+  "Type": "Task",
+  "DefaultCoreConfig": "TaskCore",
+  "AllowedCores": [
+    "TaskCore"
+  ],
+  "DefaultComponents": [
+    "basic-tools", "file-tools", "mind-tools",
+    "sub-agent-runtime"
+  ],
+  "PermissionGroup": "task",
+  "PermissionMode": "whitelist",
+  "PermissionTools": [
+    "speak", "thinking", "send_media", "send_file", "adapter_action",
+    "read_text", "write_text", "list_dir", "move_file", "delete_file", "copy_file", "update_text",
+    "journal", "claim", "remember", "mind_status", "archive",
+    "report_to_parent",
+    "end_session", "wait", "compact", "connect_channel", "listen_channel",
+    "disconnect_channel", "get_image_text", "refine_image", "continue_loop"
+  ]
+}

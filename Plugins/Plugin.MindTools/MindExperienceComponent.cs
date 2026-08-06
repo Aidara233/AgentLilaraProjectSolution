@@ -17,7 +17,6 @@ public class MindExperienceComponent : GlobalComponentBase
 {
     private IRetrieveAccess? _retrieve;
     private HashSet<int> _injectedIds = new();   // 已注入标记（去重）
-    private bool _initialized;                   // 初建是否已做
 
     public override ComponentMeta Meta => new()
     {

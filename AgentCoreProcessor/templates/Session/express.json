@@ -1,0 +1,10 @@
+{
+  "DefaultCoreConfig": "ExpressCore",
+  "PermissionMode": "whitelist",
+  "PermissionTools": [
+    "speak", "thinking", "send_media", "send_file", "adapter_action",
+    "escalate", "wait",
+    "connect_channel", "disconnect_channel",
+    "journal", "remember", "mind_status"
+  ]
+}

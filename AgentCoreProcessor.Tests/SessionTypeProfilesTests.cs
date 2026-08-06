@@ -118,7 +118,7 @@ public class SessionTypeProfilesTests
         using var _ = PointToRealStorage();
         var profile = SessionTypeProfiles.Get("review");
         Assert.Equal("review", profile.Type);
-        Assert.Equal("ReviewCore", profile.DefaultCoreConfig);
+        Assert.Equal("TaskCore", profile.DefaultCoreConfig); // ReviewCore 已随重设计删除，review 复用 TaskCore
         Assert.Equal("review", profile.PermissionGroup);
         Assert.Equal("whitelist", profile.PermissionMode);
         Assert.Contains("review-tools", profile.DefaultComponentIds);
@@ -176,7 +176,11 @@ public class SessionTypeProfilesTests
         // Working 会话 profile 组件全在 channel 组
         Assert.True(cfg.IsEnabled("basic-tools", "channel"));
         Assert.True(cfg.IsEnabled("working-tools", "channel"));
-        Assert.True(cfg.IsEnabled("memory-tools", "channel"));
+        Assert.True(cfg.IsEnabled("mind-tools", "channel"));
+        // 心智注入组件：channel/task 启用，review 不注入（冷静验证不带情绪偏置）
+        Assert.True(cfg.IsEnabled("mind-emotion", "channel"));
+        Assert.True(cfg.IsEnabled("mind-experience", "channel"));
+        Assert.False(cfg.IsEnabled("mind-emotion", "review"));
 
         // 未配置组件 → 不启用（config-required）
         Assert.False(cfg.IsEnabled("__nonexistent__", "channel"));

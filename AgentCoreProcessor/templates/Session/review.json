@@ -1,0 +1,21 @@
+{
+  "Type": "Review",
+  "DefaultCoreConfig": "TaskCore",
+  "AllowedCores": [
+    "TaskCore"
+  ],
+  "DefaultComponents": [
+    "review-tools",
+    "basic-tools", "file-tools", "mind-tools"
+  ],
+  "PromptFiles": [
+    "ReviewPrompt.txt", "mind_usage.txt"
+  ],
+  "PermissionGroup": "review",
+  "PermissionMode": "whitelist",
+  "PermissionTools": [
+    "review_list", "review_resolve", "review_preview", "review_commit", "review_evidence",
+    "journal", "claim", "remember", "mind_status", "archive",
+    "end_session", "wait", "compact", "continue_loop"
+  ]
+}

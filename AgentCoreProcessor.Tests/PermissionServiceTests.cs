@@ -79,19 +79,19 @@ public class PermissionServiceTests
     {
         using var _ = PointToRealStorage();
 
-        // express：白名单，轻量对话工具 + memory 只读，不含 continue_loop/escalate 之外的工作工具
+        // express：白名单，轻量对话工具 + 心智只读（journal/remember/mind_status），不含工作工具
         Assert.Equal("whitelist", PermissionService.GetMode("express"));
         Assert.True(PermissionService.IsAllowed("express", "speak"));
         Assert.True(PermissionService.IsAllowed("express", "escalate"));
-        Assert.True(PermissionService.IsAllowed("express", "memory_search"));
+        Assert.True(PermissionService.IsAllowed("express", "remember"));
         Assert.False(PermissionService.IsAllowed("express", "continue_loop"));
         Assert.False(PermissionService.IsAllowed("express", "end_session"));
 
         // channel：黑名单，escalate + review 工具被禁，其余（含全局工具）放行
         Assert.Equal("blacklist", PermissionService.GetMode("channel"));
         Assert.False(PermissionService.IsAllowed("channel", "escalate"));
-        Assert.False(PermissionService.IsAllowed("channel", "review_browse"));
-        Assert.False(PermissionService.IsAllowed("channel", "review_evaluate"));
+        Assert.False(PermissionService.IsAllowed("channel", "review_list"));
+        Assert.False(PermissionService.IsAllowed("channel", "review_resolve"));
         Assert.True(PermissionService.IsAllowed("channel", "speak"));
         Assert.True(PermissionService.IsAllowed("channel", "send_email"));
         Assert.True(PermissionService.IsAllowed("channel", "end_session"));
@@ -104,11 +104,11 @@ public class PermissionServiceTests
         Assert.False(PermissionService.IsAllowed("task", "escalate"));
         Assert.False(PermissionService.IsAllowed("task", "send_email"));
 
-        // review：白名单，review 工具 + memory，不含文件/网络等全局工具
+        // review：白名单，review 工具 + 心智工具 + 会话生命周期，不含文件/网络等全局工具
         Assert.Equal("whitelist", PermissionService.GetMode("review"));
-        Assert.True(PermissionService.IsAllowed("review", "review_browse"));
-        Assert.True(PermissionService.IsAllowed("review", "memory_search"));
-        Assert.False(PermissionService.IsAllowed("review", "end_session"));
+        Assert.True(PermissionService.IsAllowed("review", "review_list"));
+        Assert.True(PermissionService.IsAllowed("review", "remember"));
+        Assert.True(PermissionService.IsAllowed("review", "end_session"));
         Assert.False(PermissionService.IsAllowed("review", "send_email"));
 
         // express：默认 Core 配置从 express.json 读取（ExpressCore）

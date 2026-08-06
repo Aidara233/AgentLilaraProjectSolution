@@ -60,9 +60,9 @@ internal class SubAgentAccessAdapter : ISubAgentAccess, AgentLilara.PluginSDK.Se
         return engines.OfType<SessionEngine>().FirstOrDefault();
     }
 
-    /// <summary>子 agent 默认组件：基础输出+文件操作+记忆读写+子 agent 回报工具。</summary>
+    /// <summary>子 agent 默认组件：基础输出+文件操作+心智工具+子 agent 回报工具。</summary>
     private static readonly string[] DefaultSubAgentComponents =
-        { "basic-tools", "file-tools", "memory-tools", "sub-agent-runtime" };
+        { "basic-tools", "file-tools", "mind-tools", "sub-agent-runtime" };
 
     public SubAgentInfo Create(string instruction, SubAgentOptions? options = null)
     {

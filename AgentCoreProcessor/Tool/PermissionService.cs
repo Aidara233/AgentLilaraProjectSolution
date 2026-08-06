@@ -102,7 +102,7 @@ internal static class PermissionService
         "channel" => ("blacklist", new[] { "escalate" }.Concat(Engine.Session.SessionTypeProfiles.ReviewToolSeed).ToArray()),
         "task" => ("whitelist", Engine.Session.SessionTypeProfiles.TaskToolSeed),
         "review" => ("whitelist", Engine.Session.SessionTypeProfiles.ReviewToolSeed
-            .Concat(Engine.Session.SessionTypeProfiles.MemoryToolSeed).ToArray()),
+            .Concat(Engine.Session.SessionTypeProfiles.MindToolSeed).ToArray()),
         _ => ("whitelist", Array.Empty<string>())
     };
 

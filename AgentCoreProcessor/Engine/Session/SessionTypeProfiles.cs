@@ -114,7 +114,7 @@ internal static class SessionTypeProfiles
             DefaultComponentIds = new[]
             {
                 "basic-tools", "working-tools", "file-tools", "file-ops",
-                "memory-tools", "system-ops"
+                "mind-tools", "system-ops"
             },
             PermissionGroup = "channel",
             PermissionMode = "blacklist",
@@ -132,7 +132,7 @@ internal static class SessionTypeProfiles
             },
             DefaultComponentIds = new[]
             {
-                "basic-tools", "file-tools", "memory-tools",
+                "basic-tools", "file-tools", "mind-tools",
                 "sub-agent-runtime"
             },
             PermissionGroup = "task",
@@ -190,8 +190,8 @@ internal static class SessionTypeProfiles
         "review_evidence"
     };
 
-    /// <summary>memory 工具集：review 白名单等复用（新心智工具）。</summary>
-    internal static readonly string[] MemoryToolSeed =
+    /// <summary>mind 工具集：review 白名单等复用（新心智工具）。</summary>
+    internal static readonly string[] MindToolSeed =
     {
         "journal", "claim", "remember", "mind_status", "archive"
     };
