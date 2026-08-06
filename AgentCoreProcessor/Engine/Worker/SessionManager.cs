@@ -162,6 +162,9 @@ namespace AgentCoreProcessor.Engine
 
         public Task<Channel?> GetChannelByIdAsync(int id) => channels.GetByIdAsync(id);
 
+        /// <summary>按频道名查频道（HTTP 桥等外部协议按 name 解析频道 id）。</summary>
+        public Task<Channel?> FindChannelByNameAsync(string name) => channels.FindByNameAsync(name);
+
         public Task UpdateChannelAsync(Channel channel) => channels.UpdateAsync(channel);
 
         public Task<Channel?> GetChannelAsync(int channelId) => channels.GetByIdAsync(channelId);

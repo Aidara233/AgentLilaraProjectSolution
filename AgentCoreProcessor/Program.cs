@@ -190,6 +190,10 @@ namespace AgentCoreProcessor
 
             if (testMode)
             {
+                // HTTP 桥接适配器（独立端口）：test 模式也启动，便于 curl / WS 交互调试
+                foreach (var httpAdapter in adapterManager.GetAllAdapters().OfType<Adapter.HttpBridgeAdapter>())
+                    await httpAdapter.StartAsync();
+
                 // 解析超时参数
                 int timeoutSeconds = 60;
                 var timeoutIdx = Array.FindIndex(args, a => a == "--timeout");

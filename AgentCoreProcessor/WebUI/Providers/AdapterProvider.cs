@@ -85,7 +85,7 @@ internal class AdapterProvider : IWebUIProvider
                         Fields = new()
                         {
                             new() { Field = "type", Label = "类型", Type = FormFieldType.Select, Required = true,
-                                Options = new() { new() { Value = "onebot", Label = "OneBot" }, new() { Value = "file", Label = "File" } } },
+                                Options = new() { new() { Value = "onebot", Label = "OneBot" }, new() { Value = "file", Label = "File" }, new() { Value = "http", Label = "HTTP/WS" } } },
                             new() { Field = "id", Label = "ID", Type = FormFieldType.Text, Placeholder = "唯一标识", Required = true }
                         }
                     },
@@ -252,6 +252,71 @@ internal class AdapterProvider : IWebUIProvider
                         new() { Field = "input_dir", Label = "输入目录", Type = FormFieldType.Text },
                         new() { Field = "output_dir", Label = "输出目录", Type = FormFieldType.Text },
                         new() { Field = "poll_ms", Label = "轮询间隔 (ms)", Type = FormFieldType.Number }
+                    }
+                },
+                ListenEvent = "adapter-selected",
+                Layout = new() { Order = 2, PreferredCols = 4 }
+            }
+        }));
+
+        // ═══ HTTP/WS 桥接详情 ═══
+        pages.Add(BuildPlatformPage("http", "HTTP/WS 桥接适配器", new()
+        {
+            new()
+            {
+                Id = "http-picker",
+                Type = CardType.Table,
+                DataSourceId = SrcId("http", "picker"),
+                Title = "实例",
+                Schema = new TableSchema
+                {
+                    Columns = new()
+                    {
+                        new() { Field = "id", Header = "ID", Width = "100px" },
+                        new() { Field = "state", Header = "状态", Width = "90px" },
+                        new() { Field = "rx", Header = "RX", Width = "60px" },
+                        new() { Field = "tx", Header = "TX", Width = "60px" }
+                    }
+                },
+                LinkEvent = "adapter-selected",
+                Layout = new() { Order = 0, PreferredCols = 12 }
+            },
+            new()
+            {
+                Id = "http-status",
+                Type = CardType.Status,
+                DataSourceId = SrcId("http", "status"),
+                Title = "运行状态",
+                Schema = new StatusSchema
+                {
+                    Fields = new()
+                    {
+                        new() { Field = "platform", Label = "平台" },
+                        new() { Field = "state", Label = "状态", Type = StatusFieldType.Indicator },
+                        new() { Field = "rx", Label = "接收" },
+                        new() { Field = "tx", Label = "发送" },
+                        new() { Field = "started", Label = "启动时间" }
+                    }
+                },
+                ListenEvent = "adapter-selected",
+                Layout = new() { Order = 1, PreferredCols = 4 }
+            },
+            new()
+            {
+                Id = "http-config",
+                Type = CardType.Form,
+                DataSourceId = SrcId("http", "config"),
+                Title = "桥接配置",
+                Schema = new FormSchema
+                {
+                    Fields = new()
+                    {
+                        new() { Field = "port", Label = "端口", Type = FormFieldType.Number },
+                        new() { Field = "token", Label = "访问令牌", Type = FormFieldType.Text },
+                        new() { Field = "defaultChannel", Label = "默认频道", Type = FormFieldType.Text },
+                        new() { Field = "channelPrefix", Label = "频道前缀", Type = FormFieldType.Text },
+                        new() { Field = "burstTimeoutMs", Label = "阻塞超时 (ms)", Type = FormFieldType.Number },
+                        new() { Field = "settleChecks", Label = "稳定判定次数", Type = FormFieldType.Number }
                     }
                 },
                 ListenEvent = "adapter-selected",

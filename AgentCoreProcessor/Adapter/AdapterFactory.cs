@@ -13,6 +13,7 @@ namespace AgentCoreProcessor.Adapter
             {
                 "onebot" => CreateOneBot(config),
                 "file" => CreateFile(config),
+                "http" => CreateHttp(config),
                 _ => throw new ArgumentException($"Unknown adapter type: {config.Type}")
             };
         }
@@ -32,6 +33,12 @@ namespace AgentCoreProcessor.Adapter
                 ?? config.Settings["poll_ms"]?.Value<int>()
                 ?? 2000;
             return new FileAdapter(config.Id, baseDir, pollMs);
+        }
+
+        private static HttpBridgeAdapter CreateHttp(AdapterInstanceConfig config)
+        {
+            var settings = config.Settings.ToObject<HttpBridgeConfig>() ?? new HttpBridgeConfig();
+            return new HttpBridgeAdapter(config.Id, settings);
         }
     }
 }

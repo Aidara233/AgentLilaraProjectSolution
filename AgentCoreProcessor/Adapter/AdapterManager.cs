@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Config;
+using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Logging;
 using Newtonsoft.Json;
 
@@ -20,6 +21,17 @@ namespace AgentCoreProcessor.Adapter
 
         /// <summary>消息入向回调，由 MasterEngine 在 InitAsync 中注入。</summary>
         public Func<IncomingMessage, Task>? OnIncomingMessage { get; set; }
+
+        /// <summary>引擎引用（IEngineAwareAdapter 注入用）。MasterEngine 构造函数注入；InitAsync 前 Session 为 null。</summary>
+        internal MasterEngine? Engine { get; private set; }
+
+        /// <summary>引擎就绪后注入：对已注册 + 后续注册的 IEngineAwareAdapter 分发引擎引用。</summary>
+        internal void AttachEngine(MasterEngine engine)
+        {
+            Engine = engine;
+            foreach (var adapter in adapters.Values)
+                if (adapter is IEngineAwareAdapter aware) aware.AttachEngine(engine);
+        }
 
         public event Action? OnAdaptersChanged;
 
@@ -85,6 +97,7 @@ namespace AgentCoreProcessor.Adapter
             };
             adapters[adapter.Id] = adapter;
             enabledMap[adapter.Id] = enabled;
+            if (Engine != null && adapter is IEngineAwareAdapter aware) aware.AttachEngine(Engine);
         }
 
         // ── 动态生命周期 ──
@@ -227,6 +240,8 @@ namespace AgentCoreProcessor.Adapter
                 else
                     return !cfg.Blacklist.Contains(channelId);
             }
+            if (adapter is IChannelAwareAdapter channelAware)
+                return channelAware.OwnsChannel(channelId);
             return true;
         }
 
@@ -239,6 +254,12 @@ namespace AgentCoreProcessor.Adapter
                 .Where(a => enabledMap.GetValueOrDefault(a.Id, true))
                 .ToList();
             if (enabled.Count == 0) return null;
+
+            // 频道归属优先：显式声明拥有该频道的适配器（http_xxx → HttpBridge，group_xxx → OneBot）。
+            // 避免多适配器共存时（如 --test 下 file-test + http）出向被先注册者抢走。
+            var owner = enabled.FirstOrDefault(a => a is IChannelAwareAdapter aw && aw.OwnsChannel(channelId));
+            if (owner != null) return owner;
+
             if (enabled.Count == 1) return enabled[0];
             foreach (var a in enabled)
             {

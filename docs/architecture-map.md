@@ -13,7 +13,8 @@ AgentLilaraProjectSolution/
 │     ├── Adapter/     平台适配（File/OneBot QQ），消息收发，通用操作接口
 │     │     ├── OneBot/  OneBotAdapter(WS协议) + OneBotMessageParser(解析+notice事件分类) + OneBotActions(操作+base64图片编码) + OneBotConfig
 │     │     ├── File/    FileAdapter（文件轮询，测试用）
-│     │     └── 通用:    IAdapter / AdapterManager / AdapterFactory / AdapterStatus / AdapterAction / ActionResult / AdapterAccessImpl(IAdapterAccess桥接)
+│     │     ├── Http/    HttpBridgeAdapter(HTTP+WS混合协议，独立端口；POST /api/send 阻塞等突发统一返回 + /api/messages 聊天记录 + /ws 双向实时) + HttpBridgeConfig
+│     │     └── 通用:    IAdapter / AdapterManager / AdapterFactory / AdapterStatus / AdapterAction / ActionResult / IEngineAwareAdapter / IChannelAwareAdapter / AdapterAccessImpl(IAdapterAccess桥接)
 │     │     ├── 消息模型: IncomingMessage (含 IsSystemEvent/SystemEventSubType) + OutgoingMessage + MessageAttachment
 │     ├── Client/      IModelClient 抽象层（Claude/OpenAI 双协议）+ Embedding + IVisionProvider + IOcrProvider
 │     ├── Command/     框架指令系统（/help /status /config 等）
@@ -585,6 +586,7 @@ Storage/
 ├── Adapter/
 │     └── *.json  适配器实例配置（多实例，config-driven）
 │         qq-main.json: OneBotAdapter 配置(WS地址/token/白名单/botNames)
+│         http.json: HttpBridgeAdapter 配置(port/token/defaultChannel/channelPrefix/burstTimeoutMs)
 ├── Command/
 │     └── CommandConfig.json  指令前缀配置
 ├── MCP/
