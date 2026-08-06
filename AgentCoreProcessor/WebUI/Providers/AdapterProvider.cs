@@ -313,10 +313,10 @@ internal class AdapterProvider : IWebUIProvider
                     {
                         new() { Field = "port", Label = "端口", Type = FormFieldType.Number },
                         new() { Field = "token", Label = "访问令牌", Type = FormFieldType.Text },
-                        new() { Field = "defaultChannel", Label = "默认频道", Type = FormFieldType.Text },
-                        new() { Field = "channelPrefix", Label = "频道前缀", Type = FormFieldType.Text },
-                        new() { Field = "burstTimeoutMs", Label = "阻塞超时 (ms)", Type = FormFieldType.Number },
-                        new() { Field = "settleChecks", Label = "稳定判定次数", Type = FormFieldType.Number }
+                        new() { Field = "default_channel", Label = "默认频道", Type = FormFieldType.Text },
+                        new() { Field = "channel_prefix", Label = "频道前缀", Type = FormFieldType.Text },
+                        new() { Field = "burst_timeout_ms", Label = "阻塞超时 (ms)", Type = FormFieldType.Number },
+                        new() { Field = "settle_checks", Label = "稳定判定次数", Type = FormFieldType.Number }
                     }
                 },
                 ListenEvent = "adapter-selected",
@@ -693,7 +693,13 @@ internal class AdapterConfigSource : IDataSource
                 // File 适配器：优先读新 key（camelCase），回退旧 key
                 ["input_dir"] = s["baseDir"]?.ToString() ?? s["input_dir"]?.ToString() ?? "",
                 ["output_dir"] = s["outputDir"]?.ToString() ?? s["output_dir"]?.ToString() ?? "",
-                ["poll_ms"] = s["pollIntervalMs"]?.ToString() ?? s["poll_ms"]?.ToString() ?? s["PollIntervalMs"]?.ToString() ?? "2000"
+                ["poll_ms"] = s["pollIntervalMs"]?.ToString() ?? s["poll_ms"]?.ToString() ?? s["PollIntervalMs"]?.ToString() ?? "2000",
+                // Http 适配器字段（对齐 HttpBridgeConfig；token 已在上方共用）
+                ["port"] = s["port"]?.ToString() ?? s["Port"]?.ToString() ?? "9876",
+                ["default_channel"] = s["defaultChannel"]?.ToString() ?? s["default_channel"]?.ToString() ?? "http_debug",
+                ["channel_prefix"] = s["channelPrefix"]?.ToString() ?? s["channel_prefix"]?.ToString() ?? "http_",
+                ["burst_timeout_ms"] = s["burstTimeoutMs"]?.ToString() ?? s["burst_timeout_ms"]?.ToString() ?? "30000",
+                ["settle_checks"] = s["settleChecks"]?.ToString() ?? s["settle_checks"]?.ToString() ?? "3"
             }
         });
     }
@@ -773,6 +779,12 @@ internal class AdapterConfigSource : IDataSource
         if (data["input_dir"] != null) { s["baseDir"] = data["input_dir"]!.ToString(); s.Remove("input_dir"); }
         if (data["output_dir"] != null) { s["outputDir"] = data["output_dir"]!.ToString(); s.Remove("output_dir"); }
         if (data["poll_ms"] != null) { s["pollIntervalMs"] = data["poll_ms"]!.ToString(); s.Remove("poll_ms"); s.Remove("PollIntervalMs"); }
+        // Http 适配器字段（对齐 HttpBridgeConfig：port/defaultChannel/channelPrefix/burstTimeoutMs/settleChecks）
+        if (data["port"] != null) { s["port"] = data["port"]!.ToString(); s.Remove("Port"); }
+        if (data["default_channel"] != null) { s["defaultChannel"] = data["default_channel"]!.ToString(); s.Remove("default_channel"); s.Remove("DefaultChannel"); }
+        if (data["channel_prefix"] != null) { s["channelPrefix"] = data["channel_prefix"]!.ToString(); s.Remove("channel_prefix"); s.Remove("ChannelPrefix"); }
+        if (data["burst_timeout_ms"] != null) { s["burstTimeoutMs"] = data["burst_timeout_ms"]!.ToString(); s.Remove("burst_timeout_ms"); s.Remove("BurstTimeoutMs"); }
+        if (data["settle_checks"] != null) { s["settleChecks"] = data["settle_checks"]!.ToString(); s.Remove("settle_checks"); s.Remove("SettleChecks"); }
 
         _adapters.UpdateConfig(cfg);
         return Task.FromResult(new ActionResult { Success = true, Message = "配置已保存" });

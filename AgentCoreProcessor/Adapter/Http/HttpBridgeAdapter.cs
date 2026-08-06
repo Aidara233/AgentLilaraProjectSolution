@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Logging;
@@ -149,6 +150,50 @@ namespace AgentCoreProcessor.Adapter
         };
 
         public void AttachEngine(MasterEngine engine) => this.engine = engine;
+
+        /// <summary>
+        /// 热更新配置（WebUI 保存后调用）：重读 Storage/Adapter/{Id}.json，非端口字段即时生效。
+        /// 端口变更需重启（Kestrel 已绑定），保留旧端口并记录日志。
+        /// </summary>
+        public async Task<bool> ReloadConfigAsync()
+        {
+            try
+            {
+                var path = Path.Combine(PathConfig.StoragePath, "Adapter", $"{Id}.json");
+                if (!File.Exists(path)) return false;
+                var json = await File.ReadAllTextAsync(path);
+                var cfg = JsonConvert.DeserializeObject<AdapterInstanceConfig>(json);
+                var newCfg = cfg?.Settings?.ToObject<HttpBridgeConfig>();
+                if (newCfg == null) return false;
+
+                if (newCfg.Port != config.Port)
+                {
+                    Signal.Warn(LogGroup.Adapter, "HttpBridge 端口变更需重启生效，本次保留旧端口",
+                        new { id = Id, oldPort = config.Port, newPort = newCfg.Port });
+                    newCfg.Port = config.Port;
+                }
+
+                config.Port = newCfg.Port;
+                config.Token = newCfg.Token;
+                config.DefaultChannel = newCfg.DefaultChannel;
+                config.ChannelPrefix = newCfg.ChannelPrefix;
+                config.Channels = newCfg.Channels;
+                config.DefaultUser = newCfg.DefaultUser;
+                config.DefaultIsPrivate = newCfg.DefaultIsPrivate;
+                config.BurstTimeoutMs = newCfg.BurstTimeoutMs;
+                config.BusyObserveMs = newCfg.BusyObserveMs;
+                config.SettleIntervalMs = newCfg.SettleIntervalMs;
+                config.SettleChecks = newCfg.SettleChecks;
+
+                Signal.Event(LogGroup.Adapter, "HttpBridge 配置热更新", new { id = Id, port = config.Port });
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Signal.Warn(LogGroup.Adapter, "HttpBridge 配置重载失败", new { id = Id, error = ex.Message });
+                return false;
+            }
+        }
 
         // ── 出向中枢：模型 speak → 此方法。WS 推送 + burst 收集 + 返回非 null id ──
 
