@@ -38,7 +38,7 @@ namespace Plugin.BasicTools
             new("time_from", "起始时间（ISO，含）。如 2026-08-01 或 2026-08-01T12:00:00。", 2, false),
             new("time_to", "结束时间（ISO，含）。", 3, false),
             new("after_id", "增量拉取：返回 id 大于该值的消息（需指定单个 channel）。", 4, false),
-            new("before_id", "翻旧：返回 id 小于等于该值的最近 N 条（需指定单个 channel）。", 5, false),
+            new("before_id", "翻旧：返回 id 小于等于该值的最近 N 条（含该条，需指定单个 channel）。", 5, false),
             new("limit", "返回条数，1-100，默认 20。", 6, false)
         ];
 
