@@ -118,7 +118,7 @@ WebUI `/p/plugins` 页面有"热重载"按钮。
 AgentLilaraProjectSolution/
   AgentLilara.PluginSDK/         ← 共享契约（引用此项目即可开发插件）
   Plugins/                        ← 所有插件项目
-    Plugin.BasicTools/            ← 基础通信（speak, thinking, send_media, send_file, adapter_action）— Loop
+    Plugin.BasicTools/            ← 基础通信（speak, thinking, send_media, send_file, adapter_action, list_channels, search_chat_history）— Loop
     Plugin.WorkingTools/          ← 工作空间（pinboard, thinking_notes, retain_list, task_management, mark_for_review）— Loop
     Plugin.MemoryTools/           ← 记忆存储/检索/关联（10个工具）— Global
     Plugin.FileTools/             ← 文件操作（read_text, write_text, update_text, list_dir, move_file, delete_file, copy_file）— Global

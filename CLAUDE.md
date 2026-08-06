@@ -226,7 +226,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - WebUI 数据层：WebUI/Shell/DataSourceManager.cs（Fetch重试 + Subscribe推送 + 路由参数注入）
 - WebUI 卡片类型：WebUI/Components/Cards/（Table/Status/Form/Stream/Chat/Action/Tree/Detail/PropertyEditor 共 9 张 + Custom 预留）
 - WebUI Provider：WebUI/Providers/（Dashboard/Engines/EngineDetail/Sessions/Channel/Vision/Dream/Review/Memory/Adapter/Config/Console/Test/LogTrace/Plugins/Logs/Currency，17 个；Dream=框架事件+推断断言，Review=ReviewQueue+冲突组，Memory=Claims/Journals/Keywords/情绪快照）
-- 插件项目：Plugins/Plugin.BasicTools/（speak + thinking + send_media + send_file + adapter_action）
+- 插件项目：Plugins/Plugin.BasicTools/（speak + thinking + send_media + send_file + adapter_action + list_channels + search_chat_history）
 -           Plugins/Plugin.WorkingTools/（pinboard + thinking_notes + retain_list + mark_for_review + task_management）
 -           Plugins/Plugin.MindTools/（journal/claim/remember/mind_status/archive + mind-emotion/mind-experience 注入组件）
 -           Plugins/Plugin.FileTools/（read_text + write_text + update_text + list_dir + move_file/delete_file/copy_file）
