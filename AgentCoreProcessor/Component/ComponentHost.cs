@@ -67,6 +67,8 @@ internal class ComponentHost
 
     public async Task InitAsync(IReadOnlyList<string>? finalComponentIds = null)
     {
+        var loopTimeout = TimeSpan.FromSeconds(_config.LoopInitTimeoutSeconds);
+
         if (finalComponentIds != null)
         {
             // 仅加载指定列表内的组件（组件归属由 ComponentConfig 决定）
@@ -77,11 +79,26 @@ internal class ComponentHost
                 if (!nameSet.Contains(compName)) continue;
                 if (!_config.IsEnabled(compName, _loopType, reg.DefaultEnabled))
                     continue;
-                var instance = CreateInstance(reg);
-                if (instance == null) continue;
-                _loopComponents.Add(instance);
-                await instance.Component.OnInitAsync(instance.Context, InitReason.Fresh);
-                RegisterTools(instance);
+                try
+                {
+                    var instance = CreateInstance(reg);
+                    if (instance == null) continue;
+                    _loopComponents.Add(instance);
+                    // 超时兜底：单个组件挂起不阻塞 session 创建（express 会话在 eventLock 下创建，阻塞=卡消息路由）
+                    await instance.Component.OnInitAsync(instance.Context, InitReason.Fresh)
+                        .WaitAsync(loopTimeout);
+                    RegisterTools(instance);
+                }
+                catch (TimeoutException)
+                {
+                    Signal.Warn(LogGroup.Engine, $"Loop组件初始化超时，跳过: {reg.Type.Name}",
+                        new { component = reg.Type.Name, timeout = loopTimeout.TotalSeconds });
+                }
+                catch (Exception ex)
+                {
+                    Signal.Error(LogGroup.Engine, $"Loop组件初始化失败: {reg.Type.Name}",
+                        new { type = reg.Type.FullName, error = ex.Message });
+                }
             }
             return;
         }
@@ -98,8 +115,15 @@ internal class ComponentHost
                 var instance = CreateInstance(reg);
                 if (instance == null) continue;
                 _loopComponents.Add(instance);
-                await instance.Component.OnInitAsync(instance.Context, InitReason.Fresh);
+                // 超时兜底：单个组件挂起不阻塞 session 创建（express 会话在 eventLock 下创建，阻塞=卡消息路由）
+                await instance.Component.OnInitAsync(instance.Context, InitReason.Fresh)
+                    .WaitAsync(loopTimeout);
                 RegisterTools(instance);
+            }
+            catch (TimeoutException)
+            {
+                Signal.Warn(LogGroup.Engine, $"Loop组件初始化超时，跳过: {reg.Type.Name}",
+                    new { component = reg.Type.Name, timeout = loopTimeout.TotalSeconds });
             }
             catch (Exception ex)
             {

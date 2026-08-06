@@ -35,10 +35,10 @@ public class BrowserSetCookiesTool : ITool
 
         try
         {
-            var sessionManager = _component.GetSessionManager();
+            var sessionManager = await _component.EnsureStartedAsync();
 
             if (sessionManager == null)
-                return Fail("浏览器组件未初始化");
+                return Fail(_component.LastError ?? "浏览器组件未初始化");
 
             var session = await sessionManager.GetOrCreateSessionAsync(_sessionId);
 

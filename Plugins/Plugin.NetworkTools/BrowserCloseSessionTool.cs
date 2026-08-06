@@ -27,10 +27,10 @@ public class BrowserCloseSessionTool : ITool
     {
         try
         {
-            var sessionManager = _component.GetSessionManager();
+            var sessionManager = await _component.EnsureStartedAsync();
 
             if (sessionManager == null)
-                return Fail("浏览器组件未初始化");
+                return Fail(_component.LastError ?? "浏览器组件未初始化");
 
             await sessionManager.CloseSessionAsync(_sessionId);
 

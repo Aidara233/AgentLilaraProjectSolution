@@ -34,22 +34,35 @@ internal class GlobalComponentHost
     public async Task InitAsync()
     {
         var registrations = ComponentRegistry.GetGlobals();
+        var timeout = TimeSpan.FromSeconds(_config.GlobalInitTimeoutSeconds);
 
-        foreach (var reg in registrations)
+        // 并行初始化 + 每组件超时兜底：单个全局组件初始化挂起不再阻塞启动、不影响其它组件。
+        var tasks = registrations.Select(reg => InitOneAsync(reg, timeout)).ToArray();
+        await Task.WhenAll(tasks);
+    }
+
+    private async Task InitOneAsync(ComponentRegistration reg, TimeSpan timeout)
+    {
+        try
         {
-            try
-            {
-                var instance = CreateInstance(reg);
-                if (instance == null) continue;
-                _components.Add(instance);
-                await instance.Component.OnInitAsync(instance.Context, InitReason.Fresh);
-                RegisterTools(instance);
-            }
-            catch (Exception ex)
-            {
-                Signal.Error(LogGroup.Engine, $"Global组件初始化失败: {reg.Type.Name}",
-                    new { type = reg.Type.FullName, error = ex.Message });
-            }
+            var instance = CreateInstance(reg);
+            if (instance == null) return;
+
+            lock (_components) _components.Add(instance);
+
+            await instance.Component.OnInitAsync(instance.Context, InitReason.Fresh)
+                .WaitAsync(timeout);
+            lock (_components) RegisterTools(instance);
+        }
+        catch (TimeoutException)
+        {
+            Signal.Warn(LogGroup.Plugin, "Global组件初始化超时，跳过工具注册",
+                new { component = reg.Type.Name, timeout = timeout.TotalSeconds });
+        }
+        catch (Exception ex)
+        {
+            Signal.Error(LogGroup.Engine, $"Global组件初始化失败: {reg.Type.Name}",
+                new { type = reg.Type.FullName, error = ex.Message });
         }
     }
 

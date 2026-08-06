@@ -12,6 +12,9 @@ public class BrowserComponent : GlobalComponentBase
     private BrowserConfig? _config;
     private IPluginStorage? _storage;
     private Timer? _cleanupTimer;
+    private readonly SemaphoreSlim _startLock = new(1, 1);
+    private bool _startFailed;
+    private string? _lastError;
 
     public override ComponentMeta Meta => new()
     {
@@ -23,7 +26,7 @@ public class BrowserComponent : GlobalComponentBase
 
     public override IEnumerable<ITool> Tools => Enumerable.Empty<ITool>();
 
-    public override async Task OnInitAsync(IGlobalComponentContext context, InitReason reason)
+    public override Task OnInitAsync(IGlobalComponentContext context, InitReason reason)
     {
         _storage = context.Storage;
 
@@ -31,36 +34,93 @@ public class BrowserComponent : GlobalComponentBase
         var configPath = Path.Combine(_storage.GlobalDirectory, "..", "..", "Network", "BrowserConfig.json");
         _config = BrowserConfig.Load(configPath);
 
-        // 解析浏览器路径
-        var browserPath = ResolveBrowserPath();
-        Environment.SetEnvironmentVariable("PLAYWRIGHT_BROWSERS_PATH", browserPath);
-
-        // 启动 Playwright 和浏览器
-        Console.WriteLine("[Browser] 正在启动 Playwright...");
-        _playwright = await Playwright.CreateAsync();
-
-        Console.WriteLine("[Browser] 正在启动 Chromium...");
-        _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
-        {
-            Headless = _config.HeadlessMode,
-            Timeout = _config.DefaultTimeout,
-            SlowMo = _config.SlowMo
-        });
-
-        // 创建会话管理器
-        _sessionManager = new BrowserSessionManager(_browser, _config);
-
-        // 启动定时清理任务（每5分钟）
-        _cleanupTimer = new Timer(async _ =>
-        {
-            if (_sessionManager != null)
-                await _sessionManager.CleanupIdleSessionsAsync();
-        }, null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
-
-        // 暴露静态引用供 Loop 组件工具使用
+        // 立即暴露实例引用（BrowserToolsLoopComponent 构造工具需要），但浏览器本身懒启动。
+        // 实际 Playwright/Chromium 由首次工具调用时 EnsureStartedAsync() 启动。
         BrowserAccessor.Configure(this);
 
-        Console.WriteLine("[Browser] Playwright 浏览器组件已启动");
+        // 懒启动：不在启动关键路径上同步拉 Playwright/Chromium（挂起会拖住整个启动）。
+        try
+        {
+            var browserPath = ResolveBrowserPath();
+            Environment.SetEnvironmentVariable("PLAYWRIGHT_BROWSERS_PATH", browserPath);
+        }
+        catch (Exception ex)
+        {
+            _lastError = ex.Message;
+            Console.WriteLine($"[Browser] 浏览器路径未就绪（启动不阻塞，首次工具调用时报告）: {ex.Message}");
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// 首次使用时启动 Playwright + Chromium（带内部超时）。返回会话管理器；启动失败返回 null。
+    /// 并发安全：只启动一次，失败后标记不可用。
+    /// </summary>
+    public async Task<BrowserSessionManager?> EnsureStartedAsync()
+    {
+        if (_sessionManager != null) return _sessionManager;
+        if (_startFailed) return null;
+
+        await _startLock.WaitAsync();
+        try
+        {
+            if (_sessionManager != null) return _sessionManager;
+            if (_startFailed) return null;
+
+            if (_config == null)
+            {
+                _startFailed = true;
+                _lastError = "浏览器组件未初始化";
+                return null;
+            }
+            if (_lastError != null)
+            {
+                _startFailed = true;
+                return null;
+            }
+
+            try
+            {
+                Console.WriteLine("[Browser] 正在启动 Playwright...");
+                _playwright = await Playwright.CreateAsync()
+                    .WaitAsync(TimeSpan.FromSeconds(30));
+
+                Console.WriteLine("[Browser] 正在启动 Chromium...");
+                _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+                {
+                    Headless = _config.HeadlessMode,
+                    Timeout = _config.DefaultTimeout,
+                    SlowMo = _config.SlowMo
+                }).WaitAsync(TimeSpan.FromSeconds(30));
+
+                _sessionManager = new BrowserSessionManager(_browser, _config);
+
+                // 启动定时清理任务（每5分钟）
+                _cleanupTimer = new Timer(async _ =>
+                {
+                    if (_sessionManager != null)
+                        await _sessionManager.CleanupIdleSessionsAsync();
+                }, null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
+
+                // 暴露静态引用供 Loop 组件工具使用
+                BrowserAccessor.Configure(this);
+
+                Console.WriteLine("[Browser] Playwright 浏览器组件已启动");
+                return _sessionManager;
+            }
+            catch (Exception ex)
+            {
+                _startFailed = true;
+                _lastError = ex.Message;
+                Console.WriteLine($"[Browser] 启动失败: {ex.Message}");
+                return null;
+            }
+        }
+        finally
+        {
+            _startLock.Release();
+        }
     }
 
     private string ResolveBrowserPath()
@@ -120,6 +180,8 @@ public class BrowserComponent : GlobalComponentBase
     public BrowserSessionManager? GetSessionManager() => _sessionManager;
     public BrowserConfig? GetConfig() => _config;
     public IPluginStorage? GetStorage() => _storage;
+    /// <summary>启动失败原因（工具用作文本化错误提示）。</summary>
+    public string? LastError => _lastError;
 }
 
 /// <summary>

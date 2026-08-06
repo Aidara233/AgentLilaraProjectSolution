@@ -41,12 +41,12 @@ public class BrowserScreenshotTool : ITool
 
         try
         {
-            var sessionManager = _component.GetSessionManager();
+            var sessionManager = await _component.EnsureStartedAsync();
             var config = _component.GetConfig();
             var storage = _component.GetStorage();
 
             if (sessionManager == null || config == null || storage == null)
-                return Fail("浏览器组件未初始化");
+                return Fail(_component.LastError ?? "浏览器组件未初始化");
 
             var session = await sessionManager.GetOrCreateSessionAsync(_sessionId);
 

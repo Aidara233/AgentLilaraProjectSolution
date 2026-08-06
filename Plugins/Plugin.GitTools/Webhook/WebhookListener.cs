@@ -23,7 +23,8 @@ public class WebhookListener : IDisposable
     public WebhookListener(int port, string secret, ISignalLogger? log)
     {
         _listener = new HttpListener();
-        _listener.Prefixes.Add($"http://+:{port}/webhooks/github");
+        // HttpListener 前缀必须以 '/' 结尾，否则 Start() 抛 "Only Uri prefixes ending in '/' are allowed"
+        _listener.Prefixes.Add($"http://+:{port}/webhooks/github/");
         _secret = secret;
         _log = log;
     }

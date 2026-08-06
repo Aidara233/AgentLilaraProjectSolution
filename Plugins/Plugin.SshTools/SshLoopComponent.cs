@@ -47,8 +47,9 @@ public class SshLoopComponent : LoopComponentBase
         var workspaceDir = context.Storage.WorkspaceDirectory;
         _workDir = $"/tmp/agent-lilara/{CleanSessionId(_sessionId)}";
 
-        // 确保远端工作目录存在
-        EnsureRemoteWorkDir(global, _workDir);
+        // 远端工作目录懒创建：后台异步执行，不在 session 创建关键路径上同步连 SSH
+        // （SSH 不可达时不拖住会话；首轮命令若目录未建好，ExecTool 的 cd 由 sshd 处理）
+        _ = Task.Run(() => EnsureRemoteWorkDir(global, _workDir));
 
         _exec = new ExecTool(global, _workDir, _sessionId);
         _upload = new UploadTool(global, _workDir, workspaceDir, _sessionId);

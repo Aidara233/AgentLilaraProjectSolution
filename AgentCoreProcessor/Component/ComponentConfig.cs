@@ -10,6 +10,10 @@ internal class ComponentConfig
         Path.Combine(PathConfig.StoragePath, "Engine", "ComponentConfig.json");
 
     public int ShutdownTimeoutMs { get; set; } = 30000;
+    /// <summary>全局组件（Global 作用域）初始化超时（秒）。防止单个组件挂起拖住启动。</summary>
+    public int GlobalInitTimeoutSeconds { get; set; } = 10;
+    /// <summary>会话 Loop 组件初始化超时（秒）。防止单个组件挂起阻塞 session 创建。</summary>
+    public int LoopInitTimeoutSeconds { get; set; } = 5;
     public Dictionary<string, ComponentPermEntry> Components { get; set; } = new();
 
     private static ComponentConfig? _cached;
