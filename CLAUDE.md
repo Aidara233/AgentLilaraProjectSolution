@@ -217,7 +217,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 心智桥接：Tool/Host/WriterAccessImpl.cs + RetrieveAccessImpl.cs + EmotionAccessImpl.cs（SDK 服务桥：IWriterAccess / IRetrieveAccess / IEmotionAccess）
 - 适配器接口：Adapter/IAdapter.cs + AdapterManager.cs + AdapterFactory.cs
 - OneBot 适配器：Adapter/OneBot/OneBotAdapter.cs（WS连接 + 消息映射 + QQ协议）
-- File 适配器：Adapter/File/FileAdapter.cs（文件轮询，测试用）
+- File 适配器：Adapter/File/FileAdapter.cs（文件轮询，测试用；SendMessageAsync 返回输出文件名作为消息 id，speak 等工具据此判成功）
 - MCP 系统：MCP/McpServerManager.cs + McpBridgeTool.cs + McpConfig.cs
 - WebUI Shell：WebUI/Shell/ProviderRegistry.cs + WebUI/Components/Shell/（DynamicPage/CardGrid/CardHost.razor）
 - WebUI 数据层：WebUI/Shell/DataSourceManager.cs（Fetch重试 + Subscribe推送 + 路由参数注入）
