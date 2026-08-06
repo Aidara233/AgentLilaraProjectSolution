@@ -60,6 +60,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 
 **架构：**
 - `docs/architecture-map.md` — **架构全景图**（引擎生态/消息流/做梦/记忆/工具/WebUI/日志/MCP），冷启动第一站
+- `docs/http-bridge-api.md` — **HttpBridge 适配器 API 文档**（HTTP+WS 混合协议：send/messages/channels/status/ws 端点、配置、示例）
 - `docs/review-engine-redesign.md` — ReviewEngine 自由探索重设计**旧稿**（旧复盘系统已随记忆重构移除，仅供参考）
 
 **记忆重构计划（`docs/memory-redesign/`）：**
