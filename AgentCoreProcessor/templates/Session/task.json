@@ -12,6 +12,7 @@
   "PermissionMode": "whitelist",
   "PermissionTools": [
     "speak", "thinking", "send_media", "send_file", "adapter_action",
+    "list_channels", "search_chat_history",
     "read_text", "write_text", "list_dir", "move_file", "delete_file", "copy_file", "update_text",
     "journal", "claim", "remember", "mind_status", "archive",
     "report_to_parent",
