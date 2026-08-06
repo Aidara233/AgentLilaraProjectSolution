@@ -4,7 +4,7 @@
 
 **文件：** `Core/AgentCore.cs`
 **继承：** `CoreBase`
-**实例化：** RuntimeSession（按需创建，会话化后频道响应由 express/working 会话驱动）、ReviewEngine（一个）
+**实例化：** RuntimeSession（按需创建，会话化后频道响应由 express/working/task/review 会话驱动）
 
 ### 定位
 
@@ -19,7 +19,7 @@ AgentCore 是系统中最关键的核心，负责所有 LLM 对话交互。它�
 | express | `ExpressCore.json` | 快速响应（fire-and-forget 工具，不续轮） |
 | channel | `ChannelCore.json` | 工作模式多轮推理（escalate 后接管频道） |
 | task | `TaskCore.json` | 任务执行 / 子 agent |
-| review | `ReviewCore.json` | ReviewEngine 复盘（尚未 session 化，运行时硬编码） |
+| review | `TaskCore.json` | Review 验证会话（复用 TaskCore，ReviewQueue + review_* 工具链） |
 
 模式通过 `SwitchMode(EngineMode)` 切换（EngineMode 为宿主侧概念，保留）。运行时换核走 `RuntimeSession.ConfigureCores / SwitchCore`（见下文"Session 多核切换"）。
 
@@ -62,14 +62,14 @@ Express 模式下的简单对话，支持多模态图片输入。
 | 构造 | 说明 |
 |------|------|
 | `new AgentCore()` | 默认，配置="SessionCore"（遗留默认值；当前代码无调用点） |
-| `new AgentCore(cfgName)` | 按名称加载 `Storage/Core/{cfgName}.json`，如 `new AgentCore("ChannelCore")`、`new AgentCore("ReviewCore")` |
+| `new AgentCore(cfgName)` | 按名称加载 `Storage/Core/{cfgName}.json`，如 `new AgentCore("ChannelCore")`、`new AgentCore("TaskCore")` |
 
 ### 实例化位置
 
 | 位置 | 构造 | CallerTag |
 |------|------|-----------|
 | `RuntimeSession`（SessionEngine.CreateSession） | `new AgentCore(spec.CoreConfigName)` | `"Session:{sessionId}"` |
-| `ReviewEngine.cs` | `new AgentCore("ReviewCore")` | `"Review:{mode}"` |
+| `RuntimeSession`（review 会话，`Storage/Session/review.json`） | `new AgentCore("TaskCore")` | `"Review:{mode}"` |
 
 ### Session 多核切换（运行时）
 
@@ -86,14 +86,14 @@ Session 与 Core 解耦：session 一组配置文件（决定组件/上下文）
 - **单核类型**（task 默认）不注入 `switch_core`、无切换入口，完全零回归。
 - **轮内硬化**：`RuntimeSession` 每轮锁 `roundCore = _agentCore`，格式化标志（UseNativeTools 等）与产出该轮的核一致，外置切换不破坏进行中的轮。
 
-### Review 对齐状态（配置已生效，运行时待重构）
+### Review 会话（复用 TaskCore）
 
-`Storage/Session/review.json` 已补齐会话类型档案字段（Type/DefaultCoreConfig/AllowedCores/DefaultComponents/PromptFiles/PermissionGroup），配置形态与 channel/task 一致。**Session 类型已字符串化**：`SessionTypeProfiles.Get("review")` 可正常加载档案（`All()` 也会枚举 review）——配置侧已彻底激活，**运行时尚未接入**：
+`Storage/Session/review.json` 已补齐会话类型档案字段（Type/DefaultCoreConfig/AllowedCores/DefaultComponents/PromptFiles/PermissionGroup），配置形态与 channel/task 一致，`SessionTypeProfiles.Get("review")` 可正常加载（`All()` 也会枚举 review）。Review 验证会话**复用 TaskCore**（`DefaultCoreConfig: "TaskCore"`，AllowedCores 单核），旧 `ReviewCore.json` 已删。
 
-- `ReviewEngine.cs:86` 仍硬编码 `new AgentCore("ReviewCore")`，不走白名单、不可运行时换核。
-- `ReviewCore.json` 因 ReviewEngine 未 session 化而暂保留 `promptFiles`（`ReviewPrompt.txt` 已迁至 `Session/Prompts`，靠 PromptLoader 双目录加载）；review 重构时随 ReviewEngine 迁移删除。
-
-**待办**（Review 重构时实施）：`ReviewEngine` 改走 `ConfigureCores`（`Get("review")` 取白名单 + PromptFiles 取提示词）。届时 review 复用与 channel 同构的白名单机制（如"快速浏览 flash / 深度评价 pro"双核）。
+ReviewEngine 已随记忆重构移除，Review 验证改走 `docs/memory-redesign/05` 流程：
+- 工作源 = ReviewQueue（ReviewQueueService，唯一待验证队列）
+- 工具链 = review_*（review_list/resolve/preview/commit/evidence，Plugin.ReviewTools）
+- 提交 = ReviewStage git 式暂存（review_preview 预览影响 → review_commit 原子事务落库）
 
 ### 提示词归属（session 定身份，core 定模型）
 
@@ -101,5 +101,5 @@ Session 与 Core 解耦：session 一组配置文件（决定组件/上下文）
 
 - `SessionTypeProfile.PromptFiles` → `RuntimeSession.BuildSessionPrompt()` 拼接 → `AgentCore.SessionPrompt`，在 `SetConversationHistory` 覆盖 core 的 `BasePrompt`。
 - `SwitchCore`/`ConfigureCores`/`SetActiveCore` 换核时把同一 `SessionPrompt` 绑定到新核 —— **换核只换模型配置执行器，会话身份提示词不变**。
-- `PromptLoader.Load(file, storageRoot, ...)` 双目录搜索：`Session/Prompts`（session 主库）→ `Core/Prompts`（Express/System/记忆等非 session 核心），templates 对应释放。
-- 非 session 核心（Express 框架循环/System/记忆/梦话）提示词仍跟 core 走（`Core/Prompts` + core 配置 `promptFiles`），无换核场景。
+- `PromptLoader.Load(file, storageRoot, ...)` 双目录搜索：`Session/Prompts`（session 主库）→ `Core/Prompts`（System/SleepTalk 等非 session 核心），templates 对应释放。
+- 非 session 核心（System/SleepTalk）提示词仍跟 core 走（`Core/Prompts` + core 配置 `promptFiles`），无换核场景。

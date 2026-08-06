@@ -18,21 +18,20 @@ AgentLilaraProjectSolution/
 │     ├── Client/      IModelClient 抽象层（Claude/OpenAI 双协议）+ Embedding + IVisionProvider + IOcrProvider
 │     ├── Command/     框架指令系统（/help /status /config 等）
 │     ├── Config/      PathConfig 绝对路径管理
-│     ├── Core/        业务核心（AgentCore+PreprocessingCore+MemoryExtractionCore+RelationClassificationCore+SleepTalkCore等），继承 CoreBase，各自 JSON 配置
-│     ├── Database/    实体 + Repository（SQLite，18张表）
-│     ├── Engine/      引擎生态（MasterEngine内核 + 8个ISubEngine + Components + Modules）
+│     ├── Core/        业务核心（AgentCore+SleepTalkCore+PreprocessingCore等），继承 CoreBase，各自 JSON 配置
+│     ├── Database/    实体 + Repository（SQLite，15张表：记忆 9 张 + 业务 6 张，另加日志库）
+│     ├── Engine/      引擎生态（MasterEngine内核 + 7个ISubEngine + Components + Modules）
 │     │     ├── Core/     MasterEngine内核 + Gate/Agent/ComponentHost等基类
 │     │     ├── Session/  SessionEngine + RuntimeSession（会话管理+频道占用）
 │     │     ├── Messaging/ MessageEngine（双向消息枢纽+去重分发）
 │     │     ├── AdapterEng/ AdapterEngine（适配器生命周期+频道融合）
-│     │     ├── Extraction/ ExtractionEngine + EavesdropTask（记忆提取+监听检测）
+│     │     ├── Extraction/ ExtractionEngine（触发+进度标记，提取核心已并入心智）
+│     │     ├── Mind/     MindEngine（心智引擎：Writer+情绪+可信度仲裁+检索，常驻）
 │     │     ├── Worker/   ExpressEngineSpawnCheck（渠道层调度：express 会话孵化）
 │     │     ├── Timer/    TimerEngine（心跳30s）
-│     │     ├── Dream/    DreamEngine + ReviewEngine + EvaluationEngine
 │     │     ├── Vision/   VisionEngine（图片描述+OCR）
 │     │     ├── Command/  CommandSpawnCheck（指令拦截）
 │     │     └── Modules/  各模块（CompressionTierModule等）
-│     ├── Memory/      MemoryService 检索管线
 │     ├── MCP/         MCP Client 桥接层（外部插件生态接入）
 │     ├── Tool/        工具宿主（PluginLoader/ToolRegistry/ToolExecutor）+ 核心工具（continue_loop/wait）
 │     ├── Util/        VectorUtil 向量操作
@@ -41,12 +40,12 @@ AgentLilaraProjectSolution/
 └── Plugins/                    源码项目（每个含 plugin.json + CopyToHostPlugins 目标）
       ├── Plugin.BasicTools/      speak + thinking + send_media + send_file + adapter_action
       ├── Plugin.WorkingTools/    pinboard + thinking_notes + retain_list + task_management + mark_for_review
-      ├── Plugin.MemoryTools/     memory（记忆读写，依赖 IMemoryAccess）
+      ├── Plugin.MindTools/       journal/claim/remember/mind_status/archive（心智工具）+ mind-emotion/mind-experience 注入组件
       ├── Plugin.FileTools/       read_text + write_text + update_text + list_dir + move_file/delete_file/copy_file
       ├── Plugin.FileOps/         archive + search/grep_files + file_info/hash/compare_files
       ├── Plugin.GroupFileTools/  分组文件操作
       ├── Plugin.SystemTools/     子 session 管理：create_sub_agent / stop_sub_agent / send_instruction / list_sub_agents / wait_sub / get_sub_info（system-ops 组件）+ report_to_parent（sub-agent-runtime 组件）
-      ├── Plugin.ReviewTools/     review_* 12个复盘工具
+      ├── Plugin.ReviewTools/     5 个验证工具（review_list/resolve/preview/commit/evidence）
       ├── Plugin.ScheduledTasks/  定时任务（插件化实现）
       ├── Plugin.SkillTools/      invoke_skill / list_skills / load_skill_file / list_skill_files
       ├── Plugin.NetworkTools/    网络工具 + Playwright 浏览器自动化
@@ -109,12 +108,11 @@ PluginLoader 扫描子目录 → 读 `plugin.json` → 加载 `entry` DLL。无�
     │     Message    → MessageEngine (双向消息枢纽，IsInfrastructure=true)
     │     Adapter    → AdapterEngine (适配器管理+频道融合，IsInfrastructure=true)
     │     Session    → SessionEngine (会话生命周期+资源池，IsInfrastructure=true)
-    │     Extraction → ExtractionEngine (记忆提取+监听检测，IsInfrastructure=true)
-    │     Channel    → ExpressEngineSpawnCheck (无占用消息→孵化 express 会话)
-    │     Dream      → DreamEngine (走神/小睡/大睡)
-    │     Review     → ReviewEngine (自由探索复盘)
+    │     Mind       → MindEngine (心智引擎：唯一写入口 Writer+情绪+可信度仲裁+检索，常驻 AutoStart)
     │     Vision     → VisionEngine (图片描述+OCR，IsInfrastructure=true)
     │     Command    → CommandSpawnCheck (指令拦截)
+    │     Channel    → ExpressEngineSpawnCheck (无占用消息→孵化 express 会话)
+    │     (ExtractionEngine 保留为触发壳，未 AutoStart；提取核心已并入 MindEngine.ExtractService)
     ├── 活跃引擎表 (List<ISubEngine>)
     ├── GlobalComponentHost + ComponentHost(per-session) + ModuleBus(per-session)
     │     Component 系统: IGlobalComponent(全局) / ILoopComponent(per-session)（接口定义在 AgentLilara.PluginSDK/）
@@ -181,7 +179,7 @@ RuntimeSession 内部（取代旧 Channel/System 引擎内循环）:
 适配器 ──► AdapterEngine ──► MessageEngine (入库+去重+标记+分发)
                                   │
                                   ├── express/working 会话 (端口权重激活，频道 Full-claim 时)
-                                  ├── ExtractionEngine (记忆提取 + 监听检测)
+                                  ├── ExtractionEngine (提取触发壳，提取核心在 MindEngine)
                                   └── ExpressEngineSpawnCheck (无占用→孵化 express 会话)
 
 出向:
@@ -213,7 +211,7 @@ MessageEngine: 双向枢纽
       直接杀 + 释放 claim（频道回无占用）。express 记忆只读+历史突发语义，无长期状态可压缩。
     工具白名单（Storage/Session/express.json，白名单模式）:
       speak/thinking/send_media/send_file/adapter_action/escalate/wait/connect_channel/disconnect_channel
-      + memory 只读(get/list/search/stats/link_get)
+      + 心智只读(journal/remember/mind_status)
     身份提示词: SessionTypeProfile.PromptFiles（express_workflow.txt），InitialState 只放实例特有内容。
 
   escalate 行为（同池换活跃 session）:
@@ -238,18 +236,12 @@ SessionEngine (ISubEngine, IsInfrastructure=true):
   崩溃恢复:
     Storage/Sessions/{sessionId}/*.json → 扫描 → Running/Crashed → 恢复 → 继续运行
 
-ExtractionEngine (ISubEngine, IsInfrastructure=true):
-  引擎无关，从入向唯一咽喉喂数据（HandleMessageAsync 入库后 OnMessage），
-  覆盖 express 会话与 working 会话两条路（入向统一咽喉）:
-    每频道独立计数，累计若干条 → 触发该频道 ChannelExtractionWorker:
-      活跃/潜水阈值靠"最近 5 分钟内有无 bot 出向消息"判定（GetLatestBotMessageTimeAsync）
-      一次 LLM 调用完成记忆提取（现有流程）→ 存入记忆库
-      about 解析失败时归属人 = 该批最后发言的非 bot 用户
-    监听检测（EavesdropTask 关键词粗筛）尚未实现，留壳
+ExtractionEngine (ISubEngine，触发壳，未 AutoStart):
+  提取核心已退役并并入 MindEngine.ExtractService（见 docs/memory-redesign/03），
+  ExtractionEngine 只保留触发 + 进度标记职责（入向消息计数触发提取），不再承载提取逻辑；
+  提取产物统一经 WriteBatch 交心智引擎落库。
 
-  全频道监听（定时扫描，5-30 分钟）— 待实现:
-    对每个全频道 EavesdropTask:
-      查 DB → 关键词粗筛（滤掉 99%）→ 轻量 LLM 判断
+  监听检测（EavesdropTask 关键词粗筛）尚未实现，留壳
 
   EavesdropTask 定义: TaskId / Name / ChannelIds(空=全频道) / Rules[{Keywords, Hint}] / NotificationTargetId
   EavesdropSession: 一次性短命判定，MaxMessages=5
@@ -272,8 +264,8 @@ RuntimeSession (统一 agent 循环, 无强制 stop):
     AutoClaimChannel: 自动 Full 占用归属频道
 
   默认配置（SessionTypeProfiles 内置默认，Storage/Session/{type}.json 可覆盖）:
-    channel: basic-tools, working-tools, file-tools, file-ops, memory-tools, system-ops | AutoClaim Full
-    task:    basic-tools, file-tools, memory-tools, sub-agent-runtime | AutoClaim=false
+    channel: basic-tools, working-tools, file-tools, file-ops, mind-tools, system-ops | AutoClaim Full
+    task:    basic-tools, file-tools, mind-tools, sub-agent-runtime | AutoClaim=false
     express: basic-tools | AutoClaim Full（孵化时接管频道）
 
   激活:
@@ -349,71 +341,68 @@ VisionEngine (视觉引擎，单例，基础设施):
 ## 做梦系统
 
 ```
-三阶段架构:
-  实时 — 外部工具写入主库时异步触发，embedding搜相似 → LLM关系分类 → 建边/矛盾边
-  秩序（小睡/大睡） — temp入库: embedding去重 → LLM关系分类(分批,cache复用) → LLM权重评估 → 建边 → ChangePropagation
-  巡逻（走神/小睡/大睡） — 冷启动选点 → 三角闭合 → MemoryDecay衰减 → 过期清理 → ChangePropagation → 沿冷邻居步进
+旧 DreamEngine / ReviewEngine（旧复盘引擎）已随记忆重构整体移除，三阶段架构、关系分类、
+ChangePropagation、临时记忆爆仓触发等旧机制全部删除。
 
-三级睡眠:
-  走神 — 仅巡逻，~3步，无LLM(除非三角缓冲攒够)
-  小睡 — 秩序(temp非空)+巡逻~15步，LLM分批调用
-  大睡 — 秩序(temp非空)+巡逻~100步，LLM分批调用
+维护与探索（尚未实装）:
+  按 docs/memory-redesign/03 规划走 MaintenanceEngine + Dream 探索者（切片式轻量探索，
+  无 session，产出交 Writer / ReviewQueue），调度节奏见 docs/memory-redesign/06 待定清单。
 
-睡眠状态管理 (SleepState 枚举，ISystemContext.CurrentSleepState):
-  DreamEngine 启动时设置，结束时重置为 None
-  所有引擎可感知当前睡眠状态
-
-分级打断 (DreamEngine.OnEvent):
-  走神: 被@ → shouldWake=true，立即打断
-  小睡: 被@ + 叫醒关键词("起床/醒醒/wake/起来/叫醒/别睡了/醒来") → 打断
-         仅被@ → 触发梦话(SleepTalkCore)，不打断
-  大睡: 消息不打断，仅 force-wake 信号可唤醒
+睡眠分级（保留）:
+  SleepState 枚举 + 分级打断语义（走神被@醒 / 小睡需@+关键词叫醒、仅@触发梦话 / 大睡仅 force-wake 可唤醒）。
+  force-sleep 信号仍发布，但暂无消费引擎（旧 DreamEngine 已删）。
 
 梦话 (SleepTalkCore): 保留，逻辑不变
 
-触发条件 (DreamEngineSpawnCheck):
-  红色(任一触发): customRedAlert / 临时记忆爆仓 / 大睡间隔过长
-  黄色(累计评分≥阈值): 空闲时长+距上次大睡+临时记忆比+未处理数+时间窗口
-  → 决定锁定 → 许可闸门(管理员授权/超时自动) → 执行
-  信号: force-sleep(触发睡觉) / force-wake(强制唤醒) / dream-config(配置更新)
-
-巡逻核心: 三角闭合（邻居对无边→embedding验证→LLM关系分类） + 衰减清理
-关系分类: RelationClassificationCore (新增），专注单中心+N候选，输出support值(-1~+1)
-ChangePropagation: BFS单轮扩散，所有节点变更(实时/秩序/巡逻)统一终点
-
-ReviewEngine (由DreamEngine孵化，不注册SpawnCheck):
-  独立Agent循环 + 12个专用工具（Plugin.ReviewTools）+ 自由探索模式（无固定目标）
-  不变，同旧描述
+Review 验证（替代旧 ReviewEngine 自由探索复盘）:
+  完整流程见 docs/memory-redesign/05：ReviewQueue 唯一工作源（Conflict/Dream/Manual 入队）
+  + review_* 工具链（review_list/resolve/preview/commit/evidence）+ git 式暂存提交
+  （ReviewStage：review_preview 预览影响 → review_commit 原子事务落库）。
 ```
 
 ## 记忆系统
 
 ```
-写入: MemoryExtractionCore 自动提取 / 工具"记忆"手动写入 / [REMEMBER]信号 → TempMemory (自动生成embedding)
-  每条记忆含: Type(knowledge/fact/feedback/inference/event) + Subject(主题关键词) + PersonId/ChannelId(软标签)
+心智引擎（MindEngine）承载记忆模型，架构见 docs/memory-redesign/（01 存储模型 / 03 心智引擎 / 05 可信度冲突模型）。
 
-检索: MemoryService.RecallAsync
-  ① TempMemory 全量扫描 (小库，快)
-  ② Memory 全量扫描 (person/channel 软加分，不做硬过滤)
-  ③ 向量精排 (cosine similarity, MinRecallScore=0.25)
-  ④ 关联扩展 (MemoryLink)
-  ⑤ 综合排序: Similarity×0.5 + Importance×0.3 + Link×0.2 + TempBoost×0.1 + TagMatch×0.1
-  ⑥ PersonaMemory 独立召回 (PersonaPenalty=0.05, PersonaMinScore=0.12, 仅聊天路径)
-  
-  增强检索 (MemoryQueryCore):
-    轻量模型调用提取检索意图 (keywords + subjects)
-    关键词命中加分 (KeywordBoost=0.15) + Subject匹配加分 (SubjectBoost=0.2)
-    30s 意图缓存，同一轮对话内不重复调用
+存储（docs/memory-redesign/01）:
+  Claims       — 断言三元组（subject/predicate/object 槽位 JSON），带 Credibility（可信度锚点）/
+                  strength（程度值 -1~+1）/ IsInference（推断标记），否定 = 支持 + 负 strength
+  Journals     — 经历正文（L2 Experience / L3 Reflection），第一人称不可变，携带 EmotionSignals
+  Keywords     — 关键词库（attribute/keyword 角色 + IsExclusive 排他标记），经 FragmentKeywords 关联 Claims/Journals
 
-整合: TempMemory → 秩序阶段(embedding去重+LLM关系分类) → Memory
-	关联建立: 实时(外部写入异步LLM) + 秩序(temp入库LLM) + 巡逻(三角闭合LLM)
-	过期清理: 每次做梦RunAsync入口执行 + 巡逻衰减清理
-标记: Beacon表 (工作时标记 → 复盘时消费，按 Consumer 字段多消费者路由)
-双轴模型: Importance(0.0-1.0，半衰期衰减) + Certainty(0.0-1.0，仅证据可改变) + RecallCount/LastRecalledAt(命中追踪)
-关联边: Relevance(关联性) + Support(-1~+1，负值=矛盾)，矛盾边不删节点只降确定性
+唯一写入口 Writer（Engine/Mind/Writer.cs，docs/memory-redesign/03）:
+  WriteBatch 原子批次（claims + journals 一次事务）：关键词关联 → 同源分组（utterance_id）→
+  冲突检测 → 情绪应用 → 证据重算 → 落库；EmotionState.json 事务成功后原子写
+
+证据引擎 EvidenceEngine（docs/memory-redesign/05）:
+  支持/反对边（断言引用断言，反对 = 支持 + 负 strength）→ noisy-OR 组内聚合（质量>数量）+
+  logit/sigmoid 融合算实际可信度 c_actual（锚点 + 证据网络派生，用于召回/展示/触发 Review）
+
+冲突检测 ConflictService（docs/memory-redesign/05）:
+  排他属性槽位（Keywords IsExclusive=true）取值不同 → 建组/入组；组内成员 c_actual 和 ≤1 恒定，
+  超预算（和 >1）→ 触发 ReviewQueue（Source=Conflict）
+
+Review 验证（docs/memory-redesign/05）:
+  ReviewQueueService 待验证队列（唯一工作源：Conflict/Dream/Manual 入队，崩溃恢复）
+  + ReviewStage git 式暂存提交（review_preview 预览影响 → review_commit 原子事务落库）
+  review_* 工具链见 Plugin.ReviewTools
+
+检索 RetrieveService（docs/memory-redesign/01）:
+  关键词 + 时间窗口；排序两级：命中关键词数降序（绝对优先级）→ c_actual 降序；返回二跳内子证据；
+  同 utterance_id 的多条断言并排返回
+
+情绪 EmotionService（docs/memory-redesign/02）:
+  五轴（兴奋/喜悦/敏觉/满足/积极，-1~+1）+ 运动公式实时应用 + EmotionState.json 原子写 + EmotionSnapshot 快照表
+
+框架事件 EventSink（docs/memory-redesign/03）:
+  工具失败/超时/用户否定等 → L0/L1 落 FrameworkEvents 表（不污染 Claims/Journals，可作 Evidence 引用）
 ```
 
-18张表: Person / User / Channel / UserMessage / Memory / TempMemory / MemoryLink / PersonaMemory / Beacon / Image / DreamSession / DreamFragment / DreamFragmentDetail / ModelCallLog / PersonTrait / EvaluationScore / ReviewSession / ReviewAction
+数据库表（docs/memory-redesign/01 已实施）:
+  记忆表（9 张）: Claims / Journals / Keywords / FragmentKeywords / EmotionSnapshots / FrameworkEvents / ConflictGroups / ConflictGroupMembers / ReviewQueueItems
+  业务表: Person / User / Channel / UserMessage / Image / ModelCallLog 等
+  旧表（Memories/TempMemories/MemoryLinks/PersonaMemories/Beacons/PersonTraits/DreamLogs/ReviewLogs/EvaluationScores 等 12 张）已 DROP
 日志库(logs.db): events / token_usage
 
 ## 工具系统（插件化架构）
@@ -426,11 +415,11 @@ AgentLilara.PluginSDK (共享契约，独立类库):
   IPromptContributor: SectionKey / Priority / BuildSection()
   ToolMetaAttribute: Group / ContinueLoop / OutputOnly
   ToolParameter: Name / Description / Index / IsRequired（控制 JSON Schema required 数组）
-  Services/: IMemoryAccess（完整数据访问：语义搜索/向量操作/批量读取/临时库/关联图）
+  Services/: IWriterAccess（记忆写：WriteBatch 原子批次）/ IRetrieveAccess（关键词+时间窗口检索）
+             IEmotionAccess（情绪读取/信号提交）/ IReviewQueueAccess（待验证队列）
+             IReviewStageAccess（git 式暂存提交）
              IChannelAccess / ISubAgentAccess / IAdapterAccess / IEngineAccess
              IEventBusAccess / IToolHistoryAccess
-             IReviewAccess（游标/浏览/评价/笔记/进度）/ IReviewControl（预算/完成）
-             IBeaconAccess（信标创建）/ IPersonAccess（人物查询/更新）
              IConnectedChannel（会话频道状态）/ ICurrencyService（货币）/ IImageAccess（图片+OCR）
              ISpeakGuard（防话唠）/ ISessionResourceAccess（会话资源）/ IProductRegistry（商品注册）
 
@@ -439,7 +428,11 @@ AgentLilara.PluginSDK (共享契约，独立类库):
   Core/EscalateTool.cs       — Express escalate 工具，触发 SessionEngine.CreateSession
   Host/PluginLoader          — 扫描 {BaseDirectory}/Plugins/*.dll，AssemblyLoadContext 隔离加载
   Host/ToolContextImpl       — IToolContext 实现（ConcurrentDictionary 服务容器）
-  Host/MemoryAccessImpl      — IMemoryAccess 桥接（Repository + EmbeddingProvider）
+  Host/WriterAccessImpl      — IWriterAccess 桥接（Writer 写入口）
+  Host/RetrieveAccessImpl    — IRetrieveAccess 桥接（关键词+时间窗口检索）
+  Host/EmotionAccessImpl     — IEmotionAccess 桥接（情绪读取/提交）
+  Host/ReviewQueueAccessImpl — IReviewQueueAccess 桥接（待验证队列）
+  Host/ReviewStageAccessImpl — IReviewStageAccess 桥接（暂存提交）
   ToolRegistry               — 全局注册表（Register/Unregister/Get/禁用管理）
   ToolExecutor               — 顺序执行 + 权限组硬校验 + OnToolExecuted 回调
   PermissionService          — 工具权限组裁决（Storage/Session/{express,channel,task,review}.json 黑白名单）
@@ -455,8 +448,8 @@ AgentLilara.PluginSDK (共享契约，独立类库):
 
 插件项目 (独立 DLL，输出到 {BaseDirectory}/Plugins/):
   Plugin.BasicTools      — speak + thinking + send_media + send_file + adapter_action（基础通信）[LoopComponent: basic-tools]
-  Plugin.WorkingTools    — pinboard + thinking_notes + retain_list + task_management + mark_for_review（工作状态+复盘标记）[LoopComponent: working-tools, IInjectProvider]
-  Plugin.MemoryTools     — memory（记忆读写，依赖 IMemoryAccess 服务）[GlobalComponent: memory-tools]
+  Plugin.WorkingTools    — pinboard + thinking_notes + retain_list + task_management + mark_for_review（工作状态+复盘标记；mark_for_review 走 IReviewQueueAccess 入 ReviewQueue，Source=Manual）[LoopComponent: working-tools, IInjectProvider]
+  Plugin.MindTools       — journal/claim/remember/mind_status/archive（心智工具）+ mind-emotion/mind-experience 注入组件 [GlobalComponent: mind-tools]
   Plugin.FileTools       — read_text + write_text + update_text + list_dir + move_file/delete_file/copy_file（文件系统）[GlobalComponent: file-tools]
   Plugin.FileOps         — archive_create/extract/list + search/grep_files + file_info/hash/compare_files
   Plugin.GroupFileTools  — 分组文件操作
@@ -465,7 +458,7 @@ AgentLilara.PluginSDK (共享契约，独立类库):
                             - 创建子 session 时附加 MailboxInputPort（父→子指令通道）
                             - 子 session OnCompleted 钩子 → 直接 InjectExternal 通知父 session + 触发 wait_sub
                             - report_to_parent 工具直接 InjectExternal 注入父 session 上下文（单条路径，无双轨）
-  Plugin.ReviewTools     — review_* 12个复盘工具
+  Plugin.ReviewTools     — review_list/resolve/preview/commit/evidence（5 个验证工具链）[LoopComponent: review-tools]
   Plugin.ScheduledTasks  — 定时任务（插件化实现）
   Plugin.SkillTools      — invoke_skill / list_skills / load_skill_file / list_skill_files
   Plugin.NetworkTools    — http_request + download_file [LoopComponent: network-tools] + Playwright 浏览器自动化 10 工具 [GlobalComponent: browser + LoopComponent: browser-tools]
@@ -493,10 +486,10 @@ ToolCall: 原生 tool_use (Claude API) 为主路径
   依赖解析: deps.json（AssemblyDependencyResolver）+ 目录回退（插件目录下直接探测）
   安全: 依赖 DLL 不在独立 ALC 中加载，消除竞态条件
   多类型发现: ITool / IInjectProvider / IWebUIProvider / ILoopComponent / IGlobalComponent
-  构造注入: EventBus / ModuleBus / Gate / IMemoryAccess / IServiceProvider
+  构造注入: EventBus / ModuleBus / Gate / IWriterAccess / IRetrieveAccess / IEmotionAccess / IServiceProvider
   延迟实例化: IInjectProvider/Component 由引擎创建（非全局单例），ITool 是全局单例
   启动时 MasterEngine.InitAsync 调用 PluginLoader.LoadAll()
-  服务注入: ToolContext.Register<IMemoryAccess>(impl) 在插件加载前完成
+  服务注入: ToolContext.Register<IWriterAccess>/<IRetrieveAccess>/<IEmotionAccess> 等心智服务在插件加载前完成
 ```
 
 ## MCP 插件系统
@@ -540,22 +533,20 @@ Person (自然人)          User (账号)
   TrustLevel (-2~5)        PersonId → Person
   TrustProgress (好感度)   Platform + PlatformId
   FastMemory (一句话概括)  PermissionLevel (Blocked~Admin)
-  AlertLevel (0-4)         DisplayName
-  LastAlertTime
+  DisplayName
 
-TrustLevel: Hostile(-2) / Wary(-1) / Unknown(0) / Stranger(1) /
+信任系统已暂缓（见 docs/memory-redesign/06）:
+  旧信任升降级/好感度/警报惩罚流程不再运转——TrustProgressionConfig 保留但旧信任字段
+  迁移到"信任 = 评估断言"未做；AlertLevel 已取消。
+  目标形态（docs/memory-redesign/03 人物与账号）: 信任是 Lilara 对某人物的一条评估断言
+  （{subject:Lilara, predicate:信任, object:人物, object_value:等级, Credibility:可信度}），
+  日常事件不更新，仅 Review 审视该人物时重估等级 + 可信度（评估断言）——未实装。
+  TrustLevel 语义沿用: Hostile(-2) / Wary(-1) / Unknown(0) / Stranger(1) /
             Understanding(2) / Familiarity(3) / Trust(4) / AbsoluteTrust(5)
+  冷启动默认 Unknown，首次 Review 审视该人物时才建信任断言
 
-信任升级: Unknown→Stranger(消息数≥3) → Understanding(记忆≥5+天数≥3+任一维度≥8) → Familiarity(天数≥14+无警报+3/4维度≥20) → Trust(天数≥30+无近期警报+review≥3+全维度≥35)
-降级: 维度跌破门槛即降（自动执行）
-AbsoluteTrust: 仅管理员手动
-评价存储: EvaluationScore 表 (TargetType/TargetId/Dimension/Value/LastEvaluatedAt)
-
-报警按钮: alertLevel 递增惩罚(记录→扣分→限制+通知管理员)，冷却恢复(1/3/7/14天)
-participants XML: <user name="..." relation="好友" memo="..."/>
-
-一个Person可关联多个User (跨平台)
-Console平台用户默认Admin权限
+一个 Person 可关联多个 User（跨平台账号）
+Console 平台用户默认 Admin 权限
 ```
 
 ## 指令系统
@@ -574,26 +565,23 @@ CommandSpawnCheck 拦截 → CommandRegistry 路由
 ```
 Storage/
 ├── Core/*.json          各Core的LLM配置（连接+采样+协议，不含 session 提示词）
-├── Core/Prompts/        非 session 核心提示词（Express/System/记忆/梦话），通过 core 配置 promptFiles 加载
+├── Core/Prompts/        非 session 核心提示词（System/SleepTalk），通过 core 配置 promptFiles 加载
 ├── Core/VisionProvider.json  视觉模型配置(apiKey/endpoint/model)
 ├── Core/OcrProvider.json     OCR模型配置(apiKey/endpoint/model)
-├── Dream/
-│     ├── DreamConfig.json    做梦调度参数+片段预算配置
-│     ├── ReviewConfig.json   复盘引擎配置（评价参数/信任门槛/预算/空转检测）
-│     ├── DreamStats.json     滚动7天统计+自适应基线
-│     └── ReviewProgress.json 复盘进度存档（游标/评价缓冲/笔记）
 ├── Engine/
-│     ├── EngineConfig.json          自启动引擎列表 {"autoStart":["Timer"]}
+│     ├── EngineConfig.json          自启动引擎列表 {"autoStart":["Message","Timer","Session","Vision","Mind"]}
 │     ├── ImpulseConfig.json         仅 ColdTimeoutSeconds 被读取用于 express 空闲回收（其余冲动字段为死配置，不参与决策）
-│     ├── TrustProgressionConfig.json 信任升降阈值+警报冷却配置
+│     ├── TrustProgressionConfig.json 信任升降阈值配置（信任系统暂缓，见 docs/memory-redesign/06）
 │     ├── VisionEngineConfig.json    视觉引擎并发/批量/重试配置
-│     └── ComponentConfig.json       组件按权限组启用/禁用状态
+│     ├── ComponentConfig.json       组件按权限组启用/禁用状态
+│     └── Emotion/
+│           └── EmotionState.json    情绪五轴当前值（-1~+1，原子写，重启加载，见 docs/memory-redesign/02）
 ├── Session/（会话类型配置库：类型键=文件名，字符串驱动，`SessionTypeProfiles.All()` 可枚举）
 │     ├── channel.json               会话类型 channel（核心/组件/权限组/AllowedCores 白名单/PromptFiles）+ 工具黑白名单
 │     ├── task.json                  会话类型 task（核心/组件/权限组/AllowedCores 白名单/PromptFiles）+ 工具黑白名单
 │     ├── express.json               会话类型 express（轻量对话，AutoClaim Full + 白名单工具 + express_workflow 提示词）
-│     ├── review.json                Review 复盘工具白名单（+ 会话类型档案字段，`Get("review")` 已可加载，运行时待重构接入）
-│     └── Prompts/                   session 提示词主库（会话身份，SessionTypeProfile.PromptFiles 引用；换核不换提示词）
+│     ├── review.json                Review 验证会话（复用 TaskCore，组件 review-tools/mind-tools，PromptFiles ReviewPrompt+mind_usage）
+│     └── Prompts/                   session 身份提示词主库（会话身份，SessionTypeProfile.PromptFiles 引用；换核不换提示词；含 mind_usage.txt 心智工具用法）
 ├── Adapter/
 │     └── *.json  适配器实例配置（多实例，config-driven）
 │         qq-main.json: OneBotAdapter 配置(WS地址/token/白名单/botNames)
@@ -616,18 +604,22 @@ Storage/
 
 数据桥接:
   SystemMonitor — 触发告警采集（CollectAlerts + OnStateChanged 通知）
-  快照: 各 Provider 直接拉取（EnginesProvider 用 DreamEngineSpawnCheck.GetDreamSnapshot(true)、VisionEngine.GetSnapshot() 等）
+  快照: 各 Provider 直接拉取（EnginesProvider 用 MasterEngine.GetActiveEnginesSnapshot()、VisionEngine.GetSnapshot() 等）
        MasterEngine.GetSpawnCheck<T>() / GetActiveEnginesSnapshot()
 
-页面 (卡片系统 Phase 3 已完成；仍保留少量独立页面 Dashboard/LogTrace/Login/McpStatus/Memory_Graph):
-  Dashboard    — 系统状态/引擎摘要/活跃频道表格/做梦状态/实时日志尾部
+页面 (卡片系统 Phase 3 已完成；仍保留少量独立页面 Dashboard/LogTrace/Login/McpStatus):
+  Dashboard    — 系统状态/引擎摘要/活跃频道表格/实时日志尾部
   Logs/Trace   — Signal 信号追踪（SVG渲染/虚拟化/实时推送/因果链高亮）
   Logs/Tokens  — Token 统计（按 Core / 按 Model 汇总）
   Logs/Model   — 模型调用历史 + 详情查看
   Console      — 频道选择/创建 + 聊天式消息流 + 模拟用户/替Bot说话/自定义发送者 + @提及/私聊模拟
   McpStatus    — MCP Server 状态
-  Memory_Graph — 记忆关联图谱
   其余页面通过卡片系统动态渲染（/p/{route}）
+
+Provider 数据源（WebUI/Providers/，共 17 个）:
+  Memory — Claims/Journals/Keywords/情绪快照
+  Review — ReviewQueue/冲突组
+  Dream  — 框架事件 + 推断断言
 
 启动行为:
   默认启动 Web 服务器（所有模式），--debug / --test 模式不启动 Web 服务器
