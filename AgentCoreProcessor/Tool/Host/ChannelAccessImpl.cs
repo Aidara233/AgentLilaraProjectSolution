@@ -4,7 +4,9 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
+using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine;
+using AgentCoreProcessor.Engine.Session;
 using AgentLilara.PluginSDK.Services;
 
 namespace AgentCoreProcessor.Tool.Host
@@ -21,14 +23,31 @@ namespace AgentCoreProcessor.Tool.Host
         public async Task<List<ChannelSummary>> GetAllChannelsAsync()
         {
             var channels = await _ctx.Session.GetAllChannelsAsync();
-            return channels.Select(c => new ChannelSummary
+
+            // 一次取全频道占用快照，避免逐频道调用 SessionEngine
+            var sessionEngine = _ctx.GetActiveEnginesSnapshot()
+                .OfType<SessionEngine>().FirstOrDefault();
+            var snapById = sessionEngine?.GetChannelSessionSnapshots()
+                              .ToDictionary(s => s.ChannelId)
+                          ?? new Dictionary<int, SessionEngine.ChannelSessionSnapshot>();
+
+            var result = new List<ChannelSummary>(channels.Count);
+            foreach (var c in channels)
             {
-                Id = c.Id,
-                Name = c.Name,
-                Platform = "",
-                MessageCount = 0,
-                HasActiveEngine = _ctx.HasActiveEngine($"Channel:{c.Id}")
-            }).ToList();
+                var snap = snapById.GetValueOrDefault(c.Id);
+                result.Add(new ChannelSummary
+                {
+                    Id = c.Id,
+                    Name = c.Name,
+                    Platform = "",
+                    MessageCount = await _ctx.Session.GetMessageCountByChannelAsync(c.Id),
+                    HasActiveEngine = snap is { IsAlive: true },
+                    SessionId = snap?.SessionId,
+                    SessionType = snap?.Type,
+                    LastActive = await _ctx.Session.GetLatestMessageTimeAsync(c.Id)
+                });
+            }
+            return result;
         }
 
         public async Task<ChannelDetail?> GetChannelDetailAsync(int channelId)
@@ -48,16 +67,57 @@ namespace AgentCoreProcessor.Tool.Host
         public async Task<List<MessageSummary>> GetMessagesAsync(int channelId, int count = 20)
         {
             var messages = await _ctx.Session.GetContextByChannelAsync(channelId, limit: count);
-            return messages.Select(m => new MessageSummary
-            {
-                Id = m.Id,
-                UserName = m.IsFromBot ? "Lilara"
-                    : !string.IsNullOrEmpty(m.SenderName) ? m.SenderName
-                    : $"User:{m.UserId}",
-                Content = m.Content,
-                Timestamp = m.Time
-            }).ToList();
+            return messages.Select(ToSummary).ToList();
         }
+
+        public async Task<List<MessageSummary>> SearchChatAsync(ChannelQuery query)
+        {
+            var limit = Math.Clamp(query.Limit, 1, 100);
+
+            // 频道名 → id（无效名忽略；全部无效视为无结果）
+            List<int>? channelIds = null;
+            if (query.ChannelNames is { Count: > 0 })
+            {
+                channelIds = new List<int>();
+                foreach (var name in query.ChannelNames)
+                {
+                    var ch = await _ctx.Session.FindChannelByNameAsync(name);
+                    if (ch != null) channelIds.Add(ch.Id);
+                }
+                if (channelIds.Count == 0)
+                    return new List<MessageSummary>();
+            }
+
+            // 游标模式（增量/翻旧）：需指定单个频道
+            if (query.AfterId.HasValue || query.BeforeId.HasValue)
+            {
+                if (channelIds is not { Count: 1 })
+                    return new List<MessageSummary>();
+                var cid = channelIds[0];
+                var cursorMsgs = query.AfterId.HasValue
+                    ? await _ctx.Session.GetMessagesAfterIdAsync(cid, query.AfterId.GetValueOrDefault(), limit)
+                    : await _ctx.Session.GetMessagesBeforeIdAsync(cid, query.BeforeId.GetValueOrDefault(), limit);
+                return cursorMsgs.Select(ToSummary).ToList();
+            }
+
+            // 搜索模式：关键词/时间范围，可跨频道或全频道（SearchAsync 按 Time DESC，翻转成升序）
+            var found = await _ctx.Session.SearchMessagesAsync(
+                channelIds, query.Keyword, null,
+                query.TimeFrom, query.TimeTo, limit);
+            found.Reverse();
+            return found.Select(ToSummary).ToList();
+        }
+
+        private static MessageSummary ToSummary(UserMessage m) => new()
+        {
+            Id = m.Id,
+            UserName = m.IsFromBot ? "Lilara"
+                : !string.IsNullOrEmpty(m.SenderName) ? m.SenderName
+                : $"User:{m.UserId}",
+            Content = m.Content,
+            Timestamp = m.Time,
+            IsBot = m.IsFromBot
+        };
 
         public async Task UpdateAffinityAsync(int channelId, float delta)
         {

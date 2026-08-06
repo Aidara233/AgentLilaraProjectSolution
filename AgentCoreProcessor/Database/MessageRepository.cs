@@ -98,6 +98,15 @@ namespace AgentCoreProcessor.Database
             return results.Count > 0 ? results[0].Time : (DateTime?)null;
         }
 
+        /// <summary>获取指定频道最新一条消息的时间（无则 null）。供频道列表显示最后活跃时间。</summary>
+        public async Task<DateTime?> GetLatestMessageTimeAsync(int channelId)
+        {
+            var results = await db.QueryAsync<UserMessage>(
+                "SELECT * FROM UserMessages WHERE ChannelId = ? ORDER BY Id DESC LIMIT 1",
+                channelId);
+            return results.Count > 0 ? results[0].Time : (DateTime?)null;
+        }
+
         /// <summary>获取指定频道中 Id <= upToId 的消息数量。</summary>
         public async Task<int> GetCountUpToAsync(int channelId, int upToId)
         {

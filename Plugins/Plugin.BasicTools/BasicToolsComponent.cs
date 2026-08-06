@@ -12,11 +12,13 @@ public class BasicToolsComponent : LoopComponentBase
     private SendMediaTool? _sendMedia;
     private SendFileTool? _sendFile;
     private AdapterActionTool? _adapterAction;
+    private ListChannelsTool? _listChannels;
+    private SearchChatHistoryTool? _searchChatHistory;
 
     public override ComponentMeta Meta => new()
     {
         Name = "basic-tools",
-        Description = "基础通信工具（speak, thinking, send_media, send_file, adapter_action）",
+        Description = "基础通信工具（speak, thinking, send_media, send_file, adapter_action, list_channels, search_chat_history）",
         DefaultEnabled = true,
         PromptPriority = 100
     };
@@ -30,6 +32,8 @@ public class BasicToolsComponent : LoopComponentBase
             if (_sendMedia != null) yield return _sendMedia;
             if (_sendFile != null) yield return _sendFile;
             if (_adapterAction != null) yield return _adapterAction;
+            if (_listChannels != null) yield return _listChannels;
+            if (_searchChatHistory != null) yield return _searchChatHistory;
         }
     }
 
@@ -53,12 +57,16 @@ public class BasicToolsComponent : LoopComponentBase
             _sendFile = connected != null
                 ? new SendFileTool(channelAccess, connected)
                 : new SendFileTool(channelAccess, channelId);
+            _listChannels = new ListChannelsTool(channelAccess);
+            _searchChatHistory = new SearchChatHistoryTool(channelAccess);
         }
         else
         {
             _speak = new SpeakTool();
             _sendMedia = new SendMediaTool();
             _sendFile = new SendFileTool();
+            _listChannels = new ListChannelsTool();
+            _searchChatHistory = new SearchChatHistoryTool();
         }
         _thinking = new ThinkingTool();
 

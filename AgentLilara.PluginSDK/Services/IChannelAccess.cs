@@ -20,6 +20,13 @@ namespace AgentLilara.PluginSDK.Services
         /// <summary>调整频道亲和度（delta 正值增加，负值降低）。</summary>
         Task UpdateAffinityAsync(int channelId, float delta);
 
+        /// <summary>
+        /// 按条件查询聊天记录。游标模式（AfterId/BeforeId）需指定单个频道；
+        /// 其余条件（Keyword/时间范围）可跨频道或全频道，至少提供一个条件。
+        /// 结果按时间升序返回。
+        /// </summary>
+        Task<List<MessageSummary>> SearchChatAsync(ChannelQuery query);
+
         // —— 消息输出 ——
 
         /// <summary>
@@ -49,6 +56,15 @@ namespace AgentLilara.PluginSDK.Services
         public string Platform { get; set; } = "";
         public int MessageCount { get; set; }
         public bool HasActiveEngine { get; set; }
+
+        /// <summary>占用该频道的会话 id（无占用为空）。</summary>
+        public string? SessionId { get; set; }
+
+        /// <summary>占用会话类型（express/working/task，仅占用时有值）。</summary>
+        public string? SessionType { get; set; }
+
+        /// <summary>频道最后一条消息的时间（无消息为空）。</summary>
+        public System.DateTime? LastActive { get; set; }
     }
 
     public class ChannelDetail
@@ -66,5 +82,34 @@ namespace AgentLilara.PluginSDK.Services
         public string UserName { get; set; } = "";
         public string Content { get; set; } = "";
         public System.DateTime Timestamp { get; set; }
+        public bool IsBot { get; set; }
+    }
+
+    /// <summary>
+    /// 聊天记录查询条件。至少提供一个有效条件（频道/关键词/时间范围/游标）。
+    /// 游标模式（AfterId/BeforeId）仅支持单个频道；搜索模式（Keyword/时间范围）可跨频道或全频道。
+    /// </summary>
+    public class ChannelQuery
+    {
+        /// <summary>频道名列表。空/缺省 = 全部频道。</summary>
+        public List<string>? ChannelNames { get; set; }
+
+        /// <summary>内容关键词，匹配消息文本或发送者名。</summary>
+        public string? Keyword { get; set; }
+
+        /// <summary>起始时间（含）。</summary>
+        public System.DateTime? TimeFrom { get; set; }
+
+        /// <summary>结束时间（含）。</summary>
+        public System.DateTime? TimeTo { get; set; }
+
+        /// <summary>增量拉取：返回 Id &gt; AfterId 的消息（升序）。需指定单个频道。</summary>
+        public int? AfterId { get; set; }
+
+        /// <summary>翻旧：返回 Id &lt;= BeforeId 的最近 N 条（升序）。需指定单个频道。</summary>
+        public int? BeforeId { get; set; }
+
+        /// <summary>返回条数，1–100，默认 20。</summary>
+        public int Limit { get; set; } = 20;
     }
 }
