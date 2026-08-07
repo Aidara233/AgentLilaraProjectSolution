@@ -7,7 +7,7 @@
   ],
   "DefaultComponents": [
     "basic-tools", "working-tools", "file-tools", "file-ops",
-    "mind-tools", "system-ops"
+    "mind-tools", "system-ops", "network-tools"
   ],
   "PermissionGroup": "channel",
   "PermissionMode": "blacklist",

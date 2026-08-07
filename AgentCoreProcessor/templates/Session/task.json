@@ -6,7 +6,7 @@
   ],
   "DefaultComponents": [
     "basic-tools", "file-tools", "mind-tools",
-    "sub-agent-runtime"
+    "sub-agent-runtime", "network-tools"
   ],
   "PermissionGroup": "task",
   "PermissionMode": "whitelist",
@@ -18,6 +18,7 @@
     "journal", "claim", "remember", "mind_status", "archive",
     "report_to_parent",
     "end_session", "wait", "compact", "connect_channel", "listen_channel",
-    "disconnect_channel", "get_image_text", "refine_image", "continue_loop"
+    "disconnect_channel", "get_image_text", "refine_image", "continue_loop",
+    "http_request", "download_file"
   ]
 }

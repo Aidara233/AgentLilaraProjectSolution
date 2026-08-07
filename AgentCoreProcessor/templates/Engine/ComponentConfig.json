@@ -11,7 +11,7 @@
     "git-tools":               { "channel": true,  "task": true,  "review": false },
     "group-file-tools":        { "channel": true,  "task": true,  "review": true  },
     "browser-tools":           { "channel": true,  "task": true,  "review": false },
-    "network-tools":           { "channel": false, "task": true,  "review": false },
+    "network-tools":           { "channel": true,  "task": true,  "review": false },
     "quick-actions":           { "channel": true,  "task": true,  "review": true  },
     "scheduled-tasks":         { "channel": true,  "task": true,  "review": true  },
     "ssh-tools":               { "channel": false, "task": true,  "review": false },
