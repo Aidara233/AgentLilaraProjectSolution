@@ -120,7 +120,7 @@ using AgentLilara.PluginSDK;
 namespace Plugin.MyFirst;
 
 [Component(Name = "counter", Scope = ComponentScope.Loop)]
-// 组件归属由 Storage/Engine/ComponentConfig.json 决定（插件已不声明引擎适用性）
+// 组件归属由会话类型文件（SessionTypes/{type}.json 的 Components 清单）决定（插件已不声明引擎适用性）
 public class CounterComponent : LoopComponentBase
 {
     private CounterTool? _counter;

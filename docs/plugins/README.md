@@ -83,7 +83,7 @@ Program.cs 启动
 **初始化超时兜底（2026-08-06）**：组件 `OnInitAsync` 一律带超时，任何组件挂起都不会拖住启动或 session 创建——
 - Global 组件：`GlobalComponentHost.InitAsync` **并行**初始化，每组件超时 `GlobalInitTimeoutSeconds`（默认 10s）；超时组件跳过工具注册，其余照常。
 - Loop 组件：`ComponentHost.InitAsync` 每组件超时 `LoopInitTimeoutSeconds`（默认 5s）；超时跳过不抛异常，session 照常创建（express 会话在 `eventLock` 下创建，阻塞=卡整条消息路由）。
-- 超时值在 `Storage/Engine/ComponentConfig.json`（`GlobalInitTimeoutSeconds` / `LoopInitTimeoutSeconds`）。
+- 超时值收敛为代码常量（`Component/ComponentTimeouts.cs`：`GlobalInitTimeoutSeconds` / `LoopInitTimeoutSeconds` / `ShutdownTimeoutMs`，不再外部可配）。
 
 **重活组件应懒启动**：不要在 `OnInitAsync` 里做可能挂起的同步操作（网络连接、拉起浏览器等）。参照 `browser`（`EnsureStartedAsync()` 首次工具调用才拉 Playwright/Chromium）与 SSH（全局组件懒连接 + 远端目录后台创建）。
 
@@ -163,7 +163,7 @@ AgentLilaraProjectSolution/
 - **AssemblyLoadContext 隔离**：每个插件 DLL 运行在自己的 ALC 中，支持热重载（卸载后重新扫描）
 - **服务定位器模式**：插件通过 `GetService<T>()` 获取宿主服务（IMemoryAccess、IChannelAccess 等），不直接引用宿主程序集
 - **无清单文件**：所有元数据通过 C# 属性声明（`[Component]`、`[ToolMeta]` 等）
-- **插件不声明权限/引擎适用性**：`[ToolMeta] EngineTypes` 与 `[LoopApplicability]` 的引擎维度已 **删除**。工具/组件可见性完全由程序本体裁决——`Storage/Session/{express,channel,task,review}.json` 的权限黑白名单（工具级） + `Storage/Engine/ComponentConfig.json`（组件×权限组装配）。插件只需提供工具，不决定谁能用。
+- **插件不声明权限/引擎适用性**：`[ToolMeta] EngineTypes` 与 `[LoopApplicability]` 的引擎维度已 **删除**。工具/组件可见性完全由程序本体裁决——**会话类型文件即唯一权限源**（`Storage/SessionTypes/{type}.json` 的 Tools 白黑名单裁决工具 + Components 清单裁决组件装配）。插件只需提供工具，不决定谁能用。旧 `PermissionService` / `ComponentConfig` 已删除。
 - **参数名必须英文**：这是 Bedrock 代理的硬性限制
 - **Workspace 路径**：文件工具通过 `IPluginStorage.WorkspaceDirectory` 访问共享沙箱，不要用 `..` 跳转
 - **共享代码**：跨插件复用抽到独立类库（如 `FileToolKit.Shared/`），不用链接文件

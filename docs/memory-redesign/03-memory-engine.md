@@ -367,16 +367,16 @@ Claims: { subject:   {entity, Lilara},
 
 情绪注入、经历注入做成**插件**（消费端自治），不塞进 MindEngine 核心。核心只生产状态（EmotionService），消费由各 Session 按自己性质决定（对话型注入、审查型 Review 不注入）。
 
-**一个 DLL，多个 `[Component]`**——注入与工具天然分离，各组件在 ComponentConfig.json 独立启停：
+**一个 DLL，多个 `[Component]`**——注入与工具天然分离，各组件在会话类型文件（SessionTypes/{type}.json 的 Components 清单）独立启停：
 
 ```
 Plugin.MindTools/
 ├── MindEmotionComponent    [Global 组件]  → BuildPromptSection：读情绪 → 生成状态片段
 ├── MindExperienceComponent [Global 组件]  → BuildPromptSection：读经历 → 生成经历片段
-└── 心智工具                独立 ITool     → PermissionService 黑白名单（工具级）
+└── 心智工具                独立 ITool     → 会话类型 Tools 白黑名单（工具级）
 ```
 
-- 注入用组件装配控制（ComponentConfig），工具用权限组控制（Storage/Session/{group}.json）——两套控制面
+- 注入与工具都收敛到**会话类型文件单一控制面**（Components 清单 + Tools 白黑名单，旧 ComponentConfig/PermissionService 已删除）
 - 情绪组件按 `caller.LoopType` 区分：Working/Express 注入、Review 不注入（冷静验证不带情绪偏置）
 
 ### 情绪注入（MindEmotionComponent）
@@ -405,5 +405,5 @@ Plugin.MindTools/
 
 - **OnCompleted 事件**（`RuntimeSession.cs`）已存在，复活监听直接订阅
 - **Completed 存档**（`SessionEngine.cs`）已"留档不加载"，复活从该存档重建
-- **Session 类型配置化**（`Storage/Session/{type}.json`）已就绪，记忆工具组/整理会话只需新增配置
+- **Session 类型配置化**（`Storage/SessionTypes/{type}.json`）已就绪，记忆工具组/整理会话只需新增配置
 - **session 善后不做拦截**——端到端结束保持现状，复活在其后发生

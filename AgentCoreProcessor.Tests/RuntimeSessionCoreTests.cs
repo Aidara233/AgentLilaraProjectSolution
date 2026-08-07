@@ -126,13 +126,13 @@ public class RuntimeSessionCoreTests
     public void SwitchCore_PreservesSessionPrompt()
     {
         using var _ = PointToTempStorage();
-        // 布置临时 Storage：会话类型配置声明 PromptFiles + 提示词文件
-        var sessionDir = Path.Combine(PathConfig.StoragePath, "Session");
+        // 布置临时 Storage：会话类型配置声明 Prompts + 提示词文件
+        var sessionDir = Path.Combine(PathConfig.StoragePath, "SessionTypes");
         var promptsDir = Path.Combine(sessionDir, "Prompts");
         Directory.CreateDirectory(promptsDir);
         File.WriteAllText(Path.Combine(sessionDir, "channel.json"),
-            "{\"Type\":\"channel\",\"DefaultCoreConfig\":\"ChannelCore\"," +
-            "\"AllowedCores\":[\"ChannelCore\",\"ExpressCore\"],\"PromptFiles\":[\"test_prompt.txt\"]}");
+            "{\"Type\":\"channel\",\"Core\":\"ChannelCore\"," +
+            "\"AllowedCores\":[\"ChannelCore\",\"ExpressCore\"],\"Prompts\":[\"test_prompt.txt\"]}");
         File.WriteAllText(Path.Combine(promptsDir, "test_prompt.txt"), "测试会话提示词：channel 身份");
 
         var rs = NewChannelSession();

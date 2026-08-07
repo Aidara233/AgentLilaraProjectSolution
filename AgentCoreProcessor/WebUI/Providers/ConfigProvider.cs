@@ -34,7 +34,6 @@ internal class ConfigProvider : IWebUIProvider
         ["EngineConfig"] = "Engine/EngineConfig.json",
         ["ImpulseConfig"] = "Engine/ImpulseConfig.json",
         ["VisionEngine"] = "Engine/VisionEngineConfig.json",
-        ["ComponentConfig"] = "Engine/ComponentConfig.json",
     };
 
     private readonly Dictionary<string, string> _otherFiles = new()

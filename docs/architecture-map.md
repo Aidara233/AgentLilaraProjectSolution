@@ -210,8 +210,9 @@ MessageEngine: 双向枢纽
     被动响应: awaitingInput=true 强制，按端口权重激活，不因 InitialState 立即推理。
     空闲回收: SessionEngine 30s 循环扫描 express 会话空闲超时（ImpulseConfig.ColdTimeoutSeconds）→
       直接杀 + 释放 claim（频道回无占用）。express 记忆只读+历史突发语义，无长期状态可压缩。
-    工具白名单（Storage/Session/express.json，白名单模式）:
+    工具白名单（Storage/SessionTypes/express.json 的 Tools，白名单模式）:
       speak/thinking/send_media/send_file/adapter_action/escalate/wait/connect_channel/disconnect_channel
+      + 会话工具(list_channels/search_chat_history/list_sessions/send_session_message)
       + 心智只读(journal/remember/mind_status)
     身份提示词: SessionTypeProfile.PromptFiles（express_workflow.txt），InitialState 只放实例特有内容。
 
@@ -264,7 +265,7 @@ RuntimeSession (统一 agent 循环, 无强制 stop):
     OutputPorts: 端口名 → 目标
     AutoClaimChannel: 自动 Full 占用归属频道
 
-  默认配置（SessionTypeProfiles 内置默认，Storage/Session/{type}.json 可覆盖）:
+  默认配置（SessionTypeProfiles 内置种子，Storage/SessionTypes/{type}.json 可覆盖）:
     channel: basic-tools, working-tools, file-tools, file-ops, mind-tools, system-ops | AutoClaim Full
     task:    basic-tools, file-tools, mind-tools, sub-agent-runtime | AutoClaim=false
     express: basic-tools | AutoClaim Full（孵化时接管频道）
@@ -435,17 +436,17 @@ AgentLilara.PluginSDK (共享契约，独立类库):
   Host/ReviewQueueAccessImpl — IReviewQueueAccess 桥接（待验证队列）
   Host/ReviewStageAccessImpl — IReviewStageAccess 桥接（暂存提交）
   ToolRegistry               — 全局注册表（Register/Unregister/Get/禁用管理）
-  ToolExecutor               — 顺序执行 + 权限组硬校验 + OnToolExecuted 回调
-  PermissionService          — 工具权限组裁决（Storage/Session/{express,channel,task,review}.json 黑白名单）
-  SessionTypeProfiles        — 会话类型配置库（Storage/Session/{type}.json，字符串类型键：内置 channel/task/express；任意新类型=新 JSON）
+  ToolExecutor               — 顺序执行 + 会话类型硬校验 + OnToolExecuted 回调
+  SessionTypeProfiles        — 会话类型档案（**唯一权限源**，Storage/SessionTypes/{type}.json：Core/AllowedCores/Components/Tools 白黑名单/Prompts 自包含；内置 express/channel/task/review 种子；任意新类型=新 JSON）
 
-  工具可用性（权限控制组，单一裁决源）:
-    1. ToolConfig.json 全局禁用
-    2. PermissionService 权限组（Storage/Session/{group}.json，default=disabled 白名单 / default=enabled 黑名单）
-    3. 组件装配（ComponentConfig.json 组件×组开关；LoopApplicability / ToolMeta.EngineTypes 已删除）
-  AgentCore.EngineType = 当前权限组 key（express/channel/task/review）。
-  核心过滤点：ToolRegistry.IsVisibleToEngine(name, engineType) → PermissionService.IsAllowed；
-  执行期：ToolExecutor.PermissionGroup 对组外工具硬拒绝。
+  工具可用性（会话类型文件 = 单一裁决源）:
+    1. ToolConfig.json 全局禁用（kill switch，独立概念）
+    2. SessionTypeProfiles 会话类型白/黑名单（Storage/SessionTypes/{type}.json 的 Tools：whitelist=仅清单可用 / blacklist=清单禁用）
+    3. 组件装配 = 同文件的 Components 清单（Loop 组件按清单装载；Global 组件恒装载、其工具由工具清单门控）
+  会话类型名即权限作用域（无 PermissionGroup 间接层）。AgentCore.EngineType = 会话类型 key。
+  核心过滤点：ToolRegistry.IsVisible(name, type) → SessionTypeProfiles.IsAllowed；
+  执行期：ToolExecutor.PermissionGroup 对类型外工具硬拒绝。
+  旧 PermissionService / ComponentConfig 已删除。
 
 插件项目 (独立 DLL，输出到 {BaseDirectory}/Plugins/):
   Plugin.BasicTools      — speak + thinking + send_media + send_file + adapter_action（基础通信）[LoopComponent: basic-tools]
@@ -574,10 +575,9 @@ Storage/
 │     ├── ImpulseConfig.json         仅 ColdTimeoutSeconds 被读取用于 express 空闲回收（其余冲动字段为死配置，不参与决策）
 │     ├── TrustProgressionConfig.json 信任升降阈值配置（信任系统暂缓，见 docs/memory-redesign/06）
 │     ├── VisionEngineConfig.json    视觉引擎并发/批量/重试配置
-│     ├── ComponentConfig.json       组件按权限组启用/禁用状态
 │     └── Emotion/
 │           └── EmotionState.json    情绪五轴当前值（-1~+1，原子写，重启加载，见 docs/memory-redesign/02）
-├── Session/（会话类型配置库：类型键=文件名，字符串驱动，`SessionTypeProfiles.All()` 可枚举）
+├── SessionTypes/（会话类型配置库：类型键=文件名，字符串驱动，`SessionTypeProfiles.All()` 可枚举）
 │     ├── channel.json               会话类型 channel（核心/组件/权限组/AllowedCores 白名单/PromptFiles）+ 工具黑白名单
 │     ├── task.json                  会话类型 task（核心/组件/权限组/AllowedCores 白名单/PromptFiles）+ 工具黑白名单
 │     ├── express.json               会话类型 express（轻量对话，AutoClaim Full + 白名单工具 + express_workflow 提示词）

@@ -458,9 +458,10 @@ internal class TestTreeDataSource : IDataSource
                     new JsonObject { ["id"] = "storage-engine", ["label"] = "Engine/",
                         ["children"] = new JsonArray
                         {
-                            new JsonObject { ["id"] = "engine-perms", ["label"] = "ComponentConfig.json" }
+                            new JsonObject { ["id"] = "engine-config", ["label"] = "EngineConfig.json" }
                         }
                     },
+                    new JsonObject { ["id"] = "storage-sessiontypes", ["label"] = "SessionTypes/" },
                     new JsonObject { ["id"] = "storage-db", ["label"] = "agent.db" }
                 }
             },

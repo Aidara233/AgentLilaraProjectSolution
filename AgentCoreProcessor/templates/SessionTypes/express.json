@@ -1,0 +1,25 @@
+{
+  "Type": "express",
+  "Core": "ExpressCore",
+  "AllowedCores": [
+    "ExpressCore"
+  ],
+  "Components": [
+    "basic-tools"
+  ],
+  "Tools": {
+    "Mode": "whitelist",
+    "List": [
+      "speak", "thinking", "send_media", "send_file", "adapter_action",
+      "list_channels", "search_chat_history",
+      "list_sessions", "send_session_message",
+      "escalate", "wait",
+      "connect_channel", "disconnect_channel",
+      "journal", "remember", "mind_status"
+    ]
+  },
+  "Prompts": [
+    "identity.txt", "style.txt", "social.txt",
+    "architecture_overview.txt", "tech_rules.txt", "express_workflow.txt"
+  ]
+}

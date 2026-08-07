@@ -9,7 +9,7 @@ namespace AgentCoreProcessor.Tool.Core
 {
     /// <summary>
     /// Session 运行时切换 Core 工具：模型自主决定升级/降级模型配置。
-    /// 可用核列表由会话类型白名单（Storage/Session/{type}.json 的 AllowedCores）决定，
+    /// 可用核列表由会话类型白名单（Storage/SessionTypes/{type}.json 的 AllowedCores）决定，
     /// 切换只换模型配置执行器，不碰历史/端口/组件（session 定上下文、core 定模型）。
     /// </summary>
     [ToolMeta(ContinueLoop = true)]

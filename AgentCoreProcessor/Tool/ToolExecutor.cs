@@ -16,7 +16,7 @@ namespace AgentCoreProcessor.Tool
     {
         private readonly Func<string, ITool?> toolResolver;
 
-        /// <summary>当前权限组（express/channel/task/review）。设置后执行期硬校验：组外工具返回 failed。</summary>
+        /// <summary>当前会话类型（express/channel/task/review）。设置后执行期硬校验：类型外工具返回 failed。</summary>
         public string? PermissionGroup { get; set; }
 
         /// <summary>每个工具执行完毕后触发的回调。</summary>
@@ -67,13 +67,13 @@ namespace AgentCoreProcessor.Tool
                 return new ToolResult { Status = "failed", Error = $"工具已禁用: {reason}" };
             }
 
-            // 执行期权限组硬校验：即便工具因历史上下文被模型误调用，组外也一律拒绝
-            if (PermissionGroup != null && !PermissionService.IsAllowed(PermissionGroup, call.Tool))
+            // 执行期权限组硬校验：即便工具因历史上下文被模型误调用，类型外也一律拒绝
+            if (PermissionGroup != null && !Engine.Session.SessionTypeProfiles.IsAllowed(PermissionGroup, call.Tool))
             {
                 return new ToolResult
                 {
                     Status = "failed",
-                    Error = $"工具「{call.Tool}」不在当前权限组（{PermissionGroup}）内，不可用。请改用权限组内允许的工具。"
+                    Error = $"工具「{call.Tool}」不在当前会话类型（{PermissionGroup}）允许范围内，不可用。请改用允许的工具。"
                 };
             }
 

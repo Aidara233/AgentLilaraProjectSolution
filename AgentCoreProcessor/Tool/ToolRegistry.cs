@@ -76,22 +76,22 @@ namespace AgentCoreProcessor.Tool
             get { lock (_nonComponentTools) return new HashSet<string>(_nonComponentTools); }
         }
 
-        /// <summary>检查工具是否适用于指定权限组。权限组裁决（Storage/Session/{group}.json 黑白名单）。</summary>
-        public static bool IsApplicableToEngine(string toolName, string? engineType)
+        /// <summary>检查工具是否适用于指定会话类型（白/黑名单裁决）。type 为空 → 放行。</summary>
+        public static bool IsApplicableToType(string toolName, string? type)
         {
-            return PermissionService.IsAllowed(engineType, toolName);
+            return Engine.Session.SessionTypeProfiles.IsAllowed(type, toolName);
         }
 
         /// <summary>
         /// 统一工具可见性判定。优先级：
         ///   1. 全局禁用（ToolConfig）→ false
-        ///   2. 权限组裁决（Storage/Session/{group}.json）→ 白名单/黑名单
-        /// 组未配置时放行（信任组件装配过滤）。
+        ///   2. 会话类型白/黑名单（Storage/SessionTypes/{type}.json）→ 放行/拒绝
+        /// 会话类型文件即唯一权限源；type 为空时仅受全局禁用约束（放行）。
         /// </summary>
-        public static bool IsVisibleToEngine(string toolName, string? engineType)
+        public static bool IsVisible(string toolName, string? type)
         {
             if (IsDisabled(toolName)) return false;
-            return PermissionService.IsAllowed(engineType, toolName);
+            return Engine.Session.SessionTypeProfiles.IsAllowed(type, toolName);
         }
 
         // ---- 描述生成（JSON 降级路径用） ----
@@ -136,20 +136,6 @@ namespace AgentCoreProcessor.Tool
         }
 
         // ---- 禁用管理 ----
-
-        public static List<ToolDefinition> GetExpressToolDefinitions(string? engineType = null)
-        {
-            return _tools.Values
-                .Where(t => !IsDisabled(t.Name)
-                            && IsApplicableToEngine(t.Name, engineType))
-                .Select(t => new ToolDefinition
-                {
-                    Name = t.Name,
-                    Description = t.Description,
-                    Parameters = t.GetInputSchema()
-                })
-                .ToList();
-        }
 
         public static bool IsDisabled(string toolName) => _disabledTools.ContainsKey(toolName);
 

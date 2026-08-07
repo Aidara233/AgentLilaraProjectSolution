@@ -168,7 +168,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 提取核心：Engine/Mind/ExtractService.cs（提取核心：伴随提取 + 善后复活，产出 JSON 交 Writer）+ Engine/Mind/ExpressExtractor.cs（伴随提取：消息攒批 N=5 + 空闲补一次，单轮不开 session）
 - 提取触发：Engine/Extraction/ExtractionEngine.cs（触发 + 进度标记，提取核心已退役到 ExtractService）+ Engine/Extraction/EavesdropTask.cs（监听检测壳，待实现）
 - 会话规格：AgentLilara.PluginSDK/CreateSessionSpec.cs（组件列表+端口配置+初始状态）
-- 会话类型档案：Engine/Session/SessionTypeProfiles.cs（读 Storage/Session/{type}.json：默认核/组件/权限组/AllowedCores 白名单；express/channel/task 内置）
+- 会话类型档案：Engine/Session/SessionTypeProfiles.cs（**唯一权限源**，读 Storage/SessionTypes/{type}.json：Core/AllowedCores/Components/Tools 白黑名单/Prompts 自包含；express/channel/task/review 内置种子）
 - 会话多核：Engine/Session/RuntimeSession.cs（ConfigureCores/SwitchCore/SetActiveCore + 懒建缓存）+ Tool/Core/SwitchCoreTool.cs（模型 switch_core）+ Command/CoreCommand.cs（!core）+ state.json.activeCoreConfig
 - 循环闸门：Engine/Core/Gate.cs（delegate 驱动，组合不继承）+ Engine/Worker/LoopGate.cs（auto-reset 信号）
 - Agent 循环：Engine/Core/Agent.cs（多轮推理，退避策略）
@@ -211,7 +211,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 信号系统：Logging/Signal.cs（静态门面）+ Logging/LogDatabase.cs（独立 SQLite）+ Logging/LogWriter.cs（批量写入）+ Logging/SignalConfig.cs（MinLevel 运行时开关，Storage/Logs/signalconfig.json；Debug=0 排查用）
 - 信号查询：Logging/LogQuery.cs + Logging/LogAccessImpl.cs（ILogAccess 桥接）
 - 每工具 span：ToolExecutor.RunSingleAsync 为每个工具开 LogGroup.Tool span（输入→status/data/error），会话/子 agent/bootstrap 全覆盖
-- 工具管理：Tool/ToolRegistry.cs（注册/卸载/禁用）+ Tool/PermissionService.cs（权限组裁决，Storage/Session/{express,channel,task,review}.json 黑白名单）+ Engine/Session/SessionTypeProfiles.cs（会话类型档案）+ Component/ComponentConfig.cs（组件按权限组启用/禁用，LoopApplicability/EngineTypes 已删除）
+- 工具管理：Tool/ToolRegistry.cs（注册/卸载/禁用）+ Engine/Session/SessionTypeProfiles.cs（**会话类型文件即唯一权限源**：Storage/SessionTypes/{type}.json 的 Tools 白黑名单裁决工具可见性 + Components 清单裁决组件装配，取代旧 PermissionService/ComponentConfig）
 - 核心工具：Tool/Core/CoreTools.cs（wait + continue_loop）+ Tool/Core/EscalateTool.cs
 - 插件 SDK：AgentLilara.PluginSDK/（共享契约：ITool/IInjectProvider/服务接口/CardSchema）
 - 插件加载：Tool/Host/PluginLoader.cs（AssemblyLoadContext 隔离，多类型发现 + 构造注入）
@@ -255,5 +255,5 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
   - end_session 拦截：子 agent + 任意 ISessionResource HasActiveResources=true 都阻止退出；二次 end_session force override
 - 异步唤醒链路（channel-scoped）：
   定时任务到期 → ScheduledTasksTimerComponent 按 requires_work 路由 → MasterEngine.WakeLoop(sessionId) → SessionEngine.WakeUpSession（裸 sessionId，经池解析跨 compact forward）→ wake 活跃会话
-- 工具配置：Storage/Engine/ComponentConfig.json（组件按引擎类型启用/禁用 + GlobalInitTimeoutSeconds/LoopInitTimeoutSeconds 组件初始化超时，防挂起阻塞启动/会话）+ Storage/ToolConfig.json（全局工具禁用）
+- 工具配置：Storage/ToolConfig.json（全局工具禁用）+ 组件初始化超时收敛为代码常量 Component/ComponentTimeouts.cs（GlobalInitTimeoutSeconds/LoopInitTimeoutSeconds/ShutdownTimeoutMs，防挂起阻塞启动/会话）
 - 配置文件：Storage/ 目录下

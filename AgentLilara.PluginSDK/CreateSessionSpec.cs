@@ -8,7 +8,7 @@ namespace AgentLilara.PluginSDK;
 /// </summary>
 public class CreateSessionSpec
 {
-    /// <summary>Session 类型键（对应 Storage/Session/{type}.json 配置库），决定默认组件集、Core 白名单、权限组</summary>
+    /// <summary>Session 类型键（对应 Storage/SessionTypes/{type}.json 配置库），决定默认组件集、Core 白名单、工具权限</summary>
     public string Type { get; set; } = "channel";
 
     /// <summary>预计算的组件列表（compact 迁移用）。非 null 则跳过 Profile 计算</summary>

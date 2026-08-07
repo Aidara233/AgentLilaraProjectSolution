@@ -2,16 +2,14 @@
 using System;
 using System.IO;
 using System.Reflection;
-using AgentCoreProcessor.Component;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Engine.Session;
-using AgentLilara.PluginSDK;
 using Xunit;
 
 namespace AgentCoreProcessor.Tests;
 
 /// <summary>
-/// 会话类型档案（Storage/Session/*.json）与组件配置（Storage/Engine/ComponentConfig.json）测试。
+/// 会话类型档案（Storage/SessionTypes/*.json）测试：组件清单 + 工具白/黑名单 + Core 选择，全部自包含于类型文件。
 /// </summary>
 public class SessionTypeProfilesTests
 {
@@ -23,12 +21,10 @@ public class SessionTypeProfilesTests
         var old = (string)prop!.GetValue(null)!;
         prop.SetValue(null, storage);
         SessionTypeProfiles.Invalidate();
-        ComponentConfig.Invalidate();
         return new Disposable(() =>
         {
             prop.SetValue(null, old);
             SessionTypeProfiles.Invalidate();
-            ComponentConfig.Invalidate();
         });
     }
 
@@ -42,10 +38,10 @@ public class SessionTypeProfilesTests
     {
         using var _ = PointToRealStorage();
         var profile = SessionTypeProfiles.Get("channel");
-        Assert.Contains("system-ops", profile.DefaultComponentIds);
-        Assert.DoesNotContain("system-tools", profile.DefaultComponentIds);
-        Assert.Equal("channel", profile.PermissionGroup);
-        Assert.Equal("blacklist", profile.PermissionMode);
+        Assert.Contains("system-ops", profile.Components);
+        Assert.DoesNotContain("system-tools", profile.Components);
+        Assert.Equal("channel", profile.Type);
+        Assert.Equal("blacklist", profile.Tools.Mode);
     }
 
     [Fact]
@@ -53,12 +49,12 @@ public class SessionTypeProfilesTests
     {
         using var _ = PointToRealStorage();
         var profile = SessionTypeProfiles.Get("task");
-        Assert.Equal("task", profile.PermissionGroup);
-        Assert.Equal("whitelist", profile.PermissionMode);
-        Assert.Contains("report_to_parent", profile.PermissionTools);
-        Assert.Contains("compact", profile.PermissionTools);
-        Assert.DoesNotContain("send_email", profile.PermissionTools);
-        Assert.DoesNotContain("escalate", profile.PermissionTools);
+        Assert.Equal("task", profile.Type);
+        Assert.Equal("whitelist", profile.Tools.Mode);
+        Assert.Contains("report_to_parent", profile.Tools.List);
+        Assert.Contains("compact", profile.Tools.List);
+        Assert.DoesNotContain("send_email", profile.Tools.List);
+        Assert.DoesNotContain("escalate", profile.Tools.List);
     }
 
     [Fact]
@@ -100,16 +96,15 @@ public class SessionTypeProfilesTests
         var profile = SessionTypeProfiles.Get("express");
         Assert.Equal("express", profile.Type);
         Assert.Equal("ExpressCore", profile.DefaultCoreConfig);
-        Assert.Equal("express", profile.PermissionGroup);
-        Assert.Equal("whitelist", profile.PermissionMode);
-        Assert.Contains("basic-tools", profile.DefaultComponentIds);
+        Assert.Equal("whitelist", profile.Tools.Mode);
+        Assert.Contains("basic-tools", profile.Components);
         // 白名单工具集
-        Assert.Contains("escalate", profile.PermissionTools);
-        Assert.Contains("speak", profile.PermissionTools);
-        Assert.Contains("connect_channel", profile.PermissionTools); // 初始化连接频道
+        Assert.Contains("escalate", profile.Tools.List);
+        Assert.Contains("speak", profile.Tools.List);
+        Assert.Contains("connect_channel", profile.Tools.List); // 初始化连接频道
         // 记忆只读：无写工具
-        Assert.DoesNotContain("memory_store", profile.PermissionTools);
-        Assert.DoesNotContain("memory_update", profile.PermissionTools);
+        Assert.DoesNotContain("memory_store", profile.Tools.List);
+        Assert.DoesNotContain("memory_update", profile.Tools.List);
     }
 
     [Fact]
@@ -119,9 +114,8 @@ public class SessionTypeProfilesTests
         var profile = SessionTypeProfiles.Get("review");
         Assert.Equal("review", profile.Type);
         Assert.Equal("TaskCore", profile.DefaultCoreConfig); // ReviewCore 已随重设计删除，review 复用 TaskCore
-        Assert.Equal("review", profile.PermissionGroup);
-        Assert.Equal("whitelist", profile.PermissionMode);
-        Assert.Contains("review-tools", profile.DefaultComponentIds);
+        Assert.Equal("whitelist", profile.Tools.Mode);
+        Assert.Contains("review-tools", profile.Components);
     }
 
     [Fact]
@@ -160,29 +154,28 @@ public class SessionTypeProfilesTests
     }
 
     [Fact]
-    public void ComponentConfig_SeededByGroup()
+    public void Components_AssembledByType_SingleSource()
     {
         using var _ = PointToRealStorage();
-        var cfg = ComponentConfig.Load();
 
-        // 组件归属按组：system-ops 仅 channel，ssh-tools 仅 task，review-tools 仅 review
-        Assert.True(cfg.IsEnabled("system-ops", "channel"));
-        Assert.False(cfg.IsEnabled("system-ops", "task"));
-        Assert.False(cfg.IsEnabled("ssh-tools", "channel"));
-        Assert.True(cfg.IsEnabled("ssh-tools", "task"));
-        Assert.True(cfg.IsEnabled("review-tools", "review"));
-        Assert.False(cfg.IsEnabled("review-tools", "channel"));
+        // channel：工作组件全集（含网络工具，用户 2026-08-07 开放）
+        var channel = SessionTypeProfiles.Get("channel");
+        Assert.Contains("system-ops", channel.Components);
+        Assert.Contains("working-tools", channel.Components);
+        Assert.Contains("basic-tools", channel.Components);
+        Assert.Contains("network-tools", channel.Components);
 
-        // Working 会话 profile 组件全在 channel 组
-        Assert.True(cfg.IsEnabled("basic-tools", "channel"));
-        Assert.True(cfg.IsEnabled("working-tools", "channel"));
-        Assert.True(cfg.IsEnabled("mind-tools", "channel"));
-        // 心智注入组件：channel/task 启用，review 不注入（冷静验证不带情绪偏置）
-        Assert.True(cfg.IsEnabled("mind-emotion", "channel"));
-        Assert.True(cfg.IsEnabled("mind-experience", "channel"));
-        Assert.False(cfg.IsEnabled("mind-emotion", "review"));
+        // task：任务组件（含网络工具），不含工作组件
+        var task = SessionTypeProfiles.Get("task");
+        Assert.Contains("sub-agent-runtime", task.Components);
+        Assert.Contains("network-tools", task.Components);
+        Assert.DoesNotContain("working-tools", task.Components);
+        Assert.DoesNotContain("system-ops", task.Components);
 
-        // 未配置组件 → 不启用（config-required）
-        Assert.False(cfg.IsEnabled("__nonexistent__", "channel"));
+        // review：复盘组件专属
+        var review = SessionTypeProfiles.Get("review");
+        Assert.Contains("review-tools", review.Components);
+        Assert.DoesNotContain("review-tools", channel.Components);
+        Assert.DoesNotContain("review-tools", task.Components);
     }
 }

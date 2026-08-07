@@ -44,7 +44,7 @@ namespace AgentCoreProcessor.Core
         /// </summary>
         public IReadOnlySet<string>? ExcludedToolNames { get; set; }
 
-        /// <summary>当前引擎类型（如 "channel"、"task"、"review"），用于工具过滤。</summary>
+        /// <summary>当前会话类型（express/channel/task/review），工具白/黑名单裁决依据。</summary>
         public string? EngineType { get; set; }
 
         /// <summary>
@@ -74,7 +74,8 @@ namespace AgentCoreProcessor.Core
         }
 
         /// <summary>
-        /// 统一入口。根据模式和 profile 调用模型，返回文本或工具调用。
+        /// 统一入口。会话统一走 Working 路径（Express 旧分支已随 express 会话化移除），
+        /// 工具过滤由当前会话类型（EngineType）白/黑名单统一裁决。
         /// </summary>
         public async Task<ModelOutput> InvokeAsync(List<Message> messages, Engine.EngineMode mode)
         {
@@ -84,52 +85,8 @@ namespace AgentCoreProcessor.Core
             ApplyExtraMessages();
             SetConversationHistory(messages);
 
-            if (mode == Engine.EngineMode.Express)
-            {
-                var expressDefs = ToolRegistry.GetExpressToolDefinitions(EngineType)
-                    .Where(d => ToolRegistry.IsVisibleToEngine(d.Name, EngineType))
-                    .ToList();
-                // 图片工具过滤：DisableImageMessages 时移除需要模型"看"图片的工具
-                if (DisableImageMessages)
-                    expressDefs.RemoveAll(d => ImageDependentTools.Contains(d.Name));
-                // 合并全局组件工具
-                if (GlobalComponentTools != null)
-                {
-                    foreach (var t in GlobalComponentTools)
-                    {
-                        if (!IsVisibleToEngineOrGlobal(t)) continue;
-                        if (DisableImageMessages && ImageDependentTools.Contains(t.Name)) continue;
-                        if (expressDefs.Any(d => d.Name == t.Name)) continue;
-                        expressDefs.Add(ToDefinition(t));
-                    }
-                }
-                // 合并 loop 组件工具
-                if (AdditionalTools != null)
-                {
-                    foreach (var t in AdditionalTools)
-                    {
-                        if (!IsVisibleToEngineOrGlobal(t)) continue;
-                        if (DisableImageMessages && ImageDependentTools.Contains(t.Name)) continue;
-                        if (expressDefs.Any(d => d.Name == t.Name)) continue;
-                        expressDefs.Add(ToDefinition(t));
-                    }
-                }
-                if (expressDefs.Count > 0 && UseNativeTools)
-                {
-                    var (text, calls, thinking, usage) = await GenerateExpressWithToolsAsync(expressDefs);
-                    return ModelOutput.FromExpressWithTools(text, calls.Count > 0 ? calls : null, thinking, usage);
-                }
-                else
-                {
-                    var text = await GenerateOnceAsync();
-                    return ModelOutput.FromText(text);
-                }
-            }
-            else
-            {
-                var (calls, thinking, usage) = await GenerateToolCallsWithThinkingAsync();
-                return ModelOutput.FromTools(calls, thinking, usage);
-            }
+            var (calls, thinking, usage) = await GenerateToolCallsWithThinkingAsync();
+            return ModelOutput.FromTools(calls, thinking, usage);
         }
 
         /// <summary>
@@ -194,21 +151,20 @@ namespace AgentCoreProcessor.Core
 
         private async Task<(List<ToolCall> Calls, string? Thinking, Usage? Usage)> GenerateWithNativeToolsAsync()
         {
-            // 只取非组件工具（核心 + MCP + 纯插件），按引擎类型、模式、引擎清单过滤
+            // 只取非组件工具（核心 + MCP + 纯插件），按会话类型白/黑名单过滤
             var toolDefs = ToolRegistry.NonComponentToolNames
                 .Select(ToolRegistry.Get)
-                .Where(t => t != null && !ToolRegistry.IsDisabled(t.Name)
-                            && ToolRegistry.IsApplicableToEngine(t.Name, EngineType)
+                .Where(t => t != null
+                            && ToolRegistry.IsVisible(t.Name, EngineType)
                             && (ExcludedToolNames == null || !ExcludedToolNames.Contains(t.Name))
-                            && ToolRegistry.IsVisibleToEngine(t.Name, EngineType)
                             && !(DisableImageMessages && ImageDependentTools.Contains(t.Name)))
                 .Select(ToDefinition!)
                 .ToList();
 
-            // 合并全局组件工具（已由引擎按 EngineType 过滤）
+            // 合并全局组件工具（可见性由会话类型白/黑名单裁决）
             MergeTools(toolDefs, GlobalComponentTools);
 
-            // 合并 loop 组件工具（已由 ComponentHost 过滤）
+            // 合并 loop 组件工具（已由 ComponentHost 按类型清单过滤）
             MergeTools(toolDefs, AdditionalTools);
 
             // 图片工具过滤（组件工具路径）
@@ -219,15 +175,6 @@ namespace AgentCoreProcessor.Core
             var usage = await GenerateWithToolsAsync(toolDefs, handler.OnEvent);
             var (calls, thinking) = handler.GetResult();
             return (calls, thinking, usage);
-        }
-
-        private async Task<(string Text, List<ToolCall> Calls, string? Thinking, Usage? Usage)> GenerateExpressWithToolsAsync(
-            List<ToolDefinition> expressDefs)
-        {
-            ExpressToolCallHandler handler = new(expressDefs);
-            var usage = await GenerateWithToolsAsync(expressDefs, handler.OnEvent);
-            var (text, calls, thinking) = handler.GetResult();
-            return (text, calls, thinking, usage);
         }
 
         /// <summary>
@@ -256,12 +203,12 @@ namespace AgentCoreProcessor.Core
         }
 
         /// <summary>
-        /// 工具对当前权限组的可见性判定。统一走 ToolRegistry.IsVisibleToEngine
-        /// （全局禁用 + PermissionService 黑白名单裁决）。组件工具也接受同一裁决。
+        /// 工具对当前会话类型的可见性判定。统一走 ToolRegistry.IsVisible
+        /// （全局禁用 + 会话类型白/黑名单裁决）。组件工具也接受同一裁决。
         /// </summary>
         private bool IsVisibleToEngineOrGlobal(ITool t)
         {
-            return ToolRegistry.IsVisibleToEngine(t.Name, EngineType);
+            return ToolRegistry.IsVisible(t.Name, EngineType);
         }
 
         private void MergeTools(List<ToolDefinition> defs, List<ITool>? tools)

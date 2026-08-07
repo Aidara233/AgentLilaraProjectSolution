@@ -1,0 +1,23 @@
+{
+  "Type": "channel",
+  "Core": "ChannelCore",
+  "AllowedCores": [
+    "ChannelCore",
+    "ExpressCore"
+  ],
+  "Components": [
+    "basic-tools", "working-tools", "file-tools", "file-ops",
+    "mind-tools", "system-ops", "network-tools"
+  ],
+  "Tools": {
+    "Mode": "blacklist",
+    "List": [
+      "escalate",
+      "review_list", "review_resolve", "review_preview", "review_commit", "review_evidence"
+    ]
+  },
+  "Prompts": [
+    "identity.txt", "style.txt", "social.txt",
+    "architecture_overview.txt", "tech_rules.txt", "channel_workflow.txt"
+  ]
+}

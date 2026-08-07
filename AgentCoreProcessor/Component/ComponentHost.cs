@@ -23,7 +23,6 @@ internal class ComponentHost
 
     private readonly List<LoopComponentInstance> _loopComponents = new();
     private readonly Dictionary<string, ITool> _localTools = new();
-    private readonly ComponentConfig _config;
 
     /// <summary>由引擎注入，用于工具解析时回退到全局组件。</summary>
     public GlobalComponentHost? GlobalHost { get; set; }
@@ -41,7 +40,6 @@ internal class ComponentHost
         _moduleBus = moduleBus;
         _services = services;
         _wakeLoop = wakeLoop;
-        _config = ComponentConfig.Load();
 
         if (perLoopServices != null && perLoopServices.Count > 0)
         {
@@ -67,18 +65,16 @@ internal class ComponentHost
 
     public async Task InitAsync(IReadOnlyList<string>? finalComponentIds = null)
     {
-        var loopTimeout = TimeSpan.FromSeconds(_config.LoopInitTimeoutSeconds);
+        var loopTimeout = TimeSpan.FromSeconds(ComponentTimeouts.LoopInitTimeoutSeconds);
 
         if (finalComponentIds != null)
         {
-            // 仅加载指定列表内的组件（组件归属由 ComponentConfig 决定）
+            // 仅加载指定列表内的组件（归属由会话类型文件 Components 决定）
             var nameSet = new HashSet<string>(finalComponentIds, StringComparer.OrdinalIgnoreCase);
             foreach (var reg in ComponentRegistry.GetLoopComponents(_loopType))
             {
                 var compName = ComponentAttribute.GetFrom(reg.Type)?.Name ?? reg.Type.Name;
                 if (!nameSet.Contains(compName)) continue;
-                if (!_config.IsEnabled(compName, _loopType, reg.DefaultEnabled))
-                    continue;
                 try
                 {
                     var instance = CreateInstance(reg);
@@ -110,8 +106,6 @@ internal class ComponentHost
             try
             {
                 var compName = ComponentAttribute.GetFrom(reg.Type)?.Name ?? reg.Type.Name;
-                if (!_config.IsEnabled(compName, _loopType, reg.DefaultEnabled))
-                    continue;
                 var instance = CreateInstance(reg);
                 if (instance == null) continue;
                 _loopComponents.Add(instance);
@@ -233,7 +227,7 @@ internal class ComponentHost
 
     public async Task ShutdownAsync(ShutdownReason reason)
     {
-        var timeout = _config.ShutdownTimeoutMs;
+        var timeout = ComponentTimeouts.ShutdownTimeoutMs;
 
         // Phase 1: 等待就绪
         using var cts = new CancellationTokenSource(timeout);
@@ -305,7 +299,7 @@ internal class ComponentHost
 
         if (instance is not ILoopComponent component) return null;
 
-        var defaultEnabled = _config.IsEnabled(component.Meta.Name, _loopType, component.Meta.DefaultEnabled);
+        var defaultEnabled = component.Meta.DefaultEnabled;
         var storage = new ComponentStorage(component.Meta.Name, _sessionId);
 
         var context = new LoopComponentContext(

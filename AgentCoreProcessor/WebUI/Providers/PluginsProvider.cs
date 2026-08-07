@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Component;
 using AgentCoreProcessor.Engine;
+using AgentCoreProcessor.Engine.Session;
 using AgentCoreProcessor.Tool;
 using AgentCoreProcessor.Tool.Host;
 using AgentLilara.PluginSDK;
@@ -32,8 +33,7 @@ internal class PluginsProvider : IWebUIProvider
         BuildPluginListPage(),
         BuildPluginDetailPage(),
         BuildToolsPage(),
-        BuildComponentPermsPage(),
-        BuildEngineToolsPage(),
+        BuildSessionTypesPage(),
     };
 
     // ================ 1. 插件清单 ================
@@ -197,7 +197,6 @@ internal class PluginsProvider : IWebUIProvider
                         new() { Field = "description", Header = "描述" },
                         new() { Field = "source", Header = "来源", Width = "120px" },
                         new() { Field = "group", Header = "分组", Width = "100px" },
-                        new() { Field = "express", Header = "Express", Width = "70px" },
                         new() { Field = "disabled", Header = "状态", Width = "80px" },
                     },
                     Filters = new()
@@ -223,101 +222,48 @@ internal class PluginsProvider : IWebUIProvider
         }
     };
 
-    // ================ 4. 组件权限 ================
+    // ================ 4. 会话类型（唯一权限源）================
 
-    private PageDefinition BuildComponentPermsPage() => new()
+    private PageDefinition BuildSessionTypesPage() => new()
     {
-        Route = "plugins/permissions",
-        Meta = new PageMeta { Title = "组件权限", Icon = "bi-sliders2", Group = "插件", Order = 92 },
+        Route = "plugins/types",
+        Meta = new PageMeta { Title = "会话类型", Icon = "bi-shield-check", Group = "插件", Order = 92 },
         LayoutType = PageLayoutType.Sidebar,
         Cards = new List<CardDefinition>
         {
-            // 左侧：组件列表
+            // 左侧：会话类型列表
             new()
             {
-                Id = "perm-list", Type = CardType.Table, DataSourceId = "perm-list", Title = "组件",
-                LinkEvent = "perm-selected",
+                Id = "st-list", Type = CardType.Table, DataSourceId = "st-list", Title = "会话类型",
+                LinkEvent = "st-selected",
                 Schema = new TableSchema
                 {
                     Columns = new()
                     {
-                        new() { Field = "componentName", Header = "组件名" },
-                        new() { Field = "scope", Header = "作用域", Width = "70px", Format = ColumnFormat.Badge },
-                    },
-                    Searchable = false, Paginated = false
-                },
-                Layout = new CardLayout { PreferredCols = 3, GridColumnStart = 1 }
-            },
-            // 右侧：引擎类型开关
-            new()
-            {
-                Id = "perm-toggles", Type = CardType.Status, DataSourceId = "perm-toggles",
-                Title = "引擎类型权限", ListenEvent = "perm-selected",
-                Schema = new StatusSchema
-                {
-                    Fields = new()
-                    {
-                        new() { Field = "componentName", Label = "组件" },
-                        new() { Field = "channel", Label = "Express", Type = StatusFieldType.Badge },
-                        new() { Field = "task", Label = "Task", Type = StatusFieldType.Badge },
-                        new() { Field = "review", Label = "Review", Type = StatusFieldType.Badge },
-                    },
-                    Actions = new()
-                    {
-                        new() { Id = "toggle-channel", Label = "切换 Express" },
-                        new() { Id = "toggle-task", Label = "切换 Task" },
-                        new() { Id = "toggle-review", Label = "切换 Review" },
-                    }
-                },
-                Layout = new CardLayout { PreferredCols = 9, GridColumnStart = 4 }
-            },
-        },
-        DataSources = new List<DataSourceDefinition>
-        {
-            new() { Id = "perm-list", Source = new ComponentPermListSource(_engine) },
-            new() { Id = "perm-toggles", Source = new ComponentPermTogglesSource(_engine) },
-        }
-    };
-
-    // ================ 5. 工具权限组 ================
-
-    private PageDefinition BuildEngineToolsPage() => new()
-    {
-        Route = "plugins/engine-tools",
-        Meta = new PageMeta { Title = "工具权限组", Icon = "bi-shield-check", Group = "插件", Order = 93 },
-        LayoutType = PageLayoutType.Sidebar,
-        Cards = new List<CardDefinition>
-        {
-            // 左侧：权限组列表
-            new()
-            {
-                Id = "et-list", Type = CardType.Table, DataSourceId = "et-list", Title = "权限组",
-                LinkEvent = "et-selected",
-                Schema = new TableSchema
-                {
-                    Columns = new()
-                    {
-                        new() { Field = "engineType", Header = "权限组" },
+                        new() { Field = "type", Header = "类型" },
                         new() { Field = "mode", Header = "模式", Width = "90px", Format = ColumnFormat.Badge },
-                        new() { Field = "toolCount", Header = "清单数", Width = "70px" },
+                        new() { Field = "toolCount", Header = "工具数", Width = "70px" },
+                        new() { Field = "componentCount", Header = "组件数", Width = "70px" },
                     },
                     Searchable = false, Paginated = false
                 },
                 Layout = new CardLayout { PreferredCols = 3, GridColumnStart = 1 }
             },
-            // 右侧：引擎详情（模式切换）
+            // 右侧：类型详情（模式切换 + 恢复默认）
             new()
             {
-                Id = "et-detail", Type = CardType.Status, DataSourceId = "et-detail",
-                Title = "工具权限组", ListenEvent = "et-selected",
+                Id = "st-detail", Type = CardType.Status, DataSourceId = "st-detail",
+                Title = "会话类型详情", ListenEvent = "st-selected",
                 Schema = new StatusSchema
                 {
                     Fields = new()
                     {
-                        new() { Field = "engineType", Label = "权限组" },
+                        new() { Field = "type", Label = "类型" },
+                        new() { Field = "core", Label = "默认核心" },
                         new() { Field = "mode", Label = "模式", Type = StatusFieldType.Badge },
                         new() { Field = "modeDesc", Label = "说明" },
-                        new() { Field = "toolCount", Label = "清单工具数" },
+                        new() { Field = "toolCount", Label = "工具清单数" },
+                        new() { Field = "componentCount", Label = "组件清单数" },
                     },
                     Actions = new()
                     {
@@ -327,11 +273,34 @@ internal class PluginsProvider : IWebUIProvider
                 },
                 Layout = new CardLayout { PreferredCols = 9, GridColumnStart = 4 }
             },
-            // 右侧：该引擎的全部工具 + 清单状态
+            // 右侧：组件清单（勾选 = 该类型装载）
             new()
             {
-                Id = "et-tools", Type = CardType.Table, DataSourceId = "et-tools",
-                Title = "工具清单（勾选 = 该权限组可见）", ListenEvent = "et-selected",
+                Id = "st-components", Type = CardType.Table, DataSourceId = "st-components",
+                Title = "组件清单（勾选 = 该类型装载；Global 组件恒装载，其工具由工具清单门控）",
+                ListenEvent = "st-selected",
+                Schema = new TableSchema
+                {
+                    Columns = new()
+                    {
+                        new() { Field = "name", Header = "组件名" },
+                        new() { Field = "scope", Header = "作用域", Width = "80px", Format = ColumnFormat.Badge },
+                        new() { Field = "inList", Header = "装载", Width = "70px" },
+                    },
+                    RowActions = new()
+                    {
+                        new() { Id = "add", Label = "加入" },
+                        new() { Id = "remove", Label = "移出", Danger = true },
+                    },
+                    Searchable = true, Paginated = true, DefaultPageSize = 20
+                },
+                Layout = new CardLayout { PreferredCols = 9, GridColumnStart = 4 }
+            },
+            // 右侧：工具清单（白名单=仅勾选项可用；黑名单=勾选项禁用）
+            new()
+            {
+                Id = "st-tools", Type = CardType.Table, DataSourceId = "st-tools",
+                Title = "工具清单（白名单=仅勾选项可用；黑名单=勾选项禁用）", ListenEvent = "st-selected",
                 Schema = new TableSchema
                 {
                     Columns = new()
@@ -357,9 +326,10 @@ internal class PluginsProvider : IWebUIProvider
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "et-list", Source = new EngineToolsListSource() },
-            new() { Id = "et-detail", Source = new EngineToolsDetailSource() },
-            new() { Id = "et-tools", Source = new EngineToolsTableSource(_engine) },
+            new() { Id = "st-list", Source = new SessionTypesListSource() },
+            new() { Id = "st-detail", Source = new SessionTypeDetailSource() },
+            new() { Id = "st-components", Source = new SessionTypeComponentsSource(_engine) },
+            new() { Id = "st-tools", Source = new SessionTypeToolsSource(_engine) },
         }
     };
 
@@ -661,20 +631,18 @@ internal class PluginComponentsSource : IDataSource
         if (plugin == null)
             return Task.FromResult(new DataResult { Data = new JsonArray() });
 
-        var config = ComponentConfig.Load();
         var arr = new JsonArray();
         foreach (var compName in plugin.ComponentNames)
         {
             var reg = ComponentRegistry.Get(compName);
             if (reg == null) continue;
-            var defaultEnabled = reg.DefaultEnabled;
 
             arr.Add(new JsonObject
             {
                 ["componentName"] = compName,
                 ["scope"] = reg.Scope.ToString(),
-                ["channel"] = config.IsEnabled(compName, "channel", defaultEnabled) ? "启用" : "禁用",
-                ["task"] = config.IsEnabled(compName, "task", defaultEnabled) ? "启用" : "禁用",
+                ["channel"] = SessionTypeUiHelpers.IsLoadedInType(compName, "channel") ? "装载" : "—",
+                ["task"] = SessionTypeUiHelpers.IsLoadedInType(compName, "task") ? "装载" : "—",
             });
         }
         return Task.FromResult(new DataResult { Data = arr, TotalCount = arr.Count });
@@ -829,148 +797,76 @@ internal class AllToolsSource : IDataSource
     }
 }
 
-// ================ 组件权限数据源 ================
 
-internal class ComponentPermListSource : IDataSource
+// ================ 会话类型数据源 ================
+
+internal static class SessionTypeUiHelpers
 {
-    private readonly MasterEngine _engine;
-    public ComponentPermListSource(MasterEngine engine) => _engine = engine;
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+    public static string ModeLabel(string mode)
+        => string.Equals(mode, "blacklist", StringComparison.OrdinalIgnoreCase) ? "黑名单" : "白名单";
 
-    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-    {
-        var config = ComponentConfig.Load();
-        var registrations = ComponentRegistry.GetAll();
-
-        var arr = new JsonArray();
-        foreach (var reg in registrations)
-        {
-            var attr = ComponentAttribute.GetFrom(reg.Type);
-            var name = attr?.Name ?? reg.Type.Name;
-            arr.Add(new JsonObject
-            {
-                ["id"] = name,
-                ["componentName"] = name,
-                ["scope"] = reg.Scope == ComponentScope.Global ? "Global" : "Loop",
-            });
-        }
-        return Task.FromResult(new DataResult { Data = arr, TotalCount = arr.Count });
-    }
-
-    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-        => Task.FromResult(new ActionResult { Success = false });
-}
-
-internal class ComponentPermTogglesSource : IDataSource
-{
-    private readonly MasterEngine _engine;
-    private string _selectedComponent = "";
-
-    public ComponentPermTogglesSource(MasterEngine engine) => _engine = engine;
-
-    public bool SupportsPush => false;
-    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
-
-    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-    {
-        if (query?.Extra is JsonObject extra)
-        {
-            var id = extra["id"]?.ToString();
-            if (!string.IsNullOrEmpty(id))
-                _selectedComponent = id;
-        }
-
-        if (string.IsNullOrEmpty(_selectedComponent))
-            return Task.FromResult(new DataResult
-            {
-                Data = new JsonObject
-                {
-                    ["componentName"] = "选择左侧组件",
-                    ["channel"] = "—", ["task"] = "—",
-                    ["review"] = "—",
-                }
-            });
-
-        var config = ComponentConfig.Load();
-        var reg = ComponentRegistry.Get(_selectedComponent);
-        var defaultEnabled = reg?.DefaultEnabled ?? true;
-        var data = new JsonObject
-        {
-            ["componentName"] = _selectedComponent,
-            ["channel"] = config.IsEnabled(_selectedComponent, "channel", defaultEnabled) ? "启用" : "禁用",
-            ["task"] = config.IsEnabled(_selectedComponent, "task", defaultEnabled) ? "启用" : "禁用",
-            ["review"] = config.IsEnabled(_selectedComponent, "review", defaultEnabled) ? "启用" : "禁用",
-        };
-        return Task.FromResult(new DataResult { Data = data });
-    }
-
-    public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-    {
-        if (string.IsNullOrEmpty(_selectedComponent))
-            return new ActionResult { Success = false, Message = "未选择组件" };
-
-        var engineType = action switch
-        {
-            "toggle-channel" => "channel",
-            "toggle-task" => "task",
-            "toggle-review" => "review",
-            _ => null
-        };
-
-        if (engineType == null)
-            return new ActionResult { Success = false, Message = $"未知操作: {action}" };
-
-        var config = ComponentConfig.Load();
-        var reg = ComponentRegistry.Get(_selectedComponent);
-        var defaultEnabled = reg?.DefaultEnabled ?? true;
-        var current = config.IsEnabled(_selectedComponent, engineType, defaultEnabled);
-        var target = !current;
-
-        try
-        {
-            await _engine.ToggleComponentLiveAsync(_selectedComponent, engineType, target);
-            var label = target ? "启用" : "禁用";
-            return new ActionResult { Success = true, Message = $"{_selectedComponent} × {engineType} → {label}（已即时生效）" };
-        }
-        catch (Exception ex)
-        {
-            return new ActionResult { Success = false, Message = $"切换失败: {ex.Message}" };
-        }
-    }
-}
-
-// ================ 权限组清单数据源 ================
-
-/// <summary>已知权限组（对应 AgentCore.EngineType / Storage/Session/{group}.json）。</summary>
-internal static class EngineToolKnownEngines
-{
-    public static readonly string[] All = PermissionService.KnownGroups;
-
-    public static string ModeLabel(bool whitelist) => whitelist ? "白名单" : "黑名单";
-    public static string ModeDesc(string group)
-        => string.Equals(PermissionService.GetMode(group), "blacklist", StringComparison.OrdinalIgnoreCase)
+    public static string ModeDesc(string mode)
+        => string.Equals(mode, "blacklist", StringComparison.OrdinalIgnoreCase)
             ? "黑名单：清单中的工具被禁用" : "白名单：仅允许清单中的工具";
+
+    /// <summary>组件是否在指定会话类型的装配清单中（Global 组件恒装载，不参与类型清单）。</summary>
+    public static bool IsLoadedInType(string componentName, string type)
+        => SessionTypeProfiles.Get(type).Components.Contains(componentName, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>工具名 → 来源插件映射（核心工具无映射）。</summary>
+    public static Dictionary<string, string> BuildSourceMap(MasterEngine engine)
+    {
+        var map = new Dictionary<string, string>();
+        foreach (var plugin in engine.PluginLoader.LoadedPlugins)
+        {
+            var pluginName = plugin.PluginId;
+            foreach (var tn in plugin.ToolNames)
+                map[tn] = pluginName;
+            foreach (var cn in plugin.ComponentNames)
+            {
+                var reg = ComponentRegistry.Get(cn);
+                if (reg == null) continue;
+                foreach (var inst in engine.GlobalComponentHost?.Instances ?? Enumerable.Empty<GlobalComponentInstance>())
+                {
+                    if (inst.Component.Meta.Name != cn) continue;
+                    foreach (var tool in inst.Component.Tools)
+                        map[tool.Name] = pluginName;
+                }
+                foreach (var inst in engine.GetActiveEnginesSnapshot()
+                    .Select(e => e.ComponentHost).Where(h => h != null))
+                {
+                    foreach (var loopInst in inst!.Instances)
+                    {
+                        if (loopInst.Component.Meta.Name != cn) continue;
+                        foreach (var tool in loopInst.Component.Tools)
+                            map[tool.Name] = pluginName;
+                    }
+                }
+            }
+        }
+        return map;
+    }
 }
 
-internal class EngineToolsListSource : IDataSource
+internal class SessionTypesListSource : IDataSource
 {
-    public EngineToolsListSource() { }
+    public SessionTypesListSource() { }
     public bool SupportsPush => false;
     public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
 
     public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
         var arr = new JsonArray();
-        foreach (var et in EngineToolKnownEngines.All)
+        foreach (var t in SessionTypeProfiles.All())
         {
-            var whitelist = !string.Equals(PermissionService.GetMode(et), "blacklist", StringComparison.OrdinalIgnoreCase);
+            var p = SessionTypeProfiles.Get(t);
             arr.Add(new JsonObject
             {
-                ["id"] = et,
-                ["engineType"] = et,
-                ["mode"] = EngineToolKnownEngines.ModeLabel(whitelist),
-                ["toolCount"] = PermissionService.GetTools(et).Count,
+                ["id"] = t,
+                ["type"] = t,
+                ["mode"] = SessionTypeUiHelpers.ModeLabel(p.Tools.Mode),
+                ["toolCount"] = p.Tools.List.Count,
+                ["componentCount"] = p.Components.Length,
             });
         }
         return Task.FromResult(new DataResult { Data = arr, TotalCount = arr.Count });
@@ -980,11 +876,11 @@ internal class EngineToolsListSource : IDataSource
         => Task.FromResult(new ActionResult { Success = false });
 }
 
-internal class EngineToolsDetailSource : IDataSource
+internal class SessionTypeDetailSource : IDataSource
 {
-    private string _selectedEngine = "";
+    private string _selectedType = "";
 
-    public EngineToolsDetailSource() { }
+    public SessionTypeDetailSource() { }
     public bool SupportsPush => false;
     public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
 
@@ -994,54 +890,54 @@ internal class EngineToolsDetailSource : IDataSource
         {
             var id = extra["id"]?.ToString();
             if (!string.IsNullOrEmpty(id))
-                _selectedEngine = id;
+                _selectedType = id;
         }
 
-        if (string.IsNullOrEmpty(_selectedEngine))
+        if (string.IsNullOrEmpty(_selectedType))
             return Task.FromResult(new DataResult
             {
                 Data = new JsonObject
                 {
-                    ["engineType"] = "选择左侧权限组",
-                    ["mode"] = "—", ["modeDesc"] = "—", ["toolCount"] = "—",
+                    ["type"] = "选择左侧会话类型",
+                    ["core"] = "—", ["mode"] = "—", ["modeDesc"] = "—",
+                    ["toolCount"] = "—", ["componentCount"] = "—",
                 }
             });
 
-        var mode = PermissionService.GetMode(_selectedEngine);
-        var whitelist = !string.Equals(mode, "blacklist", StringComparison.OrdinalIgnoreCase);
-        var count = PermissionService.GetTools(_selectedEngine).Count;
-
+        var p = SessionTypeProfiles.Get(_selectedType);
         return Task.FromResult(new DataResult
         {
             Data = new JsonObject
             {
-                ["engineType"] = _selectedEngine,
-                ["mode"] = EngineToolKnownEngines.ModeLabel(whitelist),
-                ["modeDesc"] = EngineToolKnownEngines.ModeDesc(_selectedEngine),
-                ["toolCount"] = count.ToString(),
+                ["type"] = _selectedType,
+                ["core"] = p.DefaultCoreConfig,
+                ["mode"] = SessionTypeUiHelpers.ModeLabel(p.Tools.Mode),
+                ["modeDesc"] = SessionTypeUiHelpers.ModeDesc(p.Tools.Mode),
+                ["toolCount"] = p.Tools.List.Count.ToString(),
+                ["componentCount"] = p.Components.Length.ToString(),
             }
         });
     }
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
     {
-        if (string.IsNullOrEmpty(_selectedEngine))
-            return Task.FromResult(new ActionResult { Success = false, Message = "未选择权限组" });
+        if (string.IsNullOrEmpty(_selectedType))
+            return Task.FromResult(new ActionResult { Success = false, Message = "未选择会话类型" });
 
         switch (action)
         {
             case "toggle-mode":
             {
-                var mode = PermissionService.GetMode(_selectedEngine);
+                var mode = SessionTypeProfiles.GetMode(_selectedType);
                 var flipped = string.Equals(mode, "blacklist", StringComparison.OrdinalIgnoreCase) ? "whitelist" : "blacklist";
-                PermissionService.Save(_selectedEngine, flipped, PermissionService.GetTools(_selectedEngine));
-                return Task.FromResult(new ActionResult { Success = true, Message = $"{_selectedEngine} → {EngineToolKnownEngines.ModeLabel(flipped != "blacklist")}（已保存）" });
+                SessionTypeProfiles.Save(_selectedType, flipped, SessionTypeProfiles.GetTools(_selectedType));
+                return Task.FromResult(new ActionResult { Success = true, Message = $"{_selectedType} → {SessionTypeUiHelpers.ModeLabel(flipped)}（已保存）" });
             }
             case "reset":
             {
-                var (dMode, dTools) = PermissionService.GetDefault(_selectedEngine);
-                PermissionService.Save(_selectedEngine, dMode, dTools);
-                return Task.FromResult(new ActionResult { Success = true, Message = $"{_selectedEngine} 已恢复默认（{EngineToolKnownEngines.ModeLabel(dMode != "blacklist")}）" });
+                var (dMode, dTools) = SessionTypeProfiles.GetDefault(_selectedType);
+                SessionTypeProfiles.Save(_selectedType, dMode, dTools);
+                return Task.FromResult(new ActionResult { Success = true, Message = $"{_selectedType} 已恢复默认（{SessionTypeUiHelpers.ModeLabel(dMode)}）" });
             }
             default:
                 return Task.FromResult(new ActionResult { Success = false, Message = $"未知操作: {action}" });
@@ -1049,12 +945,12 @@ internal class EngineToolsDetailSource : IDataSource
     }
 }
 
-internal class EngineToolsTableSource : IDataSource
+internal class SessionTypeComponentsSource : IDataSource
 {
     private readonly MasterEngine _engine;
-    private string _selectedEngine = "";
+    private string _selectedType = "";
 
-    public EngineToolsTableSource(MasterEngine engine) => _engine = engine;
+    public SessionTypeComponentsSource(MasterEngine engine) => _engine = engine;
     public bool SupportsPush => false;
     public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
 
@@ -1064,13 +960,78 @@ internal class EngineToolsTableSource : IDataSource
         {
             var id = extra["id"]?.ToString();
             if (!string.IsNullOrEmpty(id))
-                _selectedEngine = id;
+                _selectedType = id;
         }
 
-        if (string.IsNullOrEmpty(_selectedEngine))
+        if (string.IsNullOrEmpty(_selectedType))
             return Task.FromResult(new DataResult { Data = new JsonArray(), TotalCount = 0 });
 
-        var inList = new HashSet<string>(PermissionService.GetTools(_selectedEngine), StringComparer.OrdinalIgnoreCase);
+        var inList = new HashSet<string>(SessionTypeProfiles.Get(_selectedType).Components, StringComparer.OrdinalIgnoreCase);
+        var arr = new JsonArray();
+        foreach (var reg in ComponentRegistry.GetAll().Where(r => r.Scope == ComponentScope.Loop))
+        {
+            var name = ComponentAttribute.GetFrom(reg.Type)?.Name ?? reg.Type.Name;
+            arr.Add(new JsonObject
+            {
+                ["id"] = name,
+                ["name"] = name,
+                ["scope"] = "Loop",
+                ["inList"] = inList.Contains(name) ? "✓" : "—",
+            });
+        }
+        return Task.FromResult(new DataResult { Data = arr, TotalCount = arr.Count });
+    }
+
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+    {
+        var compName = data?["_row_id"]?.ToString() ?? "";
+        if (string.IsNullOrEmpty(compName))
+            return Task.FromResult(new ActionResult { Success = false, Message = "未指定组件" });
+        if (string.IsNullOrEmpty(_selectedType))
+            return Task.FromResult(new ActionResult { Success = false, Message = "未选择会话类型" });
+
+        var list = SessionTypeProfiles.Get(_selectedType).Components.ToList();
+        switch (action)
+        {
+            case "add":
+                if (list.Contains(compName, StringComparer.OrdinalIgnoreCase))
+                    return Task.FromResult(new ActionResult { Success = false, Message = $"「{compName}」已在 {_selectedType} 清单中" });
+                list.Add(compName);
+                break;
+            case "remove":
+                list.RemoveAll(c => c.Equals(compName, StringComparison.OrdinalIgnoreCase));
+                break;
+            default:
+                return Task.FromResult(new ActionResult { Success = false, Message = $"未知操作: {action}" });
+        }
+
+        SessionTypeProfiles.SaveComponents(_selectedType, list);
+        return Task.FromResult(new ActionResult { Success = true, Message = $"{compName} × {_selectedType} 组件清单已更新（新会话生效）" });
+    }
+}
+
+internal class SessionTypeToolsSource : IDataSource
+{
+    private readonly MasterEngine _engine;
+    private string _selectedType = "";
+
+    public SessionTypeToolsSource(MasterEngine engine) => _engine = engine;
+    public bool SupportsPush => false;
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        if (query?.Extra is JsonObject extra)
+        {
+            var id = extra["id"]?.ToString();
+            if (!string.IsNullOrEmpty(id))
+                _selectedType = id;
+        }
+
+        if (string.IsNullOrEmpty(_selectedType))
+            return Task.FromResult(new DataResult { Data = new JsonArray(), TotalCount = 0 });
+
+        var inList = new HashSet<string>(SessionTypeProfiles.GetTools(_selectedType), StringComparer.OrdinalIgnoreCase);
 
         // 全部工具（核心 + 组件 + 插件）
         var allTools = ToolRegistry.All.Values
@@ -1079,7 +1040,7 @@ internal class EngineToolsTableSource : IDataSource
             .Select(g => g.First())
             .ToList();
 
-        var sourceMap = BuildSourceMap();
+        var sourceMap = SessionTypeUiHelpers.BuildSourceMap(_engine);
 
         var filtered = allTools.AsEnumerable();
 
@@ -1122,11 +1083,11 @@ internal class EngineToolsTableSource : IDataSource
         var toolName = data?["_row_id"]?.ToString() ?? "";
         if (string.IsNullOrEmpty(toolName))
             return Task.FromResult(new ActionResult { Success = false, Message = "未指定工具" });
-        if (string.IsNullOrEmpty(_selectedEngine))
-            return Task.FromResult(new ActionResult { Success = false, Message = "未选择权限组" });
+        if (string.IsNullOrEmpty(_selectedType))
+            return Task.FromResult(new ActionResult { Success = false, Message = "未选择会话类型" });
 
-        var tools = PermissionService.GetTools(_selectedEngine).ToList();
-        var mode = PermissionService.GetMode(_selectedEngine);
+        var tools = SessionTypeProfiles.GetTools(_selectedType).ToList();
+        var mode = SessionTypeProfiles.GetMode(_selectedType);
 
         switch (action)
         {
@@ -1142,40 +1103,7 @@ internal class EngineToolsTableSource : IDataSource
                 return Task.FromResult(new ActionResult { Success = false, Message = $"未知操作: {action}" });
         }
 
-        PermissionService.Save(_selectedEngine, mode, tools);
-        return Task.FromResult(new ActionResult { Success = true, Message = $"{toolName} × {_selectedEngine} 已更新" });
-    }
-
-    private Dictionary<string, string> BuildSourceMap()
-    {
-        var map = new Dictionary<string, string>();
-        foreach (var plugin in _engine.PluginLoader.LoadedPlugins)
-        {
-            var pluginName = plugin.PluginId;
-            foreach (var tn in plugin.ToolNames)
-                map[tn] = pluginName;
-            foreach (var cn in plugin.ComponentNames)
-            {
-                var reg = ComponentRegistry.Get(cn);
-                if (reg == null) continue;
-                foreach (var inst in _engine.GlobalComponentHost?.Instances ?? Enumerable.Empty<GlobalComponentInstance>())
-                {
-                    if (inst.Component.Meta.Name != cn) continue;
-                    foreach (var tool in inst.Component.Tools)
-                        map[tool.Name] = pluginName;
-                }
-                foreach (var inst in _engine.GetActiveEnginesSnapshot()
-                    .Select(e => e.ComponentHost).Where(h => h != null))
-                {
-                    foreach (var loopInst in inst!.Instances)
-                    {
-                        if (loopInst.Component.Meta.Name != cn) continue;
-                        foreach (var tool in loopInst.Component.Tools)
-                            map[tool.Name] = pluginName;
-                    }
-                }
-            }
-        }
-        return map;
+        SessionTypeProfiles.Save(_selectedType, mode, tools);
+        return Task.FromResult(new ActionResult { Success = true, Message = $"{toolName} × {_selectedType} 已更新（运行中会话即时生效）" });
     }
 }

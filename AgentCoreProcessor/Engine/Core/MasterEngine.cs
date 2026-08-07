@@ -274,46 +274,30 @@ namespace AgentCoreProcessor.Engine
         }
 
         /// <summary>
-        /// 即时切换组件在指定引擎类型下的启用状态。
-        /// 同时持久化配置并通知所有运行中的实例。
+        /// 即时切换组件在指定会话类型下的启用状态：
+        /// 1. 持久化到类型文件 Components 清单（新会话生效）；
+        /// 2. 运行中该类型会话已装载的组件实例即时翻转（组件须预先声明，新增组件不对运行中会话装载）。
         /// </summary>
-        public async Task ToggleComponentLiveAsync(string componentName, string engineType, bool enabled)
+        public async Task ToggleComponentLiveAsync(string componentName, string sessionType, bool enabled)
         {
-            // 1. 持久化配置
-            var config = ComponentConfig.Load();
-            config.SetEnabled(componentName, engineType, enabled);
-
-            // 2. Global 组件：GlobalComponentHost 实例始终存在，直接切换
-            if (GlobalComponentHost != null)
+            // 1. 持久化：改写类型文件 Components 清单
+            var profile = Engine.Session.SessionTypeProfiles.Get(sessionType);
+            var list = profile.Components.ToList();
+            if (enabled)
             {
-                var reg = ComponentRegistry.Get(componentName);
-                if (reg != null && reg.Scope == ComponentScope.Global)
-                {
-                    if (enabled)
-                        await GlobalComponentHost.EnableComponentAsync(componentName);
-                    else
-                        await GlobalComponentHost.DisableComponentAsync(componentName);
-                }
+                if (!list.Contains(componentName, StringComparer.OrdinalIgnoreCase))
+                    list.Add(componentName);
             }
-
-            // 3. Loop 组件：遍历所有活跃引擎中匹配的 ComponentHost
-            var loopType = engineType switch
+            else
             {
-                "channel" => "channel",
-                "task" => "task",
-                "review" => "review",
-                _ => engineType
-            };
-            foreach (var engine in GetActiveEnginesSnapshot())
-            {
-                if (engine.ComponentHost == null) continue;
-                if (engine.EngineType != loopType) continue;
-
-                if (enabled)
-                    await engine.ComponentHost.EnableComponentAsync(componentName);
-                else
-                    await engine.ComponentHost.DisableComponentAsync(componentName);
+                list.RemoveAll(c => c.Equals(componentName, StringComparison.OrdinalIgnoreCase));
             }
+            Engine.Session.SessionTypeProfiles.SaveComponents(sessionType, list);
+
+            // 2. 运行中同类型会话：已装载实例即时翻转
+            var se = GetActiveEnginesSnapshot().OfType<Session.SessionEngine>().FirstOrDefault();
+            if (se != null)
+                await se.ToggleComponentForTypeAsync(componentName, sessionType, enabled);
         }
 
         /// <summary>
@@ -338,14 +322,11 @@ namespace AgentCoreProcessor.Engine
 
             // 卸载并重新加载 DLL
             PluginLoader.ReloadSingle(pluginName);
-            ComponentConfig.Invalidate();
             Engine.Session.SessionTypeProfiles.Invalidate();
-            Tool.PermissionService.Invalidate();
 
             // 为新注册的 Global 组件创建实例
             if (GlobalComponentHost != null)
             {
-                var config = ComponentConfig.Load();
                 var plugin = FindPluginByName(pluginName);
                 if (plugin != null)
                 {
@@ -353,15 +334,7 @@ namespace AgentCoreProcessor.Engine
                     {
                         var reg = ComponentRegistry.Get(compName);
                         if (reg != null && reg.Scope == ComponentScope.Global)
-                        {
-                            // 尊重配置：该组件对任一权限组启用则创建（组件归属由 ComponentConfig 决定）
-                            if (config.IsEnabled(compName, "channel", true) ||
-                                config.IsEnabled(compName, "task", true) ||
-                                config.IsEnabled(compName, "review", true))
-                            {
-                                await GlobalComponentHost.CreateAndEnableComponentAsync(compName);
-                            }
-                        }
+                            await GlobalComponentHost.CreateAndEnableComponentAsync(compName);
                     }
                 }
             }

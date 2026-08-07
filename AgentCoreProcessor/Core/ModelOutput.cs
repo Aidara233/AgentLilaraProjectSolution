@@ -16,7 +16,5 @@ namespace AgentCoreProcessor.Core
         public static ModelOutput FromText(string text) => new() { Text = text };
         public static ModelOutput FromTools(List<ToolCall> calls, string? thinking = null, Models.Usage? usage = null)
             => new() { ToolCalls = calls, Thinking = thinking, Usage = usage };
-        public static ModelOutput FromExpressWithTools(string text, List<ToolCall>? calls, string? thinking = null, Models.Usage? usage = null)
-            => new() { Text = text, ToolCalls = calls, Thinking = thinking, Usage = usage };
     }
 }

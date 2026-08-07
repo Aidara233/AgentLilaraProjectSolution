@@ -54,7 +54,7 @@ internal static class ComponentRegistry
         _registrations.Values.Where(r => r.Scope == ComponentScope.Global);
 
     /// <summary>
-    /// 获取全部 Loop 组件。组件在哪个权限组加载由 ComponentConfig 决定。
+    /// 获取全部 Loop 组件。组件在哪个会话类型装载由会话类型文件 Components 清单决定。
     /// </summary>
     public static IEnumerable<ComponentRegistration> GetLoopComponents(string loopType)
     {

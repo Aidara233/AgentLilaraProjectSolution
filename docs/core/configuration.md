@@ -112,7 +112,7 @@ Storage/Core/{CoreName}.json
 
 Persona.txt 作为普通 prompt 文件处理。需要 Persona 的 Core 在 `promptFiles` 数组首项加入 `"Persona.txt"`，由 `PromptLoader` 统一按序加载。不需要 Persona 的 Core（工具性核心如 SleepTalkCore 等）不在 `promptFiles` 中包含即可。
 
-> **session 会话的提示词不走 core 的 `promptFiles`**：channel/task/review 的身份提示词由会话类型配置（`Storage/Session/{type}.json` 的 `PromptFiles`，文件在 `Storage/Session/Prompts/`）决定，`RuntimeSession` 构建后经 `AgentCore.SessionPrompt` 注入，**换核不换提示词**。core 配置的 `promptFiles` 仅服务于非 session 核心（System/SleepTalk）。加载统一走 `PromptLoader` 双目录（Session/Prompts → Core/Prompts）。
+> **session 会话的提示词不走 core 的 `promptFiles`**：channel/task/review 的身份提示词由会话类型配置（`Storage/SessionTypes/{type}.json` 的 `Prompts`，文件在 `Storage/SessionTypes/Prompts/`）决定，`RuntimeSession` 构建后经 `AgentCore.SessionPrompt` 注入，**换核不换提示词**。core 配置的 `promptFiles` 仅服务于非 session 核心（System/SleepTalk）。加载统一走 `PromptLoader` 双目录（SessionTypes/Prompts → Core/Prompts）。
 
 ---
 
@@ -132,7 +132,7 @@ Persona.txt 作为普通 prompt 文件处理。需要 Persona 的 Core 在 `prom
 
 **遗留配置（对应 Core 类已删除，Storage/Core 下的 json 已清理，2026-08-04）：** `CombineCore` / `ConsolidationCore` / `ConsolidationFinalCore` / `DedupCore` / `LinkCore` / `MemoryQueryCore` / `SummarizationCore` / `SystemCore`。对应模板保留在 `templates/Core/` 归档，如有需要可从模板重建。
 
-> 记忆重构（2026-08-05）又删 `ReviewCore` / `MemoryExtractionCore` / `RelationClassificationCore`：提取/关系分类核心已并入心智引擎（MindEngine.ExtractService），review 会话复用 `TaskCore`（见 `Storage/Session/review.json`）。
+> 记忆重构（2026-08-05）又删 `ReviewCore` / `MemoryExtractionCore` / `RelationClassificationCore`：提取/关系分类核心已并入心智引擎（MindEngine.ExtractService），review 会话复用 `TaskCore`（见 `Storage/SessionTypes/review.json`）。
 
 > 注：`VisionProvider.json`、`OcrProvider.json`、`EmbeddingProvider.json` 不是 Core 配置，而是独立 Provider 的配置。
 
@@ -168,4 +168,4 @@ Persona.txt 作为普通 prompt 文件处理。需要 Persona 的 Core 在 `prom
 
 ## conversationHistory（预设消息）
 
-> **⚠ 已废弃**：`conversationHistory`（映射 `ApiClientCfg.PresetMessages`）在代码中**无读取点**，是死字段。会话身份提示词改由 `Storage/Session/{type}.json` 的 `PromptFiles` 承载（经 `RuntimeSession.BuildSessionPrompt` → `AgentCore.SessionPrompt` 注入，换核不换）；非 session 核心用 `promptFiles` 数组加载 `Core/Prompts` 下的提示词文件。
+> **⚠ 已废弃**：`conversationHistory`（映射 `ApiClientCfg.PresetMessages`）在代码中**无读取点**，是死字段。会话身份提示词改由 `Storage/SessionTypes/{type}.json` 的 `Prompts` 承载（经 `RuntimeSession.BuildSessionPrompt` → `AgentCore.SessionPrompt` 注入，换核不换）；非 session 核心用 `promptFiles` 数组加载 `Core/Prompts` 下的提示词文件。

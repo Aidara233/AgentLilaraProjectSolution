@@ -57,7 +57,7 @@
 | `group-file-tools-global` | Plugin.GroupFileTools | 分组文件 Global 面 |
 | `scheduled-tasks-timer` | Plugin.ScheduledTasks | 定时触发 Global 面 |
 
-> 会话类型装配（哪些组件出现在 express/channel/task/review 会话）由 `Storage/Engine/ComponentConfig.json` 决定，插件自身不声明。
+> 会话类型装配（哪些组件出现在 express/channel/task/review 会话）由 `Storage/SessionTypes/{type}.json` 的 `Components` 清单决定，插件自身不声明。
 
 ## 开发套路
 
@@ -126,7 +126,7 @@ dotnet build
 | 工具注册失败（名称冲突） | 同名工具已被其他插件注册 | 改工具名，或检查是否重复加载 |
 | 组件工具不生效 | DLL 有 `[Component]` 时独立 ITool 不被注册 | 把工具放进组件的 `Tools` 属性 |
 | 构造注入拿不到服务 | 服务类型不在 `InstantiateWithInjection` 的 resolver 字典里 | 用 `IServiceProvider` 参数 + `GetService<T>()` |
-| Loop 组件在某个权限组不出现 | `ComponentConfig.json` 未启用该组件 × 组 | 在 `Storage/Engine/ComponentConfig.json` 开启（插件已不声明引擎适用性） |
+| Loop 组件在某个会话类型不出现 | 该类型 `SessionTypes/{type}.json` 的 `Components` 清单没包含它 | 在 `/p/plugins/types` 把组件加入该类型清单（插件已不声明引擎适用性） |
 | `OnEnabledAsync()` 初始化时没调用 | 设计如此，首次初始化只调 `OnInitAsync()` | 初始化逻辑放 `OnInitAsync()` |
 | 文件路径不对 | 用 `..` 跳出 `GlobalDirectory` 访问 Workspace | 用 `IPluginStorage.WorkspaceDirectory` |
 | 以为插件 DLL 在 Storage 下 | 插件 DLL 在 `{BaseDirectory}/Plugins/`，不在 Storage 下 | 读 [path-config.md](path-config.md) |
@@ -151,6 +151,6 @@ AgentCoreProcessor/Component/ComponentHost.cs   ← Loop 组件宿主
 AgentCoreProcessor/Component/GlobalComponentHost.cs ← 全局组件宿主
 
 # 配置
-Storage/Engine/ComponentConfig.json             ← 组件按权限组（channel/task/review）启用/禁用状态
-Storage/Session/{channel,task,express,review}.json ← 会话类型档案（默认核/组件/AllowedCores/prompts）+ 工具权限黑白名单（PermissionService 裁决）
+Storage/SessionTypes/{channel,task,express,review}.json ← 会话类型档案（**唯一权限源**：Core/AllowedCores/Components/Tools 白黑名单/Prompts 自包含）
+Storage/ToolConfig.json                                ← 全局工具禁用（kill switch）
 ```

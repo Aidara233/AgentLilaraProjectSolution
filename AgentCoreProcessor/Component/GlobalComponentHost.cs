@@ -15,7 +15,6 @@ internal class GlobalComponentHost
     private readonly ModuleBus _moduleBus;
     private readonly IServiceProvider _services;
     private readonly Action<string> _wakeLoop;
-    private readonly ComponentConfig _config;
 
     private readonly List<GlobalComponentInstance> _components = new();
     private readonly Dictionary<string, ITool> _tools = new();
@@ -28,13 +27,12 @@ internal class GlobalComponentHost
         _moduleBus = moduleBus;
         _services = services;
         _wakeLoop = wakeLoop;
-        _config = ComponentConfig.Load();
     }
 
     public async Task InitAsync()
     {
         var registrations = ComponentRegistry.GetGlobals();
-        var timeout = TimeSpan.FromSeconds(_config.GlobalInitTimeoutSeconds);
+        var timeout = TimeSpan.FromSeconds(ComponentTimeouts.GlobalInitTimeoutSeconds);
 
         // 并行初始化 + 每组件超时兜底：单个全局组件初始化挂起不再阻塞启动、不影响其它组件。
         var tasks = registrations.Select(reg => InitOneAsync(reg, timeout)).ToArray();
@@ -63,18 +61,6 @@ internal class GlobalComponentHost
         {
             Signal.Error(LogGroup.Engine, $"Global组件初始化失败: {reg.Type.Name}",
                 new { type = reg.Type.FullName, error = ex.Message });
-        }
-    }
-
-    public IEnumerable<ITool> GetVisibleTools(string loopType)
-    {
-        foreach (var inst in _components)
-        {
-            if (!inst.Context.IsEnabled) continue;
-            if (!_config.IsEnabled(inst.Component.Meta.Name, loopType, inst.Component.Meta.DefaultEnabled))
-                continue;
-            foreach (var tool in inst.Component.Tools)
-                yield return tool;
         }
     }
 
@@ -168,7 +154,7 @@ internal class GlobalComponentHost
     }
     public async Task ShutdownAsync(ShutdownReason reason)
     {
-        var timeout = _config.ShutdownTimeoutMs;
+        var timeout = ComponentTimeouts.ShutdownTimeoutMs;
         using var cts = new CancellationTokenSource(timeout);
 
         var tasks = _components.Select(async inst =>

@@ -264,7 +264,8 @@ internal class RuntimeSession : IRuntimeSession
     /// </summary>
     public void InitComponents(string sessionId, ModuleBus moduleBus, IServiceProvider services, Action wakeLoop)
     {
-        _componentLoopType = SessionTypeProfiles.Get(Type).PermissionGroup;
+        // 会话类型名即权限作用域（无 PermissionGroup 间接层）：组件装载 + 工具白黑名单都按 Type 走
+        _componentLoopType = Type;
         _services = services;
         // 注入 per-session 连接状态：发送工具据此决定目标频道并校验发言权限
         var perLoopServices = new Dictionary<Type, object>
@@ -741,6 +742,16 @@ internal class RuntimeSession : IRuntimeSession
 
     public void DisableComponent(string componentId)
         => throw new NotSupportedException("运行时动态卸载组件尚未实现，组件须在 CreateSessionSpec.ComponentIds 中预先声明");
+
+    /// <summary>运行时翻转已装载组件实例的启用状态（仅对已在组件清单中的实例生效；新增组件须预先声明，不即时装载）。</summary>
+    internal async Task ToggleComponentAsync(string name, bool enabled)
+    {
+        if (_componentHost == null) return;
+        if (enabled)
+            await _componentHost.EnableComponentAsync(name);
+        else
+            await _componentHost.DisableComponentAsync(name);
+    }
 
     public void RequestStop(string reason)
     {

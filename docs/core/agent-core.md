@@ -12,7 +12,7 @@ AgentCore 是系统中最关键的核心，负责所有 LLM 对话交互。它�
 
 ### 核心配置映射
 
-会话类型在 `Storage/Session/{type}.json` 声明 `DefaultCoreConfig`，各会话类型默认核：
+会话类型在 `Storage/SessionTypes/{type}.json` 声明 `Core`，各会话类型默认核：
 
 | 会话类型 | 默认核配置 | 用途 |
 |------|----------|------|
@@ -69,12 +69,12 @@ Express 模式下的简单对话，支持多模态图片输入。
 | 位置 | 构造 | CallerTag |
 |------|------|-----------|
 | `RuntimeSession`（SessionEngine.CreateSession） | `new AgentCore(spec.CoreConfigName)` | `"Session:{sessionId}"` |
-| `RuntimeSession`（review 会话，`Storage/Session/review.json`） | `new AgentCore("TaskCore")` | `"Review:{mode}"` |
+| `RuntimeSession`（review 会话，`Storage/SessionTypes/review.json`） | `new AgentCore("TaskCore")` | `"Review:{mode}"` |
 
 ### Session 多核切换（运行时）
 
 Session 与 Core 解耦：session 一组配置文件（决定组件/上下文），core 一组配置文件（决定模型）。
-每个会话类型在 `Storage/Session/{type}.json` 声明 `AllowedCores` 白名单（缺省 = 仅默认核，行为不变）。
+每个会话类型在 `Storage/SessionTypes/{type}.json` 声明 `AllowedCores` 白名单（缺省 = 仅默认核，行为不变）。
 
 - **白名单配置**：`channel.json` 的 `"AllowedCores": ["ChannelCore", "ExpressCore"]`；`task.json` 单核 `["TaskCore"]`。加载器见 `SessionTypeProfiles.Load`。
 - **切换入口**（三路）：
@@ -88,7 +88,7 @@ Session 与 Core 解耦：session 一组配置文件（决定组件/上下文）
 
 ### Review 会话（复用 TaskCore）
 
-`Storage/Session/review.json` 已补齐会话类型档案字段（Type/DefaultCoreConfig/AllowedCores/DefaultComponents/PromptFiles/PermissionGroup），配置形态与 channel/task 一致，`SessionTypeProfiles.Get("review")` 可正常加载（`All()` 也会枚举 review）。Review 验证会话**复用 TaskCore**（`DefaultCoreConfig: "TaskCore"`，AllowedCores 单核），旧 `ReviewCore.json` 已删。
+`Storage/SessionTypes/review.json` 是完整会话类型档案（Type/Core/AllowedCores/Components/Tools/Prompts），配置形态与 channel/task 一致，`SessionTypeProfiles.Get("review")` 可正常加载（`All()` 也会枚举 review）。Review 验证会话**复用 TaskCore**（`Core: "TaskCore"`，AllowedCores 单核），旧 `ReviewCore.json` 已删。
 
 ReviewEngine 已随记忆重构移除，Review 验证改走 `docs/memory-redesign/05` 流程：
 - 工作源 = ReviewQueue（ReviewQueueService，唯一待验证队列）
@@ -97,9 +97,9 @@ ReviewEngine 已随记忆重构移除，Review 验证改走 `docs/memory-redesig
 
 ### 提示词归属（session 定身份，core 定模型）
 
-会话身份提示词由 **session 类型配置的 `PromptFiles`** 声明（`Storage/Session/Prompts/`），不再由 core 配置提供：
+会话身份提示词由 **session 类型配置的 `Prompts`** 声明（`Storage/SessionTypes/Prompts/`），不再由 core 配置提供：
 
 - `SessionTypeProfile.PromptFiles` → `RuntimeSession.BuildSessionPrompt()` 拼接 → `AgentCore.SessionPrompt`，在 `SetConversationHistory` 覆盖 core 的 `BasePrompt`。
 - `SwitchCore`/`ConfigureCores`/`SetActiveCore` 换核时把同一 `SessionPrompt` 绑定到新核 —— **换核只换模型配置执行器，会话身份提示词不变**。
-- `PromptLoader.Load(file, storageRoot, ...)` 双目录搜索：`Session/Prompts`（session 主库）→ `Core/Prompts`（System/SleepTalk 等非 session 核心），templates 对应释放。
+- `PromptLoader.Load(file, storageRoot, ...)` 双目录搜索：`SessionTypes/Prompts`（会话主库）→ `Core/Prompts`（System/SleepTalk 等非 session 核心），templates 对应释放。
 - 非 session 核心（System/SleepTalk）提示词仍跟 core 走（`Core/Prompts` + core 配置 `promptFiles`），无换核场景。

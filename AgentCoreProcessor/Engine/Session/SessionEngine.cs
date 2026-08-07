@@ -81,13 +81,11 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
         }
         else
         {
-            var set = new HashSet<string>(profile.DefaultComponentIds, StringComparer.OrdinalIgnoreCase);
+            // 组件清单即会话类型的唯一装配源（Storage/SessionTypes/{type}.json Components）
+            var set = new HashSet<string>(profile.Components, StringComparer.OrdinalIgnoreCase);
             if (spec.AdditionalComponents != null) set.UnionWith(spec.AdditionalComponents);
             if (spec.ExcludedComponents != null) set.ExceptWith(spec.ExcludedComponents);
-            var cfg = ComponentConfig.Load();
-            finalComponents = set
-                .Where(c => cfg.IsEnabled(c, profile.PermissionGroup, defaultEnabled: true))
-                .ToArray();
+            finalComponents = set.ToArray();
         }
 
         var session = fixedSessionId != null
@@ -483,6 +481,25 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
 
     public IReadOnlyList<IRuntimeSession> GetActiveSessions() =>
         _sessions.Values.Where(s => s.IsAlive).ToList();
+
+    /// <summary>对指定会话类型的所有运行中会话，翻转已装载组件实例的启用状态（最佳努力，失败跳过）。</summary>
+    public async Task ToggleComponentForTypeAsync(string componentName, string type, bool enabled)
+    {
+        foreach (var s in _sessions.Values.Where(s => s.IsAlive
+                     && string.Equals(s.Type, type, StringComparison.OrdinalIgnoreCase)))
+        {
+            try
+            {
+                if (s is RuntimeSession rs)
+                    await rs.ToggleComponentAsync(componentName, enabled);
+            }
+            catch (Exception ex)
+            {
+                Signal.Warn(LogGroup.Engine, "运行中会话组件翻转失败",
+                    new { sessionId = s.SessionId, component = componentName, error = ex.Message });
+            }
+        }
+    }
 
     public bool HasActiveWorking(int channelId)
     {
