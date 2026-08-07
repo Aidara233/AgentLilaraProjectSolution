@@ -220,6 +220,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - OneBot 适配器：Adapter/OneBot/OneBotAdapter.cs（WS连接 + 消息映射 + QQ协议）
 - File 适配器：Adapter/File/FileAdapter.cs（文件轮询，测试用；SendMessageAsync 返回输出文件名作为消息 id，speak 等工具据此判成功）
 - HTTP 桥接适配器：Adapter/Http/HttpBridgeAdapter.cs（HTTP+WS 混合，独立端口自建 Kestrel；POST /api/send 阻塞等突发统一返回 + /api/messages 聊天记录 + /ws 双向实时；实现 IEngineAwareAdapter/IChannelAwareAdapter 拿引擎 + 频道归属；多适配器出向路由按 IChannelAwareAdapter.OwnsChannel 优先）
+- 迷你客户端：LilaraConsoleClient/（net8.0 控制台，零依赖，直连 HttpBridge ws 端点交互式对话；协议见 docs/http-bridge-api.md §6）
 - 适配器引擎访问：Adapter/IEngineAwareAdapter.cs（MasterEngine 注入）+ Adapter/IChannelAwareAdapter.cs（频道归属），AdapterManager.AttachEngine 由 MasterEngine 构造注入
 - MCP 系统：MCP/McpServerManager.cs + McpBridgeTool.cs + McpConfig.cs
 - WebUI Shell：WebUI/Shell/ProviderRegistry.cs + WebUI/Components/Shell/（DynamicPage/CardGrid/CardHost.razor）

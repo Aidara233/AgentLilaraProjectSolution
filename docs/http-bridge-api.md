@@ -240,3 +240,30 @@ ws.onopen = () => {
 - **并发**：同一频道并发多个 `wait=true` 请求，bot 回复可能被多个请求都观测到（无严格归属），调试场景可接受。
 - **出向 id**：`platformMessageId` 形如 `http_00000001`（适配器自增 seq），作为该条 bot 消息在消息历史里的标识。
 - **路由归属**：多适配器共存（如 `--test` 下 file + http）时，`http_` 前缀/白名单频道出向归本适配器；其他频道归各自适配器。
+
+---
+
+## 6. 迷你客户端（LilaraConsoleClient）
+
+solution 内置一个控制台迷你客户端，直连本适配器的 ws 端点，交互式对话（net8.0，零外部依赖，代码在 `LilaraConsoleClient/`）。
+
+```
+dotnet run --project LilaraConsoleClient [--host localhost] [--port 9876] [--channel http_debug]
+    [--user http-user] [--display-name <名>] [--token <token>] [--history-limit 20]
+```
+
+- 启动后先拉当前频道历史（`--history-limit` 可调，0=不拉），进入 REPL。
+- 明文输入即发送（isPrivate=true 视同提及，立即激活会话）；`/` 开头为命令。
+- 内置命令：
+  ```
+  /help /quit /ping
+  /channels               列出频道
+  /join <频道>             订阅并切换（拉该频道历史）
+  /leave <频道>            退订
+  /history [条数] [afterId]  拉取当前频道历史（afterId>0 增量查未读）
+  /status                 适配器 + 引擎状态
+  /user <名> /display <名>  切换发言人
+  ```
+- bot 出向推送实时显示；历史拉取与实时流按 `platformMessageId`（== ws `seq`）对账去重，避免重复回显。
+- 鉴权：`--token <token>` 会在 ws URL 加 `token` 查询参数、HTTP 请求带 `Authorization: Bearer <token>`。
+
