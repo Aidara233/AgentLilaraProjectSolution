@@ -123,6 +123,32 @@ public class RuntimeSessionCoreTests
     }
 
     [Fact]
+    public async Task MarkCompletedForCleanup_PersistsCompletedStatus()
+    {
+        using var _ = PointToTempStorage();
+        var sessionId = "cleanuptest1";
+        var persister = new SessionPersistence(sessionId);
+        await persister.SaveSpecAsync(new CreateSessionSpec { Type = "channel" }, DateTime.UtcNow);
+
+        // 模拟测试运行中的 Running 会话
+        var rs = new RuntimeSession(new CreateSessionSpec { Type = "channel" }, new[] { "basic-tools" });
+        rs.SetPersister(persister);
+        await persister.SaveStateAsync(new SessionStateSnapshot
+        {
+            SessionId = sessionId,
+            Status = SessionStatus.Running,
+            ConnectedChannelId = "13"
+        });
+
+        // --test 退出清理：静默置 Completed + 落盘
+        rs.MarkCompletedForCleanup();
+        await rs.PersistStateAsync();
+
+        var loaded = persister.Load().State;
+        Assert.Equal(SessionStatus.Completed, loaded.Status);
+    }
+
+    [Fact]
     public void SwitchCore_PreservesSessionPrompt()
     {
         using var _ = PointToTempStorage();

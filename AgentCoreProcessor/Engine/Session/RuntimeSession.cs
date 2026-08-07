@@ -759,6 +759,9 @@ internal class RuntimeSession : IRuntimeSession
         _cts?.Cancel();
     }
 
+    /// <summary>测试退出清理用：静默置 Completed（不取消循环、不触发 OnCompleted/Resurrector），仅改状态供落盘。</summary>
+    internal void MarkCompletedForCleanup() => Status = SessionStatus.Completed;
+
     public void SetWaitUntil(DateTime? until) => WaitUntil = until;
     public void TouchActivity() => _lastActivity = DateTime.UtcNow;
     /// <summary>外部信号唤醒（由 wakeLoop 回调触发，如异步任务完成）。</summary>

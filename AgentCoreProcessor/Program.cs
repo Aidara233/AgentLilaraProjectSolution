@@ -190,95 +190,114 @@ namespace AgentCoreProcessor
 
             if (testMode)
             {
-                // HTTP 桥接适配器（独立端口）：test 模式也启动，便于 curl / WS 交互调试
-                foreach (var httpAdapter in adapterManager.GetAllAdapters().OfType<Adapter.HttpBridgeAdapter>())
-                    await httpAdapter.StartAsync();
-
-                // 解析超时参数
-                int timeoutSeconds = 60;
-                var timeoutIdx = Array.FindIndex(args, a => a == "--timeout");
-                if (timeoutIdx >= 0 && timeoutIdx + 1 < args.Length)
-                    int.TryParse(args[timeoutIdx + 1], out timeoutSeconds);
-
-                // 解析消息间隔参数（秒）
-                int delaySec = 0;
-                var delayIdx = Array.FindIndex(args, a => a == "--delay");
-                if (delayIdx >= 0 && delayIdx + 1 < args.Length)
-                    int.TryParse(args[delayIdx + 1], out delaySec);
-                int delayMs = delaySec * 1000;
-
-                // 读取 input 目录
-                int msgCount;
-                if (delayMs > 0)
+                try
                 {
-                    msgCount = await fileAdapter!.ProcessInputWithDelayAsync(delayMs);
-                }
-                else
-                {
-                    msgCount = fileAdapter!.ProcessInputOnce();
-                }
-                Console.WriteLine($"[test] 读取 {msgCount} 条输入消息{(delayMs > 0 ? $"（间隔 {delaySec}s）" : "")}");
+                    // HTTP 桥接适配器（独立端口）：test 模式也启动，便于 curl / WS 交互调试
+                    foreach (var httpAdapter in adapterManager.GetAllAdapters().OfType<Adapter.HttpBridgeAdapter>())
+                        await httpAdapter.StartAsync();
 
-                if (msgCount == 0)
-                {
-                    Console.WriteLine("[test] input 目录为空，无消息可处理。");
-                    return 0;
-                }
+                    // 解析超时参数
+                    int timeoutSeconds = 60;
+                    var timeoutIdx = Array.FindIndex(args, a => a == "--timeout");
+                    if (timeoutIdx >= 0 && timeoutIdx + 1 < args.Length)
+                        int.TryParse(args[timeoutIdx + 1], out timeoutSeconds);
 
-                Console.WriteLine("[test] 消息投递完成，等待处理...");
-                var sw = System.Diagnostics.Stopwatch.StartNew();
-                var deadline = TimeSpan.FromSeconds(timeoutSeconds);
+                    // 解析消息间隔参数（秒）
+                    int delaySec = 0;
+                    var delayIdx = Array.FindIndex(args, a => a == "--delay");
+                    if (delayIdx >= 0 && delayIdx + 1 < args.Length)
+                        int.TryParse(args[delayIdx + 1], out delaySec);
+                    int delayMs = delaySec * 1000;
 
-                // 等引擎开始工作（会话引擎就绪；express 会话化后频道响应由会话承载）
-                while (engine.GetActiveEngineCount("Session") == 0 && sw.Elapsed < deadline)
-                    await Task.Delay(200);
-
-                // 等会话处理完成。会话处理完突发后回等待（IsBusy=false），
-                // 连续 5 次不忙确认稳定
-                var remainMs = (int)(deadline - sw.Elapsed).TotalMilliseconds;
-                if (remainMs > 0)
-                    await Task.Delay(Math.Min(4000, remainMs));
-
-                int idleCount = 0;
-                while (idleCount < 5 && sw.Elapsed < deadline)
-                {
-                    await Task.Delay(1000);
-                    idleCount = engine.HasBusyWorker() ? 0 : idleCount + 1;
-                }
-
-                sw.Stop();
-                bool timedOut = idleCount < 4;
-
-                if (timedOut)
-                {
-                    Console.WriteLine($"[test] 超时 ({timeoutSeconds}s)，部分引擎可能仍在运行");
-                }
-                else
-                {
-                    Console.WriteLine($"[test] 处理完成 (耗时 {sw.Elapsed.TotalSeconds:F1}s)");
-                }
-
-                // 收集回复
-                var outputDir = Path.Combine(PathConfig.StoragePath, "FileAdapter", "output");
-                if (Directory.Exists(outputDir))
-                {
-                    var replyFiles = Directory.GetFiles(outputDir, "*.txt")
-                        .Where(f => !Path.GetFileName(f).StartsWith("000_"))
-                        .OrderBy(f => Path.GetFileName(f))
-                        .ToArray();
-
-                    Console.WriteLine($"[test] === 回复 ({replyFiles.Length}条) ===");
-                    foreach (var file in replyFiles)
+                    // 读取 input 目录
+                    int msgCount;
+                    if (delayMs > 0)
                     {
-                        var content = File.ReadAllText(file).TrimEnd();
-                        Console.WriteLine($"[reply] {Path.GetFileName(file)}");
-                        Console.WriteLine(content);
-                        Console.WriteLine();
+                        msgCount = await fileAdapter!.ProcessInputWithDelayAsync(delayMs);
+                    }
+                    else
+                    {
+                        msgCount = fileAdapter!.ProcessInputOnce();
+                    }
+                    Console.WriteLine($"[test] 读取 {msgCount} 条输入消息{(delayMs > 0 ? $"（间隔 {delaySec}s）" : "")}");
+
+                    if (msgCount == 0)
+                    {
+                        Console.WriteLine("[test] input 目录为空，无消息可处理。");
+                        return 0;
+                    }
+
+                    Console.WriteLine("[test] 消息投递完成，等待处理...");
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    var deadline = TimeSpan.FromSeconds(timeoutSeconds);
+
+                    // 等引擎开始工作（会话引擎就绪；express 会话化后频道响应由会话承载）
+                    while (engine.GetActiveEngineCount("Session") == 0 && sw.Elapsed < deadline)
+                        await Task.Delay(200);
+
+                    // 等会话处理完成。会话处理完突发后回等待（IsBusy=false），
+                    // 连续 5 次不忙确认稳定
+                    var remainMs = (int)(deadline - sw.Elapsed).TotalMilliseconds;
+                    if (remainMs > 0)
+                        await Task.Delay(Math.Min(4000, remainMs));
+
+                    int idleCount = 0;
+                    while (idleCount < 5 && sw.Elapsed < deadline)
+                    {
+                        await Task.Delay(1000);
+                        idleCount = engine.HasBusyWorker() ? 0 : idleCount + 1;
+                    }
+
+                    sw.Stop();
+                    bool timedOut = idleCount < 4;
+
+                    if (timedOut)
+                    {
+                        Console.WriteLine($"[test] 超时 ({timeoutSeconds}s)，部分引擎可能仍在运行");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[test] 处理完成 (耗时 {sw.Elapsed.TotalSeconds:F1}s)");
+                    }
+
+                    // 收集回复
+                    var outputDir = Path.Combine(PathConfig.StoragePath, "FileAdapter", "output");
+                    if (Directory.Exists(outputDir))
+                    {
+                        var replyFiles = Directory.GetFiles(outputDir, "*.txt")
+                            .Where(f => !Path.GetFileName(f).StartsWith("000_"))
+                            .OrderBy(f => Path.GetFileName(f))
+                            .ToArray();
+
+                        Console.WriteLine($"[test] === 回复 ({replyFiles.Length}条) ===");
+                        foreach (var file in replyFiles)
+                        {
+                            var content = File.ReadAllText(file).TrimEnd();
+                            Console.WriteLine($"[reply] {Path.GetFileName(file)}");
+                            Console.WriteLine(content);
+                            Console.WriteLine();
+                        }
+                    }
+
+                    Console.WriteLine("[test] === 结束 ===");
+                    return timedOut ? 1 : 0;
+                }
+                finally
+                {
+                    // --test 的会话是仿真产物：退出前全部标记 Completed 并落盘，释放频道占用，
+                    // 避免残留 Running 会话阻塞下次验证（dev-ops 已知坑）。
+                    try
+                    {
+                        var sessionEngine = engine.GetActiveEnginesSnapshot()
+                            .OfType<AgentCoreProcessor.Engine.Session.SessionEngine>().FirstOrDefault();
+                        if (sessionEngine != null)
+                            await sessionEngine.CompleteAllSessionsAsync("[test] 退出清理");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[test] 会话清理失败（不影响退出码）: {ex.Message}");
                     }
                 }
-
-                Console.WriteLine("[test] === 结束 ===");
-                return timedOut ? 1 : 0;
             }
 
             // 正常模式：启动 Web 服务器 + 适配器

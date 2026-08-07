@@ -482,6 +482,24 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
     public IReadOnlyList<IRuntimeSession> GetActiveSessions() =>
         _sessions.Values.Where(s => s.IsAlive).ToList();
 
+    /// <summary>完成所有活跃会话并落盘（--test 退出清理用）：标记 Completed，释放频道占用，避免残留 Running 阻塞下次验证。单会话失败不阻塞。</summary>
+    public async Task CompleteAllSessionsAsync(string reason)
+    {
+        foreach (var s in _sessions.Values.ToList())
+        {
+            try
+            {
+                s.MarkCompletedForCleanup();
+                await s.PersistStateAsync();
+            }
+            catch (Exception ex)
+            {
+                Signal.Warn(LogGroup.Engine, "会话退出清理失败",
+                    new { sessionId = s.SessionId, reason, error = ex.Message });
+            }
+        }
+    }
+
     /// <summary>对指定会话类型的所有运行中会话，翻转已装载组件实例的启用状态（最佳努力，失败跳过）。</summary>
     public async Task ToggleComponentForTypeAsync(string componentName, string type, bool enabled)
     {
