@@ -19,15 +19,14 @@ AgentLilaraProjectSolution/
 │     ├── Client/      IModelClient 抽象层（Claude/OpenAI 双协议）+ Embedding + IVisionProvider + IOcrProvider
 │     ├── Command/     框架指令系统（/help /status /config 等）
 │     ├── Config/      PathConfig 绝对路径管理
-│     ├── Core/        业务核心（AgentCore+SleepTalkCore+PreprocessingCore等），继承 CoreBase，各自 JSON 配置
+│     ├── Core/        业务核心（AgentCore+ExtractionCore+SleepTalkCore+PreprocessingCore等），继承 CoreBase，各自 JSON 配置
 │     ├── Database/    实体 + Repository（SQLite，15张表：记忆 9 张 + 业务 6 张，另加日志库）
 │     ├── Engine/      引擎生态（MasterEngine内核 + 7个ISubEngine + Components + Modules）
 │     │     ├── Core/     MasterEngine内核 + Gate/Agent/ComponentHost等基类
 │     │     ├── Session/  SessionEngine + RuntimeSession（会话管理+频道占用）
 │     │     ├── Messaging/ MessageEngine（双向消息枢纽+去重分发）
 │     │     ├── AdapterEng/ AdapterEngine（适配器生命周期+频道融合）
-│     │     ├── Extraction/ ExtractionEngine（触发+进度标记，提取核心已并入心智）
-│     │     ├── Mind/     MindEngine（心智引擎：Writer+情绪+可信度仲裁+检索，常驻）
+│     │     ├── Mind/     MindEngine（心智引擎：Writer+情绪+可信度仲裁+检索+伴随提取，常驻）
 │     │     ├── Worker/   ExpressEngineSpawnCheck（渠道层调度：express 会话孵化）
 │     │     ├── Timer/    TimerEngine（心跳30s）
 │     │     ├── Vision/   VisionEngine（图片描述+OCR）
@@ -112,8 +111,7 @@ PluginLoader 扫描子目录 → 读 `plugin.json` → 加载 `entry` DLL。无�
     │     Mind       → MindEngine (心智引擎：唯一写入口 Writer+情绪+可信度仲裁+检索，常驻 AutoStart)
     │     Vision     → VisionEngine (图片描述+OCR，IsInfrastructure=true)
     │     Command    → CommandSpawnCheck (指令拦截)
-    │     Channel    → ExpressEngineSpawnCheck (无占用消息→孵化 express 会话)
-    │     (ExtractionEngine 保留为触发壳，未 AutoStart；提取核心已并入 MindEngine.ExtractService)
+    │     Channel    → ExpressEngineSpawnCheck (无占用消息→孵化 express 会话；同时喂伴随提取攒批)
     ├── 活跃引擎表 (List<ISubEngine>)
     ├── GlobalComponentHost + ComponentHost(per-session) + ModuleBus(per-session)
     │     Component 系统: IGlobalComponent(全局) / ILoopComponent(per-session)（接口定义在 AgentLilara.PluginSDK/）
@@ -180,8 +178,8 @@ RuntimeSession 内部（取代旧 Channel/System 引擎内循环）:
 适配器 ──► AdapterEngine ──► MessageEngine (入库+去重+标记+分发)
                                   │
                                   ├── express/working 会话 (端口权重激活，频道 Full-claim 时)
-                                  ├── ExtractionEngine (提取触发壳，提取核心在 MindEngine)
-                                  └── ExpressEngineSpawnCheck (无占用→孵化 express 会话)
+                                  └── ExpressEngineSpawnCheck (无占用→孵化 express 会话
+                                        + 喂 MindEngine 伴随提取攒批)
 
 出向:
 Session ── speak/send_media ──► MessageEngine (出向入库) ──► AdapterEngine (发送) ──► 适配器
@@ -238,15 +236,22 @@ SessionEngine (ISubEngine, IsInfrastructure=true):
   崩溃恢复:
     Storage/Sessions/{sessionId}/*.json → 扫描 → Running/Crashed → 恢复 → 继续运行
 
-ExtractionEngine (ISubEngine，触发壳，未 AutoStart):
-  提取核心已退役并并入 MindEngine.ExtractService（见 docs/memory-redesign/03），
-  ExtractionEngine 只保留触发 + 进度标记职责（入向消息计数触发提取），不再承载提取逻辑；
-  提取产物统一经 WriteBatch 交心智引擎落库。
+伴随提取 (MindEngine.Extract.Express，无独立引擎):
+  入向咽喉 ExpressEngineSpawnCheck.HandleMessageAsync 把消息喂进 ExpressExtractor 攒批
+  （fire-and-forget，达阈值时的 LLM 调用不阻塞消息链路）。
 
-  监听检测（EavesdropTask 关键词粗筛）尚未实现，留壳
+  触发: 攒够 20 条自动跑 | SessionEngine 30s 循环空闲补一次（>=3 条且静默 120s）
+        | 优雅退出/--test 收尾 FlushAllAsync 清尾巴 | WebUI 频道页手动触发
+  调用: ExtractionCore（Core/，继承 CoreBase，单轮无工具）
+        指令模板 Storage/Core/Prompts/ExtractionPrompt.txt（可热改，不用重编译）
+  产出: 语义三元组断言（subject/predicate/object 完整槽位），非"用户说了X"式 literal
+        可信度由模型按上下文态度自评，缺省 0.7（默认不假设为真），夹取 [0.05, 0.95]
+        同一消息的多条断言共享 utterance_id（防重复计分）
+  容错: 解析失败/槽位残缺 → 丢弃该条，不兜底造断言（消息仍在库里可重提）
+  范围: 仅聊天文本消息（bot 发言作上下文不作提取对象）；工具调用内容归善后复活
 
-  EavesdropTask 定义: TaskId / Name / ChannelIds(空=全频道) / Rules[{Keywords, Hint}] / NotificationTargetId
-  EavesdropSession: 一次性短命判定，MaxMessages=5
+  旧 ExtractionEngine / ChannelExtractionWorker / EavesdropTask 已于 2026-08-11 删除
+  （提取核心并入心智后它们只剩进度标记，从未真正提取）。
 
 RuntimeSession (统一 agent 循环, 无强制 stop):
   不设 MaxLifetime/IdleTimeout 上限——仅由模型 end_session / 外部 RequestStop / CTS 取消终止。

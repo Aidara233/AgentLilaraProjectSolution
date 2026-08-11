@@ -4,12 +4,12 @@
 
 **核心特性**：
 - 会话体系：频道响应全面会话化（express/working/task 都是 RuntimeSession）+ 基础设施引擎层（ISubEngine）+ 资源池树（SessionPool，频道占用在池里）
-- 基础设施引擎：SessionEngine（会话生命周期+资源池+30s循环+express 空闲回收）、MessageEngine（双向消息枢纽，入向去重+分发、出向入库+路由）、AdapterEngine（适配器管理+频道融合+消息分段）、ExtractionEngine（提取触发+进度标记，提取核心已并入心智）、MindEngine（心智引擎：唯一写入口 Writer+情绪+可信度仲裁+检索，常驻）、VisionEngine（图片描述+OCR）、TimerEngine（定时触发）
+- 基础设施引擎：SessionEngine（会话生命周期+资源池+30s循环+express 空闲回收+提取空闲补一次）、MessageEngine（双向消息枢纽，入向去重+分发、出向入库+路由）、AdapterEngine（适配器管理+频道融合+消息分段）、MindEngine（心智引擎：唯一写入口 Writer+情绪+可信度仲裁+检索+伴随提取，常驻）、VisionEngine（图片描述+OCR）、TimerEngine（定时触发）
 - 统一会话：RuntimeSession 不分子类，行为由 CreateSessionSpec（组件列表+端口配置+初始状态）+ Type（express/channel/task）驱动。express（轻量对话，权重触发）、Working（频道全功能，由 escalate 创建）、Task（任务执行，禁止套娃）
 - 无强制 stop：Session 不设 MaxLifetime/IdleTimeout 上限，仅由模型调 end_session / 外部 RequestStop / CTS 取消终止；express 会话空闲回收（ColdTimeoutSeconds）直接杀
 - express 会话化：无独立 ExpressEngine 引擎，无冲动值。无占用频道收到消息 → ExpressEngineSpawnCheck 孵化 Type="express" 会话（AutoClaim Full），按端口权重激活。escalate 同池换 working（claim 原地不动）
 - 端口模型：Session 通过 IInputPort（注入上下文）和 IOutputPort（工具写端口）与外界交互，端口决定工具注册
-- 消息流：AdapterEngine → MessageEngine（入向去重+分发）→ 订阅者（express/working 会话/ExtractionEngine 触发提取 → MindEngine）；出向 Session → MessageEngine → AdapterEngine
+- 消息流：AdapterEngine → MessageEngine（入向去重+分发）→ 订阅者（express/working 会话）；入向咽喉 ExpressEngineSpawnCheck 同时喂 MindEngine 伴随提取攒批；出向 Session → MessageEngine → AdapterEngine
 - 引擎容错：API 调用失败不杀循环，连续失败 exponential backoff，SpawnCheck 检测死亡自动重启
 - 优雅退出：ApplicationStopping 钩子 → 停适配器 → 停引擎（signal gate + CTS）→ 等 30s → 强杀兜底 → close startupSignal
 - 引擎生命周期信号：每个引擎 RunAsync 用 Signal.Continue 创建 lifecycle span（scope=自己），退出时 Close 带 reason
@@ -90,7 +90,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - `docs/core/README.md` — 文件清单 + 分类索引
 - `docs/core/infrastructure.md` — CoreBase / Processor / ModelOutput 基类和数据模型
 - `docs/core/agent-core.md` — AgentCore 统一对话核心（Express + Working 双模式）
-- `docs/core/memory-cores.md` — 7 个记忆处理核心（提取/去重/权重/关联/组合/整合）
+- `docs/core/memory-cores.md` — ExtractionCore（伴随提取，含输出契约与可信度自评规范；旧 7 个记忆核已删）
 - `docs/core/context-management.md` — 三层压缩 + CompactTool 接管路径
 - `docs/core/special-purpose.md` — SleepTalkCore / PreprocessingCore
 - `docs/core/stream-handlers.md` — NativeToolCallHandler / ExpressToolCallHandler
@@ -165,8 +165,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 统一会话：Engine/Session/RuntimeSession.cs（IRuntimeSession 实现，行为由 CreateSessionSpec + Type 驱动）
 - 消息枢纽：Engine/Messaging/MessageEngine.cs（双向枢纽，入向去重+分发，出向入库+路由）
 - 适配器引擎：Engine/AdapterEng/AdapterEngine.cs（适配器生命周期+频道融合+消息分段）
-- 提取核心：Engine/Mind/ExtractService.cs（提取核心：伴随提取 + 善后复活，产出 JSON 交 Writer）+ Engine/Mind/ExpressExtractor.cs（伴随提取：消息攒批 N=5 + 空闲补一次，单轮不开 session）
-- 提取触发：Engine/Extraction/ExtractionEngine.cs（触发 + 进度标记，提取核心已退役到 ExtractService）+ Engine/Extraction/EavesdropTask.cs（监听检测壳，待实现）
+- 提取核心：Core/ExtractionCore.cs（实现 IExtractionLlm，单轮无工具，指令在 ExtractionPrompt.txt）+ Engine/Mind/ExtractService.cs（组合 ExpressExtractor）+ Engine/Mind/ExpressExtractor.cs（攒批 N=20 + 空闲补一次，触发 ExtractionCore 单轮调用）
 - 会话规格：AgentLilara.PluginSDK/CreateSessionSpec.cs（组件列表+端口配置+初始状态）
 - 会话类型档案：Engine/Session/SessionTypeProfiles.cs（**唯一权限源**，读 Storage/SessionTypes/{type}.json：Core/AllowedCores/Components/Tools 白黑名单/Prompts 自包含；express/channel/task/review 内置种子）
 - 会话多核：Engine/Session/RuntimeSession.cs（ConfigureCores/SwitchCore/SetActiveCore + 懒建缓存）+ Tool/Core/SwitchCoreTool.cs（模型 switch_core）+ Command/CoreCommand.cs（!core）+ state.json.activeCoreConfig
@@ -191,7 +190,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 记忆检索：Engine/Mind/RetrieveService.cs（关键词 + 时间窗口 + 命中关键词数优先 + c_actual 降序 + 二跳内子证据）
 - 记忆写入口：Engine/Mind/Writer.cs（唯一写入口：WriteBatch 原子批次，关键词关联 + 同源分组 + 冲突检测 + 证据重算 + 情绪应用）
 - Embedding：Client/SiliconFlowEmbeddingProvider.cs（bge-large-zh-v1.5，SiliconFlow）+ Client/OnnxEmbeddingProvider.cs（本地模型）
-- 记忆提取：Engine/Mind/ExtractService.cs（提取核心，产出 JSON 交 Writer）+ Engine/Mind/ExpressExtractor.cs（伴随提取：攒批 + 空闲补一次）
+- 记忆提取入口：ExpressEngineSpawnCheck.HandleMessageAsync（入向咽喉喂攒批，fire-and-forget）+ SessionEngine 30s 循环（空闲补一次）+ Program.cs --test 收尾（FlushAllAsync 清尾巴）
 - 复活善后：Engine/Mind/Resurrector.cs（订阅 session 完成 → 从存档重建 → 换记忆工具组 → 注入整理任务）
 - 情绪服务：Engine/Mind/EmotionService.cs（唯一情绪写入者：五轴 + 实时应用 + EmotionState.json 原子写 + 快照）
 - 事件接收：Engine/Mind/EventSink.cs（框架事件 → L0/L1 落库 FrameworkEvents）

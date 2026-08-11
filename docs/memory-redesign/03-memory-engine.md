@@ -1,7 +1,9 @@
 # 心智引擎整体规划
 
 > 记忆重构计划 · 文件 03
-> 状态：**已实施（骨架）** — 2026-08-05。MindEngine / Writer / ExtractService / ExpressExtractor / Resurrector / EventSink 已落地；EventSink 映射、Dream 探索者、MaintenanceEngine 等实现细节仍待定（见 06）。
+> 状态：**伴随提取已接通** — 2026-08-11。MindEngine / Writer / Resurrector / EventSink 于 2026-08-05 落地骨架，但 ExtractService 当时从未被实例化、`IExtractionLlm` 无实现，提取实际未运行；2026-08-11 补齐 ExtractionCore + 入向咽喉接线 + 空闲触发，产出改为语义三元组（详见 `docs/core/memory-cores.md`）。
+>
+> 仍待定：Review 会话孵化与 `IReviewStageAccess` 装配（队列产入已通，消费端未接）、EventSink 事件映射表、Dream 探索者、MaintenanceEngine（见 06）。
 
 ## 定位：前额叶，不是海马体
 
