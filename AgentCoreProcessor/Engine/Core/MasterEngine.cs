@@ -137,7 +137,6 @@ namespace AgentCoreProcessor.Engine
             ("Message",     () => new MessageEngineSpawnCheck()),
             ("Adapter",     () => new AdapterEngineSpawnCheck()),
             ("Session",     () => new SessionEngineSpawnCheck()),
-            ("Extraction",  () => new ExtractionEngineSpawnCheck()),
             ("Express",     () => new ExpressEngineSpawnCheck()),
             ("Mind",        () => new MindEngineSpawnCheck()),
             ("Vision",      () => new Vision.VisionEngineSpawnCheck()),

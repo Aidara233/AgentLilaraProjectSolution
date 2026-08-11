@@ -32,12 +32,22 @@ namespace AgentCoreProcessor.Engine
             // 自产消息（bot 自身行为触发的 notice 回执）：已入库但不触发孵化
             if (msg.IsSelfTriggered) return;
 
-            // 记忆提取计数（入向唯一咽喉，覆盖 ExpressEngine 与 session 占用两条路）
+            // 伴随提取入批（入向唯一咽喉，覆盖 express 会话与 session 占用两条路）。
+            // 达攒批阈值时内部会跑一轮 LLM 调用，故 fire-and-forget 不阻塞消息链路。
             if (sessionContext.IncomingMessage != null)
             {
-                var extractionEngine = ctx.GetActiveEnginesSnapshot()
-                    .OfType<Extraction.ExtractionEngine>().FirstOrDefault();
-                extractionEngine?.OnMessage(sessionContext.Channel.Id);
+                var mind = ctx.GetActiveEnginesSnapshot()
+                    .OfType<Mind.MindEngine>().FirstOrDefault();
+                var extractor = mind?.Extract.Express;
+                if (extractor != null)
+                {
+                    var senderName = !string.IsNullOrWhiteSpace(sessionContext.User.DisplayName)
+                        ? sessionContext.User.DisplayName
+                        : "用户";
+                    var channelKey = sessionContext.Channel.Id.ToString();
+                    var content = sessionContext.IncomingMessage.Content;
+                    _ = extractor.AddMessageAsync(channelKey, senderName, content);
+                }
             }
 
             // 权限检查

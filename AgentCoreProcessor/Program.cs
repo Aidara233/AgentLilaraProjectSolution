@@ -288,6 +288,17 @@ namespace AgentCoreProcessor
                     // 避免残留 Running 会话阻塞下次验证（dev-ops 已知坑）。
                     try
                     {
+                        // 伴随提取攒批收尾：把不足一批的尾巴也提取掉，不丢消息
+                        var mind = engine.GetActiveEnginesSnapshot()
+                            .OfType<AgentCoreProcessor.Engine.Mind.MindEngine>().FirstOrDefault();
+                        var extractor = mind?.Extract.Express;
+                        if (extractor != null && extractor.PendingCount > 0)
+                        {
+                            Console.WriteLine($"[test] 提取收尾：攒批 {extractor.PendingCount} 条");
+                            await extractor.FlushAllAsync();
+                            Console.WriteLine($"[test] 提取完成：累计 {extractor.ExtractCount} 批");
+                        }
+
                         var sessionEngine = engine.GetActiveEnginesSnapshot()
                             .OfType<AgentCoreProcessor.Engine.Session.SessionEngine>().FirstOrDefault();
                         if (sessionEngine != null)
@@ -295,7 +306,7 @@ namespace AgentCoreProcessor
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"[test] 会话清理失败（不影响退出码）: {ex.Message}");
+                        Console.WriteLine($"[test] 退出清理失败（不影响退出码）: {ex.Message}");
                     }
                 }
             }

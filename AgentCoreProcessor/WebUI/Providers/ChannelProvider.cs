@@ -223,16 +223,15 @@ internal class ChannelInfoSource : IDataSource
             engineStatus = "未启动";
         }
 
-        // 提取状态改读 ExtractionEngine（提取已与 ExpressEngine 解耦，独立运行）
-        var extractionEngine = _engine.GetActiveEnginesSnapshot()
-            .OfType<AgentCoreProcessor.Engine.Extraction.ExtractionEngine>().FirstOrDefault();
-        var extractionStatus = extractionEngine?.GetExtractionStatus(_channelId);
-        bool extractionRunning = extractionStatus?.running ?? false;
-        int extractedCount = extractionStatus?.extractedCount ?? 0;
+        // 提取状态改读 MindEngine 伴随提取器（全局攒批，非 per-channel 进度）
+        var extractor = _engine.GetActiveEnginesSnapshot()
+            .OfType<AgentCoreProcessor.Engine.Mind.MindEngine>().FirstOrDefault()?.Extract.Express;
+        int pendingCount = extractor?.PendingCount ?? 0;
+        long extractBatches = extractor?.ExtractCount ?? 0;
 
         var disabledActions = new JsonArray();
         if (!hasEngine) disabledActions.Add("view-engine");
-        if (extractionEngine == null || extractionRunning) disabledActions.Add("force-extraction");
+        if (extractor == null || pendingCount == 0) disabledActions.Add("force-extraction");
 
         var data = new JsonObject
         {
@@ -241,10 +240,8 @@ internal class ChannelInfoSource : IDataSource
             ["affinity"] = channel.Affinity.ToString("F1"),
             ["importance"] = config.Importance,
             ["messages"] = msgCount.ToString(),
-            ["extraction"] = extractionRunning
-                ? $"提取中... ({extractedCount} / {msgCount})"
-                : $"{extractedCount} / {msgCount}",
-            ["config"] = $"活跃 {config.ActiveExtractionThreshold} | 潜水 {config.LurkingExtractionThreshold}"
+            ["extraction"] = $"攒批 {pendingCount} | 已提取 {extractBatches} 批",
+            ["config"] = $"攒批阈值 {AgentCoreProcessor.Engine.Mind.ExpressExtractor.DefaultBatchSize}"
         };
         if (disabledActions.Count > 0)
             data["_disabled_actions"] = disabledActions;
@@ -266,14 +263,14 @@ internal class ChannelInfoSource : IDataSource
         }
         if (action == "force-extraction")
         {
-            var extractionEngine = _engine.GetActiveEnginesSnapshot()
-                .OfType<AgentCoreProcessor.Engine.Extraction.ExtractionEngine>().FirstOrDefault();
-            if (extractionEngine == null)
-                return Task.FromResult(new ActionResult { Success = false, Message = "提取引擎未启动" });
-            if (extractionEngine.GetExtractionStatus(_channelId).running)
-                return Task.FromResult(new ActionResult { Success = false, Message = "提取正在进行中" });
-            extractionEngine.ForceExtraction(_channelId);
-            return Task.FromResult(new ActionResult { Success = true, Message = "已触发强制提取" });
+            var extractor = _engine.GetActiveEnginesSnapshot()
+                .OfType<AgentCoreProcessor.Engine.Mind.MindEngine>().FirstOrDefault()?.Extract.Express;
+            if (extractor == null)
+                return Task.FromResult(new ActionResult { Success = false, Message = "心智引擎未启动" });
+            if (extractor.PendingCount == 0)
+                return Task.FromResult(new ActionResult { Success = false, Message = "攒批为空，无待提取消息" });
+            _ = extractor.FlushAllAsync();
+            return Task.FromResult(new ActionResult { Success = true, Message = "已触发提取" });
         }
         return Task.FromResult(new ActionResult { Success = true });
     }

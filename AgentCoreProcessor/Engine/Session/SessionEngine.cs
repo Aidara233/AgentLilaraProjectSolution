@@ -835,6 +835,10 @@ InitialState = $"执行定时任务: {task.Description}"
                         }
                     }
 
+                    // 2.5 伴随提取空闲补一次（攒批有尾巴且已静默 → 提取掉，不漏尾）
+                    if (Mind?.Extract?.Express != null)
+                        await Mind.Extract.Express.TriggerIdleAsync();
+
                     // 3. 检查 TODO（每 15 分钟扫一次）
                     if ((DateTime.UtcNow - _lastTodoScan).TotalMinutes >= 15)
                     {

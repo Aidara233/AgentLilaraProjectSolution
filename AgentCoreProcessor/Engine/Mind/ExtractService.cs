@@ -20,7 +20,7 @@ namespace AgentCoreProcessor.Engine.Mind
     /// <summary>
     /// 提取服务（03-memory-engine.md 产生端）。
     /// 组合 ExpressExtractor（伴随提取：消息攒批 + 空闲补一次，单轮 LLM 调用，不开 session）。
-    /// 预留 Resurrector 接入点（复活善后整理，Phase 4 实现）。
+    /// 善后复活由 <see cref="Resurrector"/> 独立承担（MindEngine 直接持有，不经本服务）。
     /// </summary>
     internal class ExtractService
     {
@@ -29,14 +29,6 @@ namespace AgentCoreProcessor.Engine.Mind
 
         /// <summary>伴随提取器。</summary>
         public ExpressExtractor Express { get; }
-
-        /// <summary>
-        /// 复活善后整理接入点（Phase 4 实现，先占位）。
-        /// 待 Resurrector 类型就绪后替换 object 为具体类型：
-        /// 监听 OnCompleted → 从 Completed 存档重建 session → 重定义工具集为记忆工具组
-        /// → 注入整理任务跑多轮 → 完成再次归档。
-        /// </summary>
-        public object? Resurrector { get; set; }
 
         public ExtractService(
             IWriterAccess writer,
@@ -59,8 +51,8 @@ namespace AgentCoreProcessor.Engine.Mind
                 var (sender, content) = SplitSenderLine(line);
                 await Express.AddMessageAsync(FrameworkChannelId, sender, content);
             }
-            // 空闲补一次：把不足一攒批的尾巴也提取掉
-            await Express.TriggerIdleAsync();
+            // 批量提取是一次性调用，直接清空攒批（不等静默判定）
+            await Express.FlushAllAsync();
         }
 
         /// <summary>拆分 "发送者: 内容" 行（支持中英文冒号）。</summary>

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Util;
 using AgentLilara.PluginSDK.Services;
 using Newtonsoft.Json;
@@ -13,19 +14,38 @@ namespace AgentCoreProcessor.Engine.Mind
 {
     /// <summary>
     /// 伴随提取器（Express 模式，03-memory-engine.md 产生端）。
-    /// 按消息攒批：攒够 N 条（默认 5）自动触发，或由 FlushAsync / TriggerIdleAsync（空闲补一次）显式触发。
-    /// 每次触发 = 一轮轻量 LLM 调用（单轮、不开 session），产出窄 Claim（"用户说了X"），
+    /// 按消息攒批：攒够 N 条（默认 20）自动触发，或由 FlushAsync / TriggerIdleAsync（空闲补一次）显式触发。
+    /// 每次触发 = 一轮轻量 LLM 调用（单轮、不开 session），产出语义三元组断言，
     /// 经 IWriterAccess.WriteBatchAsync 统一落库。
-    /// 窄 Claim 结构：subject=发送者 entity，predicate="说了" relation，object=内容 literal，带 source 消息引用。
+    /// 模型直接产出完整槽位（subject/predicate/object），关键词槽位由 Writer 建索引参与检索与冲突检测。
+    /// 解析失败即提取失败（不兜底造断言）——消息仍在库里，可后续重提。
     /// LLM 调用入口由外部注入（IExtractionLlm，定义见 ExtractService.cs），本类不直接依赖模型客户端。
     /// </summary>
     internal class ExpressExtractor
     {
-        /// <summary>默认攒批阈值。</summary>
-        public const int DefaultBatchSize = 5;
+        /// <summary>默认攒批阈值。一段话题说完的量级，够 LLM 判断哪些值得留。</summary>
+        public const int DefaultBatchSize = 20;
 
-        /// <summary>窄 Claim 的默认谓词。</summary>
-        private const string PredicateSaid = "说了";
+        /// <summary>空闲补提取的最低攒批数：低于此值不触发，避免为零星消息开调用。</summary>
+        public const int IdleFlushMinCount = 3;
+
+        /// <summary>空闲判定默认静默秒数：最后一条消息超过此时长没有新消息则补提取。</summary>
+        public const int DefaultIdleSeconds = 120;
+
+        /// <summary>可信度缺省值。默认假设所有信息都不一定为真。</summary>
+        private const float DefaultCredibility = 0.7f;
+
+        /// <summary>可信度夹取范围：不给 0/1 绝对值，留证据聚合与 Review 的调节空间。</summary>
+        private const float MinCredibility = 0.05f;
+        private const float MaxCredibility = 0.95f;
+
+        /// <summary>合法槽位类型。</summary>
+        private static readonly HashSet<string> ValidSlotTypes =
+            new(StringComparer.OrdinalIgnoreCase) { "entity", "keyword", "attribute", "literal", "assertion" };
+
+        /// <summary>合法谓词类型。</summary>
+        private static readonly HashSet<string> ValidPredicateTypes =
+            new(StringComparer.OrdinalIgnoreCase) { "relation", "attribute" };
 
         private readonly IWriterAccess _writer;
         private readonly IExtractionLlm _llm;
@@ -45,6 +65,9 @@ namespace AgentCoreProcessor.Engine.Mind
 
         /// <summary>已成功落库的提取批次计数（审计/WebUI 用）。</summary>
         private long _extractCount;
+
+        /// <summary>最后一条消息入批的时间（UTC）。供空闲判定用。</summary>
+        private DateTime _lastMessageAt = DateTime.MinValue;
 
         public ExpressExtractor(IWriterAccess writer, IExtractionLlm llm, int batchSize = DefaultBatchSize)
         {
@@ -78,6 +101,7 @@ namespace AgentCoreProcessor.Engine.Mind
             lock (_bufferLock)
             {
                 _pending.Add(msg);
+                _lastMessageAt = DateTime.UtcNow;
                 thresholdReached = _pending.Count >= _batchSize;
             }
 
@@ -96,12 +120,28 @@ namespace AgentCoreProcessor.Engine.Mind
         }
 
         /// <summary>
-        /// 空闲补一次：频道进入空闲时调用，把不足一攒批的尾巴也提取掉，保证沉默监听不漏尾。
+        /// 空闲补一次：把不足一攒批的尾巴也提取掉，保证沉默监听不漏尾。
+        /// 需同时满足：攒批 ≥ <see cref="IdleFlushMinCount"/> 条，且静默超过 idleSeconds 秒。
+        /// 由 SessionEngine 监控循环周期性调用。
         /// </summary>
-        public async Task TriggerIdleAsync()
+        public async Task TriggerIdleAsync(int idleSeconds = DefaultIdleSeconds)
         {
+            DateTime lastAt;
+            int pending;
+            lock (_bufferLock)
+            {
+                pending = _pending.Count;
+                lastAt = _lastMessageAt;
+            }
+
+            if (pending < IdleFlushMinCount) return;
+            if ((DateTime.UtcNow - lastAt).TotalSeconds < idleSeconds) return;
+
             await FlushAsync();
         }
+
+        /// <summary>强制清空攒批（不看阈值与静默时长）。停机收尾用。</summary>
+        public Task FlushAllAsync() => FlushAsync();
 
         // ---- 内部 ----
 
@@ -136,8 +176,9 @@ namespace AgentCoreProcessor.Engine.Mind
             }
             catch (Exception ex)
             {
-                // 伴随提取失败不阻断会话：LLM 异常 / 写库异常统一记录并吞掉
-                Console.Error.WriteLine($"[ExpressExtractor] 伴随提取失败: {ex.Message}");
+                // 伴随提取失败不阻断消息链路：LLM 异常 / 写库异常统一记录并吞掉
+                Signal.Error(LogGroup.Memory, "伴随提取失败",
+                    new { batchSize = batch.Count, error = ex.GetType().Name, message = ex.Message });
             }
             finally
             {
@@ -145,17 +186,10 @@ namespace AgentCoreProcessor.Engine.Mind
             }
         }
 
-        /// <summary>构造单轮 LLM 上下文：索引化消息 + 窄 Claim 输出说明。</summary>
+        /// <summary>索引化消息列表。提取指令在 ExtractionPrompt.txt，这里只提供 {{MESSAGES}} 部分。</summary>
         private static string BuildContext(List<PendingMessage> batch)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("以下是一段对话。请从每条消息中挑出值得长期记住的，输出为窄断言（\"用户说了X\"）。");
-            sb.AppendLine("窄断言要求：主语=发送者，谓词=\"说了\"，宾语=消息内容（原文）。");
-            sb.AppendLine("请只输出 JSON，不要任何解释。JSON 格式：");
-            sb.AppendLine("{\"claims\":[{\"message_index\":0,\"raw\":\"用户说了……\",\"strength\":0.8}]}");
-            sb.AppendLine("其中 message_index 对应该条消息在对话列表中的序号。如果没有任何值得记住的，输出 {\"claims\":[]}。");
-            sb.AppendLine();
-            sb.AppendLine("对话：");
             for (int i = 0; i < batch.Count; i++)
                 sb.AppendLine($"[{i}] <{batch[i].SenderName}> {batch[i].Content}");
             return sb.ToString();
@@ -164,8 +198,8 @@ namespace AgentCoreProcessor.Engine.Mind
         // ---- 解析（容错） ----
 
         /// <summary>
-        /// 解析 LLM 输出。优先 JSON；LLM 可能返回非 JSON，此时回退为对整批消息产窄 Claim，
-        /// 保证沉默监听不丢尾巴。空 / "无" / 空数组按"无可提取"处理（不产生回退噪音）。
+        /// 解析 LLM 输出为断言列表。解析失败返回空列表——消息仍在数据库里，不造假断言填库。
+        /// 空 / "无" / 空数组按"无可提取"处理。
         /// </summary>
         private static List<ClaimDto> ParseLlmOutput(string? output, List<PendingMessage> batch)
         {
@@ -184,8 +218,9 @@ namespace AgentCoreProcessor.Engine.Mind
             }
             catch
             {
-                // 非 JSON → 容错回退窄 Claim
-                return FallbackNarrowClaims(batch);
+                Signal.Warn(LogGroup.Memory, "提取输出非 JSON，本批丢弃",
+                    new { batchSize = batch.Count, preview = Preview(trimmed) });
+                return new List<ClaimDto>();
             }
 
             var items = new List<JObject>();
@@ -196,72 +231,75 @@ namespace AgentCoreProcessor.Engine.Mind
             else if (token is JObject obj)
             {
                 // 容器 {"claims":[...]}，或单条 claim 对象
-                var claimsArr = obj["claims"] as JArray;
-                if (claimsArr != null)
+                if (obj["claims"] is JArray claimsArr)
                     items.AddRange(claimsArr.OfType<JObject>());
-                else if (obj["message_index"] != null || obj["raw"] != null || obj["subject"] != null)
+                else if (obj["subject"] != null)
                     items.Add(obj);
             }
 
             var result = new List<ClaimDto>();
+            int dropped = 0;
             foreach (var item in items)
             {
                 var claim = BuildClaimFromItem(item, batch);
                 if (claim != null) result.Add(claim);
+                else dropped++;
             }
+
+            if (dropped > 0)
+                Signal.Debug(LogGroup.Memory, "提取丢弃残缺断言",
+                    new { dropped, kept = result.Count });
+
             return result;
         }
 
-        /// <summary>从单个 claim JSON 对象构造 ClaimDto。无法定位消息时返回 null（丢弃该条）。</summary>
+        /// <summary>
+        /// 从单个 claim JSON 对象构造 ClaimDto。
+        /// 消息定位失败或三槽位不齐 → 返回 null（丢弃该条，不兜底补全）。
+        /// </summary>
         private static ClaimDto? BuildClaimFromItem(JObject item, List<PendingMessage> batch)
         {
             var msg = ResolveMessage(item, batch);
             if (msg == null) return null;
 
-            // 默认窄 Claim 骨架
-            var claim = BuildNarrowClaim(msg);
+            // 三槽位必须齐全：任一缺失说明模型没按格式产出，丢弃
+            var subject = ParseSlot(item["subject"], ValidSlotTypes, "keyword");
+            var predicate = ParseSlot(item["predicate"], ValidPredicateTypes, "relation");
+            var obj = ParseSlot(item["object"], ValidSlotTypes, "keyword");
+            if (subject == null || predicate == null || obj == null) return null;
 
-            // 允许模型显式覆盖槽位 / 字段（容错解析字符串或对象槽位）
-            var subject = ParseSlot(item["subject"]);
-            if (subject != null) claim.Subject = subject;
-            var predicate = ParseSlot(item["predicate"]);
-            if (predicate != null) claim.Predicate = predicate;
-            var obj = ParseSlot(item["object"]);
-            if (obj != null) claim.Object = obj;
+            var inferred = item["inferred"]?.ToObject<bool?>()
+                        ?? item["is_inference"]?.ToObject<bool?>()
+                        ?? false;
 
             var raw = item["raw"]?.ToString();
-            if (!string.IsNullOrWhiteSpace(raw)) claim.Raw = raw;
-            claim.Strength = item["strength"]?.ToObject<float?>() ?? claim.Strength;
-            claim.Credibility = item["credibility"]?.ToObject<float?>() ?? claim.Credibility;
-            claim.IsInference = item["is_inference"]?.ToObject<bool>() ?? claim.IsInference;
-            return claim;
-        }
+            if (string.IsNullOrWhiteSpace(raw))
+                raw = $"{subject.Index} {predicate.Index} {obj.Index}";
 
-        /// <summary>窄 Claim（subject=发送者 entity，predicate="说了" relation，object=内容 literal，带 source 引用）。</summary>
-        private static ClaimDto BuildNarrowClaim(PendingMessage m)
-        {
+            var strength = item["strength"]?.ToObject<float?>();
+            if (strength.HasValue) strength = Math.Clamp(strength.Value, -1f, 1f);
+
+            var credibility = item["credibility"]?.ToObject<float?>() ?? DefaultCredibility;
+            credibility = Math.Clamp(credibility, MinCredibility, MaxCredibility);
+
             return new ClaimDto
             {
-                Subject = new SlotDto { Type = "entity", Index = m.SenderName },
-                Predicate = new SlotDto { Type = "relation", Index = PredicateSaid },
-                Object = new SlotDto { Type = "literal", Index = m.Content },
-                Raw = $"{m.SenderName}说：{m.Content}",
-                SourceJson = BuildSourceJson(m),
-                UtteranceId = BuildUtteranceId(m),
-                Strength = 1.0f,
-                Credibility = 1.0f, // 用户亲口说的 → stated ≈ 1.0
-                IsInference = false,
+                Subject = subject,
+                Predicate = predicate,
+                Object = obj,
+                Raw = raw,
+                SourceJson = BuildSourceJson(msg),
+                UtteranceId = BuildUtteranceId(msg),
+                Strength = strength,
+                Credibility = credibility,
+                IsInference = inferred,
             };
         }
 
-        /// <summary>回退窄 Claim：LLM 输出不可用时，对整批消息逐条产窄 Claim。</summary>
-        private static List<ClaimDto> FallbackNarrowClaims(List<PendingMessage> batch)
-            => batch.Select(BuildNarrowClaim).ToList();
-
-        /// <summary>定位 claim 引用的消息：优先 message_index，其次按 raw 文本反查。</summary>
+        /// <summary>定位 claim 引用的消息：优先 msg 序号，其次按 raw 文本反查。</summary>
         private static PendingMessage? ResolveMessage(JObject item, List<PendingMessage> batch)
         {
-            var index = item["message_index"]?.ToObject<int?>();
+            var index = item["msg"]?.ToObject<int?>() ?? item["message_index"]?.ToObject<int?>();
             if (index.HasValue && index.Value >= 0 && index.Value < batch.Count)
                 return batch[index.Value];
 
@@ -271,31 +309,45 @@ namespace AgentCoreProcessor.Engine.Mind
             return null;
         }
 
-        /// <summary>槽位容错解析：接受字符串（默认 entity）或对象 { type, index, ref }。</summary>
-        private static SlotDto? ParseSlot(JToken? token)
+        /// <summary>
+        /// 槽位解析：接受字符串（按 fallbackType 处理）或对象 { type, index, ref }。
+        /// type 不在 validTypes 内时纠正为 fallbackType；index 为空返回 null。
+        /// </summary>
+        private static SlotDto? ParseSlot(JToken? token, HashSet<string> validTypes, string fallbackType)
         {
             if (token == null) return null;
+
             if (token.Type == JTokenType.String)
             {
                 var text = token.ToString().Trim();
                 if (text.Length == 0) return null;
-                return new SlotDto { Type = "entity", Index = text };
+                return new SlotDto { Type = fallbackType, Index = text };
             }
+
             if (token.Type == JTokenType.Object)
             {
                 var obj = (JObject)token;
-                var index = obj["index"]?.ToString();
+                var index = obj["index"]?.ToString()?.Trim();
                 if (string.IsNullOrWhiteSpace(index)) return null;
+
                 var type = obj["type"]?.ToString();
+                if (string.IsNullOrWhiteSpace(type) || !validTypes.Contains(type))
+                    type = fallbackType;
+
                 return new SlotDto
                 {
-                    Type = string.IsNullOrWhiteSpace(type) ? "entity" : type,
+                    Type = type.ToLowerInvariant(),
                     Index = index,
                     Ref = obj["ref"]?.ToObject<int?>(),
                 };
             }
+
             return null;
         }
+
+        /// <summary>日志用短预览。</summary>
+        private static string Preview(string text)
+            => text.Length <= 120 ? text : text[..120] + "…";
 
         /// <summary>source 消息引用（03 契约：who + ref{kind:message,id}，附 channel 便于追溯）。</summary>
         private static string BuildSourceJson(PendingMessage m)

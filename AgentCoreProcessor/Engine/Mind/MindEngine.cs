@@ -44,6 +44,9 @@ namespace AgentCoreProcessor.Engine.Mind
         /// <summary>复活善后（订阅 session 完成 → 整理写入）。</summary>
         public Resurrector Resurrector { get; }
 
+        /// <summary>提取服务（伴随提取：消息攒批 → 单轮 LLM → Writer 落库）。</summary>
+        public ExtractService Extract { get; }
+
         /// <summary>按 review 会话 Id 创建暂存区（一次一个 review 会话，天然串行）。</summary>
         public ReviewStage CreateReviewStage(string sessionId)
             => new(sessionId, _ctx.Claims, _ctx.ConflictGroups, Evidence);
@@ -79,6 +82,11 @@ namespace AgentCoreProcessor.Engine.Mind
 
             // 复活善后
             Resurrector = new Resurrector(this, Events);
+
+            // 提取服务（Writer 经 SDK 桥注入，LLM 用 ExtractionCore 单轮调用）
+            Extract = new ExtractService(
+                new Tool.Host.WriterAccessImpl(Writer),
+                new AgentCoreProcessor.Core.ExtractionCore());
         }
 
         public bool IsAlive => _isAlive;
