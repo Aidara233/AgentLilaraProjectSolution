@@ -261,7 +261,7 @@ internal static class SessionTypeProfiles
                     "speak", "thinking", "send_media", "send_file", "adapter_action",
                     "list_channels", "search_chat_history",
                     "list_sessions", "send_session_message",
-                    "escalate", "wait",
+                    "escalate", "wait", "compact",
                     "connect_channel", "disconnect_channel",
                     "journal", "remember", "mind_status"
                 }

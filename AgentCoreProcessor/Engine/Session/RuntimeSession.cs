@@ -108,6 +108,8 @@ internal class RuntimeSession : IRuntimeSession
     public event Action<IRuntimeSession>? OnCompleted;
 
     private const int FreeRounds = 20;
+    /// <summary>express 轻量会话 L1 首次压缩提醒阈值（Flash 模型窗口较 Working 小，调低提前量；L2/L3 沿用默认）。</summary>
+    private const int ExpressL1Tokens = 40000;
 
     public RuntimeSession(CreateSessionSpec spec, string[]? finalComponents = null)
     {
@@ -328,7 +330,9 @@ internal class RuntimeSession : IRuntimeSession
         _compression = new CompressionTierModule(
             cfg,
             getHistory: () => _history,
-            onL3Triggered: () => _l3Lockdown = true
+            onL3Triggered: () => _l3Lockdown = true,
+            // express 轻量会话：L1 首次提醒阈值调低（40k），L2/L3 保持默认
+            l1Tokens: Type == "express" ? ExpressL1Tokens : null
         );
 
         // 创建 CompactTool 并注入工具表

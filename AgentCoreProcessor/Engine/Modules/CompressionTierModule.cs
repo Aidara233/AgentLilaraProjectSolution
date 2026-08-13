@@ -20,17 +20,21 @@ namespace AgentCoreProcessor.Engine.Modules
         private readonly AgentConfig _config;
         private readonly Func<List<Message>> _getHistory;
         private readonly Action _onL3Triggered;
+        private readonly int _l1Tokens;
 
         private bool _l1Injected;
         private CompressionTier _currentTier = CompressionTier.None;
 
         public CompressionTier CurrentTier => _currentTier;
 
-        public CompressionTierModule(AgentConfig config, Func<List<Message>> getHistory, Action onL3Triggered)
+        public CompressionTierModule(AgentConfig config, Func<List<Message>> getHistory, Action onL3Triggered,
+            int? l1Tokens = null)
         {
             _config = config;
             _getHistory = getHistory;
             _onL3Triggered = onL3Triggered;
+            // L1 首次提醒阈值可覆盖（express 轻量会话按 Flash 模型窗口调低，其余类型沿用 config）
+            _l1Tokens = l1Tokens ?? config.CompressL1Tokens;
         }
 
         public CompressionTier Evaluate(int estimatedTokens)
@@ -42,7 +46,7 @@ namespace AgentCoreProcessor.Engine.Modules
                 _currentTier = CompressionTier.L3;
             else if (estimatedTokens >= _config.CompressL2Tokens)
                 _currentTier = CompressionTier.L2;
-            else if (estimatedTokens >= _config.CompressL1Tokens)
+            else if (estimatedTokens >= _l1Tokens)
                 _currentTier = CompressionTier.L1;
             else
                 _currentTier = CompressionTier.None;
