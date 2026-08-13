@@ -45,7 +45,7 @@ AgentLilaraProjectSolution/
       ├── Plugin.FileOps/         archive + search/grep_files + file_info/hash/compare_files
       ├── Plugin.GroupFileTools/  分组文件操作
       ├── Plugin.SystemTools/     子 session 管理：create_sub_agent / stop_sub_agent / send_instruction / list_sub_agents / wait_sub / get_sub_info（system-ops 组件）+ report_to_parent（sub-agent-runtime 组件）
-      ├── Plugin.ReviewTools/     5 个验证工具（review_list/resolve/preview/commit/evidence）
+      ├── Plugin.ReviewTools/     8 个验证工具（review_list/resolve/preview/commit/evidence/declassify/dissolve/finish）
       ├── Plugin.ScheduledTasks/  定时任务（插件化实现）
       ├── Plugin.SkillTools/      invoke_skill / list_skills / load_skill_file / list_skill_files
       ├── Plugin.NetworkTools/    网络工具 + Playwright 浏览器自动化
@@ -363,8 +363,14 @@ ChangePropagation、临时记忆爆仓触发等旧机制全部删除。
 
 Review 验证（替代旧 ReviewEngine 自由探索复盘）:
   完整流程见 docs/memory-redesign/05：ReviewQueue 唯一工作源（Conflict/Dream/Manual 入队）
-  + review_* 工具链（review_list/resolve/preview/commit/evidence）+ git 式暂存提交
-  （ReviewStage：review_preview 预览影响 → review_commit 原子事务落库）。
+  + review_* 工具链（review_list/resolve/preview/commit/evidence/declassify/dissolve/finish）
+  + git 式暂存提交（ReviewStage：三类操作——可信度调值 / 解除排他 / 拆解冲突组，
+    review_preview 预览影响 → review_commit 原子事务落库）。
+  消费端（2026-08-13 接通）: SessionEngine 30s 循环按需孵化 review 会话
+    （队列有活 + 无活跃 review 会话），per-session 注册 IReviewStageAccess
+    （CreateSessionSpec.SessionServices → ComponentHost perLoopServices）。
+  排他自动标记: Writer 写 attribute 谓词首建时 IsExclusive=true（默认排他），
+    解除后 sticky（GetOrCreateAsync 尊重已有记录，不再升回）。
 ```
 
 ## 记忆系统

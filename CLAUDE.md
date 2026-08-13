@@ -195,9 +195,10 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 情绪服务：Engine/Mind/EmotionService.cs（唯一情绪写入者：五轴 + 实时应用 + EmotionState.json 原子写 + 快照）
 - 事件接收：Engine/Mind/EventSink.cs（框架事件 → L0/L1 落库 FrameworkEvents）
 - 证据聚合：Engine/Mind/EvidenceEngine.cs（noisy-OR + logit/sigmoid 算 c_actual）+ Engine/Mind/EvidenceMath.cs
-- 冲突检测：Engine/Mind/ConflictService.cs（排他属性槽位冲突 → 建组/入组，组内 c_actual 和 ≤1）
+- 排他冲突触发：Engine/Mind/Writer.cs（attribute 谓词首建标记 IsExclusive=true，默认排他；解除后 sticky 不再升回）+ Engine/Mind/ConflictService.cs（同主语+排他属性不同值 → 建组/入组）
 - 待验证队列：Engine/Mind/ReviewQueueService.cs（ReviewQueue 统一工作源：入队/认领/状态/崩溃恢复）
-- 暂存提交：Engine/Mind/ReviewStage.cs（git 式暂存区：review_preview 预览 + review_commit 提交）
+- 暂存提交：Engine/Mind/ReviewStage.cs（git 式暂存区，三类操作：可信度调值 / 解除排他 / 拆解冲突组；review_preview 预览 + review_commit 提交）
+- Review 消费：Engine/Session/SessionEngine.cs 30s 循环按需孵化 review 会话（队列有活 + 无活跃 review），per-session 注册 IReviewStageAccess（CreateSessionSpec.SessionServices）
 - 心智引擎：Engine/Mind/MindEngine.cs（持有 Writer/Emotion/Evidence/Conflicts/Queue/Retrieve/Events/Resurrector）+ Engine/Mind/MindEngineSpawnCheck.cs（响应系统启动，常驻 AutoStart）
 - 梦话生成：Core/SleepTalkCore.cs（被@时无关键词触发）
 - 睡眠状态：Engine/Core/SleepState.cs
@@ -233,7 +234,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 -           Plugins/Plugin.FileOps/（archive_create/extract/list + search_files + grep_files + file_info + file_hash + compare_files）
 -           Plugins/Plugin.GroupFileTools/（分组文件操作）
 -           Plugins/Plugin.SystemTools/（子 session 管理：create_sub_agent / stop_sub_agent / send_instruction / list_sub_agents / wait_sub / get_sub_info；子侧回报：report_to_parent）— system-ops（父侧 LoopComponent）+ sub-agent-runtime（子侧 LoopComponent）
--           Plugins/Plugin.ReviewTools/（review_list/resolve/preview/commit/evidence 验证工具链，review-tools 组件）
+-           Plugins/Plugin.ReviewTools/（review_list/resolve/preview/commit/evidence/declassify/dissolve/finish 验证工具链，review-tools 组件）
 -           Plugins/Plugin.ScheduledTasks/（定时任务，插件化实现）
 -           Plugins/Plugin.Email/（邮件收发：send_email, check_unread, check_email, read_email, search_email, download_attachment, delete_email, mark_all_read, list_folders）— Global
 -           Plugins/Plugin.SkillTools/（技能工具：casual-chat / code-review / system-maintenance）
