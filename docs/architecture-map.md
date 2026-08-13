@@ -208,10 +208,8 @@ MessageEngine: 双向枢纽
     被动响应: awaitingInput=true 强制，按端口权重激活，不因 InitialState 立即推理。
     空闲回收: SessionEngine 30s 循环扫描 express 会话空闲超时（ImpulseConfig.ColdTimeoutSeconds）→
       直接杀 + 释放 claim（频道回无占用）。express 记忆只读+历史突发语义，无长期状态可压缩。
-    上下文压缩: express 白名单含 compact，模型可压缩自身上下文；L1 首次提醒阈值覆盖为 40k
-      （Flash 模型窗口较小，RuntimeSession.InitCompression 传 l1Tokens），L2/L3 沿用默认。
     工具白名单（Storage/SessionTypes/express.json 的 Tools，白名单模式）:
-      speak/thinking/send_media/send_file/adapter_action/escalate/wait/compact/connect_channel/disconnect_channel
+      speak/thinking/send_media/send_file/adapter_action/escalate/wait/connect_channel/disconnect_channel
       + 会话工具(list_channels/search_chat_history/list_sessions/send_session_message)
       + 心智只读(journal/remember/mind_status)
     身份提示词: SessionTypeProfile.PromptFiles（express_workflow.txt），InitialState 只放实例特有内容。
