@@ -12,5 +12,8 @@ namespace AgentCoreProcessor.Adapter
         public List<string> Whitelist { get; set; } = new();
         public List<string> Blacklist { get; set; } = new();
         public List<string> BotNames { get; set; } = new();
+
+        /// <summary>合并转发嵌套递归展开的最大深度（顶层=1，超过的不展开）。</summary>
+        public int ForwardMaxDepth { get; set; } = 3;
     }
 }

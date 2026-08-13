@@ -7,7 +7,7 @@
   ],
   "Components": [
     "basic-tools", "working-tools", "file-tools", "file-ops",
-    "mind-tools", "system-ops", "network-tools"
+    "mind-tools", "system-ops", "network-tools", "qq-tools"
   ],
   "Tools": {
     "Mode": "blacklist",

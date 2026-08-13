@@ -6,7 +6,7 @@
   ],
   "Components": [
     "review-tools",
-    "basic-tools", "file-tools", "mind-tools"
+    "basic-tools", "file-tools", "mind-tools", "qq-tools"
   ],
   "Tools": {
     "Mode": "whitelist",
@@ -15,7 +15,7 @@
       "list_channels", "search_chat_history",
       "list_sessions", "send_session_message",
       "journal", "claim", "remember", "mind_status", "archive",
-      "end_session", "wait", "compact", "continue_loop"
+      "end_session", "wait", "compact", "continue_loop", "get_forward_msg"
     ]
   },
   "Prompts": [

@@ -1,0 +1,9 @@
+{
+  "id": "qq-tools",
+  "name": "QQ工具",
+  "version": "1.0.0",
+  "entry": "Plugin.QQTools.dll",
+  "description": "QQ 合并转发查询工具",
+  "components": ["qq-tools"],
+  "author": "Agent Lilara"
+}

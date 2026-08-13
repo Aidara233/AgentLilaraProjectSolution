@@ -6,7 +6,7 @@
   ],
   "Components": [
     "basic-tools", "file-tools", "mind-tools",
-    "sub-agent-runtime", "network-tools"
+    "sub-agent-runtime", "network-tools", "qq-tools"
   ],
   "Tools": {
     "Mode": "whitelist",
@@ -19,7 +19,7 @@
       "report_to_parent",
       "end_session", "wait", "compact", "connect_channel", "listen_channel",
       "disconnect_channel", "get_image_text", "refine_image", "continue_loop",
-      "http_request", "download_file"
+      "http_request", "download_file", "get_forward_msg"
     ]
   },
   "Prompts": [

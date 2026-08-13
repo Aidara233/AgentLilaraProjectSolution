@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Net.WebSockets;
 using System.Text;
@@ -9,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Logging;
+using AgentLilara.PluginSDK.Services;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -37,6 +39,10 @@ namespace AgentCoreProcessor.Adapter
         private readonly HashSet<long> sentMessageIds = new();
         private const int MaxSentMessageIds = 200;
         private const int MaxReconnectDelayMs = 30000;
+
+        // 合并转发树缓存：入站统计时构建整棵树，工具查询命中缓存避免重复拉取。
+        private readonly ConcurrentDictionary<string, ForwardMessageResult> forwardCache = new();
+        private const int MaxForwardCache = 30;
 
         // 状态跟踪
         private AdapterConnectionState connectionState = AdapterConnectionState.Stopped;
@@ -191,6 +197,47 @@ namespace AgentCoreProcessor.Adapter
             }
             Interlocked.Increment(ref messagesSent);
             lastMessageSentAt = DateTime.Now;
+        }
+
+        // ── 合并转发 ──
+
+        /// <summary>
+        /// 获取 QQ 合并转发内容（递归展开嵌套 + 统计 + 全文渲染）。命中缓存秒回，未命中拉取后缓存。
+        /// 顶层拉取失败返回 null。
+        /// </summary>
+        internal async Task<ForwardMessageResult?> GetForwardMessageAsync(string forwardId)
+        {
+            if (forwardCache.TryGetValue(forwardId, out var cached))
+                return cached;
+
+            var tree = await ForwardMessageTree.BuildAsync(forwardId, FetchForwardMessagesAsync, Config.ForwardMaxDepth);
+            if (tree == null) return null;
+
+            var (fullText, imageUrls) = tree.RenderFullText();
+            var result = new ForwardMessageResult
+            {
+                ForwardId = forwardId,
+                Summary = tree.RenderSummary(),
+                FullText = fullText,
+                ImageUrls = imageUrls,
+                Truncated = tree.Truncated
+            };
+
+            if (forwardCache.Count >= MaxForwardCache)
+            {
+                var oldest = forwardCache.Keys.FirstOrDefault();
+                if (oldest != null) forwardCache.TryRemove(oldest, out _);
+            }
+            forwardCache[forwardId] = result;
+            return result;
+        }
+
+        private async Task<JArray?> FetchForwardMessagesAsync(string forwardId)
+        {
+            var resp = await CallApiAsync("get_forward_msg",
+                new JObject { ["message_id"] = forwardId });
+            if (resp?["retcode"]?.Value<int>() != 0) return null;
+            return resp["data"]?["messages"] as JArray;
         }
 
         // ── WebSocket 连接 ──

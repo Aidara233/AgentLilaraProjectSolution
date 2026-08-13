@@ -188,6 +188,26 @@ namespace AgentCoreProcessor.Adapter
                             FileId = fileId
                         });
                         break;
+
+                    case "forward":
+                        var fwdId = segData["id"]?.ToString();
+                        if (!string.IsNullOrEmpty(fwdId))
+                        {
+                            try
+                            {
+                                var fwd = await adapter.GetForwardMessageAsync(fwdId);
+                                if (fwd != null)
+                                    textBuilder.Append(fwd.Summary);
+                                else
+                                    textBuilder.Append($"[合并转发 id={fwdId}：获取失败]");
+                            }
+                            catch (Exception ex)
+                            {
+                                Signal.Warn(LogGroup.Adapter, "合并转发统计失败", new { id = fwdId, error = ex.Message });
+                                textBuilder.Append($"[合并转发 id={fwdId}：获取失败]");
+                            }
+                        }
+                        break;
                 }
             }
 

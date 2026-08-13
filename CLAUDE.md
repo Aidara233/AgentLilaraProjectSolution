@@ -217,7 +217,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 插件加载：Tool/Host/PluginLoader.cs（AssemblyLoadContext 隔离，多类型发现 + 构造注入）
 - 心智桥接：Tool/Host/WriterAccessImpl.cs + RetrieveAccessImpl.cs + EmotionAccessImpl.cs（SDK 服务桥：IWriterAccess / IRetrieveAccess / IEmotionAccess）
 - 适配器接口：Adapter/IAdapter.cs + AdapterManager.cs + AdapterFactory.cs
-- OneBot 适配器：Adapter/OneBot/OneBotAdapter.cs（WS连接 + 消息映射 + QQ协议）
+- OneBot 适配器：Adapter/OneBot/OneBotAdapter.cs（WS连接 + 消息映射 + QQ协议）+ Adapter/OneBot/ForwardMessageTree.cs（合并转发递归树：嵌套统计+统计行+全文渲染，深度 ForwardMaxDepth 可配，树缓存30）
 - File 适配器：Adapter/File/FileAdapter.cs（文件轮询，测试用；SendMessageAsync 返回输出文件名作为消息 id，speak 等工具据此判成功）
 - HTTP 桥接适配器：Adapter/Http/HttpBridgeAdapter.cs（HTTP+WS 混合，独立端口自建 Kestrel；POST /api/send 阻塞等突发统一返回 + /api/messages 聊天记录 + /ws 双向实时；实现 IEngineAwareAdapter/IChannelAwareAdapter 拿引擎 + 频道归属；多适配器出向路由按 IChannelAwareAdapter.OwnsChannel 优先）
 - 迷你客户端：LilaraConsoleClient/（net8.0 控制台，零依赖，直连 HttpBridge ws 端点交互式对话；协议见 docs/http-bridge-api.md §6）
@@ -248,6 +248,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 -           Plugins/Plugin.SvgTools/（SVG 渲染）
 -           Plugins/Plugin.DocumentTools/（文档处理）
 -           Plugins/Plugin.QuickActions/（快捷操作）
+-           Plugins/Plugin.QQTools/（QQ 合并转发：入站统计行 + get_forward_msg 工具 + 图片下载注入）
 -           Plugins/FileToolKit.Shared/ — FileToolBase 抽象基类（路径解析/沙箱/快捷方法），文件类插件共享引用
 - 异步唤醒链路（session-scoped）：
   后台任务完成 → GlobalComponent 回调 ISessionResourceAccess.ResolveActiveSession(sessionId) 解出活跃 session → SessionEngine.WakeUpSession → RuntimeSession.WakeUp（_wakeSignaled）→ WaitForActivationAsync 检测 → 突发入口先跑 OnBeforeInvokeAsync + BuildPromptSections → 注入 _history → 进入 Agent 推理

@@ -139,6 +139,7 @@ AgentLilaraProjectSolution/
     Plugin.DocumentTools/         ← 文档处理
     Plugin.GroupFileTools/        ← 分组文件操作
     Plugin.QuickActions/          ← 快捷操作
+    Plugin.QQTools/               ← QQ 合并转发查询（get_forward_msg：统计+全文+图片注入）— Loop
     FileToolKit.Shared/           ← FileToolBase 共享基类（文件插件共用）
   AgentCoreProcessor/             ← 宿主应用
     Tool/Host/PluginLoader.cs     ← 插件加载器

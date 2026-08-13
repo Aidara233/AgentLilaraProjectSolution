@@ -24,6 +24,16 @@ namespace AgentCoreProcessor.Tool.Host
         public string? GetAdapterIdForChannel(string channelId)
             => _adapterManager.ResolveByChannelId(channelId)?.Id;
 
+        public string? GetAdapterIdByPlatform(string platform)
+            => _adapterManager.GetAdapter(platform)?.Id;
+
+        public async Task<ForwardMessageResult?> GetForwardMessageAsync(string adapterId, string forwardId)
+        {
+            var adapter = _adapterManager.GetAdapterById(adapterId);
+            if (adapter is not OneBotAdapter oneBot) return null;
+            return await oneBot.GetForwardMessageAsync(forwardId);
+        }
+
         public List<AdapterActionInfo> GetAvailableActions(string adapterId)
         {
             var adapter = _adapterManager.GetAdapterById(adapterId);
