@@ -25,6 +25,8 @@
 | L2 | 130000 tokens | 65% | 明确催促：注入催促文字，建议尽快调 compact |
 | L3 | 150000 tokens | 75% | 强制锁定：`_l3Lockdown=true`，下一轮工具表只剩 compact |
 
+**express 专属 L1 覆盖：** express 会话用 ExpressCore（DeepSeek Flash，窗口小于 200k），L1 覆盖为 **40000 tokens**（更早首次提醒）。由 `RuntimeSession.InitCompression` 按 `Type=="express"` 传入 `CompressionTierModule` 的 `l1Tokens` 参数（缺省沿用 `AgentConfig.CompressL1Tokens`），L2/L3 保持默认。express 白名单含 `compact`，L3 锁定后工具表只剩 compact 时模型仍可调用。
+
 - `CompressMinTokens = 5000`：低于此值评估为 None tier，避免极短对话误触发
 - 运行时 token 估算：`history.Sum(EstimateChars) / 3`
 - L3 留出 50k 给 compact summary 输出和新会话起步

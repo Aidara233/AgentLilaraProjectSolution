@@ -18,7 +18,7 @@
 - Prompt Caching：Claude 系 Core 启用 promptCaching，中转站已验证兼容
 - Session 持久化（已实现）：三件套 spec.json（创建一次写）/ state.json（每轮原子重写）/ history.jsonl（每轮追加），重启续跑 + 死的不加载（仅恢复 status ∈ {Running, Crashed} 的存档，Completed 留档）
 - 会话多核切换（已实现）：session 与 core 解耦，`Storage/Session/{type}.json` 的 `AllowedCores` 白名单（缺省=仅默认核，零回归）；`RuntimeSession` 运行时换核（模型 `switch_core` 工具 / `!core` 命令 / WebUI 切换表单），只换模型配置执行器、不碰历史/端口/组件；`state.json.activeCoreConfig` 持久化，compact/重启承接
-- 上下文压缩（已激活）：compact 工具不是扳机而是接管——模型调 compact(summary) → 旧 session 退出 + 新 session 创建承接摘要。三层阈值 L1=80k / L2=130k / L3=150k（基于 200k 上下文模型），L3 锁定工具表只剩 compact
+- 上下文压缩（已激活）：compact 工具不是扳机而是接管——模型调 compact(summary) → 旧 session 退出 + 新 session 创建承接摘要。三层阈值 L1=80k / L2=130k / L3=150k（基于 200k 上下文模型），L3 锁定工具表只剩 compact。**express 专属**：L1 覆盖为 40k（Flash 模型窗口较小，`RuntimeSession.InitCompression` 按 `Type=="express"` 传 `l1Tokens`），L2/L3 沿用默认；express 白名单含 compact，L3 锁定后同样只能调 compact
 - Token 统计：ModelCallLog 数据库表记录每次调用（含 usage + caller tag）。WebUI 已有 LogsProvider（`/p/logs/tokens` 和 `/p/logs/model`）提供可视化。
   - CallerTag 标识调用来源：Session:{sessionId}（express/working）/ Task:{sessionId}（task），在 RuntimeSession.GetOrCreateCore 注入 core；模型调用 span detail 的 `caller` 字段同步携带（TokenAggregator 键名为 caller/cached_tokens，勿改回）
 - 工具管理：ToolRegistry 动态注册/卸载 + WebUI /p/plugins 管理
