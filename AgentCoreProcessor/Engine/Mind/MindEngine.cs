@@ -49,7 +49,7 @@ namespace AgentCoreProcessor.Engine.Mind
 
         /// <summary>按 review 会话 Id 创建暂存区（一次一个 review 会话，天然串行）。</summary>
         public ReviewStage CreateReviewStage(string sessionId)
-            => new(sessionId, _ctx.Claims, _ctx.ConflictGroups, Evidence);
+            => new(sessionId, _ctx.Claims, _ctx.ConflictGroups, _ctx.Keywords, Evidence);
 
         public MindEngine(ISystemContext ctx)
         {

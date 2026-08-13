@@ -158,6 +158,16 @@ namespace AgentCoreProcessor.Engine.Mind
                     slot.Type == "attribute" ? "attribute" : "keyword");
                 ids.Add(kw.Id);
             }
+
+            // 谓词为 attribute 类型 → 标记排他（同主语同属性只能有一个值，触发冲突检测）
+            // IsExclusive 只升不降：GetOrCreateAsync 会在已存在时顺手升级历史记录
+            var predSlot = ClaimSlot.FromJson(claim.PredicateJson);
+            if (predSlot != null && predSlot.Type == "attribute" && !string.IsNullOrWhiteSpace(predSlot.Index))
+            {
+                var predKw = await _keywords.GetOrCreateAsync(predSlot.Index, "attribute", isExclusive: true);
+                ids.Add(predKw.Id);
+            }
+
             return ids.Distinct().ToList();
         }
 

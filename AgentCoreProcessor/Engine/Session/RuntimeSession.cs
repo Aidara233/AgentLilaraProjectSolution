@@ -113,6 +113,7 @@ internal class RuntimeSession : IRuntimeSession
 
     public RuntimeSession(CreateSessionSpec spec, string[]? finalComponents = null)
     {
+        _spec = spec;
         Type = spec.Type;
         ParentSessionId = spec.ParentSessionId;
         if (finalComponents != null)
@@ -274,6 +275,12 @@ internal class RuntimeSession : IRuntimeSession
         {
             [typeof(IConnectedChannel)] = _connected
         };
+        // 注入 spec 声明的 per-session 服务（如 review 会话的 IReviewStageAccess）
+        if (_spec.SessionServices != null)
+        {
+            foreach (var (svcType, instance) in _spec.SessionServices)
+                perLoopServices[svcType] = instance;
+        }
         _componentHost = new ComponentHost(sessionId, _componentLoopType, moduleBus, services, wakeLoop, perLoopServices);
         _componentHost.InitAsync(_componentIds).GetAwaiter().GetResult();
 
@@ -431,6 +438,9 @@ internal class RuntimeSession : IRuntimeSession
 
     /// <summary>bootstrap（InitActions）生成的初始化系统消息，CreateSession 同步生成，RunAsync 首轮消费。</summary>
     private readonly List<Message> _bootstrapMessages = new();
+
+    /// <summary>创建规格（含 SessionServices per-session 服务）。InitComponents 注入用。</summary>
+    private readonly CreateSessionSpec _spec;
 
     /// <summary>
     /// 连接到频道。Full：claim 占用+停 express+订阅 normal+mention+可发言；Listen：仅订阅 normal、不占用、不可发言。

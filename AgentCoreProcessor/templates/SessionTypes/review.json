@@ -11,7 +11,7 @@
   "Tools": {
     "Mode": "whitelist",
     "List": [
-      "review_list", "review_resolve", "review_preview", "review_commit", "review_evidence",
+      "review_list", "review_resolve", "review_preview", "review_commit", "review_evidence", "review_declassify", "review_dissolve", "review_finish",
       "list_channels", "search_chat_history",
       "list_sessions", "send_session_message",
       "journal", "claim", "remember", "mind_status", "archive",

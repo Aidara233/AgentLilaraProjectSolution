@@ -17,6 +17,12 @@ namespace AgentCoreProcessor.Tool.Host
         public void StageCredibility(int claimId, float newCredibility)
             => _stage.StageCredibility(claimId, newCredibility);
 
+        public void StageExclusivityRemoval(string keyword)
+            => _stage.StageExclusivityRemoval(keyword);
+
+        public void StageGroupResolution(int groupId)
+            => _stage.StageGroupResolution(groupId);
+
         public async Task<ReviewPreviewDto> PreviewAsync()
         {
             var result = await _stage.PreviewAsync();

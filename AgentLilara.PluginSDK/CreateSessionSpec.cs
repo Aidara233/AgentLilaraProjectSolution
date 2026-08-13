@@ -45,4 +45,11 @@ public class CreateSessionSpec
     public List<ToolCall> InitActions { get; set; } = new();
 
     public string? ParentSessionId { get; set; }
+
+    /// <summary>
+    /// per-session 服务（Type → 实例），合并进该会话的组件服务容器。
+    /// 用于会话特有服务，如 review 会话的 IReviewStageAccess（暂存区按 sessionId 键控）。
+    /// 全局服务（IReviewQueueAccess 等）由 MasterEngine 注册，无需走这里。
+    /// </summary>
+    public Dictionary<System.Type, object>? SessionServices { get; set; }
 }

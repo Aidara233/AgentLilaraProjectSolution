@@ -13,7 +13,7 @@
     "Mode": "blacklist",
     "List": [
       "escalate",
-      "review_list", "review_resolve", "review_preview", "review_commit", "review_evidence"
+      "review_list", "review_resolve", "review_preview", "review_commit", "review_evidence", "review_declassify", "review_dissolve", "review_finish"
     ]
   },
   "Prompts": [

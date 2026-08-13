@@ -25,7 +25,10 @@ namespace AgentCoreProcessor.Database
             return results.Count > 0 ? results[0] : null;
         }
 
-        /// <summary>按 Name 查找，找不到则创建并返回；已存在则返回现有记录。</summary>
+        /// <summary>
+        /// 按 Name 查找，找不到则创建并返回；已存在则返回现有记录。
+        /// 已存在时尊重现有状态（不覆盖排他标记）——Review 解除排他后不能被写入路径重新升回。
+        /// </summary>
         public async Task<Keyword> GetOrCreateAsync(string name, string role,
             string? aliasesJson = null, string? category = null, bool isExclusive = false)
         {

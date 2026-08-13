@@ -858,6 +858,28 @@ InitialState = $"执行定时任务: {task.Description}"
                             });
                         }
                     }
+                    // 4. Review 会话按需孵化：队列有待处理项 + 无活跃 review 会话 → 创建。
+                    //    review 会话一次处理一个队列项（认领→查证→暂存→提交→收尾），队列空则 end_session 退出。
+                    if (Mind?.Queue != null)
+                    {
+                        bool hasActiveReview = _sessions.Values.Any(s => s.Type == "review" && s.IsAlive);
+                        if (!hasActiveReview && await Mind.Queue.HasPendingAsync())
+                        {
+                            var stage = Mind.CreateReviewStage(Guid.NewGuid().ToString("N"));
+                            var reviewSession = CreateSession(new CreateSessionSpec
+                            {
+                                Type = "review",
+                                InitialState = "新的待验证队列项已就绪，开始处理。",
+                                SessionServices = new Dictionary<System.Type, object>
+                                {
+                                    [typeof(AgentLilara.PluginSDK.Services.IReviewStageAccess)] =
+                                        new Tool.Host.ReviewStageAccessImpl(stage)
+                                }
+                            });
+                            Signal.Event(LogGroup.Engine, "Review 会话孵化",
+                                new { sessionId = reviewSession.SessionId, queueHasPending = true });
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {

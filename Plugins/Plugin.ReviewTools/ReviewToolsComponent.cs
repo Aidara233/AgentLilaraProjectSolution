@@ -34,6 +34,9 @@ public class ReviewToolsComponent : GlobalComponentBase
         _tools.Add(new ReviewPreviewTool(toolCtx));
         _tools.Add(new ReviewCommitTool(toolCtx));
         _tools.Add(new ReviewEvidenceTool(toolCtx));
+        _tools.Add(new ReviewDeclassifyTool(toolCtx));
+        _tools.Add(new ReviewDissolveTool(toolCtx));
+        _tools.Add(new ReviewFinishTool(toolCtx));
 
         return Task.CompletedTask;
     }
