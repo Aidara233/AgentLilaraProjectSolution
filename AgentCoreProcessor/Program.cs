@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Newtonsoft.Json;
 
 namespace AgentCoreProcessor
 {
@@ -46,6 +47,7 @@ namespace AgentCoreProcessor
             var qqMode = Array.Exists(args, a => a == "--qq");
             var testSend = Array.Exists(args, a => a == "--test-send");
             var muteMode = Array.Exists(args, a => a == "--mute");
+            var devMode = Array.Exists(args, a => a == "--dev");
 
             // 事件总线
             var eventBus = new EventBus();
@@ -64,9 +66,29 @@ namespace AgentCoreProcessor
             }
 
             // 从配置目录加载适配器（--qq 保留为兼容，但正常模式也加载）
-            if (!debug)
+            // --debug/--dev 跳过：自包含环境，不连接外部平台
+            if (!debug && !devMode)
             {
                 adapterManager.LoadFromConfig();
+            }
+
+            // --dev 常驻调试：只启动 HttpBridge（复用运行时 http.json 配置），不连 QQ
+            if (devMode)
+            {
+                HttpBridgeConfig? httpCfg = null;
+                var httpPath = Path.Combine(PathConfig.StoragePath, "Adapter", "http.json");
+                if (File.Exists(httpPath))
+                {
+                    try
+                    {
+                        var cfg = JsonConvert.DeserializeObject<AdapterInstanceConfig>(File.ReadAllText(httpPath));
+                        httpCfg = cfg?.Settings?.ToObject<HttpBridgeConfig>();
+                    }
+                    catch { }
+                }
+                httpCfg ??= new HttpBridgeConfig();
+                adapterManager.RegisterAdapter(new HttpBridgeAdapter("http", httpCfg));
+                Console.WriteLine($"[dev] 自包含调试模式：HttpBridge http://localhost:{httpCfg.Port}（默认频道 {httpCfg.DefaultChannel}），不连接外部平台。用 LilaraConsoleClient 或 curl /api/send 驱动。");
             }
 
             // 主引擎

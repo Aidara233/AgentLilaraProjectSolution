@@ -39,7 +39,7 @@
 1. 读取 `docs/architecture-map.md` — 架构全景图，一页纸恢复基本认知
 2. 检查 memory 索引 `MEMORY.md` 了解记忆文件全景，读 `project_progress.md` 了解当前进度
 3. 需要了解特定设计决策时，按需读取对应的 memory 文件（见下方"记忆文件索引"）
-4. Storage 目录**不在**解决方案文件夹下，也不在 git 仓库中。
+4. Storage 目录**不在**解决方案文件夹下，也不在 git 仓库中。运行时实际路径由 exe 目录的 `paths.json` 决定（当前为 `E:\Tools\Lilara\Storage`），与工作目录 `E:\Workspace\AgentLilaraProject\Storage`（配置模板源）分离；改 `Storage/SessionTypes/` 等配置时须同步两处 + `AgentCoreProcessor/templates/`（见 memory `project-qq-forward`）。
 
 不要一次性读取所有源代码文件。按需读取，用到哪个读哪个。
 
@@ -144,7 +144,10 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
    注意：Git Bash 会把 `/IM` `/F` 等斜杠参数误解为路径，必须用 `cmd //c "..."` 包裹 taskkill 命令。
    杀进程不会造成数据损坏（SQLite WAL 模式 + 配置文件原子写入）。
 2. `git commit` 提交改动，仓库在 solution 内而非工作目录内
-3. `--test` 模式试运行验证（需要模拟对话节奏时加 `--delay N`）
+3. 运行验证（自包含，不连真实 QQ）：
+   - **`--dev` 常驻调试（主）**：`dotnet run -- --dev` → HttpBridge(9876) + WebUI(5000) 常驻，不连 QQ。用 `LilaraConsoleClient --channel <频道>` 或 `curl POST /api/send`（`wait=true` 阻塞拿回复）驱动，可查 WebUI/logs。注意：--dev 无真实频道占用，投递孵 express 会话（无 get_forward_msg），验证 qq-tools 等需先 escalate 升 channel。
+   - **`--test` 一次性脚本验证（辅）**：读 FileAdapter input 处理即退，模拟节奏加 `--delay N`；`--test` 只孵 express。
+   - 连真实 QQ 的端到端（合并转发统计行/图片注入等）由用户实测。
 4. 更新文档，方便下次冷启动
   - 文档主要包括`E:\Workspace\AgentLilaraProject\AgentLilaraProjectSolution\docs`下的文档，应当尽可能让所有文档都集中在这里面，方便管理。
   - 可以顺带把旧计划文档清空，方便下次填写。
@@ -154,7 +157,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 
 ## 关键路径
 
-- 入口：Program.cs（--file / --debug / --test / 默认 Web 服务器）
+- 入口：Program.cs（--file / --debug / --test / --dev / 默认 Web 服务器）
 - 数据库：Database/DbManager.cs（初始化 + 迁移）+ 18 张业务表 + logs.db
 - 会话管理：Engine/Worker/SessionManager.cs（用户映射 + 频道映射 + 消息入库）
 - 引擎内核：Engine/Core/MasterEngine.cs（SpawnCheck 注册表 + 活跃引擎表 + 全局组件宿主）
@@ -219,7 +222,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 适配器接口：Adapter/IAdapter.cs + AdapterManager.cs + AdapterFactory.cs
 - OneBot 适配器：Adapter/OneBot/OneBotAdapter.cs（WS连接 + 消息映射 + QQ协议）+ Adapter/OneBot/ForwardMessageTree.cs（合并转发递归树：嵌套统计+统计行+全文渲染，深度 ForwardMaxDepth 可配，树缓存30）
 - File 适配器：Adapter/File/FileAdapter.cs（文件轮询，测试用；SendMessageAsync 返回输出文件名作为消息 id，speak 等工具据此判成功）
-- HTTP 桥接适配器：Adapter/Http/HttpBridgeAdapter.cs（HTTP+WS 混合，独立端口自建 Kestrel；POST /api/send 阻塞等突发统一返回 + /api/messages 聊天记录 + /ws 双向实时；实现 IEngineAwareAdapter/IChannelAwareAdapter 拿引擎 + 频道归属；多适配器出向路由按 IChannelAwareAdapter.OwnsChannel 优先）
+- HTTP 桥接适配器：Adapter/Http/HttpBridgeAdapter.cs（HTTP+WS 混合，独立端口自建 Kestrel；POST /api/send 阻塞等突发统一返回 + /api/messages 聊天记录 + /ws 双向实时；实现 IEngineAwareAdapter/IChannelAwareAdapter 拿引擎 + 频道归属；多适配器出向路由按 IChannelAwareAdapter.OwnsChannel 优先）— `--dev` 常驻调试模式经它驱动（LilaraConsoleClient/curl）
 - 迷你客户端：LilaraConsoleClient/（net8.0 控制台，零依赖，直连 HttpBridge ws 端点交互式对话；协议见 docs/http-bridge-api.md §6）
 - 适配器引擎访问：Adapter/IEngineAwareAdapter.cs（MasterEngine 注入）+ Adapter/IChannelAwareAdapter.cs（频道归属），AdapterManager.AttachEngine 由 MasterEngine 构造注入
 - MCP 系统：MCP/McpServerManager.cs + McpBridgeTool.cs + McpConfig.cs
