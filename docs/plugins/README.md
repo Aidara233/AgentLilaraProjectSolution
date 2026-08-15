@@ -37,13 +37,15 @@ Plugins/                          ← 宿主扫描目录
   "entry": "Plugin.Email.dll",
   "components": ["email"],
   "description": "邮件收发工具（SMTP/IMAP，单账户）",
-  "author": "Agent Lilara"
+  "author": "Agent Lilara",
+  "platform": ["windows"]
 }
 ```
 
 - `id` — 全局唯一标识，用于 WebUI 路由和热重载
 - `entry` — 入口 DLL 文件名（相对于插件目录）
 - `components` — 该插件注册的组件名列表（WebUI 展示用）
+- `platform` — **可选**。平台白名单（`windows` / `linux` / `macos`，大小写不敏感）。缺省或空数组 = 所有平台。不匹配当前平台的插件在加载期直接跳过（平台专属插件如 Windows-only 的 OCR/浏览器插件，其余平台零噪音）
 - 缺少 `plugin.json` 的子目录会被静默跳过
 
 ### 加载流程
