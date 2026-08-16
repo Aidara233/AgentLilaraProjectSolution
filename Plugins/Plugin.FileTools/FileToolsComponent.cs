@@ -20,14 +20,14 @@ public class FileToolsComponent : GlobalComponentBase
 
     public override Task OnInitAsync(IGlobalComponentContext context, InitReason reason)
     {
-        var workspaceDir = context.Storage.WorkspaceDirectory;
-        _tools.Add(new ReadTextTool(workspaceDir));
-        _tools.Add(new WriteTextTool(workspaceDir));
-        _tools.Add(new ListDirTool(workspaceDir));
-        _tools.Add(new MoveFileTool(workspaceDir));
-        _tools.Add(new DeleteFileTool(workspaceDir));
-        _tools.Add(new CopyFileTool(workspaceDir));
-        _tools.Add(new UpdateTextTool(workspaceDir));
+        var workspace = context.Workspace;
+        _tools.Add(new ReadTextTool(workspace));
+        _tools.Add(new WriteTextTool(workspace));
+        _tools.Add(new ListDirTool(workspace));
+        _tools.Add(new MoveFileTool(workspace));
+        _tools.Add(new DeleteFileTool(workspace));
+        _tools.Add(new CopyFileTool(workspace));
+        _tools.Add(new UpdateTextTool(workspace));
 
         return Task.CompletedTask;
     }

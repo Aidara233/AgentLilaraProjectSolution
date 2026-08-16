@@ -26,6 +26,8 @@ internal class GlobalComponentContext : IGlobalComponentContext
         _moduleBus = moduleBus;
         _services = services;
         _storage = storage;
+        Workspace = new Tool.Host.WorkspaceAccessImpl(Config.PathConfig.WorkspacePath);
+        PluginData = new Tool.Host.PluginDataAccessImpl(storage.GlobalDirectory, storage.InstanceDirectory);
         _wakeLoop = wakeLoop;
         _setEnabled = setEnabled;
         _isEnabled = initialEnabled;
@@ -33,6 +35,8 @@ internal class GlobalComponentContext : IGlobalComponentContext
 
     public bool IsEnabled => _isEnabled;
     public IPluginStorage Storage => _storage;
+    public IWorkspaceAccess Workspace { get; }
+    public IPluginDataAccess PluginData { get; }
 
     public void Enable()
     {

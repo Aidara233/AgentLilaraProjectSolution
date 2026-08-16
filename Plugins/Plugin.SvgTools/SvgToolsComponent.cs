@@ -19,7 +19,7 @@ public class SvgToolsComponent : GlobalComponentBase
 
     public override Task OnInitAsync(IGlobalComponentContext context, InitReason reason)
     {
-        _tools.Add(new RenderSvgTool(context.Storage));
+        _tools.Add(new RenderSvgTool(context.Workspace));
         return Task.CompletedTask;
     }
 }

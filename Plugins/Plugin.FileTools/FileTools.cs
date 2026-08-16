@@ -11,7 +11,7 @@ namespace Plugin.FileTools
     [ToolMeta(Group = "file", ContinueLoop = true)]
     public class ReadTextTool : FileToolBase
     {
-        public ReadTextTool(string workspaceDir) : base(workspaceDir) { }
+        public ReadTextTool(IWorkspaceAccess workspace) : base(workspace) { }
 
         public override string Name => "read_text";
         public override string Description => "读取文本文件内容。路径相对于 Workspace 目录，只能访问该目录内的文件。支持指定行范围。建议先用 grep_files 定位到具体行号，再用本工具按行号范围读取，避免全量加载大文件。";
@@ -101,7 +101,7 @@ namespace Plugin.FileTools
     [ToolMeta(Group = "file", ContinueLoop = true)]
     public class WriteTextTool : FileToolBase
     {
-        public WriteTextTool(string workspaceDir) : base(workspaceDir) { }
+        public WriteTextTool(IWorkspaceAccess workspace) : base(workspace) { }
 
         public override string Name => "write_text";
         public override string Description => "写入文本文件。路径相对于 Workspace 目录。action: write(覆盖写入) / append(追加)。自动创建不存在的目录。";
@@ -149,7 +149,7 @@ namespace Plugin.FileTools
     [ToolMeta(Group = "file", ContinueLoop = true)]
     public class ListDirTool : FileToolBase
     {
-        public ListDirTool(string workspaceDir) : base(workspaceDir) { }
+        public ListDirTool(IWorkspaceAccess workspace) : base(workspace) { }
 
         public override string Name => "list_dir";
         public override string Description => "列出目录下的文件和子目录。路径相对于 Workspace 目录，为空则列出根目录。";
@@ -190,7 +190,7 @@ namespace Plugin.FileTools
     [ToolMeta(Group = "file", ContinueLoop = true)]
     public class MoveFileTool : FileToolBase
     {
-        public MoveFileTool(string workspaceDir) : base(workspaceDir) { }
+        public MoveFileTool(IWorkspaceAccess workspace) : base(workspace) { }
 
         public override string Name => "move_file";
         public override string Description => "移动或重命名文件/目录。源和目标路径都相对于 Workspace 目录。";
@@ -235,7 +235,7 @@ namespace Plugin.FileTools
     [ToolMeta(Group = "file", ContinueLoop = true)]
     public class DeleteFileTool : FileToolBase
     {
-        public DeleteFileTool(string workspaceDir) : base(workspaceDir) { }
+        public DeleteFileTool(IWorkspaceAccess workspace) : base(workspace) { }
 
         public override string Name => "delete_file";
         public override string Description => "删除文件或空目录。路径相对于 Workspace 目录。非空目录需要先清空。";
@@ -280,7 +280,7 @@ namespace Plugin.FileTools
     [ToolMeta(Group = "file", ContinueLoop = true)]
     public class CopyFileTool : FileToolBase
     {
-        public CopyFileTool(string workspaceDir) : base(workspaceDir) { }
+        public CopyFileTool(IWorkspaceAccess workspace) : base(workspace) { }
 
         public override string Name => "copy_file";
         public override string Description => "复制文件。源和目标路径都相对于 Workspace 目录。";
@@ -321,7 +321,7 @@ namespace Plugin.FileTools
     [ToolMeta(Group = "file", ContinueLoop = true)]
     public class UpdateTextTool : FileToolBase
     {
-        public UpdateTextTool(string workspaceDir) : base(workspaceDir) { }
+        public UpdateTextTool(IWorkspaceAccess workspace) : base(workspace) { }
 
         public override string Name => "update_text";
         public override string Description =>

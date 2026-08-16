@@ -20,7 +20,7 @@ public class SearchPptxTool : FileToolBase
     private const int ContextWindow = 40;
     private const int MaxResults = 50;
 
-    public SearchPptxTool(string workspaceDir) : base(workspaceDir) { }
+    public SearchPptxTool(IWorkspaceAccess workspace) : base(workspace) { }
 
     public override string Name => "search_pptx";
     public override string Description => "在 PowerPoint (.pptx) 幻灯片中搜索关键词，返回匹配页码和上下文。";

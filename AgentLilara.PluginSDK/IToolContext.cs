@@ -22,5 +22,11 @@ namespace AgentLilara.PluginSDK
 
         /// <summary>插件隔离存储（由宿主根据插件名+作用域自动绑定路径）。</summary>
         IPluginStorage Storage { get; }
+
+        /// <summary>工作目录访问（Workspace/ 沙箱）。</summary>
+        IWorkspaceAccess Workspace { get; }
+
+        /// <summary>插件数据目录访问（GlobalDirectory / InstanceDirectory 沙箱）。</summary>
+        IPluginDataAccess PluginData { get; }
     }
 }

@@ -55,6 +55,13 @@ public interface IPluginDataAccess
 
 - 主程序实现（`WorkspaceAccessImpl` / `PluginDataAccessImpl`），解析逻辑统一收口
 - `IPluginStorage` 保留（提供目录信息展示用），插件构造注入改为接口
+- **✅ 已实装（2026-08-16）**：
+  - SDK 新增 `IWorkspaceAccess` / `IPluginDataAccess`（`AgentLilara.PluginSDK/`），`IToolContext`/`IGlobalComponentContext`/`ILoopComponentContext` 各暴露 `Workspace` + `PluginData`
+  - 主程序实现 `WorkspaceAccessImpl`/`PluginDataAccessImpl`（`ToolContextImpl.cs`），相对路径拼根、绝对路径校验落点、越界返回 null；`WriteAllTextAsync` 自动建目录
+  - `FileToolBase` 构造改注入 `IWorkspaceAccess`，`ResolvePath` 收敛；25 个子类 + 3 组件（FileTools/FileOps/DocumentTools）批量迁移，`WorkspaceDir` 保留为兼容展示属性
+  - `RenderSvgTool` 改调 `Workspace.Resolve`（路径穿越漏洞封死，越界文件名拒绝）
+  - `CampusPrint`：`NormalizePath` 加 `OperatingSystem.IsWindows()` 守卫（非 Windows 不再转换分隔符）；`PrintFileUploadTool` 解析收口到 `Workspace.Resolve`（根外绝对路径拒绝）
+  - 新增 `WorkspaceAccessTests` 9 用例（沙箱边界/逃逸/读写），96/96 全绿
 - **语义细节**：绝对路径若在 Workspace 内直接返回；越界拒绝（不做 `TrimStart` 相对化，避免歧义）
 
 ### 3.2 能力提供者接口（上移 SDK）
@@ -141,21 +148,21 @@ public interface IBrowserSession
 
 | 位置 | 现状 | 动作 |
 |---|---|---|
-| `Plugin.DocumentTools` / `FileOps` / `FileTools` | 继承 FileToolBase | FileToolBase.ResolvePath 改内部调 IWorkspaceAccess，子类零迁移 |
+| `Plugin.DocumentTools` / `FileOps` / `FileTools` | 继承 FileToolBase | ✅ FileToolBase.ResolvePath 已收敛（25 子类 + 3 组件零行为变化） |
 | `Plugin.Email/Tools/DownloadAttachmentTool.cs` + `SendEmailTool.cs` | 三件套 | 改调接口 |
 | `Plugin.GitTools/Tools/GitToolBase.cs` | 三件套 | 改调接口 |
 | `Plugin.NetworkTools/DownloadFileTool.cs` + `BrowserScreenshotTool.cs` | 三件套 | 改调接口 |
 | `Plugin.SshTools/Tools/DownloadTool.cs` + `UploadTool.cs` | 三件套 | 改调接口 |
-| `Plugin.CampusPrint/CampusPrintComponent.cs` | NormalizePath（Windows 假设） | 改调接口 + 平台守卫 |
-| `Plugin.SvgTools/RenderSvgTool.cs` | **无校验（路径穿越漏洞）** | 改调接口（安全修复） |
+| `Plugin.CampusPrint/CampusPrintComponent.cs` | NormalizePath（Windows 假设） | ✅ 平台守卫 + 改调接口（`PrintFileUploadTool`） |
+| `Plugin.SvgTools/RenderSvgTool.cs` | **无校验（路径穿越漏洞）** | ✅ 改调接口（安全修复，越界拒绝） |
 | `Plugin.GroupFileTools/DownloadChatFileTool.cs` | 已清洗但无沙箱 | 顺手纳入 |
 | `Plugin.SkillTools/SkillEntry.cs` | 技能目录内部沙箱 | 保留独立实现 |
 
 ## 6. 校园打印专项
 
 - 结论：非云服务问题，是本地解析的 Windows 假设（`CampusPrintComponent.cs:135-143`）
-- 修复：`NormalizePath` 加 `OperatingSystem.IsWindows()` 守卫；解析流程改 `Path.IsPathRooted` 分流；绝对路径仅当落在 Workspace 内才放行
-- 工具描述 `E:\...` 改通用示例
+- ✅ 已实装：`NormalizePath` 加 `OperatingSystem.IsWindows()` 守卫；解析流程改 `IWorkspaceAccess.Resolve` 收口；根外绝对路径拒绝
+- 工具描述 `E:\...` 改通用示例 ✅
 - 行为收紧（确认过）：工作目录外文件从"能用"变为"拒绝"，模型需先复制进工作区
 
 ## 7. 文案/斜杠清理
@@ -180,9 +187,8 @@ public interface IBrowserSession
 
 ## 9. 实施顺序建议
 
-1. **P0 安全**：RenderSvgTool 路径穿越 + CampusPrint 平台守卫（独立小改，先止血）
-2. **P1 接口**：SDK 两组目录访问接口 + 主程序实现 + FileToolBase 收敛（零行为变化）
-3. **P1 迁移**：9 处散装沙箱改调接口（每处独立提交，可测试）
+1. ✅ **P0 安全 + P1 接口**（2026-08-16 已合并实施）：SDK 两组目录访问接口 + 主程序实现 + FileToolBase 收敛 + RenderSvgTool 漏洞修复 + CampusPrint 平台守卫（见 3.1/5/6 节）
+2. **P1 迁移**：剩余 7 处散装沙箱改调接口（Email×2 / GitTools / NetworkTools×2 / SshTools×2 / GroupFileTools，每处独立提交，可测试）
 4. **P2 提供者插件化**：能力接口上移 SDK + ProviderRegistry + UmiOcr 迁出
 5. **P3 浏览器**：IBrowserEngine 抽象 → Playwright 引擎搬迁 → CDP 引擎渐进交付 → BrowserTools 拆插件
 6. **P4 清理**：文案、斜杠规范、模板整理

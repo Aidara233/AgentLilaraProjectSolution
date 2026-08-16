@@ -19,7 +19,7 @@ public class ReadXlsxTool : FileToolBase
     private const int MaxCells = 5000;
     private const int PreviewRows = 20;
 
-    public ReadXlsxTool(string workspaceDir) : base(workspaceDir) { }
+    public ReadXlsxTool(IWorkspaceAccess workspace) : base(workspace) { }
 
     public override string Name => "read_xlsx";
     public override string Description => "读取 Excel (.xlsx) 表格。不提供全表提取——先不带 range 参数调用获取 sheet 列表和预览，再按需指定 range 读取区域。range 格式如 \"A1:D50\" 或 \"Sheet2!A1:C20\"。单次最多 5000 个单元格。";

@@ -20,15 +20,15 @@ public class FileOpsComponent : GlobalComponentBase
 
     public override Task OnInitAsync(IGlobalComponentContext context, InitReason reason)
     {
-        var workspaceDir = context.Storage.WorkspaceDirectory;
-        _tools.Add(new ArchiveCreateTool(workspaceDir));
-        _tools.Add(new ArchiveExtractTool(workspaceDir));
-        _tools.Add(new ArchiveListTool(workspaceDir));
-        _tools.Add(new SearchFilesTool(workspaceDir));
-        _tools.Add(new GrepFilesTool(workspaceDir));
-        _tools.Add(new FileInfoTool(workspaceDir));
-        _tools.Add(new FileHashTool(workspaceDir));
-        _tools.Add(new CompareFilesTool(workspaceDir));
+        var workspace = context.Workspace;
+        _tools.Add(new ArchiveCreateTool(workspace));
+        _tools.Add(new ArchiveExtractTool(workspace));
+        _tools.Add(new ArchiveListTool(workspace));
+        _tools.Add(new SearchFilesTool(workspace));
+        _tools.Add(new GrepFilesTool(workspace));
+        _tools.Add(new FileInfoTool(workspace));
+        _tools.Add(new FileHashTool(workspace));
+        _tools.Add(new CompareFilesTool(workspace));
         return Task.CompletedTask;
     }
 }

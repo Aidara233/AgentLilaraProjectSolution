@@ -13,7 +13,7 @@ namespace Plugin.FileOps
     [ToolMeta(Group = "file", ContinueLoop = true)]
     public class SearchFilesTool : FileToolBase
     {
-        public SearchFilesTool(string workspaceDir) : base(workspaceDir) { }
+        public SearchFilesTool(IWorkspaceAccess workspace) : base(workspace) { }
 
         public override string Name => "search_files";
         public override string Description => "使用 glob 模式搜索文件（如 **/*.cs, *.txt, logs/*.json）。最多返回 100 个结果。";
@@ -73,7 +73,7 @@ namespace Plugin.FileOps
     [ToolMeta(Group = "file", ContinueLoop = true)]
     public class GrepFilesTool : FileToolBase
     {
-        public GrepFilesTool(string workspaceDir) : base(workspaceDir) { }
+        public GrepFilesTool(IWorkspaceAccess workspace) : base(workspace) { }
 
         public override string Name => "grep_files";
         public override string Description => "在目录中搜索文件内容（支持正则），返回匹配行的文件路径和行号。最多返回 30 条，每条截断到 500 字符。建议先用本工具定位到具体文件和行号，再用 read_text 按行号范围读取上下文。";

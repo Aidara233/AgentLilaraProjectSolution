@@ -17,7 +17,7 @@ namespace Plugin.FileOps
     [ToolMeta(Group = "file", ContinueLoop = true)]
     public class ArchiveCreateTool : FileToolBase
     {
-        public ArchiveCreateTool(string workspaceDir) : base(workspaceDir) { }
+        public ArchiveCreateTool(IWorkspaceAccess workspace) : base(workspace) { }
 
         public override string Name => "archive_create";
         public override string Description => "将文件或目录打包压缩。format 从目标扩展名自动推断（zip/tar.gz/7z），也可手动指定。level: fast/balanced/best。";
@@ -145,7 +145,7 @@ namespace Plugin.FileOps
     [ToolMeta(Group = "file", ContinueLoop = true)]
     public class ArchiveExtractTool : FileToolBase
     {
-        public ArchiveExtractTool(string workspaceDir) : base(workspaceDir) { }
+        public ArchiveExtractTool(IWorkspaceAccess workspace) : base(workspace) { }
 
         public override string Name => "archive_extract";
         public override string Description => "解压归档文件到指定目录。支持 zip/tar/tar.gz/7z 格式。";
@@ -231,7 +231,7 @@ namespace Plugin.FileOps
     [ToolMeta(Group = "file", ContinueLoop = true)]
     public class ArchiveListTool : FileToolBase
     {
-        public ArchiveListTool(string workspaceDir) : base(workspaceDir) { }
+        public ArchiveListTool(IWorkspaceAccess workspace) : base(workspace) { }
 
         public override string Name => "archive_list";
         public override string Description => "列出压缩包内容（不实际解压）。最多显示 100 个条目。";

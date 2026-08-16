@@ -15,7 +15,7 @@ namespace Plugin.DocumentTools;
 [ToolMeta(Group = "document", ContinueLoop = true)]
 public class WriteDocxTool : FileToolBase
 {
-    public WriteDocxTool(string workspaceDir) : base(workspaceDir) { }
+    public WriteDocxTool(IWorkspaceAccess workspace) : base(workspace) { }
 
     public override string Name => "write_docx";
     public override string Description => "创建 Word (.docx) 文档。简单文本写入，不支持复杂格式。paragraphs 参数用换行分隔段落。";
