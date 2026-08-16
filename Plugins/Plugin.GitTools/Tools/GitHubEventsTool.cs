@@ -17,8 +17,8 @@ public class GitHubEventsTool : GitToolBase
 {
     private readonly string _instanceDir;
 
-    public GitHubEventsTool(string workspaceDir, GitRunner runner, string instanceDir)
-        : base(workspaceDir, runner)
+    public GitHubEventsTool(IWorkspaceAccess workspace, GitRunner runner, string instanceDir)
+        : base(workspace, runner)
     {
         _instanceDir = instanceDir;
     }

@@ -49,10 +49,8 @@ public class GroupFileToolsComponent : LoopComponentBase
         var adapterId = adapterAccess.GetAdapterIdForChannel(detail.Name);
         if (adapterId == null) return;
 
-        // Workspace 路径
-        var workspaceDir = Path.GetFullPath(Path.Combine(
-            context.Storage.InstanceDirectory, "..", "..", "..", "Workspace"));
-        Directory.CreateDirectory(workspaceDir);
+        // Workspace 访问
+        var workspace = context.Workspace;
 
         var http = GroupFileToolsAccessor.HttpClient
             ?? throw new InvalidOperationException("GroupFileGlobalComponent 未初始化");
@@ -61,9 +59,9 @@ public class GroupFileToolsComponent : LoopComponentBase
 
         _listFiles = new ListGroupFilesTool(adapterAccess, adapterId);
         _downloadFile = new DownloadGroupFileTool(adapterAccess,
-            adapterId, workspaceDir, http, store, context.SessionId);
+            adapterId, workspace, http, store, context.SessionId);
         _downloadChatFile = new DownloadChatFileTool(adapterAccess,
-            adapterId, workspaceDir, store, context.SessionId);
+            adapterId, workspace, store, context.SessionId);
     }
 
     public override Task OnBeforeInvokeAsync()

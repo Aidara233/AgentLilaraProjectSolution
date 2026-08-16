@@ -8,7 +8,6 @@ public class EmailComponent : GlobalComponentBase
 {
     private EmailConnectionManager _connMgr = null!;
     private readonly List<ITool> _tools = new();
-    private string _workspaceDir = "";
 
     public override ComponentMeta Meta => new()
     {
@@ -24,14 +23,13 @@ public class EmailComponent : GlobalComponentBase
     {
         var config = EmailConfig.Load(context.Storage.GlobalDirectory);
         _connMgr = new EmailConnectionManager(config);
-        _workspaceDir = context.Storage.WorkspaceDirectory;
 
-        _tools.Add(new SendEmailTool(_connMgr, context.Storage));
+        _tools.Add(new SendEmailTool(_connMgr, context.Workspace));
         _tools.Add(new CheckUnreadTool(_connMgr));
         _tools.Add(new CheckEmailTool(_connMgr));
         _tools.Add(new ReadEmailTool(_connMgr));
         _tools.Add(new SearchEmailTool(_connMgr));
-        _tools.Add(new DownloadAttachmentTool(_connMgr, context.Storage));
+        _tools.Add(new DownloadAttachmentTool(_connMgr, context.Workspace));
         _tools.Add(new DeleteEmailTool(_connMgr));
         _tools.Add(new MarkAllReadTool(_connMgr));
         _tools.Add(new ListFoldersTool(_connMgr));

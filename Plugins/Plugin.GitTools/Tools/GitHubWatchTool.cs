@@ -17,8 +17,8 @@ public class GitHubWatchTool : GitToolBase
 {
     private readonly string _instanceDir;
 
-    public GitHubWatchTool(string workspaceDir, GitRunner runner, string instanceDir)
-        : base(workspaceDir, runner)
+    public GitHubWatchTool(IWorkspaceAccess workspace, GitRunner runner, string instanceDir)
+        : base(workspace, runner)
     {
         _instanceDir = instanceDir;
     }

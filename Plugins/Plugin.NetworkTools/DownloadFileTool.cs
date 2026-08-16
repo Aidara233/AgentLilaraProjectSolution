@@ -10,7 +10,7 @@ public class DownloadFileTool : ITool
     private readonly HttpClient _http;
     private readonly SecurityConfig _security;
     private readonly DownloadStore _store;
-    private readonly string _workspaceDir;
+    private readonly IWorkspaceAccess _workspace;
     private readonly string _sessionId;
 
     public string Name => "download_file";
@@ -26,12 +26,12 @@ public class DownloadFileTool : ITool
     public TimeSpan Timeout => TimeSpan.FromSeconds(10);
 
     public DownloadFileTool(HttpClient http, SecurityConfig security, DownloadStore store,
-        string workspaceDir, string sessionId)
+        IWorkspaceAccess workspace, string sessionId)
     {
         _http = http;
         _security = security;
         _store = store;
-        _workspaceDir = workspaceDir;
+        _workspace = workspace;
         _sessionId = sessionId;
     }
 
@@ -55,12 +55,8 @@ public class DownloadFileTool : ITool
         if (reject != null) return Fail(reject);
 
         // 解析保存路径
-        var sanitized = savePath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var fullPath = Path.GetFullPath(Path.Combine(_workspaceDir, sanitized));
-        var workspaceRootWithSep = _workspaceDir.EndsWith(Path.DirectorySeparatorChar)
-            ? _workspaceDir : _workspaceDir + Path.DirectorySeparatorChar;
-        if (!fullPath.StartsWith(workspaceRootWithSep, StringComparison.OrdinalIgnoreCase)
-            && !fullPath.Equals(_workspaceDir, StringComparison.OrdinalIgnoreCase))
+        var fullPath = _workspace.Resolve(savePath);
+        if (fullPath == null)
             return Fail("路径不合法：不能访问Workspace目录之外");
 
         // 提取文件名

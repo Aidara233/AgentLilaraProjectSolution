@@ -10,13 +10,15 @@ namespace Plugin.GitTools.Tools;
 
 public abstract class GitToolBase : ITool
 {
-    protected readonly string WorkspaceDir;
+    protected readonly IWorkspaceAccess Workspace;
     protected readonly GitRunner Runner;
 
-    protected GitToolBase(string workspaceDir, GitRunner runner)
+    /// <summary>工作目录绝对路径（仅展示用；路径解析一律走 Workspace.Resolve）。</summary>
+    protected string WorkspaceDir => Workspace.Resolve("") ?? "";
+
+    protected GitToolBase(IWorkspaceAccess workspace, GitRunner runner)
     {
-        WorkspaceDir = Path.GetFullPath(workspaceDir);
-        Directory.CreateDirectory(WorkspaceDir);
+        Workspace = workspace;
         Runner = runner;
     }
 
@@ -30,14 +32,7 @@ public abstract class GitToolBase : ITool
     {
         if (string.IsNullOrEmpty(relativePath))
             return null;
-
-        var sanitized = relativePath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-	        var full = Path.GetFullPath(Path.Combine(WorkspaceDir, sanitized));
-        var workspaceRoot = WorkspaceDir.EndsWith(Path.DirectorySeparatorChar)
-            ? WorkspaceDir : WorkspaceDir + Path.DirectorySeparatorChar;
-
-        return full.StartsWith(workspaceRoot, StringComparison.OrdinalIgnoreCase)
-            || full.Equals(WorkspaceDir, StringComparison.OrdinalIgnoreCase) ? full : null;
+        return Workspace.Resolve(relativePath);
     }
 
     protected bool IsGitRepo(string fullPath)

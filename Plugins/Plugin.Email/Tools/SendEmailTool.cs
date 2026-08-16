@@ -8,12 +8,12 @@ namespace Plugin.Email.Tools;
 public class SendEmailTool : ITool
 {
     private readonly EmailConnectionManager _connMgr;
-    private readonly IPluginStorage _storage;
+    private readonly IWorkspaceAccess _workspace;
 
-    public SendEmailTool(EmailConnectionManager connMgr, IPluginStorage storage)
+    public SendEmailTool(EmailConnectionManager connMgr, IWorkspaceAccess workspace)
     {
         _connMgr = connMgr;
-        _storage = storage;
+        _workspace = workspace;
     }
 
     public string Name => "send_email";
@@ -60,13 +60,8 @@ public class SendEmailTool : ITool
                     var trimmed = relPath.Trim();
                     if (string.IsNullOrEmpty(trimmed)) continue;
 
-                    var sanitized = trimmed.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                    var fullPath = Path.GetFullPath(Path.Combine(_storage.WorkspaceDirectory, sanitized));
-                    var workspaceRoot = Path.GetFullPath(_storage.WorkspaceDirectory);
-                    var workspaceRootWithSep = workspaceRoot.EndsWith(Path.DirectorySeparatorChar)
-                        ? workspaceRoot : workspaceRoot + Path.DirectorySeparatorChar;
-                    if (!fullPath.StartsWith(workspaceRootWithSep, StringComparison.OrdinalIgnoreCase)
-                        && !fullPath.Equals(workspaceRoot, StringComparison.OrdinalIgnoreCase))
+                    var fullPath = _workspace.Resolve(trimmed);
+                    if (fullPath == null)
                         return new ToolResult { Status = "failed", Error = $"路径超出工作区范围: {trimmed}" };
 
                     if (!File.Exists(fullPath))

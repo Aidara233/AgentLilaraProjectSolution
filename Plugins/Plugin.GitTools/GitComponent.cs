@@ -78,7 +78,7 @@ public class GitComponent : LoopComponentBase
             return Task.CompletedTask;
         }
 
-        var workspace = global.WorkspaceDir;
+        var workspace = global.Workspace;
         var runner = global.Runner;
         var repos = global.Repos;
         var gh = global.GitHub;

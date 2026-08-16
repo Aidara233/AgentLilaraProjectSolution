@@ -14,7 +14,7 @@ public class GitInitTool : GitToolBase
 {
     private readonly RepoRegistry _repos;
 
-    public GitInitTool(string workspaceDir, GitRunner runner, RepoRegistry repos) : base(workspaceDir, runner)
+    public GitInitTool(IWorkspaceAccess workspace, GitRunner runner, RepoRegistry repos) : base(workspace, runner)
     {
         _repos = repos;
     }

@@ -149,13 +149,13 @@ public interface IBrowserSession
 | 位置 | 现状 | 动作 |
 |---|---|---|
 | `Plugin.DocumentTools` / `FileOps` / `FileTools` | 继承 FileToolBase | ✅ FileToolBase.ResolvePath 已收敛（25 子类 + 3 组件零行为变化） |
-| `Plugin.Email/Tools/DownloadAttachmentTool.cs` + `SendEmailTool.cs` | 三件套 | 改调接口 |
-| `Plugin.GitTools/Tools/GitToolBase.cs` | 三件套 | 改调接口 |
-| `Plugin.NetworkTools/DownloadFileTool.cs` + `BrowserScreenshotTool.cs` | 三件套 | 改调接口 |
-| `Plugin.SshTools/Tools/DownloadTool.cs` + `UploadTool.cs` | 三件套 | 改调接口 |
+| `Plugin.Email/Tools/DownloadAttachmentTool.cs` + `SendEmailTool.cs` | 三件套 | ✅ 改调接口（EmailComponent 传 `context.Workspace`） |
+| `Plugin.GitTools/Tools/GitToolBase.cs` | 三件套 | ✅ `GitToolBase`/`GitGlobalComponent`/`GitComponent` 改注入（15 子类批量迁移） |
+| `Plugin.NetworkTools/DownloadFileTool.cs` + `BrowserScreenshotTool.cs` | 三件套 | ✅ 改调接口（`NetworkToolsLoopComponent` 删 `..` 路径推算；`BrowserComponent` 增 `GetWorkspace()`） |
+| `Plugin.SshTools/Tools/DownloadTool.cs` + `UploadTool.cs` | 三件套 | ✅ 改调接口（`_workspaceDir` 仅留作错误消息展示） |
 | `Plugin.CampusPrint/CampusPrintComponent.cs` | NormalizePath（Windows 假设） | ✅ 平台守卫 + 改调接口（`PrintFileUploadTool`） |
 | `Plugin.SvgTools/RenderSvgTool.cs` | **无校验（路径穿越漏洞）** | ✅ 改调接口（安全修复，越界拒绝） |
-| `Plugin.GroupFileTools/DownloadChatFileTool.cs` | 已清洗但无沙箱 | 顺手纳入 |
+| `Plugin.GroupFileTools/DownloadChatFileTool.cs` | 已清洗但无沙箱 | ✅ 改调接口（`DownloadChatFileTool` + `DownloadGroupFileTool`，`Downloads` 子目录经 Resolve） |
 | `Plugin.SkillTools/SkillEntry.cs` | 技能目录内部沙箱 | 保留独立实现 |
 
 ## 6. 校园打印专项
@@ -188,7 +188,7 @@ public interface IBrowserSession
 ## 9. 实施顺序建议
 
 1. ✅ **P0 安全 + P1 接口**（2026-08-16 已合并实施）：SDK 两组目录访问接口 + 主程序实现 + FileToolBase 收敛 + RenderSvgTool 漏洞修复 + CampusPrint 平台守卫（见 3.1/5/6 节）
-2. **P1 迁移**：剩余 7 处散装沙箱改调接口（Email×2 / GitTools / NetworkTools×2 / SshTools×2 / GroupFileTools，每处独立提交，可测试）
+2. ✅ **P1 迁移**（2026-08-16 完成）：7 处散装沙箱全部改调接口（Email×2 / GitTools / NetworkTools×2 / SshTools×2 / GroupFileTools×2），插件侧 `Storage.WorkspaceDirectory` 零残留
 4. **P2 提供者插件化**：能力接口上移 SDK + ProviderRegistry + UmiOcr 迁出
 5. **P3 浏览器**：IBrowserEngine 抽象 → Playwright 引擎搬迁 → CDP 引擎渐进交付 → BrowserTools 拆插件
 6. **P4 清理**：文案、斜杠规范、模板整理

@@ -11,6 +11,7 @@ public class BrowserComponent : GlobalComponentBase
     private BrowserSessionManager? _sessionManager;
     private BrowserConfig? _config;
     private IPluginStorage? _storage;
+    private IWorkspaceAccess? _workspace;
     private Timer? _cleanupTimer;
     private readonly SemaphoreSlim _startLock = new(1, 1);
     private bool _startFailed;
@@ -29,6 +30,7 @@ public class BrowserComponent : GlobalComponentBase
     public override Task OnInitAsync(IGlobalComponentContext context, InitReason reason)
     {
         _storage = context.Storage;
+        _workspace = context.Workspace;
 
         // 加载配置
         var configPath = Path.Combine(_storage.GlobalDirectory, "..", "..", "Network", "BrowserConfig.json");
@@ -180,6 +182,7 @@ public class BrowserComponent : GlobalComponentBase
     public BrowserSessionManager? GetSessionManager() => _sessionManager;
     public BrowserConfig? GetConfig() => _config;
     public IPluginStorage? GetStorage() => _storage;
+    public IWorkspaceAccess? GetWorkspace() => _workspace;
     /// <summary>启动失败原因（工具用作文本化错误提示）。</summary>
     public string? LastError => _lastError;
 }

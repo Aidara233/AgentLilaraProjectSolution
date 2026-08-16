@@ -24,7 +24,8 @@ public class GitGlobalComponent : GlobalComponentBase
     public RepoRegistry Repos { get; private set; } = null!;
     public GitRunner Runner { get; private set; } = null!;
     public GitHubClient GitHub { get; private set; } = null!;
-    public string WorkspaceDir { get; private set; } = "";
+    public string WorkspaceDir => Workspace.Resolve("") ?? "";
+    public IWorkspaceAccess Workspace { get; private set; } = null!;
 
     public override ComponentMeta Meta => new()
     {
@@ -41,7 +42,7 @@ public class GitGlobalComponent : GlobalComponentBase
         _ctx = context;
         _log = context.GetService<ISignalLogger>();
 
-        WorkspaceDir = context.Storage.WorkspaceDirectory;
+        Workspace = context.Workspace;
         _pluginDataRoot = Path.GetFullPath(Path.Combine(context.Storage.GlobalDirectory, ".."));
 
         Config = GitHubConfig.Load(context.Storage.GlobalDirectory);

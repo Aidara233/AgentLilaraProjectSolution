@@ -11,7 +11,7 @@ namespace Plugin.GitTools.Tools;
 [ToolMeta(Group = "git", ContinueLoop = true)]
 public class GitLogTool : GitToolBase
 {
-    public GitLogTool(string workspaceDir, GitRunner runner) : base(workspaceDir, runner) { }
+    public GitLogTool(IWorkspaceAccess workspace, GitRunner runner) : base(workspace, runner) { }
 
     public override string Name => "git_log";
     public override string Description => "查看 git 提交历史。支持指定条数和分支。";
