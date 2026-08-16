@@ -20,7 +20,7 @@ namespace AgentCoreProcessor.Config
 
             // [1/7] Storage path
             Console.WriteLine(" [1/7] Storage 路径");
-            Console.Write(" 数据存储根目录 (回车使用 .\\Storage): ");
+            Console.Write(" 数据存储根目录 (回车使用 Storage，即程序目录下的 Storage 文件夹): ");
             var storagePath = Console.ReadLine()?.Trim() ?? "";
             if (string.IsNullOrEmpty(storagePath))
                 storagePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Storage");

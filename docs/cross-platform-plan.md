@@ -162,10 +162,12 @@ public interface IBrowserSession
 
 | 位置 | 问题 |
 |---|---|
-| `SetupWizard.cs:23` | `.\Storage` → 用 `Path.DirectorySeparatorChar` 拼接 |
-| `CampusPrintComponent.cs:221` | `E:\...` 描述 → 通用示例 |
+| `SetupWizard.cs:23` | ✅ `.\Storage` → "回车使用 Storage"（无行为变化，默认值逻辑不变） |
+| `CampusPrintComponent.cs:221` | ✅ `E:\...` 描述 → 通用示例（"相对于工作目录的路径或绝对路径"） |
 | `BrowserConfig.cs:7` | `D:\Playwright-browsers` → 随 4.2 浏览器发现链配置化 |
-| `EmbeddingProviderConfig.cs` | 正斜杠相对路径（保留，作为统一风格） |
+| `EmbeddingProviderConfig.cs` | 正斜杠相对路径（保留，作为统一风格；`MasterEngine.cs:418-429` 用 `Path.Combine(StoragePath, ...)` 解析，跨平台） |
+
+路径斜杠现状（2026-08 扫描）：代码路径构建统一 `Path.Combine`（80+ 文件 200+ 处），`Path.GetFullPath`/`IsPathRooted` 等 API 跨平台；配置相对路径统一正斜杠（`PathConfig.cs:36` `Replace("\\","/")` 是好范例）；反斜杠字面量仅剩 3 处：`BrowserConfig.cs:7` 默认值（P3 处理）、`CampusPrintComponent.cs:135-143` NormalizePath（P0 处理）、`FileToolBase.cs:76-78` glob 字符类（正则语义，保留）。
 
 ## 8. 剩余问题（方案外）
 

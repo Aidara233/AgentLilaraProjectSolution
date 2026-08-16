@@ -218,7 +218,7 @@ public class PrintFileUploadTool : ITool
     public PrintFileUploadTool(CampusPrintComponent c, string ws) { _c = c; _ws = Path.GetFullPath(ws); }
     public string Name => "print_file_upload";
     public string Description => "上传本地文件到打印服务器（步骤1/5）。路径相对于工作目录或绝对路径。返回 server file_path。参数均为 string。";
-    public IReadOnlyList<ToolParameter> Parameters => [new("file_path", "本地文件路径（string），相对于工作目录或如 E:\\... 的绝对路径", 0)];
+    public IReadOnlyList<ToolParameter> Parameters => [new("file_path", "本地文件路径（string），相对于工作目录的路径或绝对路径", 0)];
     public TimeSpan Timeout => TimeSpan.FromSeconds(120);
 
     public async Task<ToolResult> ExecuteAsync(List<string> inputs, CancellationToken ct)
