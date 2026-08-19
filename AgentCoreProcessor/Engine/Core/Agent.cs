@@ -63,6 +63,41 @@ namespace AgentCoreProcessor.Engine
             _toolResolver = toolResolver ?? ToolRegistry.Get;
         }
 
+        /// <summary>
+        /// 构建发送给模型的完整消息列表。若历史超限（MaxMessagesToSend > 0 且历史过多），
+        /// 只保留最近 N 条 + 前缀摘要占位消息（提示模型早期内容已被截断），防止全量历史常驻内存和发费。
+        /// 注意：仅影响发送给模型的副本，_history 完整保留用于持久化与后续轮次。
+        /// </summary>
+        private List<Message> BuildMessagesForModel(List<Message>? roundInject, out bool truncated)
+        {
+            truncated = false;
+            var limit = _config.MaxMessagesToSend;
+            if (limit <= 0 || _history.Count + (roundInject?.Count ?? 0) <= limit)
+            {
+                var full = new List<Message>(_history);
+                if (roundInject != null) full.AddRange(roundInject);
+                return full;
+            }
+
+            truncated = true;
+            // 保留最近 N 条（去掉注入部分后，从历史尾部取）
+            var injectCount = roundInject?.Count ?? 0;
+            var keepFromHistory = Math.Max(0, limit - injectCount);
+            var recent = _history.Skip(Math.Max(0, _history.Count - keepFromHistory)).ToList();
+
+            // 前缀摘要占位（提示模型早期内容已被截断归档）
+            var dropped = _history.Count - keepFromHistory;
+            var summary = new Message
+            {
+                Role = "system",
+                Content = $"[系统] 为控制上下文长度，较早的 {dropped} 条对话记录已归档（如需查阅历史请使用 search_chat_history 工具）。以下是最近的对话："
+            };
+            var result = new List<Message> { summary };
+            result.AddRange(recent);
+            if (roundInject != null) result.AddRange(roundInject);
+            return result;
+        }
+
         public async Task RunAsync(CancellationToken ct)
         {
             StopReason = null;
@@ -99,11 +134,16 @@ namespace AgentCoreProcessor.Engine
                 var roundInject = await _host.BuildRoundInjectAsync();
 
                 // 拼装消息：历史 + 本轮注入，同时写入 _history 确保持久化和跨轮可见
-                var messages = new List<Message>(_history);
+                var messages = BuildMessagesForModel(roundInject, out var truncated);
                 if (roundInject != null)
                 {
-                    messages.AddRange(roundInject);
                     _history.AddRange(roundInject);
+                }
+
+                if (truncated)
+                {
+                    Signal.Debug(LogGroup.Engine, "历史截取（发送给模型限量）",
+                        new { totalHistory = _history.Count, sentCount = messages.Count });
                 }
 
                 // 调模型（内层重试：同样 messages 最多尝试 MaxAttempts 次）

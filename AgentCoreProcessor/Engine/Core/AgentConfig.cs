@@ -17,5 +17,7 @@ namespace AgentCoreProcessor.Engine
         public int CompressMinTokens { get; set; } = 5000;
         public int CompressRetainedMessageCount { get; set; } = 6;
         public int CompressRetainedMaxTokens { get; set; } = 2000;
+        /// <summary>发送给模型的最近消息条数上限。超出时保留最近 N 条 + 前缀摘要占位（防全量历史常驻内存+发费）。0=不限制。</summary>
+        public int MaxMessagesToSend { get; set; } = 100;
     }
 }

@@ -138,10 +138,79 @@ namespace AgentCoreProcessor.Engine.Session
             var lines = new List<string>(newMessages.Count);
             foreach (var m in newMessages)
             {
-                lines.Add(JsonConvert.SerializeObject(m,
+                lines.Add(JsonConvert.SerializeObject(TrimForPersistence(m),
                     new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore }));
             }
             await File.AppendAllLinesAsync(_historyPath, lines);
+        }
+
+        /// <summary>
+        /// 序列化前裁剪超大数据，防止超大 history 文件膨胀（如 base64 图片本体）。
+        /// - 图片 base64 超过阈值（64KB）时替换为占位符，仅在 history 中保留长度标记；
+        /// - 保留图片路径（ImagePath），需要时按路径重新读取。
+        /// - 同样处理 tool_use/tool_result 中的超大文本。
+        /// </summary>
+        private static Message TrimForPersistence(Message m)
+        {
+            const int MaxInlineSize = 64 * 1024; // 64KB 阈值，超过则截断内联数据
+            if (m.ContentParts == null || m.ContentParts.Count == 0)
+                return m;
+
+            var trimmed = new Message
+            {
+                Role = m.Role,
+                Content = m.Content,
+                Name = m.Name,
+                ContentParts = new List<ContentPart>(m.ContentParts.Count)
+            };
+
+            foreach (var p in m.ContentParts)
+            {
+                if (p.Type == "image")
+                {
+                    if (!string.IsNullOrEmpty(p.ImageBase64) && p.ImageBase64.Length > MaxInlineSize)
+                    {
+                        trimmed.ContentParts.Add(new ContentPart
+                        {
+                            Type = "image",
+                            ImagePath = p.ImagePath,
+                            MediaType = p.MediaType,
+                            Text = p.Text,
+                            // 不写 base64 本体，保留长度供日志/统计
+                            ImageBase64 = $"[base64 已归档：{p.ImageBase64.Length} bytes]"
+                        });
+                    }
+                    else
+                    {
+                        trimmed.ContentParts.Add(p);
+                    }
+                }
+                else if (p.Type == "tool_use" || p.Type == "tool_result")
+                {
+                    if (!string.IsNullOrEmpty(p.ToolInput) && p.ToolInput.Length > MaxInlineSize)
+                    {
+                        var cp = new ContentPart
+                        {
+                            Type = p.Type,
+                            ToolUseId = p.ToolUseId,
+                            ToolName = p.ToolName,
+                            IsError = p.IsError,
+                            Text = p.Text,
+                            ToolInput = $"[输入已归档：{p.ToolInput.Length} bytes]"
+                        };
+                        trimmed.ContentParts.Add(cp);
+                    }
+                    else
+                    {
+                        trimmed.ContentParts.Add(p);
+                    }
+                }
+                else
+                {
+                    trimmed.ContentParts.Add(p);
+                }
+            }
+            return trimmed;
         }
 
         // ═══════════════════════════════════════════════════════════
@@ -260,14 +329,24 @@ namespace AgentCoreProcessor.Engine.Session
             }
         }
 
-        private List<Message> LoadHistory()
+        private List<Message> LoadHistory(int maxLines = 1000)
         {
             var history = new List<Message>();
             if (!File.Exists(_historyPath)) return history;
+            if (maxLines <= 0) maxLines = 1000;
 
-            foreach (var line in File.ReadAllLines(_historyPath))
+            // 只读取尾部最近 N 行（超大 history 全量读取会膨胀内存；尾部是最近上下文，优先保留）
+            var lines = File.ReadLines(_historyPath);
+            var tail = new Queue<string>();
+            foreach (var line in lines)
             {
                 if (string.IsNullOrWhiteSpace(line)) continue;
+                if (tail.Count >= maxLines) tail.Dequeue();
+                tail.Enqueue(line);
+            }
+
+            foreach (var line in tail)
+            {
                 try
                 {
                     var msg = JsonConvert.DeserializeObject<Message>(line);
