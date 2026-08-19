@@ -273,3 +273,9 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 7. 连真实 QQ 的端到端由用户实测
 
 注意：`templates/Session` 等旧结构残留无实际影响（SessionTypes 才是唯一权限源），可忽略不清理。
+## 历史数据内存优化（2026-08-19）
+
+- 根因：Server GC（Web SDK 默认）16 核预提交 6-7GB + GC 的 LOH 段只回收对象不还 OS（启动时大量历史对象 inflate 后段保留）。
+- 处置：csproj 显式关 Server GC；清理测试污染（9df5c67dfb82 会话 819MB history.jsonl —— 30 行重复字符测试数据）。
+- 优化代码：Agent 发送给模型的历史限量（MaxMessagesToSend=100 条 + 前缀归档摘要）；SessionPersistence.LoadHistory 只读尾部 1000 行；AppendHistoryAsync 裁剪 >64KB 的 base64/tool 内联负载。
+- 排查工具链：VMMap（/tmp/vmmap/）+ dotnet-gcdump/dotnet-dump（~/.dotnet/tools/）。诊断经验：内存大头看 VMMap 的 Managed Heap committed vs 活对象，区分段持有 vs 真占用。
