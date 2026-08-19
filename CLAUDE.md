@@ -261,3 +261,15 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
   定时任务到期 → ScheduledTasksTimerComponent 按 requires_work 路由 → MasterEngine.WakeLoop(sessionId) → SessionEngine.WakeUpSession（裸 sessionId，经池解析跨 compact forward）→ wake 活跃会话
 - 工具配置：Storage/ToolConfig.json（全局工具禁用）+ 组件初始化超时收敛为代码常量 Component/ComponentTimeouts.cs（GlobalInitTimeoutSeconds/LoopInitTimeoutSeconds/ShutdownTimeoutMs，防挂起阻塞启动/会话）
 - 配置文件：Storage/ 目录下
+
+## 发布流程（重新 publish 主程序）
+
+1. 备份旧部署：`cp -r E:/Tools/Lilara/publish E:/Tools/Lilara/publish.bak-<日期>`
+2. `dotnet build -c Release`（全解决方案）——**必须整解决方案构建**，让所有插件（含新增 QQTools）编译并复制到 `bin/Release/net8.0/win-x64/Plugins/`（单独 build 主工程不会构建插件）
+3. `dotnet publish AgentCoreProcessor/AgentCoreProcessor.csproj -c Release -o E:/Tools/Lilara/publish`（主程序 + WebUI + templates）
+4. 复制插件：`cp -r bin/Release/net8.0/win-x64/Plugins E:/Tools/Lilara/publish/Plugins`（**注意 cp 到已存在目录会嵌套成 Plugins/Plugins，先确保目标不存在**）
+5. `paths.json` 由 publish 保留（部署配置指向 E:/Tools/Lilara/Storage；首次启动无则 SetupWizard 生成）
+6. 验证：`E:/Tools/Lilara/publish/AgentCoreProcessor.exe --dev` 起动（HttpBridge 9876 + WebUI 5000，不连 QQ）+ signal 日志查 `插件已加载 qq-tools` 与会话 components 含 `qq-tools`
+7. 连真实 QQ 的端到端由用户实测
+
+注意：`templates/Session` 等旧结构残留无实际影响（SessionTypes 才是唯一权限源），可忽略不清理。
