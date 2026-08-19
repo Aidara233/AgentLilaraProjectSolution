@@ -11,6 +11,9 @@
     <PublishSingleFile>false</PublishSingleFile>
     <!-- 发布时不复制调试符号文件 -->
     <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
+    <!-- 智能体长驻进程非高并发 Web 服务，关闭 Web SDK 默认的 Server GC
+         （16 核下预提交 6~7GB 内存，实际业务用不上），改工作站 GC 省内存 -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
   </PropertyGroup>
 
   <ItemGroup>
