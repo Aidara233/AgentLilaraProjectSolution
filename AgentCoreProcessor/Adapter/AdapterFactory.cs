@@ -14,6 +14,7 @@ namespace AgentCoreProcessor.Adapter
                 "onebot" => CreateOneBot(config),
                 "file" => CreateFile(config),
                 "http" => CreateHttp(config),
+                "icalingua" => CreateIcalingua(config),
                 _ => throw new ArgumentException($"Unknown adapter type: {config.Type}")
             };
         }
@@ -39,6 +40,12 @@ namespace AgentCoreProcessor.Adapter
         {
             var settings = config.Settings.ToObject<HttpBridgeConfig>() ?? new HttpBridgeConfig();
             return new HttpBridgeAdapter(config.Id, settings);
+        }
+
+        private static IcalinguaAdapter CreateIcalingua(AdapterInstanceConfig config)
+        {
+            var settings = config.Settings.ToObject<IcalinguaConfig>() ?? new IcalinguaConfig();
+            return new IcalinguaAdapter(config.Id, settings);
         }
     }
 }

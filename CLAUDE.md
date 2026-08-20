@@ -61,7 +61,9 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 **架构：**
 - `docs/architecture-map.md` — **架构全景图**（引擎生态/消息流/做梦/记忆/工具/WebUI/日志/MCP），冷启动第一站
 - `docs/http-bridge-api.md` — **HttpBridge 适配器 API 文档**（HTTP+WS 混合协议：send/messages/channels/status/ws 端点、配置、示例）
+- `docs/icalingua-adapter.md` — **Icalingua 适配器对接**（第二条 QQ 通道：Socket.IO 连接/握手、入站/出站映射、配置；协议精要见 docs/ICALINGUA_BRIDGE_SOCKETIO_PROTOCOL.md）
 - `docs/review-engine-redesign.md` — ReviewEngine 自由探索重设计**旧稿**（旧复盘系统已随记忆重构移除，仅供参考）
+
 
 **记忆重构计划（`docs/memory-redesign/`）：**
 - `docs/memory-redesign/README.md` — 计划总纲（命名/核心决策/架构总览/文件导航）
@@ -222,6 +224,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 适配器接口：Adapter/IAdapter.cs + AdapterManager.cs + AdapterFactory.cs
 - OneBot 适配器：Adapter/OneBot/OneBotAdapter.cs（WS连接 + 消息映射 + QQ协议）+ Adapter/OneBot/ForwardMessageTree.cs（合并转发递归树：嵌套统计+统计行+全文渲染，深度 ForwardMaxDepth 可配，树缓存30）
 - File 适配器：Adapter/File/FileAdapter.cs（文件轮询，测试用；SendMessageAsync 返回输出文件名作为消息 id，speak 等工具据此判成功）
+- Icalingua 适配器：Adapter/Icalingua/（IcalinguaAdapter.cs 连接+握手+SocketIO 生命周期 / IcalinguaMessageParser.cs 入站 content 伪标记解析+图片下载 / IcalinguaActions.cs 出站 SendMessageParams / IcalinguaConfig.cs / IcalinguaProtocol.cs 常量+ed25519 签名）— 第二条 QQ 通道（Socket.IO + ed25519），与 OneBot 并行按 whitelist 分流；协议精要见 docs/ICALINGUA_BRIDGE_SOCKETIO_PROTOCOL.md
 - HTTP 桥接适配器：Adapter/Http/HttpBridgeAdapter.cs（HTTP+WS 混合，独立端口自建 Kestrel；POST /api/send 阻塞等突发统一返回 + /api/messages 聊天记录 + /ws 双向实时；实现 IEngineAwareAdapter/IChannelAwareAdapter 拿引擎 + 频道归属；多适配器出向路由按 IChannelAwareAdapter.OwnsChannel 优先）— `--dev` 常驻调试模式经它驱动（LilaraConsoleClient/curl）
 - 迷你客户端：LilaraConsoleClient/（net8.0 控制台，零依赖，直连 HttpBridge ws 端点交互式对话；协议见 docs/http-bridge-api.md §6）
 - 适配器引擎访问：Adapter/IEngineAwareAdapter.cs（MasterEngine 注入）+ Adapter/IChannelAwareAdapter.cs（频道归属），AdapterManager.AttachEngine 由 MasterEngine 构造注入

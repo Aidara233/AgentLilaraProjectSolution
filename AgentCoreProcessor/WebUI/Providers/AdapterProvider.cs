@@ -85,7 +85,7 @@ internal class AdapterProvider : IWebUIProvider
                         Fields = new()
                         {
                             new() { Field = "type", Label = "类型", Type = FormFieldType.Select, Required = true,
-                                Options = new() { new() { Value = "onebot", Label = "OneBot" }, new() { Value = "file", Label = "File" }, new() { Value = "http", Label = "HTTP/WS" } } },
+                                Options = new() { new() { Value = "onebot", Label = "OneBot" }, new() { Value = "file", Label = "File" }, new() { Value = "http", Label = "HTTP/WS" }, new() { Value = "icalingua", Label = "Icalingua" } } },
                             new() { Field = "id", Label = "ID", Type = FormFieldType.Text, Placeholder = "唯一标识", Required = true }
                         }
                     },
@@ -317,6 +317,78 @@ internal class AdapterProvider : IWebUIProvider
                         new() { Field = "channel_prefix", Label = "频道前缀", Type = FormFieldType.Text },
                         new() { Field = "burst_timeout_ms", Label = "阻塞超时 (ms)", Type = FormFieldType.Number },
                         new() { Field = "settle_checks", Label = "稳定判定次数", Type = FormFieldType.Number }
+                    }
+                },
+                ListenEvent = "adapter-selected",
+                Layout = new() { Order = 2, PreferredCols = 4 }
+            }
+        }));
+
+        // ═══ Icalingua 详情 ═══
+        pages.Add(BuildPlatformPage("icalingua", "Icalingua 适配器", new()
+        {
+            // 实例选择器
+            new()
+            {
+                Id = "icalingua-picker",
+                Type = CardType.Table,
+                DataSourceId = SrcId("icalingua", "picker"),
+                Title = "实例",
+                Schema = new TableSchema
+                {
+                    Columns = new()
+                    {
+                        new() { Field = "id", Header = "ID", Width = "100px" },
+                        new() { Field = "state", Header = "状态", Width = "90px" },
+                        new() { Field = "rx", Header = "RX", Width = "60px" },
+                        new() { Field = "tx", Header = "TX", Width = "60px" }
+                    }
+                },
+                LinkEvent = "adapter-selected",
+                Layout = new() { Order = 0, PreferredCols = 12 }
+            },
+            // 运行状态
+            new()
+            {
+                Id = "icalingua-status",
+                Type = CardType.Status,
+                DataSourceId = SrcId("icalingua", "status"),
+                Title = "运行状态",
+                Schema = new StatusSchema
+                {
+                    Fields = new()
+                    {
+                        new() { Field = "platform", Label = "平台" },
+                        new() { Field = "state", Label = "状态", Type = StatusFieldType.Indicator },
+                        new() { Field = "rx", Label = "接收" },
+                        new() { Field = "tx", Label = "发送" },
+                        new() { Field = "started", Label = "启动时间" },
+                        new() { Field = "reconnect", Label = "重连次数" },
+                        new() { Field = "last_error", Label = "最后错误", IsMultiline = true }
+                    }
+                },
+                ListenEvent = "adapter-selected",
+                Layout = new() { Order = 1, PreferredCols = 4 }
+            },
+            // 连接配置
+            new()
+            {
+                Id = "icalingua-config",
+                Type = CardType.Form,
+                DataSourceId = SrcId("icalingua", "config"),
+                Title = "连接配置",
+                Schema = new FormSchema
+                {
+                    Fields = new()
+                    {
+                        new() { Field = "server", Label = "Bridge 地址", Type = FormFieldType.Text, Required = true,
+                            Placeholder = "http://127.0.0.1:6789" },
+                        new() { Field = "private_key", Label = "ed25519 私钥", Type = FormFieldType.TextArea,
+                            Placeholder = "与 Bridge pubKey 配对的私钥 seed（base64/hex）" },
+                        new() { Field = "filter_mode", Label = "过滤模式", Type = FormFieldType.Select,
+                            Options = new() { new() { Value = "none", Label = "无" }, new() { Value = "whitelist", Label = "白名单" }, new() { Value = "blacklist", Label = "黑名单" } } },
+                        new() { Field = "bot_names", Label = "机器人名（逗号分隔）", Type = FormFieldType.Text },
+                        new() { Field = "filter_list", Label = "过滤列表（换行分隔）", Type = FormFieldType.TextArea }
                     }
                 },
                 ListenEvent = "adapter-selected",
@@ -699,7 +771,10 @@ internal class AdapterConfigSource : IDataSource
                 ["default_channel"] = s["defaultChannel"]?.ToString() ?? s["default_channel"]?.ToString() ?? "http_debug",
                 ["channel_prefix"] = s["channelPrefix"]?.ToString() ?? s["channel_prefix"]?.ToString() ?? "http_",
                 ["burst_timeout_ms"] = s["burstTimeoutMs"]?.ToString() ?? s["burst_timeout_ms"]?.ToString() ?? "30000",
-                ["settle_checks"] = s["settleChecks"]?.ToString() ?? s["settle_checks"]?.ToString() ?? "3"
+                ["settle_checks"] = s["settleChecks"]?.ToString() ?? s["settle_checks"]?.ToString() ?? "3",
+                // Icalingua 适配器字段（对齐 IcalinguaConfig：server/privateKey）
+                ["server"] = s["server"]?.ToString() ?? s["Server"]?.ToString() ?? s["server"]?.ToString() ?? "",
+                ["private_key"] = s["privateKey"]?.ToString() ?? s["PrivateKey"]?.ToString() ?? s["private_key"]?.ToString() ?? ""
             }
         });
     }
@@ -785,6 +860,9 @@ internal class AdapterConfigSource : IDataSource
         if (data["channel_prefix"] != null) { s["channelPrefix"] = data["channel_prefix"]!.ToString(); s.Remove("channel_prefix"); s.Remove("ChannelPrefix"); }
         if (data["burst_timeout_ms"] != null) { s["burstTimeoutMs"] = data["burst_timeout_ms"]!.ToString(); s.Remove("burst_timeout_ms"); s.Remove("BurstTimeoutMs"); }
         if (data["settle_checks"] != null) { s["settleChecks"] = data["settle_checks"]!.ToString(); s.Remove("settle_checks"); s.Remove("SettleChecks"); }
+        // Icalingua 适配器字段（对齐 IcalinguaConfig：server/privateKey）
+        if (data["server"] != null) { s["server"] = data["server"]!.ToString(); s.Remove("Server"); }
+        if (data["private_key"] != null) { s["privateKey"] = data["private_key"]!.ToString(); s.Remove("private_key"); s.Remove("PrivateKey"); }
 
         _adapters.UpdateConfig(cfg);
         return Task.FromResult(new ActionResult { Success = true, Message = "配置已保存" });
