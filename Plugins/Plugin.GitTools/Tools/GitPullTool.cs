@@ -11,7 +11,7 @@ namespace Plugin.GitTools.Tools;
 [ToolMeta(Group = "git", ContinueLoop = true)]
 public class GitPullTool : GitToolBase
 {
-    public GitPullTool(string workspaceDir, GitRunner runner) : base(workspaceDir, runner) { }
+    public GitPullTool(IWorkspaceAccess workspace, GitRunner runner) : base(workspace, runner) { }
 
     public override string Name => "git_pull";
     public override string Description => "从远端拉取并合并 git 更改。默认从 origin 的当前分支拉取。";

@@ -11,7 +11,7 @@ namespace Plugin.GitTools.Tools;
 [ToolMeta(Group = "git", ContinueLoop = true)]
 public class GitBranchTool : GitToolBase
 {
-    public GitBranchTool(string workspaceDir, GitRunner runner) : base(workspaceDir, runner) { }
+    public GitBranchTool(IWorkspaceAccess workspace, GitRunner runner) : base(workspace, runner) { }
 
     public override string Name => "git_branch";
     public override string Description => "管理 git 分支。action: list(列出所有分支) / create(创建新分支) / switch(切换分支) / delete(删除分支)。";

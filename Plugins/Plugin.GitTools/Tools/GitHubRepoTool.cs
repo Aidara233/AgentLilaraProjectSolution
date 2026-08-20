@@ -16,8 +16,8 @@ public class GitHubRepoTool : GitToolBase
     private readonly GitHubClient _gh;
     private readonly RepoRegistry _repos;
 
-    public GitHubRepoTool(string workspaceDir, GitRunner runner, GitHubClient gh, RepoRegistry repos)
-        : base(workspaceDir, runner)
+    public GitHubRepoTool(IWorkspaceAccess workspace, GitRunner runner, GitHubClient gh, RepoRegistry repos)
+        : base(workspace, runner)
     {
         _gh = gh;
         _repos = repos;

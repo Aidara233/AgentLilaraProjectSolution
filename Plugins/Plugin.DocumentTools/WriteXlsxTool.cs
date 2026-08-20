@@ -16,7 +16,7 @@ namespace Plugin.DocumentTools;
 [ToolMeta(Group = "document", ContinueLoop = true)]
 public class WriteXlsxTool : FileToolBase
 {
-    public WriteXlsxTool(string workspaceDir) : base(workspaceDir) { }
+    public WriteXlsxTool(IWorkspaceAccess workspace) : base(workspace) { }
 
     public override string Name => "write_xlsx";
     public override string Description => "创建或追加 Excel (.xlsx) 表格。data 参数为 CSV 格式（逗号分隔，换行分行）。action: write=覆盖创建（默认）/ append=追加到已有 sheet 末尾。";

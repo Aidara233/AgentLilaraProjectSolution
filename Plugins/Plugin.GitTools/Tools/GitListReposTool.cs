@@ -15,7 +15,7 @@ public class GitListReposTool : GitToolBase
 {
     private readonly RepoRegistry _repos;
 
-    public GitListReposTool(string workspaceDir, GitRunner runner, RepoRegistry repos) : base(workspaceDir, runner)
+    public GitListReposTool(IWorkspaceAccess workspace, GitRunner runner, RepoRegistry repos) : base(workspace, runner)
     {
         _repos = repos;
     }

@@ -43,9 +43,9 @@ public class BrowserScreenshotTool : ITool
         {
             var sessionManager = await _component.EnsureStartedAsync();
             var config = _component.GetConfig();
-            var storage = _component.GetStorage();
+            var workspace = _component.GetWorkspace();
 
-            if (sessionManager == null || config == null || storage == null)
+            if (sessionManager == null || config == null || workspace == null)
                 return Fail(_component.LastError ?? "浏览器组件未初始化");
 
             var session = await sessionManager.GetOrCreateSessionAsync(_sessionId);
@@ -53,15 +53,10 @@ public class BrowserScreenshotTool : ITool
             if (session.CurrentPage == null)
                 return Fail("当前无活动页面，请先使用 browser_navigate");
 
-            // 解析完整路径
-            var workspaceDir = storage.WorkspaceDirectory;
-            var fullPath = Path.Combine(workspaceDir, savePath);
-
-            // 路径安全校验（必须在 Workspace 内）
-            var normalizedPath = Path.GetFullPath(fullPath);
-            var normalizedWorkspace = Path.GetFullPath(workspaceDir);
-            if (!normalizedPath.StartsWith(normalizedWorkspace, StringComparison.OrdinalIgnoreCase))
-                return Fail($"路径必须在 Workspace 目录内: {workspaceDir}");
+            // 解析完整路径（Workspace 沙箱）
+            var fullPath = workspace.Resolve(savePath);
+            if (fullPath == null)
+                return Fail("路径必须在 Workspace 目录内");
 
             // 扩展名验证
             var ext = Path.GetExtension(savePath).ToLower();

@@ -19,7 +19,7 @@ public class ReadPptxTool : FileToolBase
 {
     private const int MaxOutputLen = 10000;
 
-    public ReadPptxTool(string workspaceDir) : base(workspaceDir) { }
+    public ReadPptxTool(IWorkspaceAccess workspace) : base(workspace) { }
 
     public override string Name => "read_pptx";
     public override string Description => "读取 PowerPoint (.pptx) 幻灯片。不提供全文提取——先不带 slides 参数调用获取页数和标题列表，再按需指定 slides 读取特定页。slides 格式如 \"1-5\" / \"1,3,7\"。";

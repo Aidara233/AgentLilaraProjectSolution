@@ -44,7 +44,7 @@ public class SshLoopComponent : LoopComponentBase
         var global = SshToolsAccessor.Global
             ?? throw new InvalidOperationException("SshGlobalComponent 未初始化");
 
-        var workspaceDir = context.Storage.WorkspaceDirectory;
+        var workspace = context.Workspace;
         _workDir = $"/tmp/agent-lilara/{CleanSessionId(_sessionId)}";
 
         // 远端工作目录懒创建：后台异步执行，不在 session 创建关键路径上同步连 SSH
@@ -52,8 +52,8 @@ public class SshLoopComponent : LoopComponentBase
         _ = Task.Run(() => EnsureRemoteWorkDir(global, _workDir));
 
         _exec = new ExecTool(global, _workDir, _sessionId);
-        _upload = new UploadTool(global, _workDir, workspaceDir, _sessionId);
-        _download = new DownloadTool(global, _workDir, workspaceDir, _sessionId);
+        _upload = new UploadTool(global, _workDir, workspace, _sessionId);
+        _download = new DownloadTool(global, _workDir, workspace, _sessionId);
         _check = new CheckTaskTool(global);
         _kill = new KillTaskTool(global);
 

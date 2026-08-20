@@ -11,7 +11,7 @@ namespace Plugin.GitTools.Tools;
 [ToolMeta(Group = "git", ContinueLoop = true)]
 public class GitPushTool : GitToolBase
 {
-    public GitPushTool(string workspaceDir, GitRunner runner) : base(workspaceDir, runner) { }
+    public GitPushTool(IWorkspaceAccess workspace, GitRunner runner) : base(workspace, runner) { }
 
     public override string Name => "git_push";
     public override string Description => "推送 git 更改到远端仓库。默认推送到 origin 的当前分支。";

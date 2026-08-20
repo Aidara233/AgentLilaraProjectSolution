@@ -11,7 +11,7 @@ namespace Plugin.GitTools.Tools;
 [ToolMeta(Group = "git", ContinueLoop = true)]
 public class GitDiffTool : GitToolBase
 {
-    public GitDiffTool(string workspaceDir, GitRunner runner) : base(workspaceDir, runner) { }
+    public GitDiffTool(IWorkspaceAccess workspace, GitRunner runner) : base(workspace, runner) { }
 
     public override string Name => "git_diff";
     public override string Description => "查看 git 差异。target 可以是 commit、分支或文件路径，默认为工作区 vs HEAD。";

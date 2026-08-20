@@ -8,7 +8,6 @@ namespace Plugin.NetworkTools;
 public class NetworkToolsLoopComponent : LoopComponentBase
 {
     private ILoopComponentContext _ctx = null!;
-    private string _workspaceDir = "";
     private string _sessionId = "";
     private List<DownloadNotification> _pendingNotifications = new();
 
@@ -41,11 +40,6 @@ public class NetworkToolsLoopComponent : LoopComponentBase
         _ctx = context;
         _sessionId = context.SessionId;
 
-        // Workspace路径：从插件存储目录推算
-        _workspaceDir = Path.GetFullPath(Path.Combine(context.Storage.InstanceDirectory,
-            "..", "..", "..", "Workspace"));
-        Directory.CreateDirectory(_workspaceDir);
-
         var http = NetworkToolsAccessor.HttpClient
             ?? throw new InvalidOperationException("NetworkToolsGlobalComponent 未初始化");
         var security = NetworkToolsAccessor.Security
@@ -54,7 +48,7 @@ public class NetworkToolsLoopComponent : LoopComponentBase
             ?? throw new InvalidOperationException("DownloadStore 未创建");
 
         _httpRequest = new HttpRequestTool(http, security);
-        _downloadFile = new DownloadFileTool(http, security, store, _workspaceDir, _sessionId);
+        _downloadFile = new DownloadFileTool(http, security, store, context.Workspace, _sessionId);
         _listDownloads = new ListDownloadsTool(store, _sessionId);
         _cancelDownload = new CancelDownloadTool(store);
 

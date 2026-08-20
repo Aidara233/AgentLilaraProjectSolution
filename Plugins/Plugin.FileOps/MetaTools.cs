@@ -14,7 +14,7 @@ namespace Plugin.FileOps
     [ToolMeta(Group = "file", ContinueLoop = true)]
     public class FileInfoTool : FileToolBase
     {
-        public FileInfoTool(string workspaceDir) : base(workspaceDir) { }
+        public FileInfoTool(IWorkspaceAccess workspace) : base(workspace) { }
 
         public override string Name => "file_info";
         public override string Description => "获取文件/目录的详细信息：大小、创建/修改时间、MIME类型、文本文件行数。";
@@ -126,7 +126,7 @@ namespace Plugin.FileOps
     [ToolMeta(Group = "file", ContinueLoop = true)]
     public class FileHashTool : FileToolBase
     {
-        public FileHashTool(string workspaceDir) : base(workspaceDir) { }
+        public FileHashTool(IWorkspaceAccess workspace) : base(workspace) { }
 
         public override string Name => "file_hash";
         public override string Description => "计算文件的哈希值。支持 MD5 和 SHA256，默认 SHA256。";
@@ -171,7 +171,7 @@ namespace Plugin.FileOps
     [ToolMeta(Group = "file", ContinueLoop = true)]
     public class CompareFilesTool : FileToolBase
     {
-        public CompareFilesTool(string workspaceDir) : base(workspaceDir) { }
+        public CompareFilesTool(IWorkspaceAccess workspace) : base(workspace) { }
 
         public override string Name => "compare_files";
         public override string Description => "逐行对比两个文本文件，返回差异摘要。最多显示前 100 行差异。";

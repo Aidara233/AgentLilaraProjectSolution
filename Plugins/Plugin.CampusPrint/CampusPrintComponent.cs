@@ -33,7 +33,7 @@ public class CampusPrintComponent : GlobalComponentBase
 
         _tools.Add(new PrintSetTokenTool(this));
         _tools.Add(new PrintStoreInfoTool(this));
-        _tools.Add(new PrintFileUploadTool(this, context.Storage.WorkspaceDirectory));
+        _tools.Add(new PrintFileUploadTool(this, context.Workspace));
         _tools.Add(new PrintFileAddTool(this));
         _tools.Add(new PrintFileUpdateTool(this));
         _tools.Add(new PrintFileListTool(this));
@@ -135,10 +135,13 @@ public class CampusPrintComponent : GlobalComponentBase
     internal static string NormalizePath(string path)
     {
         var p = Clean(path);
-        if (p.Length >= 3 && p[0] == '/' && p[2] == '/' && char.IsLetter(p[1]))
-            p = $"{char.ToUpper(p[1])}:{p[2..]}";
-        p = p.Replace('/', '\\');
-        while (p.Contains("\\\\")) p = p.Replace("\\\\", "\\");
+        if (OperatingSystem.IsWindows())
+        {
+            if (p.Length >= 3 && p[0] == '/' && p[2] == '/' && char.IsLetter(p[1]))
+                p = $"{char.ToUpper(p[1])}:{p[2..]}";
+            p = p.Replace('/', '\\');
+            while (p.Contains("\\\\")) p = p.Replace("\\\\", "\\");
+        }
         return p;
     }
 }
@@ -215,10 +218,11 @@ public class PrintFileUploadTool : ITool
 {
     private readonly CampusPrintComponent _c;
     private readonly string _ws;
-    public PrintFileUploadTool(CampusPrintComponent c, string ws) { _c = c; _ws = Path.GetFullPath(ws); }
+    private readonly IWorkspaceAccess _workspace;
+    public PrintFileUploadTool(CampusPrintComponent c, IWorkspaceAccess workspace) { _c = c; _workspace = workspace; _ws = workspace.Resolve("") ?? ""; }
     public string Name => "print_file_upload";
     public string Description => "上传本地文件到打印服务器（步骤1/5）。路径相对于工作目录或绝对路径。返回 server file_path。参数均为 string。";
-    public IReadOnlyList<ToolParameter> Parameters => [new("file_path", "本地文件路径（string），相对于工作目录或如 E:\\... 的绝对路径", 0)];
+    public IReadOnlyList<ToolParameter> Parameters => [new("file_path", "本地文件路径（string），相对于工作目录的路径或绝对路径", 0)];
     public TimeSpan Timeout => TimeSpan.FromSeconds(120);
 
     public async Task<ToolResult> ExecuteAsync(List<string> inputs, CancellationToken ct)
@@ -229,11 +233,9 @@ public class PrintFileUploadTool : ITool
         if (File.Exists(norm)) resolved = norm;
         if (resolved == null)
         {
-            var rel = cleaned.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            var full = Path.GetFullPath(Path.Combine(_ws, rel));
-            var root = _ws.EndsWith(Path.DirectorySeparatorChar) ? _ws : _ws + Path.DirectorySeparatorChar;
-            attempts.Add(full);
-            if (full.StartsWith(root, StringComparison.OrdinalIgnoreCase) && File.Exists(full)) resolved = full;
+            var full = _workspace.Resolve(cleaned);
+            attempts.Add(full ?? "(越界，拒绝)");
+            if (full != null && File.Exists(full)) resolved = full;
         }
         if (resolved == null)
         {

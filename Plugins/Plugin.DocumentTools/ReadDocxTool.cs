@@ -19,7 +19,7 @@ public class ReadDocxTool : FileToolBase
     private const int MaxOutputLen = 10000;
     private const int PreviewParagraphs = 5;
 
-    public ReadDocxTool(string workspaceDir) : base(workspaceDir) { }
+    public ReadDocxTool(IWorkspaceAccess workspace) : base(workspace) { }
 
     public override string Name => "read_docx";
     public override string Description => "读取 Word (.docx) 文档。不提供全文提取——先不带 range 参数调用获取元数据和预览，再按需指定 range 读取特定段落。";

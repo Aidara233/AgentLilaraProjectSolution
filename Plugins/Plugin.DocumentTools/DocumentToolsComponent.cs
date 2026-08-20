@@ -20,17 +20,17 @@ public class DocumentToolsComponent : GlobalComponentBase
 
     public override Task OnInitAsync(IGlobalComponentContext context, InitReason reason)
     {
-        var workspaceDir = context.Storage.WorkspaceDirectory;
-        _tools.Add(new ReadDocxTool(workspaceDir));
-        _tools.Add(new SearchDocxTool(workspaceDir));
-        _tools.Add(new WriteDocxTool(workspaceDir));
-        _tools.Add(new ReadXlsxTool(workspaceDir));
-        _tools.Add(new SearchXlsxTool(workspaceDir));
-        _tools.Add(new WriteXlsxTool(workspaceDir));
-        _tools.Add(new ReadPptxTool(workspaceDir));
-        _tools.Add(new SearchPptxTool(workspaceDir));
-        _tools.Add(new ReadPdfTool(workspaceDir));
-        _tools.Add(new SearchPdfTool(workspaceDir));
+        var workspace = context.Workspace;
+        _tools.Add(new ReadDocxTool(workspace));
+        _tools.Add(new SearchDocxTool(workspace));
+        _tools.Add(new WriteDocxTool(workspace));
+        _tools.Add(new ReadXlsxTool(workspace));
+        _tools.Add(new SearchXlsxTool(workspace));
+        _tools.Add(new WriteXlsxTool(workspace));
+        _tools.Add(new ReadPptxTool(workspace));
+        _tools.Add(new SearchPptxTool(workspace));
+        _tools.Add(new ReadPdfTool(workspace));
+        _tools.Add(new SearchPdfTool(workspace));
         return Task.CompletedTask;
     }
 }

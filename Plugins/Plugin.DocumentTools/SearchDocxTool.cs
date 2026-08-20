@@ -19,7 +19,7 @@ public class SearchDocxTool : FileToolBase
     private const int ContextWindow = 50;
     private const int MaxResults = 50;
 
-    public SearchDocxTool(string workspaceDir) : base(workspaceDir) { }
+    public SearchDocxTool(IWorkspaceAccess workspace) : base(workspace) { }
 
     public override string Name => "search_docx";
     public override string Description => "在 Word (.docx) 文档中搜索关键词，返回匹配位置和上下文。";

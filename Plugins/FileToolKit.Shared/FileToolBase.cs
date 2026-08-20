@@ -10,12 +10,14 @@ namespace FileToolKit.Shared
 {
     public abstract class FileToolBase : ITool
     {
-        protected readonly string WorkspaceDir;
+        protected readonly IWorkspaceAccess Workspace;
 
-        protected FileToolBase(string workspaceDir)
+        /// <summary>工作目录绝对路径（仅展示用；路径解析一律走 Workspace.Resolve）。</summary>
+        protected string WorkspaceDir => Workspace.Resolve("") ?? "";
+
+        protected FileToolBase(IWorkspaceAccess workspace)
         {
-            WorkspaceDir = Path.GetFullPath(workspaceDir);
-            Directory.CreateDirectory(WorkspaceDir);
+            Workspace = workspace;
         }
 
         public abstract string Name { get; }
@@ -24,15 +26,7 @@ namespace FileToolKit.Shared
         public abstract TimeSpan Timeout { get; }
         public abstract Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct);
 
-        protected string? ResolvePath(string relativePath)
-        {
-            var sanitized = relativePath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            var full = Path.GetFullPath(Path.Combine(WorkspaceDir, sanitized));
-            var workspaceRoot = WorkspaceDir.EndsWith(Path.DirectorySeparatorChar)
-                ? WorkspaceDir : WorkspaceDir + Path.DirectorySeparatorChar;
-            return full.StartsWith(workspaceRoot, StringComparison.OrdinalIgnoreCase)
-                || full.Equals(WorkspaceDir, StringComparison.OrdinalIgnoreCase) ? full : null;
-        }
+        protected string? ResolvePath(string relativePath) => Workspace.Resolve(relativePath);
 
         protected static Task<ToolResult> Ok(string data) =>
             Task.FromResult(new ToolResult { Status = "success", Data = data });

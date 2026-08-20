@@ -19,7 +19,7 @@ public class SearchXlsxTool : FileToolBase
     private const int MaxResults = 50;
     private const int CellTruncateLen = 100;
 
-    public SearchXlsxTool(string workspaceDir) : base(workspaceDir) { }
+    public SearchXlsxTool(IWorkspaceAccess workspace) : base(workspace) { }
 
     public override string Name => "search_xlsx";
     public override string Description => "在 Excel (.xlsx) 表格中搜索关键词，返回匹配单元格的位置和内容。";

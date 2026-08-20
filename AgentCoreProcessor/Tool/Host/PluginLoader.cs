@@ -81,6 +81,13 @@ namespace AgentCoreProcessor.Tool.Host
                     return false;
                 }
 
+                if (!PlatformMatches(manifest))
+                {
+                    Signal.Debug(LogGroup.Plugin, "插件平台不匹配，跳过加载",
+                        new { dir = Path.GetFileName(dirPath), platform = manifest.Platform, current = CurrentPlatform });
+                    return true;
+                }
+
                 var entryPath = Path.Combine(dirPath, manifest.Entry);
                 if (!File.Exists(entryPath))
                 {
@@ -284,6 +291,22 @@ namespace AgentCoreProcessor.Tool.Host
             }
         }
 
+        /// <summary>当前平台名（windows / linux / macos / other）</summary>
+        internal static string CurrentPlatform =>
+            OperatingSystem.IsWindows() ? "windows"
+            : OperatingSystem.IsLinux() ? "linux"
+            : OperatingSystem.IsMacOS() ? "macos"
+            : "other";
+
+        /// <summary>平台声明匹配。platform 为空数组 = 所有平台（向后兼容）。</summary>
+        internal static bool PlatformMatches(PluginManifest manifest)
+        {
+            if (manifest.Platform == null || manifest.Platform.Count == 0)
+                return true;
+            return manifest.Platform.Any(p =>
+                p.Equals(CurrentPlatform, StringComparison.OrdinalIgnoreCase));
+        }
+
         private static List<Type> DiscoverToolTypes(Assembly assembly)
         {
             var iToolType = typeof(AgentLilara.PluginSDK.ITool);
@@ -449,6 +472,10 @@ namespace AgentCoreProcessor.Tool.Host
 
         [JsonProperty("author")]
         public string Author { get; set; } = "";
+
+        /// <summary>平台白名单（windows/linux/macos，大小写不敏感）。空 = 所有平台。</summary>
+        [JsonProperty("platform")]
+        public List<string> Platform { get; set; } = new();
     }
 
     internal class PluginEntry

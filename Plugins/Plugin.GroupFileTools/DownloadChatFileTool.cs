@@ -8,19 +8,19 @@ public class DownloadChatFileTool : ITool
 {
     private readonly IAdapterAccess? _adapterAccess;
     private readonly string _adapterId = "";
-    private readonly string _workspaceDir = "";
+    private readonly IWorkspaceAccess? _workspace;
     private readonly GroupFileDownloadStore? _store;
     private readonly string _sessionId = "";
 
     public DownloadChatFileTool() { }
 
     public DownloadChatFileTool(IAdapterAccess adapterAccess,
-        string adapterId, string workspaceDir,
+        string adapterId, IWorkspaceAccess workspace,
         GroupFileDownloadStore store, string sessionId)
     {
         _adapterAccess = adapterAccess;
         _adapterId = adapterId;
-        _workspaceDir = workspaceDir;
+        _workspace = workspace;
         _store = store;
         _sessionId = sessionId;
     }
@@ -51,7 +51,9 @@ public class DownloadChatFileTool : ITool
 
         var saveName = fileName ?? fileId[..Math.Min(fileId.Length, 16)];
         var safeName = string.Join("_", saveName.Split(Path.GetInvalidFileNameChars()));
-        var destDir = Path.Combine(_workspaceDir, "Downloads");
+        var destDir = _workspace?.Resolve("Downloads");
+        if (destDir == null)
+            return Task.FromResult(new ToolResult { Status = "failed", Error = "工作区不可用" });
         Directory.CreateDirectory(destDir);
         var destPath = Path.Combine(destDir, safeName);
 

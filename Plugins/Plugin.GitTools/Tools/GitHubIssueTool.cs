@@ -16,8 +16,8 @@ public class GitHubIssueTool : GitToolBase
     private readonly GitHubClient _gh;
     private readonly RepoRegistry _repos;
 
-    public GitHubIssueTool(string workspaceDir, GitRunner runner, GitHubClient gh, RepoRegistry repos)
-        : base(workspaceDir, runner)
+    public GitHubIssueTool(IWorkspaceAccess workspace, GitRunner runner, GitHubClient gh, RepoRegistry repos)
+        : base(workspace, runner)
     {
         _gh = gh;
         _repos = repos;

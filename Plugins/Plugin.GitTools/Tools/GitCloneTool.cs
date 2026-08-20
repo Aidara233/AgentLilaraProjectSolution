@@ -16,7 +16,7 @@ public class GitCloneTool : GitToolBase
     private readonly RepoRegistry _repos;
     private readonly string _cloneProxy;
 
-    public GitCloneTool(string workspaceDir, GitRunner runner, RepoRegistry repos, string cloneProxy) : base(workspaceDir, runner)
+    public GitCloneTool(IWorkspaceAccess workspace, GitRunner runner, RepoRegistry repos, string cloneProxy) : base(workspace, runner)
     {
         _repos = repos;
         _cloneProxy = string.IsNullOrWhiteSpace(cloneProxy) ? "g.in0.re" : cloneProxy;

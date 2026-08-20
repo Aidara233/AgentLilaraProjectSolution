@@ -8,9 +8,9 @@ namespace Plugin.SvgTools;
 [ToolMeta(Group = "svg", ContinueLoop = true)]
 public class RenderSvgTool : ITool
 {
-    private readonly IPluginStorage _storage;
+    private readonly IWorkspaceAccess _workspace;
 
-    public RenderSvgTool(IPluginStorage storage) => _storage = storage;
+    public RenderSvgTool(IWorkspaceAccess workspace) => _workspace = workspace;
 
     public string Name => "render_svg";
     public string Description => "将 SVG 代码渲染为 PNG 图片并保存到 workspace。输入完整的 SVG 源码。";
@@ -60,10 +60,10 @@ public class RenderSvgTool : ITool
             using var data = image.Encode(SKEncodedImageFormat.Png, 100);
             ct.ThrowIfCancellationRequested();
 
-            var workspaceDir = _storage.WorkspaceDirectory;
-            Directory.CreateDirectory(workspaceDir);
             var outputName = $"{filename}.png";
-            var outputPath = Path.Combine(workspaceDir, outputName);
+            var outputPath = _workspace.Resolve(outputName);
+            if (outputPath == null)
+                return Task.FromResult(new ToolResult { Status = "failed", Error = $"输出文件名不合法：{outputName}（只允许 Workspace 内）" });
             using var fileStream = File.Create(outputPath);
             data.SaveTo(fileStream);
 

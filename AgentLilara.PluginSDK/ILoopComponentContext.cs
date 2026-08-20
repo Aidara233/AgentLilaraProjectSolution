@@ -20,4 +20,6 @@ public interface ILoopComponentContext
 
     T? GetService<T>() where T : class;
     IPluginStorage Storage { get; }
+    IWorkspaceAccess Workspace { get; }
+    IPluginDataAccess PluginData { get; }
 }

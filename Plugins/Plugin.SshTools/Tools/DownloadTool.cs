@@ -9,6 +9,7 @@ public class DownloadTool : ITool
 {
     private readonly SshGlobalComponent _global;
     private readonly string _workDir;
+    private readonly IWorkspaceAccess _workspace;
     private readonly string _workspaceDir;
     private readonly string _sessionId;
 
@@ -25,11 +26,12 @@ public class DownloadTool : ITool
 
     private const int DefaultTimeoutSeconds = 30;
 
-    public DownloadTool(SshGlobalComponent global, string workDir, string workspaceDir, string sessionId)
+    public DownloadTool(SshGlobalComponent global, string workDir, IWorkspaceAccess workspace, string sessionId)
     {
         _global = global;
         _workDir = workDir;
-        _workspaceDir = workspaceDir;
+        _workspace = workspace;
+        _workspaceDir = workspace.Resolve("") ?? "";
         _sessionId = sessionId;
     }
 
@@ -46,10 +48,8 @@ public class DownloadTool : ITool
 
         if (string.IsNullOrEmpty(localPath))
             localPath = ".";
-        var sanitized = localPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var fullLocal = Path.GetFullPath(Path.Combine(_workspaceDir, sanitized));
-        var fullWorkspace = Path.GetFullPath(_workspaceDir);
-        if (!fullLocal.StartsWith(fullWorkspace + Path.DirectorySeparatorChar) && fullLocal != fullWorkspace)
+        var fullLocal = _workspace.Resolve(localPath);
+        if (fullLocal == null)
             return Task.FromResult(Fail($"local_path 必须在 workspace 内: {_workspaceDir}"));
 
         var client = _global.EnsureConnected();

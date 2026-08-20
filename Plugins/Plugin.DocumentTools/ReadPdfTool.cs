@@ -19,7 +19,7 @@ public class ReadPdfTool : FileToolBase
     private const int MaxOutputLen = 10000;
     private const int PreviewPages = 2;
 
-    public ReadPdfTool(string workspaceDir) : base(workspaceDir) { }
+    public ReadPdfTool(IWorkspaceAccess workspace) : base(workspace) { }
 
     public override string Name => "read_pdf";
     public override string Description => "读取 PDF 文档。不提供全文提取——先不带 pages 参数调用获取总页数和目录，再按需指定 pages 读取特定页。pages 格式如 \"1-10\" / \"1,3,5\"。";

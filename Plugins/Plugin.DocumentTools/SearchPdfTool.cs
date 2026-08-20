@@ -17,7 +17,7 @@ public class SearchPdfTool : FileToolBase
     private const int ContextWindow = 80;
     private const int MaxResults = 50;
 
-    public SearchPdfTool(string workspaceDir) : base(workspaceDir) { }
+    public SearchPdfTool(IWorkspaceAccess workspace) : base(workspace) { }
 
     public override string Name => "search_pdf";
     public override string Description => "在 PDF 文档中搜索关键词，返回匹配页码和上下文。";

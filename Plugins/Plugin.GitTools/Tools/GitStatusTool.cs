@@ -11,7 +11,7 @@ namespace Plugin.GitTools.Tools;
 [ToolMeta(Group = "git", ContinueLoop = true)]
 public class GitStatusTool : GitToolBase
 {
-    public GitStatusTool(string workspaceDir, GitRunner runner) : base(workspaceDir, runner) { }
+    public GitStatusTool(IWorkspaceAccess workspace, GitRunner runner) : base(workspace, runner) { }
 
     public override string Name => "git_status";
     public override string Description => "查看 git 仓库工作区状态，包含分支信息和已暂存/未暂存/未跟踪文件。";

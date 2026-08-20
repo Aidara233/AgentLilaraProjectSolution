@@ -8,7 +8,7 @@ public class DownloadGroupFileTool : ITool
 {
     private readonly IAdapterAccess? _adapterAccess;
     private readonly string _adapterId = "";
-    private readonly string _workspaceDir = "";
+    private readonly IWorkspaceAccess? _workspace;
     private readonly HttpClient _http;
     private readonly GroupFileDownloadStore? _store;
     private readonly string _sessionId = "";
@@ -16,12 +16,12 @@ public class DownloadGroupFileTool : ITool
     public DownloadGroupFileTool() { _http = new HttpClient(); }
 
     public DownloadGroupFileTool(IAdapterAccess adapterAccess,
-        string adapterId, string workspaceDir, HttpClient http,
+        string adapterId, IWorkspaceAccess workspace, HttpClient http,
         GroupFileDownloadStore store, string sessionId)
     {
         _adapterAccess = adapterAccess;
         _adapterId = adapterId;
-        _workspaceDir = workspaceDir;
+        _workspace = workspace;
         _http = http;
         _store = store;
         _sessionId = sessionId;
@@ -63,7 +63,9 @@ public class DownloadGroupFileTool : ITool
 
         var saveName = fileName ?? $"{fileId}";
         var safeName = string.Join("_", saveName.Split(Path.GetInvalidFileNameChars()));
-        var destDir = Path.Combine(_workspaceDir, "Downloads");
+        var destDir = _workspace?.Resolve("Downloads");
+        if (destDir == null)
+            return new ToolResult { Status = "failed", Error = "工作区不可用" };
         Directory.CreateDirectory(destDir);
         var destPath = Path.Combine(destDir, safeName);
 
