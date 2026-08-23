@@ -124,8 +124,10 @@ internal class RuntimeSession : IRuntimeSession
         _initActions = spec.InitActions ?? new List<ToolCall>();
     }
 
-    /// <summary>恢复专用：复用已有 SessionId，避免重启后 ID 变动。</summary>
-    internal RuntimeSession(CreateSessionSpec spec, string fixedSessionId, string[]? finalComponents = null)
+    /// <summary>恢复专用：复用已有 SessionId，避免重启后 ID 变动。finalComponents 必填——
+    /// 组件装配只能由 SessionEngine 计算（CreateSession/RestoreAll 共用 ComputeFinalComponents），
+    /// 裸 new RuntimeSession(spec, id) 会因组件清单为空而抛异常（486b5841 起构造函数拒绝 null）。</summary>
+    internal RuntimeSession(CreateSessionSpec spec, string fixedSessionId, string[] finalComponents)
         : this(spec, finalComponents)
     {
         SessionId = fixedSessionId;
@@ -780,6 +782,18 @@ internal class RuntimeSession : IRuntimeSession
     public void TouchActivity() => _lastActivity = DateTime.UtcNow;
     /// <summary>外部信号唤醒（由 wakeLoop 回调触发，如异步任务完成）。</summary>
     public void WakeUp() => _wakeSignaled = true;
+
+    /// <summary>
+    /// 恢复后的 wait 到期重调度专用：注入 wait timeout 提示并唤醒。
+    /// 与 WaitForActivationAsync 的到期检查（InjectMessage timeout）产出一致，
+    /// 但不碰 WaitForActivationAsync 内部超长 Task.Delay（Task.Delay 数值溢出会抛
+    /// TimeOutException，把会话打 Crashed——历史超长 wait 恢复的已知坑）。
+    /// </summary>
+    internal void InjectWaitTimeoutExpired()
+    {
+        InjectMessage(new { type = "timeout", wait_reason = "wait timeout expired" });
+        _wakeSignaled = true;
+    }
 
     /// <summary>
     /// 外部直接注入系统消息（如子 session 回报结果、wait timeout 提示等）。

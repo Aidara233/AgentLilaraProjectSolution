@@ -74,19 +74,7 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
     {
         var profile = SessionTypeProfiles.Get(spec.Type);
         // 计算 finalComponents
-        string[] finalComponents;
-        if (spec.ResolvedComponentIds != null)
-        {
-            finalComponents = spec.ResolvedComponentIds;
-        }
-        else
-        {
-            // 组件清单即会话类型的唯一装配源（Storage/SessionTypes/{type}.json Components）
-            var set = new HashSet<string>(profile.Components, StringComparer.OrdinalIgnoreCase);
-            if (spec.AdditionalComponents != null) set.UnionWith(spec.AdditionalComponents);
-            if (spec.ExcludedComponents != null) set.ExceptWith(spec.ExcludedComponents);
-            finalComponents = set.ToArray();
-        }
+        var finalComponents = ComputeFinalComponents(spec, profile);
 
         var session = fixedSessionId != null
             ? new RuntimeSession(spec, fixedSessionId, finalComponents)
@@ -230,6 +218,21 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
             CreateSubPool(session.SessionId, spec.ParentSessionId);
 
         return session;
+    }
+
+    /// <summary>
+    /// 计算会话的最终组件清单（CreateSession 与 RestoreAll 共用，保证恢复装配与新建一致）。
+    /// ResolvedComponentIds（compact 承接）优先；否则类型文件 Components ± Additional/Excluded。
+    /// </summary>
+    private static string[] ComputeFinalComponents(CreateSessionSpec spec, SessionTypeProfile profile)
+    {
+        if (spec.ResolvedComponentIds != null)
+            return spec.ResolvedComponentIds;
+        // 组件清单即会话类型的唯一装配源（Storage/SessionTypes/{type}.json Components）
+        var set = new HashSet<string>(profile.Components, StringComparer.OrdinalIgnoreCase);
+        if (spec.AdditionalComponents != null) set.UnionWith(spec.AdditionalComponents);
+        if (spec.ExcludedComponents != null) set.ExceptWith(spec.ExcludedComponents);
+        return set.ToArray();
     }
 
     /// <summary>
@@ -974,7 +977,17 @@ InitialState = $"执行定时任务: {task.Description}"
             }
         }
 
-        // ── 阶段 2：仅对幸存者走恢复流程
+        // ── 阶段 2：仅对幸存者走恢复流程 ──
+        // 单个会话恢复失败（坏存档等）只跳过自己、不拖垮整个引擎：RestoreAll 完不成
+        // 会连带 SessionEngine 启动失败，频道却已被占用 → 冷启动假占用吞消息（已知坑）。
+        // 分两阶段：
+        //   A. 先重建会话对象（组件/订阅/历史/登记/启动 RunAsync）——中途失败不产生任何 claim；
+        //   B. 全部重建成功后，再统一 ClaimChannel。claim 只对"已完整重建"的会话生效，
+        //      从根上杜绝"claim 已落地但会话对象不存在"的幽灵占用中间态。
+        var restoredWait = new List<(string sessionId, DateTime waitUntil)>();
+        // 需要恢复 Full claim 的会话：(sessionId, channelId)。与旧实现一致：claim 用
+        // restorePorts 首个端口频道（spec.InputPorts 非空 或 从 state.ConnectedChannelId 推断 两条路都进）。
+        var restoreClaims = new List<(string sessionId, int channelId)>();
         foreach (var idx in survivorIndexes)
         {
             var (dir, persister, spec, state, history) = loaded[idx];
@@ -1006,105 +1019,151 @@ InitialState = $"执行定时任务: {task.Description}"
                     new { sessionId = state.SessionId, channelId = restoredCid, mode = restoreMode.ToString() });
             }
 
-            // ② 先恢复频道占用（同步生效，挡住 ChannelEngine），抢在适配器投递消息之前
-            if (restorePorts.Count > 0 && restoreMode == ConnectionMode.Full)
-            {
-                var cid = restorePorts[0].spec.ChannelId;
-                var claimed = ClaimChannel(state.SessionId, cid, ClaimLevel.Full);
-                Signal.Event(LogGroup.Engine, "恢复 Session 频道占用",
-                    new { sessionId = state.SessionId, channelId = cid, claimed });
-            }
-
-            // ③ 重建 RuntimeSession（复用旧 SessionId）
-            var session = new RuntimeSession(spec, state.SessionId);
-            session.SetCurrency(_currency!);
-            session.SetSessionEngine(this);
-
-            // 复活善后：订阅重建 session 的完成事件
-            if (Mind?.Resurrector != null)
-                Mind.Resurrector.Attach(session);
-
-            // ④ 走标准初始化路径（组件 / AgentCore / MessageEngine / AgentHost）
-            //    跳过 BootstrapAsync：InitActions 已在旧 session 执行过，不重复 claim/订阅。
-            //    会话身份统一为裸 sessionId（LoopId 概念已移除）。
+            RuntimeSession session;
             try
             {
-                session.InitComponents(session.SessionId, _ctx.ModuleBus, _ctx.ComponentServices, () => session.WakeUp());
-            }
-            catch (Exception ex)
-            {
-                Signal.Error(LogGroup.Engine, "恢复 Session 组件初始化失败",
-                    new { sessionId = session.SessionId, error = ex.Message });
-            }
+                // ② 重建 RuntimeSession（复用旧 SessionId）。finalComponents 必填——组件装配
+                //    与 CreateSession 用同一 ComputeFinalComponents，保证恢复=新建。
+                var profile = SessionTypeProfiles.Get(spec.Type);
+                session = new RuntimeSession(spec, state.SessionId, ComputeFinalComponents(spec, profile));
+                session.SetCurrency(_currency!);
+                session.SetSessionEngine(this);
 
-            _sessions[session.SessionId] = session;
+                // 复活善后：订阅重建 session 的完成事件
+                if (Mind?.Resurrector != null)
+                    Mind.Resurrector.Attach(session);
 
-            var profile = SessionTypeProfiles.Get(spec.Type);
-            session.ConfigureCores(profile.AllowedCoreConfigs, profile.DefaultCoreConfig, state.ActiveCoreConfig);
-            var messageEngine = _ctx.GetActiveEnginesSnapshot().OfType<Messaging.MessageEngine>().FirstOrDefault();
-            if (messageEngine != null) session.SetMessageEngine(messageEngine);
-
-            // ⑤ 重建输入端口 + 订阅（不重新订阅会丢消息）
-            foreach (var (portName, portSpec) in restorePorts)
-            {
-                if (messageEngine != null)
-                {
-                    var port = messageEngine.Subscribe(portSpec.ChannelId, portSpec.SubStream, portSpec.Weight);
-                    session.AddInputPort(portName, port);
-                }
-            }
-
-            // ⑥ 重建 SessionAgentHost
-            try
-            {
-                var channelPorts = new List<(int channelId, string? channelName, bool preload)>();
-                foreach (var (_, portSpec) in restorePorts)
-                {
-                    var ch = _ctx.Session.GetChannelByIdAsync(portSpec.ChannelId).GetAwaiter().GetResult();
-                    channelPorts.Add((portSpec.ChannelId, ch?.Name, portSpec.PreloadHistory));
-                }
-
-                var dataSource = new SystemContextDataSource(_ctx);
-                var svc = new ChannelContextService(dataSource);
-                var initialStateText = spec.InitialState is string s ? s
-                    : spec.InitialState != null ? JsonConvert.SerializeObject(spec.InitialState)
-                    : null;
-                var host = new SessionAgentHost(channelPorts, initialStateText, svc);
-                session.SetAgentHost(host);
-            }
-            catch (Exception ex)
-            {
-                Signal.Error(LogGroup.Engine, "恢复 Session AgentHost 失败",
-                    new { sessionId = session.SessionId, error = ex.Message });
-            }
-
-            // ④ 灌入存档状态 + 历史
-            session.RestoreFromSnapshot(state, history);
-
-            // ⑤ 注入 persister + 启用压缩
-            session.SetPersister(persister);
-            session.InitCompression();
-
-            Signal.Event(LogGroup.Engine, "Session 已恢复",
-                new { sessionId = session.SessionId, historyCount = history.Count, roundCount = state.RoundCount });
-
-            // ⑥ 启动 RunAsync
-            _ = Task.Run(async () =>
-            {
+                // ③ 走标准初始化路径（组件 / AgentCore / MessageEngine / AgentHost）
+                //    跳过 BootstrapAsync：InitActions 已在旧 session 执行过，不重复 claim/订阅。
+                //    会话身份统一为裸 sessionId（LoopId 概念已移除）。
                 try
                 {
-                    using var cts = new CancellationTokenSource();
-                    await session.RunAsync(cts.Token);
+                    session.InitComponents(session.SessionId, _ctx.ModuleBus, _ctx.ComponentServices, () => session.WakeUp());
                 }
                 catch (Exception ex)
                 {
-                    Signal.Error(LogGroup.Engine, "恢复后 Session 崩溃",
+                    Signal.Error(LogGroup.Engine, "恢复 Session 组件初始化失败",
                         new { sessionId = session.SessionId, error = ex.Message });
                 }
-                finally
+
+                _sessions[session.SessionId] = session;
+
+                session.ConfigureCores(profile.AllowedCoreConfigs, profile.DefaultCoreConfig, state.ActiveCoreConfig);
+                var messageEngine = _ctx.GetActiveEnginesSnapshot().OfType<Messaging.MessageEngine>().FirstOrDefault();
+                if (messageEngine != null) session.SetMessageEngine(messageEngine);
+
+                // ④ 重建输入端口 + 订阅（不重新订阅会丢消息）
+                foreach (var (portName, portSpec) in restorePorts)
                 {
-                    ReleaseSessionClaims(session.SessionId);
+                    if (messageEngine != null)
+                    {
+                        var port = messageEngine.Subscribe(portSpec.ChannelId, portSpec.SubStream, portSpec.Weight);
+                        session.AddInputPort(portName, port);
+                    }
                 }
+
+                // ⑤ 重建 SessionAgentHost
+                try
+                {
+                    var channelPorts = new List<(int channelId, string? channelName, bool preload)>();
+                    foreach (var (_, portSpec) in restorePorts)
+                    {
+                        var ch = _ctx.Session.GetChannelByIdAsync(portSpec.ChannelId).GetAwaiter().GetResult();
+                        channelPorts.Add((portSpec.ChannelId, ch?.Name, portSpec.PreloadHistory));
+                    }
+
+                    var dataSource = new SystemContextDataSource(_ctx);
+                    var svc = new ChannelContextService(dataSource);
+                    var initialStateText = spec.InitialState is string s ? s
+                        : spec.InitialState != null ? JsonConvert.SerializeObject(spec.InitialState)
+                        : null;
+                    var host = new SessionAgentHost(channelPorts, initialStateText, svc);
+                    session.SetAgentHost(host);
+                }
+                catch (Exception ex)
+                {
+                    Signal.Error(LogGroup.Engine, "恢复 Session AgentHost 失败",
+                        new { sessionId = session.SessionId, error = ex.Message });
+                }
+
+                // ⑥ 灌入存档状态 + 历史
+                session.RestoreFromSnapshot(state, history);
+
+                // ⑦ 注入 persister + 启用压缩
+                session.SetPersister(persister);
+                session.InitCompression();
+
+                Signal.Event(LogGroup.Engine, "Session 已恢复",
+                    new { sessionId = session.SessionId, historyCount = history.Count, roundCount = state.RoundCount });
+
+                // ⑧ 启动 RunAsync（restored 会话不立即激活，等新消息 / WaitUntil 到期 / 外部唤醒）
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        using var cts = new CancellationTokenSource();
+                        await session.RunAsync(cts.Token);
+                    }
+                    catch (Exception ex)
+                    {
+                        Signal.Error(LogGroup.Engine, "恢复后 Session 崩溃",
+                            new { sessionId = session.SessionId, error = ex.Message });
+                    }
+                    finally
+                    {
+                        ReleaseSessionClaims(session.SessionId);
+                    }
+                });
+
+                // ⑨ 重调度 WaitUntil：恢复的 waitUntil 是旧的墙上时钟（可能已超时很久），
+                //    且 RestoreFromSnapshot 已直接把 WaitUntil 灌进会话——若超时立即触发一轮
+                //    wait timeout 注入（可接受）。但若 waitUntil 在未来很远（重启发生在 wait 期间），
+                //    RunAsync 的 WaitForActivationAsync 轮询会报 TimeOutException（Task.Delay 超长溢出），
+                //    把会话打 Crashed。这里对未来 wait 统一转成"等待到期时长"，到期后注入 timeout 唤醒。
+                if (state.WaitUntil != null && state.WaitUntil > DateTime.UtcNow)
+                {
+                    restoredWait.Add((session.SessionId, state.WaitUntil.Value));
+                }
+
+                // 记录待恢复的 Full claim（供阶段 3 统一落地）：仅 restoreMode==Full 且端口非空。
+                // escalate 路径（spec.InputPorts 空、从 state 推断端口）也在此覆盖，与旧实现对齐。
+                if (restoreMode == ConnectionMode.Full && restorePorts.Count > 0)
+                    restoreClaims.Add((session.SessionId, restorePorts[0].spec.ChannelId));
+            }
+            catch (Exception ex)
+            {
+                // 单个会话恢复失败：标 Completed 防下次重启再试，跳过（不产生 claim）。
+                Signal.Error(LogGroup.Engine, "Session 恢复失败（跳过）",
+                    new { sessionId = state.SessionId, error = ex.Message, stack = ex.StackTrace });
+                try { persister.UpdateStatusAsync(SessionStatus.Completed).GetAwaiter().GetResult(); }
+                catch { }
+                continue;
+            }
+        }
+
+        // ── 阶段 3：全部会话重建成功后统一恢复频道占用（先建后 claim，杜绝幽灵占用）──
+        foreach (var (sid, cid) in restoreClaims)
+        {
+            // 会话在阶段 2 中恢复失败：未登记到 _sessions 则不建立 claim，原频道回无占用。
+            if (!_sessions.ContainsKey(sid)) continue;
+            var claimed = ClaimChannel(sid, cid, ClaimLevel.Full);
+            Signal.Event(LogGroup.Engine, "恢复 Session 频道占用",
+                new { sessionId = sid, channelId = cid, claimed });
+        }
+
+        // WaitUntil 到期重调度：用新会话唤醒回调投递 timeout（不注入消息历史，只触发激活判定）
+        foreach (var (sid, waitUntil) in restoredWait)
+        {
+            if (!_sessions.TryGetValue(sid, out var rs)) continue;
+            var delay = waitUntil - DateTime.UtcNow;
+            if (delay <= TimeSpan.Zero) continue;
+            var delayCap = TimeSpan.FromDays(100);
+            var t = delay > delayCap ? delayCap : delay;
+            _ = Task.Delay(t).ContinueWith(_ =>
+            {
+                if (_sessions.TryGetValue(sid, out var s)
+                    && s is RuntimeSession r && r.WaitUntil == waitUntil)
+                    r.InjectWaitTimeoutExpired();
             });
         }
 
