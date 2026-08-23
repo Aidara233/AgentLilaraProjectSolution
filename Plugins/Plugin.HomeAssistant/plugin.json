@@ -1,0 +1,9 @@
+{
+  "id": "home-assistant",
+  "name": "Home Assistant",
+  "version": "1.0.0",
+  "entry": "Plugin.HomeAssistant.dll",
+  "description": "Home Assistant 智能家居集成：状态查询、服务调用、实体搜索、自动化触发、历史查询",
+  "components": ["home-assistant", "ha-global"],
+  "author": "Agent Lilara"
+}

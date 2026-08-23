@@ -15,9 +15,9 @@
 
 ## 插件清单（速查版）
 
-> 所有插件均已组件化（无"无组件独立工具"模式）。作用域分 Global（全局单例，18 个组件）和 Loop（每个会话一个实例，12 个组件）。
+> 所有插件均已组件化（无"无组件独立工具"模式）。作用域分 Global（全局单例，19 个组件）和 Loop（每个会话一个实例，13 个组件）。
 
-### Loop 组件（12 个）
+### Loop 组件（13 个）
 
 | 组件 | 插件 | 工具（代表性） |
 |------|------|------|
@@ -33,8 +33,9 @@
 | `web-search` | Plugin.WebSearch | 网页搜索 |
 | `group-file-tools` | Plugin.GroupFileTools | 分组文件操作 |
 | `quick-actions` | Plugin.QuickActions | 快捷操作 |
+| `home-assistant` | Plugin.HomeAssistant | `ha_get_states`, `ha_call_service`, `ha_search_entities`, `ha_list_devices`, `ha_trigger`, `ha_get_history` |
 
-### Global 组件（18 个）
+### Global 组件（19 个）
 
 | 组件 | 插件 | 工具（代表性） |
 |------|------|------|
@@ -56,6 +57,7 @@
 | `web-search-global` | Plugin.WebSearch | 网页搜索 Global 面 |
 | `group-file-tools-global` | Plugin.GroupFileTools | 分组文件 Global 面 |
 | `scheduled-tasks-timer` | Plugin.ScheduledTasks | 定时触发 Global 面 |
+| `ha-global` | Plugin.HomeAssistant | Home Assistant Global 面（共享 HttpClient + HaConfig 配置） |
 
 > 会话类型装配（哪些组件出现在 express/channel/task/review 会话）由 `Storage/SessionTypes/{type}.json` 的 `Components` 清单决定，插件自身不声明。
 

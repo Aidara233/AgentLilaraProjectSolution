@@ -142,6 +142,7 @@ AgentLilaraProjectSolution/
     Plugin.GroupFileTools/        ← 分组文件操作
     Plugin.QuickActions/          ← 快捷操作
     Plugin.QQTools/               ← QQ 合并转发查询（get_forward_msg：统计+全文+图片注入）— Loop
+    Plugin.HomeAssistant/         ← Home Assistant 智能家居（ha_get_states/ha_call_service/ha_search_entities/ha_list_devices/ha_trigger/ha_get_history）— Global + Loop
     FileToolKit.Shared/           ← FileToolBase 共享基类（文件插件共用）
   AgentCoreProcessor/             ← 宿主应用
     Tool/Host/PluginLoader.cs     ← 插件加载器
@@ -159,6 +160,7 @@ AgentLilaraProjectSolution/
 | [路径配置](path-config.md) | Storage vs BaseDirectory、插件数据路径、常见坑 |
 | [实现模式](patterns.md) | Static Accessor Bridge、异步通知 Drain、Global Timer + Gate 契约、SpawnCheck 并发安全、文件沙箱等 |
 | [Claude 速查](claude-quick-ref.md) | 给新 Claude 会话的快速上手指南 |
+| [Home Assistant](home-assistant.md) | Home Assistant 智能家居插件：组件/工具/配置/会话接入/验证 |
 
 ## 关键设计决策
 

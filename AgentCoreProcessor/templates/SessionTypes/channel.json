@@ -7,7 +7,7 @@
   ],
   "Components": [
     "basic-tools", "working-tools", "file-tools", "file-ops",
-    "mind-tools", "system-ops", "network-tools", "qq-tools"
+    "mind-tools", "system-ops", "network-tools", "qq-tools", "home-assistant"
   ],
   "Tools": {
     "Mode": "blacklist",
