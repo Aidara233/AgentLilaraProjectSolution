@@ -9,7 +9,7 @@ namespace Plugin.HomeAssistant;
 
 /// <summary>
 /// Home Assistant REST API 薄封装。只依赖共享 HttpClient（Global 组件提供）。
-/// 返回原始 JSON 字符串（已按 MaxResponseBytes 截断），供各工具二次加工。
+/// 完整读取原始 JSON（不截断、不因体积拒绝），供各工具解析成成形摘要后返回。
 /// </summary>
 public class HaApiClient
 {
@@ -43,14 +43,9 @@ public class HaApiClient
 
     private async Task<string> ReadBodyAsync(HttpResponseMessage resp, CancellationToken ct)
     {
-        // 完整读取，绝不在字节边界截断：截断会切断 UTF-8 多字节字符并破坏 JSON 结构，
-        // 导致上层 JsonDocument.Parse 失败（曾因 20480 字节截断 /api/states 31KB 响应复现）。
-        // 超防呆上限（MaxResponseBytes）时抛异常由工具转成可读错误；
-        // 展示层的条目/字符截断在解析后由各工具负责。
+        // 完整读取。绝不在字节体积上拒绝或截断原始响应——它只是给工具解析的中间产物，
+        // 给模型的是解析后的成形中文摘要（那一步才做展示截断）。体积大不代表该拒绝查询。
         var raw = await resp.Content.ReadAsByteArrayAsync(ct);
-        if (raw.Length > _config.MaxResponseBytes)
-            throw new HaApiException(
-                $"HA 响应过大 ({raw.Length} bytes > MaxResponseBytes {_config.MaxResponseBytes})，请改用更精确的查询参数（如指定 entity_id / domain / hours）");
         return Encoding.UTF8.GetString(raw);
     }
 

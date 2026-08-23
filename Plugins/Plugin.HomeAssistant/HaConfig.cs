@@ -23,7 +23,7 @@ public class HaConfig
     /// <summary>长期访问令牌（HA 个人资料→安全→长期访问令牌 生成）。不可留空。</summary>
     public string Token { get; set; } = "";
 
-    /// <summary>HA 单次响应防呆上限（字节）。超过则拒绝并提示改用精确查询，不做字节截断（保护 JSON 完整性）。</summary>
+    /// <summary>展示层截断参考（给模型的中文摘要上限，非原始 JSON 拒绝阈值）。</summary>
     public int MaxResponseBytes { get; set; } = 512000;
 
     /// <summary>HTTP 超时秒数。</summary>
