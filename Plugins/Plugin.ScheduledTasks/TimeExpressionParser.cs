@@ -219,7 +219,7 @@ internal static class TimeExpressionParser
     }
 
     private static DateTime Normalize(DateTime dt)
-        => DateTime.SpecifyKind(dt, DateTimeKind.Local);
+        => DateTime.SpecifyKind(dt, DateTimeKind.Utc);
 
     private static DateTime? BuildCandidate(ParsedExpression expr, DateTime cursor)
     {

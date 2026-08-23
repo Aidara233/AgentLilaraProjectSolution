@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine.Context;
 using AgentCoreProcessor.Models;
+using AgentCoreProcessor.Util;
 
 namespace AgentCoreProcessor.Engine.Session;
 
@@ -97,9 +98,10 @@ internal class SessionAgentHost
     /// <summary>每轮：当前时间 + drained 新消息格式化 + 滞后图片补注。</summary>
     public async Task<List<Message>> BuildRoundAsync(IEnumerable<(int channelId, UserMessage msg, bool isMention)> drained)
     {
+        var now = System.DateTime.Now;
         var msgs = new List<Message>
         {
-            new() { Role = "user", Content = $"[系统] 当前时间: {System.DateTime.Now:yyyy-MM-dd HH:mm:ss dddd} UTC+8 (Asia/Shanghai)" }
+            new() { Role = "user", Content = $"[系统] 当前时间: {now:yyyy-MM-dd HH:mm:ss dddd} {TimeUtil.TimeZoneAnchorText(now)}" }
         };
         foreach (var (cid, m, isMention) in drained)
         {

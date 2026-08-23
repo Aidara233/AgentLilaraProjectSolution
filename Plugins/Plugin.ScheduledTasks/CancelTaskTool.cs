@@ -39,7 +39,7 @@ public class CancelTaskTool : ITool
         if (matches.Count > 1)
         {
             var list = string.Join("\n", matches.ConvertAll(t =>
-                $"  [{t.Id[..8]}] {t.Description} ({t.NextFireTime:yyyy-MM-dd HH:mm:ss})"));
+                $"  [{t.Id[..8]}] {t.Description} ({t.NextFireTime?.ToLocalTime():yyyy-MM-dd HH:mm:ss})"));
             return Fail($"找到多个匹配任务，请指定更完整的ID：\n{list}");
         }
 

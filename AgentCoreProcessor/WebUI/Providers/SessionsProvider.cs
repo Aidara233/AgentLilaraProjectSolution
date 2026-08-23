@@ -366,7 +366,7 @@ internal class SessionsHistorySource : IDataSource
                     ? string.Join(", ", meta.componentIds)
                     : "—";
                 var createdAt = meta.createdAt != DateTime.MinValue
-                    ? meta.createdAt.ToString("yyyy-MM-dd HH:mm:ss")
+                    ? meta.createdAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
                     : "—";
 
                 entries.Add((sessionId, meta.status, components, createdAt));

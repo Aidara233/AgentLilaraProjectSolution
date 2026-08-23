@@ -106,7 +106,7 @@ public class ScheduledTasksTimerComponent : GlobalComponentBase
                     continue;
                 }
 
-                var delay = nextFire.Value - DateTime.Now;
+                var delay = nextFire.Value - DateTime.UtcNow;
                 if (delay <= TimeSpan.Zero)
                 {
                     _log?.Event(LogGroup, "global-timer-fire", new { sessionId, overdue = -(int)delay.TotalSeconds, requiresWork });

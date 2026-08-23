@@ -43,7 +43,7 @@ public class ScheduleTaskTool : ITool
         if (string.IsNullOrEmpty(description))
             return Fail("description 不能为空");
 
-        var result = TimeExpressionParser.Parse(expression, DateTime.Now);
+        var result = TimeExpressionParser.Parse(expression, DateTime.UtcNow);
         if (!result.Success)
             return Fail(result.Error!);
 

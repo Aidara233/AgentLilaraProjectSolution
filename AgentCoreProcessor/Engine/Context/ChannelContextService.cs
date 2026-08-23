@@ -9,6 +9,7 @@ using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine.Vision;
 using AgentCoreProcessor.Models;
+using AgentCoreProcessor.Util;
 
 namespace AgentCoreProcessor.Engine.Context;
 
@@ -392,7 +393,7 @@ internal partial class ChannelContextService
                     var timePrefix = "";
                     if (m.Time != default)
                     {
-                        var local = m.Time.ToLocalTime();
+                        var local = TimeUtil.ToLocalSafe(m.Time);
                         // 按天打戳：日期变化时输出独立日期行
                         if (prevLocalDate == null || local.Date != prevLocalDate.Value.Date)
                         {
@@ -444,7 +445,7 @@ internal partial class ChannelContextService
         string dateLine = "";
         if (m.Time != default)
         {
-            var local = m.Time.ToLocalTime();
+            var local = TimeUtil.ToLocalSafe(m.Time);
             timePrefix = $"[{local:HH:mm}]";
             if (st.LastRenderedLocalDate == null)
             {

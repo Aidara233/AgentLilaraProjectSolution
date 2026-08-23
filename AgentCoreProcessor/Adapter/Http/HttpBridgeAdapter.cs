@@ -12,6 +12,7 @@ using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Logging;
+using AgentCoreProcessor.Util;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -360,7 +361,7 @@ namespace AgentCoreProcessor.Adapter
                         ["id"] = r.Id,
                         ["content"] = r.Content,
                         ["senderName"] = r.SenderName,
-                        ["time"] = r.Time.ToString("O")
+                        ["time"] = TimeUtil.ToLocalSafe(r.Time).ToString("O")
                     });
 
                 await WriteJson(ctx, new JObject
@@ -445,7 +446,7 @@ namespace AgentCoreProcessor.Adapter
                         ["senderName"] = m.SenderName,
                         ["content"] = m.Content,
                         ["isFromBot"] = m.IsFromBot,
-                        ["time"] = m.Time.ToString("O"),
+                        ["time"] = TimeUtil.ToLocalSafe(m.Time).ToString("O"),
                         ["platformMessageId"] = m.PlatformMessageId
                     });
                 await WriteJson(ctx, new JObject

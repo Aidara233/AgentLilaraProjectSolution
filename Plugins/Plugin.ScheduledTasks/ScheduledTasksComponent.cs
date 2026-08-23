@@ -87,7 +87,7 @@ public class ScheduledTasksComponent : LoopComponentBase
     {
         if (_store == null) return;
 
-        var now = DateTime.Now;
+        var now = DateTime.UtcNow;
         var (_, dueTasks) = _store.LoadAndFindDue(now);
         if (dueTasks.Count == 0) return;
 
@@ -141,7 +141,7 @@ public class ScheduledTasksComponent : LoopComponentBase
     {
         if (_store == null) return;
 
-        var now = DateTime.Now;
+        var now = DateTime.UtcNow;
         var (_, overdue) = _store.LoadAndFindDue(now);
         if (overdue.Count == 0) return;
 

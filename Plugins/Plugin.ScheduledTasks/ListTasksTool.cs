@@ -34,7 +34,7 @@ public class ListTasksTool : ITool
         var lines = new List<string> { $"共 {tasks.Count} 个定时任务：" };
         foreach (var t in tasks)
         {
-            var fireStr = t.NextFireTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "已完成";
+            var fireStr = t.NextFireTime?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "已完成";
             var recurring = t.IsRecurring ? " [循环]" : "";
             lines.Add($"[{t.Id[..8]}] {t.Description}");
             lines.Add($"  触发: {fireStr}{recurring}  |  表达式: {t.Expression}");

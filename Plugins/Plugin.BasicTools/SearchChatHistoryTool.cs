@@ -95,7 +95,13 @@ namespace Plugin.BasicTools
             => index < inputs.Count ? inputs[index] ?? "" : "";
 
         private static DateTime? TryParseTime(string s)
-            => DateTime.TryParse(s, out var t) ? t : null;
+        {
+            // agent 提供的时间语义 = 本地时间。Unspecified 显式锚定 Local。
+            if (!DateTime.TryParse(s, out var t)) return null;
+            return t.Kind == DateTimeKind.Unspecified
+                ? DateTime.SpecifyKind(t, DateTimeKind.Local)
+                : t;
+        }
 
         private static int? TryParseInt(string s)
             => int.TryParse(s, out var n) ? n : null;

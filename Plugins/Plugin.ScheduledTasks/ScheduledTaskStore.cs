@@ -57,17 +57,17 @@ public class ScheduledTaskStore
         }
     }
 
-    private static DateTime Normalize(DateTime dt) => DateTime.SpecifyKind(dt, DateTimeKind.Local);
+    private static DateTime Normalize(DateTime dt) => DateTime.SpecifyKind(dt, DateTimeKind.Utc);
 
     private static void NormalizeDateTimes(List<ScheduledTaskEntry> tasks)
     {
         foreach (var t in tasks)
         {
             if (t.NextFireTime.HasValue)
-                t.NextFireTime = DateTime.SpecifyKind(t.NextFireTime.Value, DateTimeKind.Local);
+                t.NextFireTime = DateTime.SpecifyKind(t.NextFireTime.Value, DateTimeKind.Utc);
             if (t.LastFiredAt.HasValue)
-                t.LastFiredAt = DateTime.SpecifyKind(t.LastFiredAt.Value, DateTimeKind.Local);
-            t.CreatedAt = DateTime.SpecifyKind(t.CreatedAt, DateTimeKind.Local);
+                t.LastFiredAt = DateTime.SpecifyKind(t.LastFiredAt.Value, DateTimeKind.Utc);
+            t.CreatedAt = DateTime.SpecifyKind(t.CreatedAt, DateTimeKind.Utc);
         }
     }
 
@@ -90,7 +90,7 @@ public class ScheduledTaskStore
                 Id = Guid.NewGuid().ToString(),
                 Description = description,
                 Expression = expression,
-                CreatedAt = Normalize(DateTime.Now),
+                CreatedAt = Normalize(DateTime.UtcNow),
                 NextFireTime = nextFire.HasValue ? Normalize(nextFire.Value) : null,
                 IsRecurring = isRecurring,
                 Enabled = true,

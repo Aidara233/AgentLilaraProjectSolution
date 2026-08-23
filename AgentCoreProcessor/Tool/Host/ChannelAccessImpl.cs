@@ -7,6 +7,7 @@ using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Engine.Session;
+using AgentCoreProcessor.Util;
 using AgentLilara.PluginSDK.Services;
 
 namespace AgentCoreProcessor.Tool.Host
@@ -101,9 +102,12 @@ namespace AgentCoreProcessor.Tool.Host
             }
 
             // 搜索模式：关键词/时间范围，可跨频道或全频道（SearchAsync 按 Time DESC，翻转成升序）
+            // query.TimeFrom/TimeTo 语义为本地时间（agent 供参），存储为 UTC → 查询前转 UTC。
             var found = await _ctx.Session.SearchMessagesAsync(
                 channelIds, query.Keyword, null,
-                query.TimeFrom, query.TimeTo, limit);
+                query.TimeFrom.HasValue ? TimeUtil.NormalizeToUtc(query.TimeFrom.Value) : null,
+                query.TimeTo.HasValue ? TimeUtil.NormalizeToUtc(query.TimeTo.Value) : null,
+                limit);
             found.Reverse();
             return found.Select(ToSummary).ToList();
         }
@@ -115,7 +119,7 @@ namespace AgentCoreProcessor.Tool.Host
                 : !string.IsNullOrEmpty(m.SenderName) ? m.SenderName
                 : $"User:{m.UserId}",
             Content = m.Content,
-            Timestamp = m.Time,
+            Timestamp = TimeUtil.ToLocalSafe(m.Time),
             IsBot = m.IsFromBot
         };
 

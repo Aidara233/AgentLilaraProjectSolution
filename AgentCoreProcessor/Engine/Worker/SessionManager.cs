@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Database;
+using AgentCoreProcessor.Util;
 
 namespace AgentCoreProcessor.Engine
 {
@@ -79,7 +80,7 @@ namespace AgentCoreProcessor.Engine
                 ChannelId = channel.Id,
                 Content = msg.Content,
                 SenderName = senderName,
-                Time = msg.Time,
+                Time = TimeUtil.NormalizeToUtc(msg.Time),
                 PlatformMessageId = msg.PlatformMessageId,
                 ImageCount = msg.Attachments?.Count(a => a.Type == AttachmentType.Image) ?? 0,
                 ImageHashes = imageHashes is { Count: > 0 } ? string.Join(",", imageHashes) : null,
@@ -121,7 +122,7 @@ namespace AgentCoreProcessor.Engine
                         Content = msg.QuotedContent,
                         SenderName = msg.QuotedSenderName ?? "未知用户",
                         IsFromBot = false,
-                        Time = msg.Time.AddSeconds(-1), // 略早于当前消息
+                        Time = TimeUtil.NormalizeToUtc(msg.Time).AddSeconds(-1), // 略早于当前消息
                         PlatformMessageId = msg.ReplyTo
                     });
                 }
@@ -150,7 +151,7 @@ namespace AgentCoreProcessor.Engine
                 Content = content,
                 SenderName = "Lilara",
                 IsFromBot = true,
-                Time = DateTime.Now,
+                Time = DateTime.UtcNow,
                 PlatformMessageId = platformMessageId
             });
         }

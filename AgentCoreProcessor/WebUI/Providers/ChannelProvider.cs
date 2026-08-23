@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine;
+using AgentCoreProcessor.Util;
 using AgentLilara.PluginSDK;
 using AgentLilara.PluginSDK.WebUI;
 
@@ -300,7 +301,7 @@ internal class ChannelMessagesSource : IDataSource
         {
             arr.Add(new JsonObject
             {
-                ["time"] = msg.Time.ToString("MM-dd HH:mm:ss"),
+                ["time"] = TimeUtil.ToLocalSafe(msg.Time).ToString("MM-dd HH:mm:ss"),
                 ["sender"] = msg.SenderName,
                 ["content"] = msg.Content.Length > 200 ? msg.Content[..200] + "..." : msg.Content
             });

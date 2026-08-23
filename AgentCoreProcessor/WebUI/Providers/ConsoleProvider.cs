@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine;
+using AgentCoreProcessor.Util;
 using ActionResult = AgentLilara.PluginSDK.WebUI.ActionResult;
 
 namespace AgentCoreProcessor.WebUI.Providers;
@@ -322,7 +323,7 @@ internal class ConsoleChatSource : IDataSource
             {
                 ["sender"] = isBot ? "Lilara" : (string.IsNullOrEmpty(m.SenderName) ? "用户" : m.SenderName),
                 ["text"] = m.Content ?? "",
-                ["time"] = m.Time.ToString("HH:mm:ss"),
+                ["time"] = TimeUtil.ToLocalSafe(m.Time).ToString("HH:mm:ss"),
                 ["isBot"] = isBot,
                 ["role"] = isBot ? "assistant" : "user",
             });

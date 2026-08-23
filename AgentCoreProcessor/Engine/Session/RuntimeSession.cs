@@ -15,6 +15,7 @@ using AgentCoreProcessor.Engine.Modules;
 using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Tool;
+using AgentCoreProcessor.Util;
 using AgentLilara.PluginSDK;
 using AgentLilara.PluginSDK.Services;
 using Newtonsoft.Json;
@@ -1290,7 +1291,7 @@ internal class RuntimeSession : IRuntimeSession
                         UserId = em.SenderUserId,
                         Content = em.Content,
                         PlatformMessageId = em.MessageId,
-                        Time = em.Timestamp == default ? DateTime.UtcNow : em.Timestamp,
+                        Time = em.Timestamp == default ? DateTime.UtcNow : TimeUtil.NormalizeToUtc(em.Timestamp),
                         IsFromBot = false,
                         SenderName = ""
                     };
