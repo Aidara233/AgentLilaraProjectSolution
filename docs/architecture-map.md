@@ -90,8 +90,14 @@ PluginLoader 扫描子目录 → 读 `plugin.json` → 加载 `entry` DLL。无�
 - **消息历史**：按规则保留（最近 N 条+关键事件）
 - **系统上下文**：频道配置+睡眠状态+模式标记
 
-**消息时间戳约定**（2026-08-23 起，`ChannelContextService` 渲染，仅供模型上下文参考）：
-- 每条消息带本地时区 `[HH:mm]`（消息 `Time` 转 `ToLocalTime()`）
+**时区统一约定**（2026-08-23 起，`TimeUtil`，存储全 UTC + 展示/调用转本地）：
+- **存储全 UTC**：UserMessages 入库咽喉（`SessionManager.OnMessageAsync`/`SaveBotMessageAsync`/`RuntimeSession`）统一 `TimeUtil.NormalizeToUtc`（Local→UTC，Unspecified→按 UTC 解释）；scheduled_tasks.json 的 `CreatedAt`/`NextFireTime` 亦以 UTC（`Z` 后缀）落盘。存量混存数据接受现状不迁移。
+- **展示转本地**：DB 读出 Kind=Unspecified（sqlite-net ticks），一律 `TimeUtil.ToLocalSafe`（按 UTC 解释再转本地，`TimeZoneInfo.Local` 动态跟随）；WebUI/HttpBridge/插件摘要均走此路径。
+- **agent 调用参数**（如 `search_chat_history` 的 time_from/time_to）：输入语义=本地时间，`Unspecified` 显式锚定 Local，查询前 `NormalizeToUtc` 转 UTC。
+- **系统时间注入**：`SessionAgentHost.BuildRoundAsync` 每轮注入 `[系统] 当前时间: {本地} {TimeZoneAnchorText}`（动态 offset，如 `UTC+08:00 (China Standard Time)`），替换旧硬编码 `UTC+8 (Asia/Shanghai)`。
+
+**消息时间戳约定**（`ChannelContextService` 渲染，仅供模型上下文参考）：
+- 每条消息带本地时区 `[HH:mm]`（`TimeUtil.ToLocalSafe(m.Time)`）
 - **历史块**（`BuildHistoryBlockAsync`，主动拉取大块）：按天打戳——日期变化时输出独立日期行 `yyyy-M-d`，其后消息各带 `[HH:mm]`
 - **增量块**（`FormatIncomingAsync`，session 自动推送）：每条带 `[HH:mm]`，**仅跨日**时前置一行日期戳（`ChannelContextState.LastRenderedLocalDate` 记录上次渲染本地日期，跨日判定）
 - `Time` 为默认值（历史残留无时间数据）时跳过时间戳，避免 `0001-1-1` 污染

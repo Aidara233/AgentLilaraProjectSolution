@@ -25,6 +25,7 @@
 - 消息段交错：MessageSegment（Text/Image/At/Reply）按原文顺序排列。OutgoingMessage.Segments 优先于旧 Content+Attachments 路径。OneBotActions 直接消费 Segments 构建分段消息数组。
 - 图片发送：本地图片通过 base64:// 编码传给 NapCat（不依赖 file:/// 或裸路径）。
 - 多模态图片处理：ContentPart 支持 text/image(path或base64)、图片感知（img 标记+直传/描述分流）、SkiaSharp 缩略图
+- 时区约定（2026-08-23 起）：存储全 UTC + 展示转本地 + agent 调用参数按本地解析。入库咽喉统一 `TimeUtil.NormalizeToUtc`；展示端 `TimeUtil.ToLocalSafe`（`TimeZoneInfo.Local` 动态跟随，勿硬编码 UTC+8）；系统时间注入带动态 offset 锚点。详见 docs/architecture-map.md「时区统一约定」
 
 ## 工作规范
 
