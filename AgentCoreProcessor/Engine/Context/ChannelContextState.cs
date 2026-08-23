@@ -17,6 +17,9 @@ internal class ChannelContextState
     public int LastConsumedMessageId { get; set; }
     public int StartInjectMaxId { get; set; }
 
+    /// <summary>增量新消息最近一次渲染时的本地日期（只有日期部分，跨日判定用）。</summary>
+    public DateTime? LastRenderedLocalDate { get; set; }
+
     public HashSet<string> RoundImageHashes { get; } = new();
     public HashSet<string> InjectedDescriptions { get; } = new();
     public HashSet<string> InjectedOcrTexts { get; } = new();

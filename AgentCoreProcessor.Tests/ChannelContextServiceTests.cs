@@ -167,11 +167,73 @@ public class FormatIncomingTests
         var m = new UserMessage
         {
             Id = 2, ChannelId = 1, SenderName = "李四",
-            Content = "回复你", ReplyToPlatformMessageId = "msgABC"
+            Content = "回复你", ReplyToPlatformMessageId = "msgABC",
+            Time = DateTime.UtcNow
         };
         var msg = await svc.FormatIncomingAsync(MakeState(), m);
         Assert.NotNull(msg);
         Assert.Contains("(回复 #msgABC)", msg!.Content);
+    }
+
+    [Fact]
+    public async Task FormatIncoming_HasLocalTimeStamp()
+    {
+        var data = MakeData();
+        var svc = new ChannelContextService(data);
+        var m = new UserMessage
+        {
+            Id = 1, ChannelId = 1, SenderName = "张三",
+            Content = "你好", Time = DateTime.UtcNow
+        };
+        var msg = await svc.FormatIncomingAsync(MakeState(), m);
+        Assert.NotNull(msg);
+        var local = m.Time.ToLocalTime();
+        Assert.Contains($"[{local:HH:mm}]", msg!.Content);
+    }
+
+    [Fact]
+    public async Task FormatIncoming_FirstMessage_NoDateLine()
+    {
+        var data = MakeData();
+        var svc = new ChannelContextService(data);
+        var m = new UserMessage
+        {
+            Id = 1, ChannelId = 1, SenderName = "张三",
+            Content = "你好", Time = DateTime.UtcNow
+        };
+        var msg = await svc.FormatIncomingAsync(MakeState(), m);
+        Assert.NotNull(msg);
+        // 首条消息只记录日期，不输出日期行（靠 [系统] 当前时间 锚定日期）
+        Assert.DoesNotContain(m.Time.ToLocalTime().ToString("yyyy-M-d") + "\n", msg!.Content);
+    }
+
+    [Fact]
+    public async Task FormatIncoming_CrossDay_InsertsDateLine()
+    {
+        var data = MakeData();
+        var svc = new ChannelContextService(data);
+        var st = MakeState();
+
+        // 本地昨天 23:30
+        var yesterdayLocal = DateTime.Now.AddDays(-1);
+        var yesterday = new UserMessage
+        {
+            Id = 1, ChannelId = 1, SenderName = "张三",
+            Content = "昨天最后一条", Time = yesterdayLocal.ToUniversalTime()
+        };
+        var first = await svc.FormatIncomingAsync(st, yesterday);
+        Assert.NotNull(first);
+
+        // 本地今天 00:30 → 与上次渲染跨日，应前置日期行
+        var todayLocal = DateTime.Now;
+        var today = new UserMessage
+        {
+            Id = 2, ChannelId = 1, SenderName = "张三",
+            Content = "今天第一条", Time = todayLocal.ToUniversalTime()
+        };
+        var second = await svc.FormatIncomingAsync(st, today);
+        Assert.NotNull(second);
+        Assert.Contains(todayLocal.ToString("yyyy-M-d") + "\n", second!.Content);
     }
 
     [Fact]
@@ -246,5 +308,28 @@ public class BuildHistoryBlockTests
         Assert.Contains("消息一", allContent);
         Assert.Contains("消息二", allContent);
         Assert.DoesNotContain("消息三", allContent);
+    }
+
+    [Fact]
+    public async Task History_GroupsByLocalDate_EachLineHasTime()
+    {
+        var data = MakeData();
+        var day1 = DateTime.Now.AddDays(-2);
+        var day2 = DateTime.Now.AddDays(-1);
+        data.Messages.Add(new UserMessage { Id = 1, ChannelId = 1, SenderName = "张三", Content = "前天消息", IsFromBot = false, Time = day1.ToUniversalTime() });
+        data.Messages.Add(new UserMessage { Id = 2, ChannelId = 1, SenderName = "张三", Content = "前天第二条", IsFromBot = false, Time = day1.AddHours(1).ToUniversalTime() });
+        data.Messages.Add(new UserMessage { Id = 3, ChannelId = 1, SenderName = "李四", Content = "昨天消息", IsFromBot = false, Time = day2.ToUniversalTime() });
+
+        var svc = new ChannelContextService(data);
+        var st = new ChannelContextState { ChannelId = 1, Mode = "session", LastConsumedMessageId = 0 };
+        var msgs = await svc.BuildHistoryBlockAsync(st);
+        var allContent = string.Join(" ", msgs.Select(m => m.Content ?? ""));
+
+        // 三条消息各带 [HH:mm]
+        Assert.Contains($"[{day1.ToLocalTime():HH:mm}]", allContent);
+        Assert.Contains($"[{day2.ToLocalTime():HH:mm}]", allContent);
+        // 两条唯一的日期行
+        Assert.Contains(day1.ToLocalTime().ToString("yyyy-M-d"), allContent);
+        Assert.Contains(day2.ToLocalTime().ToString("yyyy-M-d"), allContent);
     }
 }
