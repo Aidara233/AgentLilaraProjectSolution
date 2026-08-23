@@ -55,9 +55,19 @@ public class HaCallServiceTool : ITool
             }
         }
 
+        // HA 服务调用期望扁平结构：{entity_id, temperature, ...}，不认嵌套 "data" 键。
+        // 把 data 的每个属性展开并入 payload（同名键 data 覆盖 entity_id 之外，entity_id 优先取显式参数）。
         var payload = new Dictionary<string, object?>();
         if (!string.IsNullOrEmpty(entityId)) payload["entity_id"] = entityId;
-        if (dataObj.HasValue) payload["data"] = dataObj.Value;
+        if (dataObj.HasValue && dataObj.Value.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var prop in dataObj.Value.EnumerateObject())
+            {
+                if (string.Equals(prop.Name, "entity_id", StringComparison.OrdinalIgnoreCase))
+                    continue; // entity_id 以显式参数为准
+                payload[prop.Name] = ParseJsonValue(prop.Value);
+            }
+        }
 
         var json = JsonSerializer.Serialize(payload);
         var (code, body) = await _api.PostAsync($"/api/services/{Uri.EscapeDataString(domain)}/{Uri.EscapeDataString(service)}", json, ct);
@@ -85,5 +95,22 @@ public class HaCallServiceTool : ITool
         {
             return HaApiClient.Fail(ex.Message);
         }
+    }
+
+    /// <summary>JsonElement → CLR 值（保留数字/布尔/数组类型，供 JsonSerializer 序列化）。</summary>
+    private static object? ParseJsonValue(JsonElement el)
+    {
+        return el.ValueKind switch
+        {
+            JsonValueKind.Object => el.EnumerateObject()
+                .ToDictionary(p => p.Name, p => ParseJsonValue(p.Value)),
+            JsonValueKind.Array => el.EnumerateArray().Select(ParseJsonValue).ToList(),
+            JsonValueKind.String => el.GetString(),
+            JsonValueKind.Number => el.TryGetInt64(out var l) ? l : el.GetDouble(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null => null,
+            _ => el.GetRawText()
+        };
     }
 }
