@@ -63,23 +63,7 @@ public class HaGetStatesTool : ITool
 
         using var doc = HaApiClient.ParseBody(body);
         var root = doc.RootElement;
-        var sb = new StringBuilder();
-        sb.AppendLine($"entity_id: {root.GetProperty("entity_id").GetString()}");
-        sb.AppendLine($"state: {root.GetProperty("state").GetString()}");
-        if (root.TryGetProperty("attributes", out var attrs))
-        {
-            var name = attrs.TryGetProperty("friendly_name", out var n) ? n.GetString() : null;
-            if (!string.IsNullOrEmpty(name)) sb.AppendLine($"friendly_name: {name}");
-
-            // 温控/传感器常用属性优先展示
-            foreach (var key in new[] { "temperature", "current_temperature", "hvac_action",
-                "hvac_modes", "fan_mode", "preset_mode", "unit_of_measurement", "device_class" })
-            {
-                if (attrs.TryGetProperty(key, out var v))
-                    sb.AppendLine($"{key}: {v}");
-            }
-        }
-        return HaApiClient.Ok(sb.ToString().TrimEnd());
+        return HaApiClient.Ok(HaFormatter.FormatEntity(root));
     }
 
     private static ToolResult SummarizeDomain(List<JsonElement> states, string domain)
@@ -89,14 +73,14 @@ public class HaGetStatesTool : ITool
             return HaApiClient.Fail($"域 {domain} 下没有实体");
 
         var sb = new StringBuilder();
-        sb.AppendLine($"[{domain}] 共 {matched.Count} 个实体:");
+        sb.AppendLine($"[{domain}] 共 {matched.Count} 个:");
         foreach (var s in matched)
         {
             var id = s.GetProperty("entity_id").GetString();
             var state = s.GetProperty("state").GetString();
             var name = s.TryGetProperty("attributes", out var a) && a.TryGetProperty("friendly_name", out var n)
                 ? n.GetString() : null;
-            sb.AppendLine($"- {id}  → {state}{(string.IsNullOrEmpty(name) ? "" : $"  ({name})")}");
+            sb.AppendLine($"{(string.IsNullOrEmpty(name) ? id : name)}  →  {HaFormatter.FriendlyState(state)}");
         }
         return HaApiClient.Ok(HaApiClient.Truncate(sb.ToString().TrimEnd(), 6000));
     }

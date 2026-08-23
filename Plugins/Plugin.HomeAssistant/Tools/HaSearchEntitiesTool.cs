@@ -37,7 +37,7 @@ public class HaSearchEntitiesTool : ITool
             if (code != 200) return HaApiClient.FailHttp(code, body);
 
             using var doc = HaApiClient.ParseBody(body);
-            var matched = new List<(string Id, string State, string? Name)>();
+            var matched = new List<JsonElement>();
             foreach (var s in doc.RootElement.EnumerateArray())
             {
                 var id = s.GetProperty("entity_id").GetString() ?? "";
@@ -46,7 +46,7 @@ public class HaSearchEntitiesTool : ITool
                     ? n.GetString() : null;
 
                 if (id.ToLowerInvariant().Contains(query) || name?.ToLowerInvariant().Contains(query) == true)
-                    matched.Add((id, state, name));
+                    matched.Add(s);
             }
 
             if (matched.Count == 0)
@@ -54,9 +54,15 @@ public class HaSearchEntitiesTool : ITool
 
             var sb = new StringBuilder();
             sb.AppendLine($"找到 {matched.Count} 个匹配'{query}'的实体:");
-            foreach (var (id, state, name) in matched.Take(50))
-                sb.AppendLine($"- {id} → {state}{(string.IsNullOrEmpty(name) ? "" : $" ({name})")}");
-            if (matched.Count > 50)
+            foreach (var s in matched.Take(30))
+            {
+                var name2 = s.TryGetProperty("attributes", out var a2) && a2.TryGetProperty("friendly_name", out var n2)
+                    ? n2.GetString() : null;
+                var id2 = s.GetProperty("entity_id").GetString();
+                var st2 = HaFormatter.FriendlyState(s.TryGetProperty("state", out var ss) ? ss.GetString() : "");
+                sb.AppendLine($"{(!string.IsNullOrEmpty(name2) ? name2 : id2)}（{id2}） → {st2}");
+            }
+            if (matched.Count > 30)
                 sb.AppendLine($"... 共 {matched.Count} 个，已截断");
             return HaApiClient.Ok(sb.ToString().TrimEnd());
         }

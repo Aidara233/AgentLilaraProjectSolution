@@ -58,10 +58,10 @@ public class HaListDevicesTool : ITool
                 foreach (var s in processed)
                 {
                     var id = s.GetProperty("entity_id").GetString();
-                    var state = s.GetProperty("state").GetString();
+                    var st = HaFormatter.FriendlyState(s.GetProperty("state").GetString());
                     var name = s.TryGetProperty("attributes", out var a) && a.TryGetProperty("friendly_name", out var n)
                         ? n.GetString() : null;
-                    sb.AppendLine($"- {id} → {state}{(string.IsNullOrEmpty(name) ? "" : $" ({name})")}");
+                    sb.AppendLine($"{(string.IsNullOrEmpty(name) ? id : name)}（{id}） → {st}");
                 }
             }
             return HaApiClient.Ok(HaApiClient.Truncate(sb.ToString().TrimEnd(), 8000));
