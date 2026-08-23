@@ -41,32 +41,39 @@ public class HaGetHistoryTool : ITool
         var path = $"/api/history/period/{Uri.EscapeDataString(start)}" +
                    $"?filter_entity_id={Uri.EscapeDataString(entityId)}&minimal_response&no_attributes";
 
-        var (code, body) = await _api.GetAsync(path, ct);
-        if (code != 200) return HaApiClient.FailHttp(code, body);
-
-        using var doc = JsonDocument.Parse(body);
-        // 结构: [[{entity 状态变化...}, ...], ...]（按实体分组的多外层数组）
-        var groups = doc.RootElement.EnumerateArray().ToList();
-        var sb = new StringBuilder();
-        var total = 0;
-        foreach (var group in groups)
+        try
         {
-            foreach (var item in group.EnumerateArray())
-            {
-                var ts = item.TryGetProperty("last_changed", out var t) ? t.GetString() : "";
-                var st = item.TryGetProperty("state", out var s) ? s.GetString() : "";
-                if (string.IsNullOrEmpty(ts)) continue;
-                // 截取本地时间 HH:mm
-                var local = DateTimeOffset.TryParse(ts, out var dto) ? dto.ToLocalTime().ToString("MM-dd HH:mm") : ts;
-                total++;
-                if (sb.Length < 4000)
-                    sb.AppendLine($"{local}  {st}");
-            }
-        }
-        if (total == 0)
-            return HaApiClient.Fail($"实体 {entityId} 在最近 {hours} 小时内没有状态变化");
+            var (code, body) = await _api.GetAsync(path, ct);
+            if (code != 200) return HaApiClient.FailHttp(code, body);
 
-        var head = $"实体 {entityId} 最近 {hours}h 状态变化（共 {total} 条，时间均本地时区）:\n";
-        return HaApiClient.Ok(head + (sb.Length > 6000 ? HaApiClient.Truncate(sb.ToString(), 6000) : sb.ToString().TrimEnd()));
+            using var doc = HaApiClient.ParseBody(body);
+            // 结构: [[{entity 状态变化...}, ...], ...]（按实体分组的多外层数组）
+            var groups = doc.RootElement.EnumerateArray().ToList();
+            var sb = new StringBuilder();
+            var total = 0;
+            foreach (var group in groups)
+            {
+                foreach (var item in group.EnumerateArray())
+                {
+                    var ts = item.TryGetProperty("last_changed", out var t) ? t.GetString() : "";
+                    var st = item.TryGetProperty("state", out var s) ? s.GetString() : "";
+                    if (string.IsNullOrEmpty(ts)) continue;
+                    // 截取本地时间 HH:mm
+                    var local = DateTimeOffset.TryParse(ts, out var dto) ? dto.ToLocalTime().ToString("MM-dd HH:mm") : ts;
+                    total++;
+                    if (sb.Length < 4000)
+                        sb.AppendLine($"{local}  {st}");
+                }
+            }
+            if (total == 0)
+                return HaApiClient.Fail($"实体 {entityId} 在最近 {hours} 小时内没有状态变化");
+
+            var head = $"实体 {entityId} 最近 {hours}h 状态变化（共 {total} 条，时间均本地时区）:\n";
+            return HaApiClient.Ok(head + (sb.Length > 6000 ? HaApiClient.Truncate(sb.ToString(), 6000) : sb.ToString().TrimEnd()));
+        }
+        catch (HaApiException ex)
+        {
+            return HaApiClient.Fail(ex.Message);
+        }
     }
 }

@@ -39,11 +39,18 @@ public class HaTriggerTool : ITool
         if (domain == "")
             return HaApiClient.Fail($"只支持触发 script.* 或 automation.*，收到: {entityId}");
 
-        var name = entityId[(domain.Length + 1)..];
-        var json = JsonSerializer.Serialize(new { entity_id = entityId });
-        var (code, body) = await _api.PostAsync($"/api/services/{domain}/{Uri.EscapeDataString(name)}", json, ct);
-        if (code != 200) return HaApiClient.FailHttp(code, body);
+        try
+        {
+            var name = entityId[(domain.Length + 1)..];
+            var json = JsonSerializer.Serialize(new { entity_id = entityId });
+            var (code, body) = await _api.PostAsync($"/api/services/{domain}/{Uri.EscapeDataString(name)}", json, ct);
+            if (code != 200) return HaApiClient.FailHttp(code, body);
 
-        return HaApiClient.Ok($"已触发 {entityId}");
+            return HaApiClient.Ok($"已触发 {entityId}");
+        }
+        catch (HaApiException ex)
+        {
+            return HaApiClient.Fail(ex.Message);
+        }
     }
 }

@@ -34,18 +34,25 @@ public class HaGetStatesTool : ITool
         var entityId = resolvedInputs.Count > 0 ? resolvedInputs[0].Trim() : "";
         var domain = resolvedInputs.Count > 1 ? resolvedInputs[1].Trim().ToLowerInvariant() : "";
 
-        if (!string.IsNullOrEmpty(entityId))
-            return await GetSingle(entityId, ct);
+        try
+        {
+            if (!string.IsNullOrEmpty(entityId))
+                return await GetSingle(entityId, ct);
 
-        var (code, body) = await _api.GetAsync("/api/states", ct);
-        if (code != 200) return HaApiClient.FailHttp(code, body);
+            var (code, body) = await _api.GetAsync("/api/states", ct);
+            if (code != 200) return HaApiClient.FailHttp(code, body);
 
-        using var doc = JsonDocument.Parse(body, new JsonDocumentOptions { AllowTrailingCommas = true });
-        var states = doc.RootElement.EnumerateArray().ToList();
+            using var doc = HaApiClient.ParseBody(body);
+            var states = doc.RootElement.EnumerateArray().ToList();
 
-        if (!string.IsNullOrEmpty(domain))
-            return SummarizeDomain(states, domain);
-        return SummarizeAll(states);
+            if (!string.IsNullOrEmpty(domain))
+                return SummarizeDomain(states, domain);
+            return SummarizeAll(states);
+        }
+        catch (HaApiException ex)
+        {
+            return HaApiClient.Fail(ex.Message);
+        }
     }
 
     private async Task<ToolResult> GetSingle(string entityId, CancellationToken ct)
@@ -54,7 +61,7 @@ public class HaGetStatesTool : ITool
         if (code == 404) return HaApiClient.Fail($"实体不存在: {entityId}");
         if (code != 200) return HaApiClient.FailHttp(code, body);
 
-        using var doc = JsonDocument.Parse(body);
+        using var doc = HaApiClient.ParseBody(body);
         var root = doc.RootElement;
         var sb = new StringBuilder();
         sb.AppendLine($"entity_id: {root.GetProperty("entity_id").GetString()}");

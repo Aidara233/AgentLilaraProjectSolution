@@ -29,39 +29,46 @@ public class HaListDevicesTool : ITool
     {
         var domain = resolvedInputs.Count > 0 ? resolvedInputs[0].Trim().ToLowerInvariant() : "";
 
-        var (code, body) = await _api.GetAsync("/api/states", ct);
-        if (code != 200) return HaApiClient.FailHttp(code, body);
-
-        using var doc = JsonDocument.Parse(body);
-        var states = doc.RootElement.EnumerateArray().ToList();
-
-        var processed = domain == "" ? states : states.Where(s =>
-            s.GetProperty("entity_id").GetString()?.StartsWith(domain + ".") == true).ToList();
-
-        if (processed.Count == 0)
-            return HaApiClient.Fail($"没有找到{(domain == "" ? "任何" : $"域 {domain}")}的设备");
-
-        var sb = new StringBuilder();
-        if (domain == "")
+        try
         {
-            var byDomain = processed.GroupBy(s => s.GetProperty("entity_id").GetString()?.Split('.')[0] ?? "?")
-                .OrderByDescending(g => g.Count());
-            sb.AppendLine($"HA 设备/实体总数: {processed.Count}");
-            foreach (var g in byDomain)
-                sb.AppendLine($"  {g.Key}: {g.Count()}");
-        }
-        else
-        {
-            sb.AppendLine($"[{domain}] 共 {processed.Count} 个:");
-            foreach (var s in processed)
+            var (code, body) = await _api.GetAsync("/api/states", ct);
+            if (code != 200) return HaApiClient.FailHttp(code, body);
+
+            using var doc = HaApiClient.ParseBody(body);
+            var states = doc.RootElement.EnumerateArray().ToList();
+
+            var processed = domain == "" ? states : states.Where(s =>
+                s.GetProperty("entity_id").GetString()?.StartsWith(domain + ".") == true).ToList();
+
+            if (processed.Count == 0)
+                return HaApiClient.Fail($"没有找到{(domain == "" ? "任何" : $"域 {domain}")}的设备");
+
+            var sb = new StringBuilder();
+            if (domain == "")
             {
-                var id = s.GetProperty("entity_id").GetString();
-                var state = s.GetProperty("state").GetString();
-                var name = s.TryGetProperty("attributes", out var a) && a.TryGetProperty("friendly_name", out var n)
-                    ? n.GetString() : null;
-                sb.AppendLine($"- {id} → {state}{(string.IsNullOrEmpty(name) ? "" : $" ({name})")}");
+                var byDomain = processed.GroupBy(s => s.GetProperty("entity_id").GetString()?.Split('.')[0] ?? "?")
+                    .OrderByDescending(g => g.Count());
+                sb.AppendLine($"HA 设备/实体总数: {processed.Count}");
+                foreach (var g in byDomain)
+                    sb.AppendLine($"  {g.Key}: {g.Count()}");
             }
+            else
+            {
+                sb.AppendLine($"[{domain}] 共 {processed.Count} 个:");
+                foreach (var s in processed)
+                {
+                    var id = s.GetProperty("entity_id").GetString();
+                    var state = s.GetProperty("state").GetString();
+                    var name = s.TryGetProperty("attributes", out var a) && a.TryGetProperty("friendly_name", out var n)
+                        ? n.GetString() : null;
+                    sb.AppendLine($"- {id} → {state}{(string.IsNullOrEmpty(name) ? "" : $" ({name})")}");
+                }
+            }
+            return HaApiClient.Ok(HaApiClient.Truncate(sb.ToString().TrimEnd(), 8000));
         }
-        return HaApiClient.Ok(HaApiClient.Truncate(sb.ToString().TrimEnd(), 8000));
+        catch (HaApiException ex)
+        {
+            return HaApiClient.Fail(ex.Message);
+        }
     }
 }

@@ -23,8 +23,8 @@ public class HaConfig
     /// <summary>长期访问令牌（HA 个人资料→安全→长期访问令牌 生成）。不可留空。</summary>
     public string Token { get; set; } = "";
 
-    /// <summary>每个工具返回的响应体最大字节数，超出截断。</summary>
-    public int MaxResponseBytes { get; set; } = 20480;
+    /// <summary>HA 单次响应防呆上限（字节）。超过则拒绝并提示改用精确查询，不做字节截断（保护 JSON 完整性）。</summary>
+    public int MaxResponseBytes { get; set; } = 512000;
 
     /// <summary>HTTP 超时秒数。</summary>
     public int TimeoutSeconds { get; set; } = 15;

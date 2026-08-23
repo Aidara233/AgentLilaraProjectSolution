@@ -31,31 +31,38 @@ public class HaSearchEntitiesTool : ITool
         if (string.IsNullOrEmpty(query))
             return HaApiClient.Fail("query 不能为空");
 
-        var (code, body) = await _api.GetAsync("/api/states", ct);
-        if (code != 200) return HaApiClient.FailHttp(code, body);
-
-        using var doc = JsonDocument.Parse(body);
-        var matched = new List<(string Id, string State, string? Name)>();
-        foreach (var s in doc.RootElement.EnumerateArray())
+        try
         {
-            var id = s.GetProperty("entity_id").GetString() ?? "";
-            var state = s.GetProperty("state").GetString() ?? "";
-            var name = s.TryGetProperty("attributes", out var a) && a.TryGetProperty("friendly_name", out var n)
-                ? n.GetString() : null;
+            var (code, body) = await _api.GetAsync("/api/states", ct);
+            if (code != 200) return HaApiClient.FailHttp(code, body);
 
-            if (id.ToLowerInvariant().Contains(query) || name?.ToLowerInvariant().Contains(query) == true)
-                matched.Add((id, state, name));
+            using var doc = HaApiClient.ParseBody(body);
+            var matched = new List<(string Id, string State, string? Name)>();
+            foreach (var s in doc.RootElement.EnumerateArray())
+            {
+                var id = s.GetProperty("entity_id").GetString() ?? "";
+                var state = s.GetProperty("state").GetString() ?? "";
+                var name = s.TryGetProperty("attributes", out var a) && a.TryGetProperty("friendly_name", out var n)
+                    ? n.GetString() : null;
+
+                if (id.ToLowerInvariant().Contains(query) || name?.ToLowerInvariant().Contains(query) == true)
+                    matched.Add((id, state, name));
+            }
+
+            if (matched.Count == 0)
+                return HaApiClient.Fail($"没有找到匹配'{query}'的实体");
+
+            var sb = new StringBuilder();
+            sb.AppendLine($"找到 {matched.Count} 个匹配'{query}'的实体:");
+            foreach (var (id, state, name) in matched.Take(50))
+                sb.AppendLine($"- {id} → {state}{(string.IsNullOrEmpty(name) ? "" : $" ({name})")}");
+            if (matched.Count > 50)
+                sb.AppendLine($"... 共 {matched.Count} 个，已截断");
+            return HaApiClient.Ok(sb.ToString().TrimEnd());
         }
-
-        if (matched.Count == 0)
-            return HaApiClient.Fail($"没有找到匹配'{query}'的实体");
-
-        var sb = new StringBuilder();
-        sb.AppendLine($"找到 {matched.Count} 个匹配'{query}'的实体:");
-        foreach (var (id, state, name) in matched.Take(50))
-            sb.AppendLine($"- {id} → {state}{(string.IsNullOrEmpty(name) ? "" : $" ({name})")}");
-        if (matched.Count > 50)
-            sb.AppendLine($"... 共 {matched.Count} 个，已截断");
-        return HaApiClient.Ok(sb.ToString().TrimEnd());
+        catch (HaApiException ex)
+        {
+            return HaApiClient.Fail(ex.Message);
+        }
     }
 }

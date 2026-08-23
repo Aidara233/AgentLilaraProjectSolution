@@ -66,17 +66,24 @@ public class HaCallServiceTool : ITool
             return HaApiClient.FailHttp(code, body);
 
         // 解析返回的受影响实体，简洁展示
-        using var doc2 = JsonDocument.Parse(body);
-        var changed = doc2.RootElement.EnumerateArray().ToList();
-        var sb = new StringBuilder();
-        sb.AppendLine($"服务调用成功: {domain}.{service}");
-        sb.AppendLine($"受影响实体 {changed.Count} 个:");
-        foreach (var s in changed)
+        try
         {
-            var id = s.TryGetProperty("entity_id", out var e) ? e.GetString() : "?";
-            var state = s.TryGetProperty("state", out var st) ? st.GetString() : "?";
-            sb.AppendLine($"- {id} → {state}");
+            using var doc2 = HaApiClient.ParseBody(body);
+            var changed = doc2.RootElement.EnumerateArray().ToList();
+            var sb = new StringBuilder();
+            sb.AppendLine($"服务调用成功: {domain}.{service}");
+            sb.AppendLine($"受影响实体 {changed.Count} 个:");
+            foreach (var s in changed)
+            {
+                var id = s.TryGetProperty("entity_id", out var e) ? e.GetString() : "?";
+                var state = s.TryGetProperty("state", out var st) ? st.GetString() : "?";
+                sb.AppendLine($"- {id} → {state}");
+            }
+            return HaApiClient.Ok(sb.ToString().TrimEnd());
         }
-        return HaApiClient.Ok(sb.ToString().TrimEnd());
+        catch (HaApiException ex)
+        {
+            return HaApiClient.Fail(ex.Message);
+        }
     }
 }
