@@ -439,6 +439,7 @@ protected string DetectFormat(string filePath)
 | **GetInputSchema 覆写** | 工具参数需要非 string 类型或详细 JSON Schema 描述 | `Plugin.NetworkTools/HttpRequestTool.cs` |
 | **Atomic File Save**（.tmp + Move） | 任何 JSON 持久化写入，防止崩溃导致数据损坏 | 所有插件的 `SaveXxx` 方法 |
 | **BuildPromptSection 聚合** | 组件内多个工具各自贡献 prompt 片段 | `Plugin.WorkingTools/WorkingToolsComponent.cs` |
+| **会话开头一次性注入**（BuildStartPromptSection） | 静态参考内容（技能清单等）只需会话开头注入一次；别放进每轮 BuildPromptSection（会每突发重注入） | `Plugin.SkillTools/SkillToolsComponent.cs` |
 
 ---
 

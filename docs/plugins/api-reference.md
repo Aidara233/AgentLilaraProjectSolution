@@ -70,6 +70,10 @@ public interface IGlobalComponent
 
     // LoopInfo 标识调用方（哪个会话）
     string? BuildPromptSection(LoopInfo caller);
+
+    // 会话开头一次性静态参考段（技能清单等）。仅在会话首次上下文构建时调用一次，
+    // 随首轮持久化；恢复会话跳过（内容已在存档历史中）。区别于 BuildPromptSection（每轮动态注入）。
+    string? BuildStartPromptSection(LoopInfo caller) => null;
 }
 ```
 

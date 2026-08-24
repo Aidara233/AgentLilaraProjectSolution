@@ -104,10 +104,14 @@ Loop 组件工具 **遮蔽** 全局同名工具。
 
 ### Prompt 注入流程
 
-每轮 AI 调用前：
+**会话开头（一次性静态参考）**：新会话首轮上下文构建时，`GlobalComponentHost.BuildStartPromptSections(caller)` 收集各全局组件的 `BuildStartPromptSection`（技能清单等静态内容），注入一次并持久化；恢复会话跳过（内容已在存档历史中）。
+
+**每轮（动态状态）**：每轮 AI 调用前：
 1. `GlobalComponentHost.BuildPromptSections(caller)` — 按 `PromptPriority` 升序收集全局组件
 2. `ComponentHost.BuildPromptSections()` — 按 `PromptPriority` 升序收集 Loop 组件
 3. 结果拼接到 system prompt 末尾
+
+> 静态参考内容（会话内不变、注入一次即可）走 `BuildStartPromptSection`；每轮在变的内容（情绪、通知、待办）走 `BuildPromptSection`。把静态清单塞进 `BuildPromptSection` 会在每个突发重复注入并在历史里堆叠副本。
 
 ### 热重载
 
