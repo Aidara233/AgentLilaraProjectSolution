@@ -95,8 +95,8 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - `docs/core/agent-core.md` — AgentCore 统一对话核心（Express + Working 双模式）
 - `docs/core/memory-cores.md` — ExtractionCore（伴随提取，含输出契约与可信度自评规范；旧 7 个记忆核已删）
 - `docs/core/context-management.md` — 三层压缩 + CompactTool 接管路径
-- `docs/core/special-purpose.md` — SleepTalkCore / PreprocessingCore
-- `docs/core/stream-handlers.md` — NativeToolCallHandler / ExpressToolCallHandler
+- `docs/core/special-purpose.md` — 专用核心（SleepTalkCore / PreprocessingCore 已删除，留档说明）
+- `docs/core/stream-handlers.md` — NativeToolCallHandler（原生 tool_use 流事件处理）
 - `docs/core/configuration.md` — JSON 配置文件格式、协议选择、字段说明
 
 **历史与杂项：**
@@ -192,7 +192,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 上下文构建：Engine/Context/ChannelContextService.cs（express/working 会话共用的上下文格式化）
 - 上下文状态：Engine/Context/ChannelContextState.cs（频道完整上下文快照：参与者+历史+系统信息）
 - 会话宿主：Engine/Session/SessionAgentHost.cs（RuntimeSession 端口驱动的 Agent 宿主实现）
-- 统一模型调用：Core/AgentCore.cs（Express 响应 + 原生 tool_use；SessionCore 原名 WorkingCore）
+- 统一模型调用：Core/AgentCore.cs（按配置名加载 ExpressCore/ChannelCore/TaskCore + 原生 tool_use；SessionCore 原名 WorkingCore 已随死核清理删除）
 - 记忆检索：Engine/Mind/RetrieveService.cs（关键词 + 时间窗口 + 命中关键词数优先 + c_actual 降序 + 二跳内子证据）
 - 记忆写入口：Engine/Mind/Writer.cs（唯一写入口：WriteBatch 原子批次，关键词关联 + 同源分组 + 冲突检测 + 证据重算 + 情绪应用）
 - Embedding：Client/SiliconFlowEmbeddingProvider.cs（bge-large-zh-v1.5，SiliconFlow）+ Client/OnnxEmbeddingProvider.cs（本地模型）
@@ -206,7 +206,7 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 - 暂存提交：Engine/Mind/ReviewStage.cs（git 式暂存区，三类操作：可信度调值 / 解除排他 / 拆解冲突组；review_preview 预览 + review_commit 提交）
 - Review 消费：Engine/Session/SessionEngine.cs 30s 循环按需孵化 review 会话（队列有活 + 无活跃 review），per-session 注册 IReviewStageAccess（CreateSessionSpec.SessionServices）
 - 心智引擎：Engine/Mind/MindEngine.cs（持有 Writer/Emotion/Evidence/Conflicts/Queue/Retrieve/Events/Resurrector）+ Engine/Mind/MindEngineSpawnCheck.cs（响应系统启动，常驻 AutoStart）
-- 梦话生成：Core/SleepTalkCore.cs（被@时无关键词触发）
+- 梦话生成：已随做梦系统删除（旧 DreamEngine 链路移除，无 SleepTalkCore）
 - 睡眠状态：Engine/Core/SleepState.cs
 - express 空闲回收：Storage/Engine/ImpulseConfig.json（仅 ColdTimeoutSeconds 阈值；冲动值已删，Express 不再有冲动决策）
 - 视觉引擎：Engine/Vision/VisionEngine.cs（图片描述+OCR调度）

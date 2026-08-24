@@ -19,7 +19,7 @@ AgentLilaraProjectSolution/
 │     ├── Client/      IModelClient 抽象层（Claude/OpenAI 双协议）+ Embedding + IVisionProvider + IOcrProvider
 │     ├── Command/     框架指令系统（/help /status /config 等）
 │     ├── Config/      PathConfig 绝对路径管理
-│     ├── Core/        业务核心（AgentCore+ExtractionCore+SleepTalkCore+PreprocessingCore等），继承 CoreBase，各自 JSON 配置
+│     ├── Core/        业务核心（AgentCore+ExtractionCore），继承 CoreBase，各自 JSON 配置
 │     ├── Database/    实体 + Repository（SQLite，15张表：记忆 9 张 + 业务 6 张，另加日志库）
 │     ├── Engine/      引擎生态（MasterEngine内核 + 7个ISubEngine + Components + Modules）
 │     │     ├── Core/     MasterEngine内核 + Gate/Agent/ComponentHost等基类
@@ -371,7 +371,7 @@ ChangePropagation、临时记忆爆仓触发等旧机制全部删除。
   SleepState 枚举 + 分级打断语义（走神被@醒 / 小睡需@+关键词叫醒、仅@触发梦话 / 大睡仅 force-wake 可唤醒）。
   force-sleep 信号仍发布，但暂无消费引擎（旧 DreamEngine 已删）。
 
-梦话 (SleepTalkCore): 保留，逻辑不变
+梦话 (SleepTalkCore): 已随死代码清理删除（2026-08-24，DreamEngine 已删、类零实例化）
 
 Review 验证（替代旧 ReviewEngine 自由探索复盘）:
   完整流程见 docs/memory-redesign/05：ReviewQueue 唯一工作源（Conflict/Dream/Manual 入队）
@@ -590,7 +590,7 @@ CommandSpawnCheck 拦截 → CommandRegistry 路由
 ```
 Storage/
 ├── Core/*.json          各Core的LLM配置（连接+采样+协议，不含 session 提示词）
-├── Core/Prompts/        非 session 核心提示词（System/SleepTalk），通过 core 配置 promptFiles 加载
+├── Core/Prompts/        核心提示词（ExtractionPrompt.txt 经代码 PromptLoader 加载；System/SleepTalk 提示词已随死核清理删除）
 ├── Core/VisionProvider.json  视觉模型配置(apiKey/endpoint/model)
 ├── Core/OcrProvider.json     OCR模型配置(apiKey/endpoint/model)
 ├── Engine/

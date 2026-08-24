@@ -27,9 +27,6 @@ namespace AgentCoreProcessor.Command
         {
             ["base"] = Path.Combine(PathConfig.CoreConfigPath, "Base.json"),
             ["express"] = Path.Combine(PathConfig.CoreConfigPath, "ExpressCore.json"),
-            // working 会话实际走 AgentCore 默认核，文件缺失时回退 Base.json
-            ["working"] = Path.Combine(PathConfig.CoreConfigPath, "Base.json"),
-            ["review"] = Path.Combine(PathConfig.CoreConfigPath, "ReviewCore.json"),
             ["impulse"] = Path.Combine(PathConfig.StoragePath, "Engine", "ImpulseConfig.json"),
         };
 

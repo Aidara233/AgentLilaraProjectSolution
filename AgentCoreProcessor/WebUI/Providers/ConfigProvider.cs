@@ -18,8 +18,6 @@ internal class ConfigProvider : IWebUIProvider
         ["ChannelCore"] = "Core/ChannelCore.json",
         ["ExpressCore"] = "Core/ExpressCore.json",
         ["TaskCore"] = "Core/TaskCore.json",
-        ["ReviewCore"] = "Core/ReviewCore.json",
-        ["SleepTalkCore"] = "Core/SleepTalkCore.json",
     };
 
     private readonly Dictionary<string, string> _serviceFiles = new()

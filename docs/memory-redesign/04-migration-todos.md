@@ -22,7 +22,7 @@
 | EvaluationEngine/EvaluationScores | 并入心智引擎，派生自断言（主体=用户时按断言性质驱动评价，见 06） |
 | RelationClassificationCore | 不需要 |
 | MemoryDecay/ChangePropagation | 不需要 |
-| SleepTalkCore | 保留（与记忆库无关） |
+| SleepTalkCore | 已删除（2026-08-24 死核清理：DreamEngine 链移除后类零实例化） |
 | ExtractionEngine | 合并进心智引擎（伴随提取 + Session 善后两条链路） |
 
 ## 废弃清单

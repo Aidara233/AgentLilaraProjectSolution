@@ -110,9 +110,9 @@ Storage/Core/{CoreName}.json
 
 ## Persona 注入
 
-Persona.txt 作为普通 prompt 文件处理。需要 Persona 的 Core 在 `promptFiles` 数组首项加入 `"Persona.txt"`，由 `PromptLoader` 统一按序加载。不需要 Persona 的 Core（工具性核心如 SleepTalkCore 等）不在 `promptFiles` 中包含即可。
+Persona.txt 作为普通 prompt 文件处理。需要 Persona 的 Core 在 `promptFiles` 数组首项加入 `"Persona.txt"`，由 `PromptLoader` 统一按序加载。（当前无任何核引用 Persona.txt，文件也不存在——旧引用已随 SleepTalkCore 清理。）
 
-> **session 会话的提示词不走 core 的 `promptFiles`**：channel/task/review 的身份提示词由会话类型配置（`Storage/SessionTypes/{type}.json` 的 `Prompts`，文件在 `Storage/SessionTypes/Prompts/`）决定，`RuntimeSession` 构建后经 `AgentCore.SessionPrompt` 注入，**换核不换提示词**。core 配置的 `promptFiles` 仅服务于非 session 核心（System/SleepTalk）。加载统一走 `PromptLoader` 双目录（SessionTypes/Prompts → Core/Prompts）。
+> **session 会话的提示词不走 core 的 `promptFiles`**：channel/task/review 的身份提示词由会话类型配置（`Storage/SessionTypes/{type}.json` 的 `Prompts`，文件在 `Storage/SessionTypes/Prompts/`）决定，`RuntimeSession` 构建后经 `AgentCore.SessionPrompt` 注入，**换核不换提示词**。core 配置的 `promptFiles` 已无非 session 核心引用（ExtractionCore 走代码内置指令模板 `Core/Prompts/ExtractionPrompt.txt`）。加载统一走 `PromptLoader` 双目录（SessionTypes/Prompts → Core/Prompts）。
 
 ---
 
@@ -128,9 +128,11 @@ Persona.txt 作为普通 prompt 文件处理。需要 Persona 的 Core 在 `prom
 | `ExpressCore.json` | openai | deepseek-v4-flash | express 会话快速响应 |
 | `ChannelCore.json` | openai | deepseek-v4-pro | channel 会话多轮推理（escalate 后接管） |
 | `TaskCore.json` | openai | deepseek-v4-flash | task 会话执行 / 子 agent（review 会话复用此核） |
-| `SleepTalkCore.json` | 模板占位 | 模板占位 | 梦话生成 |
+| `ExtractionCore.json` | openai | deepseek-v4-flash | 伴随提取（MindEngine 常驻，单轮无工具） |
 
-**遗留配置（对应 Core 类已删除，Storage/Core 下的 json 已清理，2026-08-04）：** `CombineCore` / `ConsolidationCore` / `ConsolidationFinalCore` / `DedupCore` / `LinkCore` / `MemoryQueryCore` / `SummarizationCore` / `SystemCore`。对应模板保留在 `templates/Core/` 归档，如有需要可从模板重建。
+**遗留配置（对应 Core 类已删除，Storage/Core 下的 json 已清理，2026-08-04）：** `CombineCore` / `ConsolidationCore` / `ConsolidationFinalCore` / `DedupCore` / `LinkCore` / `MemoryQueryCore` / `SummarizationCore`。对应模板保留在 `templates/Core/` 归档，如有需要可从模板重建。
+
+> 2026-08-24 死核清理：`SessionCore` / `SubAgentCore` / `SystemCore` / `SleepTalkCore` 配置已从 templates / 工作区 / 运行时三处删除；代码侧同删 `SleepTalkCore.cs`、`PreprocessingCore.cs`、AgentCore 的 Express/Working 内切（`SwitchMode`）与 `ReviewCore` 悬空引用。仅被死核引用的 `SystemPrompt.txt` / `SleepTalkPrompt.txt` / `working_workflow.txt` 提示词一并清理。
 
 > 记忆重构（2026-08-05）又删 `ReviewCore` / `MemoryExtractionCore` / `RelationClassificationCore`：提取/关系分类核心已并入心智引擎（MindEngine.ExtractService），review 会话复用 `TaskCore`（见 `Storage/SessionTypes/review.json`）。
 

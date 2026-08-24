@@ -8,7 +8,7 @@
 
 ### 定位
 
-AgentCore 是系统中最关键的核心，负责所有 LLM 对话交互。它合并了原先 ExpressCore + SessionCore 两个独立核心的能力，统一处理两种引擎模式下的模型调用。SessionCore（原 WorkingCore）现已专供 RuntimeSession 的统一会话循环使用。
+AgentCore 是系统中最关键的核心，负责所有 LLM 对话交互。它按配置名（`Storage/Core/{name}.json`）锁定一个核（ExpressCore / ChannelCore / TaskCore），只负责模型调用和输出解析，不再区分 Express/Working 两种模式。
 
 ### 核心配置映射
 
@@ -21,7 +21,7 @@ AgentCore 是系统中最关键的核心，负责所有 LLM 对话交互。它�
 | task | `TaskCore.json` | 任务执行 / 子 agent |
 | review | `TaskCore.json` | Review 验证会话（复用 TaskCore，ReviewQueue + review_* 工具链） |
 
-模式通过 `SwitchMode(EngineMode)` 切换（EngineMode 为宿主侧概念，保留）。运行时换核走 `RuntimeSession.ConfigureCores / SwitchCore`（见下文"Session 多核切换"）。
+旧的 Express/Working 模式内切换（`SwitchMode`）已随死代码清理删除（2026-08-24，原有调用方均硬编码 Working 且 fixedMode 短路）。核选择统一走 `RuntimeSession.ConfigureCores / SwitchCore`（见下文"Session 多核切换"）。
 
 ### 关键属性
 
@@ -61,8 +61,7 @@ Express 模式下的简单对话，支持多模态图片输入。
 
 | 构造 | 说明 |
 |------|------|
-| `new AgentCore()` | 默认，配置="SessionCore"（遗留默认值；当前代码无调用点） |
-| `new AgentCore(cfgName)` | 按名称加载 `Storage/Core/{cfgName}.json`，如 `new AgentCore("ChannelCore")`、`new AgentCore("TaskCore")` |
+| `new AgentCore(cfgName)` | 按名称加载 `Storage/Core/{cfgName}.json`，如 `new AgentCore("ChannelCore")`、`new AgentCore("TaskCore")`。无参构造已删除（原默认 "SessionCore" 为死配置） |
 
 ### 实例化位置
 

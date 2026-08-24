@@ -10,14 +10,13 @@ using AgentLilara.PluginSDK;
 namespace AgentCoreProcessor.Core
 {
     /// <summary>
-    /// 统一 Agent 核心。合并 ExpressCore + SessionCore 的模型调用能力。
-    /// SessionCore 专供 RuntimeSession 会话循环，ExpressCore 用于框架层快速响应。
-    /// 只负责模型调用和输出解析，不管循环、不管状态、不管副作用。
+    /// 统一 Agent 核心。按配置名加载 Storage/Core/{name}.json（ExpressCore / ChannelCore / TaskCore），
+    /// 由 RuntimeSession 多核切换按名懒建缓存。只负责模型调用和输出解析，不管循环、不管状态、不管副作用。
     /// </summary>
     internal class AgentCore : CoreBase
     {
-        private string currentMode = "SessionCore";
-        private readonly bool fixedMode;
+        /// <summary>锁定的配置名：始终按该核加载（Express/Working 模式内切换已废弃，由会话多核切换取代）。</summary>
+        private readonly string _configName = "Base";
 
         /// <summary>当前是否使用原生工具调用。</summary>
         internal bool UseNativeTools => processor?.Client?.Config?.UseNativeTools == true;
@@ -53,24 +52,9 @@ namespace AgentCoreProcessor.Core
         /// </summary>
         public string? SessionPrompt { get; set; }
 
-        public AgentCore() : base("SessionCore")
-        {
-        }
-
         public AgentCore(string cfgName) : base(cfgName)
         {
-            currentMode = cfgName;
-            fixedMode = true;
-        }
-
-        /// <summary>切换模式配置（Express/Working 用不同 LLM 配置）。固定模式时不切换。</summary>
-        public void SwitchMode(Engine.EngineMode mode)
-        {
-            if (fixedMode) return;
-            var target = mode == Engine.EngineMode.Express ? "ExpressCore" : "SessionCore";
-            if (target == currentMode) return;
-            currentMode = target;
-            processor.CfgName = target;
+            _configName = cfgName;
         }
 
         /// <summary>
@@ -79,9 +63,9 @@ namespace AgentCoreProcessor.Core
         /// </summary>
         public async Task<ModelOutput> InvokeAsync(List<Message> messages, Engine.EngineMode mode)
         {
-            SwitchMode(mode);
-            if (processor == null || processor.CfgName != currentMode)
-                processor = new Processor(currentMode);
+            // 一次性核配置：processor 缺失或已加载配置与目标核不符则用该核重建。EngineMode 为宿主侧遗留参数，不再分流。
+            if (processor == null || processor.CfgName != _configName)
+                processor = new Processor(_configName);
             ApplyExtraMessages();
             SetConversationHistory(messages);
 
