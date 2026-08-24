@@ -30,4 +30,6 @@ public abstract class GlobalComponentBase : IGlobalComponent
     public virtual Task OnEnabledAsync() => Task.CompletedTask;
     public virtual Task OnDisabledAsync() => Task.CompletedTask;
     public virtual string? BuildPromptSection(LoopInfo caller) => null;
+    /// <summary>会话开头一次性静态参考段；默认不注入。见 IGlobalComponent 说明。</summary>
+    public virtual string? BuildStartPromptSection(LoopInfo caller) => null;
 }

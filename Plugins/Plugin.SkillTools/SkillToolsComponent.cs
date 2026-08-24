@@ -50,7 +50,16 @@ public class SkillToolsComponent : GlobalComponentBase
         return Task.CompletedTask;
     }
 
+    /// <summary>每轮注入返回 null：技能清单是静态参考，只在会话开头注入一次（BuildStartPromptSection），
+    /// 避免每个突发都重推整份清单、且历史里堆叠 [组件通知] 副本。</summary>
     public override string? BuildPromptSection(LoopInfo caller)
+    {
+        _ = caller;
+        return null;
+    }
+
+    /// <summary>会话开头一次性注入技能清单，让模型知道有哪些技能可 invoke_skill。</summary>
+    public override string? BuildStartPromptSection(LoopInfo caller)
     {
         _ = caller;
         if (_skills.Count == 0)

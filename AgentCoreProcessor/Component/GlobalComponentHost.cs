@@ -82,6 +82,29 @@ internal class GlobalComponentHost
             .ToList();
     }
 
+    /// <summary>
+    /// 会话开头一次性静态参考段（技能清单等）。每个 Global 组件提供一段，按 PromptPriority 排序后
+    /// 拼接为单个字符串。会话首次上下文构建时由 RuntimeSession 调用一次；恢复会话跳过（已随首轮持久化）。
+    /// </summary>
+    public string? BuildStartPromptSections(LoopInfo caller)
+    {
+        var sections = new List<(int priority, string content)>();
+
+        foreach (var inst in _components)
+        {
+            if (!inst.Context.IsEnabled) continue;
+            var section = inst.Component.BuildStartPromptSection(caller);
+            if (section != null)
+                sections.Add((inst.Component.Meta.PromptPriority, section));
+        }
+
+        if (sections.Count == 0)
+            return null;
+
+        return string.Join("\n\n",
+            sections.OrderBy(s => s.priority).Select(s => s.content));
+    }
+
     public async Task EnableComponentAsync(string name)
     {
         var inst = _components.FirstOrDefault(i => i.Component.Meta.Name == name);

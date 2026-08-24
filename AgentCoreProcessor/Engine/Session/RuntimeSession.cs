@@ -749,6 +749,34 @@ internal class RuntimeSession : IRuntimeSession
         }
     }
 
+    /// <summary>
+    /// 追加 Global 组件的会话开头一次性静态参考段（技能清单等）。仅新会话首轮上下文构建时调用，
+    /// 恢复会话跳过（参考段已随首轮持久化在存档历史中，不重复注入）。产物为独立用户消息，非 [组件通知]。
+    /// </summary>
+    private void AppendStartReferenceSections()
+    {
+        try
+        {
+            var globalHost = _services?.GetService(typeof(Component.GlobalComponentHost))
+                as Component.GlobalComponentHost;
+            if (globalHost == null) return;
+
+            var loopInfo = new LoopInfo(SessionId, _componentLoopType);
+            var section = globalHost.BuildStartPromptSections(loopInfo);
+            if (string.IsNullOrEmpty(section))
+                return;
+
+            _history.Add(new Message { Role = "user", Content = section });
+            Signal.Debug(LogGroup.Engine, "会话开头参考注入(一次性)",
+                new { sessionId = SessionId, sectionLen = section.Length });
+        }
+        catch (Exception ex)
+        {
+            Signal.Warn(LogGroup.Engine, "会话开头参考注入失败",
+                new { sessionId = SessionId, error = ex.Message });
+        }
+    }
+
     // ── 组件管理 ──
     // 运行时动态启用/卸载组件：尚未实现。
     // 当前 _componentHost 在 InitComponents 时一次性构建，运行期无法增删组件实例并重建工具表。
@@ -884,6 +912,10 @@ internal class RuntimeSession : IRuntimeSession
                 if (_initialState is string initText && !string.IsNullOrEmpty(initText))
                     _history.Add(new Message { Role = "user", Content = initText });
             }
+
+            // 会话开头一次性静态参考（技能清单等）：仅新会话首轮注入一次，随首轮持久化落盘，
+            // 恢复会话天然跳过（清单已在存档历史中）。与后续每突发注入的 [组件通知] 互不混淆。
+            AppendStartReferenceSections();
 
             // 持久化首轮 Bootstrap（存档落到 history.jsonl + state.json）
             await PersistRoundAsync(_history.ToList());
