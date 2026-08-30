@@ -15,7 +15,8 @@
       "list_sessions", "send_session_message",
       "escalate", "wait", "compact",
       "connect_channel", "disconnect_channel",
-      "journal", "remember", "mind_status"
+      "journal", "remember", "mind_status",
+      "pin_list", "pin_read", "pin_write", "pin_append", "pin_remove", "pin_search"
     ]
   },
   "Prompts": [

@@ -238,7 +238,8 @@ internal static class SessionTypeProfiles
                     "report_to_parent",
                     "end_session", "wait", "compact", "connect_channel", "listen_channel",
                     "disconnect_channel", "get_image_text", "refine_image", "continue_loop",
-                    "http_request", "download_file"
+                    "http_request", "download_file",
+                    "pin_list", "pin_read", "pin_write", "pin_append", "pin_remove", "pin_search"
                 }
             }
         },
@@ -263,7 +264,8 @@ internal static class SessionTypeProfiles
                     "list_sessions", "send_session_message",
                     "escalate", "wait", "compact",
                     "connect_channel", "disconnect_channel",
-                    "journal", "remember", "mind_status"
+                    "journal", "remember", "mind_status",
+                    "pin_list", "pin_read", "pin_write", "pin_append", "pin_remove", "pin_search"
                 }
             }
         },
@@ -286,7 +288,8 @@ internal static class SessionTypeProfiles
                     "list_channels", "search_chat_history",
                     "list_sessions", "send_session_message",
                     "journal", "claim", "remember", "mind_status", "archive",
-                    "end_session", "wait", "compact", "continue_loop"
+                    "end_session", "wait", "compact", "continue_loop",
+                    "pin_list", "pin_read", "pin_write", "pin_append", "pin_remove", "pin_search"
                 }
             }
         },

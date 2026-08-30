@@ -39,7 +39,7 @@ AgentLilaraProjectSolution/
 │     └── Program.cs   入口（WebApplication 宿主，默认启动 Web 服务器 + 适配器）
 └── Plugins/                    源码项目（每个含 plugin.json + CopyToHostPlugins 目标）
       ├── Plugin.BasicTools/      speak + thinking + send_media + send_file + adapter_action
-      ├── Plugin.WorkingTools/    pinboard + thinking_notes + retain_list + task_management + mark_for_review
+      ├── Plugin.WorkingTools/    thinking_notes + retain_list + task_management + mark_for_review + pin_* 系统记忆
       ├── Plugin.MindTools/       journal/claim/remember/mind_status/archive（心智工具）+ mind-emotion/mind-experience 注入组件
       ├── Plugin.FileTools/       read_text + write_text + update_text + list_dir + move_file/delete_file/copy_file
       ├── Plugin.FileOps/         archive + search/grep_files + file_info/hash/compare_files
@@ -473,7 +473,7 @@ AgentLilara.PluginSDK (共享契约，独立类库):
 
 插件项目 (独立 DLL，输出到 {BaseDirectory}/Plugins/):
   Plugin.BasicTools      — speak + thinking + send_media + send_file + adapter_action（基础通信）[LoopComponent: basic-tools]
-  Plugin.WorkingTools    — pinboard + thinking_notes + retain_list + task_management + mark_for_review（工作状态+复盘标记；mark_for_review 走 IReviewQueueAccess 入 ReviewQueue，Source=Manual）[LoopComponent: working-tools, IInjectProvider]
+  Plugin.WorkingTools    — thinking_notes + retain_list + task_management + mark_for_review（工作状态+复盘标记；mark_for_review 走 IReviewQueueAccess 入 ReviewQueue，Source=Manual）[LoopComponent: working-tools] + Global 组件 pinboard（文件式系统记忆：Storage/Workspace/pins/*.md，会话开始时注入仅标题清单，pin_* 工具家族，旧 pinboard.json 迁移）
   Plugin.MindTools       — journal/claim/remember/mind_status/archive（心智工具）+ mind-emotion/mind-experience 注入组件 [GlobalComponent: mind-tools]
   Plugin.FileTools       — read_text + write_text + update_text + list_dir + move_file/delete_file/copy_file（文件系统）[GlobalComponent: file-tools]
   Plugin.FileOps         — archive_create/extract/list + search/grep_files + file_info/hash/compare_files

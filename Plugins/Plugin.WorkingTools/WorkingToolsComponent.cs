@@ -9,7 +9,6 @@ public class WorkingToolsComponent : LoopComponentBase
 {
     private ILoopComponentContext _ctx = null!;
     private ThinkingNotesTool? _thinkingNotes;
-    private PinboardTool? _pinboard;
     private RetainListTool? _retainList;
     private TaskListTool? _taskList;
     private MarkForReviewTool? _markForReview;
@@ -17,7 +16,7 @@ public class WorkingToolsComponent : LoopComponentBase
     public override ComponentMeta Meta => new()
     {
         Name = "working-tools",
-        Description = "思考笔记、便签板、缓存列表、复盘标记",
+        Description = "思考笔记、缓存列表、复盘标记",
         DefaultEnabled = true,
         PromptPriority = 45
     };
@@ -27,7 +26,6 @@ public class WorkingToolsComponent : LoopComponentBase
         get
         {
             if (_thinkingNotes != null) yield return _thinkingNotes;
-            if (_pinboard != null) yield return _pinboard;
             if (_retainList != null) yield return _retainList;
             if (_taskList != null) yield return _taskList;
             if (_markForReview != null) yield return _markForReview;
@@ -38,7 +36,6 @@ public class WorkingToolsComponent : LoopComponentBase
     {
         _ctx = context;
         _thinkingNotes = new ThinkingNotesTool(context.Storage, context.SessionId);
-        _pinboard = new PinboardTool(context.Storage);
         _retainList = new RetainListTool(context.Storage);
         _taskList = new TaskListTool(context.Storage);
 
@@ -55,9 +52,6 @@ public class WorkingToolsComponent : LoopComponentBase
 
         var notes = _thinkingNotes?.BuildSection();
         if (notes != null) sections.Add(notes);
-
-        var board = _pinboard?.BuildSection();
-        if (board != null) sections.Add(board);
 
         var retain = _retainList?.BuildSection();
         if (retain != null) sections.Add(retain);

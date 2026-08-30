@@ -19,7 +19,8 @@
       "report_to_parent",
       "end_session", "wait", "compact", "connect_channel", "listen_channel",
       "disconnect_channel", "get_image_text", "refine_image", "continue_loop",
-      "http_request", "download_file", "get_forward_msg"
+      "http_request", "download_file", "get_forward_msg",
+      "pin_list", "pin_read", "pin_write", "pin_append", "pin_remove", "pin_search"
     ]
   },
   "Prompts": [
