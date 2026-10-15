@@ -8,6 +8,8 @@ internal class LogTraceProvider : IWebUIProvider
     public string Id => "log-trace";
     public string DisplayName => "信号追踪";
 
+    // The trace UI is implemented by the dedicated LogTrace.razor page and
+    // intentionally does not participate in DynamicPage/Card rendering.
     public IReadOnlyList<PageDefinition> Pages { get; } = new List<PageDefinition>
     {
         new()

@@ -13,13 +13,27 @@ internal class DataSourceManager : IDisposable
     private readonly ConcurrentDictionary<string, IDataSource> _sources = new();
     private readonly ConcurrentDictionary<string, IDisposable?> _subscriptions = new();
     private readonly ConcurrentDictionary<string, DataSourceState> _states = new();
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _requestCts = new();
+    private readonly ConcurrentDictionary<string, long> _requestVersions = new();
+    private CancellationTokenSource _lifetimeCts = new();
     private Dictionary<string, string>? _routeParams;
+    private long _generation;
+    private bool _disposed;
 
     public event Action<string>? OnDataChanged;
 
     public void Initialize(IReadOnlyList<DataSourceDefinition> definitions, Dictionary<string, string>? routeParams = null)
     {
-        _routeParams = routeParams;
+        if (_disposed) return;
+
+        CancelRequestsAndSubscriptions();
+        _generation++;
+        _routeParams = routeParams != null
+            ? new Dictionary<string, string>(routeParams, StringComparer.OrdinalIgnoreCase)
+            : null;
+        _sources.Clear();
+        _states.Clear();
+        _requestVersions.Clear();
         foreach (var def in definitions)
         {
             _sources[def.Id] = def.Source;
@@ -29,11 +43,25 @@ internal class DataSourceManager : IDisposable
 
     public async Task<DataResult?> FetchAsync(string? dataSourceId, DataQuery? query = null, CancellationToken ct = default)
     {
-        if (dataSourceId == null || !_sources.TryGetValue(dataSourceId, out var source))
+        if (_disposed || dataSourceId == null || !_sources.TryGetValue(dataSourceId, out var source))
             return null;
 
         if (!_states.TryGetValue(dataSourceId, out var state))
             return null;
+
+        var version = _requestVersions.AddOrUpdate(dataSourceId, 1, static (_, current) => current + 1);
+        var requestCts = new CancellationTokenSource();
+        var previousCts = _requestCts.AddOrUpdate(dataSourceId, requestCts, (_, previous) =>
+        {
+            previous.Cancel();
+            previous.Dispose();
+            return requestCts;
+        });
+        if (!ReferenceEquals(previousCts, requestCts))
+            previousCts.Dispose();
+
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetimeCts.Token, requestCts.Token);
+        var requestToken = linkedCts.Token;
         state.IsLoading = true;
         state.Error = null;
 
@@ -54,11 +82,21 @@ internal class DataSourceManager : IDisposable
         {
             try
             {
-                var result = await source.FetchAsync(query, ct);
+                var result = await source.FetchAsync(query, requestToken);
+                if (_disposed || requestToken.IsCancellationRequested ||
+                    !_requestVersions.TryGetValue(dataSourceId, out var currentVersion) || currentVersion != version)
+                    return null;
+
                 state.IsLoading = false;
                 state.LastData = result;
                 state.RetryCount = 0;
                 return result;
+            }
+            catch (OperationCanceledException) when (requestToken.IsCancellationRequested)
+            {
+                if (!_disposed && _requestVersions.TryGetValue(dataSourceId, out var currentVersion) && currentVersion == version)
+                    state.IsLoading = false;
+                return null;
             }
             catch (Exception ex)
             {
@@ -66,12 +104,15 @@ internal class DataSourceManager : IDisposable
                 {
                     state.RetryCount = attempt + 1;
                     var delay = (int)Math.Pow(2, attempt) * 1000;
-                    await Task.Delay(delay, ct);
+                    await Task.Delay(delay, requestToken);
                 }
                 else
                 {
-                    state.IsLoading = false;
-                    state.Error = ex.Message;
+                    if (!_disposed && _requestVersions.TryGetValue(dataSourceId, out var currentVersion) && currentVersion == version)
+                    {
+                        state.IsLoading = false;
+                        state.Error = ex.Message;
+                    }
                     return null;
                 }
             }
@@ -97,13 +138,21 @@ internal class DataSourceManager : IDisposable
 
     public void SubscribeAll()
     {
+        if (_disposed) return;
+
         foreach (var (id, source) in _sources)
         {
             if (!source.SupportsPush) continue;
-            _subscriptions[id] = source.Subscribe(payload =>
+            if (_subscriptions.TryRemove(id, out var oldSubscription))
+                oldSubscription?.Dispose();
+
+            var generation = _generation;
+            var subscription = source.Subscribe(payload =>
             {
+                if (_disposed || generation != _generation) return;
                 OnDataChanged?.Invoke(id);
             });
+            _subscriptions[id] = subscription;
         }
     }
 
@@ -112,11 +161,30 @@ internal class DataSourceManager : IDisposable
 
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
+        CancelRequestsAndSubscriptions();
+        _lifetimeCts.Dispose();
+        _sources.Clear();
+        _states.Clear();
+    }
+
+    private void CancelRequestsAndSubscriptions()
+    {
+        _lifetimeCts.Cancel();
+        _lifetimeCts.Dispose();
+        _lifetimeCts = new CancellationTokenSource();
+
+        foreach (var cts in _requestCts.Values)
+        {
+            cts.Cancel();
+            cts.Dispose();
+        }
+        _requestCts.Clear();
+
         foreach (var sub in _subscriptions.Values)
             sub?.Dispose();
         _subscriptions.Clear();
-        _sources.Clear();
-        _states.Clear();
     }
 }
 

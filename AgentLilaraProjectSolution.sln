@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.14.36623.8
+# Visual Studio Version 18
+VisualStudioVersion = 18.8.12023.21 stable
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentCoreProcessor", "AgentCoreProcessor\AgentCoreProcessor.csproj", "{89792DF4-2240-4A88-90AE-8BB7513C077C}"
 EndProject
@@ -371,6 +371,18 @@ Global
 		{EAE03B26-8F5D-4B69-9A64-9AC582A0E2C1}.Release|x64.Build.0 = Release|Any CPU
 		{EAE03B26-8F5D-4B69-9A64-9AC582A0E2C1}.Release|x86.ActiveCfg = Release|Any CPU
 		{EAE03B26-8F5D-4B69-9A64-9AC582A0E2C1}.Release|x86.Build.0 = Release|Any CPU
+		{0FC47596-11C9-4A28-8CFE-12BBCE48DCE0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0FC47596-11C9-4A28-8CFE-12BBCE48DCE0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0FC47596-11C9-4A28-8CFE-12BBCE48DCE0}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{0FC47596-11C9-4A28-8CFE-12BBCE48DCE0}.Debug|x64.Build.0 = Debug|Any CPU
+		{0FC47596-11C9-4A28-8CFE-12BBCE48DCE0}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{0FC47596-11C9-4A28-8CFE-12BBCE48DCE0}.Debug|x86.Build.0 = Debug|Any CPU
+		{0FC47596-11C9-4A28-8CFE-12BBCE48DCE0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0FC47596-11C9-4A28-8CFE-12BBCE48DCE0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0FC47596-11C9-4A28-8CFE-12BBCE48DCE0}.Release|x64.ActiveCfg = Release|Any CPU
+		{0FC47596-11C9-4A28-8CFE-12BBCE48DCE0}.Release|x64.Build.0 = Release|Any CPU
+		{0FC47596-11C9-4A28-8CFE-12BBCE48DCE0}.Release|x86.ActiveCfg = Release|Any CPU
+		{0FC47596-11C9-4A28-8CFE-12BBCE48DCE0}.Release|x86.Build.0 = Release|Any CPU
 		{9B569DCA-248E-4DAB-A208-27BCA82BDC32}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{9B569DCA-248E-4DAB-A208-27BCA82BDC32}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9B569DCA-248E-4DAB-A208-27BCA82BDC32}.Debug|x64.ActiveCfg = Debug|Any CPU

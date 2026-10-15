@@ -15,6 +15,7 @@ public class SignalContext : IDisposable
     public long Branch { get; private set; }
     public string? CurrentSpanId { get; private set; }
 
+    private SignalContext? _parentContext;
     private string? _rootSpanId;
     private string? _rootGroup;
     private string? _rootName;
@@ -32,10 +33,12 @@ public class SignalContext : IDisposable
 
     public static SignalContext Begin(string group, string scope, string name, object? detail = null)
     {
+        var parentContext = _current.Value;
         var ctx = new SignalContext
         {
             SignalId = NewSignalId(),
             Scope = scope,
+            _parentContext = parentContext,
         };
         _current.Value = ctx;
 
@@ -68,10 +71,12 @@ public class SignalContext : IDisposable
 
     public static SignalContext Continue(string signalId, string? parentSpanId, string scope, string group, string name, object? detail = null)
     {
+        var parentContext = _current.Value;
         var ctx = new SignalContext
         {
             SignalId = signalId,
             Scope = scope,
+            _parentContext = parentContext,
         };
         _current.Value = ctx;
 
@@ -106,6 +111,8 @@ public class SignalContext : IDisposable
 
     public SpanHandle Open(string group, string name, object? detail = null)
     {
+        if (_disposed) return SpanHandle.Noop;
+
         var spanId = GenerateSpanId();
         var parentSpanId = CurrentSpanId;
         var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -133,13 +140,15 @@ public class SignalContext : IDisposable
 
     internal void CloseSpan(string group, string spanId, string? prevSpanId, string name, object? detail)
     {
+        if (_disposed) return;
+
         var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var evt = new LogEvent
         {
             SignalId = SignalId,
             Scope = Scope,
             Branch = Branch,
-            ParentId = CurrentSpanId,
+            ParentId = prevSpanId,
             SpanId = spanId,
             GroupName = group,
             Level = LogLevel.Info,
@@ -154,7 +163,7 @@ public class SignalContext : IDisposable
 
     public void Event(string group, string name, int level = LogLevel.Info, object? detail = null)
     {
-        if (level < _minLevel) return;
+        if (_disposed || level < _minLevel) return;
         var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var evt = new LogEvent
         {
@@ -193,6 +202,8 @@ public class SignalContext : IDisposable
             Detail = SerializeDetail(detail)
         };
         _writer?.EnqueueClose(evt);
+        CurrentSpanId = null;
+        Restore(_parentContext);
     }
 
     public void Dispose() => Close();
