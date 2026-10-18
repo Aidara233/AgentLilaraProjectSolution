@@ -7,19 +7,18 @@ namespace Plugin.GroupFileTools;
 public class DownloadChatFileTool : ITool
 {
     private readonly IAdapterAccess? _adapterAccess;
-    private readonly string _adapterId = "";
+    private readonly IConnectedChannel? _connected;
     private readonly IWorkspaceAccess? _workspace;
     private readonly GroupFileDownloadStore? _store;
     private readonly string _sessionId = "";
 
     public DownloadChatFileTool() { }
 
-    public DownloadChatFileTool(IAdapterAccess adapterAccess,
-        string adapterId, IWorkspaceAccess workspace,
-        GroupFileDownloadStore store, string sessionId)
+    public DownloadChatFileTool(IAdapterAccess adapterAccess, IConnectedChannel? connected,
+        IWorkspaceAccess workspace, GroupFileDownloadStore store, string sessionId)
     {
         _adapterAccess = adapterAccess;
-        _adapterId = adapterId;
+        _connected = connected;
         _workspace = workspace;
         _store = store;
         _sessionId = sessionId;
@@ -49,8 +48,16 @@ public class DownloadChatFileTool : ITool
         if (string.IsNullOrEmpty(fileId))
             return Task.FromResult(new ToolResult { Status = "failed", Error = "file_id 不能为空" });
 
+        // 运行期解析适配器（组件装配早于 AutoClaim，不能在 OnInit 里锁定 adapterId）
+        var channelId = _connected?.CurrentChannelId ?? 0;
+        if (channelId <= 0)
+            return Task.FromResult(new ToolResult { Status = "failed", Error = "当前会话未连接频道" });
+        var adapterId = _adapterAccess.GetAdapterIdForChannel(channelId.ToString());
+        if (adapterId == null)
+            return Task.FromResult(new ToolResult { Status = "failed", Error = "当前频道没有可用的适配器" });
+
         var saveName = fileName ?? fileId[..Math.Min(fileId.Length, 16)];
-        var safeName = string.Join("_", saveName.Split(Path.GetInvalidFileNameChars()));
+        var safeName = GroupFileToolArgs.MakeSafeName(saveName, fileId[..Math.Min(fileId.Length, 16)]);
         var destDir = _workspace?.Resolve("Downloads");
         if (destDir == null)
             return Task.FromResult(new ToolResult { Status = "failed", Error = "工作区不可用" });
@@ -63,16 +70,15 @@ public class DownloadChatFileTool : ITool
         var taskId = task?.Id ?? "";
 
         var adapterAccess = _adapterAccess;
-        var adapterId = _adapterId;
         _ = Task.Run(async () =>
         {
             try
             {
-                await adapterAccess.ExecuteActionAsync(adapterId, "download_chat_file",
-                    $"{{\"file_id\":\"{fileId}\",\"dest_path\":\"{destPath.Replace("\\", "\\\\")}\"}}");
+                var result = await adapterAccess.ExecuteActionAsync(adapterId, "download_chat_file",
+                    $"{{\"file_id\":\"{fileId}\",\"dest_path\":\"{JsonEscape(destPath)}\"}}");
 
-                // 检查文件是否下载成功
-                if (File.Exists(destPath))
+                // 检查文件是否下载成功（适配器返回 null 表示 action 失败，错误原因已在线程内抛出）
+                if (result != null && File.Exists(destPath))
                 {
                     var size = new FileInfo(destPath).Length;
                     store?.MarkCompleted(taskId, size);
@@ -90,4 +96,9 @@ public class DownloadChatFileTool : ITool
 
         return Task.FromResult(new ToolResult { Status = "success", Data = $"[下载已提交] {saveName}" });
     }
+
+    /// <summary>JSON 字符串转义（路径含反斜杠/引号时不能直接拼进参数 JSON）。</summary>
+    private static string JsonEscape(string s) => s
+        .Replace("\\", "\\\\")
+        .Replace("\"", "\\\"");
 }

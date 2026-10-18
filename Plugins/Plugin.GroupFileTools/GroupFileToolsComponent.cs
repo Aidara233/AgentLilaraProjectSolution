@@ -31,23 +31,16 @@ public class GroupFileToolsComponent : LoopComponentBase
         }
     }
 
-    public override async Task OnInitAsync(ILoopComponentContext context, InitReason reason)
+    public override Task OnInitAsync(ILoopComponentContext context, InitReason reason)
     {
         _ctx = context;
 
         var adapterAccess = context.GetService<IAdapterAccess>();
         var channelAccess = context.GetService<IChannelAccess>();
+        // 连接驱动：频道号由 IConnectedChannel 运行期决定。组件装配早于 AutoClaim，
+        // 所以这里只拿引用、不解析频道（否则会锁定 channelId=0 导致适配器不存在、工具直接不注册）。
         var connected = context.GetService<IConnectedChannel>();
-        if (adapterAccess == null || channelAccess == null) return;
-
-        // 频道号取自连接状态（LoopId 前缀概念已移除，会话不持有 channel 号）
-        var channelId = connected?.CurrentChannelId ?? 0;
-
-        var detail = await channelAccess.GetChannelDetailAsync(channelId);
-        if (detail == null || string.IsNullOrEmpty(detail.Name)) return;
-
-        var adapterId = adapterAccess.GetAdapterIdForChannel(detail.Name);
-        if (adapterId == null) return;
+        if (adapterAccess == null || channelAccess == null) return Task.CompletedTask;
 
         // Workspace 访问
         var workspace = context.Workspace;
@@ -57,11 +50,12 @@ public class GroupFileToolsComponent : LoopComponentBase
         var store = GroupFileToolsAccessor.Store
             ?? throw new InvalidOperationException("GroupFileDownloadStore 未创建");
 
-        _listFiles = new ListGroupFilesTool(adapterAccess, adapterId);
-        _downloadFile = new DownloadGroupFileTool(adapterAccess,
-            adapterId, workspace, http, store, context.SessionId);
+        _listFiles = new ListGroupFilesTool(adapterAccess, channelAccess, connected);
+        _downloadFile = new DownloadGroupFileTool(adapterAccess, channelAccess,
+            connected, workspace, http, store, context.SessionId);
         _downloadChatFile = new DownloadChatFileTool(adapterAccess,
-            adapterId, workspace, store, context.SessionId);
+            connected, workspace, store, context.SessionId);
+        return Task.CompletedTask;
     }
 
     public override Task OnBeforeInvokeAsync()

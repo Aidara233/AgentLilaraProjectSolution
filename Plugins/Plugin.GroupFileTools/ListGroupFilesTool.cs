@@ -7,14 +7,17 @@ namespace Plugin.GroupFileTools;
 public class ListGroupFilesTool : ITool
 {
     private readonly IAdapterAccess? _adapterAccess;
-    private readonly string _adapterId = "";
+    private readonly IChannelAccess? _channelAccess;
+    private readonly IConnectedChannel? _connected;
 
     public ListGroupFilesTool() { }
 
-    public ListGroupFilesTool(IAdapterAccess adapterAccess, string adapterId)
+    public ListGroupFilesTool(IAdapterAccess adapterAccess, IChannelAccess channelAccess,
+        IConnectedChannel? connected)
     {
         _adapterAccess = adapterAccess;
-        _adapterId = adapterId;
+        _channelAccess = channelAccess;
+        _connected = connected;
     }
 
     public string Name => "list_group_files";
@@ -52,10 +55,18 @@ public class ListGroupFilesTool : ITool
         if (!int.TryParse(limitStr, out var limit) || limit < 1) limit = 10;
         if (limit > 50) limit = 50;
 
+        // 运行期解析适配器（组件装配早于 AutoClaim，不能在 OnInit 里锁定 adapterId）
+        var channelId = _connected?.CurrentChannelId ?? 0;
+        string? adapterId = null;
+        if (channelId > 0)
+            adapterId = _adapterAccess.GetAdapterIdForChannel(channelId.ToString());
+        if (adapterId == null)
+            return new ToolResult { Status = "failed", Error = "当前会话未连接 QQ 频道，无法查询群文件" };
+
         var folderParam = string.IsNullOrEmpty(folderId) ? null : $",\"folder_id\":\"{folderId}\"";
         var paramJson = $"{{\"group_id\":\"{groupId}\"{folderParam}}}";
 
-        var rawJson = await _adapterAccess.ExecuteActionAsync(_adapterId, "get_group_files", paramJson);
+        var rawJson = await _adapterAccess.ExecuteActionAsync(adapterId, "get_group_files", paramJson);
         if (rawJson == null)
             return new ToolResult { Status = "failed", Error = "获取群文件列表失败" };
 
