@@ -280,11 +280,13 @@ Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，�
 
 1. 备份旧部署：`cp -r E:/Tools/Lilara/publish E:/Tools/Lilara/publish.bak-<日期>`
 2. `dotnet build -c Release`（全解决方案）——**必须整解决方案构建**，让所有插件（含新增 QQTools）编译并复制到 `bin/Release/net8.0/win-x64/Plugins/`（单独 build 主工程不会构建插件）
-3. `dotnet publish AgentCoreProcessor/AgentCoreProcessor.csproj -c Release -o E:/Tools/Lilara/publish`（主程序 + WebUI + templates）
-4. 复制插件：`cp -r bin/Release/net8.0/win-x64/Plugins E:/Tools/Lilara/publish/Plugins`（**注意 cp 到已存在目录会嵌套成 Plugins/Plugins，先确保目标不存在**）
-5. `paths.json` 由 publish 保留（部署配置指向 E:/Tools/Lilara/Storage；首次启动无则 SetupWizard 生成）
-6. 验证：`E:/Tools/Lilara/publish/AgentCoreProcessor.exe --dev` 起动（HttpBridge 9876 + WebUI 5000，不连 QQ）+ signal 日志查 `插件已加载 qq-tools` 与会话 components 含 `qq-tools`
-7. 连真实 QQ 的端到端由用户实测
+3. **publish 前清空部署目录**（只保留 `paths.json`）：publish 到已存在目录不会清理旧文件，旧版 `Microsoft.Extensions.Logging` 等残留 DLL 会导致启动 `FileNotFoundException`。`paths.json` 不在发布产物中，务必先取出再放回。
+4. `dotnet publish AgentCoreProcessor/AgentCoreProcessor.csproj -c Release -o E:/Tools/Lilara/publish`（主程序 + WebUI + templates）
+   - csproj 已开 `PublishSingleFile`：托管程序集全部打进 `AgentCoreProcessor.exe`（约 110MB），根目录只剩 exe + 原生库（`e_sqlite3`/`libSkiaSharp`/`onnxruntime*`）+ `aspnetcorev2_inprocess.dll`（IIS 宿主，删不得）+ 数据目录。
+   - `IncludeNativeLibrariesForSelfExtract` 保持 false（不启用）；`PublishTrimmed` 必须保持 false —— 插件反射扫描 / Newtonsoft / Blazor 一裁剪即启动失败。
+5. 复制插件：`cp -r AgentCoreProcessor/bin/Release/net8.0/win-x64/Plugins E:/Tools/Lilara/publish/Plugins`（**注意 cp 到已存在目录会嵌套成 Plugins/Plugins，先确保目标不存在**）
+6. 验证：`E:/Tools/Lilara/publish/AgentCoreProcessor.exe --dev` 起动（HttpBridge 9876 + WebUI 5000，不连 QQ）+ 确认 23 个插件从 `publish/Plugins/` 加载 + 会话 components 含目标组件
+7. 连真实 QQ 的端到端由用户实测（OneBot WS 连不连得上以内网 `debian.local:3003` 为准）
 
 注意：`templates/Session` 等旧结构残留无实际影响（SessionTypes 才是唯一权限源），可忽略不清理。
 ## 历史数据内存优化（2026-08-19）
