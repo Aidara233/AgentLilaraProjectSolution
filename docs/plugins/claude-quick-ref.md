@@ -129,6 +129,8 @@ dotnet build
 | 组件工具不生效 | DLL 有 `[Component]` 时独立 ITool 不被注册 | 把工具放进组件的 `Tools` 属性 |
 | 构造注入拿不到服务 | 服务类型不在 `InstantiateWithInjection` 的 resolver 字典里 | 用 `IServiceProvider` 参数 + `GetService<T>()` |
 | Loop 组件在某个会话类型不出现 | 该类型 `SessionTypes/{type}.json` 的 `Components` 清单没包含它 | 在 `/p/plugins/types` 把组件加入该类型清单（插件已不声明引擎适用性） |
+| Loop 组件 OnInit 里 `IConnectedChannel.CurrentChannelId` 恒为 0 | 组件装配发生在 AutoClaim 之前，此时会话尚未占频道 | 只注入 `IConnectedChannel` 引用，在 `ExecuteAsync` 里运行期解析频道/适配器（参考 `Plugin.BasicTools`） |
+| 插件工具静默不注册 | 工具构造依赖 `adapterId` 等运行期值，`OnInitAsync` 提前 `return` 就整组不挂载 | 组件 `OnInitAsync` 只做无条件的构造，失败信息留到工具执行时返回 |
 | `OnEnabledAsync()` 初始化时没调用 | 设计如此，首次初始化只调 `OnInitAsync()` | 初始化逻辑放 `OnInitAsync()` |
 | 文件路径不对 | 用 `..` 跳出 `GlobalDirectory` 访问 Workspace | 用 `IPluginStorage.WorkspaceDirectory` |
 | 以为插件 DLL 在 Storage 下 | 插件 DLL 在 `{BaseDirectory}/Plugins/`，不在 Storage 下 | 读 [path-config.md](path-config.md) |
