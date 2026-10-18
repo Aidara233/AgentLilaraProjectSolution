@@ -5,10 +5,13 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- 裁剪关闭：项目重度依赖反射（插件扫描 / Newtonsoft / Blazor），一裁剪即启动失败 -->
     <PublishTrimmed>false</PublishTrimmed>
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <PublishSingleFile>false</PublishSingleFile>
+    <!-- 单文件发布：托管程序集打包进 exe；原生库（e_sqlite3/libSkiaSharp/onnxruntime）
+         仍散落在 exe 旁（默认 IncludeNativeLibrariesForSelfExtract=false），不启用压缩以省内存/启动时间 -->
+    <PublishSingleFile>true</PublishSingleFile>
     <!-- 发布时不复制调试符号文件 -->
     <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
     <!-- 智能体长驻进程非高并发 Web 服务，关闭 Web SDK 默认的 Server GC
