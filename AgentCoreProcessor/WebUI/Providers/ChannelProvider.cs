@@ -77,7 +77,7 @@ internal class ChannelProvider : IWebUIProvider
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "channel-list", Source = new ChannelListSource(_engine, this) }
+            new() { Id = "channel-list", Source = new ChannelListSource(_engine, this), Paging = DataPagingMode.Client }
         }
     };
 
@@ -108,7 +108,9 @@ internal class ChannelProvider : IWebUIProvider
                         new() { Id = "force-extraction", Label = "强制提取记忆", Confirm = "确定要强制触发记忆提取吗？" }
                     }
                 },
-                Layout = new CardLayout { PreferredCols = 12 }
+                Layout = new CardLayout { PreferredCols = 12 },
+                // 提取是 MindEngine 的全局攒批，不是频道私有队列；强制提取后会改变提取计数。
+                AffectedDataSourceIds = new[] { "ch-info" }
             },
             new()
             {
@@ -128,8 +130,8 @@ internal class ChannelProvider : IWebUIProvider
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "ch-info", Source = new ChannelInfoSource(_engine, channelId) },
-            new() { Id = "ch-messages", Source = new ChannelMessagesSource(_engine, channelId) }
+            new() { Id = "ch-info", Factory = () => new ChannelInfoSource(_engine, channelId) },
+            new() { Id = "ch-messages", Factory = () => new ChannelMessagesSource(_engine, channelId), Paging = DataPagingMode.Server }
         }
     };
 }
@@ -241,8 +243,8 @@ internal class ChannelInfoSource : IDataSource
             ["affinity"] = channel.Affinity.ToString("F1"),
             ["importance"] = config.Importance,
             ["messages"] = msgCount.ToString(),
-            ["extraction"] = $"攒批 {pendingCount} | 已提取 {extractBatches} 批",
-            ["config"] = $"攒批阈值 {AgentCoreProcessor.Engine.Mind.ExpressExtractor.DefaultBatchSize}"
+            ["extraction"] = $"全局攒批 {pendingCount} | 已提取 {extractBatches} 批",
+            ["config"] = $"攒批阈值 {AgentCoreProcessor.Engine.Mind.ExpressExtractor.DefaultBatchSize}（全局）"
         };
         if (disabledActions.Count > 0)
             data["_disabled_actions"] = disabledActions;
@@ -294,7 +296,9 @@ internal class ChannelMessagesSource : IDataSource
         var keyword = query?.Search;
 
         var messages = await _engine.Session.SearchMessagesByChannelAsync(_channelId, keyword, offset, pageSize);
-        var total = await _engine.Session.GetMessageCountByChannelAsync(_channelId);
+        var total = string.IsNullOrWhiteSpace(keyword)
+            ? await _engine.Session.GetMessageCountByChannelAsync(_channelId)
+            : messages.Count; // 搜索无独立计数的现成 API；至少不把关键词过滤后的当前页误报成全部频道消息
 
         var arr = new JsonArray();
         foreach (var msg in messages)

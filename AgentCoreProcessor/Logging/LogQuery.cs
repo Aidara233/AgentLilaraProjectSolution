@@ -97,16 +97,41 @@ public class LogQuery : ILogQuery
     }
 
     public List<LogEvent> GetRecentBefore(long beforeTimestamp, int limit = 200)
+        => GetRecentBefore(beforeTimestamp, long.MaxValue, limit);
+
+    /// <summary>
+    /// 稳定游标：timestamp + id 联合比较，避免同一毫秒内跨页漏事件。
+    /// </summary>
+    public List<LogEvent> GetRecentBefore(long beforeTimestamp, long beforeId, int limit = 200)
     {
         using var cmd = _db.Connection.CreateCommand();
         cmd.CommandText = """
             SELECT id, signal_id, scope, branch, parent_id, span_id, cause_span_id, group_name, level, type, timestamp, name, detail, is_signal_origin
             FROM events
-            WHERE timestamp < @before
-            ORDER BY timestamp DESC
+            WHERE timestamp < @before OR (timestamp = @before AND id < @beforeId)
+            ORDER BY timestamp DESC, id DESC
             LIMIT @limit
             """;
         cmd.Parameters.AddWithValue("@before", beforeTimestamp);
+        cmd.Parameters.AddWithValue("@beforeId", beforeId);
+        cmd.Parameters.AddWithValue("@limit", limit);
+        return ReadEvents(cmd);
+    }
+
+    public List<LogEvent> GetSignalBefore(string signalId, long beforeTimestamp, long beforeId, int limit = 200)
+    {
+        using var cmd = _db.Connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT id, signal_id, scope, branch, parent_id, span_id, cause_span_id, group_name, level, type, timestamp, name, detail, is_signal_origin
+            FROM events
+            WHERE signal_id = @signalId
+              AND (timestamp < @before OR (timestamp = @before AND id < @beforeId))
+            ORDER BY timestamp DESC, id DESC
+            LIMIT @limit
+            """;
+        cmd.Parameters.AddWithValue("@signalId", signalId);
+        cmd.Parameters.AddWithValue("@before", beforeTimestamp);
+        cmd.Parameters.AddWithValue("@beforeId", beforeId);
         cmd.Parameters.AddWithValue("@limit", limit);
         return ReadEvents(cmd);
     }

@@ -14,6 +14,11 @@ public class CardDefinition
     public string? ListenEvent { get; init; }
     /// <summary>提交时从 PageContext state 中取此 key 的值合并进 payload</summary>
     public string? InjectEvent { get; init; }
+    /// <summary>
+    /// 操作成功后除本卡数据源外还需要失效刷新的数据源 ID。
+    /// 用于拨款后余额、换核后会话列表等跨卡片联动；不要用它刷新存在未保存草稿的卡片。
+    /// </summary>
+    public IReadOnlyList<string>? AffectedDataSourceIds { get; init; }
 }
 
 public enum CardType

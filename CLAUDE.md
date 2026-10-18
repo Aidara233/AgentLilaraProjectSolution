@@ -44,6 +44,16 @@
 
 不要一次性读取所有源代码文件。按需读取，用到哪个读哪个。
 
+## WebUI 约定（2026-10-18 起）
+
+- **页面作用域数据源**：`DataSourceDefinition.Factory` 为每个页面实例创建数据源；只有无状态源才用 `Source` 共享。有选中对象/编辑草稿的数据源（配置、控制台、适配器、会话类型）必须 Factory，避免跨标签页串状态。
+- **显式分页模式**：`DataSourceDefinition.Paging` 必须声明 `Client` 或 `Server`。Server 源按 `DataQuery.Page/PageSize` 返回当前页并给 `TotalCount`；Client 源返回完整集合。表格不再靠 `TotalCount` 猜测。
+- **行操作目标**：表格行键用 `TableSchema.RowKeyField`（缺省回退 `_row_id`/`id`/`name`），`SubmitAsync` 收到 payload 已含 `_row_id`；`Danger` 行操作默认需要确认。
+- **操作反馈**：`DynamicPage` 统一展示 `ActionResult.Message`，失败不刷新数据、不覆盖草稿；成功后刷新本卡与 `CardDefinition.AffectedDataSourceIds`（精确失效，不要刷新全页）。
+- **独立 Trace 页**：正式入口只是 `/logs/trace`（独立 Razor + `log-trace.js`）；`/p/logs/trace` 是兼容跳转壳，`LogTraceProvider` 只提供导航。不要把 Trace 迁入 DynamicPage。
+- **验证方式**：UI 回归不能只靠单元测试。用隔离 Storage + 独立 WebUI/HttpBridge 端口启动 `--dev`（不要中断正式部署实例），系统 Chrome + Microsoft.Playwright 的 `ExecutablePath` 驱动；隐藏的 `/p/test/ui-contract` 覆盖分页、行键、确认、失败反馈、配置类型保持，`/p/test/status`、`/p/test/cards` 为卡片演示。
+
+
 ## 记忆文件索引
 
 Memory 目录：`~/.claude/projects/E--Workspace-AgentLilaraProject/memory/`，入口索引为 `MEMORY.md`。历史设计决策记忆已随架构演进清理，当前仅保留近三轮重构的结论：

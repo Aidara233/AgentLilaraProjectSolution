@@ -32,7 +32,8 @@ internal class SessionsProvider : IWebUIProvider
     {
         BuildActiveSessionsPage(),
         BuildHistoryPage(),
-        BuildInjectPage()
+        BuildInjectPage(),
+        BuildSessionDetailPage()
     };
 
     // ---- 活跃会话 ----
@@ -80,13 +81,15 @@ internal class SessionsProvider : IWebUIProvider
                         new() { Field = "coreName", Label = "目标核心", Type = FormFieldType.Select, Required = true, Options = CoreOptions() }
                     }
                 },
-                Layout = new CardLayout { PreferredCols = 6, GridColumnStart = 1 }
+                Layout = new CardLayout { PreferredCols = 6, GridColumnStart = 1 },
+                // 换核成功后活跃会话列表的“核心”列需要立即刷新。
+                AffectedDataSourceIds = new[] { "sessions-active" }
             }
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "sessions-active", Source = new SessionsActiveSource(_engine) },
-            new() { Id = "core-switch", Source = new CoreSwitchSource(_engine) }
+            new() { Id = "sessions-active", Source = new SessionsActiveSource(_engine), Paging = DataPagingMode.Client },
+            new() { Id = "core-switch", Factory = () => new CoreSwitchSource(_engine) }
         }
     };
 
@@ -108,6 +111,7 @@ internal class SessionsProvider : IWebUIProvider
                         new() { Field = "sessionId", Header = "会话ID", Width = "140px" },
                         new() { Field = "status", Header = "状态", Width = "100px", Format = ColumnFormat.Badge },
                         new() { Field = "components", Header = "组件" },
+                        new() { Field = "rounds", Header = "轮次", Width = "70px" },
                         new() { Field = "createdAt", Header = "创建时间", Width = "160px" }
                     },
                     Searchable = true,
@@ -118,7 +122,7 @@ internal class SessionsProvider : IWebUIProvider
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "sessions-history", Source = new SessionsHistorySource(_engine) }
+            new() { Id = "sessions-history", Source = new SessionsHistorySource(_engine), Paging = DataPagingMode.Server }
         }
     };
 
@@ -153,7 +157,60 @@ internal class SessionsProvider : IWebUIProvider
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "sessions-inject", Source = new MessageInjectSource(_engine) }
+            new() { Id = "sessions-inject", Factory = () => new MessageInjectSource(_engine) }
+        }
+    };
+
+    // ---- 会话详情（活跃与归档共用） ----
+
+    private PageDefinition BuildSessionDetailPage() => new()
+    {
+        Route = "sessions/{sessionId}",
+        Meta = new PageMeta { Title = "会话详情", Icon = "bi-cpu", Group = "会话引擎", Order = 38, ShowInNav = false },
+        Cards = new List<CardDefinition>
+        {
+            new()
+            {
+                Id = "session-basic", Type = CardType.Status, DataSourceId = "session-detail", Title = "会话概览",
+                Schema = new StatusSchema
+                {
+                    Fields = new()
+                    {
+                        new() { Field = "sessionId", Label = "会话 ID" },
+                        new() { Field = "type", Label = "类型", Type = StatusFieldType.Badge },
+                        new() { Field = "status", Label = "状态", Type = StatusFieldType.Badge },
+                        new() { Field = "alive", Label = "存活", Type = StatusFieldType.Indicator },
+                        new() { Field = "core", Label = "当前核心" },
+                        new() { Field = "created", Label = "创建时间" },
+                        new() { Field = "rounds", Label = "轮次" },
+                        new() { Field = "parent", Label = "父会话" },
+                        new() { Field = "children", Label = "子会话" },
+                        new() { Field = "channel", Label = "连接频道" },
+                        new() { Field = "pool", Label = "资源池" },
+                        new() { Field = "compression", Label = "压缩层级", Type = StatusFieldType.Badge },
+                    }
+                },
+                Layout = new CardLayout { PreferredCols = 6 }
+            },
+            new()
+            {
+                Id = "session-components", Type = CardType.Status, DataSourceId = "session-components", Title = "组件",
+                Schema = new StatusSchema
+                {
+                    Fields = new()
+                    {
+                        new() { Field = "components", Label = "组件清单", IsMultiline = true },
+                        new() { Field = "ports", Label = "端口", IsMultiline = true },
+                        new() { Field = "note", Label = "说明", IsMultiline = true },
+                    }
+                },
+                Layout = new CardLayout { PreferredCols = 6 }
+            }
+        },
+        DataSources = new List<DataSourceDefinition>
+        {
+            new() { Id = "session-detail", Factory = () => new SessionDetailSource(_engine) },
+            new() { Id = "session-components", Factory = () => new SessionComponentSource(_engine) }
         }
     };
 
@@ -233,18 +290,7 @@ internal class SessionsActiveSource : IDataSource
             });
         }
 
-        if (arr.Count == 0)
-        {
-            arr.Add(new JsonObject
-            {
-                ["sessionId"] = "（无活跃会话）",
-                ["status"] = "—",
-                ["components"] = "—",
-                ["parent"] = "—",
-                ["rounds"] = "—"
-            });
-        }
-
+        // 空态不伪造可操作会话行；前端会显示“本页暂无数据”。
         return Task.FromResult(new DataResult { Data = arr, TotalCount = arr.Count });
     }
 
@@ -342,39 +388,67 @@ internal class SessionsHistorySource : IDataSource
             return Task.FromResult(new DataResult { Data = arr, TotalCount = 0 });
 
         var dirs = Directory.GetDirectories(sessionsDir);
-        var entries = new List<(string sessionId, string status, string components, string createdAt)>();
+        var entries = new List<(string sessionId, string status, string components, string createdAt, int roundCount)>();
 
         foreach (var dir in dirs)
         {
+            var sessionId = Path.GetFileName(dir);
+            var statePath = Path.Combine(dir, "state.json");
+            var specPath = Path.Combine(dir, "spec.json");
             var metaPath = Path.Combine(dir, "meta.json");
-            if (!File.Exists(metaPath)) continue;
 
             try
             {
-                var json = File.ReadAllText(metaPath);
-                var meta = JsonConvert.DeserializeAnonymousType(json, new
+                if (File.Exists(statePath))
                 {
-                    status = "",
-                    componentIds = new List<string>(),
-                    createdAt = DateTime.MinValue
-                });
+                    // 现行存档：spec.json（不可变）+ state.json（每轮重写）+ history.jsonl
+                    var state = JsonConvert.DeserializeObject<SessionStateProbe>(File.ReadAllText(statePath));
+                    var spec = File.Exists(specPath)
+                        ? JsonConvert.DeserializeObject<SessionSpecProbe>(File.ReadAllText(specPath))
+                        : null;
 
-                if (meta == null) continue;
+                    var components = spec?.ResolvedComponentIds?.Length > 0
+                        ? string.Join(", ", spec.ResolvedComponentIds)
+                        : spec?.AdditionalComponents?.Length > 0
+                            ? string.Join(", ", spec.AdditionalComponents)
+                            : "—";
+                    var created = state?.CreatedAt is DateTime dt && dt != default
+                        ? Util.TimeUtil.ToLocalSafe(dt).ToString("yyyy-MM-dd HH:mm:ss")
+                        : "—";
 
-                var sessionId = Path.GetFileName(dir);
-                var components = meta.componentIds?.Count > 0
-                    ? string.Join(", ", meta.componentIds)
-                    : "—";
-                var createdAt = meta.createdAt != DateTime.MinValue
-                    ? meta.createdAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
-                    : "—";
+                    entries.Add((sessionId, state?.Status ?? "Unknown", components, created, state?.RoundCount ?? 0));
+                }
+                else if (File.Exists(metaPath))
+                {
+                    // 兼容旧 meta.json 存档（仅无 persister 的兜底路径会写）
+                    var meta = JsonConvert.DeserializeAnonymousType(File.ReadAllText(metaPath), new
+                    {
+                        status = "",
+                        componentIds = new List<string>(),
+                        createdAt = DateTime.MinValue,
+                        roundCount = 0
+                    });
+                    if (meta == null) continue;
 
-                entries.Add((sessionId, meta.status, components, createdAt));
+                    var components = meta.componentIds?.Count > 0
+                        ? string.Join(", ", meta.componentIds)
+                        : "—";
+                    var created = meta.createdAt != DateTime.MinValue
+                        ? Util.TimeUtil.ToLocalSafe(meta.createdAt).ToString("yyyy-MM-dd HH:mm:ss")
+                        : "—";
+
+                    entries.Add((sessionId, meta.status, components, created, meta.roundCount));
+                }
+                else
+                {
+                    // spec 已写但 state 尚未落地 → 视为 Crashed（与 SessionPersistence.LoadState 一致）
+                    entries.Add((sessionId, "Crashed", "—", "—", 0));
+                }
             }
-            catch { /* skip corrupt meta */ }
+            catch { /* skip corrupt session archive */ }
         }
 
-        // 按创建时间倒序（从文件修改时间推断）
+        // 按创建时间倒序（字符串时间戳可直接排序；"?—" 沉底）
         entries = entries.OrderByDescending(e => e.createdAt).ToList();
 
         // 搜索
@@ -388,6 +462,7 @@ internal class SessionsHistorySource : IDataSource
             ).ToList();
         }
 
+        var total = entries.Count;
         var page = query?.Page ?? 1;
         var pageSize = query?.PageSize ?? 30;
         var paged = entries.Skip((page - 1) * pageSize).Take(pageSize);
@@ -400,15 +475,217 @@ internal class SessionsHistorySource : IDataSource
                 ["status"] = entry.status,
                 ["components"] = entry.components,
                 ["createdAt"] = entry.createdAt,
+                ["rounds"] = entry.roundCount.ToString(),
                 ["_link"] = $"/p/sessions/{entry.sessionId}"
             });
         }
 
-        return Task.FromResult(new DataResult { Data = arr, TotalCount = entries.Count });
+        return Task.FromResult(new DataResult { Data = arr, TotalCount = total });
     }
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
         => Task.FromResult(new ActionResult { Success = true });
+}
+
+/// <summary>
+/// 会话详情：活跃会话直接从 RuntimeSession + 资源池读取；已归档会话回退到 persistence 三件套。
+/// </summary>
+internal class SessionDetailSource : IDataSource
+{
+    private readonly MasterEngine _engine;
+    public SessionDetailSource(MasterEngine engine) => _engine = engine;
+    public bool SupportsPush => true;
+
+    public IDisposable? Subscribe(Action<JsonNode?> callback)
+    {
+        var timer = new System.Threading.Timer(_ => callback(null), null, 5000, 5000);
+        return new TimerDisposable(timer);
+    }
+
+    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        var sessionId = query?.RouteParams?.GetValueOrDefault("sessionId") ?? "";
+        if (string.IsNullOrEmpty(sessionId))
+            return Task.FromResult(new DataResult { Data = new JsonObject { ["status"] = "未指定会话" } });
+
+        var se = _engine.GetActiveEnginesSnapshot().OfType<SessionEngine>().FirstOrDefault();
+        var session = se?.GetSession(sessionId) as RuntimeSession;
+
+        if (session != null)
+        {
+            var pool = se!.GetPoolBySession(sessionId);
+            var data = new JsonObject
+            {
+                ["sessionId"] = session.SessionId,
+                ["type"] = session.Type,
+                ["status"] = session.Status.ToString(),
+                ["alive"] = session.IsAlive ? "运行中" : "已结束",
+                ["core"] = session.ActiveCoreConfig,
+                ["created"] = "—",
+                ["rounds"] = SessionsProvider.GetRoundCount(session).ToString(),
+                ["parent"] = session.ParentSessionId ?? "—",
+                ["children"] = session.ChildSessionIds.Count > 0
+                    ? string.Join(", ", session.ChildSessionIds)
+                    : "—",
+                ["channel"] = session.ConnectedChannel.CurrentChannelId > 0
+                    ? session.ConnectedChannel.CurrentChannelId.ToString()
+                    : "—",
+                ["pool"] = pool == null ? "—" : FormatPool(pool),
+                ["compression"] = "—",
+            };
+            return Task.FromResult(new DataResult { Data = data });
+        }
+
+        // 归档
+        var dir = Path.Combine(PathConfig.StoragePath, "Sessions", sessionId);
+        if (!Directory.Exists(dir))
+            return Task.FromResult(new DataResult { Data = new JsonObject { ["status"] = "会话不存在" } });
+
+        try
+        {
+            SessionStateProbe? state = null;
+            SessionSpecProbe? spec = null;
+            var statePath = Path.Combine(dir, "state.json");
+            var specPath = Path.Combine(dir, "spec.json");
+            if (File.Exists(statePath))
+                state = JsonConvert.DeserializeObject<SessionStateProbe>(File.ReadAllText(statePath));
+            if (File.Exists(specPath))
+                spec = JsonConvert.DeserializeObject<SessionSpecProbe>(File.ReadAllText(specPath));
+
+            var data = new JsonObject
+            {
+                ["sessionId"] = sessionId,
+                ["type"] = spec?.Type ?? "—",
+                ["status"] = state?.Status ?? "Crashed",
+                ["alive"] = "已归档",
+                ["core"] = state?.ActiveCoreConfig ?? "—",
+                ["created"] = state?.CreatedAt is DateTime dt && dt != default
+                    ? Util.TimeUtil.ToLocalSafe(dt).ToString("yyyy-MM-dd HH:mm:ss")
+                    : "—",
+                ["rounds"] = state?.RoundCount.ToString() ?? "—",
+                ["parent"] = state?.EffectiveParentId ?? spec?.ParentSessionId ?? "—",
+                ["children"] = state?.ChildSessionIds?.Length > 0
+                    ? string.Join(", ", state.ChildSessionIds)
+                    : "—",
+                ["channel"] = state?.ConnectedChannelId ?? "—",
+                ["pool"] = "（已归档，资源池已释放）",
+                ["compression"] = state?.CompressionTier ?? "None",
+            };
+            return Task.FromResult(new DataResult { Data = data });
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult(new DataResult
+            {
+                Data = new JsonObject { ["status"] = "存档解析失败", ["sessionId"] = sessionId, ["core"] = ex.Message }
+            });
+        }
+    }
+
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+        => Task.FromResult(new ActionResult { Success = false, Message = "不支持操作" });
+
+    private static string FormatPool(SessionPool pool)
+    {
+        var parts = new List<string>();
+        if (pool.IsRoot)
+            parts.Add($"频道池 #{pool.ChannelId}");
+        else
+            parts.Add("子会话池");
+        parts.Add($"活跃={pool.ActiveSessionId}");
+        if (pool.ListenSessionIds.Count > 0)
+            parts.Add($"旁听={string.Join(",", pool.ListenSessionIds)}");
+        if (pool.ChildPools.Count > 0)
+            parts.Add($"子池={pool.ChildPools.Count}");
+        return string.Join(" | ", parts);
+    }
+}
+
+/// <summary>会话组件与端口详情。</summary>
+internal class SessionComponentSource : IDataSource
+{
+    private readonly MasterEngine _engine;
+    public SessionComponentSource(MasterEngine engine) => _engine = engine;
+    public bool SupportsPush => false;
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        var sessionId = query?.RouteParams?.GetValueOrDefault("sessionId") ?? "";
+        if (string.IsNullOrEmpty(sessionId))
+            return Task.FromResult(new DataResult { Data = new JsonObject() });
+
+        var se = _engine.GetActiveEnginesSnapshot().OfType<SessionEngine>().FirstOrDefault();
+        var session = se?.GetSession(sessionId) as RuntimeSession;
+        if (session != null)
+        {
+            return Task.FromResult(new DataResult
+            {
+                Data = new JsonObject
+                {
+                    ["components"] = session.ComponentIds.Count > 0
+                        ? string.Join("\n", session.ComponentIds)
+                        : "—",
+                    ["ports"] = $"连接频道: {(session.ConnectedChannel.CurrentChannelId > 0 ? session.ConnectedChannel.CurrentChannelId.ToString() : "—")}",
+                    ["note"] = "运行中会话的组件/端口是其构建时的快照。",
+                }
+            });
+        }
+
+        try
+        {
+            var specPath = Path.Combine(PathConfig.StoragePath, "Sessions", sessionId, "spec.json");
+            if (!File.Exists(specPath))
+                return Task.FromResult(new DataResult { Data = new JsonObject { ["components"] = "存档不存在" } });
+
+            var spec = JsonConvert.DeserializeObject<SessionSpecProbe>(File.ReadAllText(specPath));
+            var components = spec?.ResolvedComponentIds?.Length > 0
+                ? spec.ResolvedComponentIds
+                : spec?.AdditionalComponents ?? Array.Empty<string>();
+            var ports = spec?.InputPorts != null && spec.InputPorts.Count > 0
+                ? string.Join("\n", spec.InputPorts.Select(kv => $"{kv.Key}: channel={kv.Value.ChannelId} stream={kv.Value.SubStream} weight={kv.Value.Weight}"))
+                : "—";
+
+            return Task.FromResult(new DataResult
+            {
+                Data = new JsonObject
+                {
+                    ["components"] = components.Length > 0 ? string.Join("\n", components) : "—",
+                    ["ports"] = ports,
+                    ["note"] = "来自 spec.json（不可变存档）。",
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult(new DataResult { Data = new JsonObject { ["components"] = $"解析失败: {ex.Message}" } });
+        }
+    }
+
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+        => Task.FromResult(new ActionResult { Success = false, Message = "不支持操作" });
+}
+
+internal class SessionStateProbe
+{
+    [JsonProperty("sessionId")] public string? SessionId { get; set; }
+    [JsonProperty("status")] public string? Status { get; set; }
+    [JsonProperty("createdAt")] public DateTime CreatedAt { get; set; }
+    [JsonProperty("roundCount")] public int RoundCount { get; set; }
+    [JsonProperty("compressionTier")] public string? CompressionTier { get; set; }
+    [JsonProperty("activeCoreConfig")] public string? ActiveCoreConfig { get; set; }
+    [JsonProperty("connectedChannelId")] public string? ConnectedChannelId { get; set; }
+    [JsonProperty("childSessionIds")] public string[]? ChildSessionIds { get; set; }
+    [JsonProperty("effectiveParentId")] public string? EffectiveParentId { get; set; }
+}
+
+internal class SessionSpecProbe
+{
+    [JsonProperty("type")] public string? Type { get; set; }
+    [JsonProperty("additionalComponents")] public string[]? AdditionalComponents { get; set; }
+    [JsonProperty("resolvedComponentIds")] public string[]? ResolvedComponentIds { get; set; }
+    [JsonProperty("inputPorts")] public Dictionary<string, PortSpec>? InputPorts { get; set; }
+    [JsonProperty("parentSessionId")] public string? ParentSessionId { get; set; }
 }
 
 /// <summary>

@@ -1,5 +1,9 @@
 ﻿# WebUI 页面与功能审计（2026-10-15）
 
+> 2026-10-18 更新：本轮审计后的修缮已完成并通过验证，见文末「修缮完成记录」。
+> 正文保留为审计快照，部分问题已修复，阅读时以完成记录与当前代码为准。
+
+
 ## 范围与验证边界
 
 本轮检查当前源码中的 17 个内置 Provider、独立 Razor 页面、全部 9 种已实现卡片、ProviderRegistry、DataSourceManager、DynamicPage、导航和相关引擎/存储调用。还搜索了插件中的 WebUI Provider 实现，未发现其他页面提供者。
@@ -170,4 +174,51 @@ DynamicPage:211–241 忽略失败/非跳转消息，无条件刷新当前数据
 5. Trace 游标/过滤/实时一致性；导航分类、MCP 入口、视觉/推断重复视图收敛。
 6. 建立回归矩阵：跨两标签选择后保存/发送、配置对象/数组往返、每张服务端表第二页与筛选、动作失败不丢草稿、重载生命周期、Trace 连续加载两页与暂停恢复。
 7. 隔离测试存储下启动 --dev 做浏览器验证，不拿现有实例的配置、账户和真实消息做破坏性试验；生产 QQ 端到端留给用户实测。
+
+---
+
+## 修缮完成记录（2026-10-18）
+
+### 契约与共享层
+
+- `DataSourceDefinition` 新增 `Factory`（页面作用域数据源）与 `Paging`（Client/Server 显式分页语义）；`Source` 改为可空，未声明时明确抛配置错误。
+- `TableSchema.RowKeyField`、`CardDefinition.AffectedDataSourceIds` 新增；行操作 payload 自动补齐 `_row_id`，稳定行键取代页内索引选中。
+- `DataSourceManager` 重写：每请求 linked CTS + 版本号，取消不残留 loading、重试等待可取消、提交受页面生命周期约束、订阅幂等且清理闭包自持、重复 ID 显式报错。
+- `DynamicPage` 重写：页面级初始化 CTS、操作令牌、失败不刷新且顶部展示错误、成功消息展示、保留 `_lastQueries`（推送/刷新不丢搜索排序与联动条件）、跨卡片精确失效刷新、未知卡片类型显式提示。
+- `TableCard`：服务端分页不再二次 Skip/Take，使用服务端 `TotalCount`；服务端搜索/排序/筛选即时提交（搜索 300ms 防抖）；客户端分页翻页不重复请求；危险行操作默认确认；行键负载注入。
+- `StatusCard` 指示器样式改为独立 `style` 属性；`FormCard` 真正校验 Required；`ActionCard` 下拉首项与 payload 一致；`PropertyEditorCard` 保留未保存草稿、保存结果由页面回传。
+
+### 功能链路
+
+- 配置：对象/数组编辑解析回 JSON 类型，非法 JSON 拒绝；原子写入；同一文件回读不清空草稿；选择记忆；补齐 `ExtractionCore` 等配置入口。
+- 控制台：移除无实现的“强制压缩”；切换频道重置名称缓存；Bot 模式经 `AdapterEngine.ResolveAdapter` 走真实出向（adapter_only/both/db_only）；用户/自定义模式等待路由完成；停止检查 `StopResult`；订阅 timer 闭包自持。
+- 插件：行键兜底 `id/name`；插件详情按 PluginId 或目录名统一查找；工具/会话类型数据源页面作用域化。
+- 会话：新增 `sessions/{sessionId}` 活跃/归档共用详情（含资源池/端口/组件），历史页读取 spec/state/history 并兼容 meta；空态不再伪造会话行；换核后刷新列表。
+- 引擎/频道：Session 链接改为 `/p/sessions`，补齐其他基础设施引擎，移除 `engines/session` 断链；频道消息总数按搜索范围修正；强制提取标注为全局。
+- 适配器：全部平台选择/控制/配置数据源页面作用域化；File `StartAsync` 后台启动、`outputDir` 生效；启停/配置更新触发 `OnAdaptersChanged`；密钥字段使用密码框；列表删除默认确认。
+- 仪表盘：移除无数据的冲动值列、无消费方的静音/做梦动作与字段，保留有实现的视觉触发。
+- 视觉/记忆/日志/货币：分页模式逐个声明；图片阶段与分类提供原始查询字段；服务端表格稳定行键；货币客户端分页固定窗口、拨款后联动；Token 统计标注范围并统一口径。
+- Trace：`timestamp + id` 稳定游标与 SQL `GetSignalBefore`；加载更早推进游标并去重；`HasOlder` 来自未过滤页；实时流应用级别/Scope/仅卡住过滤；暂停记录而非丢弃，恢复整体重载；`/p/logs/trace` 改为兼容跳转壳，正式入口 `/logs/trace`。
+- 导航：修复初始展开顺序；隐藏详情页按前缀自动展开所属分组；`DefaultCollapsed` 不再误导；MCP 增加导航入口并修复冷启动未初始化；货币/配置迁出“调试”分组；未知路由显式 NotFound。
+- 注册表：Provider ID 冲突与页面精确路由冲突记录告警；模板按字面段排序、路由规范化与参数 URL 解码。
+
+### 验证
+
+- 全解决方案构建：0 错误（仅既有 NuGet 漏洞与 FormatterServices 过时警告）。
+- 测试：173/173 通过（新增 `WebDataSourceTests` 与 `ProviderRegistryTests` 共 11 个）。
+- 隔离 Storage + 独立端口（WebUI 15000 / HttpBridge 19876）`--dev` + Playwright（系统 Chrome）实测：
+  - 登录跳转、总览清理、导航分组；
+  - 契约页：服务端 1/3→2/3 第二页非空、共 25 条、客户端 1/6、服务端搜索共 6 条、失败操作提示、危险操作确认与成功提示；
+  - 配置编辑器：成功消息、非法 JSON 拒绝、不再虚假显示已保存；
+  - 跨标签页草稿隔离；
+  - `/logs/trace` 独立页渲染 178 行节点、`/p/logs/trace` 跳转。
+  - 隔离环境只有单页数据，“加载更早”禁用符合预期；连续分页逻辑由游标代码与页面实测覆盖，未做大库翻页压测。
+- 验证后已停止隔离实例、删除临时 Storage/探针，调试输出 `paths.json` 恢复指向 `E:\Tools\Lilara\Storage`；正式部署进程（PID 23404）全程未中断。
+
+### 保留与未做
+
+- 独立 Trace 架构、`logs.db`、Signal 静态 API 保留。
+- 未改变正式部署、未提交 git、未对生产 QQ 做端到端验证。
+- 断言/经历全文详情、冲突成员与证据穿透、资源池/定时任务完整管理视图仍属于后续功能扩展，不在本轮“修复失效链路”范围。
+- HTTP + Secure Cookie 的 LAN 明文部署风险未改：localhost 浏览器可登录；如从局域网其它机器以 HTTP 访问，仍会因 Secure Cookie 不发送而反复跳登录，需要 HTTPS 终止或单独的部署配置决策。
 

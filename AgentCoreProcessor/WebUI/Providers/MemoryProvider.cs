@@ -72,15 +72,16 @@ internal class MemoryProvider : IWebUIProvider
                     Columns = new()
                     {
                         new() { Field = "id", Header = "ID", Width = "60px" },
-                        new() { Field = "inference", Header = "类型", Width = "70px", Format = ColumnFormat.Badge },
+                        new() { Field = "_inference", Header = "类型", Width = "70px", Format = ColumnFormat.Badge },
                         new() { Field = "subject", Header = "主体", Width = "110px" },
                         new() { Field = "predicate", Header = "谓词", Width = "100px" },
                         new() { Field = "object", Header = "客体", Width = "110px" },
                         new() { Field = "raw", Header = "原文" },
                         new() { Field = "credibility", Header = "可信度", Width = "80px", Format = ColumnFormat.Badge },
                         new() { Field = "status", Header = "状态", Width = "90px", Format = ColumnFormat.Badge },
-                        new() { Field = "occurred", Header = "发生", Width = "100px" }
+                        new() { Field = "occurred", Header = "发生", Width = "110px" }
                     },
+                    RowKeyField = "id",
                     DefaultPageSize = 25,
                     Filters = new()
                     {
@@ -103,8 +104,8 @@ internal class MemoryProvider : IWebUIProvider
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "main-stats", Source = new MemoryStatsSource(_engine) },
-            new() { Id = "main-table", Source = new ClaimsSource(_engine) }
+            new() { Id = "main-stats", Factory = () => new MemoryStatsSource(_engine) },
+            new() { Id = "main-table", Factory = () => new ClaimsSource(_engine), Paging = DataPagingMode.Server }
         }
     };
 
@@ -146,7 +147,7 @@ internal class MemoryProvider : IWebUIProvider
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "journals-table", Source = new JournalsSource(_engine) }
+            new() { Id = "journals-table", Factory = () => new JournalsSource(_engine), Paging = DataPagingMode.Server }
         }
     };
 
@@ -169,7 +170,7 @@ internal class MemoryProvider : IWebUIProvider
                         new() { Field = "name", Header = "名称" },
                         new() { Field = "role", Header = "角色", Width = "90px", Format = ColumnFormat.Badge },
                         new() { Field = "category", Header = "分类", Width = "100px" },
-                        new() { Field = "is_exclusive", Header = "排他", Width = "60px", Format = ColumnFormat.Badge },
+                        new() { Field = "_exclusive", Header = "排他", Width = "60px", Format = ColumnFormat.Badge },
                         new() { Field = "use_count", Header = "使用次数", Width = "90px" },
                         new() { Field = "last_used", Header = "上次使用", Width = "110px" }
                     },
@@ -193,7 +194,7 @@ internal class MemoryProvider : IWebUIProvider
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "keywords-table", Source = new KeywordsSource(_engine) }
+            new() { Id = "keywords-table", Factory = () => new KeywordsSource(_engine), Paging = DataPagingMode.Server }
         }
     };
 
@@ -246,8 +247,8 @@ internal class MemoryProvider : IWebUIProvider
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "emotion-latest", Source = new EmotionLatestSource(_engine) },
-            new() { Id = "emotion-table", Source = new EmotionSource(_engine) }
+            new() { Id = "emotion-latest", Factory = () => new EmotionLatestSource(_engine) },
+            new() { Id = "emotion-table", Factory = () => new EmotionSource(_engine), Paging = DataPagingMode.Client }
         }
     };
 }
@@ -353,13 +354,16 @@ internal class ClaimsSource : IDataSource
             {
                 ["id"] = c.Id,
                 ["inference"] = c.IsInference ? "推断" : "陈述",
+                ["_inference"] = c.IsInference ? "inference" : "stated",
                 ["subject"] = ClaimSlot.FromJson(c.SubjectJson)?.Index ?? "—",
                 ["predicate"] = ClaimSlot.FromJson(c.PredicateJson)?.Index ?? "—",
                 ["object"] = ClaimSlot.FromJson(c.ObjectJson)?.Index ?? "—",
                 ["raw"] = Truncate(c.Raw, 150),
                 ["credibility"] = c.Credibility.ToString("F2"),
                 ["status"] = string.IsNullOrEmpty(c.Status) ? "—" : c.Status,
-                ["occurred"] = c.OccurredAt?.ToString("MM-dd HH:mm") ?? "—"
+                ["occurred"] = c.OccurredAt is DateTime occ
+                    ? AgentCoreProcessor.Util.TimeUtil.ToLocalSafe(occ).ToString("MM-dd HH:mm")
+                    : "—"
             });
         }
         return new DataResult { Data = arr, TotalCount = total };
@@ -448,7 +452,7 @@ internal class JournalsSource : IDataSource
                 ["content"] = Truncate(j.Content, 200),
                 ["channel_id"] = j.ChannelId?.ToString() ?? "—",
                 ["session_id"] = j.SessionId?.ToString() ?? "—",
-                ["occurred"] = j.OccurredAt.ToString("MM-dd HH:mm")
+                ["occurred"] = AgentCoreProcessor.Util.TimeUtil.ToLocalSafe(j.OccurredAt).ToString("MM-dd HH:mm")
             });
         }
         return new DataResult { Data = arr, TotalCount = total };
@@ -513,8 +517,11 @@ internal class KeywordsSource : IDataSource
                 ["role"] = k.Role,
                 ["category"] = string.IsNullOrEmpty(k.Category) ? "—" : k.Category,
                 ["is_exclusive"] = k.IsExclusive ? "是" : "否",
+                ["_exclusive"] = k.IsExclusive ? "1" : "0",
                 ["use_count"] = k.UseCount,
-                ["last_used"] = k.LastUsedAt?.ToString("MM-dd HH:mm") ?? "—"
+                ["last_used"] = k.LastUsedAt is DateTime lu
+                    ? AgentCoreProcessor.Util.TimeUtil.ToLocalSafe(lu).ToString("MM-dd HH:mm")
+                    : "—"
             });
         }
         return new DataResult { Data = arr, TotalCount = total };
@@ -585,7 +592,7 @@ internal class EmotionLatestSource : IDataSource
             ["alertness"] = latest.Alertness.ToString("F2"),
             ["satisfaction"] = latest.Satisfaction.ToString("F2"),
             ["optimism"] = latest.Optimism.ToString("F2"),
-            ["created"] = latest.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")
+            ["created"] = AgentCoreProcessor.Util.TimeUtil.ToLocalSafe(latest.CreatedAt).ToString("yyyy-MM-dd HH:mm:ss")
         };
         return new DataResult { Data = data };
     }
@@ -622,7 +629,7 @@ internal class EmotionSource : IDataSource
                 ["alertness"] = s.Alertness.ToString("F2"),
                 ["satisfaction"] = s.Satisfaction.ToString("F2"),
                 ["optimism"] = s.Optimism.ToString("F2"),
-                ["created"] = s.CreatedAt.ToString("MM-dd HH:mm:ss")
+                ["created"] = AgentCoreProcessor.Util.TimeUtil.ToLocalSafe(s.CreatedAt).ToString("MM-dd HH:mm:ss")
             });
         }
         return new DataResult { Data = arr, TotalCount = recent.Count };

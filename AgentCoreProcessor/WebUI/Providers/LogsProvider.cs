@@ -51,13 +51,14 @@ internal class LogsProvider : IWebUIProvider
                         new() { Field = "cacheHit", Label = "缓存命中" },
                         new() { Field = "cacheCreate", Label = "缓存创建" },
                         new() { Field = "hitRate", Label = "命中率", Type = StatusFieldType.Badge },
+                        new() { Field = "_scope", Label = "统计范围" },
                     }
                 },
                 Layout = new CardLayout { PreferredCols = 6 }
             },
             new()
             {
-                Id = "tokens-by-core", Type = CardType.Table, DataSourceId = "tokens-by-core", Title = "按 Core",
+                Id = "tokens-by-core", Type = CardType.Table, DataSourceId = "tokens-by-core", Title = "按 Core（全库）",
                 Schema = new TableSchema
                 {
                     Columns = new()
@@ -74,7 +75,7 @@ internal class LogsProvider : IWebUIProvider
             },
             new()
             {
-                Id = "tokens-by-model", Type = CardType.Table, DataSourceId = "tokens-by-model", Title = "按模型",
+                Id = "tokens-by-model", Type = CardType.Table, DataSourceId = "tokens-by-model", Title = "按模型（全库）",
                 Schema = new TableSchema
                 {
                     Columns = new()
@@ -109,7 +110,7 @@ internal class LogsProvider : IWebUIProvider
         {
             new()
             {
-                Id = "model-list", Type = CardType.Table, DataSourceId = "model-list", Title = "调用历史",
+                Id = "model-list", Type = CardType.Table, DataSourceId = "model-list", Title = "调用历史（最近 2000 条）",
                 LinkEvent = "model-call-selected",
                 Schema = new TableSchema
                 {
@@ -149,8 +150,8 @@ internal class LogsProvider : IWebUIProvider
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "model-list", Source = new ModelListSource(_engine) },
-            new() { Id = "model-detail", Source = new ModelDetailSource(_engine) },
+            new() { Id = "model-list", Factory = () => new ModelListSource(_engine), Paging = DataPagingMode.Client },
+            new() { Id = "model-detail", Factory = () => new ModelDetailSource(_engine) },
         }
     };
 }
@@ -167,8 +168,12 @@ internal class TokenCacheSource : IDataSource
     public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
         var logs = await _engine.ModelCallLogs.GetRecentAsync(2000, includeErrors: false);
+
+        // 按 Core / 模型两张卡是成功调用的全库聚合；缓存卡必须使用同一范围，
+        // 否则“总输入/命中率”与下方表无法对齐。
+        var all = logs;
         long totalInput = 0, totalCacheRead = 0, totalCacheCreation = 0, totalCacheHit = 0;
-        foreach (var log in logs)
+        foreach (var log in all)
         {
             totalInput += log.InputTokens;
             totalCacheRead += log.CacheReadTokens;
@@ -187,7 +192,8 @@ internal class TokenCacheSource : IDataSource
                 ["totalInput"] = FormatTokens(totalInput),
                 ["cacheHit"] = FormatTokens(totalCacheRead + totalCacheHit),
                 ["cacheCreate"] = FormatTokens(totalCacheCreation),
-                ["hitRate"] = $"{hitRate:F1}%"
+                ["hitRate"] = $"{hitRate:F1}%",
+                ["_scope"] = $"最近 {all.Count} 条成功调用（全库聚合另见表）"
             }
         };
     }
@@ -302,7 +308,7 @@ internal class ModelListSource : IDataSource
             arr.Add(new JsonObject
             {
                 ["id"] = log.Id,
-                ["time"] = log.Timestamp.ToString("MM-dd HH:mm:ss"),
+                ["time"] = Util.TimeUtil.ToLocalSafe(log.Timestamp).ToString("MM-dd HH:mm:ss"),
                 ["coreName"] = log.CoreName,
                 ["model"] = log.Model ?? "—",
                 ["provider"] = log.Provider ?? "—",

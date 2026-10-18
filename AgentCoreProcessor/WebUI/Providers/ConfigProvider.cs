@@ -18,6 +18,7 @@ internal class ConfigProvider : IWebUIProvider
         ["ChannelCore"] = "Core/ChannelCore.json",
         ["ExpressCore"] = "Core/ExpressCore.json",
         ["TaskCore"] = "Core/TaskCore.json",
+        ["ExtractionCore"] = "Core/ExtractionCore.json",
     };
 
     private readonly Dictionary<string, string> _serviceFiles = new()
@@ -74,7 +75,7 @@ internal class ConfigProvider : IWebUIProvider
                 Title = "配置管理",
                 Icon = "bi-gear",
                 ShowInNav = true,
-                Group = "调试",
+                Group = "系统设置",
                 Order = 113,
             },
             Cards = new List<CardDefinition>
@@ -161,8 +162,8 @@ internal class ConfigProvider : IWebUIProvider
             },
             DataSources = new List<DataSourceDefinition>
             {
-                new() { Id = $"{group}-list", Source = new ConfigListSource(files, group) },
-                new() { Id = $"{group}-detail", Source = new ConfigEditSource(_storageRoot, files) },
+                new() { Id = $"{group}-list", Source = new ConfigListSource(files, group), Paging = DataPagingMode.Client },
+                new() { Id = $"{group}-detail", Factory = () => new ConfigEditSource(_storageRoot, files) },
             },
         };
     }
@@ -192,7 +193,7 @@ internal class ConfigProvider : IWebUIProvider
             },
             DataSources = new List<DataSourceDefinition>
             {
-                new() { Id = $"{group}-editor", Source = new ConfigEditSource(_storageRoot, files) },
+                new() { Id = $"{group}-editor", Factory = () => new ConfigEditSource(_storageRoot, files) },
             },
         };
     }
@@ -298,6 +299,7 @@ internal class ConfigEditSource : IDataSource
     private readonly string _storageRoot;
     private readonly Dictionary<string, string>? _files;
     private string? _currentFile;
+    private string? _currentKey;
 
     public ConfigEditSource(string storageRoot, Dictionary<string, string>? files = null)
     {
@@ -318,15 +320,27 @@ internal class ConfigEditSource : IDataSource
         if (fileKey == null && query?.Extra is JsonObject extra)
             fileKey = extra["name"]?.ToString();
 
+        // 联动编辑器切换文件时必须记住当前选择，否则提交后的刷新会丢失目标。
+        if (string.IsNullOrEmpty(fileKey))
+            fileKey = _currentKey;
+
         string? relPath = null;
         if (_files != null && fileKey != null)
+        {
             _files.TryGetValue(fileKey, out relPath);
+            if (relPath != null)
+                _currentKey = fileKey;
+        }
 
         if (relPath == null)
         {
             return Task.FromResult(new DataResult
             {
-                Data = new JsonObject { ["properties"] = new JsonArray() },
+                Data = new JsonObject
+                {
+                    ["properties"] = new JsonArray(),
+                    ["_hint"] = "请在左侧选择一个配置文件"
+                },
             });
         }
 
@@ -335,7 +349,11 @@ internal class ConfigEditSource : IDataSource
         {
             return Task.FromResult(new DataResult
             {
-                Data = new JsonObject { ["properties"] = new JsonArray() },
+                Data = new JsonObject
+                {
+                    ["properties"] = new JsonArray(),
+                    ["_hint"] = $"配置文件不存在：{relPath}"
+                },
             });
         }
 
@@ -347,7 +365,11 @@ internal class ConfigEditSource : IDataSource
             {
                 return Task.FromResult(new DataResult
                 {
-                    Data = new JsonObject { ["properties"] = new JsonArray() },
+                    Data = new JsonObject
+                    {
+                        ["properties"] = new JsonArray(),
+                        ["_hint"] = "配置文件根节点不是 JSON 对象"
+                    },
                 });
             }
 
@@ -368,7 +390,7 @@ internal class ConfigEditSource : IDataSource
                 Data = new JsonObject
                 {
                     ["properties"] = new JsonArray(),
-                    ["_error"] = ex.Message,
+                    ["_hint"] = $"解析失败：{ex.Message}"
                 },
             });
         }
@@ -405,7 +427,11 @@ internal class ConfigEditSource : IDataSource
                 }
             }
 
-            await File.WriteAllTextAsync(_currentFile, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }), ct);
+            // 原子写入：先写临时文件再替换，避免保存中断留下半个配置文件。
+            var text = root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            var tmp = _currentFile + ".tmp";
+            await File.WriteAllTextAsync(tmp, text, ct);
+            File.Move(tmp, _currentFile, overwrite: true);
             return new ActionResult { Success = true, Message = "配置已保存" };
         }
         catch (Exception ex)
@@ -418,7 +444,27 @@ internal class ConfigEditSource : IDataSource
     {
         if (!obj.ContainsKey(key)) return;
         var existing = obj[key];
-        if (existing == null) { obj[key] = newValue; return; }
+        if (existing == null) { obj[key] = newValue.DeepClone(); return; }
+
+        // 对象/数组：编辑器提交的是 JSON 文本，必须解析回结构，不能退化成字符串。
+        if (existing is JsonObject or JsonArray)
+        {
+            var text = newValue.GetValueKind() == System.Text.Json.JsonValueKind.String
+                ? newValue.GetValue<string>()
+                : newValue.ToJsonString();
+            try
+            {
+                var parsed = JsonNode.Parse(text);
+                if (parsed == null)
+                    throw new FormatException("JSON 不能为空");
+                obj[key] = parsed;
+            }
+            catch (Exception ex)
+            {
+                throw new FormatException($"字段 {key} 不是合法 JSON：{ex.Message}", ex);
+            }
+            return;
+        }
 
         obj[key] = existing.GetValueKind() switch
         {

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -8,65 +9,79 @@ using AgentLilara.PluginSDK.WebUI;
 
 namespace AgentCoreProcessor.WebUI.Shell;
 
+/// <summary>
+/// 页面作用域数据源管理：每个 DynamicPage 页面实例持有一个，负责请求取消、
+/// 过期结果丢弃、幂等订阅与释放。有状态数据源应通过 DataSourceDefinition.Factory
+/// 在页面初始化时创建，避免跨页面实例共享选中对象。
+/// </summary>
 internal class DataSourceManager : IDisposable
 {
-    private readonly ConcurrentDictionary<string, IDataSource> _sources = new();
-    private readonly ConcurrentDictionary<string, IDisposable?> _subscriptions = new();
-    private readonly ConcurrentDictionary<string, DataSourceState> _states = new();
-    private readonly ConcurrentDictionary<string, CancellationTokenSource> _requestCts = new();
-    private readonly ConcurrentDictionary<string, long> _requestVersions = new();
-    private CancellationTokenSource _lifetimeCts = new();
+    private sealed class Entry
+    {
+        public required IDataSource Source { get; init; }
+        public required DataSourceDefinition Definition { get; init; }
+        public DataSourceState State { get; } = new();
+        public readonly object Sync = new();
+        public CancellationTokenSource? RequestCts;
+        public long Version;
+        public IDisposable? Subscription;
+        public bool Subscribed;
+    }
+
+    private readonly ConcurrentDictionary<string, Entry> _entries = new(StringComparer.Ordinal);
+    private readonly CancellationTokenSource _lifetimeCts = new();
     private Dictionary<string, string>? _routeParams;
-    private long _generation;
     private bool _disposed;
+
+    /// <summary>页面级数据源配置错误（如重复 ID），由 DynamicPage 显式展示。</summary>
+    public string? ConfigurationError { get; private set; }
 
     public event Action<string>? OnDataChanged;
 
     public void Initialize(IReadOnlyList<DataSourceDefinition> definitions, Dictionary<string, string>? routeParams = null)
     {
-        if (_disposed) return;
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
-        CancelRequestsAndSubscriptions();
-        _generation++;
         _routeParams = routeParams != null
             ? new Dictionary<string, string>(routeParams, StringComparer.OrdinalIgnoreCase)
             : null;
-        _sources.Clear();
-        _states.Clear();
-        _requestVersions.Clear();
+
         foreach (var def in definitions)
         {
-            _sources[def.Id] = def.Source;
-            _states[def.Id] = new DataSourceState();
+            var entry = new Entry { Source = def.CreateSource(), Definition = def };
+            if (!_entries.TryAdd(def.Id, entry))
+            {
+                ConfigurationError = string.IsNullOrEmpty(ConfigurationError)
+                    ? $"页面数据源 ID 重复：{def.Id}。后一个定义已被忽略。"
+                    : ConfigurationError + $"\n页面数据源 ID 重复：{def.Id}。后一个定义已被忽略。";
+            }
         }
     }
 
     public async Task<DataResult?> FetchAsync(string? dataSourceId, DataQuery? query = null, CancellationToken ct = default)
     {
-        if (_disposed || dataSourceId == null || !_sources.TryGetValue(dataSourceId, out var source))
+        if (_disposed || dataSourceId == null || !_entries.TryGetValue(dataSourceId, out var entry))
             return null;
 
-        if (!_states.TryGetValue(dataSourceId, out var state))
-            return null;
-
-        var version = _requestVersions.AddOrUpdate(dataSourceId, 1, static (_, current) => current + 1);
-        var requestCts = new CancellationTokenSource();
-        var previousCts = _requestCts.AddOrUpdate(dataSourceId, requestCts, (_, previous) =>
+        CancellationTokenSource requestCts;
+        long version;
+        var lifetimeToken = _lifetimeCts.Token;
+        lock (entry.Sync)
         {
-            previous.Cancel();
-            previous.Dispose();
-            return requestCts;
-        });
-        if (!ReferenceEquals(previousCts, requestCts))
-            previousCts.Dispose();
+            var previous = entry.RequestCts;
+            requestCts = CancellationTokenSource.CreateLinkedTokenSource(ct, lifetimeToken);
+            entry.RequestCts = requestCts;
+            version = ++entry.Version;
+            previous?.Cancel();
+            previous?.Dispose();
+        }
 
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetimeCts.Token, requestCts.Token);
-        var requestToken = linkedCts.Token;
-        state.IsLoading = true;
-        state.Error = null;
+        var requestToken = requestCts.Token;
+        entry.State.IsLoading = true;
+        entry.State.Error = null;
 
-        // 注入路由参数
-        if (_routeParams != null && _routeParams.Count > 0)
+        // 注入路由参数，保留原查询其余字段
+        if (_routeParams is { Count: > 0 })
         {
             query = query == null
                 ? new DataQuery { RouteParams = _routeParams }
@@ -78,57 +93,79 @@ internal class DataSourceManager : IDisposable
                 };
         }
 
-        for (int attempt = 0; attempt < 3; attempt++)
+        try
         {
-            try
+            for (int attempt = 0; attempt < 3; attempt++)
             {
-                var result = await source.FetchAsync(query, requestToken);
-                if (_disposed || requestToken.IsCancellationRequested ||
-                    !_requestVersions.TryGetValue(dataSourceId, out var currentVersion) || currentVersion != version)
-                    return null;
+                try
+                {
+                    var result = await entry.Source.FetchAsync(query, requestToken);
+                    if (!TryCompleteCurrent(entry, version))
+                        return null;
 
-                state.IsLoading = false;
-                state.LastData = result;
-                state.RetryCount = 0;
-                return result;
-            }
-            catch (OperationCanceledException) when (requestToken.IsCancellationRequested)
-            {
-                if (!_disposed && _requestVersions.TryGetValue(dataSourceId, out var currentVersion) && currentVersion == version)
-                    state.IsLoading = false;
-                return null;
-            }
-            catch (Exception ex)
-            {
-                if (attempt < 2)
-                {
-                    state.RetryCount = attempt + 1;
-                    var delay = (int)Math.Pow(2, attempt) * 1000;
-                    await Task.Delay(delay, requestToken);
+                    entry.State.LastData = result;
+                    entry.State.RetryCount = 0;
+                    return result;
                 }
-                else
+                catch (OperationCanceledException) when (requestToken.IsCancellationRequested)
                 {
-                    if (!_disposed && _requestVersions.TryGetValue(dataSourceId, out var currentVersion) && currentVersion == version)
+                    return null;
+                }
+                catch (Exception ex)
+                {
+                    if (attempt < 2)
                     {
-                        state.IsLoading = false;
-                        state.Error = ex.Message;
+                        entry.State.RetryCount = attempt + 1;
+                        var delay = (int)Math.Pow(2, attempt) * 1000;
+                        try
+                        {
+                            await Task.Delay(delay, requestToken);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            return null;
+                        }
                     }
-                    return null;
+                    else
+                    {
+                        if (TryCompleteCurrent(entry, version))
+                            entry.State.Error = ex.Message;
+                        return null;
+                    }
                 }
             }
-        }
 
-        return null;
+            return null;
+        }
+        finally
+        {
+            // 取消只结束请求，不把仍在使用的卡片永久留在加载态。
+            if (TryCompleteCurrent(entry, version))
+                entry.State.IsLoading = false;
+
+            lock (entry.Sync)
+            {
+                if (ReferenceEquals(entry.RequestCts, requestCts))
+                    entry.RequestCts = null;
+            }
+            requestCts.Dispose();
+        }
     }
 
     public async Task<ActionResult> SubmitAsync(string? dataSourceId, string action, JsonNode? data = null, CancellationToken ct = default)
     {
-        if (dataSourceId == null || !_sources.TryGetValue(dataSourceId, out var source))
+        if (_disposed || dataSourceId == null || !_entries.TryGetValue(dataSourceId, out var entry))
             return new ActionResult { Success = false, Message = "数据源不存在" };
 
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetimeCts.Token);
         try
         {
-            return await source.SubmitAsync(action, data, ct);
+            var result = await entry.Source.SubmitAsync(action, data, linkedCts.Token);
+            return _disposed ? new ActionResult { Success = false, Message = "页面已关闭" } : result;
+        }
+        catch (OperationCanceledException)
+        {
+            return new ActionResult { Success = false, Message = "操作已取消" };
         }
         catch (Exception ex)
         {
@@ -140,51 +177,66 @@ internal class DataSourceManager : IDisposable
     {
         if (_disposed) return;
 
-        foreach (var (id, source) in _sources)
+        foreach (var entry in _entries.Values)
         {
-            if (!source.SupportsPush) continue;
-            if (_subscriptions.TryRemove(id, out var oldSubscription))
-                oldSubscription?.Dispose();
+            if (!entry.Source.SupportsPush) continue;
 
-            var generation = _generation;
-            var subscription = source.Subscribe(payload =>
+            lock (entry.Sync)
             {
-                if (_disposed || generation != _generation) return;
-                OnDataChanged?.Invoke(id);
-            });
-            _subscriptions[id] = subscription;
+                if (entry.Subscribed) continue;
+                entry.Subscribed = true;
+                var subscription = entry.Source.Subscribe(_ =>
+                {
+                    if (_disposed) return;
+                    lock (entry.Sync)
+                    {
+                        if (!entry.Subscribed) return;
+                    }
+                    OnDataChanged?.Invoke(entry.Definition.Id);
+                });
+                entry.Subscription = subscription;
+            }
         }
     }
 
     public DataSourceState? GetState(string? dataSourceId)
-        => dataSourceId != null && _states.TryGetValue(dataSourceId, out var s) ? s : null;
+        => dataSourceId != null && _entries.TryGetValue(dataSourceId, out var e) ? e.State : null;
+
+    public DataSourceDefinition? GetDefinition(string? dataSourceId)
+        => dataSourceId != null && _entries.TryGetValue(dataSourceId, out var e) ? e.Definition : null;
+
+    public DataPagingMode GetPagingMode(string? dataSourceId)
+        => GetDefinition(dataSourceId)?.Paging ?? DataPagingMode.Client;
 
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
-        CancelRequestsAndSubscriptions();
+
+        try { _lifetimeCts.Cancel(); } catch { /* ignore */ }
+
+        foreach (var entry in _entries.Values)
+        {
+            lock (entry.Sync)
+            {
+                entry.Subscribed = false;
+                entry.Subscription?.Dispose();
+                entry.Subscription = null;
+                entry.RequestCts?.Cancel();
+                entry.RequestCts?.Dispose();
+                entry.RequestCts = null;
+            }
+        }
+
+        _entries.Clear();
         _lifetimeCts.Dispose();
-        _sources.Clear();
-        _states.Clear();
     }
 
-    private void CancelRequestsAndSubscriptions()
+    private bool TryCompleteCurrent(Entry entry, long version)
     {
-        _lifetimeCts.Cancel();
-        _lifetimeCts.Dispose();
-        _lifetimeCts = new CancellationTokenSource();
-
-        foreach (var cts in _requestCts.Values)
-        {
-            cts.Cancel();
-            cts.Dispose();
-        }
-        _requestCts.Clear();
-
-        foreach (var sub in _subscriptions.Values)
-            sub?.Dispose();
-        _subscriptions.Clear();
+        if (_disposed) return false;
+        lock (entry.Sync)
+            return !_disposed && entry.Version == version;
     }
 }
 

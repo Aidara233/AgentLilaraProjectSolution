@@ -32,11 +32,13 @@ namespace AgentCoreProcessor.Adapter
         private long messagesSent;
         private long messagesReceived;
 
-        public FileAdapter(string id, string baseDir, int pollIntervalMs = 2000)
+        public FileAdapter(string id, string baseDir, int pollIntervalMs = 2000, string? outputDir = null)
         {
             Id = id;
             this.inputDir = Path.Combine(baseDir, "input");
-            this.outputDir = Path.Combine(baseDir, "output");
+            this.outputDir = string.IsNullOrWhiteSpace(outputDir)
+                ? Path.Combine(baseDir, "output")
+                : outputDir;
             this.pollIntervalMs = pollIntervalMs;
         }
 

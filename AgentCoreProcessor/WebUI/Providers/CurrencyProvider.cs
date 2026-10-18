@@ -32,7 +32,7 @@ internal class CurrencyProvider : IWebUIProvider
                     Title = "货币管理",
                     Icon = "bi-coin",
                     ShowInNav = true,
-                    Group = "调试",
+                    Group = "资源管理",
                     Order = 115,
                 },
                 Cards = new List<CardDefinition>
@@ -43,9 +43,9 @@ internal class CurrencyProvider : IWebUIProvider
                 },
                 DataSources = new List<DataSourceDefinition>
                 {
-                    new() { Id = "currency-status", Source = new CurrencyStatusSource(_engine) },
-                    new() { Id = "currency-grant", Source = new CurrencyGrantSource(_engine) },
-                    new() { Id = "currency-transactions", Source = new CurrencyTransactionsSource(_engine) },
+                    new() { Id = "currency-status", Factory = () => new CurrencyStatusSource(_engine) },
+                    new() { Id = "currency-grant", Factory = () => new CurrencyGrantSource(_engine) },
+                    new() { Id = "currency-transactions", Factory = () => new CurrencyTransactionsSource(_engine), Paging = DataPagingMode.Client },
                 },
             },
         };
@@ -106,6 +106,7 @@ internal class CurrencyProvider : IWebUIProvider
                 ShowReset = true,
             },
             Layout = new CardLayout { PreferredCols = 4 },
+            AffectedDataSourceIds = new[] { "currency-status", "currency-transactions" },
         };
     }
 
@@ -130,6 +131,7 @@ internal class CurrencyProvider : IWebUIProvider
                 Searchable = false,
                 Paginated = true,
                 DefaultPageSize = 20,
+                RowKeyField = "id",
             },
             Layout = new CardLayout { PreferredCols = 8 },
         };
@@ -235,8 +237,8 @@ internal class CurrencyTransactionsSource : IDataSource
     public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
         var currency = CurrencySourceHelper.RequireCurrency(_engine);
-        var limit = query?.PageSize > 0 ? query.PageSize.Value : 500;
-        var transactions = currency.GetTransactions(limit);
+        // 交易流水为客户端分页：固定拉取窗口，表格在本地分页。
+        var transactions = currency.GetTransactions(500);
         var rows = new JsonArray();
 
         foreach (var t in transactions)

@@ -81,7 +81,7 @@ internal class ReviewProvider : IWebUIProvider
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "review-queue", Source = new ReviewQueueSource(_engine) }
+            new() { Id = "review-queue", Factory = () => new ReviewQueueSource(_engine), Paging = DataPagingMode.Server }
         }
     };
 
@@ -124,7 +124,7 @@ internal class ReviewProvider : IWebUIProvider
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "conflict-groups", Source = new ConflictGroupsSource(_engine) }
+            new() { Id = "conflict-groups", Factory = () => new ConflictGroupsSource(_engine), Paging = DataPagingMode.Server }
         }
     };
 }

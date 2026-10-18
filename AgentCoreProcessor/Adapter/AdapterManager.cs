@@ -112,7 +112,7 @@ namespace AgentCoreProcessor.Adapter
             SaveConfig(config);
 
             if (config.Enabled)
-                await adapter.StartAsync();
+                StartInBackground(adapter);
 
             OnAdaptersChanged?.Invoke();
             return true;
@@ -138,7 +138,8 @@ namespace AgentCoreProcessor.Adapter
             if (!adapters.TryGetValue(id, out var adapter)) return false;
             enabledMap[id] = true;
             UpdateConfigEnabled(id, true);
-            await adapter.StartAsync();
+            StartInBackground(adapter);
+            OnAdaptersChanged?.Invoke();
             return true;
         }
 
@@ -148,7 +149,28 @@ namespace AgentCoreProcessor.Adapter
             enabledMap[id] = false;
             UpdateConfigEnabled(id, false);
             await adapter.StopAsync();
+            OnAdaptersChanged?.Invoke();
             return true;
+        }
+
+        /// <summary>
+        /// FileAdapter.StartAsync 是常驻轮询（直到 Stop），其他适配器启动也可能等待首连。
+        /// WebUI 的创建/启用动作必须立即返回，因此启动放到后台，状态通过 OnAdaptersChanged/GetStatus 观察。
+        /// </summary>
+        private void StartInBackground(IAdapter adapter)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await adapter.StartAsync();
+                }
+                catch (Exception ex)
+                {
+                    Signal.Error(LogGroup.Adapter, "适配器后台启动失败", new { id = adapter.Id, error = ex.Message });
+                    OnAdaptersChanged?.Invoke();
+                }
+            });
         }
 
         public async Task StartAllAsync(bool debugMode = false, CancellationToken ct = default)
@@ -294,6 +316,7 @@ namespace AgentCoreProcessor.Adapter
         {
             configs[config.Id] = config;
             SaveConfig(config);
+            OnAdaptersChanged?.Invoke();
         }
 
         // ── 重载 ──

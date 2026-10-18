@@ -13,7 +13,7 @@
                 }
                 else
                 {
-                    <span class="status-field-value @GetValueClass(field)">
+                    <span class="status-field-value @GetValueClass(field)" style="@GetIndicatorStyle(field)">
                         @GetFieldValue(field)
                     </span>
                 }
@@ -73,18 +73,23 @@
         if (field.Type == StatusFieldType.Badge)
             return "badge";
         if (field.Type == StatusFieldType.Indicator)
-        {
-            var val = GetFieldValue(field).ToLower();
-            var color = val switch
-            {
-                "running" or "active" or "online" or "ok" => "color: var(--status-ok)",
-                "stopped" or "offline" or "error" => "color: var(--status-error)",
-                "idle" or "sleeping" or "paused" => "color: var(--status-warn)",
-                _ => ""
-            };
-            return $"status-indicator\" style=\"{color}";
-        }
+            return "status-indicator";
         return "";
+    }
+
+    private string GetIndicatorStyle(StatusField field)
+    {
+        if (field.Type != StatusFieldType.Indicator)
+            return "";
+
+        var val = GetFieldValue(field).ToLowerInvariant();
+        return val switch
+        {
+            "running" or "active" or "online" or "ok" or "运行中" or "活跃" or "空闲" => "color: var(--status-ok)",
+            "stopped" or "offline" or "error" or "停止" or "已停止" or "未启动" or "调用失败" => "color: var(--status-error)",
+            "idle" or "sleeping" or "paused" or "睡眠" or "暂停" or "处理中" => "color: var(--status-warn)",
+            _ => ""
+        };
     }
 
     private async Task HandleAction(ActionButton action)

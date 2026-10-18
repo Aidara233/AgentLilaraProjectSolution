@@ -53,6 +53,10 @@
             }
         </div>
     }
+    @if (_validationError != null)
+    {
+        <div class="alert alert-danger mt-2 mb-0 py-1 px-2 small">@_validationError</div>
+    }
 </div>
 
 @code {
@@ -66,6 +70,7 @@
     private bool _initialized;
     private bool _dataFetched;
     private JsonNode? _lastData;
+    private string? _validationError;
 
     protected override void OnParametersSet()
     {
@@ -222,6 +227,18 @@
 
     private async Task HandleSubmit()
     {
+        _validationError = null;
+        var missing = Schema.Fields
+            .Where(f => f.Required && !f.Readonly)
+            .Where(f => string.IsNullOrWhiteSpace(_values.GetValueOrDefault(f.Field, "")))
+            .Select(f => f.Label)
+            .ToList();
+        if (missing.Count > 0)
+        {
+            _validationError = $"请填写必填项：{string.Join("、", missing)}";
+            return;
+        }
+
         await OnSubmit.InvokeAsync(BuildPayload());
     }
 
@@ -229,6 +246,7 @@
     {
         _initialized = false;
         _dataFetched = false;
+        _validationError = null;
         OnParametersSet();
     }
 }

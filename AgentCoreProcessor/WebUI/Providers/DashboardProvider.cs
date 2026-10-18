@@ -44,15 +44,11 @@ internal class DashboardProvider : IWebUIProvider
                                 new() { Field = "state", Label = "状态", Type = StatusFieldType.Indicator },
                                 new() { Field = "idleDuration", Label = "空闲时长" },
                                 new() { Field = "lastMessage", Label = "上次消息" },
-                                new() { Field = "muteMode", Label = "静音模式", Type = StatusFieldType.Badge },
                                 new() { Field = "sleepState", Label = "睡眠", Type = StatusFieldType.Badge }
                             },
                             Actions = new()
                             {
-                                new() { Id = "mute", Label = "静音", Icon = "bi-volume-mute" },
-                                new() { Id = "unmute", Label = "取消静音", Icon = "bi-volume-up" },
-                                new() { Id = "trigger-vision", Label = "触发视觉", Icon = "bi-eye" },
-                                new() { Id = "trigger-dream", Label = "触发做梦", Icon = "bi-moon-stars" }
+                                new() { Id = "trigger-vision", Label = "触发视觉", Icon = "bi-eye" }
                             }
                         },
                         Layout = new CardLayout { PreferredCols = 6 }
@@ -90,7 +86,6 @@ internal class DashboardProvider : IWebUIProvider
                                 new() { Field = "name", Header = "名称" },
                                 new() { Field = "mode", Header = "模式", Format = ColumnFormat.Badge },
                                 new() { Field = "status", Header = "状态", Format = ColumnFormat.Badge },
-                                new() { Field = "impulse", Header = "冲动值", Width = "80px" },
                                 new() { Field = "rounds", Header = "轮次", Width = "60px" }
                             }
                         },
@@ -99,9 +94,9 @@ internal class DashboardProvider : IWebUIProvider
                 },
                 DataSources = new List<DataSourceDefinition>
                 {
-                    new() { Id = "dashboard-status", Source = new DashboardStatusSource(engine) },
-                    new() { Id = "dashboard-engines", Source = new DashboardEngineSource(engine) },
-                    new() { Id = "dashboard-channels", Source = new DashboardChannelSource(engine) }
+                    new() { Id = "dashboard-status", Factory = () => new DashboardStatusSource(engine) },
+                    new() { Id = "dashboard-engines", Factory = () => new DashboardEngineSource(engine) },
+                    new() { Id = "dashboard-channels", Factory = () => new DashboardChannelSource(engine), Paging = DataPagingMode.Client }
                 }
             }
         };
@@ -125,17 +120,17 @@ internal class DashboardStatusSource : IDataSource
         var sleepState = _engine.CurrentSleepState;
 
         var disabled = new JsonArray();
-        if (_engine.MuteMode)
-            disabled.Add("mute");
-        else
-            disabled.Add("unmute");
+        var visionRunning = _engine.GetSpawnCheck<VisionEngineSpawnCheck>()?.ActiveInstance != null;
+        if (!visionRunning)
+            disabled.Add("trigger-vision");
 
+        // 冲动值已随记忆重构移除；静音与 force-sleep 目前没有业务消费方，
+        // 因此不再在 UI 暴露这些“看起来能控制”的字段和按钮。
         var data = new JsonObject
         {
             ["state"] = _engine.IsIdle ? "空闲" : "忙碌",
             ["idleDuration"] = FormatDuration(_engine.IdleDuration),
             ["lastMessage"] = _engine.LastMessageTime.ToString("HH:mm:ss"),
-            ["muteMode"] = _engine.MuteMode ? "开启" : "关闭",
             ["sleepState"] = sleepState != SleepState.None ? sleepState.ToString() : "清醒",
             ["_disabled_actions"] = disabled
         };
@@ -148,14 +143,6 @@ internal class DashboardStatusSource : IDataSource
         var msg = "";
         switch (action)
         {
-            case "mute":
-                _engine.MuteMode = true;
-                msg = "静音模式已开启";
-                break;
-            case "unmute":
-                _engine.MuteMode = false;
-                msg = "静音模式已关闭";
-                break;
             case "trigger-vision":
                 var visionCheck = _engine.GetSpawnCheck<VisionEngineSpawnCheck>();
                 if (visionCheck?.ActiveInstance != null)
@@ -168,10 +155,6 @@ internal class DashboardStatusSource : IDataSource
                     ok = false;
                     msg = "视觉引擎未运行";
                 }
-                break;
-            case "trigger-dream":
-                _engine.EventBus.PublishSignal("force-sleep", "daydream");
-                msg = "已发送做梦信号（走神）";
                 break;
             default:
                 ok = false;

@@ -9,4 +9,13 @@
             </NotAuthorized>
         </AuthorizeRouteView>
     </Found>
+    <NotFound>
+        <LayoutView Layout="typeof(MainLayout)">
+            <div class="p-4 text-center text-muted-custom">
+                <i class="bi bi-question-circle" style="font-size:2rem"></i>
+                <p>页面未找到</p>
+                <a class="btn btn-sm btn-outline-secondary" href="/p/dashboard">返回总览</a>
+            </div>
+        </LayoutView>
+    </NotFound>
 </Router>

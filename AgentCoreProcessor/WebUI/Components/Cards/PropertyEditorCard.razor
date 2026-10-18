@@ -6,10 +6,14 @@
     {
         <p class="text-muted small mb-2">@Schema.Description</p>
     }
+    @if (_hint != null)
+    {
+        <p class="text-muted-custom small mb-2">@_hint</p>
+    }
 
     @if (_properties.Count == 0)
     {
-        <p class="text-muted-custom text-center py-3">无属性</p>
+        <p class="text-muted-custom text-center py-3">@(_hint ?? "无属性")</p>
     }
     else
     {
@@ -155,6 +159,10 @@
     private bool _isSaving;
     private string? _error;
     private string? _statusMessage;
+    private string? _hint;
+    private string? _loadedFilePath;
+    /// <summary>等待页面回传的保存令牌；成功/失败后由页面调用 ResolveSave。</summary>
+    private string? _pendingSaveToken;
 
     private string? _jsonEditorProp;
     private string _jsonEditorText = "";
@@ -164,7 +172,39 @@
     {
         if (Data is JsonObject obj)
         {
+            var filePath = obj["_filePath"]?.ToString();
             var propsArr = obj["properties"]?.AsArray();
+            _hint = obj["_hint"]?.ToString();
+
+            // 同一文件的数据刷新（例如保存后的回读）不能清空用户的未保存草稿。
+            // 如果刷新后的值与草稿一致，说明保存成功，可以安全地结束 dirty 状态。
+            var sameFile = filePath != null && string.Equals(filePath, _loadedFilePath, StringComparison.Ordinal);
+            if (sameFile && _hasChanges && propsArr != null)
+            {
+                var sameValues = true;
+                foreach (var item in propsArr)
+                {
+                    if (item is not JsonObject po) continue;
+                    var name = po["name"]?.ToString() ?? "";
+                    var prop = _properties.FirstOrDefault(p => p.Name == name);
+                    if (prop == null || (po["value"]?.ToString() ?? "") != (prop.Value?.ToString() ?? ""))
+                    {
+                        sameValues = false;
+                        break;
+                    }
+                }
+
+                if (sameValues)
+                {
+                    _hasChanges = false;
+                    _statusMessage = "已保存";
+                    _pendingSaveToken = null;
+                    foreach (var prop in _properties)
+                        _originalValues[prop.Name] = prop.Value?.ToString() ?? "";
+                }
+                return;
+            }
+
             if (propsArr != null)
             {
                 _properties = new();
@@ -173,6 +213,7 @@
                 _revealed = new();
                 _error = null;
                 _statusMessage = null;
+                _loadedFilePath = filePath;
 
                 foreach (var item in propsArr)
                 {
@@ -266,10 +307,22 @@
         if (_jsonEditorProp == null) return;
         var prop = _properties.FirstOrDefault(p => p.Name == _jsonEditorProp);
         if (prop == null) return;
-        prop.Value = JsonValue.Create(_jsonEditorText);
-        _hasChanges = true;
-        _statusMessage = null;
-        _jsonEditorOpen = false;
+
+        try
+        {
+            var parsed = JsonNode.Parse(_jsonEditorText);
+            if (parsed == null)
+                throw new FormatException("内容不能为空");
+            prop.Value = parsed;
+            _error = null;
+            _hasChanges = true;
+            _statusMessage = null;
+            _jsonEditorOpen = false;
+        }
+        catch (Exception ex)
+        {
+            _error = $"JSON 格式错误：{ex.Message}";
+        }
     }
 
     private async Task HandleSave()
@@ -289,20 +342,58 @@
             }
         }
 
+        if (changed.Count == 0)
+        {
+            _isSaving = false;
+            _statusMessage = "没有需要保存的修改";
+            return;
+        }
+
         var payload = new JsonObject
         {
             ["action"] = "save",
             ["changes"] = changed
         };
 
-        await OnSubmit.InvokeAsync(payload);
+        // 页面通过 ResolveSave 回传结果；只有成功才清空草稿并显示“已保存”。
+        var token = Guid.NewGuid().ToString("N");
+        _pendingSaveToken = token;
+        try
+        {
+            await OnSubmit.InvokeAsync(payload);
+        }
+        finally
+        {
+            if (_pendingSaveToken == token)
+            {
+                // 页面没有回传结果（旧调用方）：保持 pending，草稿不丢，由页面错误提示兜底。
+                _hasChanges = true;
+            }
+            _isSaving = false;
+        }
+    }
+
+    /// <summary>页面在提交完成后调用：成功则提交草稿、失败则保留草稿并显示错误。</summary>
+    public void ResolveSave(bool success, string? message)
+    {
+        _pendingSaveToken = null;
         _isSaving = false;
-        _hasChanges = false;
 
-        foreach (var prop in _properties)
-            _originalValues[prop.Name] = prop.Value?.ToString() ?? "";
-
-        _statusMessage = "已保存";
+        if (success)
+        {
+            _hasChanges = false;
+            foreach (var prop in _properties)
+                _originalValues[prop.Name] = prop.Value?.ToString() ?? "";
+            _error = null;
+            _statusMessage = string.IsNullOrEmpty(message) ? "已保存" : message;
+        }
+        else
+        {
+            _hasChanges = true;
+            _statusMessage = null;
+            _error = string.IsNullOrEmpty(message) ? "保存失败" : message;
+        }
+        StateHasChanged();
     }
 
     private static string Truncate(string? s, int max)

@@ -73,7 +73,7 @@ internal class DreamProvider : IWebUIProvider
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "dream-events", Source = new DreamEventsSource(_engine) }
+            new() { Id = "dream-events", Source = new DreamEventsSource(_engine), Paging = DataPagingMode.Server }
         }
     };
 
@@ -105,7 +105,7 @@ internal class DreamProvider : IWebUIProvider
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "dream-claims", Source = new DreamClaimsSource(_engine) }
+            new() { Id = "dream-claims", Source = new DreamClaimsSource(_engine), Paging = DataPagingMode.Server }
         }
     };
 }

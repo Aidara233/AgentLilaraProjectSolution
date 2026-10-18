@@ -34,6 +34,7 @@ internal class PluginsProvider : IWebUIProvider
         BuildPluginDetailPage(),
         BuildToolsPage(),
         BuildSessionTypesPage(),
+        BuildMcpNavPage(),
     };
 
     // ================ 1. 插件清单 ================
@@ -77,15 +78,49 @@ internal class PluginsProvider : IWebUIProvider
                             Options = new() { new() { Value = "yes", Label = "是，执行热重载" } } }
                     }
                 },
-                Layout = new CardLayout { PreferredCols = 4 }
+                Layout = new CardLayout { PreferredCols = 4 },
+                AffectedDataSourceIds = new[] { "plugin-list" }
             }
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "plugin-list", Source = new PluginListSource(_engine) },
+            new() { Id = "plugin-list", Source = new PluginListSource(_engine), Paging = DataPagingMode.Client },
             new() { Id = "plugin-reload", Source = new PluginReloadSource(_engine) },
         }
     };
+
+    /// <summary>
+    /// MCP 状态页是独立 Razor 组件（/mcp），这里只注册导航入口；
+    /// DynamicPage 遇到空 Cards 时需要显式重定向。
+    /// </summary>
+    private PageDefinition BuildMcpNavPage() => new()
+    {
+        Route = "mcp",
+        Meta = new PageMeta { Title = "MCP", Icon = "bi-plug", Group = "插件", Order = 93 },
+        Cards = new List<CardDefinition>(),
+        DataSources = new List<DataSourceDefinition>
+        {
+            new() { Id = "mcp-redirect", Factory = () => new RedirectDataSource("/mcp") }
+        }
+    };
+
+    private sealed class RedirectDataSource : IDataSource
+    {
+        private readonly string _target;
+        public RedirectDataSource(string target) => _target = target;
+        public bool SupportsPush => false;
+        public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+        public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+            => Task.FromResult(new DataResult
+            {
+                Data = new JsonObject(),
+                Meta = new JsonObject { ["redirect"] = _target }
+            });
+
+        public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+            => Task.FromResult(new ActionResult { Success = false, Message = "只读导航入口" });
+    }
 
     // ================ 2. 插件详情 ================
 
@@ -148,6 +183,7 @@ internal class PluginsProvider : IWebUIProvider
                         new() { Id = "disable", Label = "禁用", Danger = true },
                         new() { Id = "enable", Label = "启用" },
                     },
+                    RowKeyField = "name",
                     Searchable = false, Paginated = false
                 },
                 Layout = new CardLayout { PreferredCols = 6 }
@@ -171,10 +207,10 @@ internal class PluginsProvider : IWebUIProvider
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "plugin-info", Source = new PluginInfoSource(_engine) },
-            new() { Id = "plugin-reload-single", Source = new PluginReloadSingleSource(_engine) },
-            new() { Id = "plugin-tools", Source = new PluginToolsSource(_engine) },
-            new() { Id = "plugin-components", Source = new PluginComponentsSource(_engine) },
+            new() { Id = "plugin-info", Factory = () => new PluginInfoSource(_engine) },
+            new() { Id = "plugin-reload-single", Factory = () => new PluginReloadSingleSource(_engine) },
+            new() { Id = "plugin-tools", Factory = () => new PluginToolsSource(_engine) },
+            new() { Id = "plugin-components", Factory = () => new PluginComponentsSource(_engine) },
         }
     };
 
@@ -211,14 +247,14 @@ internal class PluginsProvider : IWebUIProvider
                         new() { Id = "disable", Label = "禁用", Danger = true },
                         new() { Id = "enable", Label = "启用" },
                     },
-                    Searchable = true, Paginated = true, DefaultPageSize = 30
+                    RowKeyField = "name",
                 },
                 Layout = new CardLayout { PreferredCols = 12 }
             }
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "all-tools", Source = new AllToolsSource(_engine) },
+            new() { Id = "all-tools", Source = new AllToolsSource(_engine), Paging = DataPagingMode.Client },
         }
     };
 
@@ -245,6 +281,7 @@ internal class PluginsProvider : IWebUIProvider
                         new() { Field = "toolCount", Header = "工具数", Width = "70px" },
                         new() { Field = "componentCount", Header = "组件数", Width = "70px" },
                     },
+                    RowKeyField = "type",
                     Searchable = false, Paginated = false
                 },
                 Layout = new CardLayout { PreferredCols = 3, GridColumnStart = 1 }
@@ -292,6 +329,7 @@ internal class PluginsProvider : IWebUIProvider
                         new() { Id = "add", Label = "加入" },
                         new() { Id = "remove", Label = "移出", Danger = true },
                     },
+                    RowKeyField = "name",
                     Searchable = true, Paginated = true, DefaultPageSize = 20
                 },
                 Layout = new CardLayout { PreferredCols = 9, GridColumnStart = 4 }
@@ -319,6 +357,7 @@ internal class PluginsProvider : IWebUIProvider
                         new() { Id = "add", Label = "加入" },
                         new() { Id = "remove", Label = "移出", Danger = true },
                     },
+                    RowKeyField = "name",
                     Searchable = true, Paginated = true, DefaultPageSize = 30
                 },
                 Layout = new CardLayout { PreferredCols = 9, GridColumnStart = 4 }
@@ -327,9 +366,9 @@ internal class PluginsProvider : IWebUIProvider
         DataSources = new List<DataSourceDefinition>
         {
             new() { Id = "st-list", Source = new SessionTypesListSource() },
-            new() { Id = "st-detail", Source = new SessionTypeDetailSource() },
-            new() { Id = "st-components", Source = new SessionTypeComponentsSource(_engine) },
-            new() { Id = "st-tools", Source = new SessionTypeToolsSource(_engine) },
+            new() { Id = "st-detail", Factory = () => new SessionTypeDetailSource() },
+            new() { Id = "st-components", Factory = () => new SessionTypeComponentsSource(_engine) },
+            new() { Id = "st-tools", Factory = () => new SessionTypeToolsSource(_engine) },
         }
     };
 
@@ -338,7 +377,12 @@ internal class PluginsProvider : IWebUIProvider
     private List<SelectOption> BuildSourceFilterOptions()
     {
         var options = new List<SelectOption> { new() { Value = "__core__", Label = "核心工具" } };
-        foreach (var plugin in _engine.PluginLoader.LoadedPlugins)
+        // Provider 在 engine.InitAsync 之前注册；此时 PluginLoader/组件宿主尚不存在。
+        // 页面定义在每次枚举时重建，插件加载完成后再打开页面即可拿到完整来源列表。
+        var loader = _engine.PluginLoader;
+        if (loader == null) return options;
+
+        foreach (var plugin in loader.LoadedPlugins)
         {
             options.Add(new SelectOption { Value = plugin.PluginId, Label = plugin.Manifest?.Name ?? plugin.PluginId });
         }
@@ -354,13 +398,16 @@ internal class PluginsProvider : IWebUIProvider
             if (!string.IsNullOrEmpty(group))
                 groups.Add(group);
         }
-        // 组件工具也检查 metadata
-        foreach (var tool in _engine.GetAllComponentTools())
+        // 组件宿主可能尚未初始化（Provider 注册早于 InitAsync）。
+        if (_engine.GlobalComponentHost != null)
         {
-            var meta = ToolRegistry.GetMeta(tool.Name)
-                ?? Attribute.GetCustomAttribute(tool.GetType(), typeof(ToolMetaAttribute)) as ToolMetaAttribute;
-            if (!string.IsNullOrEmpty(meta?.Group))
-                groups.Add(meta.Group);
+            foreach (var tool in _engine.GetAllComponentTools())
+            {
+                var meta = ToolRegistry.GetMeta(tool.Name)
+                    ?? Attribute.GetCustomAttribute(tool.GetType(), typeof(ToolMetaAttribute)) as ToolMetaAttribute;
+                if (!string.IsNullOrEmpty(meta?.Group))
+                    groups.Add(meta.Group);
+            }
         }
         return groups.OrderBy(g => g).Select(g => new SelectOption { Value = g, Label = g }).ToList();
     }
@@ -505,7 +552,7 @@ internal class PluginInfoSource : IDataSource
     private PluginEntry? FindPlugin(string name)
     {
         return _engine.PluginLoader.LoadedPlugins
-            .FirstOrDefault(p => p.PluginId == name
+            .FirstOrDefault(p => p.PluginId.Equals(name, StringComparison.OrdinalIgnoreCase)
                              || Path.GetFileNameWithoutExtension(p.FileName).Equals(name, StringComparison.OrdinalIgnoreCase));
     }
 }
@@ -591,7 +638,7 @@ internal class PluginToolsSource : IDataSource
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
     {
-        var toolName = data?["_row_id"]?.ToString() ?? "";
+        var toolName = GetRowId(data);
         if (string.IsNullOrEmpty(toolName))
             return Task.FromResult(new ActionResult { Success = false, Message = "未指定工具" });
 
@@ -608,10 +655,21 @@ internal class PluginToolsSource : IDataSource
         }
     }
 
+    /// <summary>行操作目标：优先 _row_id，兼容旧前端的 name/id。</summary>
+    internal static string GetRowId(JsonNode? data)
+    {
+        if (data is not JsonObject obj) return "";
+        return obj["_row_id"]?.ToString()
+            ?? obj["id"]?.ToString()
+            ?? obj["name"]?.ToString()
+            ?? "";
+    }
+
     private PluginEntry? FindPlugin(string name)
     {
         return _engine.PluginLoader.LoadedPlugins
-            .FirstOrDefault(p => Path.GetFileNameWithoutExtension(p.FileName) == name);
+            .FirstOrDefault(p => p.PluginId.Equals(name, StringComparison.OrdinalIgnoreCase)
+                             || Path.GetFileNameWithoutExtension(p.FileName).Equals(name, StringComparison.OrdinalIgnoreCase));
     }
 }
 
@@ -654,7 +712,8 @@ internal class PluginComponentsSource : IDataSource
     private PluginEntry? FindPlugin(string name)
     {
         return _engine.PluginLoader.LoadedPlugins
-            .FirstOrDefault(p => Path.GetFileNameWithoutExtension(p.FileName) == name);
+            .FirstOrDefault(p => p.PluginId.Equals(name, StringComparison.OrdinalIgnoreCase)
+                             || Path.GetFileNameWithoutExtension(p.FileName).Equals(name, StringComparison.OrdinalIgnoreCase));
     }
 }
 
@@ -740,7 +799,7 @@ internal class AllToolsSource : IDataSource
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
     {
-        var toolName = data?["_row_id"]?.ToString() ?? "";
+        var toolName = data?["_row_id"]?.ToString() ?? data?["name"]?.ToString() ?? "";
         if (string.IsNullOrEmpty(toolName))
             return Task.FromResult(new ActionResult { Success = false, Message = "未指定工具" });
 
@@ -935,9 +994,15 @@ internal class SessionTypeDetailSource : IDataSource
             }
             case "reset":
             {
+                // 恢复默认应尽量完整；SessionTypeProfiles.GetDefault 当前只提供 Tools 默认。
+                // 组件清单没有默认种子，保留现状并在消息中说明，避免给出虚假的“全部已重置”。
                 var (dMode, dTools) = SessionTypeProfiles.GetDefault(_selectedType);
                 SessionTypeProfiles.Save(_selectedType, dMode, dTools);
-                return Task.FromResult(new ActionResult { Success = true, Message = $"{_selectedType} 已恢复默认（{SessionTypeUiHelpers.ModeLabel(dMode)}）" });
+                return Task.FromResult(new ActionResult
+                {
+                    Success = true,
+                    Message = $"{_selectedType} 工具清单/模式已恢复默认（{SessionTypeUiHelpers.ModeLabel(dMode)}）；组件清单保持现状"
+                });
             }
             default:
                 return Task.FromResult(new ActionResult { Success = false, Message = $"未知操作: {action}" });
@@ -984,7 +1049,7 @@ internal class SessionTypeComponentsSource : IDataSource
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
     {
-        var compName = data?["_row_id"]?.ToString() ?? "";
+        var compName = data?["_row_id"]?.ToString() ?? data?["name"]?.ToString() ?? "";
         if (string.IsNullOrEmpty(compName))
             return Task.FromResult(new ActionResult { Success = false, Message = "未指定组件" });
         if (string.IsNullOrEmpty(_selectedType))
@@ -999,8 +1064,9 @@ internal class SessionTypeComponentsSource : IDataSource
                 list.Add(compName);
                 break;
             case "remove":
-                list.RemoveAll(c => c.Equals(compName, StringComparison.OrdinalIgnoreCase));
-                break;
+                if (!list.RemoveAll(c => c.Equals(compName, StringComparison.OrdinalIgnoreCase)).Equals(0))
+                    break;
+                return Task.FromResult(new ActionResult { Success = false, Message = $"「{compName}」不在 {_selectedType} 清单中" });
             default:
                 return Task.FromResult(new ActionResult { Success = false, Message = $"未知操作: {action}" });
         }
@@ -1080,7 +1146,7 @@ internal class SessionTypeToolsSource : IDataSource
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
     {
-        var toolName = data?["_row_id"]?.ToString() ?? "";
+        var toolName = data?["_row_id"]?.ToString() ?? data?["name"]?.ToString() ?? "";
         if (string.IsNullOrEmpty(toolName))
             return Task.FromResult(new ActionResult { Success = false, Message = "未指定工具" });
         if (string.IsNullOrEmpty(_selectedType))
@@ -1097,7 +1163,8 @@ internal class SessionTypeToolsSource : IDataSource
                 tools.Add(toolName);
                 break;
             case "remove":
-                tools.RemoveAll(t => t.Equals(toolName, StringComparison.OrdinalIgnoreCase));
+                if (tools.RemoveAll(t => t.Equals(toolName, StringComparison.OrdinalIgnoreCase)) == 0)
+                    return Task.FromResult(new ActionResult { Success = false, Message = $"「{toolName}」不在清单中" });
                 break;
             default:
                 return Task.FromResult(new ActionResult { Success = false, Message = $"未知操作: {action}" });

@@ -259,12 +259,249 @@ internal class TestProvider : IWebUIProvider
                 new() { Id = "test-stream-data", Source = new TestStreamDataSource() },
                 new() { Id = "test-chat-data",   Source = new TestChatDataSource() },
                 new() { Id = "test-tree-data",   Source = new TestTreeDataSource() },
-                new() { Id = "test-action-simple", Source = new TestActionDataSource() },
-                new() { Id = "test-action-params", Source = new TestActionDataSource() },
-                new() { Id = "test-action-select", Source = new TestActionDataSource() }
+                new() { Id = "test-action-simple", Factory = () => new TestActionDataSource() },
+                new() { Id = "test-action-params", Factory = () => new TestActionDataSource() },
+                new() { Id = "test-action-select", Factory = () => new TestActionDataSource() }
+            }
+        },
+        new()
+        {
+            // WebUI 契约回归页：覆盖本次修缮的分页模式、稳定行键、确认框、失败反馈、
+            // 服务端搜索和跨卡片失效刷新。页面保持隐藏，避免进入生产导航。
+            Route = "test/ui-contract",
+            Meta = new PageMeta { Title = "UI 契约回归", Icon = "bi-check2-square", Group = "测试", Order = 2, ShowInNav = false },
+            Cards = new List<CardDefinition>
+            {
+                new()
+                {
+                    Id = "contract-client-table",
+                    Type = CardType.Table,
+                    DataSourceId = "contract-client",
+                    Title = "客户端分页（全量 60 条）",
+                    Schema = new TableSchema
+                    {
+                        Columns = new()
+                        {
+                            new() { Field = "id", Header = "ID", Width = "60px" },
+                            new() { Field = "name", Header = "名称" },
+                            new() { Field = "size", Header = "大小", Width = "90px" }
+                        },
+                        Searchable = true,
+                        Paginated = true,
+                        DefaultPageSize = 10,
+                        RowKeyField = "id"
+                    },
+                    Layout = new CardLayout { PreferredCols = 6 }
+                },
+                new()
+                {
+                    Id = "contract-server-table",
+                    Type = CardType.Table,
+                    DataSourceId = "contract-server",
+                    Title = "服务端分页（服务端 TotalCount=25）",
+                    Schema = new TableSchema
+                    {
+                        Columns = new()
+                        {
+                            new() { Field = "id", Header = "ID", Width = "60px" },
+                            new() { Field = "name", Header = "名称" },
+                            new() { Field = "size", Header = "大小", Width = "90px" }
+                        },
+                        Searchable = true,
+                        Paginated = true,
+                        DefaultPageSize = 10,
+                        RowKeyField = "id",
+                        RowActions = new()
+                        {
+                            new() { Id = "ok", Label = "成功操作" },
+                            new() { Id = "fail", Label = "失败操作" },
+                            new() { Id = "danger", Label = "危险操作（需确认）", Danger = true }
+                        }
+                    },
+                    Layout = new CardLayout { PreferredCols = 6 }
+                },
+                new()
+                {
+                    Id = "contract-refresh",
+                    Type = CardType.Action,
+                    DataSourceId = "contract-action",
+                    Title = "跨卡片失效刷新",
+                    Schema = new ActionCardSchema
+                    {
+                        ActionId = "touch",
+                        ActionLabel = "刷新两张表",
+                        Description = "执行后两张表的数据源都应重新请求。",
+                        SubmitLabel = "执行"
+                    },
+                    Layout = new CardLayout { PreferredCols = 12 },
+                    AffectedDataSourceIds = new[] { "contract-client", "contract-server" }
+                },
+                new()
+                {
+                    Id = "contract-property",
+                    Type = CardType.PropertyGrid,
+                    DataSourceId = "contract-property",
+                    Title = "配置保存（类型保持）",
+                    Schema = new PropertyGridSchema
+                    {
+                        Description = "Nested 字段是对象；保存后应保持对象类型。Invalid 字段保存应失败并保留草稿。",
+                        SubmitLabel = "保存"
+                    },
+                    Layout = new CardLayout { PreferredCols = 12 }
+                }
+            },
+            DataSources = new List<DataSourceDefinition>
+            {
+                new() { Id = "contract-client", Factory = () => new TestContractClientSource(), Paging = DataPagingMode.Client },
+                new() { Id = "contract-server", Factory = () => new TestContractServerSource(), Paging = DataPagingMode.Server },
+                new() { Id = "contract-action", Factory = () => new TestContractActionSource() },
+                new() { Id = "contract-property", Factory = () => new TestContractPropertySource() }
             }
         }
     };
+}
+
+/// <summary>客户端分页回归：始终返回全量 60 条。</summary>
+internal class TestContractClientSource : IDataSource
+{
+    public bool SupportsPush => false;
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        var total = 60;
+        return Task.FromResult(new DataResult
+        {
+            Data = BuildRows(total),
+            Meta = new JsonObject { ["fetchPage"] = query?.Page ?? 1, ["fetchSearch"] = query?.Search ?? "" }
+        });
+    }
+
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+        => Task.FromResult(new ActionResult { Success = false, Message = "只读" });
+
+    internal static JsonArray BuildRows(int total, int skip = 0, int take = 0, string? search = null)
+    {
+        // 先计算目标区间再创建节点，避免把已有父节点的 JsonNode 重新挂到新数组
+        // （System.Text.Json.Nodes 会抛 “The node already has a parent”）。
+        var arr = new JsonArray();
+        var emitted = 0;
+        for (var i = 1; i <= total; i++)
+        {
+            var name = $"项目-{i:00}";
+            if (!string.IsNullOrEmpty(search) &&
+                !name.Contains(search, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            arr.Add(new JsonObject { ["id"] = i, ["name"] = name, ["size"] = i * 10 });
+            emitted++;
+        }
+
+        if (skip <= 0 && take <= 0) return arr;
+
+        var page = new JsonArray();
+        var end = take > 0 ? skip + take : int.MaxValue;
+        for (var i = skip; i < arr.Count && i < end; i++)
+            page.Add(arr[i]!.DeepClone());
+        return page;
+    }
+}
+
+/// <summary>服务端分页回归：按 Page/PageSize/Search 返回当前页，TotalCount 为过滤后总数。</summary>
+internal class TestContractServerSource : IDataSource
+{
+    public bool SupportsPush => false;
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+    {
+        const int total = 25;
+        var page = query?.Page ?? 1;
+        var pageSize = query?.PageSize ?? 10;
+        var search = query?.Search;
+        var filtered = TestContractClientSource.BuildRows(total, 0, 0, search);
+        var totalCount = filtered.Count;
+        var pageRows = TestContractClientSource.BuildRows(total, (page - 1) * pageSize, pageSize, search);
+
+        return Task.FromResult(new DataResult
+        {
+            Data = pageRows,
+            TotalCount = totalCount,
+            Meta = new JsonObject { ["servedPage"] = page, ["servedSearch"] = search ?? "" }
+        });
+    }
+
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+    {
+        var rowId = data?["_row_id"]?.ToString() ?? "";
+        return action switch
+        {
+            "ok" => Task.FromResult(new ActionResult { Success = true, Message = $"成功操作 row={rowId}" }),
+            "fail" => Task.FromResult(new ActionResult { Success = false, Message = $"失败操作 row={rowId}" }),
+            "danger" => Task.FromResult(new ActionResult { Success = true, Message = $"危险操作 row={rowId} 已确认执行" }),
+            _ => Task.FromResult(new ActionResult { Success = false, Message = "未知操作" })
+        };
+    }
+}
+
+internal class TestContractActionSource : IDataSource
+{
+    public bool SupportsPush => false;
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+        => Task.FromResult(new DataResult { Data = new JsonObject() });
+
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+        => Task.FromResult(new ActionResult { Success = true, Message = "已触发跨卡片刷新" });
+}
+
+/// <summary>配置保存回归：对象字段保存后保持对象类型；Invalid 字段输出非法 JSON 用于失败路径。</summary>
+internal class TestContractPropertySource : IDataSource
+{
+    private JsonNode? _nested = new JsonObject { ["a"] = 1, ["b"] = "x" };
+
+    public bool SupportsPush => false;
+    public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
+
+    public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
+        => Task.FromResult(new DataResult
+        {
+            Data = new JsonObject
+            {
+                ["_filePath"] = "contract-test.json",
+                ["properties"] = new JsonArray
+                {
+                    new JsonObject { ["name"] = "plain", ["label"] = "plain", ["value"] = "hello", ["type"] = "text", ["sensitive"] = false },
+                    new JsonObject { ["name"] = "nested", ["label"] = "nested", ["value"] = _nested?.DeepClone(), ["type"] = "json", ["sensitive"] = false }
+                }
+            }
+        });
+
+    public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
+    {
+        var changes = data?["changes"]?.AsObject();
+        if (changes == null || changes.Count == 0)
+            return Task.FromResult(new ActionResult { Success = false, Message = "无变更" });
+
+        // 模拟 ConfigProvider.ReplaceValue：对象字段必须解析 JSON，非法输入失败。
+        if (changes["nested"] is JsonNode nested)
+        {
+            var text = nested.GetValueKind() == System.Text.Json.JsonValueKind.String
+                ? nested.GetValue<string>()
+                : nested.ToJsonString();
+            try
+            {
+                _nested = JsonNode.Parse(text);
+            }
+            catch (Exception ex)
+            {
+                return Task.FromResult(new ActionResult { Success = false, Message = $"nested 不是合法 JSON：{ex.Message}" });
+            }
+        }
+
+        return Task.FromResult(new ActionResult { Success = true, Message = "测试配置已保存" });
+    }
 }
 
 internal class TestStatusDataSource : IDataSource

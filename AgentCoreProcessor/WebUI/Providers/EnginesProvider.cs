@@ -167,7 +167,21 @@ internal class EngineListSource : IDataSource
                 ["name"] = "会话引擎",
                 ["status"] = "运行中",
                 ["detail"] = $"活跃会话 {sessions.Count} | 待办 {todoCount}",
-                ["_link"] = "/p/engines/session"
+                ["_link"] = "/p/sessions"
+            });
+        }
+
+        // 其他基础设施引擎：会话运行在 SessionEngine 内，未单独启动时也应当可见。
+        var linked = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Session", "Vision", "Express" };
+        foreach (var summary in _engine.GetActiveEngineSummary())
+        {
+            if (linked.Contains(summary.Type)) continue;
+            arr.Add(new JsonObject
+            {
+                ["type"] = summary.Type,
+                ["name"] = summary.Type,
+                ["status"] = "运行中",
+                ["detail"] = $"实例 ×{summary.Count}"
             });
         }
 

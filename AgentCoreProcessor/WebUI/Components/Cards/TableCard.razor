@@ -1,6 +1,7 @@
 @using AgentLilara.PluginSDK.WebUI
 @using System.Text.Json.Nodes
 @inject NavigationManager Nav
+@implements IDisposable
 
 <div class="table-card">
     @if (Schema.Searchable || Schema.Filters?.Count > 0)
@@ -8,7 +9,7 @@
         <div class="table-card-toolbar mb-2 d-flex gap-2 flex-wrap align-items-center">
             @if (Schema.Searchable)
             {
-                <input class="form-control form-control-sm" style="max-width:200px" placeholder="搜索..." @bind="_search" @bind:event="oninput" @onkeyup="OnSearchInput" />
+                <input class="form-control form-control-sm" style="max-width:200px" placeholder="搜索..." @bind="_search" @bind:event="oninput" @bind:after="OnSearchChanged" />
             }
             @if (Schema.Filters != null)
             {
@@ -27,6 +28,10 @@
                     </select>
                 }
             }
+            @if (_searchDebounce)
+            {
+                <span class="text-muted small">输入中…</span>
+            }
         </div>
     }
 
@@ -38,7 +43,7 @@
                     {
                         <th style="@(col.Width != null ? $"width:{col.Width}" : "")"
                             class="@(col.Sortable ? "sortable-col" : "")"
-                            @onclick="() => { if (col.Sortable) ToggleSort(col.Field); }">
+                            @onclick="async () => { if (col.Sortable) await ToggleSort(col.Field); }">
                             @col.Header
                             @if (_sortBy == col.Field)
                             {
@@ -60,10 +65,11 @@
                     {
                         var link = row["_link"]?.ToString();
                         var idx = rowIndex;
+                        var rowKey = GetRowKey(row, idx);
                         var isSelectable = link == null && OnRowSelect.HasDelegate;
-                        var isSelected = isSelectable && _selectedIndex == idx;
+                        var isSelected = isSelectable && string.Equals(_selectedKey, rowKey, StringComparison.Ordinal);
                         <tr class="@(link != null ? "row-clickable" : "") @(isSelectable ? "row-selectable" : "") @(isSelected ? "row-selected" : "")"
-                            @onclick="() => HandleRowClick(link, idx, row)">
+                            @onclick="() => HandleRowClick(link, rowKey, row)">
                             @foreach (var col in Schema.Columns)
                             {
                                 <td>@RenderCell(row, col)</td>
@@ -74,7 +80,7 @@
                                     @foreach (var action in Schema.RowActions)
                                     {
                                         <button class="btn btn-sm @(action.Danger ? "btn-outline-danger" : "btn-outline-secondary") me-1"
-                                                @onclick="() => HandleRowAction(action, row)" @onclick:stopPropagation>
+                                                @onclick="() => HandleRowAction(action, row, rowKey)" @onclick:stopPropagation>
                                             @action.Label
                                         </button>
                                     }
@@ -86,7 +92,7 @@
                 }
                 else
                 {
-                    <tr><td colspan="@(Schema.Columns.Count + (Schema.RowActions?.Count > 0 ? 1 : 0))" class="text-center text-muted-custom" style="padding:1.5rem">暂无数据</td></tr>
+                    <tr><td colspan="@(Schema.Columns.Count + (Schema.RowActions?.Count > 0 ? 1 : 0))" class="text-center text-muted-custom" style="padding:1.5rem">@(IsServerPaged ? "本页暂无数据" : "暂无数据")</td></tr>
                 }
             </tbody>
         </table>
@@ -95,7 +101,7 @@
     @if (Schema.Paginated)
     {
         <div class="table-card-pagination d-flex align-items-center justify-content-between mt-2 px-1">
-            <span class="text-muted small">共 @LocalTotalCount 条</span>
+            <span class="text-muted small">共 @EffectiveTotalCount 条</span>
             <div class="d-flex gap-1">
                 <button class="btn btn-sm btn-outline-secondary" disabled="@(_page <= 1)" @onclick="PrevPage">上一页</button>
                 <span class="btn btn-sm disabled">@_page / @TotalPages</span>
@@ -103,10 +109,23 @@
             </div>
         </div>
     }
-    else if (LocalTotalCount > 0)
+    else if (EffectiveTotalCount > 0)
     {
         <div class="table-card-pagination d-flex align-items-center mt-2 px-1">
-            <span class="text-muted small">共 @LocalTotalCount 条</span>
+            <span class="text-muted small">共 @EffectiveTotalCount 条</span>
+        </div>
+    }
+
+    @if (_confirmAction != null && _confirmRow != null)
+    {
+        <div class="confirm-overlay" @onclick="CancelConfirm">
+            <div class="confirm-dialog" @onclick:stopPropagation="true">
+                <div class="confirm-body">@(ConfirmText(_confirmAction) ?? _confirmAction.Label)</div>
+                <div class="confirm-footer">
+                    <button class="btn btn-sm btn-ghost" @onclick="CancelConfirm">取消</button>
+                    <button class="btn btn-sm @(_confirmAction.Danger ? "btn-danger" : "btn-primary")" @onclick="ExecuteConfirmed">确认</button>
+                </div>
+            </div>
         </div>
     }
 </div>
@@ -115,6 +134,8 @@
     [Parameter, EditorRequired] public TableSchema Schema { get; set; } = null!;
     [Parameter] public JsonNode? Data { get; set; }
     [Parameter] public int? TotalCount { get; set; }
+    /// <summary>由页面按数据源声明注入；服务端分页时不再次本地 Skip/Take。</summary>
+    [Parameter] public DataPagingMode Paging { get; set; } = DataPagingMode.Client;
     [Parameter] public EventCallback<DataQuery> OnQueryChanged { get; set; }
     [Parameter] public EventCallback<(string ActionId, JsonNode Row)> OnRowAction { get; set; }
     [Parameter] public EventCallback<JsonNode> OnRowSelect { get; set; }
@@ -124,18 +145,29 @@
     private string? _sortBy;
     private bool _sortDesc;
     private int _page = 1;
-    private int _pageSize;
-    private int _selectedIndex = -1;
+    private int _pageSize = 20;
+    private string? _selectedKey;
     private Dictionary<string, string> _filters = new();
+    private bool _searchDebounce;
+    private string? _filterSignature;
+    private CancellationTokenSource? _searchCts;
+
+    private RowAction? _confirmAction;
+    private JsonNode? _confirmRow;
+    private string? _confirmRowKey;
+
+    private bool IsServerPaged => Paging == DataPagingMode.Server;
 
     private List<JsonNode>? FilteredRows
     {
         get
         {
             if (_rows == null) return null;
+            // 服务端分页：数据源已经完成搜索/排序/分页，客户端不再二次处理。
+            if (IsServerPaged) return _rows;
+
             var items = _rows.AsEnumerable();
 
-            // 客户端搜索
             if (!string.IsNullOrWhiteSpace(_search))
             {
                 var lower = _search.ToLowerInvariant();
@@ -144,26 +176,22 @@
                         (r[col.Field]?.ToString() ?? "").ToLowerInvariant().Contains(lower)));
             }
 
-            // 客户端筛选器
             foreach (var (field, value) in _filters)
             {
                 if (!string.IsNullOrEmpty(value))
                     items = items.Where(r => (r[field]?.ToString() ?? "") == value);
             }
 
-            // 客户端排序
             if (!string.IsNullOrEmpty(_sortBy))
             {
                 items = _sortDesc
-                    ? items.OrderByDescending(r => r[_sortBy]?.ToString() ?? "")
-                    : items.OrderBy(r => r[_sortBy]?.ToString() ?? "");
+                    ? items.OrderByDescending(r => r[_sortBy]?.ToString() ?? "", StringComparer.OrdinalIgnoreCase)
+                    : items.OrderBy(r => r[_sortBy]?.ToString() ?? "", StringComparer.OrdinalIgnoreCase);
             }
 
             return items.ToList();
         }
     }
-
-    private int LocalTotalCount => FilteredRows?.Count ?? 0;
 
     private List<JsonNode>? DisplayRows
     {
@@ -171,24 +199,43 @@
         {
             var filtered = FilteredRows;
             if (filtered == null) return null;
-            if (!Schema.Paginated) return filtered;
+            if (!Schema.Paginated || IsServerPaged) return filtered;
             return filtered.Skip((_page - 1) * _pageSize).Take(_pageSize).ToList();
         }
     }
 
+    private int EffectiveTotalCount
+    {
+        get
+        {
+            if (IsServerPaged)
+                return TotalCount ?? (_rows?.Count ?? 0);
+            return FilteredRows?.Count ?? 0;
+        }
+    }
+
     private int TotalPages => Schema.Paginated && _pageSize > 0
-        ? Math.Max(1, (int)Math.Ceiling(LocalTotalCount / (double)_pageSize))
+        ? Math.Max(1, (int)Math.Ceiling(EffectiveTotalCount / (double)_pageSize))
         : 1;
 
     protected override void OnParametersSet()
     {
-        _pageSize = Schema.DefaultPageSize;
+        if (_pageSize <= 0 || _pageSize == 20)
+            _pageSize = Schema.DefaultPageSize;
+
         if (Data is JsonArray arr)
             _rows = arr.Where(n => n != null).Select(n => n!).ToList();
         else
             _rows = null;
 
-        // 初始化筛选器字典中不存在的 key
+        // 数据源切换/刷新后重建页码选项。
+        var signature = string.Join('|', Schema.Filters?.Select(f => f.Field) ?? Enumerable.Empty<string>());
+        if (signature != _filterSignature)
+        {
+            _filterSignature = signature;
+            _filters.Clear();
+        }
+
         if (Schema.Filters != null)
         {
             foreach (var filter in Schema.Filters)
@@ -197,12 +244,22 @@
                     _filters[filter.Field] = "";
             }
         }
+
+        // 数据缩小或服务端返回末页时，避免停在无效页。
+        // 这里只修正页码，不主动触发查询，避免渲染过程中再次请求形成循环。
+        if (_page > TotalPages)
+            _page = TotalPages;
     }
 
-    private string GetCellValue(JsonNode row, ColumnDef col)
+    private string GetRowKey(JsonNode row, int index)
     {
-        var val = row[col.Field];
-        return val?.ToString() ?? "";
+        var keyField = Schema.RowKeyField ?? "_row_id";
+        var value = row[keyField]?.ToString();
+        if (string.IsNullOrEmpty(value) && keyField != "id")
+            value = row["id"]?.ToString();
+        if (string.IsNullOrEmpty(value))
+            value = row["name"]?.ToString();
+        return string.IsNullOrEmpty(value) ? $"#{index}" : value;
     }
 
     private RenderFragment RenderCell(JsonNode row, ColumnDef col) => __builder =>
@@ -231,22 +288,51 @@
         }
     };
 
-    private void ToggleSort(string field)
+    private async Task ToggleSort(string field)
     {
         if (_sortBy == field) _sortDesc = !_sortDesc;
         else { _sortBy = field; _sortDesc = false; }
         _page = 1;
+        if (IsServerPaged)
+            await EmitQuery();
     }
 
-    private void OnSearchInput(KeyboardEventArgs e)
+    private async Task OnSearchChanged()
     {
         _page = 1;
+
+        if (!IsServerPaged) return;
+
+        // 服务端搜索做短防抖，避免每个按键都打一次数据源。
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _searchCts = cts;
+        _searchDebounce = true;
+        try
+        {
+            await Task.Delay(300, cts.Token);
+            if (cts.IsCancellationRequested) return;
+            _searchDebounce = false;
+            await EmitQuery();
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
-    private void ApplyFilter()
+    private async Task ApplyFilter()
     {
         _page = 1;
+        if (IsServerPaged)
+            await EmitQuery();
     }
+
+    /// <summary>删除行等破坏性操作默认需要确认；未声明 Confirm 时也给出统一确认。</summary>
+    private static string? ConfirmText(RowAction action)
+        => !string.IsNullOrEmpty(action.Confirm)
+            ? action.Confirm
+            : action.Danger ? $"确认执行「{action.Label}」？" : null;
 
     private async Task PrevPage()
     {
@@ -256,6 +342,22 @@
     private async Task NextPage()
     {
         if (_page < TotalPages) { _page++; await EmitQuery(); }
+    }
+
+    private async Task EmitQuery(List<DataFilter>? filters)
+    {
+        var query = new DataQuery
+        {
+            Page = _page,
+            PageSize = _pageSize,
+            Search = _search,
+            SortBy = _sortBy,
+            SortDesc = _sortDesc,
+            Filters = filters
+        };
+
+        if (IsServerPaged || Schema.Paginated)
+            await OnQueryChanged.InvokeAsync(query);
     }
 
     private async Task EmitQuery()
@@ -270,28 +372,59 @@
                     filters.Add(new DataFilter { Field = field, Operator = "eq", Value = value });
             }
         }
-
-        await OnQueryChanged.InvokeAsync(new DataQuery
-        {
-            Page = _page,
-            PageSize = _pageSize,
-            Search = _search,
-            SortBy = _sortBy,
-            SortDesc = _sortDesc,
-            Filters = filters
-        });
+        await EmitQuery(filters);
     }
 
-    private async Task HandleRowAction(RowAction action, JsonNode row)
+    private void HandleRowAction(RowAction action, JsonNode row, string rowKey)
     {
-        if (!string.IsNullOrEmpty(action.Confirm))
+        if (ConfirmText(action) is not null)
         {
-            // 简单确认：实际页面可替换为模态框
+            _confirmAction = action;
+            _confirmRow = row;
+            _confirmRowKey = rowKey;
+            return;
         }
-        await OnRowAction.InvokeAsync((action.Id, row));
+
+        _ = ExecuteRowAction(action, row, rowKey);
     }
 
-    private async Task HandleRowClick(string? link, int index, JsonNode row)
+    private async Task ExecuteRowAction(RowAction action, JsonNode row, string rowKey)
+    {
+        var payload = row.DeepClone();
+        if (payload is JsonObject obj)
+            obj["_row_id"] = rowKey;
+        await OnRowAction.InvokeAsync((action.Id, payload));
+    }
+
+    private async Task ExecuteConfirmed()
+    {
+        var action = _confirmAction;
+        var row = _confirmRow;
+        var rowKey = _confirmRowKey;
+        CancelConfirm();
+        if (action != null && row != null && rowKey != null)
+            await ExecuteRowAction(action, row, rowKey);
+    }
+
+    private void CancelConfirm()
+    {
+        _confirmAction = null;
+        _confirmRow = null;
+        _confirmRowKey = null;
+    }
+
+    private void OnKeyUp(KeyboardEventArgs e)
+    {
+        // 关键词搜索由 oninput 防抖提交；按键事件保留给未来快捷键扩展。
+    }
+
+    public void Dispose()
+    {
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+    }
+
+    private async Task HandleRowClick(string? link, string rowKey, JsonNode row)
     {
         if (link != null)
         {
@@ -300,7 +433,7 @@
         }
         if (OnRowSelect.HasDelegate)
         {
-            _selectedIndex = index;
+            _selectedKey = rowKey;
             await OnRowSelect.InvokeAsync(row);
         }
     }

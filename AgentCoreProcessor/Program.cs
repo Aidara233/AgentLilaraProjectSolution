@@ -374,8 +374,9 @@ namespace AgentCoreProcessor
             builder.Services.AddSingleton<WebUI.Services.ModelLogService>();
             builder.Services.AddSingleton(sp =>
                 new WebUI.Services.TokenStatsService(engine.ModelCallLogs));
-            builder.Services.AddScoped<AgentCoreProcessor.WebUI.Services.LogTraceService>(
-                sp => new AgentCoreProcessor.WebUI.Services.LogTraceService(logQuery, logWriter));
+            // LogTrace 页面是独立组件，数据服务必须与浏览会话/电路同作用域，
+            // 单例会让多个标签页共享同一份 Trace 服务。
+            builder.Services.AddScoped<AgentCoreProcessor.WebUI.Services.LogTraceService>();
             builder.Services.AddSingleton(providerRegistry);
             Signal.Event(LogGroup.Engine, "服务注册完成");
 

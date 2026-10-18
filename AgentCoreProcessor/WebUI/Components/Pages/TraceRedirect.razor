@@ -1,0 +1,15 @@
+@page "/p/logs/trace"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using AgentCoreProcessor.WebUI.Components.Pages
+@inject NavigationManager Nav
+
+<div class="p-4 text-muted-custom">正在跳转到信号追踪…</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        // 正式入口是独立的 /logs/trace；/p 路径仅作兼容壳，避免
+        // DynamicPage 渲染 LogTraceProvider 的空卡片。
+        Nav.NavigateTo("/logs/trace", replace: true);
+    }
+}

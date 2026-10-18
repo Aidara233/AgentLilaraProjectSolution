@@ -16,61 +16,78 @@
         <p>页面未找到: @Route</p>
     </div>
 }
-else if (page.LayoutType == PageLayoutType.Sidebar)
-{
-    var leftCards = page.Cards.Where(c => c.Layout.GridColumnStart == 1).OrderBy(c => c.Layout.Order);
-    var mainCards = page.Cards.Where(c => c.Layout.GridColumnStart != 1).OrderBy(c => c.Layout.Order);
-    <div class="p-3">
-        <h4 class="mb-3">@(page.Meta.Title)</h4>
-        <div style="display:flex; gap:1rem;">
-            <div style="flex: 0 0 25%; display:flex; flex-direction:column; gap:1rem; min-width:260px;">
-                @foreach (var card in leftCards)
-                {
-                    var state = dsManager.GetState(card.DataSourceId);
-                    <CardHost Title="@card.Title" Layout="@card.Layout" State="@state"
-                              OnRefresh="() => RefreshCard(card)">
-                        @RenderCard(card, state)
-                    </CardHost>
-                }
-            </div>
-            <div style="flex: 1; min-width:0; display:flex; flex-direction:column; gap:1rem;">
-                @foreach (var card in mainCards)
-                {
-                    var state = dsManager.GetState(card.DataSourceId);
-                    <CardHost Title="@card.Title" Layout="@card.Layout" State="@state"
-                              OnRefresh="() => RefreshCard(card)">
-                        @RenderCard(card, state)
-                    </CardHost>
-                }
-            </div>
-        </div>
-    </div>
-}
 else
 {
-    <div class="p-3">
-        <h4 class="mb-3">@(page.Meta.Title)</h4>
-        <AgentCoreProcessor.WebUI.Components.Shell.CardGrid>
-            @foreach (var card in page.Cards.OrderBy(c => c.Layout.Order))
-            {
-                var state = dsManager.GetState(card.DataSourceId);
-                <CardHost Title="@card.Title" Layout="@card.Layout" State="@state"
-                          OnRefresh="() => RefreshCard(card)">
-                    @RenderCard(card, state)
-                </CardHost>
-            }
-        </AgentCoreProcessor.WebUI.Components.Shell.CardGrid>
-    </div>
+    @if (!string.IsNullOrEmpty(_lastActionError))
+    {
+        <div class="alert alert-danger d-flex align-items-start mb-2" role="alert">
+            <span class="flex-grow-1">@_lastActionError</span>
+            <button class="btn btn-sm btn-link text-muted p-0 ms-2" @onclick="() => _lastActionError = null" title="关闭">✕</button>
+        </div>
+    }
+    @if (!string.IsNullOrEmpty(_lastActionMessage))
+    {
+        <div class="alert alert-success d-flex align-items-start mb-2" role="alert">
+            <span class="flex-grow-1">@_lastActionMessage</span>
+            <button class="btn btn-sm btn-link text-muted p-0 ms-2" @onclick="() => _lastActionMessage = null" title="关闭">✕</button>
+        </div>
+    }
+    @if (!string.IsNullOrEmpty(dsManager.ConfigurationError))
+    {
+        <div class="alert alert-warning mb-2" role="alert">@dsManager.ConfigurationError</div>
+    }
+
+    @if (page.LayoutType == PageLayoutType.Sidebar)
+    {
+        var leftCards = page.Cards.Where(c => c.Layout.GridColumnStart == 1).OrderBy(c => c.Layout.Order);
+        var mainCards = page.Cards.Where(c => c.Layout.GridColumnStart != 1).OrderBy(c => c.Layout.Order);
+        <div class="p-3">
+            <h4 class="mb-3">@(page.Meta.Title)</h4>
+            <div style="display:flex; gap:1rem;">
+                <div style="flex: 0 0 25%; display:flex; flex-direction:column; gap:1rem; min-width:260px;">
+                    @foreach (var card in leftCards)
+                    {
+                        @RenderCardWithHost(card)
+                    }
+                </div>
+                <div style="flex: 1; min-width:0; display:flex; flex-direction:column; gap:1rem;">
+                    @foreach (var card in mainCards)
+                    {
+                        @RenderCardWithHost(card)
+                    }
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="p-3">
+            <h4 class="mb-3">@(page.Meta.Title)</h4>
+            <AgentCoreProcessor.WebUI.Components.Shell.CardGrid>
+                @foreach (var card in page.Cards.OrderBy(c => c.Layout.Order))
+                {
+                    @RenderCardWithHost(card)
+                }
+            </AgentCoreProcessor.WebUI.Components.Shell.CardGrid>
+        </div>
+    }
 }
 
 @code {
     [Parameter] public string? Route { get; set; }
 
     private PageDefinition? page;
+    private string? _activeRoute;
     private DataSourceManager dsManager = new();
     private PageContext? pageContext;
     private Dictionary<string, string>? routeParams;
     private List<IDisposable> _linkSubscriptions = new();
+    private CancellationTokenSource? _initCts;
+    private readonly Dictionary<string, DataQuery> _lastQueries = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, CancellationTokenSource> _actionCts = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _runningActions = new(StringComparer.Ordinal);
+    private string? _lastActionError;
+    private string? _lastActionMessage;
 
     protected override void OnInitialized()
     {
@@ -79,46 +96,49 @@ else
 
     private void OnRegistryChanged()
     {
-        var newPage = Registry.FindPage(Route ?? "", out var newRouteParams);
+        var newPage = Registry.FindPage(Route ?? "", out _);
         if (newPage == page) return;
 
-        InvokeAsync(async () =>
+        _ = InvokeAsync(async () =>
         {
-            Cleanup();
-            page = newPage;
-            routeParams = newRouteParams;
-            if (page != null)
-            {
-                pageContext = new PageContext(Nav);
-                dsManager = new DataSourceManager();
-                dsManager.Initialize(page.DataSources, routeParams);
-                dsManager.OnDataChanged += OnDataSourceChanged;
-                dsManager.SubscribeAll();
-                SetupLinkSubscriptions();
-                foreach (var ds in page.DataSources)
-                    await dsManager.FetchAsync(ds.Id);
-            }
-            StateHasChanged();
+            if (IsDisposed) return;
+            await InitializePageAsync();
         });
     }
 
     protected override async Task OnParametersSetAsync()
     {
-        Cleanup();
+        if (IsDisposed) return;
+        await InitializePageAsync();
+    }
 
-        page = Registry.FindPage(Route ?? "", out routeParams);
+    private async Task InitializePageAsync()
+    {
+        await CleanupAsync();
+
+        var route = Route ?? "";
+        page = Registry.FindPage(route, out routeParams);
+        _activeRoute = route;
         if (page == null) return;
 
-        pageContext = new PageContext(Nav);
+        _initCts = new CancellationTokenSource();
+        var initToken = _initCts.Token;
+
+        // 每个页面实例创建独立数据源，杜绝跨标签页共享选中状态。
         dsManager = new DataSourceManager();
         dsManager.Initialize(page.DataSources, routeParams);
         dsManager.OnDataChanged += OnDataSourceChanged;
         dsManager.SubscribeAll();
+        pageContext = new PageContext(Nav);
         SetupLinkSubscriptions();
 
         foreach (var ds in page.DataSources)
         {
-            var result = await dsManager.FetchAsync(ds.Id);
+            if (initToken.IsCancellationRequested) return;
+
+            var result = await dsManager.FetchAsync(ds.Id, null, initToken);
+            if (initToken.IsCancellationRequested) return;
+
             var redirect = result?.Meta?["redirect"]?.ToString();
             if (!string.IsNullOrEmpty(redirect))
             {
@@ -128,17 +148,30 @@ else
         }
     }
 
+    private RenderFragment RenderCardWithHost(CardDefinition card) => __builder =>
+    {
+        var state = dsManager.GetState(card.DataSourceId);
+        <CardHost Title="@card.Title" Layout="@card.Layout" State="@state"
+                  OnRefresh="() => RefreshCard(card)">
+            @RenderCard(card, state)
+        </CardHost>
+    };
+
     private async Task RefreshCard(CardDefinition card)
     {
-        await dsManager.FetchAsync(card.DataSourceId);
+        var query = card.DataSourceId != null && _lastQueries.TryGetValue(card.DataSourceId, out var q) ? q : null;
+        await dsManager.FetchAsync(card.DataSourceId, query);
         StateHasChanged();
     }
 
     private void OnDataSourceChanged(string dataSourceId)
     {
-        InvokeAsync(async () =>
+        _ = InvokeAsync(async () =>
         {
-            await dsManager.FetchAsync(dataSourceId);
+            if (IsDisposed) return;
+            // 推送刷新保留当前查询条件（搜索、排序、联动 Extra），而不是回退到默认查询。
+            var query = _lastQueries.TryGetValue(dataSourceId, out var q) ? q : null;
+            await dsManager.FetchAsync(dataSourceId, query);
             StateHasChanged();
         });
     }
@@ -154,17 +187,18 @@ else
         {
             case CardType.Table:
                 <TableCard Schema="@((TableSchema)card.Schema)" Data="@data" TotalCount="@totalCount"
+                           Paging="@dsManager.GetPagingMode(dsId)"
                            OnQueryChanged="@(q => OnQuery(dsId, q))"
-                           OnRowAction="@(e => OnRowAction(dsId, e))"
+                           OnRowAction="@(e => OnRowAction(card, e))"
                            OnRowSelect="@(card.LinkEvent != null ? EventCallback.Factory.Create<JsonNode>(this, row => EmitLinkEvent(pc, card.LinkEvent, row)) : default)" />
                 break;
             case CardType.Status:
                 <StatusCard Schema="@((StatusSchema)card.Schema)" Data="@data"
-                            OnAction="@(id => OnSubmitAction(dsId, id, data))" />
+                            OnAction="@(id => OnSubmitAction(card, id, data))" />
                 break;
             case CardType.Form:
                 <FormCard Schema="@((FormSchema)card.Schema)" Data="@data"
-                          OnSubmit='@(d => OnSubmitAction(dsId, "save", d))'
+                          OnSubmit='@(d => OnSubmitAction(card, "save", d))'
                           OnValuesChanged="@(card.LinkEvent != null ? EventCallback.Factory.Create<JsonNode>(this, d => OnFormValuesChanged(pc, card.LinkEvent, d)) : default)" />
                 break;
             case CardType.Stream:
@@ -172,7 +206,7 @@ else
                 break;
             case CardType.Chat:
                 <ChatCard Schema="@((ChatSchema)card.Schema)" Data="@data"
-                          OnSubmit='@(d => OnSubmitAction(dsId, "send", d, card.InjectEvent))' />
+                          OnSubmit='@(d => OnSubmitAction(card, "send", d, card.InjectEvent))' />
                 break;
             case CardType.Tree:
                 <TreeCard Schema="@((TreeSchema)card.Schema)" Data="@data"
@@ -180,15 +214,18 @@ else
                 break;
             case CardType.Detail:
                 <DetailCard Schema="@((DetailSchema)card.Schema)" Data="@data"
-                            OnSubmit='@(d => OnSubmitAction(dsId, "update", d))' />
+                            OnSubmit='@(d => OnSubmitAction(card, "update", d))' />
                 break;
             case CardType.Action:
                 <ActionCard Schema="@((ActionCardSchema)card.Schema)" Data="@data"
-                            OnSubmit='@(d => OnSubmitAction(dsId, "exec", d))' />
+                            OnSubmit='@(d => OnSubmitAction(card, "exec", d))' />
                 break;
             case CardType.PropertyGrid:
                 <PropertyEditorCard Schema="@((PropertyGridSchema)card.Schema)" Data="@data"
-                                    OnSubmit='@(d => OnSubmitAction(dsId, "save", d))' />
+                                    OnSubmit='@(d => OnSubmitAction(card, "save", d))' />
+                break;
+            default:
+                <div class="text-muted-custom small p-2">不支持的卡片类型：@card.Type（卡片 @card.Id）</div>
                 break;
         }
     };
@@ -204,18 +241,22 @@ else
 
     private async Task OnQuery(string? dsId, DataQuery query)
     {
+        if (dsId != null)
+            _lastQueries[dsId] = query;
         await dsManager.FetchAsync(dsId, query);
         StateHasChanged();
     }
 
-    private async Task OnRowAction(string? dsId, (string ActionId, JsonNode Row) e)
+    private async Task OnRowAction(CardDefinition card, (string ActionId, JsonNode Row) e)
     {
-        await dsManager.SubmitAsync(dsId, e.ActionId, e.Row);
-        await dsManager.FetchAsync(dsId);
+        var result = await RunSubmitAsync(card.DataSourceId, e.ActionId, e.Row);
+        if (result == null) return;
+
+        await AfterSubmitAsync(card, result);
         StateHasChanged();
     }
 
-    private async Task OnSubmitAction(string? dsId, string action, JsonNode? data, string? injectEvent = null)
+    private async Task OnSubmitAction(CardDefinition card, string action, JsonNode? data, string? injectEvent = null)
     {
         if (injectEvent != null && pageContext != null)
         {
@@ -229,29 +270,113 @@ else
             {
                 data = injected.DeepClone();
             }
+            else if (injected is JsonObject extraObj && data is JsonObject dataObj2)
+            {
+                foreach (var prop in extraObj)
+                    dataObj2[prop.Key] = prop.Value?.DeepClone();
+            }
+
+            // 控制台聊天与发送配置：表单值保存在 PageContext（key=send-config），
+            // ChatCard 提交的 payload 仅有 sender/text；这里合并成控制台需要的参数。
+            if (action == "send" && data is JsonObject chatPayload)
+                chatPayload["actionId"] = "send";
         }
 
-        var result = await dsManager.SubmitAsync(dsId, action, data);
-        if (result.Success && result.Message is string msg && msg.StartsWith("/"))
+        var result = await RunSubmitAsync(card.DataSourceId, action, data);
+        if (result == null) return;
+
+        await AfterSubmitAsync(card, result);
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// 执行提交并统一反馈：失败显示在页面顶部且不刷新数据；成功消息也展示。
+    /// 返回 null 表示页面实例已切换或数据源不存在。
+    /// </summary>
+    private async Task<ActionResult?> RunSubmitAsync(string? dsId, string action, JsonNode? data)
+    {
+        if (dsId == null) return null;
+
+        // 同一数据源禁止并发提交，避免双击造成重复动作。
+        if (_runningActions.Contains(dsId)) return null;
+        _runningActions.Add(dsId);
+
+        var cts = new CancellationTokenSource();
+        _actionCts[dsId] = cts;
+        try
+        {
+            var result = await dsManager.SubmitAsync(dsId, action, data, cts.Token);
+            if (IsDisposed) return null;
+
+            if (!result.Success)
+            {
+                _lastActionError = string.IsNullOrEmpty(result.Message) ? "操作失败" : result.Message;
+                _lastActionMessage = null;
+            }
+            else if (result.Message is string msg && !msg.StartsWith('/'))
+            {
+                _lastActionMessage = msg;
+                _lastActionError = null;
+            }
+            else
+            {
+                _lastActionError = null;
+                _lastActionMessage = null;
+            }
+
+            return result;
+        }
+        finally
+        {
+            _runningActions.Remove(dsId);
+            if (_actionCts.TryGetValue(dsId, out var current) && ReferenceEquals(current, cts))
+                _actionCts.Remove(dsId);
+            cts.Dispose();
+        }
+    }
+
+    private async Task AfterSubmitAsync(CardDefinition card, ActionResult result)
+    {
+        if (!result.Success) return; // 失败不覆盖用户草稿/现有数据
+
+        if (result.Message is string msg && msg.StartsWith('/'))
         {
             Nav.NavigateTo(msg);
             return;
         }
-        await dsManager.FetchAsync(dsId);
-        StateHasChanged();
+
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        if (card.DataSourceId != null) ids.Add(card.DataSourceId);
+        if (card.AffectedDataSourceIds != null)
+            foreach (var id in card.AffectedDataSourceIds)
+                ids.Add(id);
+
+        foreach (var id in ids)
+            await RefreshDataSourceAsync(id);
+    }
+
+    private async Task RefreshDataSourceAsync(string dsId)
+    {
+        if (dsManager.GetState(dsId) == null) return;
+        var query = _lastQueries.TryGetValue(dsId, out var q) ? q : null;
+        await dsManager.FetchAsync(dsId, query);
     }
 
     private void SetupLinkSubscriptions()
     {
         if (page == null || pageContext == null) return;
+        var pc = pageContext;
         foreach (var card in page.Cards.Where(c => c.ListenEvent != null))
         {
             var dsId = card.DataSourceId;
-            var sub = pageContext.On(card.ListenEvent!, payload =>
+            var sub = pc.On(card.ListenEvent!, payload =>
             {
-                InvokeAsync(async () =>
+                _ = InvokeAsync(async () =>
                 {
+                    if (IsDisposed) return;
                     var query = new DataQuery { Extra = payload };
+                    if (dsId != null)
+                        _lastQueries[dsId] = query;
                     await dsManager.FetchAsync(dsId, query);
                     StateHasChanged();
                 });
@@ -260,19 +385,45 @@ else
         }
     }
 
-    private void Cleanup()
+    private bool IsDisposed { get; set; }
+
+    private async Task CleanupAsync()
     {
+        _initCts?.Cancel();
+        _initCts?.Dispose();
+        _initCts = null;
+
+        foreach (var cts in _actionCts.Values)
+            cts.Cancel();
+        _actionCts.Clear();
+        _runningActions.Clear();
+
+        foreach (var sub in _linkSubscriptions)
+            sub.Dispose();
+        _linkSubscriptions.Clear();
+
+        dsManager.OnDataChanged -= OnDataSourceChanged;
+        dsManager.Dispose();
+        pageContext?.Dispose();
+        pageContext = null;
+        _lastQueries.Clear();
+    }
+
+    public void Dispose()
+    {
+        if (IsDisposed) return;
+        IsDisposed = true;
+        Registry.OnChanged -= OnRegistryChanged;
+        _initCts?.Cancel();
+        _initCts?.Dispose();
+        foreach (var cts in _actionCts.Values)
+            cts.Cancel();
+        _actionCts.Clear();
         foreach (var sub in _linkSubscriptions)
             sub.Dispose();
         _linkSubscriptions.Clear();
         dsManager.OnDataChanged -= OnDataSourceChanged;
         dsManager.Dispose();
         pageContext?.Dispose();
-    }
-
-    public void Dispose()
-    {
-        Registry.OnChanged -= OnRegistryChanged;
-        Cleanup();
     }
 }

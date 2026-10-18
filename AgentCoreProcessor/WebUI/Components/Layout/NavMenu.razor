@@ -83,9 +83,9 @@
 
     protected override void OnInitialized()
     {
+        navGroups = Registry.BuildNavTree();
         ExpandForCurrentPath();
         Nav.LocationChanged += OnLocationChanged;
-        navGroups = Registry.BuildNavTree();
         Registry.OnChanged += OnRegistryChanged;
     }
 
@@ -123,6 +123,16 @@
             var navItem = ToNavItem(group);
             if (ContainsPathOrPrefix(navItem, path))
                 expandedSet.Add(navItem.Title);
+        }
+
+        // 隐藏详情页（channels/{id}、plugins/{name} 等）不在导航树中，
+        // 通过注册表解析所属分组并展开，避免用户进入详情后侧栏没有上下文。
+        if (path.StartsWith("/p/", StringComparison.OrdinalIgnoreCase))
+        {
+            var route = path[3..].Trim('/');
+            var groupName = Registry.FindNavGroupForPath(route);
+            if (!string.IsNullOrEmpty(groupName))
+                expandedSet.Add(groupName);
         }
     }
 

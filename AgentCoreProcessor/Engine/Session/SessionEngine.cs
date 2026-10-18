@@ -424,6 +424,30 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
     public IRuntimeSession? GetSession(string id) =>
         _sessions.TryGetValue(id, out var s) ? s : null;
 
+    /// <summary>会话所在的资源池（WebUI 详情/池树展示用）。无池返回 null。</summary>
+    public SessionPool? GetPoolBySession(string sessionId) => FindPoolBySession(sessionId);
+
+    /// <summary>全部资源池快照（WebUI 池树展示用；复制后调用方无需持锁）。</summary>
+    public List<SessionPool> GetPoolsSnapshot()
+    {
+        lock (_poolLock)
+        {
+            var seen = new HashSet<SessionPool>();
+            var result = new List<SessionPool>();
+            void Add(SessionPool pool)
+            {
+                if (!seen.Add(pool)) return;
+                result.Add(pool);
+                foreach (var child in pool.ChildPools)
+                    Add(child);
+            }
+
+            foreach (var pool in _pools.Values)
+                Add(pool);
+            return result;
+        }
+    }
+
     // ── 子链查询（资源池树）──
 
     /// <summary>某会话的活跃子 agent 列表。走池树：所在池的 ChildPools 的活跃 session。</summary>

@@ -41,6 +41,34 @@ internal class AdapterEngine : ISubEngine
             .FirstOrDefault();
     }
 
+    /// <summary>
+    /// 按频道标识解析登记过的适配器。控制台等维护入口用它模拟真实出向，
+    /// 不经过入向 RouteMessageAsync（那会重新入库并触发模型会话）。
+    /// </summary>
+    public Adapter.IAdapter? ResolveAdapter(string channelId)
+    {
+        if (string.IsNullOrEmpty(channelId)) return null;
+
+        if (channelId.Equals("FileAdapter", StringComparison.OrdinalIgnoreCase))
+            return _allAdapters.Values.FirstOrDefault(h => h.Adapter.Platform.Equals("File", StringComparison.OrdinalIgnoreCase))?.Adapter;
+
+        foreach (var handle in _allAdapters.Values.Where(h => h.IsAlive))
+        {
+            if (handle.Adapter is Adapter.IChannelAwareAdapter aware && aware.OwnsChannel(channelId))
+                return handle.Adapter;
+        }
+
+        // 数字频道 id → 已登记的频道映射；找不到时回退到唯一适配器（与 AdapterManager.ResolveByChannelId 一致）。
+        if (int.TryParse(channelId, out var numeric))
+        {
+            var active = GetActiveAdapter(numeric);
+            if (active != null) return active.Adapter;
+        }
+
+        var adapters = _allAdapters.Values.Where(h => h.IsAlive).Select(h => h.Adapter).Distinct().ToList();
+        return adapters.Count == 1 ? adapters[0] : null;
+    }
+
     public async Task SendOutgoing(EngineOutgoingMessage engineMsg)
     {
         var handle = GetActiveAdapter(engineMsg.ChannelId);

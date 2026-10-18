@@ -1,5 +1,4 @@
 @page "/logs/trace"
-@page "/p/logs/trace"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using AgentCoreProcessor.WebUI.Services
 @using Microsoft.JSInterop
@@ -90,6 +89,9 @@
     private TraceViewModel? _trace;
     private HashSet<string> _hiddenScopes = new();
     private List<string> _allScopes = new();
+    private List<TraceRow> _windowRows = new();
+    private long? _oldestId;
+    private long? _oldestTimestamp;
     private IDisposable? _subscription;
 
     private ElementReference _bodyRef;
@@ -123,34 +125,73 @@
             : TraceService.GetTrace(_selectedSignal, filter);
         _allScopes = _trace.Scopes;
         _hiddenScopes.RemoveWhere(s => !_allScopes.Contains(s));
-        _hasOlder = _trace.Rows.Count >= PAGE_SIZE;
+
+        // 重新加载后清空“更早”窗口，游标改由当前加载结果重新建立。
+        _windowRows = _trace.Rows.ToList();
+        RebuildCursor();
+        _hasOlder = _trace.HasOlder;
         await RenderGraph();
+    }
+
+    private void RebuildCursor()
+    {
+        if (_trace == null)
+        {
+            _oldestId = null;
+            _oldestTimestamp = null;
+            return;
+        }
+
+        if (_trace.CursorTimestamp is long ts && _trace.CursorId is long id)
+        {
+            _oldestTimestamp = ts;
+            _oldestId = id;
+            return;
+        }
+
+        if (_windowRows.Count == 0)
+        {
+            _oldestId = null;
+            _oldestTimestamp = null;
+            return;
+        }
+
+        var first = _windowRows[0];
+        _oldestTimestamp = first.Timestamp;
+        _oldestId = first.Id;
     }
 
     private async Task LoadOlder()
     {
-        if (_trace == null || _trace.Rows.Count == 0 || _loadingOlder) return;
+        if (_loadingOlder || !_hasOlder) return;
+        if (_oldestTimestamp is not long cursorTs || _oldestId is not long cursorId) return;
+
         _loadingOlder = true;
         StateHasChanged();
 
         try
         {
-            var oldestTimestamp = _trace.Rows[0].Timestamp;
-            var filter = BuildFilter();
             var older = string.IsNullOrEmpty(_selectedSignal)
-                ? TraceService.GetRecentBefore(oldestTimestamp, PAGE_SIZE, filter)
-                : TraceService.GetTraceBefore(_selectedSignal, oldestTimestamp, PAGE_SIZE);
+                ? TraceService.GetRecentBefore(cursorTs, cursorId, PAGE_SIZE)
+                : TraceService.GetTraceBefore(_selectedSignal, cursorTs, cursorId, PAGE_SIZE);
 
             if (older.Rows.Count == 0)
             {
-                _hasOlder = false;
+                _hasOlder = older.HasOlder;
             }
             else
             {
-                _hasOlder = older.Rows.Count >= PAGE_SIZE;
-                if (_jsModule != null)
-                    await _jsModule.InvokeVoidAsync("prependRows", older.Rows, _hasOlder);
-                // Update local scopes
+                // 去重：同一条事件可能因窗口边界重复出现。
+                var known = new HashSet<long>(_windowRows.Select(r => r.Id));
+                var fresh = older.Rows.Where(r => !known.Contains(r.Id)).ToList();
+                _windowRows = fresh.Concat(_windowRows).ToList();
+                _trace = new TraceViewModel { Scopes = _allScopes, Rows = _windowRows };
+                _hasOlder = fresh.Count > 0 || older.HasOlder;
+
+                RebuildCursor();
+
+                if (_jsModule != null && fresh.Count > 0)
+                    await _jsModule.InvokeVoidAsync("prependRows", fresh, _hasOlder);
                 foreach (var s in older.Scopes)
                 {
                     if (!_allScopes.Contains(s)) _allScopes.Add(s);
@@ -182,7 +223,19 @@
         await ApplyFilters();
     }
 
-    private void TogglePause() => _paused = !_paused;
+    private async Task TogglePause()
+    {
+        _paused = !_paused;
+
+        // 恢复时把暂停期间的窗口整体重载一次，避免暂停被理解为“丢日志”。
+        if (!_paused)
+        {
+            _pausedSince = null;
+            await LoadTrace();
+        }
+    }
+
+    private long? _pausedSince;
 
     private async Task Refresh()
     {
@@ -238,10 +291,20 @@
 
     private void OnNewEvent(TraceRow row)
     {
-        if (_paused) return;
+        // Scope/level 过滤对实时流生效（此前只有历史加载会过滤）。
         if (row.Level < _minLevel) return;
         if (_hiddenScopes.Contains(row.Scope)) return;
         if (!string.IsNullOrEmpty(_selectedSignal) && row.SignalId != _selectedSignal) return;
+
+        // 暂停：记录事件而不是丢弃；恢复时会整体重载窗口。
+        if (_paused)
+        {
+            _pausedSince ??= row.Timestamp;
+            return;
+        }
+
+        // 仅卡住模式：close 事件不能追加到只显示未关闭 span 的视图。
+        if (_showOpenOnly && row.Type == "close") return;
 
         lock (_pendingRows)
         {

@@ -1,3 +1,4 @@
+@layout LoginLayout
 @page "/mcp"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using AgentCoreProcessor.Engine
@@ -20,10 +21,15 @@
             <span class="text-muted-custom">MCP 管理器未初始化</span>
         }
     </div>
-    <button class="btn-ghost" @onclick="ReloadMcp" disabled="@(manager == null || isReloading)">
-        <i class="bi bi-arrow-clockwise me-1"></i>
-        @(isReloading ? "重载中..." : "重载配置")
-    </button>
+    <div class="d-flex gap-2">
+        <a class="btn-ghost" href="/p/plugins" title="返回插件管理">
+            <i class="bi bi-arrow-left me-1"></i> 插件管理
+        </a>
+        <button class="btn-ghost" @onclick="ReloadMcp" disabled="@(manager == null || isReloading)">
+            <i class="bi bi-arrow-clockwise me-1"></i>
+            @(isReloading ? "重载中..." : "重载配置")
+        </button>
+    </div>
 </div>
 
 @if (!string.IsNullOrEmpty(statusMessage))
@@ -116,6 +122,7 @@ else
 
     protected override void OnInitialized()
     {
+        // 冷启动时插件/ MCP 链可能尚未完成初始化；按需读取当前实例。
         manager = Engine.McpManager;
         RefreshCounts();
     }
@@ -127,7 +134,17 @@ else
 
     private async Task ReloadMcp()
     {
-        if (manager == null) return;
+        // 若进入页面时 MCP 尚未就绪，重载前再取一次当前实例。
+        manager ??= Engine.McpManager;
+        if (manager == null)
+        {
+            statusMessage = "MCP 管理器未初始化";
+            statusBg = "var(--status-error-dim)";
+            statusColor = "var(--status-error)";
+            StateHasChanged();
+            return;
+        }
+
         isReloading = true;
         statusMessage = null;
         StateHasChanged();

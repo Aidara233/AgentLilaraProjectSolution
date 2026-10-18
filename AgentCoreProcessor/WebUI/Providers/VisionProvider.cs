@@ -67,8 +67,7 @@ internal class VisionProvider : IWebUIProvider
             },
             new()
             {
-                Id = "vision-config", Type = CardType.Form, DataSourceId = "vision-config", Title = "配置",
-                Schema = new FormSchema
+                Id = "vision-config", Type = CardType.Form, DataSourceId = "vision-config", Title = "配置",                Schema = new FormSchema
                 {
                     ShowSubmit = true,
                     ShowReset = false,
@@ -84,7 +83,8 @@ internal class VisionProvider : IWebUIProvider
                         new() { Field = "ocrRichTextThreshold", Label = "OCR富文本阈值", Type = FormFieldType.Number },
                     },
                 },
-                Layout = new CardLayout { PreferredCols = 6 }
+                Layout = new CardLayout { PreferredCols = 6 },
+                AffectedDataSourceIds = new[] { "vision-status" }
             },
             new()
             {
@@ -98,14 +98,15 @@ internal class VisionProvider : IWebUIProvider
                         new() { Field = "total_images", Label = "图片总数" }
                     }
                 },
-                Layout = new CardLayout { PreferredCols = 12 }
+                Layout = new CardLayout { PreferredCols = 12 },
+                AffectedDataSourceIds = new[] { "vision-status" }
             }
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "vision-status", Source = new VisionStatusSource(_engine) },
-            new() { Id = "vision-config", Source = new VisionConfigSource(_engine) },
-            new() { Id = "vision-queue", Source = new VisionQueueSource() }
+            new() { Id = "vision-status", Factory = () => new VisionStatusSource(_engine) },
+            new() { Id = "vision-config", Factory = () => new VisionConfigSource(_engine) },
+            new() { Id = "vision-queue", Factory = () => new VisionQueueSource() }
         }
     };
 
@@ -121,6 +122,7 @@ internal class VisionProvider : IWebUIProvider
                 Schema = new TableSchema
                 {
                     Searchable = true,
+                    RowKeyField = "id",
                     Columns = new()
                     {
                         new() { Field = "thumbnail", Header = "预览", Width = "96px", Format = ColumnFormat.Image, Sortable = false },
@@ -165,7 +167,7 @@ internal class VisionProvider : IWebUIProvider
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "gallery", Source = new VisionGallerySource() }
+            new() { Id = "gallery", Factory = () => new VisionGallerySource(), Paging = DataPagingMode.Server }
         }
     };
 }
@@ -329,8 +331,8 @@ internal class VisionQueueSource : IDataSource
 
         var data = new JsonObject
         {
-            ["ocr_pending"] = ocrPending.Count > 0 ? $"{ocrPending.Count} 张" : "无",
-            ["vision_pending"] = visionPending.Count > 0 ? $"{visionPending.Count} 张" : "无",
+            ["ocr_pending"] = $"{ocrPending.Count}{(ocrPending.Count >= 50 ? "+" : "")} 张",
+            ["vision_pending"] = $"{visionPending.Count}{(visionPending.Count >= 50 ? "+" : "")} 张",
             ["total_images"] = $"{totalCount} 张"
         };
         return new DataResult { Data = data };
@@ -383,10 +385,10 @@ internal class VisionGallerySource : IDataSource
 
             var phaseLabel = img.Phase switch
             {
-                0 => "—",
-                1 => "P1",
-                2 => "P2",
-                3 => "P3",
+                0 => "待处理",
+                1 => "已粗扫",
+                2 => "已精炼",
+                3 => "已强制",
                 _ => "?"
             };
 
@@ -399,6 +401,8 @@ internal class VisionGallerySource : IDataSource
                 ["_img_src"] = thumbUrl,
                 ["time"] = img.CreatedAt.ToString("MM-dd HH:mm"),
                 ["category"] = img.Classification ?? img.Category ?? "—",
+                ["_classification"] = img.Classification ?? img.Category ?? "",
+                ["_phase"] = img.Phase.ToString(),
                 ["phase"] = phaseLabel,
                 ["ocr"] = Truncate(img.OcrText, 80),
                 ["description"] = Truncate(img.Description, 100),

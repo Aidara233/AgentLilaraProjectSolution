@@ -24,6 +24,11 @@ public class TableSchema : CardSchema
     public int DefaultPageSize { get; init; } = 20;
     public List<RowAction>? RowActions { get; init; }
     public List<FilterDef>? Filters { get; init; }
+    /// <summary>
+    /// 稳定行键字段。选中状态与行操作目标使用该字段；未声明时依次回退到 _row_id、id。
+    /// 行操作回传的 payload 会自动补齐 _row_id。
+    /// </summary>
+    public string? RowKeyField { get; init; }
 }
 
 public class FilterDef

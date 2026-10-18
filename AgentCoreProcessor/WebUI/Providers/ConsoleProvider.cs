@@ -106,7 +106,6 @@ internal class ConsoleProvider : IWebUIProvider
                     {
                         new() { Id = "force-start", Label = "强制启动", Icon = "bi-play-fill" },
                         new() { Id = "force-stop", Label = "强制停止", Icon = "bi-stop-fill", Danger = true },
-                        new() { Id = "force-compress", Label = "强制压缩", Icon = "bi-arrow-down-up" },
                     },
                 },
                 Layout = new CardLayout { PreferredCols = 3, MinWidth = "240px", GridColumnStart = 1 },
@@ -122,9 +121,9 @@ internal class ConsoleProvider : IWebUIProvider
         },
         DataSources = new List<DataSourceDefinition>
         {
-            new() { Id = "console-channels", Source = new ConsoleChannelSource(_engine) },
-            new() { Id = "console-engine-ctl", Source = new ConsoleEngineSource(_engine) },
-            new() { Id = "console-chat", Source = new ConsoleChatSource(_engine) },
+            new() { Id = "console-channels", Factory = () => new ConsoleChannelSource(_engine) },
+            new() { Id = "console-engine-ctl", Factory = () => new ConsoleEngineSource(_engine) },
+            new() { Id = "console-chat", Factory = () => new ConsoleChatSource(_engine) },
         },
     };
 }
@@ -192,7 +191,7 @@ internal class ConsoleEngineSource : IDataSource
                 Data = new JsonObject
                 {
                     ["channelName"] = "未选择", ["engineState"] = "-", ["messageCount"] = "-",
-                    ["_disabled_actions"] = new JsonArray { "force-start", "force-stop", "force-compress" },
+                    ["_disabled_actions"] = new JsonArray { "force-start", "force-stop" },
                 }
             };
         }
@@ -253,8 +252,14 @@ internal class ConsoleEngineSource : IDataSource
         var snap = sessionEngine.GetChannelSessionSnapshot(_selectedChannelId);
         if (snap?.IsAlive == true)
         {
-            sessionEngine.StopSession(snap.SessionId, "console force-stop");
-            return new ActionResult { Success = true, Message = "会话已请求停止" };
+            var stop = sessionEngine.StopSession(snap.SessionId, "console force-stop");
+            if (stop.Success)
+                return new ActionResult { Success = true, Message = "会话已请求停止" };
+
+            var reason = stop.BlockReason == "Has running children"
+                ? $"存在活跃子会话：{string.Join(", ", stop.BlockingChildren ?? new List<string>())}"
+                : stop.BlockReason ?? "未知原因";
+            return Fail($"停止失败：{reason}");
         }
         return Fail("无活跃会话");
     }
@@ -267,9 +272,8 @@ internal class ConsoleChatSource : IDataSource
     private readonly MasterEngine _engine;
     private int _channelId;
     private string _channelName = "";
-    private Timer? _pollTimer;
+    private int _cachedChannelId;
     private int _lastMessageId;
-    private Action<JsonNode?>? _callback;
 
     public bool SupportsPush => true;
 
@@ -277,39 +281,52 @@ internal class ConsoleChatSource : IDataSource
 
     public IDisposable? Subscribe(Action<JsonNode?> callback)
     {
-        _callback = callback;
-        _pollTimer = new Timer(_ =>
+        Timer? timer = null;
+        timer = new Timer(_ =>
         {
-            if (_channelId > 0)
+            if (_channelId <= 0) return;
+            try
             {
-                try
+                var msgs = _engine.Session.GetContextByChannelAsync(_channelId, 1).Result;
+                if (msgs.Count > 0 && msgs[0].Id != _lastMessageId)
                 {
-                    var msgs = _engine.Session.GetContextByChannelAsync(_channelId, 1).Result;
-                    if (msgs.Count > 0 && msgs[0].Id != _lastMessageId)
-                    {
-                        _lastMessageId = msgs[0].Id;
-                        callback(null);
-                    }
+                    _lastMessageId = msgs[0].Id;
+                    callback(null);
                 }
-                catch (Exception ex) { Console.Error.WriteLine($"[ConsoleProvider] 轮询失败: {ex.Message}"); }
             }
+            catch (Exception ex) { Console.Error.WriteLine($"[ConsoleProvider] 轮询失败: {ex.Message}"); }
         }, null, 2000, 2000);
-        return new ActionDisposable(() => { _pollTimer?.Dispose(); _callback = null; });
+
+        // 清理闭包捕获自己的 timer，避免旧订阅释放时误杀新订阅。
+        return new ActionDisposable(() =>
+        {
+            timer?.Dispose();
+            timer = null;
+        });
     }
 
     public async Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
         if (query?.Extra is JsonObject extra)
-            _channelId = (int?)extra["channelId"] ?? _channelId;
+        {
+            var id = (int?)extra["channelId"];
+            if (id.HasValue && id.Value != _channelId)
+            {
+                _channelId = id.Value;
+                _channelName = "";
+                _cachedChannelId = 0;
+                _lastMessageId = 0;
+            }
+        }
 
         if (_channelId == 0)
             return new DataResult { Data = new JsonArray() };
 
-        // 缓存频道真实名称
-        if (string.IsNullOrEmpty(_channelName))
+        if (_cachedChannelId != _channelId || string.IsNullOrEmpty(_channelName))
         {
             var channels = await _engine.Session.GetAllChannelsAsync();
             _channelName = channels.FirstOrDefault(c => c.Id == _channelId)?.Name ?? "";
+            _cachedChannelId = _channelId;
         }
 
         var messages = await _engine.Session.GetContextByChannelAsync(_channelId, 50);
@@ -347,41 +364,36 @@ internal class ConsoleChatSource : IDataSource
         var simulatePrivate = payload["simulatePrivate"]?.ToString() == "true";
         var customName = payload["customName"]?.ToString() ?? "TestUser";
 
-        // 确保频道名称已缓存
-        if (string.IsNullOrEmpty(_channelName))
+        // 频道名称缓存必须与当前选中频道绑定，切换频道后重新解析。
+        if (_cachedChannelId != _channelId || string.IsNullOrEmpty(_channelName))
         {
             var channels = await _engine.Session.GetAllChannelsAsync();
             _channelName = channels.FirstOrDefault(c => c.Id == _channelId)?.Name ?? "";
+            _cachedChannelId = _channelId;
         }
+        if (string.IsNullOrEmpty(_channelName))
+            return new ActionResult { Success = false, Message = $"频道 #{_channelId} 不存在" };
 
         try
         {
-            // 自动启动会话：无活跃会话时注入一条消息（路由会孵化 express 会话）
-            var sessionEngine = _engine.GetActiveEnginesSnapshot()
-                .OfType<AgentCoreProcessor.Engine.Session.SessionEngine>().FirstOrDefault();
-            if (sessionEngine?.GetChannelSessionSnapshot(_channelId)?.IsAlive != true)
+            switch (mode)
             {
-                var kickMsg = new IncomingMessage
-                {
-                    Platform = "WebConsole", PlatformUserId = "web-admin",
-                    ChannelId = _channelName, Content = "(控制台自动启动)",
-                    DisplayName = "WebAdmin", Time = DateTime.Now,
-                };
-                await Task.Run(() => _engine.RouteMessageAsync(kickMsg));
-                await Task.Delay(800);
+                case "bot":
+                    await SendAsBotAsync(text, botSaveMode, ct);
+                    break;
+                case "custom":
+                    await SendAsCustomAsync(text, customName, simulateMention, simulatePrivate, ct);
+                    break;
+                default:
+                    await SendAsUserAsync(text, simulateMention, simulatePrivate, ct);
+                    break;
             }
 
-            await Task.Run(() =>
-            {
-                switch (mode)
-                {
-                    case "bot": SendAsBot(text, botSaveMode); break;
-                    case "custom": SendAsCustom(text, customName, simulateMention, simulatePrivate); break;
-                    default: SendAsUser(text, simulateMention, simulatePrivate); break;
-                }
-            });
-
             return new ActionResult { Success = true, Message = "已发送" };
+        }
+        catch (OperationCanceledException)
+        {
+            return new ActionResult { Success = false, Message = "发送已取消" };
         }
         catch (Exception ex)
         {
@@ -389,9 +401,10 @@ internal class ConsoleChatSource : IDataSource
         }
     }
 
-    private void SendAsUser(string text, bool mention, bool priv)
+    /// <summary>模拟用户入向消息：走真实路由（无会话时会孵化 express）。等待处理完成再返回。</summary>
+    private async Task SendAsUserAsync(string text, bool mention, bool priv, CancellationToken ct)
     {
-        _ = _engine.RouteMessageAsync(new IncomingMessage
+        await _engine.RouteMessageAsync(new IncomingMessage
         {
             Platform = "WebConsole", PlatformUserId = "web-admin",
             ChannelId = _channelName, Content = text,
@@ -400,27 +413,41 @@ internal class ConsoleChatSource : IDataSource
         });
     }
 
-    private void SendAsBot(string text, string saveMode)
+    /// <summary>
+    /// 替 Bot 说话：直接走适配器出向。
+    /// both = 先入库再发送；adapter_only 只发送；db_only 只入库。
+    /// 注意这里不是 RouteMessageAsync（那是用户入向入口，会触发模型回复）。
+    /// </summary>
+    private async Task SendAsBotAsync(string text, string saveMode, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
+
+        var adapter = _engine.GetActiveEnginesSnapshot()
+            .OfType<AgentCoreProcessor.Engine.AdapterEng.AdapterEngine>().FirstOrDefault()
+            ?.ResolveAdapter(_channelName);
+
+        if (saveMode is "both" or "adapter_only" && adapter == null)
+            throw new InvalidOperationException("没有可用的出向适配器");
+
         if (saveMode is "both" or "adapter_only")
         {
-            _ = _engine.RouteMessageAsync(new IncomingMessage
+            var outgoing = new OutgoingMessage
             {
-                Platform = "WebConsole", PlatformUserId = "bot-self",
-                ChannelId = _channelName, Content = text,
-                DisplayName = "Lilara", Time = DateTime.Now,
-            });
+                ChannelId = _channelName,
+                Content = text,
+            };
+            adapter!.SendMessageAsync(outgoing).GetAwaiter().GetResult();
         }
 
         if (saveMode is "both" or "db_only")
         {
-            _engine.Session.SaveBotMessageAsync(_channelId, text, null).GetAwaiter().GetResult();
+            await _engine.Session.SaveBotMessageAsync(_channelId, text, null);
         }
     }
 
-    private void SendAsCustom(string text, string name, bool mention, bool priv)
+    private async Task SendAsCustomAsync(string text, string name, bool mention, bool priv, CancellationToken ct)
     {
-        _ = _engine.RouteMessageAsync(new IncomingMessage
+        await _engine.RouteMessageAsync(new IncomingMessage
         {
             Platform = "WebConsole", PlatformUserId = $"custom-{name.ToLowerInvariant()}",
             ChannelId = _channelName, Content = text,

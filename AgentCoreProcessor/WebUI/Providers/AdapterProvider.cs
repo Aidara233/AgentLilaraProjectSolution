@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading;
@@ -72,10 +73,13 @@ internal class AdapterProvider : IWebUIProvider
                         RowActions = new()
                         {
                             new() { Id = "toggle", Label = "启用/禁用" },
-                            new() { Id = "delete", Label = "删除", Danger = true }
-                        }
+                            new() { Id = "delete", Label = "删除", Danger = true, Confirm = "确认删除此适配器？该操作会停止并删除配置文件。" }
+                        },
+                        RowKeyField = "id",
+                        Paginated = false
                     },
-                    Layout = new() { PreferredCols = 6 }
+                    Layout = new() { PreferredCols = 6 },
+                    AffectedDataSourceIds = new[] { "adapter-stats" }
                 },
                 new()
                 {
@@ -89,14 +93,15 @@ internal class AdapterProvider : IWebUIProvider
                             new() { Field = "id", Label = "ID", Type = FormFieldType.Text, Placeholder = "唯一标识", Required = true }
                         }
                     },
-                    Layout = new() { PreferredCols = 6 }
+                    Layout = new() { PreferredCols = 6 },
+                    AffectedDataSourceIds = new[] { "adapter-list", "adapter-stats" }
                 }
             },
             DataSources = new List<DataSourceDefinition>
             {
-                new() { Id = "adapter-stats",  Source = new AdapterStatsSource(Adapters) },
-                new() { Id = "adapter-list",   Source = new AdapterListSource(Adapters) },
-                new() { Id = "adapter-create", Source = new AdapterCreateSource(Adapters) }
+                new() { Id = "adapter-stats",  Factory = () => new AdapterStatsSource(Adapters) },
+                new() { Id = "adapter-list",   Factory = () => new AdapterListSource(Adapters) },
+                new() { Id = "adapter-create", Factory = () => new AdapterCreateSource(Adapters) }
             }
         });
 
@@ -118,7 +123,9 @@ internal class AdapterProvider : IWebUIProvider
                         new() { Field = "state", Header = "状态", Width = "90px" },
                         new() { Field = "rx", Header = "RX", Width = "60px" },
                         new() { Field = "tx", Header = "TX", Width = "60px" }
-                    }
+                    },
+                    RowKeyField = "id",
+                    Paginated = false
                 },
                 LinkEvent = "adapter-selected",
                 Layout = new() { Order = 0, PreferredCols = 12 }
@@ -169,7 +176,9 @@ internal class AdapterProvider : IWebUIProvider
                     }
                 },
                 ListenEvent = "adapter-selected",
-                Layout = new() { Order = 2, PreferredCols = 4 }
+                Layout = new() { Order = 2, PreferredCols = 4 },
+                // 启停会改变同页状态卡与实例列表。
+                AffectedDataSourceIds = new[] { SrcId("onebot", "status"), SrcId("onebot", "picker") }
             },
             // 连接配置
             new()
@@ -184,8 +193,8 @@ internal class AdapterProvider : IWebUIProvider
                     {
                         new() { Field = "ws_url", Label = "WS URL", Type = FormFieldType.Text, Required = true },
                         new() { Field = "http_url", Label = "HTTP URL", Type = FormFieldType.Text },
-                        new() { Field = "token", Label = "Token", Type = FormFieldType.Text },
-                        new() { Field = "http_token", Label = "HTTP Token", Type = FormFieldType.Text },
+                        new() { Field = "token", Label = "Token", Type = FormFieldType.Password },
+                        new() { Field = "http_token", Label = "HTTP Token", Type = FormFieldType.Password },
                         new() { Field = "filter_mode", Label = "过滤模式", Type = FormFieldType.Select,
                             Options = new() { new() { Value = "none", Label = "无" }, new() { Value = "whitelist", Label = "白名单" }, new() { Value = "blacklist", Label = "黑名单" } } },
                         new() { Field = "bot_names", Label = "机器人名（逗号分隔）", Type = FormFieldType.Text },
@@ -214,7 +223,9 @@ internal class AdapterProvider : IWebUIProvider
                         new() { Field = "state", Header = "状态", Width = "90px" },
                         new() { Field = "rx", Header = "RX", Width = "60px" },
                         new() { Field = "tx", Header = "TX", Width = "60px" }
-                    }
+                    },
+                    RowKeyField = "id",
+                    Paginated = false
                 },
                 LinkEvent = "adapter-selected",
                 Layout = new() { Order = 0, PreferredCols = 12 }
@@ -276,7 +287,9 @@ internal class AdapterProvider : IWebUIProvider
                         new() { Field = "state", Header = "状态", Width = "90px" },
                         new() { Field = "rx", Header = "RX", Width = "60px" },
                         new() { Field = "tx", Header = "TX", Width = "60px" }
-                    }
+                    },
+                    RowKeyField = "id",
+                    Paginated = false
                 },
                 LinkEvent = "adapter-selected",
                 Layout = new() { Order = 0, PreferredCols = 12 }
@@ -312,7 +325,7 @@ internal class AdapterProvider : IWebUIProvider
                     Fields = new()
                     {
                         new() { Field = "port", Label = "端口", Type = FormFieldType.Number },
-                        new() { Field = "token", Label = "访问令牌", Type = FormFieldType.Text },
+                        new() { Field = "token", Label = "访问令牌", Type = FormFieldType.Password },
                         new() { Field = "default_channel", Label = "默认频道", Type = FormFieldType.Text },
                         new() { Field = "channel_prefix", Label = "频道前缀", Type = FormFieldType.Text },
                         new() { Field = "burst_timeout_ms", Label = "阻塞超时 (ms)", Type = FormFieldType.Number },
@@ -342,7 +355,9 @@ internal class AdapterProvider : IWebUIProvider
                         new() { Field = "state", Header = "状态", Width = "90px" },
                         new() { Field = "rx", Header = "RX", Width = "60px" },
                         new() { Field = "tx", Header = "TX", Width = "60px" }
-                    }
+                    },
+                    RowKeyField = "id",
+                    Paginated = false
                 },
                 LinkEvent = "adapter-selected",
                 Layout = new() { Order = 0, PreferredCols = 12 }
@@ -383,7 +398,7 @@ internal class AdapterProvider : IWebUIProvider
                     {
                         new() { Field = "server", Label = "Bridge 地址", Type = FormFieldType.Text, Required = true,
                             Placeholder = "http://127.0.0.1:6789" },
-                        new() { Field = "private_key", Label = "ed25519 私钥", Type = FormFieldType.TextArea,
+                        new() { Field = "private_key", Label = "ed25519 私钥", Type = FormFieldType.Password,
                             Placeholder = "与 Bridge pubKey 配对的私钥 seed（base64/hex）" },
                         new() { Field = "filter_mode", Label = "过滤模式", Type = FormFieldType.Select,
                             Options = new() { new() { Value = "none", Label = "无" }, new() { Value = "whitelist", Label = "白名单" }, new() { Value = "blacklist", Label = "黑名单" } } },
@@ -404,10 +419,11 @@ internal class AdapterProvider : IWebUIProvider
         var cards = new List<CardDefinition>(baseCards);
         var dataSources = new List<DataSourceDefinition>
         {
-            new() { Id = SrcId(platform, "picker"), Source = new PlatformPickerSource(Adapters, platform) },
-            new() { Id = SrcId(platform, "status"), Source = new AdapterStatusSource(Adapters) },
-            new() { Id = SrcId(platform, "control"), Source = new AdapterControlSource(Adapters) },
-            new() { Id = SrcId(platform, "config"), Source = new AdapterConfigSource(Adapters) }
+            // 页面作用域：每个标签页独立保存选中的适配器实例。
+            new() { Id = SrcId(platform, "picker"), Factory = () => new PlatformPickerSource(Adapters, platform) },
+            new() { Id = SrcId(platform, "status"), Factory = () => new AdapterStatusSource(Adapters) },
+            new() { Id = SrcId(platform, "control"), Factory = () => new AdapterControlSource(Adapters) },
+            new() { Id = SrcId(platform, "config"), Factory = () => new AdapterConfigSource(Adapters) }
         };
 
         // 从适配器实例动态获取可用操作（而非硬编码列表）
@@ -439,7 +455,7 @@ internal class AdapterProvider : IWebUIProvider
                 ListenEvent = "adapter-selected",
                 Layout = new() { Order = actionOrder++, PreferredCols = 4 }
             });
-            dataSources.Add(new() { Id = dsId, Source = new ActionExecSource(Adapters, a.Name) });
+            dataSources.Add(new() { Id = dsId, Factory = () => new ActionExecSource(Adapters, a.Name) });
         }
 
         return new()
@@ -498,7 +514,7 @@ internal class AdapterStatsSource : IDataSource
     }
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-        => Task.FromResult(new ActionResult { Success = true });
+        => Task.FromResult(new ActionResult { Success = false, Message = "不支持操作" });
 }
 
 internal class AdapterListSource : IDataSource
@@ -537,19 +553,24 @@ internal class AdapterListSource : IDataSource
 
     public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
     {
-        if (data == null) return new ActionResult { Success = false };
+        if (data == null) return new ActionResult { Success = false, Message = "缺少行数据" };
         var id = data["id"]?.ToString();
-        if (string.IsNullOrEmpty(id)) return new ActionResult { Success = false };
+        if (string.IsNullOrEmpty(id)) return new ActionResult { Success = false, Message = "未指定适配器" };
 
         switch (action)
         {
             case "toggle":
-                if (_adapters.IsEnabled(id))
-                    return new ActionResult { Success = await _adapters.DisableAsync(id) };
-                else
-                    return new ActionResult { Success = await _adapters.EnableAsync(id) };
+                var ok = _adapters.IsEnabled(id)
+                    ? await _adapters.DisableAsync(id)
+                    : await _adapters.EnableAsync(id);
+                return new ActionResult
+                {
+                    Success = ok,
+                    Message = ok ? (_adapters.IsEnabled(id) ? "已启用" : "已禁用") : "操作失败"
+                };
             case "delete":
-                return new ActionResult { Success = await _adapters.RemoveAsync(id) };
+                var removed = await _adapters.RemoveAsync(id);
+                return new ActionResult { Success = removed, Message = removed ? "已删除" : "删除失败" };
             default:
                 return new ActionResult { Success = false, Message = $"未知操作: {action}" };
         }
@@ -565,7 +586,7 @@ internal class AdapterCreateSource : IDataSource
     public IDisposable? Subscribe(Action<JsonNode?> callback) => null;
 
     public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
-        => Task.FromResult(new DataResult { Data = null! });
+        => Task.FromResult(new DataResult { Data = new JsonObject() });
 
     public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
     {
@@ -621,7 +642,7 @@ internal class PlatformPickerSource : IDataSource
     }
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-        => Task.FromResult(new ActionResult { Success = true });
+        => Task.FromResult(new ActionResult { Success = false, Message = "不支持操作" });
 }
 
 internal class AdapterStatusSource : IDataSource
@@ -666,7 +687,7 @@ internal class AdapterStatusSource : IDataSource
     }
 
     public Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)
-        => Task.FromResult(new ActionResult { Success = true });
+        => Task.FromResult(new ActionResult { Success = false, Message = "不支持操作" });
 }
 
 internal class AdapterControlSource : IDataSource
@@ -712,17 +733,31 @@ internal class AdapterControlSource : IDataSource
         switch (action)
         {
             case "enable":
-                return new ActionResult { Success = await _adapters.EnableAsync(id), Message = "已启用" };
+            {
+                var enabled = await _adapters.EnableAsync(id);
+                return new ActionResult { Success = enabled, Message = enabled ? "已启用" : "启用失败" };
+            }
             case "disable":
-                return new ActionResult { Success = await _adapters.DisableAsync(id), Message = "已禁用" };
+            {
+                var disabled = await _adapters.DisableAsync(id);
+                return new ActionResult { Success = disabled, Message = disabled ? "已禁用" : "禁用失败" };
+            }
             case "toggle_auto":
+            {
                 var cfg = _adapters.GetConfigById(id);
-                if (cfg != null) { cfg.AutoStart = !cfg.AutoStart; _adapters.UpdateConfig(cfg); }
-                return new ActionResult { Success = true, Message = "已切换" };
+                if (cfg == null) return new ActionResult { Success = false, Message = "配置不存在" };
+                cfg.AutoStart = !cfg.AutoStart;
+                _adapters.UpdateConfig(cfg);
+                return new ActionResult { Success = true, Message = cfg.AutoStart ? "自动启动已开启" : "自动启动已关闭" };
+            }
             case "toggle_debug":
-                var c = _adapters.GetConfigById(id);
-                if (c != null) { c.AutoStartDebug = !c.AutoStartDebug; _adapters.UpdateConfig(c); }
-                return new ActionResult { Success = true, Message = "已切换" };
+            {
+                var cfg = _adapters.GetConfigById(id);
+                if (cfg == null) return new ActionResult { Success = false, Message = "配置不存在" };
+                cfg.AutoStartDebug = !cfg.AutoStartDebug;
+                _adapters.UpdateConfig(cfg);
+                return new ActionResult { Success = true, Message = cfg.AutoStartDebug ? "调试模式已开启" : "调试模式已关闭" };
+            }
             default:
                 return new ActionResult { Success = false, Message = $"未知操作: {action}" };
         }
@@ -744,11 +779,11 @@ internal class AdapterConfigSource : IDataSource
         var id = query?.Extra?["id"]?.ToString() ?? _selectedId;
         _selectedId = id;
         if (string.IsNullOrEmpty(id))
-            return Task.FromResult(new DataResult { Data = null! });
+            return Task.FromResult(new DataResult { Data = new JsonObject() });
 
         var cfg = _adapters.GetConfigById(id);
         if (cfg == null)
-            return Task.FromResult(new DataResult { Data = null! });
+            return Task.FromResult(new DataResult { Data = new JsonObject() });
 
         var s = cfg.Settings;
         return Task.FromResult(new DataResult
@@ -773,7 +808,7 @@ internal class AdapterConfigSource : IDataSource
                 ["burst_timeout_ms"] = s["burstTimeoutMs"]?.ToString() ?? s["burst_timeout_ms"]?.ToString() ?? "30000",
                 ["settle_checks"] = s["settleChecks"]?.ToString() ?? s["settle_checks"]?.ToString() ?? "3",
                 // Icalingua 适配器字段（对齐 IcalinguaConfig：server/privateKey）
-                ["server"] = s["server"]?.ToString() ?? s["Server"]?.ToString() ?? s["server"]?.ToString() ?? "",
+                ["server"] = s["server"]?.ToString() ?? s["Server"]?.ToString() ?? "",
                 ["private_key"] = s["privateKey"]?.ToString() ?? s["PrivateKey"]?.ToString() ?? s["private_key"]?.ToString() ?? ""
             }
         });
@@ -850,7 +885,7 @@ internal class AdapterConfigSource : IDataSource
         s.Remove("WsUrl"); s.Remove("ws_url");
         s.Remove("Token");
         s.Remove("FilterMode"); s.Remove("filter_mode");
-        // File 字段（对齐 AdapterFactory：baseDir / pollIntervalMs）
+        // File 字段（对齐 AdapterFactory：baseDir / outputDir / pollIntervalMs）
         if (data["input_dir"] != null) { s["baseDir"] = data["input_dir"]!.ToString(); s.Remove("input_dir"); }
         if (data["output_dir"] != null) { s["outputDir"] = data["output_dir"]!.ToString(); s.Remove("output_dir"); }
         if (data["poll_ms"] != null) { s["pollIntervalMs"] = data["poll_ms"]!.ToString(); s.Remove("poll_ms"); s.Remove("PollIntervalMs"); }
@@ -865,7 +900,12 @@ internal class AdapterConfigSource : IDataSource
         if (data["private_key"] != null) { s["privateKey"] = data["private_key"]!.ToString(); s.Remove("private_key"); s.Remove("PrivateKey"); }
 
         _adapters.UpdateConfig(cfg);
-        return Task.FromResult(new ActionResult { Success = true, Message = "配置已保存" });
+        // 显式提示：配置已持久化，但运行中的实例不会自动重建。
+        return Task.FromResult(new ActionResult
+        {
+            Success = true,
+            Message = "配置已保存；对运行中的适配器需禁用后重新启用才会重建连接"
+        });
     }
 }
 
@@ -890,7 +930,7 @@ internal class ActionExecSource : IDataSource
         var id = query?.Extra?["id"]?.ToString() ?? _selectedId;
         if (id != _selectedId) _lastData = null; // 切换实例清除旧结果
         _selectedId = id;
-        return Task.FromResult(new DataResult { Data = _lastData! });
+        return Task.FromResult(new DataResult { Data = _lastData ?? new JsonObject() });
     }
 
     public async Task<ActionResult> SubmitAsync(string action, JsonNode? data = null, CancellationToken ct = default)

@@ -86,6 +86,10 @@
         {
             if (!_values.ContainsKey(param.Name))
                 _values[param.Name] = "";
+
+            // 下拉框显示首个选项时，payload 也应当带上该值，避免“看到的”和“提交的”不一致。
+            if (string.IsNullOrEmpty(_values[param.Name]) && param.Type == "select" && param.Options?.Count > 0)
+                _values[param.Name] = param.Options[0].Value;
         }
 
         if (Data is JsonObject obj)

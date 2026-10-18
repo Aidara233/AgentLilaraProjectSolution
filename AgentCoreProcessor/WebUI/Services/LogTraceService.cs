@@ -55,30 +55,73 @@ internal class LogTraceService
     public TraceViewModel GetTrace(string signalId, TraceFilter? filter = null)
     {
         var events = _query.GetBySignal(signalId);
-        return BuildViewModel(events, filter);
+        var vm = BuildViewModel(events, filter);
+        // 单信号轨迹一次性取全量，游标只为与页面模型保持一致。
+        vm.HasOlder = false;
+        if (events.Count > 0)
+        {
+            var oldest = events.OrderBy(e => e.Timestamp).ThenBy(e => e.Id).First();
+            vm.CursorTimestamp = oldest.Timestamp;
+            vm.CursorId = oldest.Id;
+        }
+        return vm;
     }
 
     public TraceViewModel GetRecentTrace(int limit = 500, TraceFilter? filter = null)
     {
-        var events = _query.GetRecent(limit);
-        return BuildViewModel(events, filter);
+        // 多取一条判断是否还有更早事件（含过滤场景）。
+        var events = _query.GetRecent(limit + 1);
+        var hasOlder = events.Count > limit;
+        var page = hasOlder ? events.Take(limit).ToList() : events;
+        var vm = BuildViewModel(page, filter);
+        vm.HasOlder = hasOlder;
+        if (page.Count > 0)
+        {
+            var oldest = page.OrderBy(e => e.Timestamp).ThenBy(e => e.Id).First();
+            vm.CursorTimestamp = oldest.Timestamp;
+            vm.CursorId = oldest.Id;
+        }
+        return vm;
     }
 
     public TraceViewModel GetTraceBefore(string signalId, long beforeTimestamp, int limit = 200)
+        => GetTraceBefore(signalId, beforeTimestamp, long.MaxValue, limit);
+
+    public TraceViewModel GetTraceBefore(string signalId, long beforeTimestamp, long beforeId, int limit = 200)
     {
-        var events = _query.GetBySignal(signalId)
-            .Where(e => e.Timestamp < beforeTimestamp)
-            .OrderByDescending(e => e.Timestamp)
-            .Take(limit)
-            .Reverse()
-            .ToList();
-        return BuildViewModel(events);
+        var events = _query.GetSignalBefore(signalId, beforeTimestamp, beforeId, limit + 1);
+        var hasOlder = events.Count > limit;
+        var page = hasOlder ? events.Take(limit).ToList() : events;
+        var vm = BuildViewModel(page);
+        vm.HasOlder = hasOlder;
+        if (page.Count > 0)
+        {
+            var oldest = page.OrderBy(e => e.Timestamp).ThenBy(e => e.Id).First();
+            vm.CursorTimestamp = oldest.Timestamp;
+            vm.CursorId = oldest.Id;
+        }
+        return vm;
     }
 
     public TraceViewModel GetRecentBefore(long beforeTimestamp, int limit = 200, TraceFilter? filter = null)
+        => GetRecentBefore(beforeTimestamp, long.MaxValue, limit, filter);
+
+    public TraceViewModel GetRecentBefore(long beforeTimestamp, long beforeId, int limit = 200, TraceFilter? filter = null)
     {
-        var events = _query.GetRecentBefore(beforeTimestamp, limit);
-        return BuildViewModel(events, filter);
+        // 多取一条用于判断是否还有更早事件；过滤在内存中进行，游标使用原始 SQL 结果。
+        var raw = _query.GetRecentBefore(beforeTimestamp, beforeId, limit + 1);
+        var hasOlder = raw.Count > limit;
+        var page = hasOlder ? raw.Take(limit).ToList() : raw;
+        var vm = BuildViewModel(page, filter);
+        vm.HasOlder = hasOlder;
+        // 过滤只影响展示；游标基于未过滤的原始页，保证“加载更早”持续推进且不漏事件。
+        if (page.Count > 0)
+        {
+            var oldest = page.OrderBy(e => e.Timestamp).ThenBy(e => e.Id).First();
+            vm.CursorTimestamp = oldest.Timestamp;
+            vm.CursorId = oldest.Id;
+        }
+        return vm;
     }
 
     private TraceViewModel BuildViewModel(List<LogEvent> events, TraceFilter? filter = null)
@@ -159,6 +202,9 @@ internal class TraceViewModel
 {
     public List<string> Scopes { get; set; } = new();
     public List<TraceRow> Rows { get; set; } = new();
+    public bool HasOlder { get; set; }
+    public long? CursorTimestamp { get; set; }
+    public long? CursorId { get; set; }
 }
 
 internal class TraceRow

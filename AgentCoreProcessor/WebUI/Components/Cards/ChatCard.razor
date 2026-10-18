@@ -134,8 +134,18 @@
             ["sender"] = _selectedSender,
             ["text"] = _inputText
         };
+        var draft = _inputText;
         _inputText = "";
-        await OnSubmit.InvokeAsync(payload);
+        try
+        {
+            await OnSubmit.InvokeAsync(payload);
+        }
+        catch
+        {
+            // 提交异常时保留草稿。
+            if (string.IsNullOrEmpty(_inputText)) _inputText = draft;
+            throw;
+        }
         if (_autoScroll) _needsScroll = true;
     }
 
