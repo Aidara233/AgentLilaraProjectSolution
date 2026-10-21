@@ -4,6 +4,6 @@
     <!-- 主程序 RuntimeIdentifier（AgentCoreProcessor.csproj 声明）。插件 CopyToHostPlugins 需复制到带 RID 的主程序运行目录，
          否则插件 DLL 只落到无 RID 的 net8.0\Plugins，运行时（BaseDirectory 带 RID）加载不到。 -->
     <HostRuntimeIdentifier>win-x64</HostRuntimeIdentifier>
-    <HostPluginsDir>$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net8.0\$(HostRuntimeIdentifier)\Plugins\</HostPluginsDir>
+    <HostPluginsDir>$(SolutionDir)AgentCoreProcessor\bin\$(Configuration)\net10.0\$(HostRuntimeIdentifier)\Plugins\</HostPluginsDir>
   </PropertyGroup>
 </Project>

@@ -176,10 +176,10 @@
                         (r[col.Field]?.ToString() ?? "").ToLowerInvariant().Contains(lower)));
             }
 
-            foreach (var (field, value) in _filters)
+            foreach (var (fieldName, value) in _filters)
             {
                 if (!string.IsNullOrEmpty(value))
-                    items = items.Where(r => (r[field]?.ToString() ?? "") == value);
+                    items = items.Where(r => (r[fieldName]?.ToString() ?? "") == value);
             }
 
             if (!string.IsNullOrEmpty(_sortBy))

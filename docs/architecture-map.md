@@ -4,6 +4,10 @@
 
 技术栈：.NET 8 / C# / SQLite-net-pcl / Anthropic SDK (Claude) / OpenAI SDK / SiliconFlow API / bge-large-zh-v1.5 embedding
 
+## ALP → ALC 内核统一迁移
+
+统一方向已确认：**ALC 内核 + ALP 宿主**。ALP 保留频道/插件/Mind/WebUI/SQLite 等领域宿主能力；ALC 提供 canonical 时间线、Stepper 与上下文投影。迁移边界、单写者规则、基线、阶段和验收条件见 [`kernel-integration/00-boundary-adr.md`](kernel-integration/00-boundary-adr.md)。迁移按阶段单独审批，当前不启用运行路径。
+
 ## 目录结构
 
 ```
