@@ -4,7 +4,7 @@
 
 **运行时（2026-10-20）**：ALP 主程序 `AgentCoreProcessor` 与测试已升级到 **net10.0**；`LilaraConsoleClient`、`AgentLilara.PluginSDK` 和大多数插件保持 net8.0。直接引用主程序的 `Plugin.WorkingTools` 同步为 net10.0。插件复制路径见 `Directory.Build.props` 的 `HostPluginsDir`，跟随主程序 TFM。上线前必须处理 SQLitePCLRaw NU1903、PluginLoader CA2022 与测试 SYSLIB0050 告警。
 
-**内核统一迁移**：方向为 ALC 内核 + ALP 宿主；ALC 已拆为 `Lilara.Core` 库 + `Lilara.Cli`，ALP 侧 Bridge/切流尚未实现。边界、单写者规则、阶段与验收见 `docs/kernel-integration/00-boundary-adr.md`。
+**内核统一迁移**：方向为 ALC 内核 + ALP 宿主；ALC 已拆为 `Lilara.Core` 库 + `Lilara.Cli`，并提供公开宿主门面 `KernelRuntime`、固定包坐标 `Lilara.Core 0.1.0`（本地 feed：`dotnet pack ... -o artifacts/packages`）以及**不拿 InternalsVisibleTo** 的 `Lilara.Core.Contract.Tests`（S1b 完成）。ALP 侧 Bridge/切流尚未实现；边界、单写者规则、阶段与验收见 `docs/kernel-integration/00-boundary-adr.md`。
 
 **核心特性**：
 - 会话体系：频道响应全面会话化（express/working/task 都是 RuntimeSession）+ 基础设施引擎层（ISubEngine）+ 资源池树（SessionPool，频道占用在池里）

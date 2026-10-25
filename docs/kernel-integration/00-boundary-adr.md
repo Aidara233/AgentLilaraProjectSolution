@@ -53,11 +53,13 @@
 ### ALC
 
 - 仓库：`E:/Workspace/AgentLilaraCode`
-- 基线提交：`6900cfdb3687f68c24e76b1af15e5e2a8b70cf88`
-- 工作树：基线检查时无未提交改动。
-- `Lilara.Core.csproj` 已拆为 net10.0 class library，CLI 入口和 `CoreHost` 组合根现在位于 `src/Lilara.Cli`；ALC 仍未形成稳定 NuGet/package 发布物。项目拆分不改变 canonical API/磁盘格式；ALP 还不能直接引用旧 CLI。
-- 基线测试首次运行 1384/1385；失败项 `CommandDispatcherTests.Compact_RunsInBackground_AndQueuedSendContinuesAfterIt` 是 Dispose 清理目录时的并发文件占用（`history.jsonl`，`CommandDispatcherTests.cs:24`）。S1a 完成后在同一环境重跑 1385/1385 通过，表明该失败为间歇性清理竞态；首次结果仍保留记录，不作为迁移回归。
-- S1a 验证：`dotnet build AgentLilaraCode.sln --no-restore` 成功（0 warning/0 error）；`dotnet test tests/Lilara.Core.Tests/Lilara.Core.Tests.csproj --no-build` 1385/1385 通过；隔离 `LILARA_HOME` + 独立端口 18763 的 CLI 启动 smoke test 显示空数据根并成功监听，测试进程已停止。用户数据目录 `C:\Users\16640\.lilara` 未发现 heartbeat 标记，未清理或修改其内容。
+- 基线提交：`83ecfd6`（重试链路）；S1a/S1b 的包化改动以该提交之后的 ALC 工作树为准。
+- `Lilara.Core.csproj` 已拆为 net10.0 class library，CLI 入口和 `CoreHost` 组合根现在位于 `src/Lilara.Cli`。
+- S1b 起 `Lilara.Core` 具备固定包身份：`PackageId=Lilara.Core`、`Version=0.1.0`；本地 feed 由 `dotnet pack src/Lilara.Core/Lilara.Core.csproj -c Release -o artifacts/packages` 产出 `Lilara.Core.0.1.0.nupkg`（`artifacts/` 已 gitignore，包按版本固定、不从工作树漂移）。
+- S1b 新增公开宿主门面 `Hosting/KernelRuntime`：`Open(dataRoot, workingDirectory)` 自持 `DataRootLock`，提供 `CreateSession` / `LoadSession` / `StepAsync`（先落用户消息再调模型）/ `ContinueAsync`（无新输入的工具续跑）/ `ReadTimeline`，并把同会话推进串行化。宿主不再需要 `CommandDispatcher` 或 CLI 源码。
+- S1b 新增 `tests/Lilara.Core.Contract.Tests`：**不拿 `InternalsVisibleTo`**，只引用 `Lilara.Core`，从外部视角完成「开数据根 → 建会话 → 推进一步 → 重开读回」。它守的是「Bridge 不需要 internal」这条编译期契约。顺带删除了 `Lilara.Core.Tests.csproj` 里那条无效的 `InternalsVisibleTo`（授权方应在产出程序集侧）。
+- 基线测试：`Lilara.Core.Tests` 1582/1582 + `Lilara.Core.Contract.Tests` 4/4 通过（2026-10-25，`dotnet test AgentLilaraCode.sln`）。
+- S1a 验证：`dotnet build AgentLilaraCode.sln --no-restore` 成功（0 warning/0 error）；隔离 `LILARA_HOME` + 独立端口 18763 的 CLI 启动 smoke test 显示空数据根并成功监听，测试进程已停止。用户数据目录 `C:\Users\16640\.lilara` 未发现 heartbeat 标记，未清理或修改其内容。
 - Kernel 的架构守卫要求依赖方向单向；`README.md` 明确放弃 `MasterEngine + ISubEngine + SpawnCheck + SessionPool` 这类 ALP 生态。
 
 ### 关键差异
@@ -89,12 +91,14 @@
 
 验证：ALC solution build 成功（0 warning/0 error）；ALC tests 1385/1385 通过；隔离数据根和端口下 CLI 启动成功，测试进程已停止。
 
-### S1b — 固定内核版本与包化（ALC 侧由并发会话提交，ALP 侧待开始）
+### S1b — 固定内核版本与包化（完成）
 
-- ALC 仓库中已有并发会话提交 `a128b28`（拆分 Core/CLI，但同时删除了 24 步熔断）以及合并 `782339a`；当前 ALC 工作树还有一批未提交的 usage/控制面/WebUI 改动。**本计划不接管、不覆盖这些改动**；ALC 的后续包化、公开宿主门面和测试基线以该仓库当前状态为准。
 - 新增统一迁移的前置约定：Bridge 只引用固定版本的 `Lilara.Core` package/feed，不得项目引用 CLI Exe；内核 API 必须通过稳定的宿主门面暴露，Bridge 不使用 `InternalsVisibleTo`、不链接 CLI 源码。
-- 解决 Core 供宿主使用的公开组合门面，避免 Bridge 依赖 CLI 链接源码；CLI 行为保持不变。
-- CI 固定版本、架构守卫和兼容测试；ALP 仍保留 Legacy 路径，除非后续专门验证并授权切流。
+- 已完成：`Lilara.Core` 包身份与版本固定（`0.1.0`）；本地 feed 产出路径与命令固定（`artifacts/packages`，`dotnet pack`）；公开门面 `KernelRuntime` 覆盖建/载/推进/续跑/读时间线；`Lilara.Core.Contract.Tests` 在**无 InternalsVisibleTo** 前提下验证整条宿主路径。
+- 未做（有意）：没有给 ALP 侧建 nuget.config 或加包引用——那属于 S2 的 Bridge 骨架，且需要先确定 feed 的存放位置（仓库内 `artifacts/` 只服务本机开发，跨仓消费要在 S2 决定是 PATH 环境变量、共享目录还是 CI 产物）。
+- 验证：ALC 全解决方案 `dotnet build` 0 warning / 0 error；`dotnet test AgentLilaraCode.sln` = 1582 + 4 全绿；`dotnet pack` 产出 `Lilara.Core.0.1.0.nupkg`。
+- CLI 行为保持不变（`Lilara.Cli` 未改）。
+- 背景提示：`a128b28` 在拆分 Core/CLI 的同时删除了 24 步熔断（`MaxConsecutiveToolSteps`）。这是切流前需要单独确认的行为变化，S1b 未恢复也未沿用。
 
 ### S1c — ALP net10 宿主兼容（完成探测）
 
