@@ -5,24 +5,6 @@ using AgentLilara.GraphRuntime.Serialization;
 
 namespace AgentCoreProcessor.Engine.Graph;
 
-/// <summary>一条挂载记录：哪个作用域用哪张图。</summary>
-internal sealed class GraphMount
-{
-    /// <summary>作用域：global / channel / session。</summary>
-    public string Scope { get; set; } = "channel";
-
-    /// <summary>作用域键：channel 是内部频道 id；session 是 RuntimeSession.SessionId；global 为空。</summary>
-    public string? ScopeKey { get; set; }
-
-    /// <summary>图类 id，对应 Storage/Graphs/{classId}.json。</summary>
-    public string ClassId { get; set; } = string.Empty;
-
-    public bool Enabled { get; set; } = true;
-
-    /// <summary>实例键：挂载点唯一标识。classId 可被多个挂载点共用，实例绝不共用。</summary>
-    public string InstanceKey => $"{ClassId}@{Scope}#{ScopeKey ?? string.Empty}";
-}
-
 internal sealed class MountDocument
 {
     public int Version { get; set; } = 1;
@@ -108,6 +90,21 @@ internal sealed class GraphManager
         return mount is null ? null : GetOrCreate(mount);
     }
 
+    /// <summary>当前频道挂载的只读参数；无频道专属挂载时返回 global 参数或空集合。</summary>
+    public IReadOnlyDictionary<string, string> ParametersFor(int channelId)
+    {
+        EnsureFresh();
+        GraphMount? mount = null;
+        if (_byChannel.TryGetValue(channelId.ToString(), out var channelMount))
+            mount = channelMount;
+        else
+            mount = _global;
+        return mount?.Params ?? EmptyParameters;
+    }
+
+    private static readonly IReadOnlyDictionary<string, string> EmptyParameters =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>只取精确匹配 sessionId 的 session-scope 挂载；未显式挂载返回 null，不回退共享作用域。</summary>
     public KeywordGraphRunner? ForSession(string sessionId)
     {
@@ -130,7 +127,7 @@ internal sealed class GraphManager
 
         var instanceKey = mount.InstanceKey;
         var graph = new GraphInstance(_classes[mount.ClassId], instanceKey);
-        var runner = KeywordGraphRunner.ForInstance(graph, _active);
+        var runner = KeywordGraphRunner.ForInstance(graph, _active, mount.Params);
         _instances[instanceKey] = runner;
         _sessionInstanceKeys[sessionId] = instanceKey;
 
@@ -311,7 +308,7 @@ internal sealed class GraphManager
         }
 
         var graph = new GraphInstance(_classes[mount.ClassId], mount.InstanceKey);
-        var runner = KeywordGraphRunner.ForInstance(graph, _active);
+        var runner = KeywordGraphRunner.ForInstance(graph, _active, mount.Params);
         _instances[mount.InstanceKey] = runner;
 
         Logging.Signal.Event(Logging.LogGroup.Engine, "graph.mount.instance_created",

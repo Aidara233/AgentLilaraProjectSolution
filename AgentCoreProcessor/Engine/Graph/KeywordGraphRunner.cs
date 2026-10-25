@@ -15,11 +15,16 @@ internal sealed class KeywordGraphRunner
 {
     private readonly GraphInstance _graph;
     private readonly bool _active;
+    private readonly IReadOnlyDictionary<string, string> _mountParameters;
 
-    private KeywordGraphRunner(GraphInstance graph, bool active)
+    private KeywordGraphRunner(
+        GraphInstance graph,
+        bool active,
+        IReadOnlyDictionary<string, string>? mountParameters = null)
     {
         _graph = graph;
         _active = active;
+        _mountParameters = mountParameters ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     }
 
     public bool IsActive => _active;
@@ -31,8 +36,12 @@ internal sealed class KeywordGraphRunner
         TryCreateFrom("preset.keyword-agent.json", active);
 
     /// <summary>用已加载的图实例构造（挂载表按频道选图时使用）。</summary>
-    public static KeywordGraphRunner ForInstance(GraphInstance graph, bool active) =>
-        new(graph, active);
+    public static KeywordGraphRunner ForInstance(
+        GraphInstance graph,
+        bool active,
+        IReadOnlyDictionary<string, string>? mountParameters = null) =>
+        new(graph, active, mountParameters);
+
 
     /// <summary>按图文件名加载（测试与不同预制图共用）。</summary>
     public static KeywordGraphRunner? TryCreateFrom(string fileName, bool active)
@@ -138,7 +147,11 @@ internal sealed class KeywordGraphRunner
         SolveResult result;
         try
         {
-            result = _graph.Run(new EvalContext($"graph-keyword:{traceId}", DateTime.UtcNow.Ticks, @event));
+            var context = new EvalContext($"graph-keyword:{traceId}", DateTime.UtcNow.Ticks, @event)
+            {
+                MountParameters = _mountParameters
+            };
+            result = _graph.Run(context);
         }
         catch (Exception ex)
         {

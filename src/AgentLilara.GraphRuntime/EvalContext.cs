@@ -23,6 +23,10 @@ public sealed class EvalContext
     /// <summary>本拍驱动这次激活的入站事件（图的唯一输入）。</summary>
     public InboundEvent? Event { get; }
 
+    /// <summary>当前图挂载点的只读参数；未配置的参数保持未知。</summary>
+    public IReadOnlyDictionary<string, string> MountParameters { get; init; } =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
     public DateTime Time { get; }
 
     /// <summary>变量快照：本拍内只读，不随写入变化。</summary>

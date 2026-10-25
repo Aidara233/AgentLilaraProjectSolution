@@ -38,6 +38,13 @@ public sealed class BuiltInNodeFactory : INodeFactory
                 p.EnsureOnly("name");
                 return new ReadVariable(id, name);
             },
+            ["read.mount"] = (id, p) =>
+            {
+                var name = p.GetString("name")
+                           ?? throw new GraphLoadException($"node '{id}': param 'name' is required");
+                p.EnsureOnly("name");
+                return new ReadMountParameter(id, name);
+            },
             ["event.get"] = (id, p) =>
             {
                 var field = p.GetString("field")

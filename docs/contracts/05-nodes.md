@@ -40,6 +40,7 @@
 |---|---|---|
 `read.const` | `value`（bool/int/string） | `value` |
 `read.variable` | `name` | `value`（本拍快照） |
+`read.mount` | `name` | `value`（当前挂载参数；未配置则为 unknown） |
 `read.<module>.<property>` | — | `value`（模块属性，读上次提交值） |
 
 ---

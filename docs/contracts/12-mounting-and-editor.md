@@ -21,6 +21,8 @@
 |---|---|---|
 **类（GraphClass）** | `{classId, kind: Static\|Dynamic, version, hash, sourcePath, params}` | `channel.responder`、`channel.throttle` |
 **挂载（Mount）** | `{classId, scope, instanceName, params}` —— "这个类在哪个作用域生效" | `channel.throttle @ Channel` |
+
+`params` 是该挂载点提供给图读取的只读键值参数；例如 `preset.router` 可在频道挂载的 `params.sessionType` 指定空闲频道要创建的会话类型。图通过 `read.mount` 节点读取，未配置的参数为 unknown。
 **实例（GraphInstance）** | `instanceKey = {classId}@{scope}#{instanceName}`，持有变量与上次提交快照 | `channel.throttle@Channel:616565017#` |
 
 ### 作用域

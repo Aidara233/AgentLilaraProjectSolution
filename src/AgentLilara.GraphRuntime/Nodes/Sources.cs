@@ -79,6 +79,34 @@ public sealed class ConstValue : INode
         new Dictionary<string, Cell>(StringComparer.Ordinal) { ["value"] = Value };
 }
 
+/// <summary>数据源：当前挂载点参数（只读；未配置的参数输出未知）。</summary>
+public sealed class ReadMountParameter : INode
+{
+    public ReadMountParameter(string id, string name)
+    {
+        Id = id;
+        Name = name;
+    }
+
+    public string Id { get; }
+
+    public string Name { get; }
+
+    public NodeKind Kind => NodeKind.Source;
+
+    public IReadOnlyList<string> InputPorts { get; } = Array.Empty<string>();
+
+    public IReadOnlyList<string> OutputPorts { get; } = new[] { "value" };
+
+    public IReadOnlyDictionary<string, Cell> Evaluate(IReadOnlyDictionary<string, Cell> inputs, EvalContext context)
+    {
+        var value = context.MountParameters.TryGetValue(Name, out var parameter)
+            ? Cell.Of(parameter)
+            : Cell.Unknown;
+        return new Dictionary<string, Cell>(StringComparer.Ordinal) { ["value"] = value };
+    }
+}
+
 /// <summary>数据源：实例变量（本拍快照）。</summary>
 public sealed class ReadVariable : INode
 {

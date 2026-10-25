@@ -4,7 +4,7 @@
   "version": 1,
   "nodes": [
     { "id": "on", "type": "on.message" },
-    { "id": "sessionType", "type": "read.const", "params": { "value": "channel" } },
+    { "id": "sessionType", "type": "read.mount", "params": { "name": "sessionType" } },
     { "id": "route", "type": "sink.route" }
   ],
   "links": [

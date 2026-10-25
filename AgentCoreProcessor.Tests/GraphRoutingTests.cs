@@ -13,7 +13,10 @@ public class GraphRoutingTests
         var path = Path.Combine(AppContext.BaseDirectory, "Graphs", "preset.router.json");
         Assert.True(File.Exists(path), $"Missing copied preset: {path}");
         var graph = new GraphInstance(GraphLoader.Load(File.ReadAllText(path)));
-        var runner = AgentCoreProcessor.Engine.Graph.KeywordGraphRunner.ForInstance(graph, active: true);
+        var runner = AgentCoreProcessor.Engine.Graph.KeywordGraphRunner.ForInstance(
+            graph,
+            active: true,
+            new Dictionary<string, string> { ["sessionType"] = "channel" });
         var dispatched = new List<ActionIntent>();
 
         var allow = await runner.DecideAsync(
