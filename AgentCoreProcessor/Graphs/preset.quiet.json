@@ -1,0 +1,9 @@
+{
+  "classId": "preset.quiet",
+  "kind": "static",
+  "version": 1,
+  "nodes": [
+    { "id": "on", "type": "on.message" }
+  ],
+  "links": []
+}

@@ -115,7 +115,7 @@
 |---|---|---|
 `preset.mention` | 群内被 @ 才响应 → `session.prompt` | **已实现**（沙箱默认） |
 `preset.activation` | @ 立即激活 + 普通消息累积 20 条激活 + 激活后清零（旧 `RuntimeSession` 规则的图化版本） | **已实现**，与旧规则逐条对照通过 |
-`preset.quiet` | 只入库不响应（空图 / 无汇块） | 待做 |
+`preset.quiet` | 消息已入库后不激活会话、不回复（`on.message` 无汇块） | 已实现
 `preset.digest` | 攒够 N 条或 T 分钟后总结 | 待做（需要 `sink.pulse`，见 §8） |
 `preset.router` | 按频道/关键词切到不同会话与模型 | 待做 |
 

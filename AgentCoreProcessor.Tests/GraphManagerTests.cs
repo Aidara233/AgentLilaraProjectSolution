@@ -40,7 +40,12 @@ public class GraphManagerTests : IDisposable
     private void WriteMountEntries(params (string Scope, string Key)[] mounts)
     {
         var entries = string.Join(",", mounts.Select(m =>
-            $"{{\"scope\":\"{m.Scope}\",\"scopeKey\":\"{m.Key}\",\"classId\":\"preset.activation\",\"enabled\":true}}"));
+        {
+            var classId = m.Scope == "channel" && m.Key == "quiet"
+                ? "preset.quiet"
+                : "preset.activation";
+            return $"{{\"scope\":\"{m.Scope}\",\"scopeKey\":\"{m.Key}\",\"classId\":\"{classId}\",\"enabled\":true}}";
+        }));
 
         File.WriteAllText(
             Path.Combine(_graphs, "mounts.json"),
@@ -111,6 +116,27 @@ public class GraphManagerTests : IDisposable
         var after = manager.For(1)!;
         Assert.NotSame(before, after);
         Assert.Equal(0, after.Instance.ReadVariable("pending").AsInt());
+    }
+
+    [Fact]
+    public async Task QuietPresetDoesNotActivateOrDispatch()
+    {
+        File.WriteAllText(
+            Path.Combine(_graphs, "mounts.json"),
+            "{ \"version\": 1, \"mounts\": [{\"scope\":\"channel\",\"scopeKey\":\"1\",\"classId\":\"preset.quiet\",\"enabled\":true}] }");
+        var manager = GraphManager.TryCreate(_dir, active: true)!;
+        var quiet = manager.For(1)!;
+        var dispatched = false;
+
+        var allow = await quiet.DecideAsync(Message(), "quiet-test", _ =>
+        {
+            dispatched = true;
+            return Task.CompletedTask;
+        });
+
+        Assert.False(allow);
+        Assert.False(dispatched);
+        Assert.Empty(quiet.Instance.LastIntents);
     }
 
     [Fact]
