@@ -20,6 +20,29 @@ public class KeywordGraphRunnerTests
         Tag = "normal",
     };
 
+    private static Task<List<ActionIntent>> RunOnce(EngineIncomingMessage message, bool active, string text)
+    {
+        message.Content = text;
+        return RunAsync(message, active);
+    }
+
+    private static async Task<List<ActionIntent>> RunAsync(EngineIncomingMessage message, bool active)
+    {
+        var runner = KeywordGraphRunner.TryCreate(active)!;
+        var dispatched = new List<ActionIntent>();
+
+        await runner.RunAsync(
+            KeywordGraphRunner.ToEvent(message),
+            message.MessageId,
+            intent =>
+            {
+                dispatched.Add(intent);
+                return Task.CompletedTask;
+            });
+
+        return dispatched;
+    }
+
     [Fact]
     public void GraphFileIsAvailable()
     {
@@ -29,14 +52,7 @@ public class KeywordGraphRunnerTests
     [Fact]
     public async Task Keyword_ProducesSendIntent()
     {
-        var runner = KeywordGraphRunner.TryCreate(active: true)!;
-        var dispatched = new List<ActionIntent>();
-
-        await runner.RunAsync(Message("这是一次测试消息"), intent =>
-        {
-            dispatched.Add(intent);
-            return Task.CompletedTask;
-        });
+        var dispatched = await RunAsync(Message("这是一次测试消息"), active: true);
 
         var intent = Assert.Single(dispatched);
         Assert.Equal(IntentKind.SendMessage, intent.Kind);
@@ -47,14 +63,7 @@ public class KeywordGraphRunnerTests
     [Fact]
     public async Task ShadowMode_RecordsButDoesNotDispatch()
     {
-        var runner = KeywordGraphRunner.TryCreate(active: false)!;
-        var dispatched = new List<ActionIntent>();
-
-        await runner.RunAsync(Message("测试一下"), intent =>
-        {
-            dispatched.Add(intent);
-            return Task.CompletedTask;
-        });
+        var dispatched = await RunAsync(Message("测试一下"), active: false);
 
         Assert.Empty(dispatched);
     }
@@ -62,14 +71,7 @@ public class KeywordGraphRunnerTests
     [Fact]
     public async Task WithoutKeyword_NothingHappens()
     {
-        var runner = KeywordGraphRunner.TryCreate(active: true)!;
-        var dispatched = new List<ActionIntent>();
-
-        await runner.RunAsync(Message("普通消息"), intent =>
-        {
-            dispatched.Add(intent);
-            return Task.CompletedTask;
-        });
+        var dispatched = await RunAsync(Message("普通消息"), active: true);
 
         Assert.Empty(dispatched);
     }
@@ -79,14 +81,8 @@ public class KeywordGraphRunnerTests
     {
         var message = Message("测试");
         message.Tag = "mention";
-        var runner = KeywordGraphRunner.TryCreate(active: true)!;
-        var dispatched = new List<ActionIntent>();
 
-        await runner.RunAsync(message, intent =>
-        {
-            dispatched.Add(intent);
-            return Task.CompletedTask;
-        });
+        var dispatched = await RunAsync(message, active: true);
 
         // 关键词命中与 @ 无关：两者都满足时仍然只发一条
         Assert.Single(dispatched);

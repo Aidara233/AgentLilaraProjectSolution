@@ -16,6 +16,10 @@ namespace AgentCoreProcessor.Engine
     {
         public string EngineType => "Express";
 
+        /// <summary>入站关键词图（默认 shadow；LILARA_GRAPH_KEYWORD_MODE=active 才执行意图）。</summary>
+        private readonly Graph.KeywordGraphRunner? _keywordGraph =
+            Graph.KeywordGraphRunner.TryCreate(Graph.KeywordGraphRunner.ActiveFromEnvironment());
+
         public Task OnEventAsync(EngineEvent e, ISystemContext ctx)
         {
             return Task.CompletedTask;
@@ -31,6 +35,24 @@ namespace AgentCoreProcessor.Engine
 
             // 自产消息（bot 自身行为触发的 notice 回执）：已入库但不触发孵化
             if (msg.IsSelfTriggered) return;
+
+            // 入站图（默认 shadow）：消息已入库，图只观察；active 时把意图交给既有出向链。
+            // 图失败只告警，不影响后续孵化与分发。
+            if (_keywordGraph != null)
+            {
+                var graphMessageEngine = ctx.GetActiveEnginesSnapshot()
+                    .OfType<Messaging.MessageEngine>()
+                    .FirstOrDefault();
+
+                if (graphMessageEngine != null)
+                {
+                    await _keywordGraph.RunAsync(
+                        Graph.KeywordGraphRunner.ToEvent(msg, sessionContext.Channel.Id),
+                        msg.PlatformMessageId ?? $"{msg.Platform}:{msg.ChannelId}",
+                        intent => new Graph.MessageGraphIntentDispatcher(graphMessageEngine.SendOutgoing)
+                            .DispatchAsync(intent));
+                }
+            }
 
             // 伴随提取入批（入向唯一咽喉，覆盖 express 会话与 session 占用两条路）。
             // 达攒批阈值时内部会跑一轮 LLM 调用，故 fire-and-forget 不阻塞消息链路。
