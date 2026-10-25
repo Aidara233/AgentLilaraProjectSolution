@@ -67,26 +67,17 @@ internal sealed class KeywordGraphRunner
 
         foreach (var intent in intents)
         {
-            if (intent.Kind == IntentKind.SessionPrompt)
+            if (intent.Kind is IntentKind.SessionPrompt or IntentKind.SessionRoute)
             {
                 allow = true;
+                if (intent.Kind == IntentKind.SessionRoute && _active && dispatch != null)
+                    await DispatchAsync(intent, traceId, dispatch);
             }
             else if (intent.Kind == IntentKind.SendMessage)
             {
                 allow = true;
-
                 if (_active && dispatch != null)
-                {
-                    try
-                    {
-                        await dispatch(intent);
-                    }
-                    catch (Exception ex)
-                    {
-                        Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.keyword.dispatch_failed",
-                            new { traceId, intent.Kind, intent.Target, error = ex.Message });
-                    }
-                }
+                    await DispatchAsync(intent, traceId, dispatch);
             }
         }
 
@@ -94,6 +85,19 @@ internal sealed class KeywordGraphRunner
             new { traceId, allow, active = _active, intents = intents.Count });
 
         return allow;
+    }
+
+    private static async Task DispatchAsync(ActionIntent intent, string traceId, Func<ActionIntent, Task> dispatch)
+    {
+        try
+        {
+            await dispatch(intent);
+        }
+        catch (Exception ex)
+        {
+            Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.keyword.dispatch_failed",
+                new { traceId, intent.Kind, intent.Target, error = ex.Message });
+        }
     }
 
     /// <summary>运行一次图。求解失败只告警，绝不抛出。</summary>

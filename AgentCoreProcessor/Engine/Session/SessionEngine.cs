@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Component;
 using AgentCoreProcessor.Config;
+using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine.Context;
 using AgentCoreProcessor.Engine.Graph;
 using AgentCoreProcessor.Engine.Messaging;
@@ -343,6 +344,64 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
     /// 该工具需 permission 白名单且与 AutoClaim 重复；express 是轻量被动响应，端口即连接）。
     /// 会话身份/模式提示词由 SessionTypeProfile.PromptFiles（express_workflow.txt）加载，InitialState 留空。
     /// </summary>
+    /// <summary>图路由：优先复用频道当前活跃会话；频道空闲时按图指定类型创建，再投递已入库消息。</summary>
+    internal bool RouteGraphMessage(int channelId, string sessionType, UserMessage message, bool isMentioned)
+    {
+        if (channelId <= 0 || string.IsNullOrWhiteSpace(sessionType)) return false;
+
+        var messageEngine = _ctx.GetActiveEnginesSnapshot()
+            .OfType<Messaging.MessageEngine>().FirstOrDefault();
+        if (messageEngine == null) return false;
+
+        SessionTypeProfile profile;
+        try
+        {
+            profile = SessionTypeProfiles.Get(sessionType);
+        }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            Signal.Warn(LogGroup.Engine, "Graph 路由指定了未知会话类型",
+                new { channelId, sessionType, error = ex.Message });
+            return false;
+        }
+
+        var activeId = GetFullClaimer(channelId);
+        var activeSession = activeId == null ? null : GetSession(activeId);
+        if (activeSession?.IsAlive == true)
+        {
+            messageEngine.DeliverToSession(channelId, message, isMentioned);
+            Signal.Event(LogGroup.Engine, "Graph 路由到频道活跃会话",
+                new { channelId, sessionId = activeSession.SessionId, sessionType = activeSession is RuntimeSession rs ? rs.Type : null });
+            return true;
+        }
+
+        var spec = new CreateSessionSpec
+        {
+            Type = profile.Type,
+            ChannelId = channelId,
+            AutoClaimChannel = true,
+            InputPorts = new Dictionary<string, PortSpec>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["ch0:normal"] = new PortSpec { ChannelId = channelId, SubStream = "normal", Weight = 5, PreloadHistory = false },
+                ["ch0:mention"] = new PortSpec { ChannelId = channelId, SubStream = "mention", Weight = 100, PreloadHistory = false },
+            },
+            OutputPorts = new Dictionary<string, string>(),
+        };
+
+        var created = CreateSession(spec);
+        if (GetFullClaimer(channelId) != created.SessionId)
+        {
+            Signal.Warn(LogGroup.Engine, "Graph 路由创建会话未取得频道占用",
+                new { channelId, sessionId = created.SessionId, sessionType });
+            return false;
+        }
+
+        messageEngine.DeliverToSession(channelId, message, isMentioned);
+        Signal.Event(LogGroup.Engine, "Graph 路由创建频道会话并投递消息",
+            new { channelId, sessionId = created.SessionId, sessionType });
+        return true;
+    }
+
     public IRuntimeSession? CreateExpressSessionForChannel(int channelId)
     {
         if (channelId <= 0) return null;

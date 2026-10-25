@@ -15,6 +15,9 @@ public enum IntentKind
     /// <summary>往会话上下文注入一条消息（不激活循环）。</summary>
     SessionInject,
 
+    /// <summary>把当前频道消息路由到频道会话；无活跃会话时请求按类型创建。</summary>
+    SessionRoute,
+
     /// <summary>写实例/全局状态。</summary>
     StateSet,
 
@@ -47,6 +50,7 @@ public static class IntentCatalog
         new IntentSpec("sink.send", IntentKind.SendMessage, new[] { "text" }, TargetArg: null),
         new IntentSpec("sink.prompt", IntentKind.SessionPrompt, new[] { "sessionRef", "text" }, TargetArg: "sessionRef"),
         new IntentSpec("sink.inject", IntentKind.SessionInject, new[] { "sessionRef", "text" }, TargetArg: "sessionRef"),
+        new IntentSpec("sink.route", IntentKind.SessionRoute, new[] { "sessionType" }, TargetArg: "sessionType"),
         new IntentSpec("sink.set", IntentKind.StateSet, new[] { "key", "value" }, TargetArg: "key"),
     };
 

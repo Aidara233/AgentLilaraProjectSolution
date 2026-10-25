@@ -46,14 +46,43 @@ namespace AgentCoreProcessor.Engine
                 var allow = await mountedGraph.DecideAsync(
                     Graph.KeywordGraphRunner.ToEvent(msg, graphChannelId),
                     msg.PlatformMessageId ?? $"{msg.Platform}:{msg.ChannelId}",
-                    intent => new Graph.MessageGraphIntentDispatcher(
-                        outgoing => ctx.Adapters.SendMessageAsync(msg.Platform, outgoing),
-                        graphChannelId).DispatchAsync(intent));
+                    async intent =>
+                    {
+                        if (intent.Kind == AgentLilara.GraphRuntime.Graph.IntentKind.SessionRoute)
+                        {
+                            var targetType = intent.Args.TryGetValue("sessionType", out var typeCell)
+                                ? typeCell.As<string>()
+                                : null;
+                            var sessionEngine = ctx.GetActiveEnginesSnapshot()
+                                .OfType<Session.SessionEngine>().FirstOrDefault();
+                            if (sessionEngine == null || sessionContext.IncomingMessage == null)
+                                throw new InvalidOperationException("SessionEngine 或已入库消息不可用");
+
+                            await sessionEngine.WaitRestoredAsync(TimeSpan.FromSeconds(5));
+                            if (!sessionEngine.RouteGraphMessage(
+                                    graphChannelId,
+                                    targetType ?? string.Empty,
+                                    sessionContext.IncomingMessage,
+                                    msg.IsMentioned || msg.IsPrivate))
+                                throw new InvalidOperationException($"无法路由频道 {graphChannelId} 到会话类型 '{targetType}'");
+                            return;
+                        }
+
+                        await new Graph.MessageGraphIntentDispatcher(
+                            outgoing => ctx.Adapters.SendMessageAsync(msg.Platform, outgoing),
+                            graphChannelId).DispatchAsync(intent);
+                    });
 
                 if (graphs!.IsActive && !allow)
                 {
                     Signal.Event(LogGroup.Engine, "图决定不激活",
                         new { channelId = graphChannelId, platformMessageId = msg.PlatformMessageId });
+                    return;
+                }
+
+                if (graphs.IsActive && mountedGraph.Instance.LastIntents.Any(i => i.Kind == AgentLilara.GraphRuntime.Graph.IntentKind.SessionRoute))
+                {
+                    // 路由意图已在 DecideAsync 的骨架回调中处理；避免后续默认频道路径重复投递/建会话。
                     return;
                 }
             }

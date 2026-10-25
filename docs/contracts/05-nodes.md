@@ -75,6 +75,7 @@ text  sender  channel  adapter  kind  mentions  isReply  received  dedupe
 |---|---|---|---|
 `sink.send` | `text` | `SendMessage` | 事件频道 |
 `sink.prompt` | `sessionRef`、`text` | `SessionPrompt` | `sessionRef` |
+`sink.route` | `sessionType` | `SessionRoute` | 当前事件频道；复用频道活跃会话，否则按类型创建并投递当前消息 |
 `sink.inject` | `sessionRef`、`text` | `SessionInject` | `sessionRef` |
 `sink.set` | `key`、`value` | `StateSet` | `key` |
 `module.<id>.<method>` | `event` + 每个参数一个口 | 即时调用（结果进台账） | — |

@@ -70,6 +70,7 @@
 |---|---|---|---|---|---|
 `sink.send` | SendMessage | `text` | 事件频道 | 派发 | 插槽 |
 `sink.prompt` | SessionPrompt | `sessionRef`、`text` | `sessionRef` | 派发 | 插槽 |
+`sink.route` | SessionRoute | `sessionType` | 当前事件频道 | 派发 | 插槽（先复用频道活跃会话，否则按类型创建并投递当前消息） |
 `sink.inject` | SessionInject | `sessionRef`、`text` | `sessionRef` | 派发 | 插槽 |
 `sink.set` | StateSet | `key`、`value` | `key` | 即时 | 插槽 |
 
@@ -117,7 +118,7 @@
 `preset.activation` | @ 立即激活 + 普通消息累积 20 条激活 + 激活后清零（旧 `RuntimeSession` 规则的图化版本） | **已实现**，与旧规则逐条对照通过 |
 `preset.quiet` | 消息已入库后不激活会话、不回复（`on.message` 无汇块） | 已实现
 `preset.digest` | 攒够 N 条或 T 分钟后总结 | 待做（需要 `sink.pulse`，见 §8） |
-`preset.router` | 按频道/关键词切到不同会话与模型 | 待做 |
+`preset.router` | 由图指定会话类型；消息优先投递到频道活跃会话，无活跃会话时按类型创建并投递 | 已实现
 
 默认装 `preset.mention`——否则首启"没反应"会被误判成坏了。
 
@@ -216,7 +217,7 @@
 | 阶段 | 内容 | 为什么先做 |
 |---|---|---|
 N1 | **挂载表**：`GraphMount(Scope, ScopeKey, ClassId, Enabled)` + `GraphManager` | ✅ **已落地**（§13） |
-N2 | **预制图体系**：`preset.router`（按频道/关键词切会话与模型）、`preset.quiet` | 挂载表一落地就需要多张图可选；router 直接复用现有算子 |
+N2 | **预制图体系**：`preset.quiet` 与 `preset.router`（先复用频道活跃会话，否则按图指定的会话类型创建并投递） | 验证挂载表选择的图能控制消息归属；会话类型档案提供默认 Core 与权限配置 |
 N3 | **`wire.describe / validate / apply`** | agent 自改接线的前提；有挂载表才谈得上“改哪个实例” |
 N4 | `sink.pulse` + `preset.digest` | 攒批/定时聚合；中间层图的前提（D65） |
 N5 | 骨架（store/ingest/outbound 台账） | 与图并行的另一条线，独立价值 |
@@ -245,7 +246,7 @@ Storage/Graphs/
 |---|---|
 没有 `mounts.json` / 没有启用的挂载 | `GraphManager.TryCreate` 返回 null，**完全不干预消息链** |
 频道未挂载 | `For(channelId)` 返回 null → 老行为（消息照常进会话） |
-频道挂载且 `LILARA_GRAPH_MODE=active` | 图说“不激活”则跳过会话；说“激活”或产出 SendMessage 则继续 |
+频道挂载且 `LILARA_GRAPH_MODE=active` | 图说“不激活”则跳过默认会话路径；产出 SendMessage 则派发回复；产出 SessionRoute 则由 SessionEngine 路由到频道活跃会话或创建指定类型会话 |
 频道挂载但非 active（shadow） | 只记录 `graph.keyword.decision`，行为不变 |
 图文件缺失 / 加载失败 | 只告警 `graph.mount.class_missing`，跳过该挂载 |
 

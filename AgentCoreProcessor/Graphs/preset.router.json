@@ -1,0 +1,14 @@
+{
+  "classId": "preset.router",
+  "kind": "static",
+  "version": 1,
+  "nodes": [
+    { "id": "on", "type": "on.message" },
+    { "id": "sessionType", "type": "read.const", "params": { "value": "channel" } },
+    { "id": "route", "type": "sink.route" }
+  ],
+  "links": [
+    { "from": "on.event", "to": "route.event" },
+    { "from": "sessionType.value", "to": "route.sessionType" }
+  ]
+}
