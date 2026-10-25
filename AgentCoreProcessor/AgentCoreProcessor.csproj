@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -40,6 +40,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AgentLilara.PluginSDK\AgentLilara.PluginSDK.csproj" />
+    <ProjectReference Include="..\..\AgentLilara.Next\src\AgentLilara.Kernel\AgentLilara.Kernel.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -47,6 +48,7 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <Content Include="WebUI\wwwroot\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" LinkBase="WebUI\wwwroot" />
+    <Content Update="Graphs\**\*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- paths.json 不由构建拷贝，首次启动由 SetupWizard 生成 -->

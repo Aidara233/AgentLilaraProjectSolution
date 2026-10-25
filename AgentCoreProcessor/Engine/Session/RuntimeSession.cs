@@ -47,6 +47,12 @@ internal class RuntimeSession : IRuntimeSession
     private readonly List<string> _activeTools = new();
     private readonly Dictionary<string, IInputPort> _inputs = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, IOutputPort> _outputs = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 影子判定（只打日志、不改行为）：用 Graphs/preset.activation.json 复算"要不要激活"。
+    /// 一致率 100% 后把 WaitForActivationAsync 的结论换成它。
+    /// </summary>
+    private readonly GraphActivationShadow? _activationShadow = GraphActivationShadow.TryCreate();
     private readonly Dictionary<string, ITool> _tools = new(StringComparer.OrdinalIgnoreCase);
 
     private SessionAgentHost? _host;
@@ -1363,8 +1369,17 @@ internal class RuntimeSession : IRuntimeSession
 
     private async Task<bool> WaitForActivationAsync(CancellationToken ct)
     {
+        var activated = await WaitForActivationCoreAsync(ct);
+        _activationShadow?.Compare(activated);
+        return activated;
+    }
+
+    /// <summary>原判定逻辑（影子对比期间保持不变）。</summary>
+    private async Task<bool> WaitForActivationCoreAsync(CancellationToken ct)
+    {
         while (!ct.IsCancellationRequested)
         {
+            _activationShadow?.Observe(_inputs);
             // ① 非消息端口（系统注入/timeout/signal）有数据 → 立即激活
             foreach (var (name, port) in _inputs)
             {

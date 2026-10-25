@@ -1,0 +1,44 @@
+{
+  "classId": "preset.activation",
+  "kind": "static",
+  "version": 1,
+  "variables": [
+    { "name": "pending", "type": "int", "initial": 0, "description": "普通消息累积条数" }
+  ],
+  "nodes": [
+    { "id": "on",      "type": "on.message" },
+    { "id": "mention", "type": "event.mention" },
+    { "id": "read",    "type": "read.variable", "params": { "name": "pending" } },
+    { "id": "one",     "type": "read.const", "params": { "value": 1 } },
+    { "id": "add",     "type": "math.add" },
+    { "id": "limit",   "type": "read.const", "params": { "value": 20 } },
+    { "id": "ge",      "type": "compare.ge" },
+    { "id": "any",     "type": "logic.or" },
+    { "id": "zero",    "type": "read.const", "params": { "value": 0 } },
+    { "id": "next",    "type": "logic.select" },
+    { "id": "write",   "type": "write.variable", "params": { "name": "pending" } },
+    { "id": "text",    "type": "event.get", "params": { "field": "text" } },
+    { "id": "session", "type": "read.const", "params": { "value": "default" } },
+    { "id": "gate",    "type": "gate.if" },
+    { "id": "prompt",  "type": "sink.prompt" }
+  ],
+  "links": [
+    { "from": "on.event",       "to": "mention.event" },
+    { "from": "read.value",     "to": "add.a" },
+    { "from": "one.value",      "to": "add.b" },
+    { "from": "add.result",     "to": "ge.value" },
+    { "from": "limit.value",    "to": "ge.threshold" },
+    { "from": "mention.result", "to": "any.a" },
+    { "from": "ge.result",      "to": "any.b" },
+    { "from": "any.result",     "to": "next.cond" },
+    { "from": "zero.value",     "to": "next.a" },
+    { "from": "add.result",     "to": "next.b" },
+    { "from": "next.result",    "to": "write.value" },
+    { "from": "on.event",       "to": "gate.event" },
+    { "from": "any.result",     "to": "gate.cond" },
+    { "from": "on.event",       "to": "text.event" },
+    { "from": "gate.event",     "to": "prompt.event" },
+    { "from": "session.value",  "to": "prompt.sessionRef" },
+    { "from": "text.value",     "to": "prompt.text" }
+  ]
+}

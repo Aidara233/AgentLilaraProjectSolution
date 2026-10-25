@@ -15,4 +15,7 @@
   <ItemGroup>
     <ProjectReference Include="..\AgentCoreProcessor\AgentCoreProcessor.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\AgentCoreProcessor\Graphs\*.json" Link="Graphs\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
