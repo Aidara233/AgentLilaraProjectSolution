@@ -40,6 +40,9 @@ internal static class SessionBrainWiring
             (message, error) => Signal.Warn(LogGroup.Engine, "会话内核接缝失败",
                 new { message, error = error?.Message }));
 
+        // 只读的线上请求体捕获：只有影子模式才打开。
+        Client.WireRequestCapture.Enabled = mode == SessionBrainMode.Shadow;
+
         Signal.Event(LogGroup.Engine, "会话内核接缝已启用", new { mode = mode.ToString(), reportPath });
     }
 
@@ -74,8 +77,9 @@ internal static class SessionBrainWiring
             sessionId = report.AlpSessionId,
             engineType = report.EngineType,
             differences = report.Differences.Count,
+            wireDifferences = report.WireDifferences.Count,
             unsupported = report.Unsupported.Count,
-            first = report.Differences.FirstOrDefault(),
+            first = report.Differences.FirstOrDefault() ?? report.WireDifferences.FirstOrDefault(),
         });
     }
 }

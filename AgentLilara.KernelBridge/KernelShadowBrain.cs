@@ -11,9 +11,11 @@ public sealed record ShadowReport(
     int LegacyMessageCount,
     int KernelEventCount,
     IReadOnlyList<string> Differences,
-    IReadOnlyList<string> Unsupported)
+    IReadOnlyList<string> Unsupported,
+    IReadOnlyList<string> WireDifferences,
+    IReadOnlyList<string> WireNotes)
 {
-    public bool Equivalent => Differences.Count == 0;
+    public bool Equivalent => Differences.Count == 0 && WireDifferences.Count == 0;
 }
 
 /// <summary>
@@ -54,6 +56,7 @@ public sealed class KernelShadowBrain : ISessionBrain
 
             var build = KernelRequestBuilder.Build(request);
             var comparison = CanonicalComparer.Compare(request, build.Request, build.Unsupported);
+            var wire = WireComparer.Compare(request, build.Request);
 
             report = new ShadowReport(
                 DateTimeOffset.UtcNow,
@@ -62,7 +65,9 @@ public sealed class KernelShadowBrain : ISessionBrain
                 request.Messages.Count,
                 build.Request.Timeline.Count,
                 comparison.Differences,
-                comparison.Unsupported);
+                comparison.Unsupported,
+                wire.Differences,
+                wire.Notes);
         }
         catch (Exception ex)
         {
@@ -73,6 +78,8 @@ public sealed class KernelShadowBrain : ISessionBrain
                 request.Messages.Count,
                 0,
                 [$"shadow-error：{ex.GetType().Name}: {ex.Message}"],
+                [],
+                [],
                 []);
         }
 

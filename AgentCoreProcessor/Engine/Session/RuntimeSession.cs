@@ -1167,11 +1167,13 @@ internal class RuntimeSession : IRuntimeSession
                 ModelOutput output;
                 try
                 {
+                    // 只读的线上请求体捕获（默认关闭；影子模式下打开）。必须在调用**之前**开作用域。
+                    var wire = Client.WireRequestCapture.Begin();
                     output = await roundCore.InvokeAsync(_history, EngineMode.Working);
                     // ⚠️ 影子快照必须紧贴调用之后：下一次 InvokeAsync 会重设客户端历史。
                     // 默认 Off 时这一步是空操作，Legacy 路径一个字节都不变。
                     Brain.SessionBrainRuntime.Observe(
-                        roundCore, SessionId, _componentLoopType, PathConfig.StoragePath);
+                        roundCore, SessionId, _componentLoopType, PathConfig.StoragePath, wire.Body);
                 }
                 catch (Exception ex)
                 {

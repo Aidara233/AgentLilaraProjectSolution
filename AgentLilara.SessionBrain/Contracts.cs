@@ -51,6 +51,12 @@ public sealed record SessionBrainRequest
     public required IReadOnlyList<SessionBrainTool> Tools { get; init; }
 
     public required SessionBrainProvider Provider { get; init; }
+
+    /// <summary>
+    /// **实际发出去的请求体原文**（影子模式捕获；`null` = 没捕获到）。
+    /// ⚠️ 它只用于比较，不参与任何生产判定——把它当成「模型的输入」会绕过内核的渲染纪律。
+    /// </summary>
+    public string? WireBody { get; init; }
 }
 
 public sealed record SessionBrainMessage(

@@ -521,6 +521,9 @@ namespace AgentCoreProcessor.Client
             if (request.Content != null)
                 body = await request.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
 
+            // 影子模式的只读捕获：此时 body 已经在内存里，零额外 I/O。
+            WireRequestCapture.Capture(body);
+
             var seq = Interlocked.Increment(ref _seq);
             var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
             Directory.CreateDirectory(DumpDir);

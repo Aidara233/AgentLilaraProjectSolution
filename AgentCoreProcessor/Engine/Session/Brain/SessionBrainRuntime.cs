@@ -21,14 +21,17 @@ internal static class SessionBrainRuntime
     /// Legacy 调用**刚刚成功返回**时调用：同步取快照（下一步会重设客户端历史），再把比较丢到后台。
     /// ⚠️ 这里的任何失败都只报告，绝不影响会话。
     /// </summary>
-    public static void Observe(AgentCore core, string sessionId, string engineType, string workingDirectory)
+    public static void Observe(
+        AgentCore core, string sessionId, string engineType, string workingDirectory,
+        string? wireBody = null)
     {
         var host = Host;
         if (!host.IsEnabled) return;
 
         try
         {
-            host.RunShadow(LegacyRequestMapper.Snapshot(core, sessionId, engineType, workingDirectory));
+            host.RunShadow(LegacyRequestMapper.Snapshot(
+                core, sessionId, engineType, workingDirectory, wireBody));
         }
         catch (Exception ex)
         {

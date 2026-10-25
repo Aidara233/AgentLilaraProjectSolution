@@ -17,7 +17,8 @@ namespace AgentCoreProcessor.Engine.Session.Brain;
 internal static class LegacyRequestMapper
 {
     public static SessionBrainRequest Snapshot(
-        AgentCore core, string sessionId, string engineType, string workingDirectory)
+        AgentCore core, string sessionId, string engineType, string workingDirectory,
+        string? wireBody = null)
     {
         var client = core.ClientForBrain;
         var systemPrompt = core.EffectiveSystemPrompt;
@@ -49,6 +50,7 @@ internal static class LegacyRequestMapper
             Messages = messages,
             Tools = tools,
             Provider = ToProvider(client.Config),
+            WireBody = wireBody,
         };
     }
 

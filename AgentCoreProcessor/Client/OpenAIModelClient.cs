@@ -43,6 +43,9 @@ namespace AgentCoreProcessor.Client
                 innerHandler = new ExtraBodyInjectHandler(innerHandler, apiClientCfg.ExtraBody);
             }
 
+            // 影子模式的只读捕获：放在最外层，看到的是**最终**发出去的请求体（含 ExtraBody 注入）。
+            innerHandler = new WireCaptureHandler(innerHandler);
+
             var httpClient = new HttpClient(innerHandler);
             httpClient.Timeout = TimeSpan.FromMinutes(10);
 
@@ -678,6 +681,38 @@ namespace AgentCoreProcessor.Client
                 }
 
                 return response;
+            }
+        }
+
+        /// <summary>
+        /// 影子模式的只读请求体捕获。
+        ///
+        /// <para>⚠️ 读完 `Content` 必须换回一个可重发的副本，否则请求体已被消费、发送会失败。
+        /// 副本要连同原有请求头一起复制（`Content-Length` 除外，它会由新内容重算）。</para>
+        /// </summary>
+        private sealed class WireCaptureHandler : DelegatingHandler
+        {
+            public WireCaptureHandler(HttpMessageHandler inner) : base(inner) { }
+
+            protected override async Task<HttpResponseMessage> SendAsync(
+                HttpRequestMessage request, CancellationToken ct)
+            {
+                if (WireRequestCapture.Enabled && request.Content != null)
+                {
+                    var body = await request.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                    WireRequestCapture.Capture(body);
+
+                    var replacement = new StringContent(body, Encoding.UTF8, "application/json");
+                    foreach (var (key, values) in request.Content.Headers)
+                    {
+                        if (!key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase) &&
+                            !key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase))
+                            replacement.Headers.TryAddWithoutValidation(key, values);
+                    }
+                    request.Content = replacement;
+                }
+
+                return await base.SendAsync(request, ct).ConfigureAwait(false);
             }
         }
 
