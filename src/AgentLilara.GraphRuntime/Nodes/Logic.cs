@@ -252,6 +252,37 @@ public sealed class LogicOr : INode
         };
 }
 
+/// <summary>文本是否包含指定子串（序数匹配，避免文化相关行为）。</summary>
+public sealed class TextContains : INode
+{
+    public TextContains(string id)
+    {
+        Id = id;
+    }
+
+    public string Id { get; }
+
+    public NodeKind Kind => NodeKind.Logic;
+
+    public IReadOnlyList<string> InputPorts { get; } = new[] { "text", "needle" };
+
+    public IReadOnlyList<string> OutputPorts { get; } = new[] { "result" };
+
+    public IReadOnlyDictionary<string, Cell> Evaluate(IReadOnlyDictionary<string, Cell> inputs, EvalContext context)
+    {
+        var text = inputs["text"];
+        var needle = inputs["needle"];
+        var result = text.State == CellState.Unknown || needle.State == CellState.Unknown
+            ? Cell.Unknown
+            : text.IsNoEvent || needle.IsNoEvent
+                ? Cell.NoEvent
+                : Cell.Of((text.As<string>() ?? string.Empty).Contains(
+                    needle.As<string>() ?? string.Empty,
+                    StringComparison.Ordinal));
+        return new Dictionary<string, Cell>(StringComparer.Ordinal) { ["result"] = result };
+    }
+}
+
 /// <summary>
 /// 逻辑：条件取值 <c>cond ? a : b</c>（两侧都已求值，只做选择，不做惰性分支）。
 /// 用于"条件赋值"：把"什么情况下重置/沿用"写成一个值，避免对同一变量写两次。

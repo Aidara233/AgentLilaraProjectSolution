@@ -1,0 +1,23 @@
+{
+  "classId": "preset.keyword-test",
+  "kind": "static",
+  "version": 1,
+  "nodes": [
+    { "id": "on",      "type": "on.message" },
+    { "id": "text",    "type": "event.get", "params": { "field": "text" } },
+    { "id": "needle",  "type": "read.const", "params": { "value": "测试" } },
+    { "id": "contains", "type": "text.contains" },
+    { "id": "gate",    "type": "gate.if" },
+    { "id": "reply",   "type": "read.const", "params": { "value": "这是测试回复" } },
+    { "id": "send",    "type": "sink.send" }
+  ],
+  "links": [
+    { "from": "on.event",       "to": "text.event" },
+    { "from": "text.value",     "to": "contains.text" },
+    { "from": "needle.value",   "to": "contains.needle" },
+    { "from": "on.event",       "to": "gate.event" },
+    { "from": "contains.result", "to": "gate.cond" },
+    { "from": "gate.event",     "to": "send.event" },
+    { "from": "reply.value",    "to": "send.text" }
+  ]
+}

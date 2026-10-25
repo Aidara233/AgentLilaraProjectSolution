@@ -72,6 +72,11 @@ public sealed class BuiltInNodeFactory : INodeFactory
                 p.EnsureOnly();
                 return new SelectValue(id);
             },
+            ["text.contains"] = (id, p) =>
+            {
+                p.EnsureOnly();
+                return new TextContains(id);
+            },
             ["gate.if"] = (id, p) =>
             {
                 p.EnsureOnly();

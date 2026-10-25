@@ -14,4 +14,7 @@
     <ProjectReference Include="..\AgentLilara.GraphModules\AgentLilara.GraphModules.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="Graphs\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
