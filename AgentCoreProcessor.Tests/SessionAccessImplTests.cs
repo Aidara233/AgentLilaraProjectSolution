@@ -33,6 +33,7 @@ public class SessionAccessImplTests
         public IVisionProvider? Vision => null;
         public IOcrProvider? Ocr => null;
         public AdapterManager Adapters => null!;
+        public AgentCoreProcessor.Engine.Graph.GraphManager? Graphs => null;
         public EventBus EventBus => null!;
         public ImpulseConfig ImpulseConfig => null!;
         public bool IsIdle => true;

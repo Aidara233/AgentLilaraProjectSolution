@@ -24,6 +24,9 @@ internal sealed class KeywordGraphRunner
 
     public bool IsActive => _active;
 
+    /// <summary>当前实例（诊断/测试用：读变量、确认实例隔离）。</summary>
+    internal GraphInstance Instance => _graph;
+
     public static KeywordGraphRunner? TryCreate(bool active) =>
         TryCreateFrom("preset.keyword-agent.json", active);
 

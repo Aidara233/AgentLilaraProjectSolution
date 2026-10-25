@@ -77,6 +77,10 @@ namespace AgentCoreProcessor.Engine
         public IVisionProvider? Vision => visionProvider;
         public IOcrProvider? Ocr => ocrProvider;
         public AdapterManager Adapters => adapterManager;
+
+        /// <summary>图挂载表：进程级一份（挂载点之间实例隔离，见 GraphManager）。</summary>
+        public Graph.GraphManager? Graphs { get; } =
+            Graph.GraphManager.TryCreate(Config.PathConfig.StoragePath, Graph.GraphManager.ActiveFromEnvironment());
         public EventBus EventBus => eventBus;
         public ImpulseConfig ImpulseConfig { get; private set; } = null!;
 

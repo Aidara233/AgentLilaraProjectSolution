@@ -16,9 +16,8 @@ namespace AgentCoreProcessor.Engine
     {
         public string EngineType => "Express";
 
-        /// <summary>入站挂载表（无 mounts.json 时为 null：完全不干预消息链）。</summary>
-        private readonly Graph.GraphManager? _graphs =
-            Graph.GraphManager.TryCreate(Config.PathConfig.StoragePath, Graph.GraphManager.ActiveFromEnvironment());
+        /// <summary>图挂载表由宿主提供；这里不再自持（生命周期跟随 MasterEngine）。</summary>
+        private Graph.GraphManager? Graphs(ISystemContext ctx) => ctx.Graphs;
 
         public Task OnEventAsync(EngineEvent e, ISystemContext ctx)
         {
@@ -40,7 +39,8 @@ namespace AgentCoreProcessor.Engine
             // active 模式下图说“不激活”则跳过会话路径；shadow 模式只记录结论。
             // 出向走 AdapterManager（不走 MessageEngine.OnOutgoingReady —— 那条无人订阅）。
             var graphChannelId = sessionContext.Channel.Id;
-            var mountedGraph = _graphs?.For(graphChannelId);
+            var graphs = Graphs(ctx);
+            var mountedGraph = graphs?.For(graphChannelId);
             if (mountedGraph != null)
             {
                 var allow = await mountedGraph.DecideAsync(
@@ -50,7 +50,7 @@ namespace AgentCoreProcessor.Engine
                         outgoing => ctx.Adapters.SendMessageAsync(msg.Platform, outgoing),
                         graphChannelId).DispatchAsync(intent));
 
-                if (_graphs!.IsActive && !allow)
+                if (graphs!.IsActive && !allow)
                 {
                     Signal.Event(LogGroup.Engine, "图决定不激活",
                         new { channelId = graphChannelId, platformMessageId = msg.PlatformMessageId });

@@ -69,6 +69,9 @@ namespace AgentCoreProcessor.Engine
         // 适配器
         AdapterManager Adapters { get; }
 
+        /// <summary>图挂载表（无 mounts.json 时为 null：图不干预任何行为）。</summary>
+        Graph.GraphManager? Graphs { get; }
+
         // 事件总线
         EventBus EventBus { get; }
 

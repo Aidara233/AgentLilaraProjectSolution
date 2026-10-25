@@ -1,6 +1,5 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using AgentCoreProcessor.Config;
 using AgentLilara.GraphRuntime.Graph;
 using AgentLilara.GraphRuntime.Serialization;
 
@@ -19,6 +18,9 @@ internal sealed class GraphMount
     public string ClassId { get; set; } = string.Empty;
 
     public bool Enabled { get; set; } = true;
+
+    /// <summary>实例键：挂载点唯一标识。classId 可被多个挂载点共用，实例绝不共用。</summary>
+    public string InstanceKey => $"{ClassId}@{Scope}#{ScopeKey ?? string.Empty}";
 }
 
 internal sealed class MountDocument
@@ -28,9 +30,11 @@ internal sealed class MountDocument
 }
 
 /// <summary>
-/// 挂载表：按频道决定用哪张图。
+/// 挂载表 + 实例池：按频道选图，**每个挂载点一个实例**。
 /// <para>⚠️ <b>没有挂载就等于不干预</b>——<see cref="For"/> 返回 null，调用方走原有行为。</para>
-/// <para>⚠️ 加载失败、图文件缺失都只告警并跳过该挂载，不影响消息链。</para>
+/// <para>⚠️ 实例生命周期跟随挂载记录：挂载表变动（文件时间戳变化）时重建，
+/// 被移除的挂载点连同变量一起销毁；频道释放可调 <see cref="Release"/> 单独销毁。</para>
+/// <para>⚠️ 图类（GraphClass）是模板，按 classId 缓存；实例（GraphInstance）按挂载点隔离。</para>
 /// </summary>
 internal sealed class GraphManager
 {
@@ -42,17 +46,30 @@ internal sealed class GraphManager
     };
 
     private readonly bool _active;
-    private readonly Dictionary<string, KeywordGraphRunner> _classes = new(StringComparer.Ordinal);
+    private readonly string _storagePath;
+    private readonly string _mountsPath;
+    private DateTime _mountsStamp;
+
+    /// <summary>图模板：classId → 已加载的 GraphClass。</summary>
+    private readonly Dictionary<string, GraphClass> _classes = new(StringComparer.Ordinal);
+
+    /// <summary>运行实例：挂载点键 → 运行器（内含 GraphInstance 与变量）。</summary>
+    private readonly Dictionary<string, KeywordGraphRunner> _instances = new(StringComparer.Ordinal);
+
     private readonly Dictionary<string, GraphMount> _byChannel = new(StringComparer.Ordinal);
     private GraphMount? _global;
 
-    private GraphManager(bool active)
+    private GraphManager(bool active, string storagePath)
     {
         _active = active;
+        _storagePath = storagePath;
+        _mountsPath = Path.Combine(storagePath, "Graphs", "mounts.json");
     }
 
-    /// <summary>active 表示图的结论会真正影响行为；否则只记录。</summary>
     public bool IsActive => _active;
+
+    /// <summary>当前存活实例数（诊断用）。</summary>
+    public int InstanceCount => _instances.Count;
 
     public static bool ActiveFromEnvironment() =>
         string.Equals(
@@ -65,59 +82,11 @@ internal sealed class GraphManager
     {
         try
         {
-            var dir = Path.Combine(storagePath, "Graphs");
-            var mountsPath = Path.Combine(dir, "mounts.json");
-            if (!File.Exists(mountsPath))
+            var manager = new GraphManager(active, storagePath);
+            if (!manager.ParseMounts())
             {
                 return null;
             }
-
-            var doc = JsonSerializer.Deserialize<MountDocument>(File.ReadAllText(mountsPath), JsonOptions);
-            if (doc?.Mounts is null || doc.Mounts.Count == 0)
-            {
-                return null;
-            }
-
-            var manager = new GraphManager(active);
-
-            foreach (var mount in doc.Mounts.Where(m => m.Enabled))
-            {
-                if (string.IsNullOrWhiteSpace(mount.ClassId))
-                {
-                    continue;
-                }
-
-                if (!manager._classes.ContainsKey(mount.ClassId))
-                {
-                    var runner = LoadRunner(dir, mount.ClassId, active);
-                    if (runner is null)
-                    {
-                        Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.mount.class_missing",
-                            new { mount.ClassId, dir });
-                        continue;
-                    }
-
-                    manager._classes[mount.ClassId] = runner;
-                }
-
-                if (string.Equals(mount.Scope, "global", StringComparison.OrdinalIgnoreCase))
-                {
-                    manager._global = mount;
-                }
-                else if (!string.IsNullOrWhiteSpace(mount.ScopeKey))
-                {
-                    manager._byChannel[mount.ScopeKey] = mount;
-                }
-            }
-
-            manager._activeCount = manager._classes.Count;
-            Logging.Signal.Event(Logging.LogGroup.Engine, "graph.mount.loaded", new
-            {
-                classes = manager._classes.Count,
-                channelMounts = manager._byChannel.Count,
-                hasGlobal = manager._global is not null,
-                active,
-            });
 
             return manager._classes.Count == 0 ? null : manager;
         }
@@ -128,26 +97,157 @@ internal sealed class GraphManager
         }
     }
 
-    private int _activeCount;
-
-    /// <summary>该频道应使用的图运行器；未挂载返回 null。</summary>
+    /// <summary>该频道应使用的图运行器（每挂载点一个实例）；未挂载返回 null。</summary>
     public KeywordGraphRunner? For(int channelId)
     {
-        if (_byChannel.TryGetValue(channelId.ToString(), out var mount)
-            && _classes.TryGetValue(mount.ClassId, out var runner))
-        {
-            return runner;
-        }
+        EnsureFresh();
 
-        if (_global is not null && _classes.TryGetValue(_global.ClassId, out var globalRunner))
-        {
-            return globalRunner;
-        }
-
-        return null;
+        var mount = ResolveMount(channelId);
+        return mount is null ? null : GetOrCreate(mount);
     }
 
-    private static KeywordGraphRunner? LoadRunner(string mountDir, string classId, bool active)
+    /// <summary>频道释放：销毁该挂载点的实例与变量。</summary>
+    public void Release(int channelId)
+    {
+        if (!_byChannel.TryGetValue(channelId.ToString(), out var mount))
+        {
+            return;
+        }
+
+        if (_instances.Remove(mount.InstanceKey))
+        {
+            Logging.Signal.Event(Logging.LogGroup.Engine, "graph.mount.released",
+                new { channelId, mount.ClassId, key = mount.InstanceKey });
+        }
+    }
+
+    /// <summary>挂载表变动 → 重建挂载并丢弃所有实例（变量随挂载记录一起失效）。</summary>
+    private void EnsureFresh()
+    {
+        try
+        {
+            if (!File.Exists(_mountsPath))
+            {
+                return;
+            }
+
+            var stamp = File.GetLastWriteTimeUtc(_mountsPath);
+            if (stamp == _mountsStamp)
+            {
+                return;
+            }
+
+            _mountsStamp = stamp;
+
+            var dropped = _instances.Count;
+            _instances.Clear();
+            _classes.Clear();
+            _byChannel.Clear();
+            _global = null;
+
+            ParseMounts();
+
+            Logging.Signal.Event(Logging.LogGroup.Engine, "graph.mount.reloaded", new
+            {
+                droppedInstances = dropped,
+                classes = _classes.Count,
+                channelMounts = _byChannel.Count,
+                hasGlobal = _global is not null,
+            });
+        }
+        catch (Exception ex)
+        {
+            Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.mount.reload_failed", new { error = ex.Message });
+        }
+    }
+
+    /// <summary>读取 mounts.json 并解析挂载。返回 false 表示没有可用挂载表。</summary>
+    private bool ParseMounts()
+    {
+        if (!File.Exists(_mountsPath))
+        {
+            return false;
+        }
+
+        _mountsStamp = File.GetLastWriteTimeUtc(_mountsPath);
+
+        var doc = JsonSerializer.Deserialize<MountDocument>(File.ReadAllText(_mountsPath), JsonOptions);
+        if (doc?.Mounts is null || doc.Mounts.Count == 0)
+        {
+            return false;
+        }
+
+        var dir = Path.Combine(_storagePath, "Graphs");
+
+        foreach (var mount in doc.Mounts.Where(m => m.Enabled))
+        {
+            if (string.IsNullOrWhiteSpace(mount.ClassId))
+            {
+                continue;
+            }
+
+            if (!_classes.ContainsKey(mount.ClassId))
+            {
+                var graph = LoadClass(dir, mount.ClassId);
+                if (graph is null)
+                {
+                    Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.mount.class_missing",
+                        new { mount.ClassId, dir });
+                    continue;
+                }
+
+                _classes[mount.ClassId] = graph;
+            }
+
+            if (string.Equals(mount.Scope, "global", StringComparison.OrdinalIgnoreCase))
+            {
+                _global = mount;
+            }
+            else if (!string.IsNullOrWhiteSpace(mount.ScopeKey))
+            {
+                _byChannel[mount.ScopeKey] = mount;
+            }
+        }
+
+        Logging.Signal.Event(Logging.LogGroup.Engine, "graph.mount.loaded", new
+        {
+            classes = _classes.Count,
+            channelMounts = _byChannel.Count,
+            hasGlobal = _global is not null,
+            active = _active,
+        });
+
+        return true;
+    }
+
+    private GraphMount? ResolveMount(int channelId)
+    {
+        if (_byChannel.TryGetValue(channelId.ToString(), out var mount) && _classes.ContainsKey(mount.ClassId))
+        {
+            return mount;
+        }
+
+        return _global is not null && _classes.ContainsKey(_global.ClassId) ? _global : null;
+    }
+
+    private KeywordGraphRunner GetOrCreate(GraphMount mount)
+    {
+        if (_instances.TryGetValue(mount.InstanceKey, out var existing))
+        {
+            return existing;
+        }
+
+        var graph = new GraphInstance(_classes[mount.ClassId], mount.InstanceKey);
+        var runner = KeywordGraphRunner.ForInstance(graph, _active);
+        _instances[mount.InstanceKey] = runner;
+
+        Logging.Signal.Event(Logging.LogGroup.Engine, "graph.mount.instance_created",
+            new { key = mount.InstanceKey, instances = _instances.Count });
+
+        return runner;
+    }
+
+    private static GraphClass? LoadClass(string mountDir, string classId)
     {
         // 优先 Storage/Graphs（数据，可编辑），回退到程序目录下的 Graphs（随构建发布的默认图）
         var candidates = new[]
@@ -158,13 +258,10 @@ internal sealed class GraphManager
 
         foreach (var path in candidates)
         {
-            if (!File.Exists(path))
+            if (File.Exists(path))
             {
-                continue;
+                return GraphLoader.Load(File.ReadAllText(path));
             }
-
-            var graph = new GraphInstance(GraphLoader.Load(File.ReadAllText(path)));
-            return KeywordGraphRunner.ForInstance(graph, active);
         }
 
         return null;

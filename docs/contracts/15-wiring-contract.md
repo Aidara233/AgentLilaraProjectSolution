@@ -259,4 +259,12 @@ C | channel 999 | 不含关键词 | 模型调用增加到 4 次、有回复（ch
 
 场景 A 与 C 的对比就是挂载表的核心价值：**同一进程里，挂了图的频道受图约束，没挂的频道行为完全不变**。
 
-**实例状态**：`GraphManager` 按 `classId` 各持一个 `GraphInstance`，变量在进程内保持（`preset.activation` 的 `pending` 才有意义）。多频道共享同一 classId 时共享实例——频道级隔离需要 `(classId, scopeKey)` 粒度的实例表，属于 N2。
+**实例隔离（已落地）**
+
+| 项 | 行为 |
+|---|---|
+实例粒度 | 每个挂载点一个 `GraphInstance`，键 `classId@scope#scopeKey`；两个频道挂同一张图也是两个实例 |
+变量隔离 | 各实例变量独立（实测：channel 1 累积 5 条、channel 2 仍为 0） |
+实例生命周期 | 跟随挂载记录：`mounts.json` 变更（时间戳变化）→ 重建挂载并丢弃全部实例；不再挂载的频道 `For()` 返回 null |
+显式销毁 | `GraphManager.Release(channelId)` 销毁该挂载点实例与变量（供频道释放/运维调用） |
+图类缓存 | `GraphClass` 按 classId 缓存（模板），只有实例按挂载点复制 |
