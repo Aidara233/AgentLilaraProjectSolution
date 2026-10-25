@@ -1,6 +1,6 @@
 # 图源码格式（13）
 
-> 状态：**与实现同步**（`src/AgentLilara.Kernel/Serialization/`）。
+> 状态：**与实现同步**（`src/AgentLilara.GraphRuntime/Serialization/`）。
 > 实现为唯一事实来源；本文与代码不一致时以代码为准，并请回来修本文。
 
 ---

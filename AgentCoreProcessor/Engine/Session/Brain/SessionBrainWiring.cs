@@ -1,5 +1,5 @@
 using AgentCoreProcessor.Logging;
-using AgentLilara.KernelBridge;
+using AgentLilara.AlcBridge;
 using AgentLilara.SessionBrain;
 
 namespace AgentCoreProcessor.Engine.Session.Brain;
@@ -7,7 +7,7 @@ namespace AgentCoreProcessor.Engine.Session.Brain;
 /// <summary>
 /// 启动期接线：把 <c>LILARA_SESSION_BRAIN</c> 映射成接缝运行器。
 ///
-/// <para>⚠️ 这里是 ALP 唯一引用 KernelBridge 的地方——其余代码只认
+/// <para>⚠️ 这里是 ALP 唯一引用 AlcBridge 的地方——其余代码只认
 /// <see cref="SessionBrainRuntime"/> 与中性契约。</para>
 ///
 /// <para>⚠️ **配置写错要当场失败**，不能静默退回 Off：那样运维会以为影子在跑，

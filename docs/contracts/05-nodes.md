@@ -2,7 +2,7 @@
 
 > 节点 = **模块接口 / 动作在画布上的投影**（`00-decisions.md` D56）。它们不该手写，而应从清单导出：
 > 动作节点来自 `IntentCatalog`（`15-wiring-contract.md` §4），模块节点来自 `ModuleCatalog`（`14-modules.md` §3）。
-> 状态：**与实现同步**（`src/AgentLilara.Kernel/Nodes/`）。
+> 状态：**与实现同步**（`src/AgentLilara.GraphRuntime/Nodes/`）。
 
 ---
 

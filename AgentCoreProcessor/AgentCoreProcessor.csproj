@@ -41,8 +41,8 @@
   <ItemGroup>
     <ProjectReference Include="..\AgentLilara.PluginSDK\AgentLilara.PluginSDK.csproj" />
     <ProjectReference Include="..\AgentLilara.SessionBrain\AgentLilara.SessionBrain.csproj" />
-    <ProjectReference Include="..\AgentLilara.KernelBridge\AgentLilara.KernelBridge.csproj" />
-    <ProjectReference Include="..\src\AgentLilara.Kernel\AgentLilara.Kernel.csproj" />
+    <ProjectReference Include="..\AgentLilara.AlcBridge\AgentLilara.AlcBridge.csproj" />
+    <ProjectReference Include="..\src\AgentLilara.GraphRuntime\AgentLilara.GraphRuntime.csproj" />
   </ItemGroup>
 
   <ItemGroup>

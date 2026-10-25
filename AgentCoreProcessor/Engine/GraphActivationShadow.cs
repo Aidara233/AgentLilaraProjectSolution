@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.IO;
 using AgentCoreProcessor.Engine.Messaging;
 using AgentCoreProcessor.Logging;
-using AgentLilara.Kernel.Contracts;
-using AgentLilara.Kernel.Graph;
-using AgentLilara.Kernel.Serialization;
+using AgentLilara.GraphRuntime.Contracts;
+using AgentLilara.GraphRuntime.Graph;
+using AgentLilara.GraphRuntime.Serialization;
 using AgentLilara.PluginSDK;
 
 namespace AgentCoreProcessor.Engine;

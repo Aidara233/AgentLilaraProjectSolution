@@ -11,7 +11,7 @@
 
 - `Lilara.Core` 只负责 canonical 会话记录、提示槽位、上下文投影、模型协议转换、工具执行机制、压缩/回收原语与恢复。
 - ALP 保留进程生命周期、`MasterEngine`/`SessionEngine`/`SessionPool`、频道 claim 和权重激活、适配器、消息路由、SQLite 业务数据、Mind、WebUI、组件生命周期及插件加载。
-- 跨边界代码只放在 ALP 侧的 `AgentLilara.KernelBridge`（暂定名）。Core 不引用 ALP、ALP SDK、SQLite、QQ/频道类型或 WebUI 类型；只有 Bridge 依赖双方契约。
+- 跨边界代码只放在 ALP 侧的 `AgentLilara.AlcBridge`（暂定名）。Core 不引用 ALP、ALP SDK、SQLite、QQ/频道类型或 WebUI 类型；只有 Bridge 依赖双方契约。
 - 本 ADR 不决定必须合并仓库，也不批准把 ALP 组件/SpawnCheck/资源池搬入 ALC Kernel。
 
 ### D2. 单写者与存储隔离
@@ -122,7 +122,7 @@
 
 - 包消费方式：feed 在**两个仓库之外**的 `E:\Workspace\LilaraPackages`，通过用户级 NuGet 源 `lilara-local` 注册；ALP/ALC 仓库里都不出现对方路径。
 - `AgentLilara.SessionBrain`（零依赖）：`SessionBrainMode` / `ISessionBrain` / 中性 DTO（消息、部件、工具、provider、结果）。ALP 生产代码只认这套契约。
-- `AgentLilara.KernelBridge`（**唯一同时触碰两边的程序集**）：`PackageReference Lilara.Core 0.1.0` + 中性契约；不跨仓项目引用、不链接源码、不用 `InternalsVisibleTo`。
+- `AgentLilara.AlcBridge`（**唯一同时触碰两边的程序集**）：`PackageReference Lilara.Core 0.1.0` + 中性契约；不跨仓项目引用、不链接源码、不用 `InternalsVisibleTo`。
 - ALP 侧接缝：`AgentCoreProcessor/Engine/Session/Brain/`
   - `LegacyRequestMapper`：在 Legacy 调用成功返回后，从**客户端实际持有的历史/工具/配置**同步取快照（不是从 `_history` 猜）。
   - `SessionBrainRuntime` + `SessionBrainWiring`：默认 `Off`；`LILARA_SESSION_BRAIN=shadow` 启用，报告默认写 `<Storage>/KernelShadow/reports.jsonl`，可用 `LILARA_SESSION_BRAIN_REPORT` 覆盖。非法值或 `live` **启动即抛**，不静默退回。

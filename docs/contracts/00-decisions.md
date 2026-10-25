@@ -165,7 +165,7 @@ query_resources { }          // 资源持有者 + 等待队列 + 最近丢弃原
 
 ```
 AgentLilara.PluginSDK     契约（工具/组件/端口/适配器面/查询/SettingDescriptor/PageSpec/Node 描述）
-AgentLilara.Kernel        管道 + 图 + 会话 + 查询 + 授权（无平台知识，可单测）
+AgentLilara.GraphRuntime        管道 + 图 + 会话 + 查询 + 授权（无平台知识，可单测）
 AgentLilara.Adapters.*    每平台一项目（OneBot / Icalingua / HttpBridge / File）
 AgentLilara.Sources.*     流源（Email / HomeAssistant / Webhook）
 AgentLilara.WebUI         外壳 + schema 渲染器（独立进程）

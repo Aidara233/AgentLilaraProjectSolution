@@ -1,5 +1,5 @@
 using System.Security.Cryptography;
-using AgentLilara.KernelBridge;
+using AgentLilara.AlcBridge;
 using AgentLilara.SessionBrain;
 using Xunit;
 

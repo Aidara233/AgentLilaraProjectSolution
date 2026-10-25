@@ -8,7 +8,7 @@ namespace AgentCoreProcessor.Tests;
 
 /// <summary>
 /// 接缝的宿主侧契约：Legacy 请求如何被转成中性 DTO，以及接缝在 Off / Shadow 下做什么。
-/// ⚠️ 这些测试**不**验证内核实现——那是 KernelBridge 自己的测试。
+/// ⚠️ 这些测试**不**验证内核实现——那是 AlcBridge 自己的测试。
 /// </summary>
 public class SessionBrainTests
 {

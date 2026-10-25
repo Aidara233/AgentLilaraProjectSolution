@@ -9,7 +9,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentLilara.PluginSDK", "Ag
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentLilara.SessionBrain", "AgentLilara.SessionBrain\AgentLilara.SessionBrain.csproj", "{6B0C4F1E-3A2D-4E5F-9C8B-7A1D2E3F4A5B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentLilara.KernelBridge", "AgentLilara.KernelBridge\AgentLilara.KernelBridge.csproj", "{D4E5F6A7-8B9C-4D0E-A1F2-3C4D5E6F7A8B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentLilara.AlcBridge", "AgentLilara.AlcBridge\AgentLilara.AlcBridge.csproj", "{D4E5F6A7-8B9C-4D0E-A1F2-3C4D5E6F7A8B}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Plugins", "Plugins", "{07D57EEB-2F50-60C4-C011-FE4FA775C9A8}"
 EndProject
@@ -67,17 +67,17 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Plugin.HomeAssistant", "Plu
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72D-47B6-A68D-7590B98EB39B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentLilara.Kernel", "src\AgentLilara.Kernel\AgentLilara.Kernel.csproj", "{0E121FF2-E0FF-4C21-8A4B-5170E69D949B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentLilara.GraphRuntime", "src\AgentLilara.GraphRuntime\AgentLilara.GraphRuntime.csproj", "{0E121FF2-E0FF-4C21-8A4B-5170E69D949B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentLilara.Modules", "src\AgentLilara.Modules\AgentLilara.Modules.csproj", "{C3C6C534-A432-46BC-9295-E9A52CAD0389}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentLilara.GraphModules", "src\AgentLilara.GraphModules\AgentLilara.GraphModules.csproj", "{C3C6C534-A432-46BC-9295-E9A52CAD0389}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentLilara.Sandbox", "src\AgentLilara.Sandbox\AgentLilara.Sandbox.csproj", "{3C47A2EF-33F4-49BD-9834-8A1C511C7867}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentLilara.GraphSandbox", "src\AgentLilara.GraphSandbox\AgentLilara.GraphSandbox.csproj", "{3C47A2EF-33F4-49BD-9834-8A1C511C7867}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentLilara.Kernel.Tests", "tests\AgentLilara.Kernel.Tests\AgentLilara.Kernel.Tests.csproj", "{C35E33F1-5393-4BBD-825B-5DAEFEA11319}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentLilara.GraphRuntime.Tests", "tests\AgentLilara.GraphRuntime.Tests\AgentLilara.GraphRuntime.Tests.csproj", "{C35E33F1-5393-4BBD-825B-5DAEFEA11319}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentLilara.Sandbox.Tests", "tests\AgentLilara.Sandbox.Tests\AgentLilara.Sandbox.Tests.csproj", "{52F96911-ED3B-4C0D-BEE2-F3A4B894A440}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentLilara.GraphSandbox.Tests", "tests\AgentLilara.GraphSandbox.Tests\AgentLilara.GraphSandbox.Tests.csproj", "{52F96911-ED3B-4C0D-BEE2-F3A4B894A440}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

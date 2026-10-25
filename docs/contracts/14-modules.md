@@ -192,8 +192,8 @@ record 型实参 | 类型允许，但图上没有构造 record 的节点（`read
 
 ## 11. 参考模块：`agent.loop`（契约已声明 + 脚本化参考实现）
 
-代码：`src/AgentLilara.Modules/Agent/AgentLoop.cs`（契约）、
-`src/AgentLilara.Sandbox/Agent/ScriptedAgentLoop.cs`（脚本化实现，不联网）。
+代码：`src/AgentLilara.GraphModules/Agent/AgentLoop.cs`（契约）、
+`src/AgentLilara.GraphSandbox/Agent/ScriptedAgentLoop.cs`（脚本化实现，不联网）。
 
 ```csharp
 [Module("agent.loop", Version = "0.1.0", RequiredCapabilities = new[] { Capabilities.Net })]
@@ -222,7 +222,7 @@ public interface IAgentLoop
 把 `config{prompt,model,tools,budget}` 塞进一个 record 参数会逼着图去构造 record（做不到，见 §10）。
 属性 + `write.*` 节点把"配置"与"这次调用要处理的东西"分开，也符合对象模型（属性=读写，方法=动作）。
 
-样例图（`AgentLilara.Sandbox/SampleGraphs.cs` 的 `AgentStaticJson`）：
+样例图（`AgentLilara.GraphSandbox/SampleGraphs.cs` 的 `AgentStaticJson`）：
 
 ```
 on.message ──→ event.mention ──→ gate.if.cond
@@ -232,7 +232,7 @@ event.get(text) ────────────────────→ 
 read.const("file-session") ─────────────→ module.agent.loop.run.sessionRef
 ```
 
-端到端已验证（`tests/AgentLilara.Sandbox.Tests/AgentLoopModuleTests.cs`）：
+端到端已验证（`tests/AgentLilara.GraphSandbox.Tests/AgentLoopModuleTests.cs`）：
 闸门放行 → 调用 → 模块内部跑完工具循环 → 回复整个对象落在 `SinkOutcome.Outputs["reply"]`；
 `ToolBudget = 0` 时同一张图改走"预算不足"分支（配置经属性生效）。
 

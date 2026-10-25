@@ -1,4 +1,4 @@
-using AgentLilara.KernelBridge;
+using AgentLilara.AlcBridge;
 using AlpITool = AgentLilara.PluginSDK.ITool;
 using AlpToolParameter = AgentLilara.PluginSDK.ToolParameter;
 using AlpToolResult = AgentLilara.PluginSDK.ToolResult;

@@ -57,14 +57,14 @@
 
 | 文档 | 代码位置 |
 |---|---|
-`04` 执行语义 | `src/AgentLilara.Kernel/{Solver,GraphInstance,Cell,SinkExecution}.cs` |
-`05` 节点目录 | `src/AgentLilara.Kernel/Nodes/{Sources,Logic,Sinks}.cs`、`Serialization/{BuiltInNodeFactory,NodeRegistry}.cs` |
-`14` 模块契约 | `src/AgentLilara.Kernel/Modules/*.cs`（特性、描述符生成、节点投影、`ModuleHost`） |
-`14` §11 参考模块 | `src/AgentLilara.Modules/Agent/AgentLoop.cs`（契约）、`src/AgentLilara.Sandbox/Agent/ScriptedAgentLoop.cs`（脚本化实现） |
+`04` 执行语义 | `src/AgentLilara.GraphRuntime/{Solver,GraphInstance,Cell,SinkExecution}.cs` |
+`05` 节点目录 | `src/AgentLilara.GraphRuntime/Nodes/{Sources,Logic,Sinks}.cs`、`Serialization/{BuiltInNodeFactory,NodeRegistry}.cs` |
+`14` 模块契约 | `src/AgentLilara.GraphRuntime/Modules/*.cs`（特性、描述符生成、节点投影、`ModuleHost`） |
+`14` §11 参考模块 | `src/AgentLilara.GraphModules/Agent/AgentLoop.cs`（契约）、`src/AgentLilara.GraphSandbox/Agent/ScriptedAgentLoop.cs`（脚本化实现） |
 `15` 接线契约 | 事件：`Kernel/Contracts/InboundEvent.cs`；意图与动作清单：`Kernel/Intent.cs`；三层模型见文档 |
 `05` 节点（算子/动作） | `Kernel/Nodes/{Sources,Logic,Sinks}.cs` |
-`13` 图源码 | `src/AgentLilara.Kernel/Serialization/*` |
-`10` 接线 | `src/AgentLilara.Sandbox/SampleGraphs.cs`（样例） |
+`13` 图源码 | `src/AgentLilara.GraphRuntime/Serialization/*` |
+`10` 接线 | `src/AgentLilara.GraphSandbox/SampleGraphs.cs`（样例） |
 其余 | 未实现（旧实现仍在 `AgentLilaraProjectSolution/`） |
 
 测试：`tests/`（46 条：求解、快照/边沿、加载校验、模块描述符与调用、事件→意图、沙箱轮询）。
