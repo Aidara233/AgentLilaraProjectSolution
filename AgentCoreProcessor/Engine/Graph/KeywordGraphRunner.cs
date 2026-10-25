@@ -24,15 +24,12 @@ internal sealed class KeywordGraphRunner
 
     public bool IsActive => _active;
 
-    /// <summary>读取 active 开关：LILARA_GRAPH_KEYWORD_MODE=active 才真正执行意图。</summary>
-    public static bool ActiveFromEnvironment() =>
-        string.Equals(
-            Environment.GetEnvironmentVariable("LILARA_GRAPH_KEYWORD_MODE"),
-            "active",
-            StringComparison.OrdinalIgnoreCase);
-
     public static KeywordGraphRunner? TryCreate(bool active) =>
         TryCreateFrom("preset.keyword-agent.json", active);
+
+    /// <summary>用已加载的图实例构造（挂载表按频道选图时使用）。</summary>
+    public static KeywordGraphRunner ForInstance(GraphInstance graph, bool active) =>
+        new(graph, active);
 
     /// <summary>按图文件名加载（测试与不同预制图共用）。</summary>
     public static KeywordGraphRunner? TryCreateFrom(string fileName, bool active)

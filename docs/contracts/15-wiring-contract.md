@@ -207,7 +207,7 @@
 
 **因此定一条纪律**：接新动作（会话、工具、发消息）之前，先确认真实调用点，不要按名字猜。
 
-**当前开关**：`LILARA_GRAPH_KEYWORD_MODE=active` 才让图门控/派发；否则 shadow 只记日志。这个环境变量是临时的，挂载表落地后应被替换。
+**当前开关**：`LILARA_GRAPH_MODE=active` 才让图门控/派发；否则 shadow 只记日志。图由 `Storage/Graphs/mounts.json` 按频道挂载（见 §13）。
 
 ---
 
@@ -215,10 +215,48 @@
 
 | 阶段 | 内容 | 为什么先做 |
 |---|---|---|
-N1 | **挂载表**：`GraphMount(Scope, ScopeKey, ClassId, Params, Enabled)` + `GraphManager` | 现在图是全局硬编码一个文件；没有挂载，就没有“不同频道不同行为”，也没有 agent 修改的对象 |
+N1 | **挂载表**：`GraphMount(Scope, ScopeKey, ClassId, Enabled)` + `GraphManager` | ✅ **已落地**（§13） |
 N2 | **预制图体系**：`preset.router`（按频道/关键词切会话与模型）、`preset.quiet` | 挂载表一落地就需要多张图可选；router 直接复用现有算子 |
 N3 | **`wire.describe / validate / apply`** | agent 自改接线的前提；有挂载表才谈得上“改哪个实例” |
 N4 | `sink.pulse` + `preset.digest` | 攒批/定时聚合；中间层图的前提（D65） |
 N5 | 骨架（store/ingest/outbound 台账） | 与图并行的另一条线，独立价值 |
 
 **暂不做**：画布编辑器（等 N3 有真实修改需求）；自创 DSL（D62）；ALC 合并（另一条线，由 SessionBrain/AlcBridge 推进）。
+
+---
+
+## 13. N1 挂载表（已落地）
+
+```text
+Storage/Graphs/
+├── mounts.json        ← 挂载表（数据，可编辑）
+└── *.json             ← 图本体（缺失时回退到程序目录 Graphs/，即随构建发布的默认图）
+```
+
+```json
+{ "version": 1,
+  "mounts": [
+    { "scope": "channel", "scopeKey": "1",   "classId": "preset.keyword-agent", "enabled": true },
+    { "scope": "global",  "classId": "preset.quiet", "enabled": false }
+  ] }
+```
+
+| 规则 | 行为 |
+|---|---|
+没有 `mounts.json` / 没有启用的挂载 | `GraphManager.TryCreate` 返回 null，**完全不干预消息链** |
+频道未挂载 | `For(channelId)` 返回 null → 老行为（消息照常进会话） |
+频道挂载且 `LILARA_GRAPH_MODE=active` | 图说“不激活”则跳过会话；说“激活”或产出 SendMessage 则继续 |
+频道挂载但非 active（shadow） | 只记录 `graph.keyword.decision`，行为不变 |
+图文件缺失 / 加载失败 | 只告警 `graph.mount.class_missing`，跳过该挂载 |
+
+**三场景实测**（临时 Storage + 正式 DeepSeek 配置，未读写正式 Storage）：
+
+| 场景 | 挂载 | 消息 | 结果 |
+|---|---|---|---|
+A | channel 1 | 不含关键词 | **0 回复、模型调用 0 次**（图拦下，连 token 都不花） |
+B | channel 1 | 含「测试」 | 1 回复「挂载表生效」，模型调用 2 次 |
+C | channel 999 | 不含关键词 | 模型调用增加到 4 次、有回复（channel 1 未挂载 → 不干预，走老行为） |
+
+场景 A 与 C 的对比就是挂载表的核心价值：**同一进程里，挂了图的频道受图约束，没挂的频道行为完全不变**。
+
+**实例状态**：`GraphManager` 按 `classId` 各持一个 `GraphInstance`，变量在进程内保持（`preset.activation` 的 `pending` 才有意义）。多频道共享同一 classId 时共享实例——频道级隔离需要 `(classId, scopeKey)` 粒度的实例表，属于 N2。

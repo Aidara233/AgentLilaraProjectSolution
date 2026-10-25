@@ -16,9 +16,9 @@ namespace AgentCoreProcessor.Engine
     {
         public string EngineType => "Express";
 
-        /// <summary>入站关键词图（默认 shadow；LILARA_GRAPH_KEYWORD_MODE=active 才执行意图）。</summary>
-        private readonly Graph.KeywordGraphRunner? _keywordGraph =
-            Graph.KeywordGraphRunner.TryCreate(Graph.KeywordGraphRunner.ActiveFromEnvironment());
+        /// <summary>入站挂载表（无 mounts.json 时为 null：完全不干预消息链）。</summary>
+        private readonly Graph.GraphManager? _graphs =
+            Graph.GraphManager.TryCreate(Config.PathConfig.StoragePath, Graph.GraphManager.ActiveFromEnvironment());
 
         public Task OnEventAsync(EngineEvent e, ISystemContext ctx)
         {
@@ -36,21 +36,21 @@ namespace AgentCoreProcessor.Engine
             // 自产消息（bot 自身行为触发的 notice 回执）：已入库但不触发孵化
             if (msg.IsSelfTriggered) return;
 
-            // 入站图（默认 shadow）：消息已入库，图只观察；active 时把意图交给真实出向出口。
-            // 出向走 AdapterManager（AdapterManager.SendMessageAsync → IAdapter.SendMessageAsync）；
-            // 不走 MessageEngine.OnOutgoingReady —— 那条事件无人订阅，只入库不发送。
-            if (_keywordGraph != null)
+            // 入站图（挂载表）：消息已入库；**未挂载的频道完全不干预**。
+            // active 模式下图说“不激活”则跳过会话路径；shadow 模式只记录结论。
+            // 出向走 AdapterManager（不走 MessageEngine.OnOutgoingReady —— 那条无人订阅）。
+            var graphChannelId = sessionContext.Channel.Id;
+            var mountedGraph = _graphs?.For(graphChannelId);
+            if (mountedGraph != null)
             {
-                var graphChannelId = sessionContext.Channel.Id;
-                var allow = await _keywordGraph.DecideAsync(
+                var allow = await mountedGraph.DecideAsync(
                     Graph.KeywordGraphRunner.ToEvent(msg, graphChannelId),
                     msg.PlatformMessageId ?? $"{msg.Platform}:{msg.ChannelId}",
                     intent => new Graph.MessageGraphIntentDispatcher(
                         outgoing => ctx.Adapters.SendMessageAsync(msg.Platform, outgoing),
                         graphChannelId).DispatchAsync(intent));
 
-                // active 模式下由图决定这条消息要不要进入会话；shadow 模式不影响行为。
-                if (_keywordGraph.IsActive && !allow)
+                if (_graphs!.IsActive && !allow)
                 {
                     Signal.Event(LogGroup.Engine, "图决定不激活",
                         new { channelId = graphChannelId, platformMessageId = msg.PlatformMessageId });
