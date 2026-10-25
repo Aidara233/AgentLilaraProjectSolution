@@ -85,7 +85,7 @@
 
 | 组 | 算子 |
 |---|---|
-逻辑 | `logic.and`、`gate.if` |
+逻辑 | `logic.and`、`logic.or`、`logic.select`（`cond ? a : b`）、`gate.if` |
 比较 | `compare.ge` |
 算术 | `math.add` |
 事件 | `event.get`（字段：text/sender/channel/adapter/kind/mentions/isReply/received/dedupe）、`event.mention` |
@@ -114,6 +114,7 @@
 | 预制图 | 行为 | 状态 |
 |---|---|---|
 `preset.mention` | 群内被 @ 才响应 → `session.prompt` | **已实现**（沙箱默认） |
+`preset.activation` | @ 立即激活 + 普通消息累积 20 条激活 + 激活后清零（旧 `RuntimeSession` 规则的图化版本） | **已实现**，与旧规则逐条对照通过 |
 `preset.quiet` | 只入库不响应（空图 / 无汇块） | 待做 |
 `preset.digest` | 攒够 N 条或 T 分钟后总结 | 待做（需要 `sink.pulse`，见 §8） |
 `preset.router` | 按频道/关键词切到不同会话与模型 | 待做 |
@@ -149,3 +150,27 @@
 `wire.describe / validate / apply` | ❌ 未实现（L-B 后置） |
 `caps` 实际校验、预算、审计 | ❌ 未实现 |
 `sink.pulse` | ❌ 未实现 |
+
+---
+
+## 10. 首个真实切片：激活判定（新 ↔ 旧对照）
+
+**拆的是哪块**：`AgentCoreProcessor/Engine/Session/RuntimeSession.cs` 的 `WaitForActivationAsync`（约 1359–1411 行）——"这条消息要不要激活会话"。
+
+| 旧规则 | 图里怎么表达 |
+|---|---|
+① 非消息端口（系统/定时/信号）有数据 → 立即 | 不属于本切片（需要 `on.timer` / `on.signal`） |
+② mention 端口有数据 → 立即激活 | `event.mention` → `logic.or` |
+③ normal 端口累积权重 ≥ 100（Weight=5 → 20 条）→ 激活 | `read.variable` + `math.add` + `compare.ge` |
+激活后两个端口都清零 | `logic.select(any, 0, pending+1)` → 唯一写入点 |
+
+对应的预制图：`preset.activation`（静态图 + 变量 `pending`）。
+
+**对照方式**：旧逻辑抽成纯函数 `LegacyActivationPolicy.Decide(...)`（`Sandbox/Legacy/`），与新图放在同一条消息序列上逐条比对，并断言具体触发位置（第 20 条、mention 立即、mention 后重置）。
+
+**这个切片暴露的两条设计约束**（已固化为规则）：
+
+1. **同一个变量只能有一个写入点。** 最初想写"条件写"（达标时写 0、否则写 count+1），结果是同一变量写两次、后者覆盖前者，行为依赖求值顺序——脆弱。正确做法是把"条件"变成**值**：`next = cond ? 0 : count+1`，然后只写一次。为此引入了 `logic.select`（纯函数，不惰性求值，不构成控制流）。
+2. **`write.variable` 不做条件写。** 它没有使能口；要"条件写"就在上游用 `logic.select` 算出值，而不是给汇块加使能口——否则汇块会慢慢长出控制流。
+
+**结论**：这一块能行。代价是加了两个算子（`logic.or`、`logic.select`），收益是这条逻辑从"轮询端口队列 + 重置计数"变成了**可读、可 diff、可换**的一张图。

@@ -91,6 +91,8 @@
 `event.get` | 算子 | `field`（白名单） | `event` | `value` |
 `event.mention` | 算子 | — | `event` | `result` |
 `logic.and` | 算子 | — | `a`, `b` | `result` |
+`logic.or` | 算子 | — | `a`, `b` | `result` |
+`logic.select` | 算子 | — | `cond`, `a`, `b` | `result` |
 `gate.if` | 算子（闸门） | — | `event`, `cond` | `event` |
 `compare.ge` | 算子 | — | `value`, `threshold` | `result` |
 `math.add` | 算子 | — | `a`, `b` | `result` |

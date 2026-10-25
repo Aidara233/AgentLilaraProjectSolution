@@ -50,7 +50,8 @@
 |---|---|---|
 `event.get` | `event` | `value`（按 `field` 取；字段见下） |
 `event.mention` | `event` | `result`（`Bool`；上游无事件 → 无事件） |
-`logic.and` | `a`、`b` | `result`（`Bool`） |
+`logic.and` / `logic.or` | `a`、`b` | `result`（`Bool`） |
+`logic.select` | `cond`、`a`、`b` | `result`（`cond ? a : b`，只选择、不惰性求值） |
 `gate.if` | `event`、`cond` | `event`（条件不成立 → **无事件**） |
 `compare.ge` | `value`、`threshold` | `result`（`Bool`） |
 `math.add` | `a`、`b` | `result`（`Int`） |
