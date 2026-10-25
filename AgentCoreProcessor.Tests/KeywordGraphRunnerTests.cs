@@ -28,7 +28,7 @@ public class KeywordGraphRunnerTests
 
     private static async Task<List<ActionIntent>> RunAsync(EngineIncomingMessage message, bool active)
     {
-        var runner = KeywordGraphRunner.TryCreate(active)!;
+        var runner = KeywordGraphRunner.TryCreateFrom("preset.keyword-test.json", active)!;
         var dispatched = new List<ActionIntent>();
 
         await runner.RunAsync(
@@ -46,7 +46,7 @@ public class KeywordGraphRunnerTests
     [Fact]
     public void GraphFileIsAvailable()
     {
-        Assert.NotNull(KeywordGraphRunner.TryCreate(active: false));
+        Assert.NotNull(KeywordGraphRunner.TryCreateFrom("preset.keyword-test.json", active: false));
     }
 
     [Fact]

@@ -67,7 +67,7 @@ public class FileAdapterKeywordGraphTests : IDisposable
         var message = await ReceiveOne("这是一次测试消息");
         Assert.Contains("测试", message.Content, StringComparison.Ordinal);
 
-        var runner = KeywordGraphRunner.TryCreate(active: true)!;
+        var runner = KeywordGraphRunner.TryCreateFrom("preset.keyword-test.json", active: true)!;
         var dispatched = new List<ActionIntent>();
 
         await runner.RunAsync(
@@ -90,7 +90,7 @@ public class FileAdapterKeywordGraphTests : IDisposable
     {
         var message = await ReceiveOne("普通消息");
 
-        var runner = KeywordGraphRunner.TryCreate(active: true)!;
+        var runner = KeywordGraphRunner.TryCreateFrom("preset.keyword-test.json", active: true)!;
         var dispatched = new List<ActionIntent>();
 
         await runner.RunAsync(

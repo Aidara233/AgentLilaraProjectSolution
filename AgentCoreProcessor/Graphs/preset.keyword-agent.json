@@ -1,0 +1,24 @@
+{
+  "classId": "preset.keyword-agent",
+  "kind": "static",
+  "version": 1,
+  "nodes": [
+    { "id": "on",       "type": "on.message" },
+    { "id": "text",     "type": "event.get", "params": { "field": "text" } },
+    { "id": "needle",   "type": "read.const", "params": { "value": "测试" } },
+    { "id": "contains", "type": "text.contains" },
+    { "id": "gate",     "type": "gate.if" },
+    { "id": "session",  "type": "read.const", "params": { "value": "default" } },
+    { "id": "prompt",   "type": "sink.prompt" }
+  ],
+  "links": [
+    { "from": "on.event",        "to": "text.event" },
+    { "from": "text.value",      "to": "contains.text" },
+    { "from": "needle.value",    "to": "contains.needle" },
+    { "from": "on.event",        "to": "gate.event" },
+    { "from": "contains.result", "to": "gate.cond" },
+    { "from": "gate.event",      "to": "prompt.event" },
+    { "from": "session.value",   "to": "prompt.sessionRef" },
+    { "from": "text.value",      "to": "prompt.text" }
+  ]
+}

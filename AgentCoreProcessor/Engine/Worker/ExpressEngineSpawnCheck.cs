@@ -42,12 +42,20 @@ namespace AgentCoreProcessor.Engine
             if (_keywordGraph != null)
             {
                 var graphChannelId = sessionContext.Channel.Id;
-                await _keywordGraph.RunAsync(
+                var allow = await _keywordGraph.DecideAsync(
                     Graph.KeywordGraphRunner.ToEvent(msg, graphChannelId),
                     msg.PlatformMessageId ?? $"{msg.Platform}:{msg.ChannelId}",
                     intent => new Graph.MessageGraphIntentDispatcher(
                         outgoing => ctx.Adapters.SendMessageAsync(msg.Platform, outgoing),
                         graphChannelId).DispatchAsync(intent));
+
+                // active 模式下由图决定这条消息要不要进入会话；shadow 模式不影响行为。
+                if (_keywordGraph.IsActive && !allow)
+                {
+                    Signal.Event(LogGroup.Engine, "图决定不激活",
+                        new { channelId = graphChannelId, platformMessageId = msg.PlatformMessageId });
+                    return;
+                }
             }
 
             // 伴随提取入批（入向唯一咽喉，覆盖 express 会话与 session 占用两条路）。

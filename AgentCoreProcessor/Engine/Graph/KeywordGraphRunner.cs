@@ -31,11 +31,15 @@ internal sealed class KeywordGraphRunner
             "active",
             StringComparison.OrdinalIgnoreCase);
 
-    public static KeywordGraphRunner? TryCreate(bool active)
+    public static KeywordGraphRunner? TryCreate(bool active) =>
+        TryCreateFrom("preset.keyword-agent.json", active);
+
+    /// <summary>按图文件名加载（测试与不同预制图共用）。</summary>
+    public static KeywordGraphRunner? TryCreateFrom(string fileName, bool active)
     {
         try
         {
-            var path = Path.Combine(AppContext.BaseDirectory, "Graphs", "preset.keyword-test.json");
+            var path = Path.Combine(AppContext.BaseDirectory, "Graphs", fileName);
             if (!File.Exists(path))
             {
                 return null;
@@ -47,38 +51,57 @@ internal sealed class KeywordGraphRunner
         }
         catch (Exception ex)
         {
-            Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.keyword.load_failed", new { error = ex.Message });
+            Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.keyword.load_failed", new { fileName, error = ex.Message });
             return null;
         }
+    }
+
+    /// <summary>
+    /// 门控 + 派发：图是否认为这条消息应当进入会话；同时把 SendMessage 意图派发出去。
+    /// <para>shadow 模式只记录结论；active 模式调用方据返回值决定是否继续会话激活。</para>
+    /// </summary>
+    public async Task<bool> DecideAsync(InboundEvent @event, string traceId, Func<ActionIntent, Task>? dispatch = null)
+    {
+        var intents = await RunCoreAsync(@event, traceId);
+        var allow = false;
+
+        foreach (var intent in intents)
+        {
+            if (intent.Kind == IntentKind.SessionPrompt)
+            {
+                allow = true;
+            }
+            else if (intent.Kind == IntentKind.SendMessage)
+            {
+                allow = true;
+
+                if (_active && dispatch != null)
+                {
+                    try
+                    {
+                        await dispatch(intent);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.keyword.dispatch_failed",
+                            new { traceId, intent.Kind, intent.Target, error = ex.Message });
+                    }
+                }
+            }
+        }
+
+        Logging.Signal.Debug(Logging.LogGroup.Engine, "graph.keyword.decision",
+            new { traceId, allow, active = _active, intents = intents.Count });
+
+        return allow;
     }
 
     /// <summary>运行一次图。求解失败只告警，绝不抛出。</summary>
     public async Task RunAsync(InboundEvent @event, string traceId, Func<ActionIntent, Task> dispatch)
     {
-        if (@event.Kind != EventKind.MessageReceived)
-        {
-            return;
-        }
+        var intents = await RunCoreAsync(@event, traceId);
 
-        SolveResult result;
-        try
-        {
-            result = _graph.Run(new EvalContext($"graph-keyword:{traceId}", DateTime.UtcNow.Ticks, @event));
-        }
-        catch (Exception ex)
-        {
-            Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.keyword.threw", new { traceId, error = ex.Message });
-            return;
-        }
-
-        if (!result.Success)
-        {
-            Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.keyword.solve_invalid",
-                new { traceId, result.Unresolved });
-            return;
-        }
-
-        foreach (var intent in _graph.LastIntents)
+        foreach (var intent in intents)
         {
             Logging.Signal.Debug(Logging.LogGroup.Engine, "graph.keyword.intent",
                 new { traceId, intent.Kind, intent.Target, active = _active });
@@ -99,6 +122,34 @@ internal sealed class KeywordGraphRunner
                     new { traceId, intent.Kind, intent.Target, error = ex.Message });
             }
         }
+    }
+
+    private async Task<IReadOnlyList<ActionIntent>> RunCoreAsync(InboundEvent @event, string traceId)
+    {
+        if (@event.Kind != EventKind.MessageReceived)
+        {
+            return Array.Empty<ActionIntent>();
+        }
+
+        SolveResult result;
+        try
+        {
+            result = _graph.Run(new EvalContext($"graph-keyword:{traceId}", DateTime.UtcNow.Ticks, @event));
+        }
+        catch (Exception ex)
+        {
+            Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.keyword.threw", new { traceId, error = ex.Message });
+            return Array.Empty<ActionIntent>();
+        }
+
+        if (!result.Success)
+        {
+            Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.keyword.solve_invalid",
+                new { traceId, result.Unresolved });
+            return Array.Empty<ActionIntent>();
+        }
+
+        return _graph.LastIntents;
     }
 
     /// <summary>适配器入站消息 → 图事件。</summary>
