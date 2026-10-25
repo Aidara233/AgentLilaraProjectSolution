@@ -41,6 +41,10 @@ namespace AgentCoreProcessor
             var startupSignal = Signal.Begin(LogGroup.Engine, "system:init", "程序启动", new { version = "1.0.0" });
             Signal.Event(LogGroup.Engine, "配置加载完成");
 
+            // 内核接缝（默认 off）：只在显式配置 LILARA_SESSION_BRAIN=shadow 时旁路比较。
+            // 配置非法会在这里抛出——不能静默退回，否则运维会以为影子在跑。
+            Engine.Session.Brain.SessionBrainWiring.ConfigureFromEnvironment(PathConfig.StoragePath);
+
             var debug = Array.Exists(args, a => a == "--debug");
             var fileMode = Array.Exists(args, a => a == "--file");
             var testMode = Array.Exists(args, a => a == "--test");

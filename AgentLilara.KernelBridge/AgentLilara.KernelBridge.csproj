@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    ⚠️ **全仓唯一同时引用 ALP 与 ALC 的程序集**。
+    - 对 ALC 只引用**固定版本包**（`Lilara.Core` 0.1.0），不跨仓项目引用、不链接源码、不用 InternalsVisibleTo。
+    - 对 ALP 只引用中性的 `AgentLilara.SessionBrain` 契约，不引用 AgentCoreProcessor（否则会形成环）。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>AgentLilara.KernelBridge</RootNamespace>
+    <AssemblyName>AgentLilara.KernelBridge</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Lilara.Core" Version="0.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AgentLilara.SessionBrain\AgentLilara.SessionBrain.csproj" />
+  </ItemGroup>
+
+</Project>

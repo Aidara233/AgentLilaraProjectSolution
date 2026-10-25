@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    ALP ↔ 内核之间的**唯一**接缝契约。⚠️ 本项目刻意零依赖：
+    不引用 AgentCoreProcessor（否则 Bridge 无法实现它）、不引用 Lilara.Core（否则 ALP 宿主被内核污染）。
+    两边都只能看到这里的 DTO，转换的责任落在各自的实现方。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>AgentLilara.SessionBrain</RootNamespace>
+    <AssemblyName>AgentLilara.SessionBrain</AssemblyName>
+  </PropertyGroup>
+
+</Project>

@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using AgentCoreProcessor.Client;
 using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Tool;
@@ -56,6 +57,16 @@ namespace AgentCoreProcessor.Core
         {
             _configName = cfgName;
         }
+
+        /// <summary>
+        /// 影子比较用的只读视图：客户端里**此刻**的会话历史（含 prepend 的系统提示与预设消息）。
+        /// ⚠️ 不要拿它做生产逻辑——它绕过了 `InvokeAsync` 的装配次序。
+        /// </summary>
+        internal IModelClient ClientForBrain => processor.Client;
+
+        /// <summary>实际作为系统提示发出去的那段文本（与 <see cref="SetConversationHistory"/> 同一条判据）。</summary>
+        internal string EffectiveSystemPrompt =>
+            !string.IsNullOrEmpty(SessionPrompt) ? SessionPrompt! : (processor.BasePrompt ?? "");
 
         /// <summary>
         /// 统一入口。会话统一走 Working 路径（Express 旧分支已随 express 会话化移除），

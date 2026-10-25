@@ -110,13 +110,26 @@
 - 未解决告警（发布阻断项）：SQLitePCLRaw.lib.e_sqlite3 2.1.6 NU1903 高危公告、PluginLoader CA2022 短读告警、测试 FormatterServices SYSLIB0050 过时告警。
 - 并发状态提示：ALC 侧当前有另一个会话在运行，构建 `Lilara.Cli` 时输出 DLL 被 `lilara (14100)` 锁定；本会话未终止该进程或修改其工作树。
 
-### S2 — Bridge 骨架、数据转换和影子验证
+### S2 — Bridge 骨架、数据转换和影子验证（骨架完成）
 
 - 在 ALP 外围加入 `ISessionBrain`/等价 seam，默认固定使用 Legacy。
 - 建立独立 Kernel 数据根和会话绑定；Bridge 做 provider、prompt、消息、tool catalog、tool result 和 event 的显式映射。
 - 影子请求使用 stub/replay，不调用真实付费模型、不执行有副作用工具、不外发消息、不写 Legacy 历史。
 - 比较系统提示、时间线、工具 schema/排序、模型参数和映射结果；差异须进入允许清单。
 - 通过条件：工具映射、重名/权限、文本/图片/附件、失败/取消/超时、native tool pairing 和单写者测试通过；Legacy behavior 完全不变。
+
+**已落地（2026-10-25，骨架）**
+
+- 包消费方式：feed 在**两个仓库之外**的 `E:\Workspace\LilaraPackages`，通过用户级 NuGet 源 `lilara-local` 注册；ALP/ALC 仓库里都不出现对方路径。
+- `AgentLilara.SessionBrain`（零依赖）：`SessionBrainMode` / `ISessionBrain` / 中性 DTO（消息、部件、工具、provider、结果）。ALP 生产代码只认这套契约。
+- `AgentLilara.KernelBridge`（**唯一同时触碰两边的程序集**）：`PackageReference Lilara.Core 0.1.0` + 中性契约；不跨仓项目引用、不链接源码、不用 `InternalsVisibleTo`。
+- ALP 侧接缝：`AgentCoreProcessor/Engine/Session/Brain/`
+  - `LegacyRequestMapper`：在 Legacy 调用成功返回后，从**客户端实际持有的历史/工具/配置**同步取快照（不是从 `_history` 猜）。
+  - `SessionBrainRuntime` + `SessionBrainWiring`：默认 `Off`；`LILARA_SESSION_BRAIN=shadow` 启用，报告默认写 `<Storage>/KernelShadow/reports.jsonl`，可用 `LILARA_SESSION_BRAIN_REPORT` 覆盖。非法值或 `live` **启动即抛**，不静默退回。
+- 影子实现：`KernelShadowBrain` 只做「DTO → ALC `ModelRequest` → 规范化比较」，**不建内核会话、不写数据根、不调模型、不执行工具**。报告区分 `Differences`（真实不等价）与 `Unsupported`（已知能力缺口）。
+- 已知能力缺口（全部显式报告，不静默丢弃）：`enableCaching`、`forceToolCall`、`disableImageMessages`、`extraBody`、effort、system 角色的注入消息、tool_result 的 `IsError`、读不到字节的图片。
+- 验证：ALP 全解决方案 build 0 error；`AgentCoreProcessor.Tests` **203/203** 通过（含 30 条新增接缝/转换/比较/配置测试）。ALC 侧未改动，仍为 1582 + 4。
+- 尚未做（S3 起）：协议适配器级线上字节金样、工具表到 ALC `ITool` 的桥接与权限投影、内核会话/数据根绑定、原生 tool pairing 的完整往返。
 
 ### S3 — Review，再 Task 子会话
 

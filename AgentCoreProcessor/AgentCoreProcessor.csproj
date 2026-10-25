@@ -40,6 +40,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AgentLilara.PluginSDK\AgentLilara.PluginSDK.csproj" />
+    <ProjectReference Include="..\AgentLilara.SessionBrain\AgentLilara.SessionBrain.csproj" />
+    <ProjectReference Include="..\AgentLilara.KernelBridge\AgentLilara.KernelBridge.csproj" />
     <ProjectReference Include="..\..\AgentLilara.Next\src\AgentLilara.Kernel\AgentLilara.Kernel.csproj" />
   </ItemGroup>
 

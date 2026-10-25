@@ -8,6 +8,8 @@
 
 统一方向已确认：**ALC 内核 + ALP 宿主**。ALP 保留频道/插件/Mind/WebUI/SQLite 等领域宿主能力；ALC 提供 canonical 时间线、Stepper 与上下文投影。迁移边界、单写者规则、基线、阶段和验收条件见 [`kernel-integration/00-boundary-adr.md`](kernel-integration/00-boundary-adr.md)。迁移按阶段单独审批，当前不启用运行路径。
 
+S2 骨架已落地：`AgentLilara.SessionBrain`（零依赖契约）+ `AgentLilara.KernelBridge`（唯一同时引用 ALP 契约与 `Lilara.Core` 固定版本包的程序集）。默认 `off`，`LILARA_SESSION_BRAIN=shadow` 只做请求级旁路比较，不写内核数据、不调模型、不执行工具。
+
 ## 目录结构
 
 ```

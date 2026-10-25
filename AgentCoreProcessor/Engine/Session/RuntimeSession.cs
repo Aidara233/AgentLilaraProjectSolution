@@ -1168,6 +1168,10 @@ internal class RuntimeSession : IRuntimeSession
                 try
                 {
                     output = await roundCore.InvokeAsync(_history, EngineMode.Working);
+                    // ⚠️ 影子快照必须紧贴调用之后：下一次 InvokeAsync 会重设客户端历史。
+                    // 默认 Off 时这一步是空操作，Legacy 路径一个字节都不变。
+                    Brain.SessionBrainRuntime.Observe(
+                        roundCore, SessionId, _componentLoopType, PathConfig.StoragePath);
                 }
                 catch (Exception ex)
                 {
