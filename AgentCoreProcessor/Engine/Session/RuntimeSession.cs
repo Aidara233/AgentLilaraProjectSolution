@@ -10,6 +10,7 @@ using AgentCoreProcessor.Component;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Database;
+using AgentCoreProcessor.Engine.Graph;
 using AgentCoreProcessor.Engine.Messaging;
 using AgentCoreProcessor.Engine.Modules;
 using AgentCoreProcessor.Logging;
@@ -74,6 +75,9 @@ internal class RuntimeSession : IRuntimeSession
     private string? _sessionPrompt;
 
     private MessageEngine? _messageEngine;
+
+    /// <summary>图动作执行器（默认 null：图仍只观察，不发送）。</summary>
+    private IGraphIntentDispatcher? _graphIntentDispatcher;
     private SessionEngine? _sessionEngine;
     private IServiceProvider? _services;
     private readonly ConnectedChannelState _connected = new();
@@ -265,6 +269,7 @@ internal class RuntimeSession : IRuntimeSession
     }
 
     public void SetMessageEngine(MessageEngine me) => _messageEngine = me;
+    public void SetGraphIntentDispatcher(IGraphIntentDispatcher dispatcher) => _graphIntentDispatcher = dispatcher;
     public void SetSessionEngine(SessionEngine se) => _sessionEngine = se;
 
     /// <summary>当前连接频道状态（注入组件 perLoopServices，供发送工具读取）。</summary>

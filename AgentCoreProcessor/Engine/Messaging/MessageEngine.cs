@@ -22,6 +22,9 @@ internal class MessageEngine : ISubEngine
 
     private readonly ISystemContext _ctx;
     private readonly ConcurrentDictionary<(int channelId, string subStream), List<MessageInputPort>> _subscribers = new();
+    private readonly Graph.KeywordGraphRunner? _keywordGraph =
+        Graph.KeywordGraphRunner.TryCreate(
+            string.Equals(Environment.GetEnvironmentVariable("LILARA_GRAPH_KEYWORD_MODE"), "active", StringComparison.OrdinalIgnoreCase));
 
     public MessageEngine(ISystemContext ctx)
     {
@@ -58,6 +61,13 @@ internal class MessageEngine : ISubEngine
             Time = DateTime.UtcNow,
             IsFromBot = false
         });
+
+        // 图在入库之后观察消息。默认 shadow：只记录意图；active：进入既有出向链。
+        if (_keywordGraph != null)
+        {
+            await _keywordGraph.RunAsync(msg, intent =>
+                new Graph.MessageGraphIntentDispatcher(SendOutgoing).DispatchAsync(intent));
+        }
 
         // 按 tag 分发到子流
         Distribute(msg.ChannelId, msg.Tag, msg);
