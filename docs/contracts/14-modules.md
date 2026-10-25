@@ -192,8 +192,8 @@ record 型实参 | 类型允许，但图上没有构造 record 的节点（`read
 
 ## 11. 参考模块：`agent.loop`（契约已声明 + 脚本化参考实现）
 
-代码：`AgentLilara.Next/src/AgentLilara.Modules/Agent/AgentLoop.cs`（契约）、
-`AgentLilara.Next/src/AgentLilara.Sandbox/Agent/ScriptedAgentLoop.cs`（脚本化实现，不联网）。
+代码：`src/AgentLilara.Modules/Agent/AgentLoop.cs`（契约）、
+`src/AgentLilara.Sandbox/Agent/ScriptedAgentLoop.cs`（脚本化实现，不联网）。
 
 ```csharp
 [Module("agent.loop", Version = "0.1.0", RequiredCapabilities = new[] { Capabilities.Net })]
@@ -239,4 +239,4 @@ read.const("file-session") ─────────────→ module.age
 **与旧实现的关系**：旧 `AgentCoreProcessor`（`AgentCore` / `RuntimeSession`，约 6900 行）内部完成同样的
 "多轮 + 工具"工作，但类型不可复用（`internal`、耦合 DB/WebUI）。这里的契约是**新的、干净的形状**；
 把旧核心接进来要做的是"适配器"：实现 `IAgentLoop`，内部转调旧 `RuntimeSession`，
-并在 `ModuleHost.Bind("agent.loop", adapter)` 处注册。适配器需要能引用旧工程，因此不属于 `AgentLilara.Next`。
+并在 `ModuleHost.Bind("agent.loop", adapter)` 处注册。适配器需要能引用旧工程，因此属于本解决方案的适配层。
