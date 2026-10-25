@@ -72,7 +72,7 @@
 | 生命周期 | burst/wait/claim/weight/资源池 | 一步推进 + Host 调度 | 生命周期留 ALP，Stepper 只提供一步 |
 | 扩展 | 23 插件项目、组件和 13 项左右服务契约 | 进程内轴插件，无 DLL 工具插件 | 不把 ALP 插件 ABI 带入 Kernel |
 | 存储 | SQLite 业务库 + ALP spec/state/history | 文件式 SessionStore + BlobStore | 独立数据根，迁移必须显式、有报告 |
-| 流式 | ALP 模型客户端具备流式链路 | ALC `IModelAdapter.CallAsync` 当前非流式 | express/channel 切流前先决定是否接受非流式 |
+| 流式 | ALP 模型客户端具备流式链路，但 QQ 侧没有实时反馈需求 | ALC `IModelAdapter.CallAsync` 当前非流式，而 CLI 用户一直在盯着 | 已裁定（2026-10-25）：**流式不是迁移阻塞项**。ALP 接受非流式；ALC 的流式是它自己的产品能力，按「非流式语义 + 可选增量观察者」单独排期 |
 
 ## 分阶段路线与阶段门槛
 
@@ -138,7 +138,7 @@
   - `WireComparer`：把 Legacy 实际发出的 JSON 与内核 `ModelRequest` 归一到同一语义视图（model / temperature / maxTokens / system / 消息项 / 工具 schema），逐项比较。图片在两种表示里都落到同一个 sha256（Legacy 的 data URL 解码后哈希）。`stream`、SDK 附加键这类不影响「模型看到什么」的差异只记 note；没捕获到 body 也只记 note，不算不等价。
 - 已知能力缺口（全部显式报告，不静默丢弃）：`enableCaching`、`forceToolCall`、`disableImageMessages`、`extraBody`、effort、system 角色的注入消息、tool_result 的 `IsError`、读不到字节的图片。
 - 验证：ALP 全解决方案 build 0 error；`AgentCoreProcessor.Tests` **228/228** 通过（接缝/转换/比较/配置/工具桥/wire 比较/捕获作用域）。ALC 侧未改动，仍为 1582 + 4。
-- 尚未做（S3 起）：把 `ToolBridge` 与内核会话接到真实运行时（独立数据根 + 单写者绑定）；`RequestWait` 在 ALC 渲染侧的等价表达；原生 tool pairing 的完整往返；流式输出。
+- 尚未做（S3 起）：把 `ToolBridge` 与内核会话接到真实运行时（独立数据根 + 单写者绑定）；`RequestWait` 在 ALC 渲染侧的等价表达；原生 tool pairing 的完整往返。
 
 ### S3 — Review，再 Task 子会话
 
@@ -149,7 +149,7 @@
 
 ### S4 — Express canary
 
-- 先确认非流式是否可接受；若不可接受，先单独设计 Protocol 层 streaming 扩展，不在 Kernel 里掺 UI/频道事件。
+- 流式已裁定为**非阻塞**（2026-10-25）：ALP 没有实时反馈需求，内核会话可以非流式。ALC 自己的 CLI 流式按「`CallAsync` 非流式语义 + 可选 `IProgress<ModelDelta>` 观察者」单独排期；不为了迁移给两边各写一条流式链路。
 - 单测试频道 canary；weight、私聊/@、冷启动恢复、空闲回收和 `escalate` claim 移交仍由 ALP。
 - 通过条件：无重复外发/孤儿会话/卡死；延迟、工具错误和历史增长达到双方预先定的基线门槛。
 
@@ -188,7 +188,7 @@
 
 1. 明确 S1 采用 ALC 内核库化方案与版本发布位置。
 2. 评估 ALP net8 进程是否必须升级到 net10；必须先做无业务行为改变的兼容验证。
-3. 决定 express/channel 对非流式的容忍度。
+3. ~~决定 express/channel 对非流式的容忍度~~ — **已裁定**：接受非流式（2026-10-25）。
 4. 明确 ALC Provider 能否表达 ALP `extraBody`、强制工具、禁图等设置；不支持的配置必须 fail closed。
 5. 明确存量会话是否需要导入及哪些数据可接受有损映射。
 
