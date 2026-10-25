@@ -156,6 +156,50 @@ public class SessionBrainTests
         Assert.Throws<InvalidOperationException>(() => SessionBrainWiring.ParseMode(raw));
     }
 
+    // ---- 线上请求体捕获 ----
+
+    [Fact]
+    public void WireCapture_Disabled_IsANoOp()
+    {
+        WireRequestCapture.Enabled = false;
+        try
+        {
+            var handle = WireRequestCapture.Begin();
+            WireRequestCapture.Capture("{\"a\":1}");
+            Assert.Null(handle.Body);
+        }
+        finally
+        {
+            WireRequestCapture.Enabled = false;
+        }
+    }
+
+    // ⚠️ 并发会话各记各的：子上下文开新作用域不能覆盖父作用域。
+    [Fact]
+    public async Task WireCapture_IsScopedToAsyncFlow()
+    {
+        WireRequestCapture.Enabled = true;
+        try
+        {
+            var outer = WireRequestCapture.Begin();
+            WireRequestCapture.Capture("{\"outer\":1}");
+
+            var innerBody = await Task.Run(() =>
+            {
+                var inner = WireRequestCapture.Begin();
+                WireRequestCapture.Capture("{\"inner\":1}");
+                return inner.Body;
+            });
+
+            Assert.Equal("{\"inner\":1}", innerBody);
+            Assert.Equal("{\"outer\":1}", outer.Body);
+        }
+        finally
+        {
+            WireRequestCapture.Enabled = false;
+        }
+    }
+
     [Fact]
     public async Task Host_Shadow_InvokesTheKernel()
     {

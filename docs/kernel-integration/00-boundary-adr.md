@@ -137,7 +137,7 @@
   - `WireRequestCapture`：只读捕获，`AsyncLocal` 作用域按会话隔离，**仅 shadow 模式启用**。OpenAI 侧在管道最外层加 `WireCaptureHandler`（看到的是含 ExtraBody 注入的最终 body，读完换回可重发副本）；Claude 侧复用既有的 `RequestDumpInterceptor`（body 本来就在内存里）。
   - `WireComparer`：把 Legacy 实际发出的 JSON 与内核 `ModelRequest` 归一到同一语义视图（model / temperature / maxTokens / system / 消息项 / 工具 schema），逐项比较。图片在两种表示里都落到同一个 sha256（Legacy 的 data URL 解码后哈希）。`stream`、SDK 附加键这类不影响「模型看到什么」的差异只记 note；没捕获到 body 也只记 note，不算不等价。
 - 已知能力缺口（全部显式报告，不静默丢弃）：`enableCaching`、`forceToolCall`、`disableImageMessages`、`extraBody`、effort、system 角色的注入消息、tool_result 的 `IsError`、读不到字节的图片。
-- 验证：ALP 全解决方案 build 0 error；`AgentCoreProcessor.Tests` **226/226** 通过（接缝/转换/比较/配置/工具桥/wire 比较）。ALC 侧未改动，仍为 1582 + 4。
+- 验证：ALP 全解决方案 build 0 error；`AgentCoreProcessor.Tests` **228/228** 通过（接缝/转换/比较/配置/工具桥/wire 比较/捕获作用域）。ALC 侧未改动，仍为 1582 + 4。
 - 尚未做（S3 起）：把 `ToolBridge` 与内核会话接到真实运行时（独立数据根 + 单写者绑定）；`RequestWait` 在 ALC 渲染侧的等价表达；原生 tool pairing 的完整往返；流式输出。
 
 ### S3 — Review，再 Task 子会话
