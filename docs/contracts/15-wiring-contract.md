@@ -174,3 +174,51 @@
 2. **`write.variable` 不做条件写。** 它没有使能口；要"条件写"就在上游用 `logic.select` 算出值，而不是给汇块加使能口——否则汇块会慢慢长出控制流。
 
 **结论**：这一块能行。代价是加了两个算子（`logic.or`、`logic.select`），收益是这条逻辑从"轮询端口队列 + 重置计数"变成了**可读、可 diff、可换**的一张图。
+
+---
+
+## 11. 真实链路验证（2026-10-25）
+
+用 FileAdapter + 临时 Storage 实测，全程未读写正式 Storage。
+
+| 场景 | 图 | 结果 |
+|---|---|---|
+固定回复 | `preset.keyword-test`（`sink.send`） | input「这是一次测试消息」→ `output/*.txt`「这是测试回复」✅ |
+门控 + 模型回复 | `preset.keyword-agent`（`sink.prompt`） | input「测试：请用 speak 回复…」→ express 会话 → deepseek-v4-flash → speak → `output/001_file_*.txt`「你好 我是 Lilara」✅ |
+不命中 | 同上 | 图放行=false → 跳过会话路径，不产生回复 ✅ |
+
+**完整链路**（已实测连通）：
+
+```
+文件 → FileAdapter → AdapterManager.OnIncomingMessage
+  → MasterEngine.RouteMessageAsync
+  → ExpressEngineSpawnCheck.HandleMessageAsync
+      ① Session.OnMessageAsync（入库）
+      ② 图：preset.keyword-agent → SessionPrompt / SendMessage
+      ③ active：图说“不激活”则 return；说“激活”或产出 SendMessage 则继续
+      ④ SendMessage 意图 → AdapterManager.SendMessageAsync → IAdapter
+      ⑤ 会话 → AgentCore → 模型 → speak 工具 → 同上出向
+```
+
+**踩过的两个坑（都不是图的问题，是“看着像入口、实际是死路”）**：
+
+1. 适配器消息**不走** `MessageEngine.AcceptIncoming`（那条只有 WebUI 注入在用）；真实入站咽喉是 `ExpressEngineSpawnCheck.HandleMessageAsync`。
+2. `MessageEngine.OnOutgoingReady` 全仓**无人订阅**，`AdapterEngine.RegisterAdapter` 全仓**无人调用**；真实出向出口是 `AdapterManager.SendMessageAsync(platform, OutgoingMessage)`。
+
+**因此定一条纪律**：接新动作（会话、工具、发消息）之前，先确认真实调用点，不要按名字猜。
+
+**当前开关**：`LILARA_GRAPH_KEYWORD_MODE=active` 才让图门控/派发；否则 shadow 只记日志。这个环境变量是临时的，挂载表落地后应被替换。
+
+---
+
+## 12. 下一阶段（建议顺序）
+
+| 阶段 | 内容 | 为什么先做 |
+|---|---|---|
+N1 | **挂载表**：`GraphMount(Scope, ScopeKey, ClassId, Params, Enabled)` + `GraphManager` | 现在图是全局硬编码一个文件；没有挂载，就没有“不同频道不同行为”，也没有 agent 修改的对象 |
+N2 | **预制图体系**：`preset.router`（按频道/关键词切会话与模型）、`preset.quiet` | 挂载表一落地就需要多张图可选；router 直接复用现有算子 |
+N3 | **`wire.describe / validate / apply`** | agent 自改接线的前提；有挂载表才谈得上“改哪个实例” |
+N4 | `sink.pulse` + `preset.digest` | 攒批/定时聚合；中间层图的前提（D65） |
+N5 | 骨架（store/ingest/outbound 台账） | 与图并行的另一条线，独立价值 |
+
+**暂不做**：画布编辑器（等 N3 有真实修改需求）；自创 DSL（D62）；ALC 合并（另一条线，由 SessionBrain/AlcBridge 推进）。
