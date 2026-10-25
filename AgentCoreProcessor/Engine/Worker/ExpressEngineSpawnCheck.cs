@@ -36,22 +36,18 @@ namespace AgentCoreProcessor.Engine
             // 自产消息（bot 自身行为触发的 notice 回执）：已入库但不触发孵化
             if (msg.IsSelfTriggered) return;
 
-            // 入站图（默认 shadow）：消息已入库，图只观察；active 时把意图交给既有出向链。
-            // 图失败只告警，不影响后续孵化与分发。
+            // 入站图（默认 shadow）：消息已入库，图只观察；active 时把意图交给真实出向出口。
+            // 出向走 AdapterManager（AdapterManager.SendMessageAsync → IAdapter.SendMessageAsync）；
+            // 不走 MessageEngine.OnOutgoingReady —— 那条事件无人订阅，只入库不发送。
             if (_keywordGraph != null)
             {
-                var graphMessageEngine = ctx.GetActiveEnginesSnapshot()
-                    .OfType<Messaging.MessageEngine>()
-                    .FirstOrDefault();
-
-                if (graphMessageEngine != null)
-                {
-                    await _keywordGraph.RunAsync(
-                        Graph.KeywordGraphRunner.ToEvent(msg, sessionContext.Channel.Id),
-                        msg.PlatformMessageId ?? $"{msg.Platform}:{msg.ChannelId}",
-                        intent => new Graph.MessageGraphIntentDispatcher(graphMessageEngine.SendOutgoing)
-                            .DispatchAsync(intent));
-                }
+                var graphChannelId = sessionContext.Channel.Id;
+                await _keywordGraph.RunAsync(
+                    Graph.KeywordGraphRunner.ToEvent(msg, graphChannelId),
+                    msg.PlatformMessageId ?? $"{msg.Platform}:{msg.ChannelId}",
+                    intent => new Graph.MessageGraphIntentDispatcher(
+                        outgoing => ctx.Adapters.SendMessageAsync(msg.Platform, outgoing),
+                        graphChannelId).DispatchAsync(intent));
             }
 
             // 伴随提取入批（入向唯一咽喉，覆盖 express 会话与 session 占用两条路）。

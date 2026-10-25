@@ -22,8 +22,6 @@ internal class MessageEngine : ISubEngine
 
     private readonly ISystemContext _ctx;
     private readonly ConcurrentDictionary<(int channelId, string subStream), List<MessageInputPort>> _subscribers = new();
-    private readonly Graph.KeywordGraphRunner? _keywordGraph =
-        Graph.KeywordGraphRunner.TryCreate(Graph.KeywordGraphRunner.ActiveFromEnvironment());
 
     public MessageEngine(ISystemContext ctx)
     {
@@ -62,13 +60,7 @@ internal class MessageEngine : ISubEngine
         });
 
         // 图在入库之后观察消息。默认 shadow：只记录意图；active：进入既有出向链。
-        if (_keywordGraph != null)
-        {
-            await _keywordGraph.RunAsync(
-                Graph.KeywordGraphRunner.ToEvent(msg),
-                msg.MessageId,
-                intent => new Graph.MessageGraphIntentDispatcher(SendOutgoing).DispatchAsync(intent));
-        }
+        // 注意：这里只走 WebUI 注入路径；真实适配器入站走 ExpressEngineSpawnCheck。
 
         // 按 tag 分发到子流
         Distribute(msg.ChannelId, msg.Tag, msg);
