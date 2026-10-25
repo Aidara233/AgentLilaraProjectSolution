@@ -127,9 +127,15 @@
   - `LegacyRequestMapper`：在 Legacy 调用成功返回后，从**客户端实际持有的历史/工具/配置**同步取快照（不是从 `_history` 猜）。
   - `SessionBrainRuntime` + `SessionBrainWiring`：默认 `Off`；`LILARA_SESSION_BRAIN=shadow` 启用，报告默认写 `<Storage>/KernelShadow/reports.jsonl`，可用 `LILARA_SESSION_BRAIN_REPORT` 覆盖。非法值或 `live` **启动即抛**，不静默退回。
 - 影子实现：`KernelShadowBrain` 只做「DTO → ALC `ModelRequest` → 规范化比较」，**不建内核会话、不写数据根、不调模型、不执行工具**。报告区分 `Differences`（真实不等价）与 `Unsupported`（已知能力缺口）。
+- 工具桥（执行面）：`ToolBridge.Wrap`
+  - 声明面逐字取 `ITool.GetInputSchema()`；执行面把 ALC 的原始 JSON 参数按 `ToolParameter.Index` 映射回 ALP 的位置化 `List<string>`，字符串化规则与 `NativeToolCallHandler.RawString` 逐条对齐（含解析失败时把原文塞进第一个位置）。
+  - 结果面：`ToolResult.Data/Error/Status` → `Block.TextBlock`；附件经 `IToolContext.EnsureStored` 入库后变成 `ImageBlock`/`StoreBlock`；读不到字节的附件显式产出「附件无法传递」文本，不静默丢。
+  - 超时（`ITool.Timeout`）与异常都转成**结果内容**；调用方取消仍然抛，保证会话能停。
+  - `ToolResultLedger`：按 `CallId` 原样保留 ALP 的 `ToolResult`（含 `RequestWait`），供宿主在一步结束后判定副作用——**副作用仍只由 ALP 执行**。
+  - 重名工具保留先出现的那个并记录冲突；可见性可传谓词（映射自 `ToolRegistry.IsVisible`）；ALP 工具没有权限类别，未显式映射的按 `Writing` 并记录一条 note。
 - 已知能力缺口（全部显式报告，不静默丢弃）：`enableCaching`、`forceToolCall`、`disableImageMessages`、`extraBody`、effort、system 角色的注入消息、tool_result 的 `IsError`、读不到字节的图片。
-- 验证：ALP 全解决方案 build 0 error；`AgentCoreProcessor.Tests` **203/203** 通过（含 30 条新增接缝/转换/比较/配置测试）。ALC 侧未改动，仍为 1582 + 4。
-- 尚未做（S3 起）：协议适配器级线上字节金样、工具表到 ALC `ITool` 的桥接与权限投影、内核会话/数据根绑定、原生 tool pairing 的完整往返。
+- 验证：ALP 全解决方案 build 0 error；`AgentCoreProcessor.Tests` **219/219** 通过（含接缝/转换/比较/配置/工具桥测试）。ALC 侧未改动，仍为 1582 + 4。
+- 尚未做（S3 起）：协议适配器级线上字节金样；把 `ToolBridge` 接到真实运行时（内核会话 + 独立数据根 + 单写者绑定）；`RequestWait` 在 ALC 渲染侧的等价表达；原生 tool pairing 的完整往返。
 
 ### S3 — Review，再 Task 子会话
 

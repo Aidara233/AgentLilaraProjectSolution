@@ -3,7 +3,8 @@
   <!--
     ⚠️ **全仓唯一同时引用 ALP 与 ALC 的程序集**。
     - 对 ALC 只引用**固定版本包**（`Lilara.Core` 0.1.0），不跨仓项目引用、不链接源码、不用 InternalsVisibleTo。
-    - 对 ALP 只引用中性的 `AgentLilara.SessionBrain` 契约，不引用 AgentCoreProcessor（否则会形成环）。
+    - 对 ALP 只引用中性契约 `AgentLilara.SessionBrain` 与共享 SDK `AgentLilara.PluginSDK`；
+      **不**引用 AgentCoreProcessor（否则会形成环）。
   -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -19,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AgentLilara.SessionBrain\AgentLilara.SessionBrain.csproj" />
+    <ProjectReference Include="..\AgentLilara.PluginSDK\AgentLilara.PluginSDK.csproj" />
   </ItemGroup>
 
 </Project>
