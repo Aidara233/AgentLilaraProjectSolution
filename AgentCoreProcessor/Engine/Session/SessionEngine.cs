@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using AgentCoreProcessor.Component;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Engine.Context;
+using AgentCoreProcessor.Engine.Graph;
 using AgentCoreProcessor.Engine.Messaging;
 using AgentCoreProcessor.Logging;
 using AgentLilara.PluginSDK;
@@ -56,6 +57,16 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
         _ctx = ctx;
     }
 
+    private void OnRuntimeSessionCompleted(IRuntimeSession session)
+    {
+        _ctx.Graphs?.ReleaseSession(session.SessionId);
+        Signal.Event(LogGroup.Engine, "Graph session mount released", new { session.SessionId });
+    }
+
+    /// <summary>只绑定精确的 session-scope 挂载；没有挂载时保持 null。</summary>
+    private void InitializeGraphMount(RuntimeSession session) =>
+        session.SetGraphRunner(_ctx.Graphs?.ForSession(session.SessionId));
+
     /// <summary>心智引擎（统一写入口 + 情绪 + 可信度服务）。</summary>
     public Mind.MindEngine? Mind => _ctx.Mind;
 
@@ -81,6 +92,8 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
             : new RuntimeSession(spec, finalComponents);
         session.SetCurrency(_currency!);
         session.SetSessionEngine(this);
+        session.OnCompleted += OnRuntimeSessionCompleted;
+        InitializeGraphMount(session);
 
         // 复活善后：订阅 session 完成事件（心智引擎整理写入）
         if (Mind?.Resurrector != null)
@@ -1052,6 +1065,7 @@ InitialState = $"执行定时任务: {task.Description}"
                 session = new RuntimeSession(spec, state.SessionId, ComputeFinalComponents(spec, profile));
                 session.SetCurrency(_currency!);
                 session.SetSessionEngine(this);
+                session.OnCompleted += OnRuntimeSessionCompleted;
 
                 // 复活善后：订阅重建 session 的完成事件
                 if (Mind?.Resurrector != null)
@@ -1085,6 +1099,9 @@ InitialState = $"执行定时任务: {task.Description}"
                         session.AddInputPort(portName, port);
                     }
                 }
+
+                // 恢复的 session 用原 SessionId 重新绑定自己的 session-scope 图实例。
+                InitializeGraphMount(session);
 
                 // ⑤ 重建 SessionAgentHost
                 try

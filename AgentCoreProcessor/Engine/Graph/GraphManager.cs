@@ -8,10 +8,10 @@ namespace AgentCoreProcessor.Engine.Graph;
 /// <summary>一条挂载记录：哪个作用域用哪张图。</summary>
 internal sealed class GraphMount
 {
-    /// <summary>作用域：目前支持 channel / global。</summary>
+    /// <summary>作用域：global / channel / session。</summary>
     public string Scope { get; set; } = "channel";
 
-    /// <summary>作用域键：channel 作用域下是内部频道 id。</summary>
+    /// <summary>作用域键：channel 是内部频道 id；session 是 RuntimeSession.SessionId；global 为空。</summary>
     public string? ScopeKey { get; set; }
 
     /// <summary>图类 id，对应 Storage/Graphs/{classId}.json。</summary>
@@ -55,8 +55,10 @@ internal sealed class GraphManager
 
     /// <summary>运行实例：挂载点键 → 运行器（内含 GraphInstance 与变量）。</summary>
     private readonly Dictionary<string, KeywordGraphRunner> _instances = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _sessionInstanceKeys = new(StringComparer.Ordinal);
 
     private readonly Dictionary<string, GraphMount> _byChannel = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, GraphMount> _bySession = new(StringComparer.Ordinal);
     private GraphMount? _global;
 
     private GraphManager(bool active, string storagePath)
@@ -102,22 +104,71 @@ internal sealed class GraphManager
     {
         EnsureFresh();
 
-        var mount = ResolveMount(channelId);
+        var mount = ResolveChannelMount(channelId);
         return mount is null ? null : GetOrCreate(mount);
     }
 
-    /// <summary>频道释放：销毁该挂载点的实例与变量。</summary>
+    /// <summary>只取精确匹配 sessionId 的 session-scope 挂载；未显式挂载返回 null，不回退共享作用域。</summary>
+    public KeywordGraphRunner? ForSession(string sessionId)
+    {
+        EnsureFresh();
+        if (!_bySession.TryGetValue(sessionId, out var mount) || !_classes.ContainsKey(mount.ClassId))
+        {
+            return null;
+        }
+
+        return GetSessionInstance(sessionId, mount);
+    }
+
+    private KeywordGraphRunner GetSessionInstance(string sessionId, GraphMount mount)
+    {
+        if (_sessionInstanceKeys.TryGetValue(sessionId, out var existingKey)
+            && _instances.TryGetValue(existingKey, out var existing))
+        {
+            return existing;
+        }
+
+        var instanceKey = mount.InstanceKey;
+        var graph = new GraphInstance(_classes[mount.ClassId], instanceKey);
+        var runner = KeywordGraphRunner.ForInstance(graph, _active);
+        _instances[instanceKey] = runner;
+        _sessionInstanceKeys[sessionId] = instanceKey;
+
+        Logging.Signal.Event(Logging.LogGroup.Engine, "graph.session.instance_created",
+            new { sessionId, mount.ClassId, instanceKey });
+        return runner;
+    }
+
+    /// <summary>频道作用域实例销毁（频道生命周期钩子）。</summary>
     public void Release(int channelId)
     {
-        if (!_byChannel.TryGetValue(channelId.ToString(), out var mount))
+        if (_byChannel.TryGetValue(channelId.ToString(), out var mount))
+        {
+            ReleaseMount(mount, new { channelId });
+        }
+    }
+
+    /// <summary>RuntimeSession 完成或被 kill 时销毁它自己的实例，不论来源是 session/channel/global 挂载。</summary>
+    public void ReleaseSession(string sessionId)
+    {
+        if (!_sessionInstanceKeys.Remove(sessionId, out var instanceKey))
         {
             return;
         }
 
+        if (_instances.Remove(instanceKey))
+        {
+            Logging.Signal.Event(Logging.LogGroup.Engine, "graph.session.instance_released",
+                new { sessionId, key = instanceKey });
+        }
+    }
+
+    private void ReleaseMount(GraphMount mount, object detail)
+    {
         if (_instances.Remove(mount.InstanceKey))
         {
             Logging.Signal.Event(Logging.LogGroup.Engine, "graph.mount.released",
-                new { channelId, mount.ClassId, key = mount.InstanceKey });
+                new { mount.ClassId, key = mount.InstanceKey, detail });
         }
     }
 
@@ -143,6 +194,7 @@ internal sealed class GraphManager
             _instances.Clear();
             _classes.Clear();
             _byChannel.Clear();
+            _bySession.Clear();
             _global = null;
 
             ParseMounts();
@@ -186,6 +238,21 @@ internal sealed class GraphManager
                 continue;
             }
 
+            var scope = mount.Scope?.Trim().ToLowerInvariant();
+            if (scope is not ("global" or "channel" or "session"))
+            {
+                Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.mount.invalid_scope",
+                    new { mount.ClassId, mount.Scope });
+                continue;
+            }
+
+            if ((scope == "channel" || scope == "session") && string.IsNullOrWhiteSpace(mount.ScopeKey))
+            {
+                Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.mount.missing_scope_key",
+                    new { mount.ClassId, mount.Scope });
+                continue;
+            }
+
             if (!_classes.ContainsKey(mount.ClassId))
             {
                 var graph = LoadClass(dir, mount.ClassId);
@@ -203,7 +270,13 @@ internal sealed class GraphManager
             {
                 _global = mount;
             }
-            else if (!string.IsNullOrWhiteSpace(mount.ScopeKey))
+            else if (string.Equals(mount.Scope, "session", StringComparison.OrdinalIgnoreCase)
+                     && !string.IsNullOrWhiteSpace(mount.ScopeKey))
+            {
+                _bySession[mount.ScopeKey] = mount;
+            }
+            else if (string.Equals(mount.Scope, "channel", StringComparison.OrdinalIgnoreCase)
+                     && !string.IsNullOrWhiteSpace(mount.ScopeKey))
             {
                 _byChannel[mount.ScopeKey] = mount;
             }
@@ -220,7 +293,7 @@ internal sealed class GraphManager
         return true;
     }
 
-    private GraphMount? ResolveMount(int channelId)
+    private GraphMount? ResolveChannelMount(int channelId)
     {
         if (_byChannel.TryGetValue(channelId.ToString(), out var mount) && _classes.ContainsKey(mount.ClassId))
         {

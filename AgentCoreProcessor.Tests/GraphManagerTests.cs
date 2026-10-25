@@ -34,10 +34,13 @@ public class GraphManagerTests : IDisposable
         }
     }
 
-    private void WriteMounts(params string[] channelKeys)
+    private void WriteMounts(params string[] channelKeys) =>
+        WriteMountEntries(channelKeys.Select(k => ("channel", k)).ToArray());
+
+    private void WriteMountEntries(params (string Scope, string Key)[] mounts)
     {
-        var entries = string.Join(",", channelKeys.Select(k =>
-            $"{{\"scope\":\"channel\",\"scopeKey\":\"{k}\",\"classId\":\"preset.activation\",\"enabled\":true}}"));
+        var entries = string.Join(",", mounts.Select(m =>
+            $"{{\"scope\":\"{m.Scope}\",\"scopeKey\":\"{m.Key}\",\"classId\":\"preset.activation\",\"enabled\":true}}"));
 
         File.WriteAllText(
             Path.Combine(_graphs, "mounts.json"),
@@ -108,6 +111,61 @@ public class GraphManagerTests : IDisposable
         var after = manager.For(1)!;
         Assert.NotSame(before, after);
         Assert.Equal(0, after.Instance.ReadVariable("pending").AsInt());
+    }
+
+    [Fact]
+    public void SessionMountCreatesOnlyForExactSessionId()
+    {
+        WriteMountEntries(("session", "session-a"));
+        var manager = GraphManager.TryCreate(_dir, active: false)!;
+
+        var session = manager.ForSession("session-a");
+
+        Assert.NotNull(session);
+        Assert.Contains("@session#session-a", session!.Instance.InstanceKey);
+        Assert.Null(manager.ForSession("session-b"));
+        Assert.Equal(1, manager.InstanceCount);
+    }
+
+    [Fact]
+    public async Task CompletingOneSessionReleasesOnlyItsSessionGraphInstance()
+    {
+        WriteMountEntries(("session", "session-a"), ("session", "session-b"));
+        var manager = GraphManager.TryCreate(_dir, active: false)!;
+
+        var sessionA = manager.ForSession("session-a")!;
+        var sessionB = manager.ForSession("session-b")!;
+        await FeedAsync(sessionA, 4);
+
+        Assert.Equal(4, sessionA.Instance.ReadVariable("pending").AsInt());
+        Assert.Equal(0, sessionB.Instance.ReadVariable("pending").AsInt());
+
+        manager.ReleaseSession("session-a");
+
+        Assert.Equal(1, manager.InstanceCount);
+        Assert.Same(sessionB, manager.ForSession("session-b"));
+        var recreatedA = manager.ForSession("session-a")!;
+        Assert.NotSame(sessionA, recreatedA);
+        Assert.Equal(0, recreatedA.Instance.ReadVariable("pending").AsInt());
+    }
+
+    [Fact]
+    public void SessionReleaseDoesNotDestroyChannelInstanceOrOtherSessionInstance()
+    {
+        WriteMountEntries(("channel", "1"), ("session", "session-a"), ("session", "session-b"));
+        var manager = GraphManager.TryCreate(_dir, active: false)!;
+
+        var channel = manager.For(1)!;
+        var sessionA = manager.ForSession("session-a")!;
+        var sessionB = manager.ForSession("session-b")!;
+        Assert.Equal(3, manager.InstanceCount);
+
+        manager.ReleaseSession("session-a");
+
+        Assert.Equal(2, manager.InstanceCount);
+        Assert.Same(channel, manager.For(1));
+        Assert.Same(sessionB, manager.ForSession("session-b"));
+        Assert.NotSame(sessionA, manager.ForSession("session-a"));
     }
 
     [Fact]

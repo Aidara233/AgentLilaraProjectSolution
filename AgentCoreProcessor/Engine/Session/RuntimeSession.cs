@@ -56,6 +56,12 @@ internal class RuntimeSession : IRuntimeSession
     private readonly GraphActivationShadow? _activationShadow = GraphActivationShadow.TryCreate();
     private readonly Dictionary<string, ITool> _tools = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>本会话显式 session-scope 挂载的私有图实例；没有精确挂载时为 null。</summary>
+    private KeywordGraphRunner? _graphRunner;
+
+    /// <summary>由 SessionEngine 在创建/恢复时绑定。</summary>
+    internal void SetGraphRunner(KeywordGraphRunner? runner) => _graphRunner = runner;
+
     private SessionAgentHost? _host;
 
     public void SetAgentHost(SessionAgentHost host) => _host = host;
@@ -1277,6 +1283,8 @@ internal class RuntimeSession : IRuntimeSession
             if (Status == SessionStatus.Running)
                 Status = SessionStatus.Completed;
             lifeCtx.Close(new { sessionId = SessionId, reason = endReason, status = Status.ToString() });
+
+            // 完成事件由 SessionEngine 释放本会话绑定的 session-scope 图实例。
             OnCompleted?.Invoke(this);
         }
     }
