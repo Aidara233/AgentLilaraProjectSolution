@@ -55,11 +55,17 @@ namespace AgentCoreProcessor.Engine
             // ③ 骨架：伴随提取入批。与"要不要应答"无关，挂了图的频道也照常入批。
             EnqueueCompanionExtraction(sessionContext, ctx);
 
-            // 同一频道同一条消息只投递一次：多张图都产出投递意图时不重复投递。
+            // 同一频道同一条消息只投递一次：账本与执行器都由骨架持有。
             // 键在**成功之后**才占用——失败必须留出给兜底图重试的机会。
             var deliveredKeys = new HashSet<string>(StringComparer.Ordinal);
             var traceId = msg.PlatformMessageId ?? $"{msg.Platform}:{msg.ChannelId}";
             var messageEvent = Graph.KeywordGraphRunner.ToEvent(msg, channelId);
+            var executor = new Graph.IngressIntentExecutor(
+                deliveredKeys,
+                deliveryKey: $"{channelId}:{sessionContext.IncomingMessage?.Id}",
+                deliverDefault: DeliverToChannelSessionAsync,
+                route: RouteToSessionAsync,
+                send: DispatchSendAsync);
 
             // ④ 插槽：挂了图的频道由图产出意图，由骨架执行。
             //    图没有返回值——每张图各自跑完就待命，要不要投递只看它们产出的意图。
@@ -76,12 +82,7 @@ namespace AgentCoreProcessor.Engine
 
                 if (graphs!.IsActive)
                 {
-                    var failures = new List<string>();
-                    foreach (var intent in intents)
-                    {
-                        var failure = await ExecuteIntentAsync(intent);
-                        if (failure != null) failures.Add(failure);
-                    }
+                    var failures = await executor.ExecuteAsync(intents);
 
                     Signal.Event(LogGroup.Engine, "图接管本次消息路由",
                         new
@@ -106,29 +107,7 @@ namespace AgentCoreProcessor.Engine
             if (defaultFailure != null)
                 await RunFallbackAsync(new[] { defaultFailure });
 
-            // —— 骨架的意图执行器：图只表达"想做什么"，执行与失败的记录都在这里 ——
-
-            // 返回 null = 成功（或无需动作）；否则返回失败原因，供兜底图使用。
-            async Task<string?> ExecuteIntentAsync(AgentLilara.GraphRuntime.Graph.ActionIntent intent)
-            {
-                switch (intent.Kind)
-                {
-                    case AgentLilara.GraphRuntime.Graph.IntentKind.SendMessage:
-                        return await DispatchSendAsync(intent);
-
-                    case AgentLilara.GraphRuntime.Graph.IntentKind.SessionRoute:
-                        return await RouteToSessionAsync(intent);
-
-                    case AgentLilara.GraphRuntime.Graph.IntentKind.SessionPrompt:
-                        // 历史语义：请骨架按默认规则驱动频道会话
-                        return await DeliverToChannelSessionAsync();
-
-                    default:
-                        Signal.Debug(LogGroup.Engine, "graph.intent.skipped",
-                            new { channelId, kind = intent.Kind.ToString() });
-                        return null;
-                }
-            }
+            // —— 骨架侧的执行器：动作怎么执行、失败怎么记 ——
 
             async Task<string?> DispatchSendAsync(AgentLilara.GraphRuntime.Graph.ActionIntent intent)
             {
@@ -148,17 +127,10 @@ namespace AgentCoreProcessor.Engine
                 }
             }
 
-            async Task<string?> RouteToSessionAsync(AgentLilara.GraphRuntime.Graph.ActionIntent intent)
+            // 路由到频道会话（去重与记账由执行器负责，这里只做一次尝试）。
+            async Task<string?> RouteToSessionAsync(string sessionType)
             {
                 if (sessionContext.IncomingMessage == null) return "message-missing";
-
-                // 已投递成功过就跳过；失败不占键，后面的图或兜底图仍可尝试。
-                var key = DeliveryKey();
-                if (deliveredKeys.Contains(key)) return null;
-
-                var sessionType = intent.Args.TryGetValue("sessionType", out var typeCell)
-                    ? typeCell.As<string>()
-                    : null;
 
                 var sessionEngine = ctx.GetActiveEnginesSnapshot()
                     .OfType<Session.SessionEngine>().FirstOrDefault();
@@ -172,7 +144,7 @@ namespace AgentCoreProcessor.Engine
                 await sessionEngine.WaitRestoredAsync(TimeSpan.FromSeconds(5));
                 if (!sessionEngine.RouteGraphMessage(
                         channelId,
-                        sessionType ?? string.Empty,
+                        sessionType,
                         sessionContext.IncomingMessage,
                         msg.IsMentioned || msg.IsPrivate))
                 {
@@ -181,20 +153,14 @@ namespace AgentCoreProcessor.Engine
                     return $"route-rejected:{sessionType}";
                 }
 
-                deliveredKeys.Add(key);
                 return null;
             }
 
-            string DeliveryKey() => $"{channelId}:{sessionContext.IncomingMessage?.Id}";
-
             // 默认路径：复用频道活跃会话；空闲时按默认会话类型孵化，再投递本条消息。
-            // 返回 null = 已投递（或已投递过）；否则返回失败原因。
+            // 返回 null = 已投递；否则返回失败原因。去重与记账由执行器负责。
             async Task<string?> DeliverToChannelSessionAsync()
             {
                 if (sessionContext.IncomingMessage == null) return null;
-
-                var key = DeliveryKey();
-                if (deliveredKeys.Contains(key)) return null;
 
                 var sessionEngine = ctx.GetActiveEnginesSnapshot()
                     .OfType<Session.SessionEngine>().FirstOrDefault();
@@ -218,7 +184,6 @@ namespace AgentCoreProcessor.Engine
                 if (claimerId != null && claimerAlive)
                 {
                     messageEngine.DeliverToSession(channelId, sessionContext.IncomingMessage, asMention);
-                    deliveredKeys.Add(key);
                     Signal.Event(LogGroup.Engine, "入向已投递到 session 端口",
                         new { channelId, msgId = sessionContext.IncomingMessage.Id, sessionId = claimerId, asMention });
                     return null;
@@ -232,7 +197,6 @@ namespace AgentCoreProcessor.Engine
                 }
 
                 messageEngine.DeliverToSession(channelId, sessionContext.IncomingMessage, asMention);
-                deliveredKeys.Add(key);
                 Signal.Event(LogGroup.Engine, "会话孵化 + 投递",
                     new { channelId, msgId = sessionContext.IncomingMessage.Id, sessionId = created.SessionId, asMention });
                 return null;
@@ -263,12 +227,7 @@ namespace AgentCoreProcessor.Engine
                     errorIntents.AddRange(await runner.EvaluateAsync(errorEvent, errorTraceId));
                 }
 
-                var stillFailing = new List<string>();
-                foreach (var intent in errorIntents)
-                {
-                    var failure = await ExecuteIntentAsync(intent);
-                    if (failure != null) stillFailing.Add(failure);
-                }
+                var stillFailing = await executor.ExecuteAsync(errorIntents);
 
                 if (stillFailing.Count > 0)
                 {
