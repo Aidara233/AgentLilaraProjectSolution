@@ -1,0 +1,36 @@
+{
+  "classId": "preset.watch",
+  "kind": "static",
+  "version": 1,
+  "nodes": [
+    { "id": "on", "type": "on.external" },
+
+    { "id": "from", "type": "event.ext", "params": { "name": "from" } },
+    { "id": "wantFrom", "type": "read.mount", "params": { "name": "from", "default": "" } },
+    { "id": "empty", "type": "read.const", "params": { "value": "" } },
+
+    { "id": "senderMatches", "type": "compare.eq" },
+    { "id": "senderUnset", "type": "compare.eq" },
+    { "id": "anySender", "type": "logic.or" },
+
+    { "id": "gate", "type": "gate.if" },
+    { "id": "notify", "type": "sink.notify" }
+  ],
+  "links": [
+    { "from": "on.event", "to": "from.event" },
+
+    { "from": "from.value", "to": "senderMatches.a" },
+    { "from": "wantFrom.value", "to": "senderMatches.b" },
+
+    { "from": "wantFrom.value", "to": "senderUnset.a" },
+    { "from": "empty.value", "to": "senderUnset.b" },
+
+    { "from": "senderMatches.result", "to": "anySender.a" },
+    { "from": "senderUnset.result", "to": "anySender.b" },
+
+    { "from": "on.event", "to": "gate.event" },
+    { "from": "anySender.result", "to": "gate.cond" },
+
+    { "from": "gate.event", "to": "notify.event" }
+  ]
+}

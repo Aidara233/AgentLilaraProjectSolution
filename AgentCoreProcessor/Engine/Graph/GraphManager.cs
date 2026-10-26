@@ -48,11 +48,29 @@ internal sealed class GraphManager
     private readonly Dictionary<string, List<GraphMount>> _bySession = new(StringComparer.Ordinal);
     private readonly List<GraphMount> _global = new();
 
+    // ── 运行时订阅（与静态挂载分区：两个文件、两条重载路径、一个共享的类缓存）──
+
+    private readonly string _subscriptionsPath;
+    private DateTime _subscriptionsStamp;
+
+    /// <summary>订阅记录：id → 记录。</summary>
+    private readonly Dictionary<string, GraphSubscription> _subscriptions = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 订阅的图实例。**故意与 <see cref="_instances"/> 分开**——静态挂载表一改就会清空
+    /// 全部挂载实例，订阅不能跟着被误杀（模型建一条订阅不该让别的频道的计数器归零）。
+    /// </summary>
+    private readonly Dictionary<string, KeywordGraphRunner> _subscriptionRunners = new(StringComparer.Ordinal);
+
+    /// <summary>信源 → 订阅列表（粗筛索引；细条件归图）。</summary>
+    private readonly Dictionary<string, List<GraphSubscription>> _bySource = new(StringComparer.OrdinalIgnoreCase);
+
     private GraphManager(bool active, string storagePath)
     {
         _active = active;
         _storagePath = storagePath;
         _mountsPath = Path.Combine(storagePath, "Graphs", "mounts.json");
+        _subscriptionsPath = Path.Combine(storagePath, "Graphs", "subscriptions.json");
     }
 
     public bool IsActive => _active;
@@ -66,18 +84,34 @@ internal sealed class GraphManager
             "active",
             StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>没有 mounts.json / 没有启用的挂载 → 返回 null（不干预）。</summary>
+    /// <summary>
+    /// 打开图管理器：**总是返回实例**，即使一个挂载、一条订阅都没有。
+    /// <para>需要它能被打开，是因为"运行时创建第一条订阅"这件事发生在配置为空的时候——
+    /// 若此时拿到 null，模型永远无法建立第一条订阅。</para>
+    /// <para>"没有配置就不干预"由 <see cref="RunnersFor"/> 返回空集合保证，而不是靠返回 null。</para>
+    /// </summary>
+    public static GraphManager Open(string storagePath, bool active)
+    {
+        var manager = new GraphManager(active, storagePath);
+        manager.ParseMounts();
+        manager.ParseSubscriptions();
+        return manager;
+    }
+
+    /// <summary>只读场景用：完全没有配置（无挂载、无订阅）时返回 null，表示"这套机制没启用"。</summary>
     public static GraphManager? TryCreate(string storagePath, bool active)
     {
         try
         {
-            var manager = new GraphManager(active, storagePath);
-            if (!manager.ParseMounts())
+            var manager = Open(storagePath, active);
+
+            // 只有运行时订阅、没有静态挂载表时也必须工作：订阅是独立机制，不该被"没配 mounts.json"挡住。
+            if (manager._classes.Count == 0 && manager._subscriptions.Count == 0)
             {
                 return null;
             }
 
-            return manager._classes.Count == 0 ? null : manager;
+            return manager;
         }
         catch (Exception ex)
         {
@@ -158,9 +192,17 @@ internal sealed class GraphManager
         return runner;
     }
 
-    /// <summary>频道作用域实例销毁（频道生命周期钩子）。global 挂载不随单个频道销毁。</summary>
+    /// <summary>
+    /// 频道作用域实例销毁（频道生命周期钩子）。global 挂载不随单个频道销毁。
+    /// <para>该频道的**运行时订阅也一起销毁**：订阅绑频道，频道没了就没有宿主了。</para>
+    /// </summary>
     public void Release(int channelId)
     {
+        foreach (var subscription in _subscriptions.Values.Where(s => s.ChannelId == channelId).ToList())
+        {
+            RemoveSubscription(subscription.Id, reason: "channel-released");
+        }
+
         if (!_byChannel.TryGetValue(channelId.ToString(), out var mounts))
         {
             return;
@@ -187,6 +229,309 @@ internal sealed class GraphManager
                 Logging.Signal.Event(Logging.LogGroup.Engine, "graph.session.instance_released",
                     new { sessionId, key });
             }
+        }
+    }
+
+    // ── 运行时订阅（绑频道、按信源索引、带期限与次数）──
+
+    /// <summary>当前活着的订阅数（诊断用）。</summary>
+    public int SubscriptionCount => _subscriptions.Count;
+
+    /// <summary>图本体目录。</summary>
+    private string GraphDir => Path.Combine(_storagePath, "Graphs");
+
+    /// <summary>
+    /// 某个信源上的候选订阅。**粗筛只按信源**（一次字典查找），细条件交给图。
+    /// <para>顺带做惰性清理：过期/次数用尽的订阅在这里被摘掉，不依赖定时器。</para>
+    /// </summary>
+    public IReadOnlyList<SubscriptionRunner> SubscriptionsForSource(string source)
+    {
+        EnsureSubscriptionsFresh();
+
+        if (string.IsNullOrWhiteSpace(source) ||
+            !_bySource.TryGetValue(source.Trim(), out var subscriptions) ||
+            subscriptions.Count == 0)
+        {
+            return Array.Empty<SubscriptionRunner>();
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var runners = new List<SubscriptionRunner>();
+
+        foreach (var subscription in subscriptions.ToList())
+        {
+            if (subscription.IsExpired(now))
+            {
+                RemoveSubscription(subscription.Id, "expired");
+                continue;
+            }
+
+            if (subscription.IsExhausted)
+            {
+                RemoveSubscription(subscription.Id, "exhausted");
+                continue;
+            }
+
+            if (!subscription.Enabled)
+            {
+                continue;
+            }
+
+            var runner = GetOrCreateSubscriptionRunner(subscription);
+            if (runner is not null)
+            {
+                runners.Add(new SubscriptionRunner(subscription, runner));
+            }
+        }
+
+        return runners;
+    }
+
+    /// <summary>列出仍然有效的订阅（可按频道过滤）。</summary>
+    public IReadOnlyList<GraphSubscription> ListSubscriptions(int? channelId = null)
+    {
+        EnsureSubscriptionsFresh();
+        var now = DateTimeOffset.UtcNow;
+
+        return _subscriptions.Values
+            .Where(s => channelId is null || s.ChannelId == channelId)
+            .Where(s => s.IsLive(now))
+            .OrderBy(s => s.CreatedAt)
+            .ToList();
+    }
+
+    /// <summary>新增一条订阅：校验 → 落盘 → 入索引。成功返回 null，失败返回原因。</summary>
+    public string? AddSubscription(GraphSubscription subscription)
+    {
+        EnsureSubscriptionsFresh();
+
+        if (subscription.ChannelId <= 0) return "invalid-channel";
+        if (string.IsNullOrWhiteSpace(subscription.Source)) return "invalid-source";
+        if (string.IsNullOrWhiteSpace(subscription.ClassId)) return "invalid-class";
+
+        if (!_classes.ContainsKey(subscription.ClassId))
+        {
+            var graph = LoadClass(GraphDir, subscription.ClassId);
+            if (graph is null)
+            {
+                Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.subscription.class_missing",
+                    new { subscription.ClassId });
+                return "class-missing";
+            }
+
+            _classes[subscription.ClassId] = graph;
+        }
+
+        if (string.IsNullOrWhiteSpace(subscription.Id))
+        {
+            subscription.Id = Guid.NewGuid().ToString("N")[..12];
+        }
+
+        subscription.Source = subscription.Source.Trim();
+        subscription.CreatedAt = DateTimeOffset.UtcNow;
+        subscription.FiredCount = 0;
+        subscription.LastFiredAt = null;
+        subscription.Enabled = true;
+
+        _subscriptions[subscription.Id] = subscription;
+        AddToSource(subscription);
+        SaveSubscriptions();
+
+        Logging.Signal.Event(Logging.LogGroup.Engine, "graph.subscription.added", new
+        {
+            subscription.Id,
+            subscription.ChannelId,
+            subscription.Source,
+            subscription.ClassId,
+            subscription.MaxFires,
+            subscription.ExpiresAt,
+        });
+
+        return null;
+    }
+
+    /// <summary>移除一条订阅（同时销毁它的图实例）。</summary>
+    public bool RemoveSubscription(string id, string reason = "removed")
+    {
+        if (!_subscriptions.Remove(id, out var subscription))
+        {
+            return false;
+        }
+
+        if (_bySource.TryGetValue(subscription.Source, out var list))
+        {
+            list.RemoveAll(s => string.Equals(s.Id, id, StringComparison.Ordinal));
+            if (list.Count == 0)
+            {
+                _bySource.Remove(subscription.Source);
+            }
+        }
+
+        _subscriptionRunners.Remove(subscription.InstanceKey);
+        SaveSubscriptions();
+
+        Logging.Signal.Event(Logging.LogGroup.Engine, "graph.subscription.removed", new
+        {
+            id,
+            reason,
+            subscription.ChannelId,
+            subscription.FiredCount,
+        });
+
+        return true;
+    }
+
+    /// <summary>
+    /// 记一次触发。用尽次数后停用（不立即删，保留到下次清理，便于事后查"它触发过"）。
+    /// </summary>
+    public void RecordSubscriptionFired(string id, DateTimeOffset at)
+    {
+        if (!_subscriptions.TryGetValue(id, out var subscription))
+        {
+            return;
+        }
+
+        subscription.FiredCount++;
+        subscription.LastFiredAt = at;
+        if (subscription.IsExhausted)
+        {
+            subscription.Enabled = false;
+        }
+
+        SaveSubscriptions();
+    }
+
+    private void AddToSource(GraphSubscription subscription)
+    {
+        if (!_bySource.TryGetValue(subscription.Source, out var list))
+        {
+            list = new List<GraphSubscription>();
+            _bySource[subscription.Source] = list;
+        }
+
+        list.Add(subscription);
+    }
+
+    private KeywordGraphRunner? GetOrCreateSubscriptionRunner(GraphSubscription subscription)
+    {
+        if (_subscriptionRunners.TryGetValue(subscription.InstanceKey, out var existing))
+        {
+            return existing;
+        }
+
+        if (!_classes.TryGetValue(subscription.ClassId, out var graphClass))
+        {
+            var loaded = LoadClass(GraphDir, subscription.ClassId);
+            if (loaded is null)
+            {
+                Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.subscription.class_missing",
+                    new { subscription.ClassId, subscription.Id });
+                return null;
+            }
+
+            _classes[subscription.ClassId] = graphClass = loaded;
+        }
+
+        var instance = new GraphInstance(graphClass, subscription.InstanceKey);
+        var runner = KeywordGraphRunner.ForInstance(instance, _active, subscription.AsMountParameters());
+        _subscriptionRunners[subscription.InstanceKey] = runner;
+
+        Logging.Signal.Event(Logging.LogGroup.Engine, "graph.subscription.instance_created",
+            new { subscription.Id, subscription.ClassId, subscription.ChannelId });
+
+        return runner;
+    }
+
+    /// <summary>订阅文件变动 → 重建索引。**不碰挂载实例**，反之亦然。</summary>
+    private void EnsureSubscriptionsFresh()
+    {
+        try
+        {
+            if (!File.Exists(_subscriptionsPath))
+            {
+                return;
+            }
+
+            var stamp = File.GetLastWriteTimeUtc(_subscriptionsPath);
+            if (stamp == _subscriptionsStamp)
+            {
+                return;
+            }
+
+            _subscriptionsStamp = stamp;
+            ParseSubscriptions();
+
+            Logging.Signal.Event(Logging.LogGroup.Engine, "graph.subscription.reloaded",
+                new { subscriptions = _subscriptions.Count });
+        }
+        catch (Exception ex)
+        {
+            Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.subscription.reload_failed",
+                new { error = ex.Message });
+        }
+    }
+
+    private void ParseSubscriptions()
+    {
+        _subscriptions.Clear();
+        _bySource.Clear();
+
+        if (!File.Exists(_subscriptionsPath))
+        {
+            return;
+        }
+
+        _subscriptionsStamp = File.GetLastWriteTimeUtc(_subscriptionsPath);
+
+        var doc = JsonSerializer.Deserialize<SubscriptionDocument>(
+            File.ReadAllText(_subscriptionsPath), JsonOptions);
+
+        if (doc?.Subscriptions is null || doc.Subscriptions.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var subscription in doc.Subscriptions)
+        {
+            if (string.IsNullOrWhiteSpace(subscription.Id) ||
+                string.IsNullOrWhiteSpace(subscription.Source) ||
+                string.IsNullOrWhiteSpace(subscription.ClassId) ||
+                subscription.ChannelId <= 0)
+            {
+                Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.subscription.invalid_record",
+                    new { subscription.Id, subscription.ChannelId, subscription.Source, subscription.ClassId });
+                continue;
+            }
+
+            subscription.Params ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            _subscriptions[subscription.Id] = subscription;
+            AddToSource(subscription);
+        }
+    }
+
+    private void SaveSubscriptions()
+    {
+        try
+        {
+            Directory.CreateDirectory(GraphDir);
+
+            var document = new SubscriptionDocument
+            {
+                Subscriptions = _subscriptions.Values.OrderBy(s => s.CreatedAt).ToList(),
+            };
+
+            var json = JsonSerializer.Serialize(document, JsonOptions);
+            var temp = _subscriptionsPath + ".tmp";
+            File.WriteAllText(temp, json);
+            File.Move(temp, _subscriptionsPath, overwrite: true);
+
+            // 自己写的文件不该触发下一次重载
+            _subscriptionsStamp = File.GetLastWriteTimeUtc(_subscriptionsPath);
+        }
+        catch (Exception ex)
+        {
+            Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.subscription.save_failed",
+                new { error = ex.Message });
         }
     }
 

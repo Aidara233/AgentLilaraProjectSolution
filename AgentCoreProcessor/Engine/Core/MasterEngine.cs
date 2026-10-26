@@ -78,9 +78,13 @@ namespace AgentCoreProcessor.Engine
         public IOcrProvider? Ocr => ocrProvider;
         public AdapterManager Adapters => adapterManager;
 
-        /// <summary>图挂载表：进程级一份（挂载点之间实例隔离，见 GraphManager）。</summary>
+        /// <summary>
+        /// 图挂载表 + 运行时订阅：进程级一份（挂载点之间实例隔离，见 GraphManager）。
+        /// <para>用 <see cref="Graph.GraphManager.Open"/> 而不是 TryCreate：运行时要能创建第一条订阅，
+        /// 那时配置还是空的。是否干预由 RunnersFor / SubscriptionsForSource 返回空集合保证。</para>
+        /// </summary>
         public Graph.GraphManager? Graphs { get; } =
-            Graph.GraphManager.TryCreate(Config.PathConfig.StoragePath, Graph.GraphManager.ActiveFromEnvironment());
+            Graph.GraphManager.Open(Config.PathConfig.StoragePath, Graph.GraphManager.ActiveFromEnvironment());
         public EventBus EventBus => eventBus;
         public ImpulseConfig ImpulseConfig { get; private set; } = null!;
 

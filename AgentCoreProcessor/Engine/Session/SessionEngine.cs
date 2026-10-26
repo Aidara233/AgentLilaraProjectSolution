@@ -404,6 +404,42 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
         return true;
     }
 
+    /// <summary>
+    /// 把一个外部事件的内容注入频道会话（订阅命中 / 跨会话唤醒）。
+    /// <para>频道有活会话 → 注入它的待处理上下文并唤醒；没有 → 先建一个 express 会话再注入。
+    /// **不写聊天消息表**：外部事件不是聊天消息，不该变成一条"用户说过的话"。</para>
+    /// <para>返回 null 表示已注入，否则是失败原因。</para>
+    /// </summary>
+    internal string? InjectToChannelSession(int channelId, string content)
+    {
+        if (channelId <= 0) return "invalid-channel";
+        if (string.IsNullOrWhiteSpace(content)) return "empty-content";
+
+        var activeId = GetFullClaimer(channelId);
+        var active = activeId is null ? null : GetSession(activeId);
+
+        if (active is RuntimeSession live && live.IsAlive)
+        {
+            live.InjectExternal(content);
+            Signal.Event(LogGroup.Engine, "graph.subscription.injected",
+                new { channelId, sessionId = live.SessionId, reused = true, length = content.Length });
+            return null;
+        }
+
+        var created = CreateExpressSessionForChannel(channelId);
+        if (created is not RuntimeSession fresh)
+        {
+            Signal.Warn(LogGroup.Engine, "graph.subscription.session_create_failed",
+                new { channelId, reason = created is null ? "channel-occupied-or-failed" : "unexpected-session-type" });
+            return "session-create-failed";
+        }
+
+        fresh.InjectExternal(content);
+        Signal.Event(LogGroup.Engine, "graph.subscription.injected",
+            new { channelId, sessionId = fresh.SessionId, reused = false, length = content.Length });
+        return null;
+    }
+
     public IRuntimeSession? CreateExpressSessionForChannel(int channelId)
     {
         if (channelId <= 0) return null;
