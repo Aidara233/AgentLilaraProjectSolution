@@ -1,4 +1,3 @@
-using MailKit;
 using MimeKit;
 using Plugin.Email;
 using Xunit;
@@ -32,7 +31,7 @@ public class EmailEventMappingTests
     [Fact]
     public void SenderIsTheAddressNotTheDisplayName()
     {
-        var source = EmailEventSource.ToSourceEvent(Mail(), new UniqueId(42), 7, "INBOX");
+        var source = EmailEventSource.ToSourceEvent(Mail(), 42, 7, "INBOX");
 
         // 订阅按发件人地址匹配，取显示名就永远匹配不上
         Assert.Equal("boss@corp", source.SenderId);
@@ -42,7 +41,7 @@ public class EmailEventMappingTests
     [Fact]
     public void ExtFromKeepsDisplayName()
     {
-        var source = EmailEventSource.ToSourceEvent(Mail(), new UniqueId(42), 7, "INBOX");
+        var source = EmailEventSource.ToSourceEvent(Mail(), 42, 7, "INBOX");
 
         // 显示名是给人看的，地址是给匹配用的，两者都要
         Assert.Equal("老板 <boss@corp>", source.Ext["from"]);
@@ -51,7 +50,7 @@ public class EmailEventMappingTests
     [Fact]
     public void ExtFromFallsBackToBareAddress()
     {
-        var source = EmailEventSource.ToSourceEvent(Mail(name: null), new UniqueId(1), 1, "INBOX");
+        var source = EmailEventSource.ToSourceEvent(Mail(name: null), 1, 1, "INBOX");
 
         Assert.Equal("boss@corp", source.Ext["from"]);
     }
@@ -59,7 +58,7 @@ public class EmailEventMappingTests
     [Fact]
     public void DedupeKeyCombinesUidValidityAndUid()
     {
-        var source = EmailEventSource.ToSourceEvent(Mail(), new UniqueId(42), 7, "INBOX");
+        var source = EmailEventSource.ToSourceEvent(Mail(), 42, 7, "INBOX");
 
         // UIDVALIDITY 必须进键：服务器重建邮箱后同号 UID 是完全不同的信
         Assert.Equal("mail:7:42", source.DedupeKey);
@@ -68,7 +67,7 @@ public class EmailEventMappingTests
     [Fact]
     public void ExtCarriesSubjectUidAndFolder()
     {
-        var source = EmailEventSource.ToSourceEvent(Mail(), new UniqueId(42), 7, "Archive");
+        var source = EmailEventSource.ToSourceEvent(Mail(), 42, 7, "Archive");
 
         Assert.Equal("发版通知", source.Ext["subject"]);
         Assert.Equal("42", source.Ext["uid"]);
@@ -78,7 +77,7 @@ public class EmailEventMappingTests
     [Fact]
     public void EmptyFolderFallsBackToInbox()
     {
-        var source = EmailEventSource.ToSourceEvent(Mail(), new UniqueId(1), 1, "  ");
+        var source = EmailEventSource.ToSourceEvent(Mail(), 1, 1, "  ");
 
         Assert.Equal("INBOX", source.Ext["folder"]);
     }
@@ -86,7 +85,7 @@ public class EmailEventMappingTests
     [Fact]
     public void BodyComesFromExtractBody()
     {
-        var source = EmailEventSource.ToSourceEvent(Mail(body: "今晚发版"), new UniqueId(1), 1, "INBOX");
+        var source = EmailEventSource.ToSourceEvent(Mail(body: "今晚发版"), 1, 1, "INBOX");
 
         Assert.Equal("今晚发版", source.Text);
     }
@@ -95,7 +94,7 @@ public class EmailEventMappingTests
     public void MissingDateFallsBackToNow()
     {
         var before = DateTimeOffset.UtcNow.AddSeconds(-1);
-        var source = EmailEventSource.ToSourceEvent(Mail(date: null), new UniqueId(1), 1, "INBOX");
+        var source = EmailEventSource.ToSourceEvent(Mail(date: null), 1, 1, "INBOX");
 
         Assert.True(source.ReceivedAt >= before);
     }
@@ -105,7 +104,7 @@ public class EmailEventMappingTests
     {
         var date = new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero);
 
-        var source = EmailEventSource.ToSourceEvent(Mail(date: date), new UniqueId(1), 1, "INBOX");
+        var source = EmailEventSource.ToSourceEvent(Mail(date: date), 1, 1, "INBOX");
 
         Assert.Equal(date, source.ReceivedAt);
     }
@@ -113,7 +112,7 @@ public class EmailEventMappingTests
     [Fact]
     public void ExtIsCaseInsensitive()
     {
-        var source = EmailEventSource.ToSourceEvent(Mail(), new UniqueId(1), 1, "INBOX");
+        var source = EmailEventSource.ToSourceEvent(Mail(), 1, 1, "INBOX");
 
         // 图上的 event.ext 键名是约定，插件写 Subject 还是 subject 都得能查到
         Assert.Equal("发版通知", source.Ext["Subject"]);

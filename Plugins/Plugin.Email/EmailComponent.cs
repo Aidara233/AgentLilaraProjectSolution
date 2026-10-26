@@ -41,7 +41,10 @@ public class EmailComponent : GlobalComponentBase
         // 关掉时只保留工具路径（模型主动查询）。
         if (config.EventSource.Enabled && _connMgr.Configured)
         {
-            _source = new EmailEventSource(_connMgr, config.EventSource, context.Storage.GlobalDirectory);
+            _source = new EmailEventSource(
+                new ImapMailboxSessionFactory(_connMgr, config.EventSource.Folder),
+                config.EventSource,
+                context.Storage.GlobalDirectory);
             _registrar = context.GetService<ISourceRegistrar>();
 
             if (_registrar is null)

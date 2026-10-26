@@ -20,7 +20,7 @@ namespace Plugin.Email;
 /// </summary>
 public sealed class EmailEventSource : IEventSource
 {
-    private readonly EmailConnectionManager _connMgr;
+    private readonly IMailboxSessionFactory _sessions;
     private readonly EmailEventSourceConfig _config;
     private readonly MailCursorStore _cursorStore;
 
@@ -32,11 +32,11 @@ public sealed class EmailEventSource : IEventSource
     private DateTimeOffset? _lastEventAt;
 
     public EmailEventSource(
-        EmailConnectionManager connMgr,
+        IMailboxSessionFactory sessions,
         EmailEventSourceConfig config,
         string storageDirectory)
     {
-        _connMgr = connMgr;
+        _sessions = sessions;
         _config = config;
         _cursorStore = new MailCursorStore(Path.Combine(storageDirectory, "cursor.json"));
     }
@@ -131,47 +131,42 @@ public sealed class EmailEventSource : IEventSource
     {
         var stored = _cursorStore.Load();
 
-        var events = await _connMgr.ExecuteImapAsync(async imap =>
+        var events = await _sessions.WithSessionAsync(async session =>
         {
-            var folder = await OpenFolderAsync(imap, ct);
-            var baseline = await GetMaxUidAsync(folder, ct);
+            var head = await session.GetHeadAsync(ct);
 
             // 游标缺失或 UIDVALIDITY 变了：这一轮只取基线、不投递。
-            // 两种情况的处理完全一样，所以交给决策层统一裁决，不再各写一份。
-            if (stored is null || stored.UidValidity != folder.UidValidity)
+            // 两种情况的处理完全一样，交给决策层统一裁决，不再各写一份。
+            if (stored is null || stored.UidValidity != head.UidValidity)
             {
                 var reset = MailCursorPolicy.Decide(
-                    stored, folder.UidValidity, baseline, Array.Empty<long>());
+                    stored, head.UidValidity, head.MaxUid, Array.Empty<long>());
 
                 _cursorStore.Save(new MailCursor
                 {
-                    UidValidity = folder.UidValidity,
+                    UidValidity = head.UidValidity,
                     LastUid = reset.NewLastUid,
                 });
 
                 return new List<SourceEvent>();
             }
 
-            // 只取 UID 大于游标的：FetchAsync + UniqueIdRange，避免搜全表再过滤
-            var range = new UniqueIdRange(new UniqueId((uint)(stored.LastUid + 1)), UniqueId.MaxValue);
-            var summaries = await folder.FetchAsync(range, MessageSummaryItems.UniqueId, ct);
-            var candidates = summaries.Select(summary => (long)summary.UniqueId.Id).ToList();
-
-            var decision = MailCursorPolicy.Decide(stored, folder.UidValidity, baseline, candidates);
+            var candidates = await session.ListUidsAfterAsync(stored.LastUid, ct);
+            var decision = MailCursorPolicy.Decide(
+                stored, head.UidValidity, head.MaxUid, candidates);
 
             var produced = new List<SourceEvent>(decision.Uids.Count);
 
-            foreach (var value in decision.Uids)
+            foreach (var uid in decision.Uids)
             {
                 ct.ThrowIfCancellationRequested();
-                var uid = new UniqueId((uint)value);
 
                 try
                 {
-                    var message = await folder.GetMessageAsync(uid, ct);
+                    var message = await session.GetMessageAsync(uid, ct);
                     if (message is not null)
                     {
-                        produced.Add(ToSourceEvent(message, uid, folder.UidValidity, _config.Folder));
+                        produced.Add(ToSourceEvent(message, uid, head.UidValidity, _config.Folder));
                     }
                 }
                 catch (Exception)
@@ -183,7 +178,7 @@ public sealed class EmailEventSource : IEventSource
 
             _cursorStore.Save(new MailCursor
             {
-                UidValidity = folder.UidValidity,
+                UidValidity = head.UidValidity,
                 LastUid = decision.NewLastUid,
             });
 
@@ -200,37 +195,17 @@ public sealed class EmailEventSource : IEventSource
 
             _received++;
             _lastEventAt = DateTimeOffset.UtcNow;
-            await handler(@event);
+
+            try
+            {
+                await handler(@event);
+            }
+            catch (Exception)
+            {
+                // 一个订阅抛异常不能打断整批：后面的信还得投，否则一次投递故障会吃掉整轮。
+                // 错误由订阅侧自己记录；这里只保证隔离。
+            }
         }
-    }
-
-    private Task<IMailFolder> OpenFolderAsync(ImapClient imap, CancellationToken ct)
-    {
-        var folderPath = string.IsNullOrWhiteSpace(_config.Folder) ? "INBOX" : _config.Folder;
-        return imap.GetFolderAsync(folderPath, ct);
-    }
-
-    /// <summary>
-    /// 当前邮箱的最大 UID（基线）。
-    /// <para>用 <c>UidNext - 1</c> 而不是 <c>SearchQuery.All</c>：拉全表在几千封的邮箱上就是几千个 UID，
-    /// 只是为了取一个最大值。UidNext 是服务器直接给的。</para>
-    /// </summary>
-    private static async Task<long> GetMaxUidAsync(IMailFolder folder, CancellationToken ct)
-    {
-        if (!folder.IsOpen)
-        {
-            await folder.OpenAsync(FolderAccess.ReadOnly, ct);
-        }
-
-        var next = folder.UidNext;
-        if (next is not null)
-        {
-            return Math.Max(0, (long)next.Value.Id - 1);
-        }
-
-        // 服务器没给 UidNext：退回全表（少见，但别因此卡住）
-        var all = await folder.SearchAsync(SearchQuery.All, ct);
-        return all.Count == 0 ? 0 : all.Max(u => (long)u.Id);
     }
 
     /// <summary>
@@ -238,7 +213,7 @@ public sealed class EmailEventSource : IEventSource
     /// <para>公开为 static 是为了可测：这里产出的就是模型最终看到的内容形状，
     /// 字段映射错了（发件人取了显示名、去重键拼错）不会报错，只会表现为"匹配不上"或"重复唤醒"。</para>
     /// </summary>
-    public static SourceEvent ToSourceEvent(MimeMessage message, UniqueId uid, uint uidValidity, string? folder)
+    public static SourceEvent ToSourceEvent(MimeMessage message, long uid, uint uidValidity, string? folder)
     {
         var from = message.From.Mailboxes.FirstOrDefault();
         var fromText = from is null
@@ -251,12 +226,12 @@ public sealed class EmailEventSource : IEventSource
             SenderId = from?.Address ?? string.Empty,
             Text = ExtractBody(message),
             ReceivedAt = message.Date == default ? DateTimeOffset.UtcNow : message.Date,
-            DedupeKey = $"mail:{uidValidity}:{uid.Id}",
+            DedupeKey = $"mail:{uidValidity}:{uid}",
             Ext = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["from"] = fromText,
                 ["subject"] = message.Subject ?? string.Empty,
-                ["uid"] = uid.Id.ToString(),
+                ["uid"] = uid.ToString(),
                 ["folder"] = string.IsNullOrWhiteSpace(folder) ? "INBOX" : folder,
             },
         };
