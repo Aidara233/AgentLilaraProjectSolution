@@ -127,7 +127,14 @@ public sealed class EmailEventSource : IEventSource
 
     // ── 轮询 ──
 
-    private async Task PollOnceAsync(CancellationToken ct)
+    /// <summary>
+    /// 执行一轮检查：取数以获取邮箱头部 → 决策 → 取信 → 落盘 → 投递。
+    /// <para>公开出来是因为它本身就是个正当操作（调试、WebUI 手动触发一次），
+    /// 同时这样编排逻辑才能被测试——在此之前它埋在 IMAP 调用里，一行都测不了。</para>
+    /// <para>失败会向上抛：轮询循环负责捕获并记入 <see cref="GetStatus"/>，
+    /// 手动调用者自己处理。</para>
+    /// </summary>
+    public async Task PollOnceAsync(CancellationToken ct)
     {
         var stored = _cursorStore.Load();
 
