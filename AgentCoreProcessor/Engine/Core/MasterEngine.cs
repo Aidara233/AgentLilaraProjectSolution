@@ -603,6 +603,13 @@ namespace AgentCoreProcessor.Engine
                 new Tool.Host.SessionAccessImpl(this));
             _toolContext.Register<AgentLilara.PluginSDK.Services.IAdapterAccess>(
                 new Tool.Host.AdapterAccessImpl(adapterManager));
+
+            // 订阅访问面：让 agent 把"盯着点"变成运行时订阅（模型只填参数，不碰图）
+            _toolContext.Register<AgentLilara.PluginSDK.Services.IWatchAccess>(
+                new Tool.Host.WatchAccessImpl(Graphs));
+            Tool.ToolRegistry.Register(new Tool.Core.WatchTool(_toolContext), isNonComponent: true);
+            Tool.ToolRegistry.Register(new Tool.Core.UnwatchTool(_toolContext), isNonComponent: true);
+            Tool.ToolRegistry.Register(new Tool.Core.ListWatchesTool(_toolContext), isNonComponent: true);
             _pluginLoader = new Tool.Host.PluginLoader(_toolContext, ProviderRegistry);
 
             // === Phase 2: 并行初始化（插件链 + MCP） ===
