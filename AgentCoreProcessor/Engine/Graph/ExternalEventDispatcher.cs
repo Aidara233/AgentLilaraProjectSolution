@@ -27,12 +27,13 @@ internal sealed record DispatchOutcome(
 /// </summary>
 internal sealed class ExternalEventDispatcher
 {
-    /// <summary>投递账本的容量上限：超出后丢一半最老的。防止长跑进程无界增长。</summary>
-    private const int LedgerCapacity = 4096;
+    /// <summary>投递账本的默认容量：超出后丢一半最老的。防止长跑进程无界增长。</summary>
+    public const int DefaultLedgerCapacity = 4096;
 
     private readonly Func<string, IReadOnlyList<SubscriptionRunner>> _candidates;
     private readonly Func<int, string, Task<string?>> _deliver;
     private readonly Action<string, DateTimeOffset>? _onFired;
+    private readonly int _ledgerCapacity;
 
     private readonly HashSet<string> _deliveredKeys = new(StringComparer.Ordinal);
     private readonly Queue<string> _deliveredOrder = new();
@@ -43,11 +44,13 @@ internal sealed class ExternalEventDispatcher
     public ExternalEventDispatcher(
         Func<string, IReadOnlyList<SubscriptionRunner>> candidates,
         Func<int, string, Task<string?>> deliver,
-        Action<string, DateTimeOffset>? onFired = null)
+        Action<string, DateTimeOffset>? onFired = null,
+        int ledgerCapacity = DefaultLedgerCapacity)
     {
         _candidates = candidates;
         _deliver = deliver;
         _onFired = onFired;
+        _ledgerCapacity = ledgerCapacity > 0 ? ledgerCapacity : DefaultLedgerCapacity;
     }
 
     public async Task<DispatchOutcome> DispatchAsync(InboundEvent @event)
@@ -130,7 +133,7 @@ internal sealed class ExternalEventDispatcher
 
         _deliveredOrder.Enqueue(deliveryKey);
 
-        while (_deliveredOrder.Count > LedgerCapacity)
+        while (_deliveredOrder.Count > _ledgerCapacity)
         {
             _deliveredKeys.Remove(_deliveredOrder.Dequeue());
         }
