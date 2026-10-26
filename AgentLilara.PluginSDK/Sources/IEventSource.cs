@@ -68,6 +68,15 @@ public interface IEventSource
     /// <summary>事件的信源类别，会成为 <see cref="SourceEvent.SourceId"/>（如 `mail`）。</summary>
     string Kind { get; }
 
+    /// <summary>
+    /// 本信源会在 <see cref="SourceEvent.Ext"/> 里提供哪些键。
+    /// <para>存在的意义：图上的 <c>event.ext("from")</c> 与信源写的 <c>"from"</c> 之间
+    /// 原本只有"字符串自觉"这一层保障——写错不会报错，只会**永远匹配不上**，
+    /// 而失败表现是"什么都不发生"，最难排查。声明之后，创建订阅时就能当场拒绝写错的键。</para>
+    /// <para>返回空表示不声明、不做键校验（向后兼容既有插件）。</para>
+    /// </summary>
+    IReadOnlyList<string> Fields => Array.Empty<string>();
+
     /// <summary>产出一条事件。汇集器负责把它交给统一入站入口。</summary>
     event Func<SourceEvent, Task>? OnEvent;
 

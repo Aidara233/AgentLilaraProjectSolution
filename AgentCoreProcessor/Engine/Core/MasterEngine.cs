@@ -606,7 +606,7 @@ namespace AgentCoreProcessor.Engine
 
             // 订阅访问面：让 agent 把"盯着点"变成运行时订阅（模型只填参数，不碰图）
             _toolContext.Register<AgentLilara.PluginSDK.Services.IWatchAccess>(
-                new Tool.Host.WatchAccessImpl(Graphs));
+                new Tool.Host.WatchAccessImpl(Graphs, sourceManager));
             Tool.ToolRegistry.Register(new Tool.Core.WatchTool(_toolContext), isNonComponent: true);
             Tool.ToolRegistry.Register(new Tool.Core.UnwatchTool(_toolContext), isNonComponent: true);
             Tool.ToolRegistry.Register(new Tool.Core.ListWatchesTool(_toolContext), isNonComponent: true);

@@ -45,6 +45,9 @@ public sealed class EmailEventSource : IEventSource
 
     public string Kind => "mail";
 
+    /// <summary>邮件信源提供的载荷键。`preset.watch` 读的就是这里的 `from`。</summary>
+    public IReadOnlyList<string> Fields { get; } = new[] { "from", "subject", "uid", "folder" };
+
     public event Func<SourceEvent, Task>? OnEvent;
 
     public Task StartAsync(CancellationToken ct = default)

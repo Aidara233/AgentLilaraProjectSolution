@@ -15,15 +15,19 @@ internal sealed class InjectedEventSource : IEventSource
     private DateTimeOffset? _lastEventAt;
     private EventSourceState _state = EventSourceState.Stopped;
 
-    public InjectedEventSource(string id = "manual", string kind = "injected")
+    public InjectedEventSource(string id = "manual", string kind = "injected", IReadOnlyList<string>? fields = null)
     {
         Id = id;
         Kind = kind;
+        Fields = fields ?? Array.Empty<string>();
     }
 
     public string Id { get; }
 
     public string Kind { get; }
+
+    /// <summary>声明的载荷键；不声明（默认）则不参与键校验。</summary>
+    public IReadOnlyList<string> Fields { get; }
 
     public event Func<SourceEvent, Task>? OnEvent;
 
