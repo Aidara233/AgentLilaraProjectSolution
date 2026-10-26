@@ -130,15 +130,19 @@ internal sealed class WatchAccessImpl : IWatchAccess
     /// 可用信源及其字段，供工具描述与错误提示使用。
     /// <para>把它暴露出来，模型才知道该传什么，而不是靠猜。</para>
     /// </summary>
-    public IReadOnlyList<SourceSummary> DescribeSources()
+    public IReadOnlyList<SourceCapability> DescribeSources()
     {
         if (_sources is null)
         {
-            return Array.Empty<SourceSummary>();
+            return Array.Empty<SourceCapability>();
         }
 
         return _sources.All
-            .Select(source => new SourceSummary(source.Kind, source.Fields))
+            .Select(source => new SourceCapability
+            {
+                Kind = source.Kind,
+                Fields = source.Fields,
+            })
             .ToList();
     }
 
@@ -185,6 +189,3 @@ internal sealed class WatchAccessImpl : IWatchAccess
             .ToList();
     }
 }
-
-/// <summary>信源的能力摘要（给工具描述与错误提示用）。</summary>
-internal sealed record SourceSummary(string Kind, IReadOnlyList<string> Fields);

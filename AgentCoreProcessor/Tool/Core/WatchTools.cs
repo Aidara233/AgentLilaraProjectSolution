@@ -23,9 +23,31 @@ namespace AgentCoreProcessor.Tool.Core
 
         public string Name => "watch";
 
-        public string Description =>
-            "登记一个订阅：等某个信源上出现符合条件的消息，命中后框架会把内容送到当前会话，你不需要反复查询。" +
-            "用于「我待会儿发邮件给你」「有人回复我时告诉我」这类承诺。一次性：命中或过期后自动失效。";
+        /// <summary>
+        /// 描述里实时拼上"当前真实存在哪些信源、各支持哪些字段"。
+        /// 静态文案会让模型只能猜 source 该填什么，猜错的表现是"订阅成功但永远不命中"。
+        /// </summary>
+        public string Description
+        {
+            get
+            {
+                const string baseText =
+                    "登记一个订阅：等某个信源上出现符合条件的消息，命中后框架会把内容送到当前会话，你不需要反复查询。" +
+                    "用于「我待会儿发邮件给你」「有人回复我时告诉我」这类承诺。一次性：命中或过期后自动失效。";
+
+                var sources = _access?.DescribeSources();
+                if (sources is null || sources.Count == 0)
+                {
+                    return baseText;
+                }
+
+                var parts = sources.Select(source => source.Fields.Count == 0
+                    ? source.Kind
+                    : $"{source.Kind}（字段：{string.Join("/", source.Fields)}）");
+
+                return baseText + " 可用信源：" + string.Join("；", parts) + "。";
+            }
+        }
 
         public IReadOnlyList<ToolParameter> Parameters =>
         [

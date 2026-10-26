@@ -145,6 +145,45 @@ public class WatchAccessTests : IDisposable
         Assert.Contains("from", summary.Fields);
     }
 
+    // ── F3：工具描述要带上真实存在的信源 ──
+
+    [Fact]
+    public void WatchToolDescriptionListsAvailableSources()
+    {
+        var access = new WatchAccessImpl(
+            GraphManager.Open(_root, active: true), SourcesWith("mail", "from", "subject"));
+        var tool = new AgentCoreProcessor.Tool.Core.WatchTool(new FakeToolContext(access));
+
+        // 模型看到的是真实清单，而不是靠猜 source 该填什么
+        Assert.Contains("mail", tool.Description);
+        Assert.Contains("from", tool.Description);
+    }
+
+    [Fact]
+    public void WatchToolDescriptionStaysUsableWithoutSources()
+    {
+        var access = new WatchAccessImpl(GraphManager.Open(_root, active: true), new SourceManager());
+        var tool = new AgentCoreProcessor.Tool.Core.WatchTool(new FakeToolContext(access));
+
+        Assert.False(string.IsNullOrWhiteSpace(tool.Description));
+        Assert.DoesNotContain("可用信源", tool.Description);
+    }
+
+    private sealed class FakeToolContext : AgentLilara.PluginSDK.IToolContext
+    {
+        private readonly IWatchAccess _access;
+
+        public FakeToolContext(IWatchAccess access) => _access = access;
+
+        public T? GetService<T>() where T : class => _access as T;
+
+        public AgentLilara.PluginSDK.IPluginStorage Storage => null!;
+
+        public AgentLilara.PluginSDK.IWorkspaceAccess Workspace => null!;
+
+        public AgentLilara.PluginSDK.IPluginDataAccess PluginData => null!;
+    }
+
     private static SourceManager SourcesWith(string kind, params string[] fields)
     {
         var manager = new SourceManager();
