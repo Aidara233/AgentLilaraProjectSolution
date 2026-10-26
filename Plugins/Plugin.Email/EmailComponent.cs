@@ -9,6 +9,7 @@ public class EmailComponent : GlobalComponentBase
 {
     private EmailConnectionManager _connMgr = null!;
     private EmailEventSource? _source;
+    private ISourceRegistrar? _registrar;
     private readonly List<ITool> _tools = new();
 
     public override ComponentMeta Meta => new()
@@ -41,26 +42,52 @@ public class EmailComponent : GlobalComponentBase
         if (config.EventSource.Enabled && _connMgr.Configured)
         {
             _source = new EmailEventSource(_connMgr, config.EventSource, context.Storage.GlobalDirectory);
-            var registrar = context.GetService<ISourceRegistrar>();
+            _registrar = context.GetService<ISourceRegistrar>();
 
-            if (registrar is null)
+            if (_registrar is null)
             {
                 // 宿主没有登记面：不静默降级成"看起来配好了其实没人收"
                 Console.Error.WriteLine("[email] 宿主未提供 ISourceRegistrar，邮件事件推送未启用");
             }
             else
             {
-                registrar.Register(_source);
+                _registrar.Register(_source);
             }
         }
 
         return Task.CompletedTask;
     }
 
-    public override Task OnShutdownAsync(ShutdownReason reason)
+    public override async Task OnDisabledAsync()
     {
-        _source = null;
+        // 组件被禁用还要继续轮询邮箱，是把用户关掉的开关当成没关。
+        if (_registrar is not null && _source is not null)
+        {
+            await _source.StopAsync();
+            _registrar.Unregister(_source.Id);
+        }
+    }
+
+    public override Task OnEnabledAsync()
+    {
+        if (_registrar is not null && _source is not null)
+        {
+            // StartAsync 是幂等的：宿主启动时已拉起、或这里重新拉起都成立
+            _ = _source.StartAsync();
+        }
+
         return Task.CompletedTask;
+    }
+
+    public override async Task OnShutdownAsync(ShutdownReason reason)
+    {
+        if (_source is not null)
+        {
+            await _source.StopAsync();
+        }
+
+        _source = null;
+        _registrar = null;
     }
 
     public override string? BuildPromptSection(LoopInfo caller)
