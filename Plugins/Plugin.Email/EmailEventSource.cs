@@ -63,23 +63,9 @@ public sealed class EmailEventSource : IEventSource
         _cts?.Dispose();
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
-        // 首轮（或游标丢失）只记基线、不投递历史；之后才进入正常轮询。
-        // 这个分派放在 poll 委托里，是为了让"首轮失败"也走同一套重试与退避。
-        var primed = File.Exists(_cursorPath);
-        var loop = new SourcePollingLoop(
-            async token =>
-            {
-                if (primed)
-                {
-                    await PollOnceAsync(token);
-                }
-                else
-                {
-                    await PrimeCursorIfMissingAsync(token);
-                    primed = true;
-                }
-            },
-            _config.PollSeconds);
+        // 首轮 / 游标丢失 / UIDVALIDITY 变化，统一由 MailCursorPolicy 在 PollOnceAsync 里裁决，
+        // 所以不再需要"先 prime 再轮询"的两段式——首轮失败也走同一套重试与退避。
+        var loop = new SourcePollingLoop(PollOnceAsync, _config.PollSeconds);
 
         _pollLoop = loop;
         _runTask = Task.Run(() => loop.RunAsync(_cts.Token), CancellationToken.None);
@@ -141,68 +127,44 @@ public sealed class EmailEventSource : IEventSource
 
     // ── 轮询 ──
 
-    /// <summary>没有游标时，把当前最大 UID 记成基线（不投递）。</summary>
-    private async Task PrimeCursorIfMissingAsync(CancellationToken ct)
-    {
-        if (File.Exists(_cursorPath))
-        {
-            return;
-        }
-
-        await _connMgr.ExecuteImapAsync(async imap =>
-        {
-            var folder = await OpenFolderAsync(imap, ct);
-            var cursor = new MailCursor
-            {
-                UidValidity = folder.UidValidity,
-                LastUid = await GetMaxUidAsync(folder, ct),
-            };
-
-            SaveCursor(cursor);
-            return true;
-        }, ct);
-    }
-
     private async Task PollOnceAsync(CancellationToken ct)
     {
-        var cursor = LoadCursor();
-        if (cursor is null)
-        {
-            await PrimeCursorIfMissingAsync(ct);
-            return;
-        }
+        var stored = LoadCursor();
 
         var events = await _connMgr.ExecuteImapAsync(async imap =>
         {
             var folder = await OpenFolderAsync(imap, ct);
+            var baseline = await GetMaxUidAsync(folder, ct);
 
-            // UIDVALIDITY 变了 → 旧 UID 全部失效，重新取基线（丢掉这一轮，不投递）
-            if (folder.UidValidity != cursor.UidValidity)
+            // 游标缺失或 UIDVALIDITY 变了：这一轮只取基线、不投递。
+            // 两种情况的处理完全一样，所以交给决策层统一裁决，不再各写一份。
+            if (stored is null || stored.UidValidity != folder.UidValidity)
             {
-                var reset = new MailCursor
+                var reset = MailCursorPolicy.Decide(
+                    stored, folder.UidValidity, baseline, Array.Empty<long>());
+
+                SaveCursor(new MailCursor
                 {
                     UidValidity = folder.UidValidity,
-                    LastUid = await GetMaxUidAsync(folder, ct),
-                };
-                SaveCursor(reset);
+                    LastUid = reset.NewLastUid,
+                });
+
                 return new List<SourceEvent>();
             }
 
-            // 只取 UID 大于游标的：用 FetchAsync + UniqueIdRange，避免搜全表再过滤
-            var range = new UniqueIdRange(new UniqueId((uint)(cursor.LastUid + 1)), UniqueId.MaxValue);
+            // 只取 UID 大于游标的：FetchAsync + UniqueIdRange，避免搜全表再过滤
+            var range = new UniqueIdRange(new UniqueId((uint)(stored.LastUid + 1)), UniqueId.MaxValue);
             var summaries = await folder.FetchAsync(range, MessageSummaryItems.UniqueId, ct);
-            if (summaries.Count == 0)
-            {
-                return new List<SourceEvent>();
-            }
+            var candidates = summaries.Select(summary => (long)summary.UniqueId.Id).ToList();
 
-            var produced = new List<SourceEvent>(summaries.Count);
-            var maxUid = cursor.LastUid;
+            var decision = MailCursorPolicy.Decide(stored, folder.UidValidity, baseline, candidates);
 
-            foreach (var summary in summaries.OrderBy(s => s.UniqueId.Id))
+            var produced = new List<SourceEvent>(decision.Uids.Count);
+
+            foreach (var value in decision.Uids)
             {
                 ct.ThrowIfCancellationRequested();
-                var uid = summary.UniqueId;
+                var uid = new UniqueId((uint)value);
 
                 try
                 {
@@ -214,13 +176,17 @@ public sealed class EmailEventSource : IEventSource
                 }
                 catch (Exception)
                 {
-                    // 单封解析失败不阻断整批：跳过，游标照常前进（否则会永久卡在这一封）
+                    // 单封解析失败不阻断整批：跳过。游标已由决策层越过它，
+                    // 否则每轮都会重试同一封、后面的信永远收不到。
                 }
-
-                maxUid = Math.Max(maxUid, uid.Id);
             }
 
-            SaveCursor(new MailCursor { UidValidity = folder.UidValidity, LastUid = maxUid });
+            SaveCursor(new MailCursor
+            {
+                UidValidity = folder.UidValidity,
+                LastUid = decision.NewLastUid,
+            });
+
             return produced;
         }, ct);
 
@@ -358,12 +324,6 @@ public sealed class EmailEventSource : IEventSource
         }
     }
 
-    private sealed class MailCursor
-    {
-        public uint UidValidity { get; set; }
-
-        public long LastUid { get; set; }
-    }
 }
 
 /// <summary>邮件信源的轮询配置。</summary>
