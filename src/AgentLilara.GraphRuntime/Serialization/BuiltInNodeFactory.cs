@@ -30,6 +30,11 @@ public sealed class BuiltInNodeFactory : INodeFactory
                 p.EnsureOnly();
                 return new OnErrorEvent(id);
             },
+            ["on.external"] = (id, p) =>
+            {
+                p.EnsureOnly();
+                return new OnExternal(id);
+            },
             ["read.const"] = (id, p) =>
             {
                 var cell = p.GetCell("value", Cell.Unknown);
@@ -47,8 +52,9 @@ public sealed class BuiltInNodeFactory : INodeFactory
             {
                 var name = p.GetString("name")
                            ?? throw new GraphLoadException($"node '{id}': param 'name' is required");
-                p.EnsureOnly("name");
-                return new ReadMountParameter(id, name);
+                var fallback = p.GetString("default");
+                p.EnsureOnly("name", "default");
+                return new ReadMountParameter(id, name, fallback);
             },
             ["event.get"] = (id, p) =>
             {
@@ -68,6 +74,18 @@ public sealed class BuiltInNodeFactory : INodeFactory
             {
                 p.EnsureOnly();
                 return new EventMention(id);
+            },
+            ["event.ext"] = (id, p) =>
+            {
+                var name = p.GetString("name")
+                           ?? throw new GraphLoadException($"node '{id}': param 'name' is required");
+                p.EnsureOnly("name");
+                return new EventExt(id, name);
+            },
+            ["compare.eq"] = (id, p) =>
+            {
+                p.EnsureOnly();
+                return new CompareEq(id);
             },
             ["logic.and"] = (id, p) =>
             {

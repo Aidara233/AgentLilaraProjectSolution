@@ -86,15 +86,19 @@
 |---|---|---|---|---|
 `on.message` | 激活源（每图恰一个） | — | — | `event`（`InboundEvent`）, `channel` |
 `on.clock` | 激活源（动态图时钟，归档保留） | — | — | `event` |
+`on.external` | 激活源（外部信源事件） | — | — | `event` |
 `read.const` | 数据源 | `value`（bool/int/string） | — | `value` |
 `read.variable` | 数据源 | `name` | — | `value` |
+`read.mount` | 数据源 | `name`, `default`（可选） | — | `value` |
 `event.get` | 算子 | `field`（白名单） | `event` | `value` |
+`event.ext` | 算子 | `name`（外部载荷键） | `event` | `value` |
 `event.mention` | 算子 | — | `event` | `result` |
 `logic.and` | 算子 | — | `a`, `b` | `result` |
 `logic.or` | 算子 | — | `a`, `b` | `result` |
 `logic.select` | 算子 | — | `cond`, `a`, `b` | `result` |
 `gate.if` | 算子（闸门） | — | `event`, `cond` | `event` |
 `compare.ge` | 算子 | — | `value`, `threshold` | `result` |
+`compare.eq` | 算子 | — | `a`, `b` | `result` |
 `math.add` | 算子 | — | `a`, `b` | `result` |
 `list.first` | 算子 | — | `list` | `value`, `found` |
 `write.variable` | 数据汇（变量） | `name` | `value` | — |
@@ -102,6 +106,7 @@
 `sink.prompt` | 动作（出意图） | — | `event`, `sessionRef`, `text` | — |
 `sink.inject` | 动作（出意图） | — | `event`, `sessionRef`, `text` | — |
 `sink.set` | 动作（出意图） | — | `event`, `key`, `value` | — |
+`sink.notify` | 动作（出意图） | — | `event` | — |
 `module.<id>.<method>` | 动作（即时调用） | — | `event` + 每个参数一个口 | — |
 `read.<id>.<property>` | 数据源（属性读） | — | — | `value` |
 `write.<id>.<property>` | 数据汇（属性写） | — | `event`, `value` | — |

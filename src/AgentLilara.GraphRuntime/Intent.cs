@@ -21,6 +21,13 @@ public enum IntentKind
     /// <summary>写实例/全局状态。</summary>
     StateSet,
 
+    /// <summary>
+    /// 通知这次激活所属的订阅宿主（"你在等的东西来了"）。
+    /// <para>⚠️ 图不填参数、不填目标：投递到哪个频道、文本怎么渲染，全由骨架按**订阅记录**决定。
+    /// 图只回答"条件命中了没有"——它不该知道会话 id，因为会话可能还没建。</para>
+    /// </summary>
+    Notify,
+
     MemoryRemember,
     ToolCall,
     GraphPulse,
@@ -52,6 +59,9 @@ public static class IntentCatalog
         new IntentSpec("sink.inject", IntentKind.SessionInject, new[] { "sessionRef", "text" }, TargetArg: "sessionRef"),
         new IntentSpec("sink.route", IntentKind.SessionRoute, new[] { "sessionType" }, TargetArg: "sessionType"),
         new IntentSpec("sink.set", IntentKind.StateSet, new[] { "key", "value" }, TargetArg: "key"),
+
+        // 无参数口：命中即通知，投递目标与文本由骨架按订阅记录决定（图不知道会话 id）。
+        new IntentSpec("sink.notify", IntentKind.Notify, Array.Empty<string>(), TargetArg: null),
     };
 
     public static IntentSpec? Find(string nodeType) =>

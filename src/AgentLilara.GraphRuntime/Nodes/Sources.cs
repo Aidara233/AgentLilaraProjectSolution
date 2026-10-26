@@ -33,6 +33,40 @@ public sealed class OnMessageEvent : INode
 }
 
 /// <summary>
+/// 激活源：收到一条外部信源事件（邮件、webhook、文件变化…）。
+/// <para>⚠️ 与 <see cref="OnMessageEvent"/> **严格隔离**：外部事件不是聊天消息。
+/// 若把它塞进 `MessageReceived`，所有按频道挂载的图（如 `preset.activation` 的攒批计数）
+/// 都会把邮件算成一条群消息。</para>
+/// <para>外部事件没有频道，因此只输出 `event`，不输出 `channel`。</para>
+/// </summary>
+public sealed class OnExternal : INode
+{
+    public OnExternal(string id = "on.external")
+    {
+        Id = id;
+    }
+
+    public string Id { get; }
+
+    public NodeKind Kind => NodeKind.Source;
+
+    public bool IsActivationSource => true;
+
+    public IReadOnlyList<string> InputPorts { get; } = Array.Empty<string>();
+
+    public IReadOnlyList<string> OutputPorts { get; } = new[] { "event" };
+
+    public IReadOnlyDictionary<string, Cell> Evaluate(IReadOnlyDictionary<string, Cell> inputs, EvalContext context)
+    {
+        var @event = context.Event is { Kind: EventKind.External } evt ? evt : null;
+        return new Dictionary<string, Cell>(StringComparer.Ordinal)
+        {
+            ["event"] = @event is null ? Cell.NoEvent : Cell.Of(@event),
+        };
+    }
+}
+
+/// <summary>
 /// 激活源：收到一条运行时失败事件（错误图专用）。
 /// <para>失败是信息：它作为新的一拍进入错误图，由电路自行决定怎么补偿。</para>
 /// </summary>
@@ -112,18 +146,26 @@ public sealed class ConstValue : INode
         new Dictionary<string, Cell>(StringComparer.Ordinal) { ["value"] = Value };
 }
 
-/// <summary>数据源：当前挂载点参数（只读；未配置的参数输出未知）。</summary>
+/// <summary>数据源：当前挂载点参数（只读；未配置且没有默认值 → 未知）。</summary>
 public sealed class ReadMountParameter : INode
 {
-    public ReadMountParameter(string id, string name)
+    public ReadMountParameter(string id, string name, string? defaultValue = null)
     {
         Id = id;
         Name = name;
+        DefaultValue = defaultValue;
     }
 
     public string Id { get; }
 
     public string Name { get; }
+
+    /// <summary>
+    /// 未配置该参数时给的值。<c>null</c> = 未知（让下游条件拦住）。
+    /// <para>存在的意义是表达"这一项不限"：配 <c>""</c> 再配 <c>text.contains</c>，
+    /// 空针命中任意文本，于是"没配 = 不过滤"不需要额外的算子。</para>
+    /// </summary>
+    public string? DefaultValue { get; }
 
     public NodeKind Kind => NodeKind.Source;
 
@@ -135,7 +177,7 @@ public sealed class ReadMountParameter : INode
     {
         var value = context.MountParameters.TryGetValue(Name, out var parameter)
             ? Cell.Of(parameter)
-            : Cell.Unknown;
+            : DefaultValue is null ? Cell.Unknown : Cell.Of(DefaultValue);
         return new Dictionary<string, Cell>(StringComparer.Ordinal) { ["value"] = value };
     }
 }

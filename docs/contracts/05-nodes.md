@@ -30,6 +30,7 @@
 `on.message` | — | `event`（`InboundEvent`）、`channel` | **已实现**；本拍事件为空时输出无事件 |
 `on.clock` | — | `event` | **已实现**；动态图专用（时钟沿），归档保留 |
 `on.error` | — | `event`、`channel` | **已实现**；只对 `runtime.error` 事件激活（错误图专用） |
+`on.external` | — | `event` | **已实现**；只对 `runtime.external` 事件激活。与 `on.message` **严格隔离**：外部事件没有频道，不进频道图、不进消息管线 |
 
 > 一图一源（D65）。要"多个条件都走同一反应"，用中间层图 + `sink.pulse`，不要放开多源。
 
@@ -41,7 +42,7 @@
 |---|---|---|
 `read.const` | `value`（bool/int/string） | `value` |
 `read.variable` | `name` | `value`（本拍快照） |
-`read.mount` | `name` | `value`（当前挂载参数；未配置则为 unknown） |
+`read.mount` | `name`、`default`（可选） | `value`（当前挂载参数；未配置时给 `default`，没有 `default` 则为 unknown） |
 `read.<module>.<property>` | — | `value`（模块属性，读上次提交值） |
 
 ---
@@ -51,11 +52,14 @@
 | 节点 | 输入 | 输出 |
 |---|---|---|
 `event.get` | `event` | `value`（按 `field` 取；字段见下） |
+`event.ext` | `event` | `value`（按 `name` 取外部载荷；键缺失 → **unknown**，不是空串） |
 `event.mention` | `event` | `result`（`Bool`；上游无事件 → 无事件） |
 `logic.and` / `logic.or` | `a`、`b` | `result`（`Bool`） |
 `logic.select` | `cond`、`a`、`b` | `result`（`cond ? a : b`，只选择、不惰性求值） |
 `gate.if` | `event`、`cond` | `event`（条件不成立 → **无事件**） |
+`compare.eq` | `a`、`b` | `result`（等值；字符串走序数比较，unknown 传播） |
 `compare.ge` | `value`、`threshold` | `result`（`Bool`） |
+`text.contains` | `text`、`needle` | `result`（序数子串；空针命中任意文本） |
 `math.add` | `a`、`b` | `result`（`Int`） |
 `list.first` | `list` | `value`、`found`（空列表 → `value` 无事件） |
 
@@ -79,7 +83,8 @@ text  sender  channel  adapter  kind  mentions  isReply  received  dedupe
 `sink.prompt` | `sessionRef`、`text` | `SessionPrompt` | `sessionRef` |
 `sink.route` | `sessionType` | `SessionRoute` | 当前事件频道；复用频道活跃会话，否则按类型创建并投递当前消息 |
 `sink.inject` | `sessionRef`、`text` | `SessionInject` | `sessionRef` |
-`sink.set` | `key`、`value` | `StateSet` | `key` |
+| `sink.set` | `key`、`value` | `StateSet` | `key` |
+`sink.notify` | — | `Notify` | 无目标：由骨架按**订阅记录**决定投递频道与文本（图不知道会话 id） |
 `module.<id>.<method>` | `event` + 每个参数一个口 | 即时调用（结果进台账） | — |
 
 **图上没有节点的动作**（骨架内部，问题不在于"权限"而在于"必须发生"）：落库、去重、出向台账与重试、真正发送、会话持久化、审计。

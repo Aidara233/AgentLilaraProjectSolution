@@ -52,6 +52,7 @@
 `session.failed` | sessionRef、stage、message | 低 | 归档保留 |
 `adapter.stateChanged` | adapterId、state、since | 低 | 归档保留 |
 `runtime.error` | kind、node、message | 低 | 已实现（错误图 `on.error` 的触发源） |
+`external.received` | sourceId、text、sender、ext.*（主题/线程等信源载荷） | 中 | 已实现（`on.external` 的触发源；**不是聊天消息**，无频道） |
 
 加一个新信源（邮件、webhook）**不新增事件种类**，只换 `adapterId`。
 

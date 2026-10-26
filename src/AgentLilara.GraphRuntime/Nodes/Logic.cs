@@ -284,6 +284,93 @@ public sealed class TextContains : INode
 }
 
 /// <summary>
+/// 逻辑：读外部事件载荷袋里的一个键（`ext.*`，如邮件的 `from` / `subject`）。
+/// <para>键不存在 → <c>unknown</c>（不是空串）：下游 `compare.eq` 保持 unknown，闸门不放行。
+/// 这样"信源没给这个字段"与"字段是空"能被区分开。</para>
+/// </summary>
+public sealed class EventExt : INode
+{
+    public EventExt(string id, string name)
+    {
+        Id = id;
+        Name = name;
+    }
+
+    public string Id { get; }
+
+    /// <summary>载荷键名。不做白名单——外部字段是信源定义的，加载期无从枚举。</summary>
+    public string Name { get; }
+
+    public NodeKind Kind => NodeKind.Logic;
+
+    public IReadOnlyList<string> InputPorts { get; } = new[] { "event" };
+
+    public IReadOnlyList<string> OutputPorts { get; } = new[] { "value" };
+
+    public IReadOnlyDictionary<string, Cell> Evaluate(IReadOnlyDictionary<string, Cell> inputs, EvalContext context)
+    {
+        var upstream = inputs["event"];
+        if (upstream.IsNoEvent)
+        {
+            return new Dictionary<string, Cell>(StringComparer.Ordinal) { ["value"] = Cell.NoEvent };
+        }
+
+        if (upstream.Payload is not InboundEvent @event)
+        {
+            return new Dictionary<string, Cell>(StringComparer.Ordinal) { ["value"] = Cell.Unknown };
+        }
+
+        var value = @event.Ext.TryGetValue(Name, out var found) ? Cell.Of(found) : Cell.Unknown;
+        return new Dictionary<string, Cell>(StringComparer.Ordinal) { ["value"] = value };
+    }
+}
+
+/// <summary>
+/// 逻辑：等值比较（字符串走序数比较，区分大小写；其他类型退化为对象相等）。
+/// <para>unknown 传播：任一侧未知 → 结果未知，闸门因此不放行。</para>
+/// </summary>
+public sealed class CompareEq : INode
+{
+    public CompareEq(string id)
+    {
+        Id = id;
+    }
+
+    public string Id { get; }
+
+    public NodeKind Kind => NodeKind.Logic;
+
+    public IReadOnlyList<string> InputPorts { get; } = new[] { "a", "b" };
+
+    public IReadOnlyList<string> OutputPorts { get; } = new[] { "result" };
+
+    public IReadOnlyDictionary<string, Cell> Evaluate(IReadOnlyDictionary<string, Cell> inputs, EvalContext context)
+    {
+        var a = inputs["a"];
+        var b = inputs["b"];
+
+        Cell result;
+        if (a.State == CellState.Unknown || b.State == CellState.Unknown)
+        {
+            result = Cell.Unknown;
+        }
+        else if (a.IsNoEvent || b.IsNoEvent)
+        {
+            result = Cell.NoEvent;
+        }
+        else
+        {
+            var equal = a.Payload is string left && b.Payload is string right
+                ? string.Equals(left, right, StringComparison.Ordinal)
+                : Equals(a.Payload, b.Payload);
+            result = Cell.Of(equal);
+        }
+
+        return new Dictionary<string, Cell>(StringComparer.Ordinal) { ["result"] = result };
+    }
+}
+
+/// <summary>
 /// 逻辑：条件取值 <c>cond ? a : b</c>（两侧都已求值，只做选择，不做惰性分支）。
 /// 用于"条件赋值"：把"什么情况下重置/沿用"写成一个值，避免对同一变量写两次。
 /// </summary>
