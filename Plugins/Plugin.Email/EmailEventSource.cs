@@ -25,13 +25,11 @@ public sealed class EmailEventSource : IEventSource
     private readonly string _cursorPath;
 
     private CancellationTokenSource? _cts;
-    private Task? _loop;
-    private EventSourceState _state = EventSourceState.Stopped;
+    private Task? _runTask;
+    private SourcePollingLoop? _pollLoop;
     private DateTimeOffset? _startedAt;
     private long _received;
     private DateTimeOffset? _lastEventAt;
-    private string? _lastError;
-    private DateTimeOffset? _lastErrorAt;
 
     public EmailEventSource(
         EmailConnectionManager connMgr,
@@ -51,15 +49,37 @@ public sealed class EmailEventSource : IEventSource
 
     public Task StartAsync(CancellationToken ct = default)
     {
-        if (_loop is not null)
+        // 幂等只针对"还活着的循环"。循环已经因为错误死掉时必须允许重建——
+        // 否则这个信源永远拉不起来，而外面看起来"已经启动了"。
+        if (_runTask is { IsCompleted: false })
         {
             return Task.CompletedTask;
         }
 
-        _state = EventSourceState.Starting;
-        _startedAt = DateTimeOffset.UtcNow;
+        _startedAt ??= DateTimeOffset.UtcNow;
+        _cts?.Dispose();
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        _loop = Task.Run(() => PollLoopAsync(_cts.Token), CancellationToken.None);
+
+        // 首轮（或游标丢失）只记基线、不投递历史；之后才进入正常轮询。
+        // 这个分派放在 poll 委托里，是为了让"首轮失败"也走同一套重试与退避。
+        var primed = File.Exists(_cursorPath);
+        var loop = new SourcePollingLoop(
+            async token =>
+            {
+                if (primed)
+                {
+                    await PollOnceAsync(token);
+                }
+                else
+                {
+                    await PrimeCursorIfMissingAsync(token);
+                    primed = true;
+                }
+            },
+            _config.PollSeconds);
+
+        _pollLoop = loop;
+        _runTask = Task.Run(() => loop.RunAsync(_cts.Token), CancellationToken.None);
 
         return Task.CompletedTask;
     }
@@ -68,6 +88,8 @@ public sealed class EmailEventSource : IEventSource
     {
         if (_cts is null)
         {
+            _runTask = null;
+            _pollLoop = null;
             return;
         }
 
@@ -80,85 +102,41 @@ public sealed class EmailEventSource : IEventSource
             // 已释放：忽略
         }
 
-        if (_loop is not null)
+        if (_runTask is not null)
         {
             try
             {
-                await _loop;
+                await _runTask;
             }
             catch (OperationCanceledException)
             {
                 // 正常停止
             }
+            catch (Exception)
+            {
+                // 循环内部已记录；这里不能让停止流程抛
+            }
         }
 
         _cts.Dispose();
         _cts = null;
-        _loop = null;
-        _state = EventSourceState.Stopped;
+        _runTask = null;
+        _pollLoop = null;
     }
 
     public EventSourceStatus GetStatus() => new()
     {
         Id = Id,
         Kind = Kind,
-        State = _state,
+        State = _pollLoop?.State ?? EventSourceState.Stopped,
         StartedAt = _startedAt,
         Received = _received,
         LastEventAt = _lastEventAt,
-        LastError = _lastError,
-        LastErrorAt = _lastErrorAt,
+        LastError = _pollLoop?.LastError,
+        LastErrorAt = _pollLoop?.LastErrorAt,
     };
 
-    // ── 轮询循环 ──
-
-    private async Task PollLoopAsync(CancellationToken ct)
-    {
-        // 首次进入：若还没有游标，只记基线，不投递历史
-        try
-        {
-            await PrimeCursorIfMissingAsync(ct);
-            _state = EventSourceState.Running;
-        }
-        catch (Exception ex)
-        {
-            RecordError(ex);
-            return;
-        }
-
-        while (!ct.IsCancellationRequested)
-        {
-            try
-            {
-                await PollOnceAsync(ct);
-                _state = EventSourceState.Running;
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                RecordError(ex);
-            }
-
-            try
-            {
-                await Task.Delay(TimeSpan.FromSeconds(Math.Max(10, _config.PollSeconds)), ct);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-        }
-    }
-
-    private void RecordError(Exception ex)
-    {
-        _state = EventSourceState.Error;
-        _lastError = ex.Message;
-        _lastErrorAt = DateTimeOffset.UtcNow;
-    }
+    // ── 轮询 ──
 
     /// <summary>没有游标时，把当前最大 UID 记成基线（不投递）。</summary>
     private async Task PrimeCursorIfMissingAsync(CancellationToken ct)
