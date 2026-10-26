@@ -7,6 +7,9 @@ public class EmailConfig
     public SmtpConfig Smtp { get; set; } = new();
     public ImapConfig Imap { get; set; } = new();
 
+    /// <summary>新邮件作为事件推送的配置（与模型主动查询的工具路径并存）。</summary>
+    public EmailEventSourceConfig EventSource { get; set; } = new();
+
     public static EmailConfig Load(string configDir)
     {
         Directory.CreateDirectory(configDir);

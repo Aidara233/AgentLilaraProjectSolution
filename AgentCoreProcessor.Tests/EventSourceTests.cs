@@ -1,6 +1,7 @@
 using AgentCoreProcessor.Engine.Graph;
 using AgentCoreProcessor.Engine.Source;
 using AgentLilara.GraphRuntime.Contracts;
+using AgentLilara.PluginSDK.Sources;
 using Xunit;
 
 namespace AgentCoreProcessor.Tests;
@@ -170,6 +171,45 @@ public class EventSourceTests : IDisposable
         Assert.Single(delivered);
     }
 
+    // ── 契约翻译（插件形状 → 宿主形状）──
+
+    [Fact]
+    public void SourceEventBecomesExternalEventWithoutChannel()
+    {
+        var inbound = SourceManager.ToInbound(new SourceEvent
+        {
+            SourceId = "mail",
+            Text = "正文",
+            SenderId = "boss@corp",
+            DedupeKey = "mail:1234:7",
+            Ext = new Dictionary<string, string> { ["from"] = "boss@corp", ["subject"] = "发版" },
+        });
+
+        // 外部事件没有频道：不会被按频道挂载的图看见
+        Assert.Equal(string.Empty, inbound.ChannelKey);
+        Assert.Equal(EventKind.External, inbound.Kind);
+        Assert.Equal("mail", inbound.SourceId);
+        Assert.Equal("boss@corp", inbound.SenderId);
+        Assert.Equal("正文", inbound.Text);
+        // 去重键原样带过：订阅分发靠它防重复唤醒
+        Assert.Equal("mail:1234:7", inbound.DedupeKey);
+        // 信源载荷进 Ext，键名大小写不敏感
+        Assert.Equal("发版", inbound.Ext["Subject"]);
+    }
+
+    [Fact]
+    public void SourceEventWithoutDedupeKeyStillGetsOne()
+    {
+        var inbound = SourceManager.ToInbound(new SourceEvent
+        {
+            SourceId = "mail",
+            Text = "x",
+            SenderId = "a@b",
+        });
+
+        Assert.False(string.IsNullOrWhiteSpace(inbound.DedupeKey));
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_root, recursive: true); }
@@ -178,13 +218,14 @@ public class EventSourceTests : IDisposable
 
     // ── 帮手 ──
 
-    private static InboundEvent Mail(string from, string body) =>
-        InboundEvent.External(
-            "mail",
-            body,
-            senderId: from,
-            ext: new Dictionary<string, string> { ["from"] = from },
-            dedupeKey: "mail:" + body);
+    private static SourceEvent Mail(string from, string body) => new()
+    {
+        SourceId = "mail",
+        Text = body,
+        SenderId = from,
+        Ext = new Dictionary<string, string> { ["from"] = from },
+        DedupeKey = "mail:" + body,
+    };
 
     private sealed class FakeSource : IEventSource
     {
@@ -202,7 +243,7 @@ public class EventSourceTests : IDisposable
 
         public int StopCount { get; private set; }
 
-        public event Func<InboundEvent, Task>? OnEvent
+        public event Func<SourceEvent, Task>? OnEvent
         {
             add { }
             remove { }

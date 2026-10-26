@@ -1,11 +1,11 @@
-using AgentLilara.GraphRuntime.Contracts;
+using AgentLilara.PluginSDK.Sources;
 
 namespace AgentCoreProcessor.Engine.Source;
 
 /// <summary>
-/// 进程内注入子信源：把一条 <see cref="InboundEvent"/> 直接交给汇集器。
+/// 进程内注入子信源：把一条 <see cref="SourceEvent"/> 直接交给汇集器。
 /// <para>用途是**让链路可跑通、可测**：真实信源（IMAP、webhook）需要外部依赖与网络，
-/// 而"汇集器 → 订阅 → 唤醒会话"这段逻辑不该被它们挡住。</para>
+/// 而"汇集器 → 订阅 → 会话"这段逻辑不该被它们挡住。</para>
 /// <para>也供调试与手工触发使用；它不持有游标、不做去重（去重由订阅的投递账本负责）。</para>
 /// </summary>
 internal sealed class InjectedEventSource : IEventSource
@@ -25,7 +25,7 @@ internal sealed class InjectedEventSource : IEventSource
 
     public string Kind { get; }
 
-    public event Func<InboundEvent, Task>? OnEvent;
+    public event Func<SourceEvent, Task>? OnEvent;
 
     public Task StartAsync(CancellationToken ct = default)
     {
@@ -41,7 +41,7 @@ internal sealed class InjectedEventSource : IEventSource
     }
 
     /// <summary>注入一条事件。返回 false 表示汇集器尚未接上出口（没人在听）。</summary>
-    public async Task<bool> PublishAsync(InboundEvent @event)
+    public async Task<bool> PublishAsync(SourceEvent @event)
     {
         var handler = OnEvent;
         if (handler is null)

@@ -629,6 +629,11 @@ namespace AgentCoreProcessor.Engine
                     new Tool.Host.SessionAccessImpl(this));
                 componentServices.Register<AgentLilara.PluginSDK.Services.IAdapterAccess>(
                     new Tool.Host.AdapterAccessImpl(adapterManager));
+
+                // 信源登记面：插件把自己的子信源交给汇集器（唯一认可的登记入口）
+                var sourceRegistrar = new Component.SourceRegistrarImpl(sourceManager);
+                _toolContext.Register<AgentLilara.PluginSDK.Services.ISourceRegistrar>(sourceRegistrar);
+                componentServices.Register<AgentLilara.PluginSDK.Services.ISourceRegistrar>(sourceRegistrar);
                 if (_signalLogger != null)
                     componentServices.Register<ISignalLogger>(_signalLogger);
 
