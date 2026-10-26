@@ -263,8 +263,25 @@ public sealed class EmailEventSource : IEventSource
         return imap.GetFolderAsync(folderPath, ct);
     }
 
+    /// <summary>
+    /// 当前邮箱的最大 UID（基线）。
+    /// <para>用 <c>UidNext - 1</c> 而不是 <c>SearchQuery.All</c>：拉全表在几千封的邮箱上就是几千个 UID，
+    /// 只是为了取一个最大值。UidNext 是服务器直接给的。</para>
+    /// </summary>
     private static async Task<long> GetMaxUidAsync(IMailFolder folder, CancellationToken ct)
     {
+        if (!folder.IsOpen)
+        {
+            await folder.OpenAsync(FolderAccess.ReadOnly, ct);
+        }
+
+        var next = folder.UidNext;
+        if (next is not null)
+        {
+            return Math.Max(0, (long)next.Value.Id - 1);
+        }
+
+        // 服务器没给 UidNext：退回全表（少见，但别因此卡住）
         var all = await folder.SearchAsync(SearchQuery.All, ct);
         return all.Count == 0 ? 0 : all.Max(u => (long)u.Id);
     }
