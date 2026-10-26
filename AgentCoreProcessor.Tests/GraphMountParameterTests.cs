@@ -1,5 +1,6 @@
 using AgentCoreProcessor.Engine.Graph;
 using AgentLilara.GraphRuntime.Contracts;
+using AgentLilara.GraphRuntime.Graph;
 using Xunit;
 
 namespace AgentCoreProcessor.Tests;
@@ -29,19 +30,12 @@ public class GraphMountParameterTests : IDisposable
 
         var manager = GraphManager.TryCreate(_root, active: true)!;
         var router = manager.For(42)!;
-        var intents = new List<AgentLilara.GraphRuntime.Graph.ActionIntent>();
-
-        var allow = await router.DecideAsync(
+        var evaluated = await router.EvaluateAsync(
             InboundEvent.Message("test", "42", "do work", ChannelKind.Group),
-            "mount-param-test",
-            intent =>
-            {
-                intents.Add(intent);
-                return Task.CompletedTask;
-            });
+            "mount-param-test");
 
-        Assert.True(allow);
-        var route = Assert.Single(intents);
+        var route = Assert.Single(evaluated);
+        Assert.Equal(IntentKind.SessionRoute, route.Kind);
         Assert.Equal("task", route.Target);
         Assert.Equal("task", route.Args["sessionType"].As<string>());
         Assert.Equal("task", manager.ParametersFor(42)["sessionType"]);
@@ -62,12 +56,11 @@ public class GraphMountParameterTests : IDisposable
         var manager = GraphManager.TryCreate(_root, active: true)!;
         var router = manager.For(42)!;
 
-        var allow = await router.DecideAsync(
+        var evaluated = await router.EvaluateAsync(
             InboundEvent.Message("test", "42", "do work", ChannelKind.Group),
             "missing-param-test");
 
-        Assert.False(allow);
-        Assert.Empty(router.Instance.LastIntents);
+        Assert.Empty(evaluated);
     }
 
     public void Dispose()

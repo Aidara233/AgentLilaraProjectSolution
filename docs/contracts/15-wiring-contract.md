@@ -195,10 +195,11 @@
   → MasterEngine.RouteMessageAsync
   → ExpressEngineSpawnCheck.HandleMessageAsync
       ① Session.OnMessageAsync（入库）
-      ② 图：preset.keyword-agent → SessionPrompt / SendMessage
-      ③ active：图说“不激活”则 return；说“激活”或产出 SendMessage 则继续
-      ④ SendMessage 意图 → AdapterManager.SendMessageAsync → IAdapter
-      ⑤ 会话 → AgentCore → 模型 → speak 工具 → 同上出向
+      ② 权限门 → 伴随提取入批（骨架，与是否应答无关）
+      ③ 图：preset.keyword-agent → SessionPrompt / SendMessage（图只产出意图，无返回值）
+      ④ 骨架执行意图：SendMessage → AdapterManager.SendMessageAsync → IAdapter
+      ⑤ 挂了图的频道由图接管，不再走默认会话路径
+      ⑥ 会话 → AgentCore → 模型 → speak 工具 → 同上出向
 ```
 
 **踩过的两个坑（都不是图的问题，是“看着像入口、实际是死路”）**：
@@ -246,9 +247,15 @@ Storage/Graphs/
 |---|---|
 没有 `mounts.json` / 没有启用的挂载 | `GraphManager.TryCreate` 返回 null，**完全不干预消息链** |
 频道未挂载 | `For(channelId)` 返回 null → 老行为（消息照常进会话） |
-频道挂载且 `LILARA_GRAPH_MODE=active` | 图说“不激活”则跳过默认会话路径；产出 SendMessage 则派发回复；产出 SessionRoute 则由 SessionEngine 路由到频道活跃会话或创建指定类型会话 |
-频道挂载但非 active（shadow） | 只记录 `graph.keyword.decision`，行为不变 |
+频道挂载且 `LILARA_GRAPH_MODE=active` | 图跑完就待命：骨架执行它产出的意图，本次消息**不再走默认会话路径** |
+频道挂载但非 active（shadow） | 只记录 `graph.keyword.evaluated`，行为不变（继续走默认路径） |
+同一消息多个投递意图 | 骨架按 `频道:消息id` 去重，只投递一次 |
 图文件缺失 / 加载失败 | 只告警 `graph.mount.class_missing`，跳过该挂载 |
+
+**图没有返回值。** `KeywordGraphRunner.EvaluateAsync` 只把本次求解产出的意图返回给调用方，
+调用方不据此决定"放不放行"——放行与否由骨架的"挂载即接管"规则决定。
+意图取自本次求解的局部结果，不读 `GraphInstance.LastIntents`，
+因此不依赖"读的时候还没被下一拍覆盖"这种时序前提。
 
 **三场景实测**（临时 Storage + 正式 DeepSeek 配置，未读写正式 Storage）：
 

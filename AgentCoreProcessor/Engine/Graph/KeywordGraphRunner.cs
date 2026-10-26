@@ -66,34 +66,19 @@ internal sealed class KeywordGraphRunner
     }
 
     /// <summary>
-    /// 门控 + 派发：图是否认为这条消息应当进入会话；同时把 SendMessage 意图派发出去。
-    /// <para>shadow 模式只记录结论；active 模式调用方据返回值决定是否继续会话激活。</para>
+    /// 跑一次图，把**本次激活**产出的意图交回调用方。
+    /// <para>图没有返回值：它只产出一组意图（可能是空集），执行与否归骨架；跑完即待命。</para>
+    /// <para>返回值取自本次求解的局部结果，不读实例上的 <see cref="GraphInstance.LastIntents"/>，
+    /// 因此不依赖"调用后还没被别的拍覆盖"这种时序前提。</para>
     /// </summary>
-    public async Task<bool> DecideAsync(InboundEvent @event, string traceId, Func<ActionIntent, Task>? dispatch = null)
+    public async Task<IReadOnlyList<ActionIntent>> EvaluateAsync(InboundEvent @event, string traceId)
     {
         var intents = await RunCoreAsync(@event, traceId);
-        var allow = false;
 
-        foreach (var intent in intents)
-        {
-            if (intent.Kind is IntentKind.SessionPrompt or IntentKind.SessionRoute)
-            {
-                allow = true;
-                if (intent.Kind == IntentKind.SessionRoute && _active && dispatch != null)
-                    await DispatchAsync(intent, traceId, dispatch);
-            }
-            else if (intent.Kind == IntentKind.SendMessage)
-            {
-                allow = true;
-                if (_active && dispatch != null)
-                    await DispatchAsync(intent, traceId, dispatch);
-            }
-        }
+        Logging.Signal.Debug(Logging.LogGroup.Engine, "graph.keyword.evaluated",
+            new { traceId, active = _active, intents = intents.Count });
 
-        Logging.Signal.Debug(Logging.LogGroup.Engine, "graph.keyword.decision",
-            new { traceId, allow, active = _active, intents = intents.Count });
-
-        return allow;
+        return intents;
     }
 
     private static async Task DispatchAsync(ActionIntent intent, string traceId, Func<ActionIntent, Task> dispatch)
@@ -109,10 +94,10 @@ internal sealed class KeywordGraphRunner
         }
     }
 
-    /// <summary>运行一次图。求解失败只告警，绝不抛出。</summary>
+    /// <summary>跑一次图并把意图全部交给调用方回调（测试与小工具用）。</summary>
     public async Task RunAsync(InboundEvent @event, string traceId, Func<ActionIntent, Task> dispatch)
     {
-        var intents = await RunCoreAsync(@event, traceId);
+        var intents = await EvaluateAsync(@event, traceId);
 
         foreach (var intent in intents)
         {
@@ -124,16 +109,7 @@ internal sealed class KeywordGraphRunner
                 continue;
             }
 
-            try
-            {
-                await dispatch(intent);
-            }
-            catch (Exception ex)
-            {
-                // 图动作失败不得打断消息链（入库/分发已完成）
-                Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.keyword.dispatch_failed",
-                    new { traceId, intent.Kind, intent.Target, error = ex.Message });
-            }
+            await DispatchAsync(intent, traceId, dispatch);
         }
     }
 

@@ -29,87 +29,16 @@ namespace AgentCoreProcessor.Engine
         /// </summary>
         public async Task HandleMessageAsync(IncomingMessage msg, ISystemContext ctx)
         {
-            // SessionManager：用户映射、频道、消息入库
+            // ① 骨架：入库 + 身份映射。顺序硬约束——先落库，再决策。
             var sessionContext = await ctx.Session.OnMessageAsync(msg);
 
-            // 自产消息（bot 自身行为触发的 notice 回执）：已入库但不触发孵化
+            // 自产消息（bot 自身行为触发的 notice 回执）：已入库但不触发应答
             if (msg.IsSelfTriggered) return;
 
-            // 入站图（挂载表）：消息已入库；**未挂载的频道完全不干预**。
-            // active 模式下图说“不激活”则跳过会话路径；shadow 模式只记录结论。
-            // 出向走 AdapterManager（不走 MessageEngine.OnOutgoingReady —— 那条无人订阅）。
-            var graphChannelId = sessionContext.Channel.Id;
-            var graphs = Graphs(ctx);
-            var mountedGraph = graphs?.For(graphChannelId);
-            if (mountedGraph != null)
-            {
-                var allow = await mountedGraph.DecideAsync(
-                    Graph.KeywordGraphRunner.ToEvent(msg, graphChannelId),
-                    msg.PlatformMessageId ?? $"{msg.Platform}:{msg.ChannelId}",
-                    async intent =>
-                    {
-                        if (intent.Kind == AgentLilara.GraphRuntime.Graph.IntentKind.SessionRoute)
-                        {
-                            var targetType = intent.Args.TryGetValue("sessionType", out var typeCell)
-                                ? typeCell.As<string>()
-                                : null;
-                            var sessionEngine = ctx.GetActiveEnginesSnapshot()
-                                .OfType<Session.SessionEngine>().FirstOrDefault();
-                            if (sessionEngine == null || sessionContext.IncomingMessage == null)
-                                throw new InvalidOperationException("SessionEngine 或已入库消息不可用");
-
-                            await sessionEngine.WaitRestoredAsync(TimeSpan.FromSeconds(5));
-                            if (!sessionEngine.RouteGraphMessage(
-                                    graphChannelId,
-                                    targetType ?? string.Empty,
-                                    sessionContext.IncomingMessage,
-                                    msg.IsMentioned || msg.IsPrivate))
-                                throw new InvalidOperationException($"无法路由频道 {graphChannelId} 到会话类型 '{targetType}'");
-                            return;
-                        }
-
-                        await new Graph.MessageGraphIntentDispatcher(
-                            outgoing => ctx.Adapters.SendMessageAsync(msg.Platform, outgoing),
-                            graphChannelId).DispatchAsync(intent);
-                    });
-
-                if (graphs!.IsActive && !allow)
-                {
-                    Signal.Event(LogGroup.Engine, "图决定不激活",
-                        new { channelId = graphChannelId, platformMessageId = msg.PlatformMessageId });
-                    return;
-                }
-
-                if (graphs.IsActive && mountedGraph.Instance.LastIntents.Any(i => i.Kind == AgentLilara.GraphRuntime.Graph.IntentKind.SessionRoute))
-                {
-                    // 路由意图已在 DecideAsync 的骨架回调中处理；避免后续默认频道路径重复投递/建会话。
-                    return;
-                }
-            }
-
-            // 伴随提取入批（入向唯一咽喉，覆盖 express 会话与 session 占用两条路）。
-            // 达攒批阈值时内部会跑一轮 LLM 调用，故 fire-and-forget 不阻塞消息链路。
-            if (sessionContext.IncomingMessage != null)
-            {
-                var mind = ctx.GetActiveEnginesSnapshot()
-                    .OfType<Mind.MindEngine>().FirstOrDefault();
-                var extractor = mind?.Extract.Express;
-                if (extractor != null)
-                {
-                    var senderName = !string.IsNullOrWhiteSpace(sessionContext.User.DisplayName)
-                        ? sessionContext.User.DisplayName
-                        : "用户";
-                    var channelKey = sessionContext.Channel.Id.ToString();
-                    var content = sessionContext.IncomingMessage.Content;
-                    _ = extractor.AddMessageAsync(channelKey, senderName, content);
-                }
-            }
-
-            // 权限检查
+            // ② 骨架：权限门。被屏蔽/受限的发送者不进入任何应答路径（图也只能在门后运行）。
             switch (sessionContext.User.PermissionLevel)
             {
                 case PermissionLevel.Blocked:
-                    return;
                 case PermissionLevel.Restricted:
                     return;
             }
@@ -123,51 +52,178 @@ namespace AgentCoreProcessor.Engine
                 await ctx.Session.UpdatePersonAsync(sessionContext.Person);
             }
 
-            // 入向接通：频道被 session full-claim → 改投 session 端口，不孵化新会话。
-            // 消息已由 OnMessageAsync 完整入库+身份映射，这里只分发已入库的 UserMessage。
-            //
-            // ⚠ 冷启动时序：SessionEngine 通过 Task.Run 启动，RestoreAll 在 RunAsync 开头执行。
-            // 如果消息在 RestoreAll 完成前到达，claim 字典还是空的，消息会错误地走 express 孵化。
-            // 因此先 await WaitRestoredAsync 确保 claim 恢复完成（带 5s 超时兜底）。
-            var sessionEngine = ctx.GetActiveEnginesSnapshot()
-                .OfType<Session.SessionEngine>().FirstOrDefault();
-            if (sessionEngine == null || sessionContext.IncomingMessage == null)
-                return;
+            // ③ 骨架：伴随提取入批。与"要不要应答"无关，挂了图的频道也照常入批。
+            EnqueueCompanionExtraction(sessionContext, ctx);
 
-            // 等待 RestoreAll 完成，确保冷启动恢复的 claim 已落地
-            await sessionEngine.WaitRestoredAsync(TimeSpan.FromSeconds(5));
+            // 同一频道同一条消息只投递一次：多张图都产出投递意图时不重复投递。
+            var deliveredKeys = new HashSet<string>(StringComparer.Ordinal);
 
-            var messageEngine = ctx.GetActiveEnginesSnapshot()
-                .OfType<Messaging.MessageEngine>().FirstOrDefault();
-            if (messageEngine == null) return;
-
-            var claimerId = sessionEngine.GetFullClaimer(channelId);
-            var claimerAlive = claimerId != null && sessionEngine.GetSession(claimerId)?.IsAlive == true;
-            Signal.Debug(LogGroup.Engine, "入向投递判定",
-                new { channelId, msgId = sessionContext.IncomingMessage.Id, claimer = claimerId, alive = claimerAlive });
-            if (claimerId != null && claimerAlive)
+            // ④ 插槽：挂了图的频道由图产出意图，由骨架执行。
+            //    图没有返回值——跑完就待命，要不要投递只看它产出的意图。
+            //    active：图接管本次消息，不再走默认会话路径；shadow：只记录意图，行为不变。
+            var graphs = Graphs(ctx);
+            var mountedGraph = graphs?.For(channelId);
+            if (mountedGraph != null)
             {
-                // 私聊视同提及：投 mention 子流即时激活 session（否则 normal 子流要攒满 20 条权重才醒）。
-                // express 会话与 working 会话同走此路径（DeliverToSession → 端口权重激活）。
-                var deliverAsMention = msg.IsMentioned || msg.IsPrivate;
-                messageEngine.DeliverToSession(channelId, sessionContext.IncomingMessage, deliverAsMention);
-                Signal.Event(LogGroup.Engine, "入向已投递到 session 端口",
-                    new { channelId, msgId = sessionContext.IncomingMessage.Id, sessionId = claimerId, asMention = deliverAsMention });
-                return;
+                var intents = await mountedGraph.EvaluateAsync(
+                    Graph.KeywordGraphRunner.ToEvent(msg, channelId),
+                    msg.PlatformMessageId ?? $"{msg.Platform}:{msg.ChannelId}");
+
+                if (graphs!.IsActive)
+                {
+                    foreach (var intent in intents)
+                        await ExecuteIntentAsync(intent);
+
+                    Signal.Event(LogGroup.Engine, "图接管本次消息路由",
+                        new { channelId, msgId = sessionContext.IncomingMessage?.Id, intents = intents.Count });
+                    return;
+                }
             }
 
-            // 无占用 → 孵化 express 会话（AutoClaim Full 接管频道），再投递本条消息。
-            // express 会话按端口权重激活（mention 立即 / normal 攒 20 条 / 私聊视同提及）。
-            var expressSession = sessionEngine.CreateExpressSessionForChannel(channelId);
-            if (expressSession == null)
+            // ⑤ 骨架：默认路径 —— 复用频道活跃会话，空闲则孵化（未挂图或 shadow 模式）。
+            await DeliverToChannelSessionAsync();
+
+            // —— 骨架的意图执行器：图只表达"想做什么"，执行与失败的记录都在这里 ——
+
+            async Task ExecuteIntentAsync(AgentLilara.GraphRuntime.Graph.ActionIntent intent)
             {
-                Signal.Warn(LogGroup.Engine, "express 会话创建失败或频道已被占用", new { channelId });
-                return;
+                switch (intent.Kind)
+                {
+                    case AgentLilara.GraphRuntime.Graph.IntentKind.SendMessage:
+                        await DispatchSendAsync(intent);
+                        break;
+
+                    case AgentLilara.GraphRuntime.Graph.IntentKind.SessionRoute:
+                        await RouteToSessionAsync(intent);
+                        break;
+
+                    case AgentLilara.GraphRuntime.Graph.IntentKind.SessionPrompt:
+                        // 历史语义：请骨架按默认规则驱动频道会话
+                        await DeliverToChannelSessionAsync();
+                        break;
+
+                    default:
+                        Signal.Debug(LogGroup.Engine, "graph.intent.skipped",
+                            new { channelId, kind = intent.Kind.ToString() });
+                        break;
+                }
             }
-            var expressDeliverAsMention = msg.IsMentioned || msg.IsPrivate;
-            messageEngine.DeliverToSession(channelId, sessionContext.IncomingMessage, expressDeliverAsMention);
-            Signal.Event(LogGroup.Engine, "express 会话孵化 + 投递",
-                new { channelId, msgId = sessionContext.IncomingMessage.Id, sessionId = expressSession.SessionId, asMention = expressDeliverAsMention });
+
+            async Task DispatchSendAsync(AgentLilara.GraphRuntime.Graph.ActionIntent intent)
+            {
+                try
+                {
+                    await new Graph.MessageGraphIntentDispatcher(
+                        outgoing => ctx.Adapters.SendMessageAsync(msg.Platform, outgoing),
+                        channelId).DispatchAsync(intent);
+                }
+                catch (Exception ex)
+                {
+                    // 出向失败不影响已完成的入库与后续意图
+                    Signal.Warn(LogGroup.Engine, "graph.send.failed",
+                        new { channelId, error = ex.Message });
+                }
+            }
+
+            async Task RouteToSessionAsync(AgentLilara.GraphRuntime.Graph.ActionIntent intent)
+            {
+                if (sessionContext.IncomingMessage == null) return;
+
+                // 同一频道同一条消息只投递一次：先到者取得投递权。
+                if (!deliveredKeys.Add(DeliveryKey())) return;
+
+                var sessionType = intent.Args.TryGetValue("sessionType", out var typeCell)
+                    ? typeCell.As<string>()
+                    : null;
+
+                var sessionEngine = ctx.GetActiveEnginesSnapshot()
+                    .OfType<Session.SessionEngine>().FirstOrDefault();
+                if (sessionEngine == null)
+                {
+                    Signal.Warn(LogGroup.Engine, "graph.route.failed",
+                        new { channelId, reason = "session-engine-unavailable", sessionType });
+                    return;
+                }
+
+                await sessionEngine.WaitRestoredAsync(TimeSpan.FromSeconds(5));
+                if (!sessionEngine.RouteGraphMessage(
+                        channelId,
+                        sessionType ?? string.Empty,
+                        sessionContext.IncomingMessage,
+                        msg.IsMentioned || msg.IsPrivate))
+                {
+                    Signal.Warn(LogGroup.Engine, "graph.route.failed",
+                        new { channelId, reason = "route-rejected", sessionType });
+                }
+            }
+
+            string DeliveryKey() => $"{channelId}:{sessionContext.IncomingMessage?.Id}";
+
+            // 默认路径：复用频道活跃会话；空闲时按默认会话类型孵化，再投递本条消息。
+            async Task<bool> DeliverToChannelSessionAsync()
+            {
+                if (sessionContext.IncomingMessage == null) return false;
+                if (!deliveredKeys.Add(DeliveryKey())) return true;
+
+                var sessionEngine = ctx.GetActiveEnginesSnapshot()
+                    .OfType<Session.SessionEngine>().FirstOrDefault();
+                if (sessionEngine == null) return false;
+
+                // 冷启动时序：SessionEngine 经 Task.Run 启动，RestoreAll 在 RunAsync 开头执行；
+                // 先等恢复完成，避免恢复的 claim 尚未落地就被当成"频道空闲"。
+                await sessionEngine.WaitRestoredAsync(TimeSpan.FromSeconds(5));
+
+                var messageEngine = ctx.GetActiveEnginesSnapshot()
+                    .OfType<Messaging.MessageEngine>().FirstOrDefault();
+                if (messageEngine == null) return false;
+
+                // 私聊视同提及：投 mention 子流即时激活（normal 子流要攒满权重才醒）。
+                var asMention = msg.IsMentioned || msg.IsPrivate;
+                var claimerId = sessionEngine.GetFullClaimer(channelId);
+                var claimerAlive = claimerId != null && sessionEngine.GetSession(claimerId)?.IsAlive == true;
+                Signal.Debug(LogGroup.Engine, "入向投递判定",
+                    new { channelId, msgId = sessionContext.IncomingMessage.Id, claimer = claimerId, alive = claimerAlive });
+
+                if (claimerId != null && claimerAlive)
+                {
+                    messageEngine.DeliverToSession(channelId, sessionContext.IncomingMessage, asMention);
+                    Signal.Event(LogGroup.Engine, "入向已投递到 session 端口",
+                        new { channelId, msgId = sessionContext.IncomingMessage.Id, sessionId = claimerId, asMention });
+                    return true;
+                }
+
+                var created = sessionEngine.CreateExpressSessionForChannel(channelId);
+                if (created == null)
+                {
+                    Signal.Warn(LogGroup.Engine, "会话创建失败或频道已被占用", new { channelId });
+                    return false;
+                }
+
+                messageEngine.DeliverToSession(channelId, sessionContext.IncomingMessage, asMention);
+                Signal.Event(LogGroup.Engine, "会话孵化 + 投递",
+                    new { channelId, msgId = sessionContext.IncomingMessage.Id, sessionId = created.SessionId, asMention });
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// 伴随提取入批（骨架侧，与"要不要应答"无关）：达攒批阈值时内部会跑一轮 LLM 调用，
+        /// 故 fire-and-forget，不阻塞消息链路。挂了图的频道也照常入批。
+        /// </summary>
+        private static void EnqueueCompanionExtraction(SessionContext sessionContext, ISystemContext ctx)
+        {
+            if (sessionContext.IncomingMessage == null) return;
+
+            var mind = ctx.GetActiveEnginesSnapshot()
+                .OfType<Mind.MindEngine>().FirstOrDefault();
+            var extractor = mind?.Extract.Express;
+            if (extractor == null) return;
+
+            var senderName = !string.IsNullOrWhiteSpace(sessionContext.User.DisplayName)
+                ? sessionContext.User.DisplayName
+                : "用户";
+            _ = extractor.AddMessageAsync(
+                sessionContext.Channel.Id.ToString(), senderName, sessionContext.IncomingMessage.Content);
         }
 
         public Task<bool> ShouldSpawnAsync(EngineEvent e, ISystemContext ctx)

@@ -59,7 +59,7 @@ public class GraphManagerTests : IDisposable
     {
         for (var i = 0; i < count; i++)
         {
-            await runner.DecideAsync(Message(), $"t{i}");
+            await runner.EvaluateAsync(Message(), $"t{i}");
         }
     }
 
@@ -119,24 +119,17 @@ public class GraphManagerTests : IDisposable
     }
 
     [Fact]
-    public async Task QuietPresetDoesNotActivateOrDispatch()
+    public async Task QuietPresetProducesNoIntents()
     {
         File.WriteAllText(
             Path.Combine(_graphs, "mounts.json"),
             "{ \"version\": 1, \"mounts\": [{\"scope\":\"channel\",\"scopeKey\":\"1\",\"classId\":\"preset.quiet\",\"enabled\":true}] }");
         var manager = GraphManager.TryCreate(_dir, active: true)!;
         var quiet = manager.For(1)!;
-        var dispatched = false;
 
-        var allow = await quiet.DecideAsync(Message(), "quiet-test", _ =>
-        {
-            dispatched = true;
-            return Task.CompletedTask;
-        });
+        var intents = await quiet.EvaluateAsync(Message(), "quiet-test");
 
-        Assert.False(allow);
-        Assert.False(dispatched);
-        Assert.Empty(quiet.Instance.LastIntents);
+        Assert.Empty(intents);
     }
 
     [Fact]

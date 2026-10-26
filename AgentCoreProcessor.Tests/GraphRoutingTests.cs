@@ -17,19 +17,11 @@ public class GraphRoutingTests
             graph,
             active: true,
             new Dictionary<string, string> { ["sessionType"] = "channel" });
-        var dispatched = new List<ActionIntent>();
-
-        var allow = await runner.DecideAsync(
+        var evaluated = await runner.EvaluateAsync(
             InboundEvent.Message("test", "42", "hello", ChannelKind.Group),
-            "router-test",
-            intent =>
-            {
-                dispatched.Add(intent);
-                return Task.CompletedTask;
-            });
+            "router-test");
 
-        Assert.True(allow);
-        var route = Assert.Single(dispatched);
+        var route = Assert.Single(evaluated);
         Assert.Equal(IntentKind.SessionRoute, route.Kind);
         Assert.Equal("channel", route.Target);
         Assert.Equal("channel", route.Args["sessionType"].As<string>());
