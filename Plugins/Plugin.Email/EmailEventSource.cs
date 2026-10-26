@@ -22,7 +22,7 @@ public sealed class EmailEventSource : IEventSource
 {
     private readonly EmailConnectionManager _connMgr;
     private readonly EmailEventSourceConfig _config;
-    private readonly string _cursorPath;
+    private readonly MailCursorStore _cursorStore;
 
     private CancellationTokenSource? _cts;
     private Task? _runTask;
@@ -38,7 +38,7 @@ public sealed class EmailEventSource : IEventSource
     {
         _connMgr = connMgr;
         _config = config;
-        _cursorPath = Path.Combine(storageDirectory, "cursor.json");
+        _cursorStore = new MailCursorStore(Path.Combine(storageDirectory, "cursor.json"));
     }
 
     public string Id => "mail";
@@ -129,7 +129,7 @@ public sealed class EmailEventSource : IEventSource
 
     private async Task PollOnceAsync(CancellationToken ct)
     {
-        var stored = LoadCursor();
+        var stored = _cursorStore.Load();
 
         var events = await _connMgr.ExecuteImapAsync(async imap =>
         {
@@ -143,7 +143,7 @@ public sealed class EmailEventSource : IEventSource
                 var reset = MailCursorPolicy.Decide(
                     stored, folder.UidValidity, baseline, Array.Empty<long>());
 
-                SaveCursor(new MailCursor
+                _cursorStore.Save(new MailCursor
                 {
                     UidValidity = folder.UidValidity,
                     LastUid = reset.NewLastUid,
@@ -181,7 +181,7 @@ public sealed class EmailEventSource : IEventSource
                 }
             }
 
-            SaveCursor(new MailCursor
+            _cursorStore.Save(new MailCursor
             {
                 UidValidity = folder.UidValidity,
                 LastUid = decision.NewLastUid,
@@ -376,45 +376,7 @@ public sealed class EmailEventSource : IEventSource
         .Replace("&nbsp;", " ", StringComparison.OrdinalIgnoreCase)
         .Replace("&amp;", "&", StringComparison.OrdinalIgnoreCase);
 
-    // ── 游标持久化 ──
-
-    private MailCursor? LoadCursor()
-    {
-        try
-        {
-            if (!File.Exists(_cursorPath))
-            {
-                return null;
-            }
-
-            return JsonSerializer.Deserialize<MailCursor>(File.ReadAllText(_cursorPath));
-        }
-        catch (Exception)
-        {
-            // 游标损坏：当作没有，下一次会重新取基线（宁可丢一轮，也不重放历史）
-            return null;
-        }
-    }
-
-    private void SaveCursor(MailCursor cursor)
-    {
-        try
-        {
-            var directory = Path.GetDirectoryName(_cursorPath);
-            if (!string.IsNullOrEmpty(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-
-            var temp = _cursorPath + ".tmp";
-            File.WriteAllText(temp, JsonSerializer.Serialize(cursor));
-            File.Move(temp, _cursorPath, overwrite: true);
-        }
-        catch (Exception)
-        {
-            // 落盘失败不致命：下一轮会重新取（同一次进程内仍以内存中的 maxUid 为准）
-        }
-    }
+    // 游标读写见 MailCursorStore（抽出去才能测）
 
 }
 
