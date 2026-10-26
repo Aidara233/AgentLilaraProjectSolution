@@ -123,41 +123,13 @@ internal sealed class SourceManager
 
         try
         {
-            await handler(ToInbound(@event));
+            await handler(SourceEventTranslator.ToInbound(@event));
         }
         catch (Exception ex)
         {
             Signal.Warn(LogGroup.Engine, "source.event.forward_failed",
                 new { sourceId = source.Id, @event.DedupeKey, error = ex.Message });
         }
-    }
-
-    /// <summary>
-    /// 插件事件形状 → 宿主事件形状。
-    /// <para>外部事件**没有频道**：<c>ChannelKey</c> 留空，因此它不会被按频道挂载的图看见，
-    /// 投递目标由订阅记录决定。去重键原样带过，订阅分发靠它防重复唤醒。</para>
-    /// </summary>
-    internal static InboundEvent ToInbound(SourceEvent @event)
-    {
-        var dedupe = string.IsNullOrWhiteSpace(@event.DedupeKey)
-            ? $"{@event.SourceId}:{@event.SenderId}:{@event.Text.GetHashCode():x}"
-            : @event.DedupeKey;
-
-        // 归一成大小写不敏感的字典：插件可能用默认比较器构造，而图上的 event.ext 键名是约定，
-        // 不该因为插件写成 "Subject" 还是 "subject" 就查不到。
-        Dictionary<string, string>? ext = null;
-        if (@event.Ext is { Count: > 0 })
-        {
-            ext = new Dictionary<string, string>(@event.Ext, StringComparer.OrdinalIgnoreCase);
-        }
-
-        return InboundEvent.External(
-            sourceId: string.IsNullOrWhiteSpace(@event.SourceId) ? "unknown" : @event.SourceId,
-            text: @event.Text ?? string.Empty,
-            senderId: @event.SenderId,
-            ext: ext,
-            dedupeKey: dedupe,
-            at: @event.ReceivedAt);
     }
 
     /// <summary>子信源自报的状态 + 汇集器观察到的启停失败，后者的优先级更高。</summary>

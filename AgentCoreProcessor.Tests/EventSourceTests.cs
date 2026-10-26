@@ -176,7 +176,7 @@ public class EventSourceTests : IDisposable
     [Fact]
     public void SourceEventBecomesExternalEventWithoutChannel()
     {
-        var inbound = SourceManager.ToInbound(new SourceEvent
+        var inbound = SourceEventTranslator.ToInbound(new SourceEvent
         {
             SourceId = "mail",
             Text = "正文",
@@ -200,7 +200,7 @@ public class EventSourceTests : IDisposable
     [Fact]
     public void SourceEventWithoutDedupeKeyStillGetsOne()
     {
-        var inbound = SourceManager.ToInbound(new SourceEvent
+        var inbound = SourceEventTranslator.ToInbound(new SourceEvent
         {
             SourceId = "mail",
             Text = "x",
