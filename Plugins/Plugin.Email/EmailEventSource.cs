@@ -171,7 +171,7 @@ public sealed class EmailEventSource : IEventSource
                     var message = await folder.GetMessageAsync(uid, ct);
                     if (message is not null)
                     {
-                        produced.Add(ToSourceEvent(message, uid, folder.UidValidity));
+                        produced.Add(ToSourceEvent(message, uid, folder.UidValidity, _config.Folder));
                     }
                 }
                 catch (Exception)
@@ -233,7 +233,12 @@ public sealed class EmailEventSource : IEventSource
         return all.Count == 0 ? 0 : all.Max(u => (long)u.Id);
     }
 
-    private SourceEvent ToSourceEvent(MimeMessage message, UniqueId uid, uint uidValidity)
+    /// <summary>
+    /// 邮件 → 事件。
+    /// <para>公开为 static 是为了可测：这里产出的就是模型最终看到的内容形状，
+    /// 字段映射错了（发件人取了显示名、去重键拼错）不会报错，只会表现为"匹配不上"或"重复唤醒"。</para>
+    /// </summary>
+    public static SourceEvent ToSourceEvent(MimeMessage message, UniqueId uid, uint uidValidity, string? folder)
     {
         var from = message.From.Mailboxes.FirstOrDefault();
         var fromText = from is null
@@ -252,7 +257,7 @@ public sealed class EmailEventSource : IEventSource
                 ["from"] = fromText,
                 ["subject"] = message.Subject ?? string.Empty,
                 ["uid"] = uid.Id.ToString(),
-                ["folder"] = string.IsNullOrWhiteSpace(_config.Folder) ? "INBOX" : _config.Folder,
+                ["folder"] = string.IsNullOrWhiteSpace(folder) ? "INBOX" : folder,
             },
         };
     }
