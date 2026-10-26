@@ -12,6 +12,7 @@ using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.MCP;
+using AgentLilara.GraphRuntime.Contracts;
 using AgentCoreProcessor.Engine.Modules;
 using AgentCoreProcessor.Logging;
 using AgentCoreProcessor.Tool.Host;
@@ -51,6 +52,9 @@ namespace AgentCoreProcessor.Engine
         private readonly AdapterManager adapterManager;
         private readonly EventBus eventBus;
         private readonly ISignalLogger? _signalLogger;
+
+        /// <summary>信源汇集器：与适配器管理器平级的另一条入站产生者链。</summary>
+        private readonly Source.SourceManager sourceManager = new();
         private DbManager? db;
         private IEmbeddingProvider? embeddingProvider;
         private IVisionProvider? visionProvider;
@@ -77,6 +81,9 @@ namespace AgentCoreProcessor.Engine
         public IVisionProvider? Vision => visionProvider;
         public IOcrProvider? Ocr => ocrProvider;
         public AdapterManager Adapters => adapterManager;
+
+        /// <summary>信源汇集器（与适配器管理器平级；子信源挂在它下面）。</summary>
+        public Source.SourceManager Sources => sourceManager;
 
         /// <summary>
         /// 图挂载表 + 运行时订阅：进程级一份（挂载点之间实例隔离，见 GraphManager）。
@@ -666,6 +673,11 @@ namespace AgentCoreProcessor.Engine
             // 适配器消息路由：绕过 EventBus，直接走 SpawnCheck
             adapterManager.OnIncomingMessage = async msg => await RouteMessageAsync(msg);
 
+            // 信源汇集器：与适配器链平行的另一条入站入口（不走消息管线，只走订阅分发）
+            sourceManager.OnEvent = RouteExternalEventAsync;
+            sourceManager.Register(new Source.InjectedEventSource());
+            await sourceManager.StartAllAsync();
+
             // 加载开机自启配置
             var engineCfg = EngineConfig.Load(DefaultEngineConfigPath);
             foreach (var type in engineCfg.AutoStart)
@@ -722,6 +734,84 @@ namespace AgentCoreProcessor.Engine
         /// 直接消息路由（绕过 EventBus）。由 AdapterManager.OnIncomingMessage 和
         /// ConsoleProvider 调用。串行化防止并发状态冲突。
         /// </summary>
+        /// <summary>外部事件分发器：**长期持有**——投递账本要去重，每次新建就等于每次都投。</summary>
+        private Graph.ExternalEventDispatcher? _externalDispatcher;
+        private readonly object _externalLock = new();
+
+        /// <summary>
+        /// 外部事件入口：与 <see cref="RouteMessageAsync"/> 平行的一条入站链。
+        /// <para>⚠️ 只接 <see cref="EventKind.External"/>——聊天消息不该走这里，否则会绕开落库与权限门。</para>
+        /// <para>只做订阅分发：不落库、不算信任等级、不触发伴随提取。两条链只在 <see cref="InboundEvent"/> 汇合。</para>
+        /// </summary>
+        public async Task RouteExternalEventAsync(InboundEvent @event)
+        {
+            if (@event.Kind != EventKind.External)
+            {
+                Signal.Warn(LogGroup.Engine, "source.event.rejected",
+                    new { kind = @event.Kind, @event.DedupeKey, reason = "not-external" });
+                return;
+            }
+
+            var graphs = Graphs;
+            if (graphs is null)
+            {
+                Signal.Debug(LogGroup.Engine, "source.event.dropped",
+                    new { @event.SourceId, reason = "graph-manager-absent" });
+                return;
+            }
+
+            var outcome = await ExternalDispatcher(graphs).DispatchAsync(@event);
+
+            if (outcome.Matched == 0)
+            {
+                Signal.Debug(LogGroup.Engine, "source.event.no_subscription",
+                    new { @event.SourceId, @event.DedupeKey });
+                return;
+            }
+
+            Signal.Event(LogGroup.Engine, "source.event.dispatched", new
+            {
+                @event.SourceId,
+                @event.DedupeKey,
+                outcome.Matched,
+                outcome.Delivered,
+                outcome.Duplicate,
+                failures = outcome.Failures.Count,
+            });
+
+            foreach (var failure in outcome.Failures)
+            {
+                Signal.Warn(LogGroup.Engine, "source.event.delivery_failed", new { failure });
+            }
+        }
+
+        private Graph.ExternalEventDispatcher ExternalDispatcher(Graph.GraphManager graphs)
+        {
+            lock (_externalLock)
+            {
+                return _externalDispatcher ??= new Graph.ExternalEventDispatcher(
+                    graphs.SubscriptionsForSource,
+                    DeliverExternalToChannelAsync,
+                    graphs.RecordSubscriptionFired);
+            }
+        }
+
+        /// <summary>订阅命中后的投递：注入频道会话；该频道没有活会话就新建一个。</summary>
+        private async Task<string?> DeliverExternalToChannelAsync(int channelId, string text)
+        {
+            var sessionEngine = GetActiveEnginesSnapshot()
+                .OfType<Session.SessionEngine>()
+                .FirstOrDefault();
+
+            if (sessionEngine is null)
+            {
+                return "session-engine-unavailable";
+            }
+
+            await sessionEngine.WaitRestoredAsync(TimeSpan.FromSeconds(5));
+            return sessionEngine.InjectToChannelSession(channelId, text);
+        }
+
         public async Task RouteMessageAsync(IncomingMessage msg)
         {
             await eventLock.WaitAsync();
