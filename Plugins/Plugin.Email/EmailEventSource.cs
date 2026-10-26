@@ -257,8 +257,12 @@ public sealed class EmailEventSource : IEventSource
         };
     }
 
-    /// <summary>只取纯文本正文；HTML 退化为去标签文本。附件一律不读（那是工具的事）。</summary>
-    private static string ExtractBody(MimeMessage message)
+    /// <summary>
+    /// 只取纯文本正文；没有纯文本时把 HTML 退化为文本。附件一律不读（那是工具的事）。
+    /// <para>公开为 static 是为了可测：正文抽取错了，模型看到的整封信都是错的，而这里没有任何
+    /// 网络依赖，没理由不测。</para>
+    /// </summary>
+    public static string ExtractBody(MimeMessage message)
     {
         var plain = message.TextBody;
         if (!string.IsNullOrWhiteSpace(plain))
@@ -272,17 +276,105 @@ public sealed class EmailEventSource : IEventSource
             return string.Empty;
         }
 
+        return HtmlToText(html);
+    }
+
+    /// <summary>
+    /// 朴素 HTML → 文本。
+    /// <para>⚠️ 必须跳过 <c>script</c> / <c>style</c> 整段：营销邮件几乎都带几百行 CSS，
+    /// 只去标签会把它们原样当正文塞进上下文——既白白烧 token，也把真正的内容挤掉。</para>
+    /// </summary>
+    public static string HtmlToText(string html)
+    {
         var builder = new StringBuilder(html.Length);
-        var inTag = false;
-        foreach (var ch in html)
+        var index = 0;
+
+        while (index < html.Length)
         {
-            if (ch == '<') { inTag = true; continue; }
-            if (ch == '>') { inTag = false; continue; }
-            if (!inTag) builder.Append(ch);
+            if (html[index] == '<')
+            {
+                var skipped = TrySkipRawTextElement(html, index);
+                if (skipped > index)
+                {
+                    index = skipped;
+                    continue;
+                }
+
+                var close = html.IndexOf('>', index);
+                if (close < 0)
+                {
+                    break; // 未闭合标签：丢掉剩余部分，不猜
+                }
+
+                index = close + 1;
+                continue;
+            }
+
+            builder.Append(html[index]);
+            index++;
         }
 
-        return builder.ToString().Trim();
+        return DecodeEntities(builder.ToString()).Trim();
     }
+
+    /// <summary>若 <paramref name="start"/> 处是 script/style 开标签，返回其闭合标签之后的位置；否则原样返回。</summary>
+    private static int TrySkipRawTextElement(string html, int start)
+    {
+        foreach (var tag in new[] { "script", "style" })
+        {
+            if (!StartsWithTag(html, start, tag))
+            {
+                continue;
+            }
+
+            var end = html.IndexOf($"</{tag}", start + 1, StringComparison.OrdinalIgnoreCase);
+            if (end < 0)
+            {
+                return html.Length; // 没闭合：整段当作代码丢掉
+            }
+
+            var close = html.IndexOf('>', end);
+            return close < 0 ? html.Length : close + 1;
+        }
+
+        return start;
+    }
+
+    /// <summary>判断 `&lt;tag` 是否在此处开始，且标签名后面是分隔符（避免 `&lt;scripture` 被当成 script）。</summary>
+    private static bool StartsWithTag(string html, int start, string tag)
+    {
+        if (start + 1 + tag.Length > html.Length)
+        {
+            return false;
+        }
+
+        if (html[start] != '<')
+        {
+            return false;
+        }
+
+        if (string.Compare(html, start + 1, tag, 0, tag.Length, StringComparison.OrdinalIgnoreCase) != 0)
+        {
+            return false;
+        }
+
+        var after = start + 1 + tag.Length;
+        if (after >= html.Length)
+        {
+            return true;
+        }
+
+        return html[after] is '>' or ' ' or '\t' or '\r' or '\n';
+    }
+
+    /// <summary>解常见实体。`&amp;` 放最后，避免把 `&amp;lt;` 变成 `&lt;` 之后再解一次。</summary>
+    private static string DecodeEntities(string text) => text
+        .Replace("&lt;", "<", StringComparison.OrdinalIgnoreCase)
+        .Replace("&gt;", ">", StringComparison.OrdinalIgnoreCase)
+        .Replace("&quot;", "\"", StringComparison.OrdinalIgnoreCase)
+        .Replace("&#39;", "'", StringComparison.OrdinalIgnoreCase)
+        .Replace("&nbsp;", " ", StringComparison.OrdinalIgnoreCase)
+        .Replace("&amp;", "&", StringComparison.OrdinalIgnoreCase);
 
     // ── 游标持久化 ──
 
