@@ -12,11 +12,13 @@ internal sealed class MountDocument
 }
 
 /// <summary>
-/// 挂载表 + 实例池：按频道选图，**每个挂载点一个实例**。
-/// <para>⚠️ <b>没有挂载就等于不干预</b>——<see cref="For"/> 返回 null，调用方走原有行为。</para>
+/// 挂载表 + 实例池：**每个挂载点一个实例**，同一作用域可挂多张图。
+/// <para>⚠️ <b>没有挂载就等于不干预</b>——<see cref="RunnersFor"/> 返回空集合，调用方走原有行为。</para>
 /// <para>⚠️ 实例生命周期跟随挂载记录：挂载表变动（文件时间戳变化）时重建，
-/// 被移除的挂载点连同变量一起销毁；频道释放可调 <see cref="Release"/> 单独销毁。</para>
+/// 被移除的挂载点连同变量一起销毁；频道/会话释放可调 <see cref="Release"/> / <see cref="ReleaseSession"/>。</para>
 /// <para>⚠️ 图类（GraphClass）是模板，按 classId 缓存；实例（GraphInstance）按挂载点隔离。</para>
+/// <para>⚠️ 挂载顺序（<see cref="GraphMount.Order"/>）只决定跑图次序，不构成返回值依赖：
+/// 每张图各自求解、各自待命，互不读取彼此结论。</para>
 /// </summary>
 internal sealed class GraphManager
 {
@@ -37,11 +39,14 @@ internal sealed class GraphManager
 
     /// <summary>运行实例：挂载点键 → 运行器（内含 GraphInstance 与变量）。</summary>
     private readonly Dictionary<string, KeywordGraphRunner> _instances = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, string> _sessionInstanceKeys = new(StringComparer.Ordinal);
 
-    private readonly Dictionary<string, GraphMount> _byChannel = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, GraphMount> _bySession = new(StringComparer.Ordinal);
-    private GraphMount? _global;
+    /// <summary>会话 → 它的全部实例键（一个会话可挂多张图）。</summary>
+    private readonly Dictionary<string, List<string>> _sessionInstanceKeys = new(StringComparer.Ordinal);
+
+    /// <summary>作用域键 → 挂载列表（已按 Order 排序）。同一频道可挂多张图。</summary>
+    private readonly Dictionary<string, List<GraphMount>> _byChannel = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, List<GraphMount>> _bySession = new(StringComparer.Ordinal);
+    private readonly List<GraphMount> _global = new();
 
     private GraphManager(bool active, string storagePath)
     {
@@ -81,82 +86,87 @@ internal sealed class GraphManager
         }
     }
 
-    /// <summary>该频道应使用的图运行器（每挂载点一个实例）；未挂载返回 null。</summary>
-    public KeywordGraphRunner? For(int channelId)
+    /// <summary>
+    /// 该频道的全部图运行器（每挂载点一个实例，按 Order 排序）。
+    /// 频道没有专属挂载时回退到 global 挂载；都没有则返回空集合（不干预）。
+    /// </summary>
+    public IReadOnlyList<KeywordGraphRunner> RunnersFor(int channelId)
     {
         EnsureFresh();
 
-        var mount = ResolveChannelMount(channelId);
-        return mount is null ? null : GetOrCreate(mount);
+        return ResolveChannelMounts(channelId)
+            .Where(mount => _classes.ContainsKey(mount.ClassId))
+            .Select(GetOrCreate)
+            .ToList();
     }
 
-    /// <summary>当前频道挂载的只读参数；无频道专属挂载时返回 global 参数或空集合。</summary>
-    public IReadOnlyDictionary<string, string> ParametersFor(int channelId)
+    /// <summary>只取精确匹配 sessionId 的 session-scope 挂载；未显式挂载返回空集合，不回退共享作用域。</summary>
+    public IReadOnlyList<KeywordGraphRunner> RunnersForSession(string sessionId)
     {
         EnsureFresh();
-        GraphMount? mount = null;
-        if (_byChannel.TryGetValue(channelId.ToString(), out var channelMount))
-            mount = channelMount;
-        else
-            mount = _global;
-        return mount?.Params ?? EmptyParameters;
-    }
-
-    private static readonly IReadOnlyDictionary<string, string> EmptyParameters =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>只取精确匹配 sessionId 的 session-scope 挂载；未显式挂载返回 null，不回退共享作用域。</summary>
-    public KeywordGraphRunner? ForSession(string sessionId)
-    {
-        EnsureFresh();
-        if (!_bySession.TryGetValue(sessionId, out var mount) || !_classes.ContainsKey(mount.ClassId))
+        if (!_bySession.TryGetValue(sessionId, out var mounts) || mounts.Count == 0)
         {
-            return null;
+            return Array.Empty<KeywordGraphRunner>();
         }
 
-        return GetSessionInstance(sessionId, mount);
+        return mounts
+            .Where(mount => _classes.ContainsKey(mount.ClassId))
+            .Select(mount => GetSessionInstance(sessionId, mount))
+            .ToList();
     }
 
     private KeywordGraphRunner GetSessionInstance(string sessionId, GraphMount mount)
     {
-        if (_sessionInstanceKeys.TryGetValue(sessionId, out var existingKey)
-            && _instances.TryGetValue(existingKey, out var existing))
+        if (_instances.TryGetValue(mount.InstanceKey, out var existing))
         {
             return existing;
         }
 
-        var instanceKey = mount.InstanceKey;
-        var graph = new GraphInstance(_classes[mount.ClassId], instanceKey);
+        var graph = new GraphInstance(_classes[mount.ClassId], mount.InstanceKey);
         var runner = KeywordGraphRunner.ForInstance(graph, _active, mount.Params);
-        _instances[instanceKey] = runner;
-        _sessionInstanceKeys[sessionId] = instanceKey;
+        _instances[mount.InstanceKey] = runner;
+
+        if (!_sessionInstanceKeys.TryGetValue(sessionId, out var keys))
+        {
+            keys = new List<string>();
+            _sessionInstanceKeys[sessionId] = keys;
+        }
+        keys.Add(mount.InstanceKey);
 
         Logging.Signal.Event(Logging.LogGroup.Engine, "graph.session.instance_created",
-            new { sessionId, mount.ClassId, instanceKey });
+            new { sessionId, mount.ClassId, instanceKey = mount.InstanceKey });
         return runner;
     }
 
-    /// <summary>频道作用域实例销毁（频道生命周期钩子）。</summary>
+    /// <summary>频道作用域实例销毁（频道生命周期钩子）。global 挂载不随单个频道销毁。</summary>
     public void Release(int channelId)
     {
-        if (_byChannel.TryGetValue(channelId.ToString(), out var mount))
+        if (!_byChannel.TryGetValue(channelId.ToString(), out var mounts))
+        {
+            return;
+        }
+
+        foreach (var mount in mounts)
         {
             ReleaseMount(mount, new { channelId });
         }
     }
 
-    /// <summary>RuntimeSession 完成或被 kill 时销毁它自己的实例，不论来源是 session/channel/global 挂载。</summary>
+    /// <summary>RuntimeSession 完成或被 kill 时销毁它自己的全部实例。</summary>
     public void ReleaseSession(string sessionId)
     {
-        if (!_sessionInstanceKeys.Remove(sessionId, out var instanceKey))
+        if (!_sessionInstanceKeys.Remove(sessionId, out var keys))
         {
             return;
         }
 
-        if (_instances.Remove(instanceKey))
+        foreach (var key in keys)
         {
-            Logging.Signal.Event(Logging.LogGroup.Engine, "graph.session.instance_released",
-                new { sessionId, key = instanceKey });
+            if (_instances.Remove(key))
+            {
+                Logging.Signal.Event(Logging.LogGroup.Engine, "graph.session.instance_released",
+                    new { sessionId, key });
+            }
         }
     }
 
@@ -192,7 +202,8 @@ internal sealed class GraphManager
             _classes.Clear();
             _byChannel.Clear();
             _bySession.Clear();
-            _global = null;
+            _sessionInstanceKeys.Clear();
+            _global.Clear();
 
             ParseMounts();
 
@@ -200,8 +211,8 @@ internal sealed class GraphManager
             {
                 droppedInstances = dropped,
                 classes = _classes.Count,
-                channelMounts = _byChannel.Count,
-                hasGlobal = _global is not null,
+                channelMounts = _byChannel.Values.Sum(mounts => mounts.Count),
+                globalMounts = _global.Count,
             });
         }
         catch (Exception ex)
@@ -227,7 +238,9 @@ internal sealed class GraphManager
         }
 
         var dir = Path.Combine(_storagePath, "Graphs");
+        var seenKeys = new HashSet<string>(StringComparer.Ordinal);
 
+        // 声明顺序作为 Order 相同时的次序（OrderBy 是稳定排序）
         foreach (var mount in doc.Mounts.Where(m => m.Enabled))
         {
             if (string.IsNullOrWhiteSpace(mount.ClassId))
@@ -263,41 +276,75 @@ internal sealed class GraphManager
                 _classes[mount.ClassId] = graph;
             }
 
-            if (string.Equals(mount.Scope, "global", StringComparison.OrdinalIgnoreCase))
+            var scopeKey = scope == "global" ? string.Empty : mount.ScopeKey!.Trim();
+            mount.Scope = scope;
+            mount.ScopeKey = scope == "global" ? null : scopeKey;
+
+            // 同一作用域内实例键必须唯一（classId + 作用域 + 键 + 实例名）。
+            if (!seenKeys.Add(mount.InstanceKey))
             {
-                _global = mount;
+                Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.mount.duplicate_instance",
+                    new { mount.ClassId, mount.Scope, mount.ScopeKey, mount.InstanceName });
+                continue;
             }
-            else if (string.Equals(mount.Scope, "session", StringComparison.OrdinalIgnoreCase)
-                     && !string.IsNullOrWhiteSpace(mount.ScopeKey))
+
+            if (scope == "global")
             {
-                _bySession[mount.ScopeKey] = mount;
+                _global.Add(mount);
             }
-            else if (string.Equals(mount.Scope, "channel", StringComparison.OrdinalIgnoreCase)
-                     && !string.IsNullOrWhiteSpace(mount.ScopeKey))
+            else if (scope == "session")
             {
-                _byChannel[mount.ScopeKey] = mount;
+                AddTo(_bySession, scopeKey, mount);
+            }
+            else
+            {
+                AddTo(_byChannel, scopeKey, mount);
             }
         }
+
+        // 按 Order 排序（同一 Order 保持声明顺序），保证跑图次序可复现
+        Sort(_global);
+        foreach (var mounts in _byChannel.Values) Sort(mounts);
+        foreach (var mounts in _bySession.Values) Sort(mounts);
 
         Logging.Signal.Event(Logging.LogGroup.Engine, "graph.mount.loaded", new
         {
             classes = _classes.Count,
-            channelMounts = _byChannel.Count,
-            hasGlobal = _global is not null,
+            channelMounts = _byChannel.Values.Sum(mounts => mounts.Count),
+            sessionMounts = _bySession.Values.Sum(mounts => mounts.Count),
+            globalMounts = _global.Count,
             active = _active,
         });
 
         return true;
     }
 
-    private GraphMount? ResolveChannelMount(int channelId)
+    private static void AddTo(Dictionary<string, List<GraphMount>> index, string key, GraphMount mount)
     {
-        if (_byChannel.TryGetValue(channelId.ToString(), out var mount) && _classes.ContainsKey(mount.ClassId))
+        if (!index.TryGetValue(key, out var mounts))
         {
-            return mount;
+            mounts = new List<GraphMount>();
+            index[key] = mounts;
+        }
+        mounts.Add(mount);
+    }
+
+    private static void Sort(List<GraphMount> mounts)
+    {
+        var ordered = mounts.OrderBy(mount => mount.Order).ToList();
+        mounts.Clear();
+        mounts.AddRange(ordered);
+    }
+
+    /// <summary>频道专属挂载优先；没有则用 global 挂载。</summary>
+    private IReadOnlyList<GraphMount> ResolveChannelMounts(int channelId)
+    {
+        if (_byChannel.TryGetValue(channelId.ToString(), out var mounts) && mounts.Count > 0)
+        {
+            return mounts;
         }
 
-        return _global is not null && _classes.ContainsKey(_global.ClassId) ? _global : null;
+        return _global;
     }
 
     private KeywordGraphRunner GetOrCreate(GraphMount mount)

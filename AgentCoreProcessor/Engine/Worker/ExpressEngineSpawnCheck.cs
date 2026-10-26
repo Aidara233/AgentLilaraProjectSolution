@@ -59,15 +59,19 @@ namespace AgentCoreProcessor.Engine
             var deliveredKeys = new HashSet<string>(StringComparer.Ordinal);
 
             // ④ 插槽：挂了图的频道由图产出意图，由骨架执行。
-            //    图没有返回值——跑完就待命，要不要投递只看它产出的意图。
+            //    图没有返回值——每张图各自跑完就待命，要不要投递只看它们产出的意图。
             //    active：图接管本次消息，不再走默认会话路径；shadow：只记录意图，行为不变。
             var graphs = Graphs(ctx);
-            var mountedGraph = graphs?.For(channelId);
-            if (mountedGraph != null)
+            var mountedRunners = graphs?.RunnersFor(channelId) ?? Array.Empty<Graph.KeywordGraphRunner>();
+            if (mountedRunners.Count > 0)
             {
-                var intents = await mountedGraph.EvaluateAsync(
-                    Graph.KeywordGraphRunner.ToEvent(msg, channelId),
-                    msg.PlatformMessageId ?? $"{msg.Platform}:{msg.ChannelId}");
+                var intents = new List<AgentLilara.GraphRuntime.Graph.ActionIntent>();
+                foreach (var runner in mountedRunners)
+                {
+                    intents.AddRange(await runner.EvaluateAsync(
+                        Graph.KeywordGraphRunner.ToEvent(msg, channelId),
+                        msg.PlatformMessageId ?? $"{msg.Platform}:{msg.ChannelId}"));
+                }
 
                 if (graphs!.IsActive)
                 {
@@ -75,7 +79,13 @@ namespace AgentCoreProcessor.Engine
                         await ExecuteIntentAsync(intent);
 
                     Signal.Event(LogGroup.Engine, "图接管本次消息路由",
-                        new { channelId, msgId = sessionContext.IncomingMessage?.Id, intents = intents.Count });
+                        new
+                        {
+                            channelId,
+                            msgId = sessionContext.IncomingMessage?.Id,
+                            graphs = mountedRunners.Count,
+                            intents = intents.Count
+                        });
                     return;
                 }
             }

@@ -47,9 +47,13 @@ public class GraphManagerTests : IDisposable
             return $"{{\"scope\":\"{m.Scope}\",\"scopeKey\":\"{m.Key}\",\"classId\":\"{classId}\",\"enabled\":true}}";
         }));
 
-        File.WriteAllText(
-            Path.Combine(_graphs, "mounts.json"),
-            $"{{ \"version\": 1, \"mounts\": [{entries}] }}");
+        WriteRaw($"{{ \"version\": 1, \"mounts\": [{entries}] }}");
+    }
+
+    private void WriteRaw(string json)
+    {
+        File.WriteAllText(Path.Combine(_graphs, "mounts.json"), json);
+        File.SetLastWriteTimeUtc(Path.Combine(_graphs, "mounts.json"), DateTime.UtcNow.AddSeconds(5));
     }
 
     private static InboundEvent Message() =>
@@ -71,10 +75,10 @@ public class GraphManagerTests : IDisposable
     }
 
     [Fact]
-    public void UnmountedChannel_ReturnsNull()
+    public void UnmountedChannel_ReturnsEmpty()
     {
         var manager = GraphManager.TryCreate(_dir, active: false)!;
-        Assert.Null(manager.For(99));
+        Assert.Empty(manager.RunnersFor(99));
     }
 
     [Fact]
@@ -82,8 +86,8 @@ public class GraphManagerTests : IDisposable
     {
         var manager = GraphManager.TryCreate(_dir, active: false)!;
 
-        var first = manager.For(1)!;
-        var second = manager.For(2)!;
+        var first = Assert.Single(manager.RunnersFor(1));
+        var second = Assert.Single(manager.RunnersFor(2));
 
         Assert.NotSame(first, second);
         Assert.Equal(2, manager.InstanceCount);
@@ -93,8 +97,8 @@ public class GraphManagerTests : IDisposable
     public async Task VariablesAreIsolatedPerChannel()
     {
         var manager = GraphManager.TryCreate(_dir, active: false)!;
-        var channelOne = manager.For(1)!;
-        var channelTwo = manager.For(2)!;
+        var channelOne = Assert.Single(manager.RunnersFor(1));
+        var channelTwo = Assert.Single(manager.RunnersFor(2));
 
         await FeedAsync(channelOne, 5);
 
@@ -107,13 +111,13 @@ public class GraphManagerTests : IDisposable
     public async Task ReleaseDestroysInstanceAndVariables()
     {
         var manager = GraphManager.TryCreate(_dir, active: false)!;
-        var before = manager.For(1)!;
+        var before = Assert.Single(manager.RunnersFor(1));
         await FeedAsync(before, 3);
         Assert.Equal(3, before.Instance.ReadVariable("pending").AsInt());
 
         manager.Release(1);
 
-        var after = manager.For(1)!;
+        var after = Assert.Single(manager.RunnersFor(1));
         Assert.NotSame(before, after);
         Assert.Equal(0, after.Instance.ReadVariable("pending").AsInt());
     }
@@ -121,15 +125,104 @@ public class GraphManagerTests : IDisposable
     [Fact]
     public async Task QuietPresetProducesNoIntents()
     {
-        File.WriteAllText(
-            Path.Combine(_graphs, "mounts.json"),
-            "{ \"version\": 1, \"mounts\": [{\"scope\":\"channel\",\"scopeKey\":\"1\",\"classId\":\"preset.quiet\",\"enabled\":true}] }");
+        WriteRaw("{ \"version\": 1, \"mounts\": [{\"scope\":\"channel\",\"scopeKey\":\"1\",\"classId\":\"preset.quiet\",\"enabled\":true}] }");
         var manager = GraphManager.TryCreate(_dir, active: true)!;
-        var quiet = manager.For(1)!;
+        var quiet = Assert.Single(manager.RunnersFor(1));
 
         var intents = await quiet.EvaluateAsync(Message(), "quiet-test");
 
         Assert.Empty(intents);
+    }
+
+    [Fact]
+    public async Task SameClassCanBeMountedTwiceOnOneChannel()
+    {
+        WriteRaw("""
+        {
+          "version": 1,
+          "mounts": [
+            { "scope": "channel", "scopeKey": "1", "classId": "preset.activation", "instanceName": "a", "order": 1, "enabled": true },
+            { "scope": "channel", "scopeKey": "1", "classId": "preset.activation", "instanceName": "b", "order": 2, "enabled": true }
+          ]
+        }
+        """);
+
+        var manager = GraphManager.TryCreate(_dir, active: false)!;
+        var runners = manager.RunnersFor(1);
+
+        Assert.Equal(2, runners.Count);
+        Assert.NotSame(runners[0], runners[1]);
+
+        // 各自独立变量
+        await FeedAsync(runners[1], 4);
+        Assert.Equal(0, runners[0].Instance.ReadVariable("pending").AsInt());
+        Assert.Equal(4, runners[1].Instance.ReadVariable("pending").AsInt());
+
+        // 实例键带实例名，互不覆盖
+        Assert.Contains("#a", runners[0].Instance.InstanceKey);
+        Assert.Contains("#b", runners[1].Instance.InstanceKey);
+    }
+
+    [Fact]
+    public void MountsRunInOrder()
+    {
+        WriteRaw("""
+        {
+          "version": 1,
+          "mounts": [
+            { "scope": "channel", "scopeKey": "1", "classId": "preset.activation", "instanceName": "late",  "order": 20, "enabled": true },
+            { "scope": "channel", "scopeKey": "1", "classId": "preset.activation", "instanceName": "early", "order": 5,  "enabled": true }
+          ]
+        }
+        """);
+
+        var manager = GraphManager.TryCreate(_dir, active: false)!;
+        var runners = manager.RunnersFor(1);
+
+        Assert.Equal(2, runners.Count);
+        Assert.Contains("#early", runners[0].Instance.InstanceKey);
+        Assert.Contains("#late", runners[1].Instance.InstanceKey);
+    }
+
+    [Fact]
+    public void DuplicateInstanceKeyIsSkipped()
+    {
+        WriteRaw("""
+        {
+          "version": 1,
+          "mounts": [
+            { "scope": "channel", "scopeKey": "1", "classId": "preset.activation", "enabled": true },
+            { "scope": "channel", "scopeKey": "1", "classId": "preset.activation", "enabled": true }
+          ]
+        }
+        """);
+
+        var manager = GraphManager.TryCreate(_dir, active: false)!;
+
+        // 同名同作用域且都没写 instanceName → 实例键相同，第二个被丢弃
+        Assert.Single(manager.RunnersFor(1));
+    }
+
+    [Fact]
+    public void GlobalMountsApplyWhenChannelHasNoOwnMounts()
+    {
+        WriteRaw("""
+        {
+          "version": 1,
+          "mounts": [
+            { "scope": "global", "classId": "preset.quiet", "enabled": true },
+            { "scope": "channel", "scopeKey": "7", "classId": "preset.activation", "enabled": true }
+          ]
+        }
+        """);
+
+        var manager = GraphManager.TryCreate(_dir, active: false)!;
+
+        var channelSeven = Assert.Single(manager.RunnersFor(7));
+        var otherChannel = Assert.Single(manager.RunnersFor(8));
+
+        Assert.Contains("preset.activation", channelSeven.Instance.InstanceKey);
+        Assert.Contains("preset.quiet", otherChannel.Instance.InstanceKey);
     }
 
     [Fact]
@@ -138,11 +231,10 @@ public class GraphManagerTests : IDisposable
         WriteMountEntries(("session", "session-a"));
         var manager = GraphManager.TryCreate(_dir, active: false)!;
 
-        var session = manager.ForSession("session-a");
+        var session = Assert.Single(manager.RunnersForSession("session-a"));
 
-        Assert.NotNull(session);
-        Assert.Contains("@session#session-a", session!.Instance.InstanceKey);
-        Assert.Null(manager.ForSession("session-b"));
+        Assert.Contains("@session#session-a", session.Instance.InstanceKey);
+        Assert.Empty(manager.RunnersForSession("session-b"));
         Assert.Equal(1, manager.InstanceCount);
     }
 
@@ -152,8 +244,8 @@ public class GraphManagerTests : IDisposable
         WriteMountEntries(("session", "session-a"), ("session", "session-b"));
         var manager = GraphManager.TryCreate(_dir, active: false)!;
 
-        var sessionA = manager.ForSession("session-a")!;
-        var sessionB = manager.ForSession("session-b")!;
+        var sessionA = Assert.Single(manager.RunnersForSession("session-a"));
+        var sessionB = Assert.Single(manager.RunnersForSession("session-b"));
         await FeedAsync(sessionA, 4);
 
         Assert.Equal(4, sessionA.Instance.ReadVariable("pending").AsInt());
@@ -162,8 +254,8 @@ public class GraphManagerTests : IDisposable
         manager.ReleaseSession("session-a");
 
         Assert.Equal(1, manager.InstanceCount);
-        Assert.Same(sessionB, manager.ForSession("session-b"));
-        var recreatedA = manager.ForSession("session-a")!;
+        Assert.Same(sessionB, Assert.Single(manager.RunnersForSession("session-b")));
+        var recreatedA = Assert.Single(manager.RunnersForSession("session-a"));
         Assert.NotSame(sessionA, recreatedA);
         Assert.Equal(0, recreatedA.Instance.ReadVariable("pending").AsInt());
     }
@@ -174,30 +266,29 @@ public class GraphManagerTests : IDisposable
         WriteMountEntries(("channel", "1"), ("session", "session-a"), ("session", "session-b"));
         var manager = GraphManager.TryCreate(_dir, active: false)!;
 
-        var channel = manager.For(1)!;
-        var sessionA = manager.ForSession("session-a")!;
-        var sessionB = manager.ForSession("session-b")!;
+        var channel = Assert.Single(manager.RunnersFor(1));
+        var sessionA = Assert.Single(manager.RunnersForSession("session-a"));
+        var sessionB = Assert.Single(manager.RunnersForSession("session-b"));
         Assert.Equal(3, manager.InstanceCount);
 
         manager.ReleaseSession("session-a");
 
         Assert.Equal(2, manager.InstanceCount);
-        Assert.Same(channel, manager.For(1));
-        Assert.Same(sessionB, manager.ForSession("session-b"));
-        Assert.NotSame(sessionA, manager.ForSession("session-a"));
+        Assert.Same(channel, Assert.Single(manager.RunnersFor(1)));
+        Assert.Same(sessionB, Assert.Single(manager.RunnersForSession("session-b")));
+        Assert.NotSame(sessionA, Assert.Single(manager.RunnersForSession("session-a")));
     }
 
     [Fact]
     public void MountChangeRebuildsInstances()
     {
         var manager = GraphManager.TryCreate(_dir, active: false)!;
-        Assert.Null(manager.For(3));
+        Assert.Empty(manager.RunnersFor(3));
 
-        // 改挂载表（新增频道 3），下次 For 应重建
+        // 改挂载表（新增频道 3），下次 RunnersFor 应重建
         WriteMounts("1", "3");
-        File.SetLastWriteTimeUtc(Path.Combine(_graphs, "mounts.json"), DateTime.UtcNow.AddSeconds(5));
 
-        Assert.NotNull(manager.For(3));
-        Assert.Null(manager.For(2)); // 被移除的挂载点不再有图
+        Assert.NotEmpty(manager.RunnersFor(3));
+        Assert.Empty(manager.RunnersFor(2)); // 被移除的挂载点不再有图
     }
 }

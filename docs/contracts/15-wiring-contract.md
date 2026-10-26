@@ -238,10 +238,16 @@ Storage/Graphs/
 ```json
 { "version": 1,
   "mounts": [
-    { "scope": "channel", "scopeKey": "1",   "classId": "preset.keyword-agent", "enabled": true },
+    { "scope": "channel", "scopeKey": "1", "classId": "preset.activation", "instanceName": "gate",  "order": 10, "enabled": true },
+    { "scope": "channel", "scopeKey": "1", "classId": "preset.router",     "instanceName": "route", "order": 20, "enabled": true,
+      "params": { "sessionType": "channel" } },
     { "scope": "global",  "classId": "preset.quiet", "enabled": false }
   ] }
 ```
+
+**同一个作用域可以挂多张图。** 每张图各自求值、各自待命，互不读取彼此结论——
+`order` 只决定跑图次序（小的先跑，相同则按声明顺序），不影响语义。
+同一作用域内 `classId + instanceName` 必须唯一；重名（且都没写 `instanceName`）时后者被丢弃并记 `graph.mount.duplicate_instance`。
 
 | 规则 | 行为 |
 |---|---|
@@ -271,7 +277,7 @@ C | channel 999 | 不含关键词 | 模型调用增加到 4 次、有回复（ch
 
 | 项 | 行为 |
 |---|---|
-实例粒度 | 每个挂载点一个 `GraphInstance`，键 `classId@scope#scopeKey`；两个频道挂同一张图也是两个实例 |
+实例粒度 | 每个挂载点一个 `GraphInstance`，键 `classId@scope#scopeKey#instanceName`；同频道挂两张同类图靠 `instanceName` 区分 |
 变量隔离 | 各实例变量独立（实测：channel 1 累积 5 条、channel 2 仍为 0） |
 实例生命周期 | 跟随挂载记录：`mounts.json` 变更（时间戳变化）→ 重建挂载并丢弃全部实例；不再挂载的频道 `For()` 返回 null |
 显式销毁 | `GraphManager.Release(channelId)` 销毁该挂载点实例与变量（供频道释放/运维调用） |

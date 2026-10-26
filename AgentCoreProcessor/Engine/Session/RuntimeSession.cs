@@ -56,11 +56,14 @@ internal class RuntimeSession : IRuntimeSession
     private readonly GraphActivationShadow? _activationShadow = GraphActivationShadow.TryCreate();
     private readonly Dictionary<string, ITool> _tools = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>本会话显式 session-scope 挂载的私有图实例；没有精确挂载时为 null。</summary>
-    private KeywordGraphRunner? _graphRunner;
+    /// <summary>
+    /// 本会话显式 session-scope 挂载的私有图实例（一个会话可挂多张）。
+    /// <para>⚠️ 目前只做绑定与释放，尚未在会话轮次里消费——真正的消费点落地前这里不会产生行为。</para>
+    /// </summary>
+    private IReadOnlyList<KeywordGraphRunner> _graphRunners = Array.Empty<KeywordGraphRunner>();
 
     /// <summary>由 SessionEngine 在创建/恢复时绑定。</summary>
-    internal void SetGraphRunner(KeywordGraphRunner? runner) => _graphRunner = runner;
+    internal void SetGraphRunners(IReadOnlyList<KeywordGraphRunner> runners) => _graphRunners = runners;
 
     private SessionAgentHost? _host;
 

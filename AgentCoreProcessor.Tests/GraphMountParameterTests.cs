@@ -29,7 +29,7 @@ public class GraphMountParameterTests : IDisposable
         """);
 
         var manager = GraphManager.TryCreate(_root, active: true)!;
-        var router = manager.For(42)!;
+        var router = Assert.Single(manager.RunnersFor(42));
         var evaluated = await router.EvaluateAsync(
             InboundEvent.Message("test", "42", "do work", ChannelKind.Group),
             "mount-param-test");
@@ -38,7 +38,6 @@ public class GraphMountParameterTests : IDisposable
         Assert.Equal(IntentKind.SessionRoute, route.Kind);
         Assert.Equal("task", route.Target);
         Assert.Equal("task", route.Args["sessionType"].As<string>());
-        Assert.Equal("task", manager.ParametersFor(42)["sessionType"]);
     }
 
     [Fact]
@@ -54,7 +53,7 @@ public class GraphMountParameterTests : IDisposable
         """);
 
         var manager = GraphManager.TryCreate(_root, active: true)!;
-        var router = manager.For(42)!;
+        var router = Assert.Single(manager.RunnersFor(42));
 
         var evaluated = await router.EvaluateAsync(
             InboundEvent.Message("test", "42", "do work", ChannelKind.Group),
