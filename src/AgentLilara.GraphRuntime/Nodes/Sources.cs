@@ -22,7 +22,40 @@ public sealed class OnMessageEvent : INode
 
     public IReadOnlyDictionary<string, Cell> Evaluate(IReadOnlyDictionary<string, Cell> inputs, EvalContext context)
     {
-        var @event = context.Event;
+        // 只对"收到消息"这一拍激活；别的事件种类在本图里就是无事件
+        var @event = context.Event is { Kind: EventKind.MessageReceived } evt ? evt : null;
+        return new Dictionary<string, Cell>(StringComparer.Ordinal)
+        {
+            ["event"] = @event is null ? Cell.NoEvent : Cell.Of(@event),
+            ["channel"] = @event is null ? Cell.NoEvent : Cell.Of(@event.ChannelKey),
+        };
+    }
+}
+
+/// <summary>
+/// 激活源：收到一条运行时失败事件（错误图专用）。
+/// <para>失败是信息：它作为新的一拍进入错误图，由电路自行决定怎么补偿。</para>
+/// </summary>
+public sealed class OnErrorEvent : INode
+{
+    public OnErrorEvent(string id = "on.error")
+    {
+        Id = id;
+    }
+
+    public string Id { get; }
+
+    public NodeKind Kind => NodeKind.Source;
+
+    public bool IsActivationSource => true;
+
+    public IReadOnlyList<string> InputPorts { get; } = Array.Empty<string>();
+
+    public IReadOnlyList<string> OutputPorts { get; } = new[] { "event", "channel" };
+
+    public IReadOnlyDictionary<string, Cell> Evaluate(IReadOnlyDictionary<string, Cell> inputs, EvalContext context)
+    {
+        var @event = context.Event is { Kind: EventKind.RuntimeError } evt ? evt : null;
         return new Dictionary<string, Cell>(StringComparer.Ordinal)
         {
             ["event"] = @event is null ? Cell.NoEvent : Cell.Of(@event),

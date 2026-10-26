@@ -115,11 +115,8 @@ internal sealed class KeywordGraphRunner
 
     private async Task<IReadOnlyList<ActionIntent>> RunCoreAsync(InboundEvent @event, string traceId)
     {
-        if (@event.Kind != EventKind.MessageReceived)
-        {
-            return Array.Empty<ActionIntent>();
-        }
-
+        // 事件种类由激活源自己筛（on.message / on.error）：这里不做二次过滤，
+        // 否则同一张图无法复用到别的触发源上。
         SolveResult result;
         try
         {

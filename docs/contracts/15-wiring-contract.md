@@ -51,7 +51,7 @@
 `session.finished` | sessionRef、reason | 中 | 归档保留 |
 `session.failed` | sessionRef、stage、message | 低 | 归档保留 |
 `adapter.stateChanged` | adapterId、state、since | 低 | 归档保留 |
-`runtime.error` | kind、node、message | 低 | 归档保留 |
+`runtime.error` | kind、node、message | 低 | 已实现（错误图 `on.error` 的触发源） |
 
 加一个新信源（邮件、webhook）**不新增事件种类**，只换 `adapterId`。
 
@@ -119,6 +119,7 @@
 `preset.quiet` | 消息已入库后不激活会话、不回复（`on.message` 无汇块） | 已实现
 `preset.digest` | 攒够 N 条或 T 分钟后总结 | 待做（需要 `sink.pulse`，见 §8） |
 `preset.router` | 由图指定会话类型；消息优先投递到频道活跃会话，无活跃会话时按类型创建并投递 | 已实现
+`preset.fallback` | 收到 `runtime.error` 后回一句固定提示（兜底图模板，opt-in 挂载） | 已实现
 
 默认装 `preset.mention`——否则首启"没反应"会被误判成坏了。
 
@@ -255,7 +256,9 @@ Storage/Graphs/
 频道未挂载 | `For(channelId)` 返回 null → 老行为（消息照常进会话） |
 频道挂载且 `LILARA_GRAPH_MODE=active` | 图跑完就待命：骨架执行它产出的意图，本次消息**不再走默认会话路径** |
 频道挂载但非 active（shadow） | 只记录 `graph.keyword.evaluated`，行为不变（继续走默认路径） |
-同一消息多个投递意图 | 骨架按 `频道:消息id` 去重，只投递一次 |
+同一消息多个投递意图 | 骨架按 `频道:消息id` 去重，只投递一次（成功后占键；失败不占键，留给兜底重试） |
+`trigger: "error"` 挂载 | 只在该频道有动作失败时被激活；同样按“频道级优先、否则 global”解析 |
+没有错误图时的失败 | 只记 `graph.error.unhandled`，不阻断已完成的入库 |
 图文件缺失 / 加载失败 | 只告警 `graph.mount.class_missing`，跳过该挂载 |
 
 **图没有返回值。** `KeywordGraphRunner.EvaluateAsync` 只把本次求解产出的意图返回给调用方，

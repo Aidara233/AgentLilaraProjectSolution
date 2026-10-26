@@ -56,7 +56,10 @@ namespace AgentCoreProcessor.Engine
             EnqueueCompanionExtraction(sessionContext, ctx);
 
             // 同一频道同一条消息只投递一次：多张图都产出投递意图时不重复投递。
+            // 键在**成功之后**才占用——失败必须留出给兜底图重试的机会。
             var deliveredKeys = new HashSet<string>(StringComparer.Ordinal);
+            var traceId = msg.PlatformMessageId ?? $"{msg.Platform}:{msg.ChannelId}";
+            var messageEvent = Graph.KeywordGraphRunner.ToEvent(msg, channelId);
 
             // ④ 插槽：挂了图的频道由图产出意图，由骨架执行。
             //    图没有返回值——每张图各自跑完就待命，要不要投递只看它们产出的意图。
@@ -68,15 +71,17 @@ namespace AgentCoreProcessor.Engine
                 var intents = new List<AgentLilara.GraphRuntime.Graph.ActionIntent>();
                 foreach (var runner in mountedRunners)
                 {
-                    intents.AddRange(await runner.EvaluateAsync(
-                        Graph.KeywordGraphRunner.ToEvent(msg, channelId),
-                        msg.PlatformMessageId ?? $"{msg.Platform}:{msg.ChannelId}"));
+                    intents.AddRange(await runner.EvaluateAsync(messageEvent, traceId));
                 }
 
                 if (graphs!.IsActive)
                 {
+                    var failures = new List<string>();
                     foreach (var intent in intents)
-                        await ExecuteIntentAsync(intent);
+                    {
+                        var failure = await ExecuteIntentAsync(intent);
+                        if (failure != null) failures.Add(failure);
+                    }
 
                     Signal.Event(LogGroup.Engine, "图接管本次消息路由",
                         new
@@ -84,63 +89,72 @@ namespace AgentCoreProcessor.Engine
                             channelId,
                             msgId = sessionContext.IncomingMessage?.Id,
                             graphs = mountedRunners.Count,
-                            intents = intents.Count
+                            intents = intents.Count,
+                            failures = failures.Count
                         });
+
+                    // 失败是信息：派生一条错误事件交给兜底图（只一跳）。
+                    if (failures.Count > 0)
+                        await RunFallbackAsync(failures);
+
                     return;
                 }
             }
 
             // ⑤ 骨架：默认路径 —— 复用频道活跃会话，空闲则孵化（未挂图或 shadow 模式）。
-            await DeliverToChannelSessionAsync();
+            var defaultFailure = await DeliverToChannelSessionAsync();
+            if (defaultFailure != null)
+                await RunFallbackAsync(new[] { defaultFailure });
 
             // —— 骨架的意图执行器：图只表达"想做什么"，执行与失败的记录都在这里 ——
 
-            async Task ExecuteIntentAsync(AgentLilara.GraphRuntime.Graph.ActionIntent intent)
+            // 返回 null = 成功（或无需动作）；否则返回失败原因，供兜底图使用。
+            async Task<string?> ExecuteIntentAsync(AgentLilara.GraphRuntime.Graph.ActionIntent intent)
             {
                 switch (intent.Kind)
                 {
                     case AgentLilara.GraphRuntime.Graph.IntentKind.SendMessage:
-                        await DispatchSendAsync(intent);
-                        break;
+                        return await DispatchSendAsync(intent);
 
                     case AgentLilara.GraphRuntime.Graph.IntentKind.SessionRoute:
-                        await RouteToSessionAsync(intent);
-                        break;
+                        return await RouteToSessionAsync(intent);
 
                     case AgentLilara.GraphRuntime.Graph.IntentKind.SessionPrompt:
                         // 历史语义：请骨架按默认规则驱动频道会话
-                        await DeliverToChannelSessionAsync();
-                        break;
+                        return await DeliverToChannelSessionAsync();
 
                     default:
                         Signal.Debug(LogGroup.Engine, "graph.intent.skipped",
                             new { channelId, kind = intent.Kind.ToString() });
-                        break;
+                        return null;
                 }
             }
 
-            async Task DispatchSendAsync(AgentLilara.GraphRuntime.Graph.ActionIntent intent)
+            async Task<string?> DispatchSendAsync(AgentLilara.GraphRuntime.Graph.ActionIntent intent)
             {
                 try
                 {
                     await new Graph.MessageGraphIntentDispatcher(
                         outgoing => ctx.Adapters.SendMessageAsync(msg.Platform, outgoing),
                         channelId).DispatchAsync(intent);
+                    return null;
                 }
                 catch (Exception ex)
                 {
                     // 出向失败不影响已完成的入库与后续意图
                     Signal.Warn(LogGroup.Engine, "graph.send.failed",
                         new { channelId, error = ex.Message });
+                    return $"send-failed:{ex.Message}";
                 }
             }
 
-            async Task RouteToSessionAsync(AgentLilara.GraphRuntime.Graph.ActionIntent intent)
+            async Task<string?> RouteToSessionAsync(AgentLilara.GraphRuntime.Graph.ActionIntent intent)
             {
-                if (sessionContext.IncomingMessage == null) return;
+                if (sessionContext.IncomingMessage == null) return "message-missing";
 
-                // 同一频道同一条消息只投递一次：先到者取得投递权。
-                if (!deliveredKeys.Add(DeliveryKey())) return;
+                // 已投递成功过就跳过；失败不占键，后面的图或兜底图仍可尝试。
+                var key = DeliveryKey();
+                if (deliveredKeys.Contains(key)) return null;
 
                 var sessionType = intent.Args.TryGetValue("sessionType", out var typeCell)
                     ? typeCell.As<string>()
@@ -152,7 +166,7 @@ namespace AgentCoreProcessor.Engine
                 {
                     Signal.Warn(LogGroup.Engine, "graph.route.failed",
                         new { channelId, reason = "session-engine-unavailable", sessionType });
-                    return;
+                    return "session-engine-unavailable";
                 }
 
                 await sessionEngine.WaitRestoredAsync(TimeSpan.FromSeconds(5));
@@ -164,20 +178,27 @@ namespace AgentCoreProcessor.Engine
                 {
                     Signal.Warn(LogGroup.Engine, "graph.route.failed",
                         new { channelId, reason = "route-rejected", sessionType });
+                    return $"route-rejected:{sessionType}";
                 }
+
+                deliveredKeys.Add(key);
+                return null;
             }
 
             string DeliveryKey() => $"{channelId}:{sessionContext.IncomingMessage?.Id}";
 
             // 默认路径：复用频道活跃会话；空闲时按默认会话类型孵化，再投递本条消息。
-            async Task<bool> DeliverToChannelSessionAsync()
+            // 返回 null = 已投递（或已投递过）；否则返回失败原因。
+            async Task<string?> DeliverToChannelSessionAsync()
             {
-                if (sessionContext.IncomingMessage == null) return false;
-                if (!deliveredKeys.Add(DeliveryKey())) return true;
+                if (sessionContext.IncomingMessage == null) return null;
+
+                var key = DeliveryKey();
+                if (deliveredKeys.Contains(key)) return null;
 
                 var sessionEngine = ctx.GetActiveEnginesSnapshot()
                     .OfType<Session.SessionEngine>().FirstOrDefault();
-                if (sessionEngine == null) return false;
+                if (sessionEngine == null) return "session-engine-unavailable";
 
                 // 冷启动时序：SessionEngine 经 Task.Run 启动，RestoreAll 在 RunAsync 开头执行；
                 // 先等恢复完成，避免恢复的 claim 尚未落地就被当成"频道空闲"。
@@ -185,7 +206,7 @@ namespace AgentCoreProcessor.Engine
 
                 var messageEngine = ctx.GetActiveEnginesSnapshot()
                     .OfType<Messaging.MessageEngine>().FirstOrDefault();
-                if (messageEngine == null) return false;
+                if (messageEngine == null) return "message-engine-unavailable";
 
                 // 私聊视同提及：投 mention 子流即时激活（normal 子流要攒满权重才醒）。
                 var asMention = msg.IsMentioned || msg.IsPrivate;
@@ -197,22 +218,72 @@ namespace AgentCoreProcessor.Engine
                 if (claimerId != null && claimerAlive)
                 {
                     messageEngine.DeliverToSession(channelId, sessionContext.IncomingMessage, asMention);
+                    deliveredKeys.Add(key);
                     Signal.Event(LogGroup.Engine, "入向已投递到 session 端口",
                         new { channelId, msgId = sessionContext.IncomingMessage.Id, sessionId = claimerId, asMention });
-                    return true;
+                    return null;
                 }
 
                 var created = sessionEngine.CreateExpressSessionForChannel(channelId);
                 if (created == null)
                 {
                     Signal.Warn(LogGroup.Engine, "会话创建失败或频道已被占用", new { channelId });
-                    return false;
+                    return "session-create-failed";
                 }
 
                 messageEngine.DeliverToSession(channelId, sessionContext.IncomingMessage, asMention);
+                deliveredKeys.Add(key);
                 Signal.Event(LogGroup.Engine, "会话孵化 + 投递",
                     new { channelId, msgId = sessionContext.IncomingMessage.Id, sessionId = created.SessionId, asMention });
-                return true;
+                return null;
+            }
+
+            // 兜底：把失败变成一条错误事件，交给本频道（或 global）的错误图跑一跳。
+            // 兜底图自己失败只审计，不再派生新事件——层级到此为止。
+            async Task RunFallbackAsync(IReadOnlyList<string> failures)
+            {
+                var errorRunners = graphs?.RunnersForError(channelId) ?? Array.Empty<Graph.KeywordGraphRunner>();
+                if (errorRunners.Count == 0)
+                {
+                    Signal.Warn(LogGroup.Engine, "graph.error.unhandled",
+                        new { channelId, msgId = sessionContext.IncomingMessage?.Id, failures });
+                    return;
+                }
+
+                var errorEvent = AgentLilara.GraphRuntime.Contracts.InboundEvent.RuntimeError(
+                    channelId.ToString(),
+                    string.Join(" | ", failures),
+                    dedupeKey: messageEvent.DedupeKey,
+                    depth: 1);
+                var errorTraceId = $"{traceId}:error";
+
+                var errorIntents = new List<AgentLilara.GraphRuntime.Graph.ActionIntent>();
+                foreach (var runner in errorRunners)
+                {
+                    errorIntents.AddRange(await runner.EvaluateAsync(errorEvent, errorTraceId));
+                }
+
+                var stillFailing = new List<string>();
+                foreach (var intent in errorIntents)
+                {
+                    var failure = await ExecuteIntentAsync(intent);
+                    if (failure != null) stillFailing.Add(failure);
+                }
+
+                if (stillFailing.Count > 0)
+                {
+                    Signal.Warn(LogGroup.Engine, "graph.error.fallback_failed",
+                        new { channelId, depth = errorEvent.Depth, failures = stillFailing });
+                }
+
+                Signal.Event(LogGroup.Engine, "图兜底已执行",
+                    new
+                    {
+                        channelId,
+                        graphs = errorRunners.Count,
+                        intents = errorIntents.Count,
+                        failures = stillFailing.Count
+                    });
             }
         }
 

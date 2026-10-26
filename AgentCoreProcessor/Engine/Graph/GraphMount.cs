@@ -20,10 +20,19 @@ internal sealed class GraphMount
 
     public bool Enabled { get; set; } = true;
 
+    /// <summary>触发源：<c>message</c>（收到消息）或 <c>error</c>（动作失败后的兜底）。</summary>
+    public string Trigger { get; set; } = TriggerMessage;
+
+    public const string TriggerMessage = "message";
+    public const string TriggerError = "error";
+
+    /// <summary>能力等价判断：挂载点是否属于错误兜底。</summary>
+    public bool IsErrorTrigger => string.Equals(Trigger, TriggerError, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>挂载参数，例如 preset.router 的 sessionType。</summary>
     public Dictionary<string, string> Params { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>实例键：挂载点唯一标识。classId 可被多个挂载点共用，实例绝不共用。</summary>
     public string InstanceKey =>
-        $"{ClassId}@{Scope}#{ScopeKey ?? string.Empty}#{InstanceName ?? string.Empty}";
+        $"{ClassId}@{Scope}#{ScopeKey ?? string.Empty}#{InstanceName ?? string.Empty}@{Trigger}";
 }

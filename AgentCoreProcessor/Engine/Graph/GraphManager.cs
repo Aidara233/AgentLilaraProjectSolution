@@ -87,14 +87,34 @@ internal sealed class GraphManager
     }
 
     /// <summary>
-    /// 该频道的全部图运行器（每挂载点一个实例，按 Order 排序）。
+    /// 该频道的消息图运行器（每挂载点一个实例，按 Order 排序）。
     /// 频道没有专属挂载时回退到 global 挂载；都没有则返回空集合（不干预）。
     /// </summary>
-    public IReadOnlyList<KeywordGraphRunner> RunnersFor(int channelId)
+    public IReadOnlyList<KeywordGraphRunner> RunnersFor(int channelId) =>
+        Runners(channelId, mount => !mount.IsErrorTrigger);
+
+    /// <summary>
+    /// 该频道的兜底图运行器：动作失败后由骨架以错误事件再激活一次。
+    /// 与消息图同一套继承规则——频道级优先，否则用 global 兜底。
+    /// </summary>
+    public IReadOnlyList<KeywordGraphRunner> RunnersForError(int channelId) =>
+        Runners(channelId, mount => mount.IsErrorTrigger);
+
+    private IReadOnlyList<KeywordGraphRunner> Runners(int channelId, Func<GraphMount, bool> predicate)
     {
         EnsureFresh();
 
-        return ResolveChannelMounts(channelId)
+        var scoped = _byChannel.TryGetValue(channelId.ToString(), out var mounts)
+            ? mounts.Where(predicate).ToList()
+            : new List<GraphMount>();
+
+        // 频道没有这一类挂载时回退 global（同类触发源）
+        if (scoped.Count == 0)
+        {
+            scoped = _global.Where(predicate).ToList();
+        }
+
+        return scoped
             .Where(mount => _classes.ContainsKey(mount.ClassId))
             .Select(GetOrCreate)
             .ToList();
@@ -280,6 +300,18 @@ internal sealed class GraphManager
             mount.Scope = scope;
             mount.ScopeKey = scope == "global" ? null : scopeKey;
 
+            // 触发源：message（收到消息）| error（动作失败后的兜底）
+            var trigger = string.IsNullOrWhiteSpace(mount.Trigger)
+                ? GraphMount.TriggerMessage
+                : mount.Trigger.Trim().ToLowerInvariant();
+            if (trigger is not (GraphMount.TriggerMessage or GraphMount.TriggerError))
+            {
+                Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.mount.invalid_trigger",
+                    new { mount.ClassId, mount.Trigger });
+                continue;
+            }
+            mount.Trigger = trigger;
+
             // 同一作用域内实例键必须唯一（classId + 作用域 + 键 + 实例名）。
             if (!seenKeys.Add(mount.InstanceKey))
             {
@@ -337,16 +369,6 @@ internal sealed class GraphManager
     }
 
     /// <summary>频道专属挂载优先；没有则用 global 挂载。</summary>
-    private IReadOnlyList<GraphMount> ResolveChannelMounts(int channelId)
-    {
-        if (_byChannel.TryGetValue(channelId.ToString(), out var mounts) && mounts.Count > 0)
-        {
-            return mounts;
-        }
-
-        return _global;
-    }
-
     private KeywordGraphRunner GetOrCreate(GraphMount mount)
     {
         if (_instances.TryGetValue(mount.InstanceKey, out var existing))

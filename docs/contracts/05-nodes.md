@@ -29,6 +29,7 @@
 |---|---|---|---|
 `on.message` | — | `event`（`InboundEvent`）、`channel` | **已实现**；本拍事件为空时输出无事件 |
 `on.clock` | — | `event` | **已实现**；动态图专用（时钟沿），归档保留 |
+`on.error` | — | `event`、`channel` | **已实现**；只对 `runtime.error` 事件激活（错误图专用） |
 
 > 一图一源（D65）。要"多个条件都走同一反应"，用中间层图 + `sink.pulse`，不要放开多源。
 

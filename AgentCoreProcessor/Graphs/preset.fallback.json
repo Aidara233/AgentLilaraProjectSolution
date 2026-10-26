@@ -1,0 +1,14 @@
+{
+  "classId": "preset.fallback",
+  "kind": "static",
+  "version": 1,
+  "nodes": [
+    { "id": "on",   "type": "on.error" },
+    { "id": "text", "type": "read.const", "params": { "value": "（这条消息没能处理完，已经记下了）" } },
+    { "id": "send", "type": "sink.send" }
+  ],
+  "links": [
+    { "from": "on.event",  "to": "send.event" },
+    { "from": "text.value", "to": "send.text" }
+  ]
+}

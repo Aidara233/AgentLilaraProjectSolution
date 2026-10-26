@@ -25,6 +25,11 @@ public sealed class BuiltInNodeFactory : INodeFactory
                 p.EnsureOnly();
                 return new OnClock(id);
             },
+            ["on.error"] = (id, p) =>
+            {
+                p.EnsureOnly();
+                return new OnErrorEvent(id);
+            },
             ["read.const"] = (id, p) =>
             {
                 var cell = p.GetCell("value", Cell.Unknown);

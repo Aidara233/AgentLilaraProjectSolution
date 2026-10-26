@@ -41,6 +41,12 @@ public sealed record InboundEvent(
     DateTimeOffset ReceivedAt,
     string DedupeKey)
 {
+    /// <summary>
+    /// 兜底深度：0 = 正常事件；1 = 由一次失败派生出的错误事件。
+    /// 错误事件只允许再走一跳兜底图，因此 <see cref="Depth"/> ≥ 1 不再派生新的错误事件。
+    /// </summary>
+    public int Depth { get; init; }
+
     /// <summary>一条频道消息。</summary>
     public static InboundEvent Message(
         string adapterId,
@@ -82,4 +88,33 @@ public sealed record InboundEvent(
         IsReplyToBot: false,
         ReceivedAt: at ?? DateTimeOffset.UtcNow,
         DedupeKey: $"clock:{seq}");
+
+    /// <summary>
+    /// 一条运行时失败事件：某次动作没能完成（如投递被拒、会话创建失败）。
+    /// <para>失败是信息而不是异常：它作为新的一拍进入错误图，由电路决定怎么补偿。</para>
+    /// </summary>
+    public static InboundEvent RuntimeError(
+        string channelKey,
+        string reason,
+        string? dedupeKey = null,
+        int depth = 1,
+        DateTimeOffset? at = null)
+    {
+        var dedupe = dedupeKey ?? $"error:{channelKey}:{reason.GetHashCode():x}";
+        return new InboundEvent(
+            $"error:{dedupe}",
+            EventKind.RuntimeError,
+            AdapterId: "graph",
+            ChannelKey: channelKey,
+            ChannelKind: ChannelKind.Unknown,
+            SenderId: null,
+            Text: reason,
+            MentionsBot: false,
+            IsReplyToBot: false,
+            ReceivedAt: at ?? DateTimeOffset.UtcNow,
+            DedupeKey: dedupe)
+        {
+            Depth = depth,
+        };
+    }
 }
