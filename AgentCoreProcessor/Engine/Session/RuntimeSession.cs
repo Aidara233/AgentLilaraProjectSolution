@@ -564,7 +564,12 @@ internal class RuntimeSession : IRuntimeSession
         var resolver = (Func<string, ITool?>)(name =>
             _tools.TryGetValue(name, out var t) ? t :
               _componentHost?.TryGetTool(name) ?? ToolRegistry.Get(name));
-        var executor = new ToolExecutor(resolver) { PermissionGroup = _componentLoopType };
+        var executor = new ToolExecutor(resolver)
+        {
+            PermissionGroup = _componentLoopType,
+            SessionId = SessionId,
+            ChannelId = _connected.CurrentChannelId,
+        };
         var lines = new List<string>();
 
         foreach (var action in _initActions)
@@ -1204,7 +1209,12 @@ internal class RuntimeSession : IRuntimeSession
                     System.Func<string, ITool?> resolver = name =>
                         _tools.TryGetValue(name, out var t) ? t :
                           _componentHost?.TryGetTool(name) ?? ToolRegistry.Get(name);
-                    var executor = new ToolExecutor(resolver) { PermissionGroup = _componentLoopType };
+                    var executor = new ToolExecutor(resolver)
+                    {
+                        PermissionGroup = _componentLoopType,
+                        SessionId = SessionId,
+                        ChannelId = _connected.CurrentChannelId,
+                    };
 
                     var results = await executor.ExecuteAsync(output.ToolCalls);
                     roundSpan.SetCloseDetail(new

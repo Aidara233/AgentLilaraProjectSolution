@@ -19,6 +19,12 @@ namespace AgentCoreProcessor.Tool
         /// <summary>当前会话类型（express/channel/task/review）。设置后执行期硬校验：类型外工具返回 failed。</summary>
         public string? PermissionGroup { get; set; }
 
+        /// <summary>发起本次执行的会话 id（进入 <see cref="ToolExecutionScope"/>，供需要的工具读取）。</summary>
+        public string? SessionId { get; set; }
+
+        /// <summary>该会话当前占用的频道；0 表示没有频道。</summary>
+        public int ChannelId { get; set; }
+
         /// <summary>每个工具执行完毕后触发的回调。</summary>
         public Func<ToolCall, ToolResult, Task>? OnToolExecuted { get; set; }
 
@@ -47,6 +53,15 @@ namespace AgentCoreProcessor.Tool
             // 让 trace 页展示单个工具的完整流程与耗时，而不是整轮工具的笼统阶段。
             using var span = Signal.Open(LogGroup.Tool, $"工具: {call.Tool}",
                 new { tool = call.Tool, toolUseId = call.ToolUseId, inputs = call.Inputs });
+
+            // 工具拿不到会话信息（ITool 签名里没有），需要的那几个从这里读。
+            // 用 using 成对恢复：异步并发下漏掉清理会把上下文串到别的会话。
+            using var scope = ToolExecutionScope.Begin(new ToolExecutionContext
+            {
+                SessionId = SessionId,
+                SessionType = PermissionGroup,
+                ChannelId = ChannelId,
+            });
 
             var result = await ExecuteToolCoreAsync(call);
             span.SetCloseDetail(new { status = result.Status, data = result.Data, error = result.Error });
