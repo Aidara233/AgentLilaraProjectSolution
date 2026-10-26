@@ -203,7 +203,7 @@ namespace AgentCoreProcessor.Engine
             }
 
             // 兜底：把失败变成一条错误事件，交给本频道（或 global）的错误图跑一跳。
-            // 兜底图自己失败只审计，不再派生新事件——层级到此为止。
+            // 层级规则由 GraphFallbackRunner 负责：到顶只审计，不再派生新事件。
             async Task RunFallbackAsync(IReadOnlyList<string> failures)
             {
                 var errorRunners = graphs?.RunnersForError(channelId) ?? Array.Empty<Graph.KeywordGraphRunner>();
@@ -214,34 +214,42 @@ namespace AgentCoreProcessor.Engine
                     return;
                 }
 
-                var errorEvent = AgentLilara.GraphRuntime.Contracts.InboundEvent.RuntimeError(
-                    channelId.ToString(),
-                    string.Join(" | ", failures),
-                    dedupeKey: messageEvent.DedupeKey,
-                    depth: 1);
-                var errorTraceId = $"{traceId}:error";
+                var fallback = new Graph.GraphFallbackRunner(
+                    evaluate: async (depth, reasons) =>
+                    {
+                        var errorEvent = AgentLilara.GraphRuntime.Contracts.InboundEvent.RuntimeError(
+                            channelId.ToString(),
+                            string.Join(" | ", reasons),
+                            dedupeKey: messageEvent.DedupeKey,
+                            depth: depth);
+                        var errorTraceId = $"{traceId}:error:{depth}";
 
-                var errorIntents = new List<AgentLilara.GraphRuntime.Graph.ActionIntent>();
-                foreach (var runner in errorRunners)
-                {
-                    errorIntents.AddRange(await runner.EvaluateAsync(errorEvent, errorTraceId));
-                }
+                        var errorIntents = new List<AgentLilara.GraphRuntime.Graph.ActionIntent>();
+                        foreach (var runner in errorRunners)
+                        {
+                            errorIntents.AddRange(await runner.EvaluateAsync(errorEvent, errorTraceId));
+                        }
 
-                var stillFailing = await executor.ExecuteAsync(errorIntents);
+                        return errorIntents;
+                    },
+                    execute: executor.ExecuteAsync);
 
-                if (stillFailing.Count > 0)
+                var result = await fallback.RunAsync(failures);
+
+                if (result.Failures.Count > 0)
                 {
                     Signal.Warn(LogGroup.Engine, "graph.error.fallback_failed",
-                        new { channelId, depth = errorEvent.Depth, failures = stillFailing });
+                        new { channelId, depth = result.Depth, failures = result.Failures });
                 }
 
                 Signal.Event(LogGroup.Engine, "图兜底已执行",
                     new
                     {
                         channelId,
+                        depth = result.Depth,
+                        attempted = result.Attempted,
                         graphs = errorRunners.Count,
-                        intents = errorIntents.Count,
-                        failures = stillFailing.Count
+                        failures = result.Failures.Count
                     });
             }
         }
