@@ -520,3 +520,7 @@ ChannelOccupancyRegistry创建并按引用身份移除占用对象，SessionPool
 ### C12：最后子池完成后回收空父池
 
 OnChildCompleted清理子成员索引后，在原_poolLock内检查父池回收；根池或无活跃身份的非根池才调用RemoveEmptyPool，防止IsEmpty忽略子池自身身份而误摘活跃父会话。新增5项回归覆盖空根registry/历史索引回收、Full/旁听/其他子池保留和活跃非根父身份保护；Full场景使用真实父RuntimeSession并验证子列表清理。相关池/接管/registry套件26项通过，diff检查通过。本次未重复全量测试；C12整体与真实运行冒烟未完成。
+
+### C12：释放旁听时清理无效成员索引
+
+ReleaseChannel在原_poolLock内移除旁听后，仅当session不是该池Full历史Members且索引仍指向该池时删除_poolByMember，避免仅Listen退出残留索引，同时保护历史接管寻址与跨池映射。新增5项回归（含是否保留池两分支），相关池套件31项通过；完整sln构建和774项测试通过（主程序664、邮件52、GraphRuntime41、沙箱17），diff检查通过。未运行真实模型/适配器；空池批量成员清理的跨池保护及C12整体仍待继续。

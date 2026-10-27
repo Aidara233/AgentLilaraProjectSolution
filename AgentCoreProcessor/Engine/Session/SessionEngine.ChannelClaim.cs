@@ -85,6 +85,12 @@ internal partial class SessionEngine
             if (!_pools.TryGetValue(channelId, out var pool)) return;
             pool.Release(sessionId);
             pool.Unlisten(sessionId);
+            // Listen-only members have no historical identity in this pool. Remove
+            // their index only if it still points here; another channel may own it.
+            if (!pool.Members.Contains(sessionId)
+                && _poolByMember.TryGetValue(sessionId, out var indexed)
+                && ReferenceEquals(indexed, pool))
+                _poolByMember.TryRemove(sessionId, out _);
             RemoveEmptyPool(pool);
         }
     }
