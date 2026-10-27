@@ -10,6 +10,7 @@ using AgentCoreProcessor.Component;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Database;
+using AgentCoreProcessor.Engine.Axes;
 using AgentCoreProcessor.Engine.Graph;
 using AgentCoreProcessor.Engine.Messaging;
 using AgentCoreProcessor.Engine.Modules;
@@ -48,6 +49,24 @@ internal class RuntimeSession : IRuntimeSession
     private readonly List<string> _activeTools = new();
     private readonly Dictionary<string, IInputPort> _inputs = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, IOutputPort> _outputs = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 本会话的行为轴值（`axes` 模块的每会话一份）。
+    /// <para>⚠️ 存储与端口分开：<see cref="AxisStore"/> 是**唯一写入点**，
+    /// <see cref="AxisPort"/> 是只读查询面。别把写入口从端口漏出去——"谁能改轴"必须是一个能被枚举的问题。</para>
+    /// </summary>
+    private readonly AxisStore _axisStore = new();
+    private IAxisPort? _axisPort;
+
+    internal AxisStore AxisState => _axisStore;
+
+    internal IAxisPort AxisPort => _axisPort ??= new AxisPort(_axisStore);
+
+    /// <summary>
+    /// 冻结本拍的轴快照。⚠️ **每拍调一次、拍内共用**：同一步内两次渲染必须逐字节相同，
+    /// 否则每步都破提示词前缀。别在各消费者里各调一次。
+    /// </summary>
+    internal AxisSnapshot FreezeAxes() => AxisPort.Freeze(AxisState.Snapshot(), DateTimeOffset.UtcNow);
 
     /// <summary>
     /// 影子判定（只打日志、不改行为）：用 Graphs/preset.activation.json 复算"要不要激活"。
@@ -388,6 +407,16 @@ internal class RuntimeSession : IRuntimeSession
         _lastActivity = state.LastActivity;
         _history = history ?? new List<Message>();
         EffectiveParentId = state.EffectiveParentId;
+
+        // 轴值恢复：按轴名逐条校验，未知轴与非法值丢弃、缺失的补默认（见 AxisStore.Reset）。
+        // ⚠️ 丢弃必须记日志——否则一次手改 state.json 就变成"某条轴静默回到默认值"。
+        var droppedAxes = _axisStore.Reset(state.Axes);
+        if (droppedAxes.Count > 0)
+        {
+            var names = new List<string>();
+            foreach (var d in droppedAxes) names.Add($"{d.Axis}:{d.Reason}");
+            Signal.Warn(LogGroup.Engine, "轴值恢复时丢弃了非法项", new { sessionId = SessionId, dropped = names });
+        }
 
         // 恢复连接频道状态（仅 Full 占用级，Listen 由 RestoreAll 单独重建订阅）
         if (!string.IsNullOrEmpty(state.ConnectedChannelId)
@@ -1520,6 +1549,7 @@ internal class RuntimeSession : IRuntimeSession
         ActiveCoreConfig = _activeCoreConfig,
         ConnectedChannelId = _connected.CurrentChannelId > 0 ? _connected.CurrentChannelId.ToString() : null,
         ConnectedMode = _connected.Mode != ConnectionMode.None ? _connected.Mode.ToString() : null,
+        Axes = _axisStore.Snapshot(),
         ChannelCursors = BuildChannelCursors(),
         ChildSessionIds = _childSessionIds.ToArray(),
         EffectiveParentId = EffectiveParentId,

@@ -19,7 +19,14 @@ namespace AgentCoreProcessor.Engine.Session
     internal class SessionPersistence
     {
         private const int SpecFormatVersion = 2;
-        private const int StateFormatVersion = 2;
+
+        /// <summary>
+        /// state.json 的格式版本。**3** = 增加 `axes`（行为轴值）。
+        /// <para>⚠️ 升版规则：旧文件（版本 &lt; 当前）**仍可读，读取不立即回写**；
+        /// 下次写入一律用当前版本。这条是为了防"新写旧读"——旧核心不认识 `axes`，
+        /// 一写就会把它抹掉，而用户看不到任何报错。</para>
+        /// </summary>
+        private const int StateFormatVersion = 3;
 
         private readonly string _dir;
         private readonly string _specPath;
@@ -85,7 +92,8 @@ namespace AgentCoreProcessor.Engine.Session
                 channelCursors = state.ChannelCursors,
                 childSessionIds = state.ChildSessionIds ?? Array.Empty<string>(),
                 effectiveParentId = state.EffectiveParentId,
-                forwardedTo = state.ForwardedTo
+                forwardedTo = state.ForwardedTo,
+                axes = state.Axes
             };
             var json = JsonConvert.SerializeObject(data, Formatting.Indented,
                 new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
@@ -313,7 +321,8 @@ namespace AgentCoreProcessor.Engine.Session
                     ChannelCursors = cursors,
                     ChildSessionIds = wrapper.ChildSessionIds ?? Array.Empty<string>(),
                     EffectiveParentId = wrapper.EffectiveParentId,
-                    ForwardedTo = wrapper.ForwardedTo
+                    ForwardedTo = wrapper.ForwardedTo,
+                    Axes = wrapper.Axes ?? new Dictionary<string, string>()
                 };
             }
             catch
@@ -397,6 +406,13 @@ namespace AgentCoreProcessor.Engine.Session
         public string[] ChildSessionIds { get; set; } = Array.Empty<string>();
         public string? EffectiveParentId { get; set; }
         public string? ForwardedTo { get; set; }
+
+        /// <summary>
+        /// 行为轴值（`axes` 模块）。**只是扁平字符串值，不含任何结构**（决策 D3）。
+        /// <para>⚠️ 旧版 state.json 没有这个字段 ⇒ 反序列化得到空字典 ⇒
+        /// <see cref="Engine.Axes.AxisStore.Reset"/> 用默认值补齐。不要在这里做"缺省即报错"。</para>
+        /// </summary>
+        public Dictionary<string, string> Axes { get; set; } = new();
     }
 
     // 内部反序列化包装类型（仅用于 JsonConvert.DeserializeAnonymousType 替代）
@@ -437,5 +453,6 @@ namespace AgentCoreProcessor.Engine.Session
         [JsonProperty("childSessionIds")] public string[]? ChildSessionIds;
         [JsonProperty("effectiveParentId")] public string? EffectiveParentId;
         [JsonProperty("forwardedTo")] public string? ForwardedTo;
+        [JsonProperty("axes")] public Dictionary<string, string>? Axes;
     }
 }
