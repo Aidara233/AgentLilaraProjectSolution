@@ -206,8 +206,32 @@ scheduler → 已并入 recurring
 
 ---
 
-## 8. 未验证
+## 7b. 剩余切片的锚点（`RuntimeSession.cs` 已缩到 1212 行，此处是一次性定位）
 
+| 块 | 行号（定位时刻） | 内容 | 目标文件 |
+|---|---|---|---|
+| bootstrap | 415–666 | `BootstrapAsync` / `DescribeInitResult` / `ApplyToolEffectAsync` / `BuildToolEffectContextAsync` / `WriteJournalFromWaitAsync` / `AppendGlobalPromptSections` / `AppendStartReferenceSections` / `ApplyContextMutation` | `RuntimeSession.Bootstrap.cs` |
+| 组件启停 | 668–686 | `EnableComponent` / `DisableComponent` / `ToggleComponentAsync` | 并入 `RuntimeSession.Components.cs` 尾部 |
+| 频道连接 | 318–404 | `ConnectChannelAsync` / `DisconnectChannel` / `PersistStateSync` | `RuntimeSession.ChannelConnect.cs` |
+| 持久化 | 1122–1211 | `PersistRoundAsync` / `BuildStateSnapshot` / `BuildChannelCursors` / `EstimateChars` / `PersistStateAsync` / `GetComponentIdsForCompact` | `RuntimeSession.Persistence.cs`（= B-2，**最后做**） |
+| step 主循环 | 689–1115 | `RunAsync`（约 426 行） | B-4，不只是搬文件，要拆方法 |
+
+⚠️ **行号是"定位时刻"的快照，每次切割后都会变**。下一刀之前必须重新 `grep -n` 取当前值——
+这一点是 B-3b 第一次失败的直接原因（复用了旧偏移量，切进了 `ToggleComponentAsync` 中间）。
+
+### 已落地的部件（切文件完成）
+
+| 文件 | 行数 | 部件 |
+|---|---:|---|
+| `RuntimeSession.Inbox.cs` | 111 | 端口排空 + 频道游标 |
+| `RuntimeSession.Output.cs` | 53 | 出向 |
+| `RuntimeSession.Activation.cs` | 114 | 等激活 |
+| `RuntimeSession.Lifecycle.cs` | 93 | 停止/唤醒/超时/外部注入 |
+| `RuntimeSession.Children.cs` | 48 | 会话侧父子链 |
+| `RuntimeSession.CoreSwitch.cs` | 157 | 多核白名单与切换 |
+| `RuntimeSession.Components.cs` | 98 | 组件加载与工具表刷新 |
+
+## 8. 未验证
 | id | 问题 |
 |---|---|
 | Q26 | `LoadHistory(maxLines = 1000)` 是有意截断还是缺陷？未读实现（`SessionPersistence.cs:332`） |
