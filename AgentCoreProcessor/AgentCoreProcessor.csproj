@@ -54,6 +54,7 @@
     <ProjectReference Include="..\src\Lilara.Channel\Lilara.Channel.csproj" />
     <ProjectReference Include="..\src\Lilara.Adapters\Lilara.Adapters.csproj" />
     <ProjectReference Include="..\src\Lilara.Turn\Lilara.Turn.csproj" />
+    <ProjectReference Include="..\src\Lilara.Mind\Lilara.Mind.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -392,3 +392,7 @@ Program --file/--test 直接构造FileAdapter补传原图片归档器；--dev直
 ### C1：Lilara.Turn 原生工具流首切
 
 NativeToolCallHandler与ModelOutput迁入Lilara.Turn，直接引用PluginSDK替代宿主global using，依赖Lilara.Llm协议类型；保留命名空间/internal及友元访问。新增3项流解析回归覆盖参数分片、schema顺序、缺参数、无schema输入顺序、原始JSON、思考文本、空调用及畸形JSON回退。完整sln离线还原和构建成功，638项测试通过（主程序583、GraphRuntime38、沙箱17），diff检查通过。新库继承Llm两项离线NU1603警告，连同既有CA2022/SYSLIB0050仍未解决；未调用真实模型。Turn调用/工具执行编排仍在宿主，C/D与全面日志迁移未完成。
+
+### C1：Lilara.Mind 纯规则首切
+
+EvidenceMath原文迁入Lilara.Mind，IExtractionLlm从ExtractService原文拆出；新库仅依赖BCL，保留namespace/internal及友元宿主/测试。ExtractService因依赖ExpressExtractor仍留宿主，其余心智编排/数据库服务未迁移。接口切分后已核对diff，方法签名与注释保持。完整sln离线还原、构建成功（0错误、6项现有/传递警告），638项测试通过（主程序583、GraphRuntime38、沙箱17），diff检查通过。未调用真实提取模型或适配器，不代表Mind完整提取、C/D或日志迁移完成。
