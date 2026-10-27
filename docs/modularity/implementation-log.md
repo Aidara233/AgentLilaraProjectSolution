@@ -356,3 +356,7 @@ CompressionPolicy/CompressionThresholds/CompressionTier 提取到 Lilara.Context
 ### Context：纯提示装配与变更意图
 
 ContextAssembler/ContextMutations 两文件原文迁入 Lilara.Context/Context，保留命名空间、internal 与友元访问。GlobalPromptSections 仍由宿主组件容器提供。完整解决方案构建成功（0 错误、4 项既有警告），主程序 556、GraphRuntime 38、GraphSandbox 17，共 611 项测试通过；diff --check 通过。未执行真实模型或适配器冒烟，C/D 与完整信号迁移仍未完成。
+
+### C1：Lilara.Adapters 消息契约首切
+
+IAdapter、AdapterAction、AdapterInstanceConfig、IncomingMessage、OutgoingMessage、MessageAttachment、MessageSegment、AdapterStatus、IChannelAwareAdapter 九文件原文迁入 src/Lilara.Adapters，保留命名空间与可见性，友元宿主/测试；只依赖 Newtonsoft.Json。实现、factory/manager、ImageStorage 和 IEngineAwareAdapter 暂留宿主，仍需后续端口化。完整 sln 离线还原与构建退出码0（0错误、4项既有警告），主程序556、GraphRuntime38、GraphSandbox17，共611项测试通过，无失败/跳过；diff --check通过。未运行真实适配器收发或模型冒烟。

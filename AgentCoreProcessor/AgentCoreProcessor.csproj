@@ -52,6 +52,7 @@
     <ProjectReference Include="..\src\Lilara.Recurring\Lilara.Recurring.csproj" />
     <ProjectReference Include="..\src\Lilara.Session\Lilara.Session.csproj" />
     <ProjectReference Include="..\src\Lilara.Channel\Lilara.Channel.csproj" />
+    <ProjectReference Include="..\src\Lilara.Adapters\Lilara.Adapters.csproj" />
   </ItemGroup>
 
   <ItemGroup>
