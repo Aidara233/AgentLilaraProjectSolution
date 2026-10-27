@@ -260,3 +260,7 @@ Directory.Build.props 增加 HostTargetFramework，主程序 TargetFramework 与
 ### C1：首个业务程序集 Lilara.Logging
 
 日志核心九文件及 LogAccessImpl SDK 桥迁入 src/Lilara.Logging，十文件均为 100% 原文迁移、命名空间保持。新库依赖 PluginSDK、Microsoft.Data.Sqlite 8.0.0、Newtonsoft.Json 13.0.4，宿主单向引用新库。LogCleanupService/LogCleanupConfig/SignalConfig 保留宿主，避免配置/业务数据库回指。离线缓存还原、主程序编译、491 项主程序测试通过。未跑真实适配器或模型；SignalContext 静态状态尚存，本次仅确立编译边界，不宣称 R5 或数据流日志改造完成。
+
+### C1：Lilara.Data
+
+Database 全部 32 文件迁入 src/Lilara.Data，保持命名空间且均为 100% 原文迁移。库引用 sqlite-net-pcl 1.9.172、Microsoft.Data.Sqlite 8.0.0、Newtonsoft.Json 13.0.4；宿主单向引用。对宿主与测试声明 InternalsVisibleTo，保留仓储 internal 访问范围，避免本次扩大公开 API。离线缓存还原、主程序编译与 491 项主程序测试通过。仓储接口、进程静态状态与最终装配规则仍需后续改造；未启动真实适配器/模型。
