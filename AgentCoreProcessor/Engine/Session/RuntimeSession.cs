@@ -529,64 +529,10 @@ internal partial class RuntimeSession : IRuntimeSession
                 // ── Agent 推理 ──
                 if (_agentCore == null) break;
 
-                // 组件通知排空：异步任务完成通知（下载/SSH/群文件等）→ prompt section
-                if (!hasComponentNotification && _componentHost != null)
-                {
-                    await _componentHost.OnBeforeInvokeAsync();
-                    var sections = _componentHost.BuildPromptSections();
-                    AppendGlobalPromptSections(sections);
-                    if (sections.Count > 0)
-                    {
-                        var notifyMsg = new Message { Role = "user", Content = "[组件通知]\n" + string.Join("\n\n", sections) };
-                        _history.Add(notifyMsg);
-                        Signal.Event(LogGroup.Engine, "组件通知注入",
-                            new { sessionId = SessionId, sectionCount = sections.Count });
-                    }
-                }
-
-                // 连接动作（上一轮 connect_channel）产生的频道上下文，注入本轮推理前
-                if (_pendingInjections.Count > 0)
-                {
-                    var pendingCopy = _pendingInjections.ToList();
-                    _history.AddRange(pendingCopy);
-                    _pendingInjections.Clear();
-                    await PersistRoundAsync(pendingCopy);
-                }
-
-                // ── 压缩提示注入（L1/L2 文字，L3 锁定待 Phase 5 CompactTool 注入后启用）──
-                if (_compression != null)
-                {
-                    var estimatedTokens = _history.Sum(m => EstimateChars(m)) / 3;
-                    var compressHint = _compression.GetInjectText(estimatedTokens);
-                    if (compressHint != null)
-                    {
-                        var hintMsg = new Message { Role = "user", Content = compressHint };
-                        _history.Add(hintMsg);
-                        _compression.MarkL1Injected();
-                        Signal.Event(LogGroup.Engine, "压缩提示注入",
-                            new { sessionId = SessionId, tier = _compression.CurrentTier.ToString(), estimatedTokens });
-                    }
-
-                    // L3 锁定：仅当 _compactTool 已注入（Phase 5）才走锁定路径
-                    if (_l3Lockdown && _compactTool != null && _preLockdownTools == null)
-                    {
-                        _l3Lockdown = false;
-                        // ⚠️ 上下文层**不再直接改工具表**：只产出一条变更意图，由会话统一应用。
-                        // 这是 H1 的修法——原来的 _tools.Clear() 是一条从 context 到工具层的反向数据流。
-                        ApplyContextMutation(new LockToolTableTo("compact"));
-                    }
-                }
-
-                // ⚠️ H2：不再把本轮参数写进 _agentCore 的字段——改为随调用传入
-                // （AgentInvokeRequest），参数的生命周期因此只覆盖这一次模型调用。
-                // 原来这两行的后果是：调用结束后字段仍然保留，下一轮看到的是上一轮的值。
-                var invokeRequest = new AgentInvokeRequest(
-                    EngineType: _componentLoopType,          // 权限组（channel/task）
-                    AdditionalTools: _tools.Values.ToList());
-
-                // 硬化：本轮锁定的核引用。外置切换（命令/WebUI）可能在本轮中途发生，
-                // 整轮用 roundCore 保证格式化标志（UseNativeTools 等）与产出本轮的核一致。
-                var roundCore = _agentCore;
+                // 推理前准备（B-4e：从主循环抽出）
+                var roundContext = await PrepareInferenceAsync(hasComponentNotification);
+                var roundCore = roundContext.Core;
+                var invokeRequest = roundContext.Request;
 
                 agentRound++;
 
@@ -897,5 +843,86 @@ internal partial class RuntimeSession : IRuntimeSession
                             await PersistRoundAsync(midNew);
                     }
         }
+    }
+
+    /// <summary>
+    /// 推理前准备（B-4e，从 <see cref="RunAsync"/> 抽出）：把四类"本轮该看到什么"的东西依次塞进历史，
+    /// 然后产出本轮的核引用与调用参数。
+    ///
+    /// <para>⚠️ <b>顺序是契约</b>（与原实现逐字一致）：</para>
+    /// <list type="number">
+    ///   <item>组件通知补做（仅当突发入口没做过）——<paramref name="hasComponentNotification"/> 就是那个信号</item>
+    ///   <item>`_pendingInjections` 刷入（上一轮 connect_channel 产生的频道上下文）</item>
+    ///   <item>压缩提示 L1/L2 注入（按估算 token 取档）</item>
+    ///   <item>L3 锁定：**只发一条 mutation**，不直接改工具表（H1 的修法）</item>
+    ///   <item>构建 `invokeRequest` 并锁定 `roundCore`</item>
+    /// </list>
+    ///
+    /// <para>⚠️ 第 5 步的两者**必须成对**：`roundCore` 是"本轮锁定的核"（外置切换可能在本轮中途发生），
+    /// 而 `invokeRequest` 带着同一刻的工具表。分开取会拿到两个不同时刻的快照。</para>
+    ///
+    /// <para>⚠️ 本方法**不碰 `awaitingInput`**，也不做任何跳转——所以它是 B-4f 之外唯一安全的抽取。</para>
+    /// </summary>
+    private async Task<RoundContext> PrepareInferenceAsync(bool hasComponentNotification)
+    {
+        // 组件通知排空：异步任务完成通知（下载/SSH/群文件等）→ prompt section
+        if (!hasComponentNotification && _componentHost != null)
+        {
+            await _componentHost.OnBeforeInvokeAsync();
+            var sections = _componentHost.BuildPromptSections();
+            AppendGlobalPromptSections(sections);
+            if (sections.Count > 0)
+            {
+                var notifyMsg = new Message { Role = "user", Content = "[组件通知]\n" + string.Join("\n\n", sections) };
+                _history.Add(notifyMsg);
+                Signal.Event(LogGroup.Engine, "组件通知注入",
+                    new { sessionId = SessionId, sectionCount = sections.Count });
+            }
+        }
+
+        // 连接动作（上一轮 connect_channel）产生的频道上下文，注入本轮推理前
+        if (_pendingInjections.Count > 0)
+        {
+            var pendingCopy = _pendingInjections.ToList();
+            _history.AddRange(pendingCopy);
+            _pendingInjections.Clear();
+            await PersistRoundAsync(pendingCopy);
+        }
+
+        // ── 压缩提示注入（L1/L2 文字，L3 锁定待 Phase 5 CompactTool 注入后启用）──
+        if (_compression != null)
+        {
+            var estimatedTokens = _history.Sum(m => EstimateChars(m)) / 3;
+            var compressHint = _compression.GetInjectText(estimatedTokens);
+            if (compressHint != null)
+            {
+                var hintMsg = new Message { Role = "user", Content = compressHint };
+                _history.Add(hintMsg);
+                _compression.MarkL1Injected();
+                Signal.Event(LogGroup.Engine, "压缩提示注入",
+                    new { sessionId = SessionId, tier = _compression.CurrentTier.ToString(), estimatedTokens });
+            }
+
+            // L3 锁定：仅当 _compactTool 已注入（Phase 5）才走锁定路径
+            if (_l3Lockdown && _compactTool != null && _preLockdownTools == null)
+            {
+                _l3Lockdown = false;
+                // ⚠️ 上下文层**不再直接改工具表**：只产出一条变更意图，由会话统一应用。
+                // 这是 H1 的修法——原来的 _tools.Clear() 是一条从 context 到工具层的反向数据流。
+                ApplyContextMutation(new LockToolTableTo("compact"));
+            }
+        }
+
+        // ⚠️ H2：不再把本轮参数写进 _agentCore 的字段——改为随调用传入
+        // （AgentInvokeRequest），参数的生命周期因此只覆盖这一次模型调用。
+        var invokeRequest = new AgentInvokeRequest(
+            EngineType: _componentLoopType,          // 权限组（channel/task）
+            AdditionalTools: _tools.Values.ToList());
+
+        // 硬化：本轮锁定的核引用。外置切换（命令/WebUI）可能在本轮中途发生，
+        // 整轮用 roundCore 保证格式化标志（UseNativeTools 等）与产出本轮的核一致。
+        var roundCore = _agentCore!;
+
+        return new RoundContext(invokeRequest, roundCore);
     }
 }
