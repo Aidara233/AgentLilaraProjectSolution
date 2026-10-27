@@ -18,6 +18,7 @@
 | `b63f289` | **A3-3** `GlobalPromptSections` 抽出 + 工具表锁定改为显式 mutation（H1） | ✅ | 419 pass | 无（等价重构） |
 | `5c3f4e7` | **A4-1** `ToolEffectInterpreter`：工具结果解释改纯函数 | ✅ | 441 pass（+22） | 无（等价重构） |
 | `48bbafc` | **A4-2** `StepPhase` 粗阶段字段（只读诊断） | ✅ | 441 pass | 无（只读字段） |
+| `1b9305c` | **A4-3** `AgentInvokeRequest`：每轮参数改传参（H2） | ✅ | 441 pass | 无（等价重构） |
 
 测试从 385 → **441**，净增 56 条，全部是纯内存单测（不建会话、不碰存储、不调模型）。
 
@@ -37,7 +38,7 @@
 
 | 项 | 为什么不做 | 什么时候做 |
 |---|---|---|
-| **H2：step 不再直写 `_agentCore.EngineType` / `AdditionalTools`** | 要改 `AgentCore.InvokeAsync` 的公开面，而 `Engine/Core/Agent.cs` 是第二个调用方，两处会短暂分叉 | 单独一笔，与 B 阶段第一步一起（那时 `step` 才有独立文件可对照） |
+| **H2：step 不再直写 `_agentCore.EngineType` / `AdditionalTools`** | **已完成**（`1b9305c`）：改为 `AgentInvokeRequest` 传参。`request == null` 时回落读字段，兼容 `Agent.ChatAsync` 与切核路径 | — |
 | **把 `RunAsync` 420 行拆成方法** | 细分 phase 必须与方法边界一起定，否则出现"12 个 phase 值、3 个赋值点"的假精度 | B 阶段按 20 部件切文件时 |
 | **结果回收（Reclaim）** | 已确认不做 | 不做，但后果写在 `ContextAssembler` 类型注释里：结果只增不减，压缩压力全落到 L3 |
 | **`ILoopBus` 删除（N1）** | 它在 `Engine/Worker/`，属于 C/D 阶段的文件地盘，现在删会与后续搬移冲突 | C 阶段 |
@@ -60,9 +61,23 @@
 
 | 顺序 | 内容 |
 |---|---|
-| 1 | **A4-3（H2）**：`llm.invoke(request)` 入参化，去掉对 `_agentCore` 字段的直写 |
-| 2 | **B**：session 拆 20 部件（切文件，不切 csproj） |
-| 3 | **C**：拆 16 个 csproj |
-| 4 | **D**：影子图对拍 → 内置图 JSON 化 |
+| 1 | **B**：session 拆 20 部件（切文件，不切 csproj） |
+| 2 | **C**：拆 16 个 csproj |
+| 3 | **D**：影子图对拍 → 内置图 JSON 化 |
 
-B 的前置条件已经具备：`step` 的 12 阶段表、`ToolEffectInterpreter` 纯函数、`ISnapshotPort` 的设计（D3 定为扁平 payload）。
+B 的前置条件已经具备：`step` 的 12 阶段表、`ToolEffectInterpreter` 纯函数、`ISnapshotPort` 的设计（D3 定为扁平 payload）、H1/H2 两处反向数据流已消除。
+
+### B 阶段的做法建议（未执行）
+
+**不要一次切 20 个文件**。按"每一刀都能独立编译 + 测试全绿"切：
+
+| 批次 | 切什么 | 为什么这个顺序 |
+|---|---|---|
+| B-1 | `inbox` + `output` + `activation` | 三者最独立，与 `_tools`/`_agentCore` 无关，先建立节奏 |
+| B-2 | `snapshot` + `ISnapshotPort` | 它要遍历各部件，必须**最后**一个切（否则每次加部件都要改它） |
+| B-3 | `core-switch` + `components` + `bootstrap` | 三者围绕 `_agentCore` / `_componentHost` / `_initActions`，一起动 |
+| B-4 | `step` 拆成方法（12 阶段 → 方法边界） | phase 字段已在位（`StepPhase`），拆完对照 phase 赋值点即可验证 |
+| B-5 | `children` + `resources` + `lifecycle` | 收尾，都是小件 |
+| B-6 | Singleton 8 个（pool/assembly/type-profiles/escalate/subagent/brain-bridge） | 在 `SessionEngine` 里，与上一组隔离 |
+
+⚠️ **B-2 必须最后**：`ISnapshotPort` 是对"所有有状态部件"的遍历，先切会让它反复返工。
