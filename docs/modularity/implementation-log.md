@@ -396,3 +396,7 @@ NativeToolCallHandler与ModelOutput迁入Lilara.Turn，直接引用PluginSDK替�
 ### C1：Lilara.Mind 纯规则首切
 
 EvidenceMath原文迁入Lilara.Mind，IExtractionLlm从ExtractService原文拆出；新库仅依赖BCL，保留namespace/internal及友元宿主/测试。ExtractService因依赖ExpressExtractor仍留宿主，其余心智编排/数据库服务未迁移。接口切分后已核对diff，方法签名与注释保持。完整sln离线还原、构建成功（0错误、6项现有/传递警告），638项测试通过（主程序583、GraphRuntime38、沙箱17），diff检查通过。未调用真实提取模型或适配器，不代表Mind完整提取、C/D或日志迁移完成。
+
+### Mind：伴随提取服务迁移
+
+ExpressExtractor、ExtractService 与唯一被提取器使用的 TextUtil 原文迁入 Lilara.Mind，方法体及命名空间保持。Mind 引用 PluginSDK、Logging 与 Newtonsoft.Json，不增加无必要的 Llm 横向依赖。完整 sln 离线缓存还原、构建成功（0 错误、6 项既有/传递警告）；主程序583、GraphRuntime38、GraphSandbox17，共638项测试通过，无失败/跳过。diff --check 通过，三个迁移文件均无内容差异。未执行真实提取模型或适配器冒烟；Mind其余服务、C整体边界、D1全路径对拍和完整信号迁移仍待继续。
