@@ -25,9 +25,10 @@ internal static class TestHost
     /// <summary>构造一个 SessionEngine 实例，预置一个 fake session，用于 ResolveActiveSession 等纯状态测试。
     /// alive=true 时默认把 session 注册进资源池（_poolByMember，channel 1），使寻址能解析到它。
     /// registerInPool=false 时跳过自动注册，供需要完全控制 claim 状态的测试使用。</summary>
-    public static SessionEngine BuildSessionEngineWithFakeSession(string sessionId, bool alive, bool registerInPool = true)
+    public static SessionEngine BuildSessionEngineWithFakeSession(string sessionId, bool alive, bool registerInPool = true,
+        bool failOnMindAccess = false)
     {
-        var ctx = new FakeSystemContext();
+        var ctx = new FakeSystemContext { FailOnMindAccess = failOnMindAccess };
         var engine = new SessionEngine(ctx);
 
         if (alive)
@@ -200,7 +201,9 @@ internal static class TestHost
         public FrameworkEventRepository FrameworkEvents => null!;
         public ConflictGroupRepository ConflictGroups => null!;
         public ReviewQueueRepository ReviewQueue => null!;
-        public AgentCoreProcessor.Engine.Mind.MindEngine? Mind => null;
+        public bool FailOnMindAccess { get; init; }
+        public AgentCoreProcessor.Engine.Mind.MindEngine? Mind => FailOnMindAccess
+            ? throw new InvalidOperationException("controlled external service failure") : null;
     }
 }
 

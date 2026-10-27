@@ -35,6 +35,22 @@ internal partial class SessionEngine
     /// 必须与池中一致，否则 connect_channel 的幂等 claim 不命中）。其余路径传 null（自动生成）。
     /// </summary>
     internal IRuntimeSession CreateSession(CreateSessionSpec spec, string? fixedSessionId)
+        => CreateSession(spec, fixedSessionId, null);
+
+    internal IRuntimeSession CreateSession(CreateSessionSpec spec, string? fixedSessionId, PoolReservation? reservation)
+    {
+        if (reservation is not null
+            && (!ReferenceEquals(reservation.Owner, this) || reservation.NewId != fixedSessionId))
+            throw new ArgumentException("Reservation must belong to this engine and match the new session id", nameof(reservation));
+        try { return CreateSessionCore(spec, fixedSessionId, reservation); }
+        catch
+        {
+            if (reservation is not null) TryCancelReservation(reservation);
+            throw;
+        }
+    }
+
+    private IRuntimeSession CreateSessionCore(CreateSessionSpec spec, string? fixedSessionId, PoolReservation? reservation)
     {
         var profile = SessionTypeProfiles.Get(spec.Type);
         // 计算 finalComponents
@@ -43,6 +59,7 @@ internal partial class SessionEngine
         var session = fixedSessionId != null
             ? new RuntimeSession(spec, fixedSessionId, finalComponents)
             : new RuntimeSession(spec, finalComponents);
+        reservation?.MarkPublished();
         session.SetCurrency(_currency!);
         session.SetTransitionOperations(summary => CreateFromCompact(session, summary),
             reason => CreateFromEscalateAsync(session, reason));
@@ -219,13 +236,6 @@ internal partial class SessionEngine
         // 新 session 创建后 connect_channel 会幂等命中（SessionPool.Claim 同 id 重入成功），
         // 不再有 claim 短暂释放的中间态（原 ReleaseSessionClaims → 重新 claim）。
         var newId = Guid.NewGuid().ToString("N")[..12];
-        lock (_poolLock)
-        {
-            if (_poolByMember.ContainsKey(oldSession.SessionId)
-                && !TakeOverSessionPool(oldSession.SessionId, newId, oldSession.SessionId))
-                throw new InvalidOperationException($"会话 {oldSession.SessionId} 无法 compact：当前活跃会话已变化或接管冲突");
-        }
-
         // spec.InputPorts 留空：build port spec 全靠 InitActions.connect_channel 在 BootstrapAsync
         // 阶段一次性完成 claim + 订阅 + 频道上下文载入 —— 与 escalate 路径行为对齐，
         // 避免重复订阅（spec.InputPorts 订阅一次 + connect_channel 又订阅一次 = 4 个端口/2 冗余）。
@@ -244,7 +254,14 @@ internal partial class SessionEngine
             ParentSessionId = oldSession.SessionId,
         };
 
-        var newSession = (RuntimeSession)CreateSession(oldSpec, fixedSessionId: newId);
+        PoolReservation? reservation = null;
+        lock (_poolLock)
+        {
+            if (_poolByMember.ContainsKey(oldSession.SessionId))
+                reservation = BeginPoolReservation(oldSession.SessionId, newId)
+                    ?? throw new InvalidOperationException($"会话 {oldSession.SessionId} 无法 compact：当前活跃会话已变化或接管冲突");
+        }
+        var newSession = (RuntimeSession)CreateSession(oldSpec, newId, reservation);
 
         // 承接旧 session 的活跃核（同类型白名单必然包含）
         newSession.SetActiveCore(oldSession.ActiveCoreConfig);

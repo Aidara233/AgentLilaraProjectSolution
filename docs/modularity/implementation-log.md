@@ -544,3 +544,7 @@ TakeOverSessionPool增加可选expectedSessionId并在_poolLock内核对，默�
 ### C12：接管预定票据与条件撤销基础
 
 SessionPool新增ActiveVersion，实际Claim、TakeOver和Release递增，幂等Claim不变。BeginPoolReservation在_poolLock内核对当前身份/跨池索引并记录池、旧/新id、版本与成员/索引原状；TryCancelReservation核对引擎、未封闭票据、版本、活跃身份和新旧索引，根池还核对注册身份，只删除本票据新增成员/索引。MarkPublished与撤销使用同一锁，封闭后禁止撤销。新增8项回归覆盖根/子恢复、历史成员及无索引成员保留、ABA、幂等Claim、跨引擎/跨池索引、发布与重复撤销。完整sln构建和803项测试通过（主程序693、邮件52、GraphRuntime41、沙箱17），diff检查通过。尚未接入CreateSession，不构成创建事务或已发布状态回滚；真实模型/平台冒烟未执行。
+
+### C12：预定票据接入创建未发布边界
+
+CreateSession增加内部票据包装，核对所属引擎与固定新id；准备/构造失败时仅尝试条件撤销。RuntimeSession构造完成后立即MarkPublished，早于任何外部服务访问/组件初始化，之后异常不恢复旧占用。compact/escalate将spec准备移到预定前，compact无池保持原路径，升级在_poolLock内核对频道/持有者/成员索引后BeginPoolReservation。新增8项受控故障回归覆盖根/子准备失败、错配票据、compact有池/无池spec准备失败，以及首次Mind外部访问故障后不回滚；测试不启动后台任务。完整sln构建与811项测试通过（主程序701、邮件52、GraphRuntime41、沙箱17），diff检查通过。未验证真实模型/平台运行，外部发布后的资源清理与完整创建事务未实现；C12/D1/D5和全面信号迁移仍未完成。

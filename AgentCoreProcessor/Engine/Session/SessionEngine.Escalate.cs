@@ -66,9 +66,6 @@ internal partial class SessionEngine
         if (channelId <= 0)
             throw new InvalidOperationException($"express 会话 {expressSession.SessionId} escalate 时未连接频道");
 
-        if (!TakeOverChannelPool(channelId, newId, expressSession.SessionId))
-            throw new InvalidOperationException($"express 会话 {expressSession.SessionId} 无法接管频道 {channelId}：占用已丢失或接管冲突");
-
         var spec = new CreateSessionSpec
         {
             Type = "channel",
@@ -85,7 +82,18 @@ internal partial class SessionEngine
             ParentSessionId = expressSession.SessionId,
         };
 
-        var working = (RuntimeSession)CreateSession(spec, fixedSessionId: newId);
+        PoolReservation reservation;
+        lock (_poolLock)
+        {
+            if (!_pools.TryGetValue(channelId, out var pool) || !pool.HasFullClaim
+                || pool.ActiveSessionId != expressSession.SessionId
+                || !_poolByMember.TryGetValue(expressSession.SessionId, out var indexed)
+                || !ReferenceEquals(indexed, pool))
+                throw new InvalidOperationException($"express 会话 {expressSession.SessionId} 无法接管频道 {channelId}：占用已丢失或接管冲突");
+            reservation = BeginPoolReservation(expressSession.SessionId, newId)
+                ?? throw new InvalidOperationException("升级接管预定冲突");
+        }
+        var working = (RuntimeSession)CreateSession(spec, newId, reservation);
 
         Signal.Event(LogGroup.Engine, "express escalate → working（同池换活跃 session）",
             new { channelId, expressId = expressSession.SessionId, workingId = working.SessionId });
