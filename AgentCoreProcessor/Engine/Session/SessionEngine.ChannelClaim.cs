@@ -95,35 +95,30 @@ internal partial class SessionEngine
             return _pools.TryGetValue(channelId, out var pool) && pool.HasFullClaim;
     }
 
-    /// <summary>单频道会话快照（WebUI 频道引擎监控改读会话）。</summary>
-    public record ChannelSessionSnapshot(
-        int ChannelId, string SessionId, string Type,
-        bool IsAlive, DateTime LastActivity, int RoundCount);
-
     /// <summary>某频道的活跃会话快照（express/working）。无占用返回 null。</summary>
-    public ChannelSessionSnapshot? GetChannelSessionSnapshot(int channelId)
+    public ChannelSessionView? GetChannelSessionSnapshot(int channelId)
     {
         lock (_poolLock)
         {
             if (!_pools.TryGetValue(channelId, out var pool) || !pool.HasFullClaim) return null;
             if (!_sessions.TryGetValue(pool.ActiveSessionId, out var s)) return null;
-            return new ChannelSessionSnapshot(
+            return new ChannelSessionView(
                 channelId, s.SessionId, s.Type, s.IsAlive,
                 s.LastActivityInternal, (s as RuntimeSession)?.RoundCountInternal ?? 0);
         }
     }
 
     /// <summary>所有频道的活跃会话快照。</summary>
-    public List<ChannelSessionSnapshot> GetChannelSessionSnapshots()
+    public List<ChannelSessionView> GetChannelSessionSnapshots()
     {
         lock (_poolLock)
         {
-            var list = new List<ChannelSessionSnapshot>();
+            var list = new List<ChannelSessionView>();
             foreach (var pool in _pools.Values)
             {
                 if (!pool.HasFullClaim) continue;
                 if (!_sessions.TryGetValue(pool.ActiveSessionId, out var s)) continue;
-                list.Add(new ChannelSessionSnapshot(
+                list.Add(new ChannelSessionView(
                     pool.ChannelId, s.SessionId, s.Type, s.IsAlive,
                     s.LastActivityInternal, (s as RuntimeSession)?.RoundCountInternal ?? 0));
             }

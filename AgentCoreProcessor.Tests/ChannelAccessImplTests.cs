@@ -163,6 +163,41 @@ public class ChannelAccessImplTests
         Assert.False(b.HasActiveEngine);
     }
 
+    [Fact]
+    public async Task ListChannelsWithoutQueryServiceKeepsEmptyOccupancy()
+    {
+        var services = await CreateServicesAsync();
+        var channel = await CreateChannelAsync(services, "group_no_query");
+        var access = new ChannelAccessImpl(new TestContext { Session = services.Session });
+        var summary = Assert.Single(await access.GetAllChannelsAsync());
+        Assert.Equal(channel.Id, summary.Id);
+        Assert.False(summary.HasActiveEngine);
+        Assert.Null(summary.SessionId);
+        Assert.Null(summary.SessionType);
+    }
+
+    [Fact]
+    public void QueryPortReturnsDetachedSnapshotAndReleaseRemovesOccupancy()
+    {
+        var engine = TestHost.BuildSessionEngineWithFakeSession("query-session", true);
+        var session = TestHost.GetFakeSession(engine, "query-session");
+        session.InheritRoundCount(19);
+        IChannelSessionQuery query = engine;
+        var snapshot = query.GetChannelSessionSnapshot(1);
+        Assert.NotNull(snapshot);
+        Assert.Equal("query-session", snapshot.SessionId);
+        Assert.Equal(19, snapshot.RoundCount);
+        Assert.True(snapshot.IsAlive);
+        Assert.Equal(snapshot, Assert.Single(query.GetChannelSessionSnapshots()));
+        var list = query.GetChannelSessionSnapshots();
+        list.Clear();
+        Assert.Single(query.GetChannelSessionSnapshots());
+        engine.ReleaseChannel("query-session", 1);
+        Assert.Null(query.GetChannelSessionSnapshot(1));
+        Assert.Empty(query.GetChannelSessionSnapshots());
+        Assert.Equal(19, snapshot.RoundCount);
+    }
+
     // ── 2. 关键词搜索：命中 + 升序 ──
 
     [Fact]

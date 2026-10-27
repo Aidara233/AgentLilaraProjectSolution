@@ -27,10 +27,10 @@ namespace AgentCoreProcessor.Tool.Host
 
             // 一次取全频道占用快照，避免逐频道调用 SessionEngine
             var sessionEngine = _ctx.GetActiveEnginesSnapshot()
-                .OfType<SessionEngine>().FirstOrDefault();
+                .OfType<IChannelSessionQuery>().FirstOrDefault();
             var snapById = sessionEngine?.GetChannelSessionSnapshots()
                               .ToDictionary(s => s.ChannelId)
-                          ?? new Dictionary<int, SessionEngine.ChannelSessionSnapshot>();
+                          ?? new Dictionary<int, ChannelSessionView>();
 
             var result = new List<ChannelSummary>(channels.Count);
             foreach (var c in channels)

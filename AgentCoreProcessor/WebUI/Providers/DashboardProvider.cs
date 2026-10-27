@@ -222,7 +222,7 @@ internal class DashboardChannelSource : IDataSource
     public Task<DataResult> FetchAsync(DataQuery? query = null, CancellationToken ct = default)
     {
         var sessionEngine = _engine.GetActiveEnginesSnapshot()
-            .OfType<SessionEngine>().FirstOrDefault();
+            .OfType<AgentLilara.PluginSDK.Services.IChannelSessionQuery>().FirstOrDefault();
         var arr = new JsonArray();
 
         if (sessionEngine != null)
