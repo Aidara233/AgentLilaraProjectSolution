@@ -252,3 +252,7 @@ ISnapshotPort 同时提供采集与恢复，RuntimeSession.RestoreFromSnapshot �
 ### C 前置：宿主框架配置同源
 
 Directory.Build.props 增加 HostTargetFramework，主程序 TargetFramework 与 HostPluginsDir 同源。MSBuild 属性检查：主程序仍 net10.0、Plugin.BasicTools 仍 net8.0，插件目标目录均为宿主 net10.0/win-x64/Plugins。主程序构建通过（既有 NU1903/CA2022 警告）。
+
+### C 前置：GraphSandbox 归入测试夹具
+
+受版本控制的 7 个沙箱文件迁入 tests/fixtures/AgentLilara.GraphSandbox；命名空间与方法体保持原样。修正两个项目引用、测试项目引用及解决方案路径/分组（归 tests）。未移动 bin/obj；新目录以本地缓存离线还原后 GraphSandbox.Tests 17 项通过。

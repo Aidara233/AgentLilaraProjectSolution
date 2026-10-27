@@ -10,8 +10,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\AgentLilara.GraphRuntime\AgentLilara.GraphRuntime.csproj" />
-    <ProjectReference Include="..\AgentLilara.GraphModules\AgentLilara.GraphModules.csproj" />
+    <ProjectReference Include="..\..\..\src\AgentLilara.GraphRuntime\AgentLilara.GraphRuntime.csproj" />
+    <ProjectReference Include="..\..\..\src\AgentLilara.GraphModules\AgentLilara.GraphModules.csproj" />
   </ItemGroup>
 
 </Project>
