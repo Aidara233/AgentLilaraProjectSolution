@@ -728,16 +728,7 @@ internal partial class RuntimeSession : IRuntimeSession
                 else
                 {
                     // 模型无工具调用：注入提醒继续循环（Working session 不应自动挂起）
-                    Signal.Event(LogGroup.Engine, "无工具调用，注入提醒继续",
-                        new { sessionId = SessionId, round = agentRound });
-                    var reminder = new Message { Role = "user", Content = "[系统] 你没有调用任何工具。如果任务完成请用 end_session 结束，需要等人回复用 wait 挂起，否则继续工作。" };
-                    _history.Add(reminder);
-                    // assistant + reminder 一起写
-                    await PersistRoundAsync(new List<Message>
-                    {
-                        _history[_history.Count - 2],
-                        _history[_history.Count - 1]
-                    });
+                    await InjectContinueReminderAsync(agentRound);
                 }
             }
         }
@@ -756,6 +747,35 @@ internal partial class RuntimeSession : IRuntimeSession
         }
     }
 
+    /// <summary>
+    /// 模型本轮没有调用任何工具时，注入一条「继续工作」的提醒并落盘（B-4a，从 <see cref="RunAsync"/> 抽出）。
+    ///
+    /// <para>⚠️ 这是 Working 会话**不自动挂起**的机制：没有工具调用不等于任务结束，
+    /// 会话必须靠模型自己给出 <c>end_session</c>（终结）或 <c>wait</c>（挂起）才收尾。</para>
+    ///
+    /// <para>⚠️ 落盘写的是 `_history` 的**最后两条**（assistant + 刚注入的 reminder）：
+    /// 依赖"调用前 assistant 消息已入历史"这一前置。抽方法时保留了这条隐式依赖，
+    /// 所以本方法不能挪到 assistant 入历史之前。</para>
+    /// </summary>
+    private async Task InjectContinueReminderAsync(int agentRound)
+    {
+        Signal.Event(LogGroup.Engine, "无工具调用，注入提醒继续",
+            new { sessionId = SessionId, round = agentRound });
+
+        var reminder = new Message
+        {
+            Role = "user",
+            Content = "[系统] 你没有调用任何工具。如果任务完成请用 end_session 结束，需要等人回复用 wait 挂起，否则继续工作。"
+        };
+        _history.Add(reminder);
+
+        // assistant + reminder 一起写
+        await PersistRoundAsync(new List<Message>
+        {
+            _history[_history.Count - 2],
+            _history[_history.Count - 1]
+        });
+    }
 
     private void InjectMessage(object data)
     {
