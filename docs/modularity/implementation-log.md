@@ -516,3 +516,7 @@ ChannelOccupancyState私有保存旁听列表，通过Listen/Unlisten幂等修�
 ### C12：频道注册表持有占用对象生命周期
 
 ChannelOccupancyRegistry创建并按引用身份移除占用对象，SessionPool接受共享对象；引擎在_poolLock内同时创建registry状态和根池，空根池回收同步移除两者，不新增锁。独立SessionPool构造保留供规则测试。新增3项回归覆盖共享引用、旁听/子池保留、精确引用移除和回收重建不复用旧状态。完整sln构建及764项测试通过（主程序654、邮件52、GraphRuntime41、沙箱17），diff检查通过。协调实现仍在SessionEngine；子池完成后的空根池回收、Listen成员索引、接管创建失败回滚等仍需后续，C12未完成。未运行真实模型/适配器冒烟。
+
+### C12：最后子池完成后回收空父池
+
+OnChildCompleted清理子成员索引后，在原_poolLock内检查父池回收；根池或无活跃身份的非根池才调用RemoveEmptyPool，防止IsEmpty忽略子池自身身份而误摘活跃父会话。新增5项回归覆盖空根registry/历史索引回收、Full/旁听/其他子池保留和活跃非根父身份保护；Full场景使用真实父RuntimeSession并验证子列表清理。相关池/接管/registry套件26项通过，diff检查通过。本次未重复全量测试；C12整体与真实运行冒烟未完成。
