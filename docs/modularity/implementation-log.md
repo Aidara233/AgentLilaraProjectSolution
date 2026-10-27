@@ -248,3 +248,7 @@ B 的前置条件已经具备：`step` 的 12 阶段表、`ToolEffectInterpreter
 ### B-2b：纯状态恢复入口
 
 ISnapshotPort 同时提供采集与恢复，RuntimeSession.RestoreFromSnapshot 经同一注册表分发。生命周期、轮次、父关系、连接内存状态与轴值由部件恢复；历史另行灌入。ConfigureCores、频道端口/claim/游标、子关系与压缩初始化仍由 RestoreAll 按既有依赖顺序负责，未改变原有语义。新增恢复→快照对照验证，主程序 491 项测试通过。格式仍为 v3；未进行真实模型冒烟。
+
+### C 前置：宿主框架配置同源
+
+Directory.Build.props 增加 HostTargetFramework，主程序 TargetFramework 与 HostPluginsDir 同源。MSBuild 属性检查：主程序仍 net10.0、Plugin.BasicTools 仍 net8.0，插件目标目录均为宿主 net10.0/win-x64/Plugins。主程序构建通过（既有 NU1903/CA2022 警告）。
