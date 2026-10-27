@@ -14,7 +14,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\AgentCoreProcessor\AgentCoreProcessor.csproj" />
-    <ProjectReference Include="..\Plugins\Plugin.Email\Plugin.Email.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="..\AgentCoreProcessor\Graphs\*.json" Link="Graphs\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />

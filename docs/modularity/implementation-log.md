@@ -416,3 +416,7 @@ ToolExecutor迁入Lilara.PluginHost，resolver、全局禁用/原因、会话类
 ### 程序集边界回归与迁移状态
 
 AssemblyBoundaryTests读取全部src/Lilara.*实际DLL元数据，检查无宿主回指/库依赖环，Channel/Context纯边界；插件csproj引用限SDK及既有FileToolKit例外。新增4项回归，修正测试可空键警告。新增project-migration-status.md区分13个已建类库的已迁范围与仍留宿主的实现，不把友元过渡或依赖DAG当最终装配树。完整sln构建成功，651项测试通过（主程序596、GraphRuntime38、沙箱17），diff检查通过。既有NU1603/CA2022/SYSLIB0050仍在；真实模型/外部平台/ONNX/OCR/WebUI冒烟未覆盖，C/D和全面信号迁移未完成。
+
+### C10：邮件插件测试独立
+
+七个邮件测试文件原文迁入 tests/Plugin.Email.Tests，使用 net10.0 与现有测试包版本，仅引用 Plugin.Email 和 SDK。主程序测试删除邮件插件项目引用，新测试项目加入 sln。完整解决方案离线还原/构建成功，四套测试共651项通过（主程序544、邮件52、GraphRuntime38、沙箱17），无失败/跳过；diff检查通过。未连接IMAP或真实模型。既有6项构建警告仍在。
