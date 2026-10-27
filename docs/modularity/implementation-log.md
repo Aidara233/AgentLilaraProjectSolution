@@ -23,6 +23,11 @@
 | `9f00978` | **B-5** 拆 partial：lifecycle / children | ✅ | 441 pass | 无 |
 | `ecea9bf` | **B-3a** 拆 partial：core-switch | ✅ | 441 pass | 无 |
 | `3fd8471` | **B-3b（重做）** 拆 partial：components（一刀一 build） | ✅ | 441 pass | 无 |
+| `28eb4b1` | **测试** `AxesCatalog` + `AxisStore` 契约（40 条） | ✅ | 481 pass | 无（只加测试） |
+| `b2f64c9` | **B-6** `SessionEngine` 拆 6 个 partial（1360→406） | ✅ | 481 pass | 无 |
+| `b02fb86` | **B-3b'** 拆 partial：bootstrap（1212→961） | ✅ | 481 pass | 无 |
+| `2b484c9` | **B-3b''** 组件启停三件并入 Components.cs | ✅ | 481 pass | 无 |
+| `ce6f78a` | **B-3c** 拆 partial：频道连接（939→856） | ✅ | 481 pass | 无 |
 
 测试从 385 → **441**，净增 56 条，全部是纯内存单测（不建会话、不碰存储、不调模型）。
 
