@@ -692,34 +692,19 @@ internal partial class RuntimeSession : IRuntimeSession
 
                     // 副作用 + 停止判定（突发结束 ≠ 会话结束）
                     Phase = StepPhase.Judging;
-                    // endBurst：本次突发收尾，清消息回 WaitForActivationAsync，session 保活握 claim
-                    // endSession：会话真正终结，break 走 finally 释放 claim
-                    var endBurst = false;
-                    var endSession = false;
-                    for (int i = 0; i < output.ToolCalls.Count; i++)
-                    {
-                        var effect = await ApplyToolEffectAsync(output.ToolCalls[i], results[i]);
-                        if (effect.EndBurst) endBurst = true;
-                        if (effect.EndSession) endSession = true;
-                    }
 
-                    // 内联 wait（speak 含 [wait] 占位符时 result.RequestWait=true）：挂起本突发
-                    if (results.Any(r => r.RequestWait))
-                        endBurst = true;
+                    // 工具结果解释（B-4b：从主循环抽出）
+                    var outcome = await InterpretToolEffectsAsync(output, results);
 
-                    if (endSession)
+                    // 判定（B-4b：从主循环抽出）
+                    var action = DecideStepAction(outcome, out var judgeReason);
+                    if (action == StepAction.Stop)
                     {
-                        _isBusy = false;
-                        Signal.Event(LogGroup.Engine, "endSession：退出循环释放 claim", new { sessionId = SessionId });
-                        endReason = "end_session";
+                        endReason = judgeReason;
                         break;
                     }
-                    if (endBurst)
+                    if (action == StepAction.Restart)
                     {
-                        _isBusy = false;
-                        Signal.Event(LogGroup.Engine, "endBurst：回等待保活",
-                            new { sessionId = SessionId, historyCount = _history.Count, waitUntil = WaitUntil });
-                        _forceExitAttempts = 0;
                         awaitingInput = true;
                         Phase = StepPhase.Waiting;
                         continue;
@@ -783,5 +768,67 @@ internal partial class RuntimeSession : IRuntimeSession
         _pendingInjections.Add(new Message { Role = "user", Content = $"[系统] {text}" });
     }
 
+    /// <summary>
+    /// 解释一批工具结果对控制流的影响（B-4b，从 <see cref="RunAsync"/> 抽出）。
+    ///
+    /// <para>逐个调用 <see cref="ToolEffectInterpreter"/> 的接线 <see cref="ApplyToolEffectAsync"/>，
+    /// 把各自的 <c>EndBurst</c> / <c>EndSession</c> 汇总；另外把 <c>RequestWait</c>
+    /// （<c>speak</c> 含 <c>[wait]</c> 占位符时的内联挂起）也算作收尾本突发。</para>
+    ///
+    /// <para>⚠️ **不能短路**：即使某条工具已经给出 <c>EndSession</c>，后面每条仍要解释并执行其动作
+    /// （例如 <c>end_session</c> 与 <c>connect_channel</c> 同时出现时，连接的副作用仍应发生）。
+    /// 原实现就是全量遍历，这里逐字保留。</para>
+    /// </summary>
+    private async Task<ToolBatchOutcome> InterpretToolEffectsAsync(ModelOutput output, IReadOnlyList<ToolResult> results)
+    {
+        var outcome = ToolBatchOutcome.None;
+
+        for (var i = 0; i < output.ToolCalls.Count; i++)
+        {
+            var effect = await ApplyToolEffectAsync(output.ToolCalls[i], results[i]);
+            outcome = outcome.Merge(new ToolBatchOutcome(effect.EndBurst, effect.EndSession));
+        }
+
+        // 内联 wait（speak 含 [wait] 占位符时 result.RequestWait=true）：挂起本突发
+        if (results.Any(r => r.RequestWait))
+            outcome = outcome.WithEndBurst(true);
+
+        return outcome;
+    }
+
+    /// <summary>
+    /// 由工具判定结果决定主循环去向（B-4b，从 <see cref="RunAsync"/> 抽出）。
+    ///
+    /// <para>⚠️ **只做判定，不做状态切换**：<c>awaitingInput</c> 是主循环的局部变量，
+    /// 本方法够不到它——所以返回 <see cref="StepAction.Restart"/>，由调用方置位。
+    /// 这是刻意的：一旦把 <c>awaitingInput</c> 提成字段，express 会话的"被动等待"语义
+    /// 就会散在两个地方，谁都能改。</para>
+    ///
+    /// <para>⚠️ <c>_forceExitAttempts</c> 的清零**只在回等待时做**（不终结的情形）：
+    /// 终结路径不需要清零，因为会话要结束了。</para>
+    /// </summary>
+    private StepAction DecideStepAction(ToolBatchOutcome outcome, out string endReason)
+    {
+        endReason = "completed";
+
+        if (outcome.EndSession)
+        {
+            _isBusy = false;
+            Signal.Event(LogGroup.Engine, "endSession：退出循环释放 claim", new { sessionId = SessionId });
+            endReason = "end_session";
+            return StepAction.Stop;
+        }
+
+        if (outcome.EndBurst)
+        {
+            _isBusy = false;
+            Signal.Event(LogGroup.Engine, "endBurst：回等待保活",
+                new { sessionId = SessionId, historyCount = _history.Count, waitUntil = WaitUntil });
+            _forceExitAttempts = 0;
+            return StepAction.Restart;
+        }
+
+        return StepAction.Proceed;
+    }
     internal string[] GetComponentIdsForCompact() => _componentIds.ToArray();
 }
