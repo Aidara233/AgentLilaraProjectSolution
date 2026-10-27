@@ -420,3 +420,7 @@ AssemblyBoundaryTests读取全部src/Lilara.*实际DLL元数据，检查无宿�
 ### C10：邮件插件测试独立
 
 七个邮件测试文件原文迁入 tests/Plugin.Email.Tests，使用 net10.0 与现有测试包版本，仅引用 Plugin.Email 和 SDK。主程序测试删除邮件插件项目引用，新测试项目加入 sln。完整解决方案离线还原/构建成功，四套测试共651项通过（主程序544、邮件52、GraphRuntime38、沙箱17），无失败/跳过；diff检查通过。未连接IMAP或真实模型。既有6项构建警告仍在。
+
+### C8 前置：显式会话轮次诊断
+
+SDK新增可选IRuntimeSessionDiagnostics，RuntimeSession.RoundCount直接读取既有_roundCount，内部访问器复用同一属性。SessionsProvider以接口查询替代私有字段反射，未实现诊断的会话保持0。新增真实计数/快照一致性与未知实现fallback两项回归。完整sln构建成功，653项测试通过（主程序546、邮件52、GraphRuntime38、沙箱17），diff检查通过；未运行WebUI/真实模型冒烟。完整会话查询端口与WebUI独立进程仍待后续。

@@ -91,7 +91,8 @@ internal partial class RuntimeSession
     }
 
     /// <summary>当前累计轮次（供 SubAgentAccessAdapter 查询子 session 状态）。</summary>
-    internal int RoundCountInternal => _roundCount;
+    public int RoundCount => _roundCount;
+    internal int RoundCountInternal => RoundCount;
     /// <summary>创建时间（供 SubAgentAccessAdapter 查询存活时长）。</summary>
     internal DateTime CreatedAtInternal => _createdAt;
     /// <summary>最后活动时间（供 SubAgentAccessAdapter 查询）。</summary>

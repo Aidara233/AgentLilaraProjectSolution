@@ -28,7 +28,7 @@ namespace AgentCoreProcessor.Engine.Session;
 /// <summary>
 /// 统一会话实现。行为由 CreateSessionSpec 驱动，不分子类。
 /// </summary>
-internal partial class RuntimeSession : IRuntimeSession
+internal partial class RuntimeSession : IRuntimeSession, IRuntimeSessionDiagnostics
 {
     private void RestoreAxesSnapshot(SessionStateSnapshot state)
     {

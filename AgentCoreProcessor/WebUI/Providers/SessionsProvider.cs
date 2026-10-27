@@ -216,18 +216,8 @@ internal class SessionsProvider : IWebUIProvider
 
     // ── 辅助：获取会话轮次 ──
 
-    internal static int GetRoundCount(IRuntimeSession session)
-    {
-        try
-        {
-            var field = typeof(RuntimeSession).GetField("_roundCount",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            if (field != null)
-                return (int)(field.GetValue(session) ?? 0);
-        }
-        catch { }
-        return 0;
-    }
+    internal static int GetRoundCount(IRuntimeSession session) =>
+        (session as IRuntimeSessionDiagnostics)?.RoundCount ?? 0;
 
     /// <summary>枚举 Storage/Core/*.json 的核心名，作为切换表单下拉选项（服务端按会话白名单再校验）。</summary>
     private static List<SelectOption> CoreOptions()
