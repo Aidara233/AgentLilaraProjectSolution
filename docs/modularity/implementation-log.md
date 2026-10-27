@@ -352,3 +352,7 @@ ChannelContextService 注入 IChannelMediaSource，默认宿主实现逐次代�
 ### Context：纯压缩阈值策略
 
 CompressionPolicy/CompressionThresholds/CompressionTier 提取到 Lilara.Context，不依赖模型消息或宿主 AgentConfig；宿主 CompressionTierModule 保留构造接口及 EstimateChars，薄适配传入阈值。保持最小阈值优先、L3/L2/L1优先级、L1显式标记后不再提醒、L2/L3逐字提醒及L3进入/重入回调。新增11项边界与状态测试，修正映射测试可空断言；宿主构建、556项测试与diff检查通过。未验证真实模型压缩轮次；现有依赖/弃用警告仍在。
+
+### Context：纯提示装配与变更意图
+
+ContextAssembler/ContextMutations 两文件原文迁入 Lilara.Context/Context，保留命名空间、internal 与友元访问。GlobalPromptSections 仍由宿主组件容器提供。完整解决方案构建成功（0 错误、4 项既有警告），主程序 556、GraphRuntime 38、GraphSandbox 17，共 611 项测试通过；diff --check 通过。未执行真实模型或适配器冒烟，C/D 与完整信号迁移仍未完成。
