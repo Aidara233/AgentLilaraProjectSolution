@@ -655,46 +655,13 @@ internal partial class RuntimeSession : IRuntimeSession
                 Phase = StepPhase.ExecutingTools;
                 if (output.HasToolCalls && output.ToolCalls != null && output.ToolCalls.Count > 0)
                 {
-                    System.Func<string, ITool?> resolver = name =>
-                        _tools.TryGetValue(name, out var t) ? t :
-                          _componentHost?.TryGetTool(name) ?? ToolRegistry.Get(name);
-                    var executor = new ToolExecutor(resolver)
-                    {
-                        PermissionGroup = _componentLoopType,
-                        SessionId = SessionId,
-                        ChannelId = _connected.CurrentChannelId,
-                    };
-
-                    var results = await executor.ExecuteAsync(output.ToolCalls);
-                    roundSpan.SetCloseDetail(new
-                    {
-                        sessionId = SessionId,
-                        round = agentRound,
-                        tools = output.ToolCalls.Select((c, i) => new { tool = c.Tool, status = results[i].Status })
-                    });
-
-                    // assistant 轮：保留 tool_use ContentParts（携带 tool_use_id），与下方 tool_result 严格配对
-                    // 替换上面那条空文本 assistant，避免模型看不到自己调用了工具（runaway 根因）
-                    _history[_history.Count - 1] = NativeToolMessageFormatter.FormatAssistant(
-                        output, roundCore.UseNativeTools, resolver);
-
-                    // tool_result 轮：一条消息按 tool_use_id 配对全部 call→result
-                    var resultMsg = NativeToolMessageFormatter.FormatToolResults(
-                        output.ToolCalls, results, roundCore.UseNativeTools, !roundCore.DisableImageMessages);
-                    _history.Add(resultMsg);
-
-                    // 每轮持久化：assistant turn + tool_result turn 一起写
-                    await PersistRoundAsync(new List<Message>
-                    {
-                        _history[_history.Count - 2],
-                        _history[_history.Count - 1]
-                    });
+                    var results = await ExecuteToolsAsync(output, output.ToolCalls!, roundCore, roundSpan, agentRound);
 
                     // 副作用 + 停止判定（突发结束 ≠ 会话结束）
                     Phase = StepPhase.Judging;
 
                     // 工具结果解释（B-4b：从主循环抽出）
-                    var outcome = await InterpretToolEffectsAsync(output, results);
+                    var outcome = await InterpretToolEffectsAsync(output.ToolCalls!, results);
 
                     // 判定（B-4b：从主循环抽出）
                     var action = DecideStepAction(outcome, out var judgeReason);
@@ -779,13 +746,13 @@ internal partial class RuntimeSession : IRuntimeSession
     /// （例如 <c>end_session</c> 与 <c>connect_channel</c> 同时出现时，连接的副作用仍应发生）。
     /// 原实现就是全量遍历，这里逐字保留。</para>
     /// </summary>
-    private async Task<ToolBatchOutcome> InterpretToolEffectsAsync(ModelOutput output, IReadOnlyList<ToolResult> results)
+    private async Task<ToolBatchOutcome> InterpretToolEffectsAsync(List<ToolCall> calls, IReadOnlyList<ToolResult> results)
     {
         var outcome = ToolBatchOutcome.None;
 
-        for (var i = 0; i < output.ToolCalls.Count; i++)
+        for (var i = 0; i < calls.Count; i++)
         {
-            var effect = await ApplyToolEffectAsync(output.ToolCalls[i], results[i]);
+            var effect = await ApplyToolEffectAsync(calls[i], results[i]);
             outcome = outcome.Merge(new ToolBatchOutcome(effect.EndBurst, effect.EndSession));
         }
 
@@ -829,6 +796,65 @@ internal partial class RuntimeSession : IRuntimeSession
         }
 
         return StepAction.Proceed;
+    }
+    /// <summary>
+    /// 执行本轮模型调用产出的全部工具，并把这一轮（assistant tool_use + tool_result）配好对、落盘（B-4c，从 <see cref="RunAsync"/> 抽出）。
+    ///
+    /// <para>⚠️ <b>顺序是这个方法的核心，不能调换</b>：</para>
+    /// <list type="number">
+    ///   <item>执行 → <item>把 span 的收尾详情写好（必须紧贴执行之后，否则耗时会算到别处）
+    ///     → <item>用 native 格式**重写**最后那条 assistant 消息（携带 <c>tool_use_id</c>）
+    ///     → <item>按 <c>tool_use_id</c> 配对写入 tool_result
+    ///     → <item>两条一起落盘。</item></list>
+    /// </list>
+    ///
+    /// <para>⚠️ 第 3 步的"重写"不是可有可无：原实现先写了一条空文本 assistant，再替换它。
+    /// 不替换的话模型看不到自己调用了工具——这是历史上的 runaway 根因。</para>
+    ///
+    /// <para>⚠️ <paramref name="roundSpan"/> 由调用方持有：它的 <c>using</c> 生命周期覆盖
+    /// "模型调用 + 工具执行"两段，所以必须传进来而不是在这里开（B-4d 会把这段收进模型调用方法）。</para>
+    /// </summary>
+    private async Task<IReadOnlyList<ToolResult>> ExecuteToolsAsync(
+        ModelOutput output, List<ToolCall> calls, AgentCore roundCore, SpanHandle roundSpan, int agentRound)
+    {
+        Func<string, ITool?> resolver = name =>
+            _tools.TryGetValue(name, out var t) ? t :
+              _componentHost?.TryGetTool(name) ?? ToolRegistry.Get(name);
+
+        var executor = new ToolExecutor(resolver)
+        {
+            PermissionGroup = _componentLoopType,
+            SessionId = SessionId,
+            ChannelId = _connected.CurrentChannelId,
+        };
+
+        var results = await executor.ExecuteAsync(calls);
+
+        roundSpan.SetCloseDetail(new
+        {
+            sessionId = SessionId,
+            round = agentRound,
+            tools = calls.Select((c, i) => new { tool = c.Tool, status = results[i].Status })
+        });
+
+        // assistant 轮：保留 tool_use ContentParts（携带 tool_use_id），与下方 tool_result 严格配对
+        // 替换上面那条空文本 assistant，避免模型看不到自己调用了工具（runaway 根因）
+        _history[_history.Count - 1] = NativeToolMessageFormatter.FormatAssistant(
+            output, roundCore.UseNativeTools, resolver);
+
+        // tool_result 轮：一条消息按 tool_use_id 配对全部 call→result
+        var resultMsg = NativeToolMessageFormatter.FormatToolResults(
+            calls, results, roundCore.UseNativeTools, !roundCore.DisableImageMessages);
+        _history.Add(resultMsg);
+
+        // 每轮持久化：assistant turn + tool_result turn 一起写
+        await PersistRoundAsync(new List<Message>
+        {
+            _history[_history.Count - 2],
+            _history[_history.Count - 1]
+        });
+
+        return results;
     }
     internal string[] GetComponentIdsForCompact() => _componentIds.ToArray();
 }
