@@ -57,7 +57,7 @@ namespace AgentCoreProcessor
             var eventBus = new EventBus();
 
             // 适配器管理器
-            var adapterManager = new AdapterManager();
+            var adapterManager = new AdapterManager(Path.Combine(PathConfig.StoragePath, "Adapter"), AdapterFactory.Create);
 
             // 适配器
             FileAdapter? fileAdapter = null;

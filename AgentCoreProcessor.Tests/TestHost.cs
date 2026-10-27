@@ -48,7 +48,7 @@ internal static class TestHost
     public static MasterEngineTestFacade BuildMasterEngineWithChannelClaim(
         int channelId, string? claimerSession, bool sessionAlive = true)
     {
-        var master = new MasterEngine(new AdapterManager(), new EventBus());
+        var master = new MasterEngine(new AdapterManager(Path.Combine(Path.GetTempPath(), "lilara-test-adapters"), AdapterFactory.Create), new EventBus());
 
         // Always inject a SessionEngine so tests can verify it wasn't woken.
         var sid = claimerSession ?? "__unused";

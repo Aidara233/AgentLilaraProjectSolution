@@ -5,8 +5,6 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AgentCoreProcessor.Config;
-using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Logging;
 using Newtonsoft.Json;
 
@@ -22,22 +20,26 @@ namespace AgentCoreProcessor.Adapter
         /// <summary>消息入向回调，由 MasterEngine 在 InitAsync 中注入。</summary>
         public Func<IncomingMessage, Task>? OnIncomingMessage { get; set; }
 
-        /// <summary>引擎引用（IHostAwareAdapter 注入用）。MasterEngine 构造函数注入；InitAsync 前 Session 为 null。</summary>
-        internal MasterEngine? Engine { get; private set; }
+        private IAdapterHostAccess? _host;
+        private readonly Func<AdapterInstanceConfig, IAdapter> _create;
 
-        /// <summary>引擎就绪后注入：对已注册 + 后续注册的 IHostAwareAdapter 分发引擎引用。</summary>
-        internal void AttachEngine(MasterEngine engine)
+        /// <summary>对已注册及后续注册的适配器提供同一宿主访问端口。</summary>
+        public void AttachHost(IAdapterHostAccess host)
         {
-            Engine = engine;
+            ArgumentNullException.ThrowIfNull(host);
+            _host = host;
             foreach (var adapter in adapters.Values)
-                if (adapter is IHostAwareAdapter aware) aware.AttachHost(new AdapterHostAccess(engine));
+                if (adapter is IHostAwareAdapter aware) aware.AttachHost(host);
         }
 
         public event Action? OnAdaptersChanged;
 
-        public AdapterManager()
+        public AdapterManager(string configDirectory, Func<AdapterInstanceConfig, IAdapter> create)
         {
-            this.configDirectory = Path.Combine(PathConfig.StoragePath, "Adapter");
+            ArgumentException.ThrowIfNullOrWhiteSpace(configDirectory);
+            ArgumentNullException.ThrowIfNull(create);
+            this.configDirectory = configDirectory;
+            _create = create;
         }
 
         // ── 配置驱动加载 ──
@@ -56,7 +58,7 @@ namespace AgentCoreProcessor.Adapter
                         continue;
 
                     configs[config.Id] = config;
-                    var adapter = AdapterFactory.Create(config);
+                    var adapter = _create(config);
                     RegisterAdapter(adapter, config.Enabled);
                 }
                 catch (Exception ex)
@@ -97,7 +99,7 @@ namespace AgentCoreProcessor.Adapter
             };
             adapters[adapter.Id] = adapter;
             enabledMap[adapter.Id] = enabled;
-            if (Engine != null && adapter is IHostAwareAdapter aware) aware.AttachHost(new AdapterHostAccess(Engine));
+            if (_host != null && adapter is IHostAwareAdapter aware) aware.AttachHost(_host);
         }
 
         // ── 动态生命周期 ──
@@ -107,7 +109,7 @@ namespace AgentCoreProcessor.Adapter
             if (adapters.ContainsKey(config.Id)) return false;
 
             configs[config.Id] = config;
-            var adapter = AdapterFactory.Create(config);
+            var adapter = _create(config);
             RegisterAdapter(adapter, config.Enabled);
             SaveConfig(config);
 

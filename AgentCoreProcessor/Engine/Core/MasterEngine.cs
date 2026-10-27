@@ -164,7 +164,7 @@ namespace AgentCoreProcessor.Engine
             this.eventBus = eventBus;
             this.databaseDirectory = databaseDirectory ?? DefaultDatabasePath;
             _signalLogger = signalLogger;
-            adapterManager.AttachEngine(this);
+            adapterManager.AttachHost(new AdapterHostAccess(this));
         }
 
         // ---- 引擎状态查询 ----

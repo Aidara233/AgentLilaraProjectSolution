@@ -376,3 +376,7 @@ HTTP目录迁入Lilara.Adapters，新增IAdapterHostAccess与独立频道/消息
 ### HTTP send 端口迁移回归与空内容早返回
 
 通过DefaultHttpContext和假IAdapterHostAccess直接验证发送前基线查询顺序、wait=false接受、无宿主/未就绪接受、wait=true零超时的burst返回形状。发现空内容写出错误后仍继续投递，补return并验证拒绝后不查询/不投递。HTTP定向11项通过；完整解决方案测试628项通过（主程序573、GraphRuntime38、沙箱17），diff检查通过。未启动监听、不联网；正超时轮询、WebSocket真实通信仍未验证。
+
+### Adapters：管理器显式装配与迁移
+
+AdapterManager迁入Lilara.Adapters，构造注入配置目录与创建工厂，AttachHost接收IAdapterHostAccess替代MasterEngine，保留已有/后注册适配器注入语义。生产启动与测试宿主构造点已更新，宿主AdapterFactory继续负责路径/媒体默认装配。新增3项回归验证宿主注入及替换、配置目录/工厂、启停持久化/路由和消息AdapterId。完整sln构建、631项测试通过（主程序576、GraphRuntime38、沙箱17），diff检查通过。未启动真实平台/模型；factory/图片存储仍留宿主，完整模块树与图化主线继续。
