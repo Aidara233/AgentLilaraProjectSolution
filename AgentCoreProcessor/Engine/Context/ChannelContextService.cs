@@ -5,9 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using AgentCoreProcessor.Adapter;
 using AgentCoreProcessor.Database;
-using AgentCoreProcessor.Engine.Vision;
 using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Util;
 
@@ -20,7 +18,12 @@ namespace AgentCoreProcessor.Engine.Context;
 internal partial class ChannelContextService
 {
     private readonly IChannelDataSource _data;
-    public ChannelContextService(IChannelDataSource data) => _data = data;
+    private readonly IChannelMediaSource _media;
+    public ChannelContextService(IChannelDataSource data, IChannelMediaSource? media = null)
+    {
+        _data = data;
+        _media = media ?? new SystemChannelMediaSource();
+    }
 
     // ═══════════════════════════════════════════════════════════
     // 参与者派生
@@ -94,21 +97,21 @@ internal partial class ChannelContextService
     }
 
     // ═══════════════════════════════════════════════════════════
-    // OCR 辅助（静态，仅依赖 ImageStorage + VisionEngineConfig）
+    // OCR 辅助（通过注入媒体源读取）
     // ═══════════════════════════════════════════════════════════
 
     /// <summary>
     /// 为指定图片构建 OCR 文字注入文本。根据文字长度和模式决定注入形式。
     /// 返回 null 表示无需注入（无 OCR 或 HasText 未知）。
     /// </summary>
-    private static async Task<string?> BuildOcrInjectionTextAsync(string hash, bool isExpress)
+    private async Task<string?> BuildOcrInjectionTextAsync(string hash, bool isExpress)
     {
-        var record = await ImageStorage.GetByHashAsync(hash);
+        var record = await _media.GetOcrAsync(hash);
         if (record?.HasText != true) return null;
         var ocrText = record.OcrText;
         if (string.IsNullOrEmpty(ocrText)) return null;
 
-        var threshold = VisionEngineConfig.Load().OcrRichTextThreshold;
+        var threshold = _media.GetOcrRichTextThreshold();
         if (ocrText.Length <= threshold || isExpress)
         {
             return $"[图中文字] {ocrText}";
@@ -204,12 +207,12 @@ internal partial class ChannelContextService
     }
 
     /// <summary>收集一条 DB 消息的图片路径到指定列表。</summary>
-    public static async Task CollectImagePaths(UserMessage m, List<string> imagePaths)
+    public async Task CollectImagePaths(UserMessage m, List<string> imagePaths)
     {
         if (string.IsNullOrEmpty(m.ImageHashes)) return;
         foreach (var hash in m.ImageHashes.Split(',', StringSplitOptions.RemoveEmptyEntries))
         {
-            var path = await ImageStorage.GetModelInputPathAsync(hash.Trim());
+            var path = await _media.GetModelInputPathAsync(hash.Trim());
             if (!string.IsNullOrEmpty(path))
                 imagePaths.Add(path);
         }
@@ -244,7 +247,7 @@ internal partial class ChannelContextService
             foreach (var hash in m.ImageHashes.Split(',', StringSplitOptions.RemoveEmptyEntries))
             {
                 var trimmed = hash.Trim();
-                var path = await ImageStorage.GetModelInputPathAsync(trimmed);
+                var path = await _media.GetModelInputPathAsync(trimmed);
                 imagePaths.Add(path ?? "");
                 imageHashes.Add(trimmed);
             }
@@ -277,7 +280,7 @@ internal partial class ChannelContextService
                     st.RoundImageHashes.Add(hash);
                     parts.Add(ContentPart.FromText($"[IMG:{imgIndex}]"));
                     parts.Add(ContentPart.FromImagePath(imagePaths[imgIndex]));
-                    var desc = await ImageStorage.GetDescriptionAsync(hash);
+                    var desc = await _media.GetDescriptionAsync(hash);
                     if (!string.IsNullOrEmpty(desc))
                     {
                         st.InjectedDescriptions.Add(hash);
@@ -320,7 +323,7 @@ internal partial class ChannelContextService
                 parts.Add(ContentPart.FromImagePath(path));
                 if (i < hashes.Count)
                 {
-                    var desc = await ImageStorage.GetDescriptionAsync(hashes[i]);
+                    var desc = await _media.GetDescriptionAsync(hashes[i]);
                     if (!string.IsNullOrEmpty(desc))
                         parts.Add(ContentPart.FromText($"[图片描述] {desc}"));
                     var ocrInjection = await BuildOcrInjectionTextAsync(hashes[i], true);
@@ -447,7 +450,7 @@ internal partial class ChannelContextService
             foreach (var hash in m.ImageHashes.Split(',', StringSplitOptions.RemoveEmptyEntries))
             {
                 var trimmedHash = hash.Trim();
-                var p = await ImageStorage.GetModelInputPathAsync(trimmedHash);
+                var p = await _media.GetModelInputPathAsync(trimmedHash);
                 if (!string.IsNullOrEmpty(p)) { imgPaths.Add(p); imgHashes.Add(trimmedHash); }
             }
             if (imgPaths.Count > 0)
@@ -473,7 +476,7 @@ internal partial class ChannelContextService
         foreach (var hash in st.RoundImageHashes)
         {
             if (st.InjectedDescriptions.Contains(hash)) continue;
-            var desc = await ImageStorage.GetDescriptionAsync(hash);
+            var desc = await _media.GetDescriptionAsync(hash);
             if (!string.IsNullOrEmpty(desc))
             {
                 st.InjectedDescriptions.Add(hash);

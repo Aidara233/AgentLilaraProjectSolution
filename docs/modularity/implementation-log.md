@@ -340,3 +340,7 @@ ParticipantView 与消息发送者/用户/人物快照及 IParticipantSource/Par
 ### 频道上下文完整文本基线
 
 在替换频道数据契约前，固定旧实现无媒体路径的完整输出：增量首次日期/跨日/无时间、session 忽略游标与 express 筛选、历史尾换行、引用 XML 转义（单引号保持）、缺失引用 included 状态及 null 结果。断言同时检查消息 ContentParts 与游标/日期状态。新增四项测试，主程序 532 项通过；媒体、OCR 就绪顺序和全数据源迁移仍未完成。
+
+### 频道媒体查询接缝与顺序基线
+
+ChannelContextService 注入 IChannelMediaSource，默认宿主实现逐次代理 ImageStorage 路径/描述/OCR 与 VisionEngineConfig 阈值；查询时机、顺序与阈值读取条件保持。CollectImagePaths 仅有内部调用，改实例方法。新增交错内容块、重复 hash、缺路径/无效标记、OCR 有效性及阈值读取、未就绪重试、全部描述先于全部 OCR 与集合去重回归。宿主构建、540 项主程序测试通过。尚未整体迁移领域渲染契约，未调用真实媒体存储、OCR 或模型；现有警告仍在。
