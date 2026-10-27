@@ -78,8 +78,7 @@ internal partial class SessionEngine
                 }
             }
             // 清理子池成员索引（子 agent 已结束）
-            foreach (var m in sub.Members)
-                _poolByMember.TryRemove(m, out _);
+            RemovePoolMemberIndexes(sub);
             if (parentPool is not null
                 && (parentPool.IsRoot || string.IsNullOrEmpty(parentPool.ActiveSessionId)))
                 RemoveEmptyPool(parentPool);

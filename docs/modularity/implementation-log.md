@@ -524,3 +524,7 @@ OnChildCompleted清理子成员索引后，在原_poolLock内检查父池回收�
 ### C12：释放旁听时清理无效成员索引
 
 ReleaseChannel在原_poolLock内移除旁听后，仅当session不是该池Full历史Members且索引仍指向该池时删除_poolByMember，避免仅Listen退出残留索引，同时保护历史接管寻址与跨池映射。新增5项回归（含是否保留池两分支），相关池套件31项通过；完整sln构建和774项测试通过（主程序664、邮件52、GraphRuntime41、沙箱17），diff检查通过。未运行真实模型/适配器；空池批量成员清理的跨池保护及C12整体仍待继续。
+
+### C12：批量成员回收保护新池映射
+
+RemoveEmptyPool与OnChildCompleted统一使用RemovePoolMemberIndexes，在原_poolLock内仅删除仍指向被回收池的成员索引。新增根池历史成员迁至其他频道后回收、子池历史成员迁至根池后完成两项回归，验证新池claim/寻址保留且旧索引正常清理。相关池套件33项及完整sln构建/776项测试通过（主程序666、邮件52、GraphRuntime41、沙箱17），diff检查通过。未运行真实模型/适配器；C12协调实现迁移和接管失败回滚仍待继续。

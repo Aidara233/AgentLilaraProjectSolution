@@ -99,7 +99,14 @@ internal partial class SessionEngine
         }
         else
             pool.Parent?.ChildPools.Remove(pool);
-        foreach (var m in pool.Members)
-            _poolByMember.TryRemove(m, out _);
+        RemovePoolMemberIndexes(pool);
+    }
+
+    /// <summary>调用者持有 _poolLock；历史成员可能已经归属另一池。</summary>
+    private void RemovePoolMemberIndexes(SessionPool pool)
+    {
+        foreach (var member in pool.Members)
+            if (_poolByMember.TryGetValue(member, out var indexed) && ReferenceEquals(indexed, pool))
+                _poolByMember.TryRemove(member, out _);
     }
 }
