@@ -22,7 +22,7 @@ namespace AgentCoreProcessor.Engine.Session;
 /// <summary>
 /// Session 管理器。30s 监控循环：WaitUntil 超时、ScheduledTask 触发、TODO 扫描。
 /// </summary>
-internal partial class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessionResourceAccess, IChannelSessionQuery, ISessionAccess
+internal partial class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessionResourceAccess, IChannelSessionQuery, ISessionAccess, IChannelConnectionAccess
 {
     public string EngineType => "Session";
     public bool IsAlive { get; private set; } = true;

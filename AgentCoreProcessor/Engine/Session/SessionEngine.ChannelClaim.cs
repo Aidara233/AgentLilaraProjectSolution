@@ -37,6 +37,9 @@ internal partial class SessionEngine
     public Task<Database.Channel?> GetChannelByIdAsync(int channelId)
         => _ctx.Session.GetChannelByIdAsync(channelId);
 
+    public async Task<string?> GetChannelNameAsync(int channelId) =>
+        (await _ctx.Session.GetChannelByIdAsync(channelId))?.Name;
+
     /// <summary>供 RuntimeSession 连接动作订阅频道消息子流。</summary>
     public IInputPort SubscribeChannel(int channelId, string subStream, int weight)
     {

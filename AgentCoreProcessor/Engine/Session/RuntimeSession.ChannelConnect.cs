@@ -62,14 +62,14 @@ internal partial class RuntimeSession
     /// </summary>
     public async Task ConnectChannelAsync(int channelId, ConnectionMode mode)
     {
-        if (channelId <= 0 || _sessionEngine == null || _messageEngine == null) return;
+        if (channelId <= 0 || _channelConnection == null) return;
 
         // 独占：先断开当前连接
         if (_connected.CurrentChannelId != 0)
             DisconnectChannel();
 
         var level = mode == ConnectionMode.Full ? ClaimLevel.Full : ClaimLevel.Listen;
-        var claimed = _sessionEngine.ClaimChannel(SessionId, channelId, level);
+        var claimed = _channelConnection.ClaimChannel(SessionId, channelId, level);
         if (!claimed && mode == ConnectionMode.Full)
         {
             _pendingInjections.Add(new Message { Role = "user",
@@ -78,12 +78,12 @@ internal partial class RuntimeSession
         }
 
         // 订阅消息：Full 收 normal+mention，Listen 仅收 normal
-        var normalPort = _sessionEngine.SubscribeChannel(channelId, "normal", 5);
+        var normalPort = _channelConnection.SubscribeChannel(channelId, "normal", 5);
         _inputs[$"ch{channelId}:normal"] = normalPort;
         _connectedPorts.Add(normalPort);
         if (mode == ConnectionMode.Full)
         {
-            var mentionPort = _sessionEngine.SubscribeChannel(channelId, "mention", 100);
+            var mentionPort = _channelConnection.SubscribeChannel(channelId, "mention", 100);
             _inputs[$"ch{channelId}:mention"] = mentionPort;
             _connectedPorts.Add(mentionPort);
         }
@@ -93,8 +93,8 @@ internal partial class RuntimeSession
         // 载入频道上下文（信息+参与者+历史）到下一轮
         if (_host != null)
         {
-            var channel = await _sessionEngine.GetChannelByIdAsync(channelId);
-            _host.AttachChannel(channelId, channel?.Name);
+            var channelName = await _channelConnection.GetChannelNameAsync(channelId);
+            _host.AttachChannel(channelId, channelName);
             try { _pendingInjections.AddRange(await _host.BuildChannelContextAsync(channelId)); }
             catch (Exception ex) { Signal.Warn(LogGroup.Engine, "连接频道历史载入失败", new { sessionId = SessionId, channelId, error = ex.Message }); }
         }
@@ -113,12 +113,12 @@ internal partial class RuntimeSession
         if (channelId == 0) return;
 
         foreach (var port in _connectedPorts)
-            _messageEngine?.Unsubscribe(port);
+            _channelConnection?.UnsubscribeChannel(port);
         _connectedPorts.Clear();
         var toRemove = _inputs.Keys.Where(k => k.StartsWith($"ch{channelId}:")).ToList();
         foreach (var k in toRemove) _inputs.Remove(k);
 
-        _sessionEngine?.ReleaseChannel(SessionId, channelId);
+        _channelConnection?.ReleaseChannel(SessionId, channelId);
         _host?.DetachChannel(channelId);
         _connected.Clear();
 

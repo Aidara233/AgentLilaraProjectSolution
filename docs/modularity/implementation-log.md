@@ -484,3 +484,7 @@ ContextShadowGraphTests以冻结值源→独立格式节点→采集汇构造真
 ### C9：图运行时、模块与管理层程序集统一
 
 GraphRuntime 全部源码迁入 Lilara.Graph/Runtime，GraphModules 契约迁入 GraphModules/Agent，均保留原 namespace 且源码100%原文迁移，未改求解方法体。旧两个csproj从sln和源码移除；宿主删除旧Runtime直接引用，Recurring、图测试、沙箱统一引用Lilara.Graph。旧图项目为源码构建内部资产，本次不承诺旧程序集二进制兼容。新增架构断言验证GraphInstance/Solver/ModuleHost/IAgentLoop与管理器属于同一程序集，库元数据和项目文件不再引用旧图程序集。离线缓存还原、强制完整sln构建及730项测试通过（主程序620、邮件52、GraphRuntime41、沙箱17），diff检查通过。仍有Llm/Turn离线NU1603和TestHost弃用警告；未运行真实模型/外部平台，C整体、D1全路径对拍和全面信号迁移未完成。
+
+### C3/C12 前置：频道连接窄端口
+
+SDK新增IChannelConnectionAccess，SessionEngine暂实现claim/release/subscribe/unsubscribe及频道名称查询；RuntimeSession.ChannelConnect统一使用独立注入端口，移除连接动作对具体SessionEngine/MessageEngine的调用。生产创建与恢复路径显式注入，保留先断旧连接、claim、normal/mention订阅、内存状态、上下文载入及持久化顺序。新增3项假端口回归覆盖Full→Listen释放顺序、拒绝Full claim、频道名与host挂载及无具体引擎运行。完整sln构建与733项测试通过（主程序623、邮件52、GraphRuntime41、沙箱17），diff检查通过。占用权威仍在原资源池；升级/退出/compact等具体引擎依赖仍在，C3/C12未完成；未运行真实模型/适配器冒烟。
