@@ -787,26 +787,11 @@ internal class RuntimeSession : IRuntimeSession
     /// <summary>
     /// 追加 Global 组件的 prompt 段（情绪/经历注入等）。Global 组件是单例，
     /// 每轮注入一次（带 LoopInfo 区分调用方）。注入段与 Loop 段合并进 [组件通知]。
+    /// <para>取段与容错的实现在 <see cref="GlobalPromptSections.CollectPerRound"/>（上下文域），
+    /// 这里只留一个薄壳保持调用点不变。</para>
     /// </summary>
-    private void AppendGlobalPromptSections(List<string> sections)
-    {
-        try
-        {
-            var globalHost = _services?.GetService(typeof(Component.GlobalComponentHost))
-                as Component.GlobalComponentHost;
-            if (globalHost == null) return;
-
-            var loopInfo = new LoopInfo(SessionId, _componentLoopType);
-            var globalSections = globalHost.BuildPromptSections(loopInfo);
-            if (globalSections != null)
-                sections.AddRange(globalSections);
-        }
-        catch (Exception ex)
-        {
-            Signal.Warn(LogGroup.Engine, "Global 组件注入失败",
-                new { sessionId = SessionId, error = ex.Message });
-        }
-    }
+    private void AppendGlobalPromptSections(List<string> sections) =>
+        sections.AddRange(GlobalPromptSections.CollectPerRound(_services, SessionId, _componentLoopType));
 
     /// <summary>
     /// 追加 Global 组件的会话开头一次性静态参考段（技能清单等）。仅新会话首轮上下文构建时调用，
@@ -814,30 +799,43 @@ internal class RuntimeSession : IRuntimeSession
     /// </summary>
     private void AppendStartReferenceSections()
     {
-        try
-        {
-            var globalHost = _services?.GetService(typeof(Component.GlobalComponentHost))
-                as Component.GlobalComponentHost;
-            if (globalHost == null) return;
+        var section = GlobalPromptSections.CollectStartReference(_services, SessionId, _componentLoopType);
+        if (section is null) return;
 
-            var loopInfo = new LoopInfo(SessionId, _componentLoopType);
-            var section = globalHost.BuildStartPromptSections(loopInfo);
-            if (string.IsNullOrEmpty(section))
-                return;
+        _history.Add(new Message { Role = "user", Content = section });
+        Signal.Debug(LogGroup.Engine, "会话开头参考注入(一次性)",
+            new { sessionId = SessionId, sectionLen = section.Length });
+    }
 
-            _history.Add(new Message { Role = "user", Content = section });
-            Signal.Debug(LogGroup.Engine, "会话开头参考注入(一次性)",
-                new { sessionId = SessionId, sectionLen = section.Length });
-        }
-        catch (Exception ex)
+    /// <summary>
+    /// 应用上下文层产出的变更意图。**这是唯一允许改工具表的地方**（见 <see cref="ContextMutation"/>）。
+    ///
+    /// <para>⚠️ 原来这几行写在压缩块里，直接 `_tools.Clear()` 并改 `_agentCore.AdditionalTools`。
+    /// 那是一条从上下文层到工具层的反向数据流：拆模块后它会变成看不见的回指，
+    /// 而且"谁能改工具表"会散在两个地方。现在意图与应用分离，改法只有这一处。</para>
+    /// </summary>
+    private void ApplyContextMutation(ContextMutation mutation)
+    {
+        switch (mutation)
         {
-            Signal.Warn(LogGroup.Engine, "会话开头参考注入失败",
-                new { sessionId = SessionId, error = ex.Message });
+            case LockToolTableTo lockTo:
+                // 调用方已判过 _compactTool 非空与 _preLockdownTools 为 null；这里保留一次防御性返回。
+                if (_compactTool is null) return;
+
+                _preLockdownTools = new Dictionary<string, ITool>(_tools, StringComparer.OrdinalIgnoreCase);
+                _tools.Clear();
+                _activeTools.Clear();
+                _tools[lockTo.ToolName] = _compactTool;
+                _activeTools.Add(lockTo.ToolName);
+                if (_agentCore != null)
+                    _agentCore.AdditionalTools = new List<ITool> { _compactTool };
+                Signal.Event(LogGroup.Engine, "L3 锁定：工具表只剩 " + lockTo.ToolName,
+                    new { sessionId = SessionId, preLockdownCount = _preLockdownTools.Count });
+                break;
         }
     }
 
     // ── 组件管理 ──
-    // 运行时动态启用/卸载组件：尚未实现。
     // 当前 _componentHost 在 InitComponents 时一次性构建，运行期无法增删组件实例并重建工具表。
     // 真正实现需要：实例化新组件 → 注册其工具到 _componentHost → RefreshToolList。
     // 在落地前抛异常而非静默改 _componentIds，避免调用方误以为组件已生效。
@@ -1156,15 +1154,9 @@ internal class RuntimeSession : IRuntimeSession
                     if (_l3Lockdown && _compactTool != null && _preLockdownTools == null)
                     {
                         _l3Lockdown = false;
-                        _preLockdownTools = new Dictionary<string, ITool>(_tools, StringComparer.OrdinalIgnoreCase);
-                        _tools.Clear();
-                        _activeTools.Clear();
-                        _tools["compact"] = _compactTool;
-                        _activeTools.Add("compact");
-                        if (_agentCore != null)
-                            _agentCore.AdditionalTools = new List<ITool> { _compactTool };
-                        Signal.Event(LogGroup.Engine, "L3 锁定：工具表只剩 compact",
-                            new { sessionId = SessionId, preLockdownCount = _preLockdownTools.Count });
+                        // ⚠️ 上下文层**不再直接改工具表**：只产出一条变更意图，由会话统一应用。
+                        // 这是 H1 的修法——原来的 _tools.Clear() 是一条从 context 到工具层的反向数据流。
+                        ApplyContextMutation(new LockToolTableTo("compact"));
                     }
                 }
 
