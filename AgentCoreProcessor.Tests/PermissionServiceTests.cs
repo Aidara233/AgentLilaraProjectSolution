@@ -132,7 +132,8 @@ public class PermissionServiceTests
     public async Task ToolExecutor_DeniesOutOfGroupTool()
     {
         using var _ = PointToRealStorage();
-        var executor = new ToolExecutor(name => new StubTool(name)) { PermissionGroup = "express" };
+        var executor = ToolExecutorFactory.Create(name => new StubTool(name));
+        executor.PermissionGroup = "express";
         var results = await executor.ExecuteAsync(new List<ToolCall> { new() { Tool = "end_session" } });
         Assert.Equal("failed", results[0].Status);
         Assert.Contains("会话类型", results[0].Error);
@@ -142,7 +143,8 @@ public class PermissionServiceTests
     public async Task ToolExecutor_AllowsInGroupTool()
     {
         using var _ = PointToRealStorage();
-        var executor = new ToolExecutor(name => new StubTool(name)) { PermissionGroup = "express" };
+        var executor = ToolExecutorFactory.Create(name => new StubTool(name));
+        executor.PermissionGroup = "express";
         var results = await executor.ExecuteAsync(new List<ToolCall> { new() { Tool = "speak" } });
         Assert.Equal("success", results[0].Status);
     }

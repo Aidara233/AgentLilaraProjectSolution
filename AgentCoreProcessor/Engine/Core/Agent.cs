@@ -244,7 +244,8 @@ namespace AgentCoreProcessor.Engine
                         calls = output.ToolCalls.Select(c => new { c.Tool, c.Inputs, c.ToolUseId })
                     }))
                 {
-                    var executor = new ToolExecutor(_toolResolver) { PermissionGroup = PermissionGroup };
+                    var executor = ToolExecutorFactory.Create(_toolResolver);
+                    executor.PermissionGroup = PermissionGroup;
                     if (OnToolExecuted != null)
                     {
                         executor.OnToolExecuted = async (call, result) =>

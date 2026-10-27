@@ -408,3 +408,7 @@ ToolDescriptionRenderer进入Lilara.PluginHost，仅接收已筛选ITool序列�
 ### PluginHost：工具环境作用域迁移
 
 ToolExecutionScope/ToolExecutionContext 原文迁入 Lilara.PluginHost，保持 namespace/internal，ToolExecutor 权限与执行仍留宿主。新增异常释放恢复与带继承作用域的并行异步隔离测试，复用既有基础作用域测试。完整 sln 构建成功，643项测试通过（主程序588、GraphRuntime38、沙箱17），diff检查通过。未运行真实模型/适配器；完整插件宿主迁移及C/D主线仍未完成。
+
+### PluginHost：工具执行器策略委托与迁移
+
+ToolExecutor迁入Lilara.PluginHost，resolver、全局禁用/原因、会话类型允许规则均显式注入；宿主ToolExecutorFactory统一传原ToolRegistry/SessionTypeProfiles规则。三处生产构造和权限测试已更新，保留未知→禁用→权限→执行顺序、精确错误文本、timeout/异常、OnToolExecuted顺序与ambient scope恢复。新增4项回归覆盖拒绝顺序、允许执行/回调、异常和超时。完整sln离线还原与构建成功（0错误、6项既有/传递警告），647项测试通过（主程序592、GraphRuntime38、沙箱17），diff检查通过。未调用真实模型/适配器；注册表/插件加载/权限配置IO仍在宿主，C/D和全面日志改造未完成。

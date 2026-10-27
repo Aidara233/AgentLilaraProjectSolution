@@ -2,8 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using AgentCoreProcessor.Engine;
-using AgentCoreProcessor.Engine.Modules;
 using AgentCoreProcessor.Logging;
 using AgentLilara.PluginSDK;
 
@@ -28,10 +26,17 @@ namespace AgentCoreProcessor.Tool
         /// <summary>每个工具执行完毕后触发的回调。</summary>
         public Func<ToolCall, ToolResult, Task>? OnToolExecuted { get; set; }
 
-        public ToolExecutor(
-            Func<string, ITool?>? toolResolver = null)
+        private readonly Func<string, bool> _isDisabled;
+        private readonly Func<string, string?> _disableReason;
+        private readonly Func<string?, string, bool> _isAllowed;
+
+        public ToolExecutor(Func<string, ITool?> toolResolver, Func<string, bool> isDisabled,
+            Func<string, string?> disableReason, Func<string?, string, bool> isAllowed)
         {
-            this.toolResolver = toolResolver ?? ToolRegistry.Get;
+            this.toolResolver = toolResolver;
+            _isDisabled = isDisabled;
+            _disableReason = disableReason;
+            _isAllowed = isAllowed;
         }
 
         public async Task<List<ToolResult>> ExecuteAsync(List<ToolCall> calls)
@@ -76,14 +81,14 @@ namespace AgentCoreProcessor.Tool
                 return new ToolResult { Status = "failed", Error = $"未知工具: {call.Tool}" };
             }
 
-            if (ToolRegistry.IsDisabled(call.Tool))
+            if (_isDisabled(call.Tool))
             {
-                var reason = ToolRegistry.GetDisableReason(call.Tool) ?? "未知原因";
+                var reason = _disableReason(call.Tool) ?? "未知原因";
                 return new ToolResult { Status = "failed", Error = $"工具已禁用: {reason}" };
             }
 
             // 执行期权限组硬校验：即便工具因历史上下文被模型误调用，类型外也一律拒绝
-            if (PermissionGroup != null && !Engine.Session.SessionTypeProfiles.IsAllowed(PermissionGroup, call.Tool))
+            if (PermissionGroup != null && !_isAllowed(PermissionGroup, call.Tool))
             {
                 return new ToolResult
                 {

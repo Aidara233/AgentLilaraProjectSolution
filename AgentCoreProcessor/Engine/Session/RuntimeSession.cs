@@ -726,12 +726,10 @@ internal partial class RuntimeSession : IRuntimeSession
             _tools.TryGetValue(name, out var t) ? t :
               _componentHost?.TryGetTool(name) ?? ToolRegistry.Get(name);
 
-        var executor = new ToolExecutor(resolver)
-        {
-            PermissionGroup = _componentLoopType,
-            SessionId = SessionId,
-            ChannelId = _connected.CurrentChannelId,
-        };
+        var executor = ToolExecutorFactory.Create(resolver);
+        executor.PermissionGroup = _componentLoopType;
+        executor.SessionId = SessionId;
+        executor.ChannelId = _connected.CurrentChannelId;
 
         var results = await executor.ExecuteAsync(calls);
 
