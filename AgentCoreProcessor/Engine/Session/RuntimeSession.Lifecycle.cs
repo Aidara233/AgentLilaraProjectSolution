@@ -32,6 +32,15 @@ namespace AgentCoreProcessor.Engine.Session;
 /// </summary>
 internal partial class RuntimeSession
 {
+    private void CaptureLifecycleSnapshot(SnapshotWriter writer)
+    {
+        writer.Set(s => s.SessionId, SessionId);
+        writer.Set(s => s.Status, Status);
+        writer.Set(s => s.CreatedAt, _createdAt);
+        writer.Set(s => s.WaitUntil, WaitUntil);
+        writer.Set(s => s.LastActivity, _lastActivity);
+    }
+
     public void RequestStop(string reason)
     {
         Status = SessionStatus.Completed;

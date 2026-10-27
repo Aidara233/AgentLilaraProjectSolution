@@ -30,6 +30,21 @@ namespace AgentCoreProcessor.Engine.Session;
 /// </summary>
 internal partial class RuntimeSession : IRuntimeSession
 {
+    private void CaptureStepSnapshot(SnapshotWriter writer)
+    {
+        writer.Set(s => s.RoundCount, _roundCount);
+    }
+
+    private void CaptureContextSnapshot(SnapshotWriter writer)
+    {
+        writer.Set(s => s.CompressionTier, _compression?.CurrentTier.ToString() ?? "None");
+    }
+
+    private void CaptureAxesSnapshot(SnapshotWriter writer)
+    {
+        writer.Set(s => s.Axes, _axisStore.Snapshot());
+    }
+
     public string SessionId { get; private set; } = Guid.NewGuid().ToString("N")[..12];
     public SessionStatus Status { get; private set; } = SessionStatus.Creating;
     public bool IsAlive => Status is SessionStatus.Running or SessionStatus.Creating or SessionStatus.Restored;

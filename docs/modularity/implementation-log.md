@@ -237,3 +237,10 @@ B 的前置条件已经具备：`step` 的 12 阶段表、`ToolEffectInterpreter
 | B-4c | 抽出方法后 `output.ToolCalls` 变得可能为空（CS8602/CS8604） | 不用 `!` 糊：把 `calls` 作为显式参数，让非空保证跟着参数走 |
 | B-4d | `ModelOutput?` 不能隐式转 `ModelOutput`，`!` 也无效 | `ModelOutput` 是 `readonly struct` ⇒ `Nullable<T>`，要 `.Value` |
 | B-4g | 少一个收尾大括号（CS1513） | 行号搬运时括号计数靠编译器兜底，切完立刻 build |
+
+### N3 与 B-2a：模型图工具及快照采集
+
+- `70b1b65`：内建节点类型目录，端口由探针节点读取；参数示例与目录覆盖校验。
+- `ea6170f`：注册 wire_describe / wire_validate / wire_apply / wire_mount；生产加载器校验、原子替换、.history 前后源码审计。接口与限制见 `wire-tools.md`。
+- B-2a：BuildStateSnapshot 改为七个 ISnapshotPort 采集入口；强类型字段选择器检查重复与遗漏。原有 15 个属性全部覆盖，JSON 格式仍为 v3（仅内部组织改变，无需升版）。资源恢复顺序未改，完整 restore 注册仍待拆分。
+- 主程序测试 490 项通过，GraphRuntime 33 项通过；新增快照归属冲突、遗漏与集合隔离检查。未执行真实模型/适配器冒烟。既有包漏洞和弃用 API 警告仍存在。

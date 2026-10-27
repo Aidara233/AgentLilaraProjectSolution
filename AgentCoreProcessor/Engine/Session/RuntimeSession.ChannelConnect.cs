@@ -34,6 +34,13 @@ namespace AgentCoreProcessor.Engine.Session;
 /// </summary>
 internal partial class RuntimeSession
 {
+    private void CaptureChannelSnapshot(SnapshotWriter writer)
+    {
+        writer.Set(s => s.ConnectedChannelId, _connected.CurrentChannelId > 0 ? _connected.CurrentChannelId.ToString() : null);
+        writer.Set(s => s.ConnectedMode, _connected.Mode != ConnectionMode.None ? _connected.Mode.ToString() : null);
+        writer.Set(s => s.ChannelCursors, BuildChannelCursors());
+    }
+
     /// <summary>
     /// 连接到频道。Full：claim 占用+停 express+订阅 normal+mention+可发言；Listen：仅订阅 normal、不占用、不可发言。
     /// 连接前先断开当前连接（独占单频道）。连接后载入该频道历史到下一轮上下文。

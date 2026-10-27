@@ -27,9 +27,8 @@ namespace AgentCoreProcessor.Engine.Session;
 
 /// <summary>
 /// <see cref="RuntimeSession"/> 的部件：持久化（partial 文件，仅物理拆分）。
-/// <para>含每轮追加、状态快照的构建与落盘。⚠️ <c>SessionStateSnapshot</c> 的字段仍跨多个部件
-/// （roundCount 属 step、compressionTier 属 context、channelCursors 属 inbox…），
-/// 按 D3 它们只存扁平值；拆到各部件自报（ISnapshotPort）是 B-2 的第二步，本文件只是第一步。</para>
+/// <para>每轮追加与状态落盘；字段由 ISnapshotPort 采集并检查归属，保留 v3 存档格式。
+/// 资源重建仍按既有恢复顺序进行。</para>
 /// </summary>
 internal partial class RuntimeSession
 {
@@ -55,24 +54,16 @@ internal partial class RuntimeSession
     }
 
     /// <summary>构造 state.json 快照对象。</summary>
-    internal SessionStateSnapshot BuildStateSnapshot() => new()
+    internal SessionStateSnapshot BuildStateSnapshot() => new SnapshotWriter().Capture(new ISnapshotPort[]
     {
-        SessionId = SessionId,
-        Status = Status,
-        CreatedAt = _createdAt,
-        RoundCount = _roundCount,
-        WaitUntil = WaitUntil,
-        LastActivity = _lastActivity,
-        CompressionTier = _compression?.CurrentTier.ToString() ?? "None",
-        ActiveCoreConfig = _activeCoreConfig,
-        ConnectedChannelId = _connected.CurrentChannelId > 0 ? _connected.CurrentChannelId.ToString() : null,
-        ConnectedMode = _connected.Mode != ConnectionMode.None ? _connected.Mode.ToString() : null,
-        Axes = _axisStore.Snapshot(),
-        ChannelCursors = BuildChannelCursors(),
-        ChildSessionIds = _childSessionIds.ToArray(),
-        EffectiveParentId = EffectiveParentId,
-        ForwardedTo = ForwardedTo
-    };
+        new SnapshotPort("lifecycle", CaptureLifecycleSnapshot),
+        new SnapshotPort("step", CaptureStepSnapshot),
+        new SnapshotPort("context", CaptureContextSnapshot),
+        new SnapshotPort("core", CaptureCoreSnapshot),
+        new SnapshotPort("channel", CaptureChannelSnapshot),
+        new SnapshotPort("children", CaptureChildrenSnapshot),
+        new SnapshotPort("axes", CaptureAxesSnapshot)
+    });
 
     /// <summary>从 host 维护的各频道 state 取 LastConsumedMessageId 构造游标快照。</summary>
     private Dictionary<int, int> BuildChannelCursors()

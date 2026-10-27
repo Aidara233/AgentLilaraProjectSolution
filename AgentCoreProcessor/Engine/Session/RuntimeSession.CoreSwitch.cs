@@ -32,6 +32,11 @@ namespace AgentCoreProcessor.Engine.Session;
 /// </summary>
 internal partial class RuntimeSession
 {
+    private void CaptureCoreSnapshot(SnapshotWriter writer)
+    {
+        writer.Set(s => s.ActiveCoreConfig, _activeCoreConfig);
+    }
+
     /// <summary>
     /// 配置本 session 可用的 Core 白名单并选定活跃核。取代旧的 SetAgentCore。
     /// 白名单来自会话类型配置（Storage/Session/{type}.json 的 AllowedCores），实例在列表内切换。

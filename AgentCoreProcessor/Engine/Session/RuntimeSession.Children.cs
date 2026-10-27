@@ -32,6 +32,13 @@ namespace AgentCoreProcessor.Engine.Session;
 /// </summary>
 internal partial class RuntimeSession
 {
+    private void CaptureChildrenSnapshot(SnapshotWriter writer)
+    {
+        writer.Set(s => s.ChildSessionIds, _childSessionIds.ToArray());
+        writer.Set(s => s.EffectiveParentId, EffectiveParentId);
+        writer.Set(s => s.ForwardedTo, ForwardedTo);
+    }
+
     // ── 父子链辅助方法 ──
 
     internal void RemoveChildFromState(string childId)
