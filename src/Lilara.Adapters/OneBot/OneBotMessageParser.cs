@@ -5,7 +5,6 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Logging;
 using Newtonsoft.Json.Linq;
 
@@ -117,7 +116,7 @@ namespace AgentCoreProcessor.Adapter
                         {
                             try
                             {
-                                var (localPath, imgHash) = await ImageStorage.DownloadAndSaveAsync(imageUrl, adapter.HttpClient);
+                                var (localPath, imgHash) = await (adapter.MediaStore ?? throw new InvalidOperationException("Adapter media store is not configured")).DownloadAndSaveAsync(imageUrl, adapter.HttpClient);
 
                                 // 表情包识别：sub_type=1 或有 emoji_id → sticker
                                 var subType = segData["sub_type"]?.Value<int>() ?? 0;
@@ -126,7 +125,7 @@ namespace AgentCoreProcessor.Adapter
                                     ? "sticker" : "image";
 
                                 // 更新 ImageRecord 的 category
-                                await ImageStorage.SetCategoryAsync(imgHash, imgCategory);
+                                await adapter.MediaStore!.SetCategoryAsync(imgHash, imgCategory);
 
                                 attachments ??= new List<MessageAttachment>();
                                 var imgIndex = attachments.Count(a => a.Type == AttachmentType.Image);

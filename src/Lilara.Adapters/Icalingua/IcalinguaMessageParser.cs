@@ -5,7 +5,6 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Logging;
 using Newtonsoft.Json.Linq;
 
@@ -205,9 +204,9 @@ namespace AgentCoreProcessor.Adapter
 
             try
             {
-                var (localPath, hash) = await ImageStorage.DownloadAndSaveAsync(url, adapter.HttpClient);
+                var (localPath, hash) = await (adapter.MediaStore ?? throw new InvalidOperationException("Adapter media store is not configured")).DownloadAndSaveAsync(url, adapter.HttpClient);
                 var category = isFace ? "sticker" : "image";
-                await ImageStorage.SetCategoryAsync(hash, category);
+                await adapter.MediaStore!.SetCategoryAsync(hash, category);
                 return (new MessageAttachment
                 {
                     Type = AttachmentType.Image,

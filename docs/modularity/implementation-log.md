@@ -364,3 +364,7 @@ IAdapter、AdapterAction、AdapterInstanceConfig、IncomingMessage、OutgoingMes
 ### Adapters：文件适配器媒体依赖注入
 
 FileAdapter 实现迁入 Lilara.Adapters/File，以构造委托归档附件；宿主 AdapterFactory 注入原 ImageStorage.CopyToStorageAsync。保留附件原顺序、无效路径与归档失败跳过；独立构造未提供归档器时明确跳过附件。Adapters 增加 Logging 引用，无宿主回指。新增临时 JSON 文件入站的假归档集成测试（成功/失败/缺文件及未注入）；相关4项通过。完整解决方案离线还原、构建及613项测试通过（主程序558、GraphRuntime38、GraphSandbox17），diff检查通过。未运行真实适配器平台/模型；既有依赖替代及弃用警告仍在。
+
+### Adapters：OneBot/Icalingua 实现迁移
+
+新增 IAdapterMediaStore 下载/分类端口，宿主 AdapterMediaStore 代理 ImageStorage，AdapterFactory 注入。OneBot/Icalingua 构造可选媒体端口；未配置时图片沿现有 catch 路径跳过。两个平台目录迁入 Lilara.Adapters，沿用 SocketIOClient 4.0.5/BouncyCastle.Cryptography 2.4.0。发送路径只依赖 BotOutputParser 的 @ 占位符常量，现抽为 InlineMentionProtocol，宿主解析器共用同一值。新增四项假媒体解析回归，验证下载→分类顺序、sticker、图片占位与缺端口跳过。完整 sln 离线还原/构建及617项测试通过（主程序562、GraphRuntime38、沙箱17），diff检查通过；未连接真实平台或模型。既有4项构建警告仍在。

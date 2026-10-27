@@ -22,7 +22,7 @@ namespace AgentCoreProcessor.Adapter
         private static OneBotAdapter CreateOneBot(AdapterInstanceConfig config)
         {
             var settings = config.Settings.ToObject<OneBotConfig>() ?? new OneBotConfig();
-            return new OneBotAdapter(config.Id, settings);
+            return new OneBotAdapter(config.Id, settings, new AdapterMediaStore());
         }
 
         private static FileAdapter CreateFile(AdapterInstanceConfig config)
@@ -49,7 +49,7 @@ namespace AgentCoreProcessor.Adapter
         private static IcalinguaAdapter CreateIcalingua(AdapterInstanceConfig config)
         {
             var settings = config.Settings.ToObject<IcalinguaConfig>() ?? new IcalinguaConfig();
-            return new IcalinguaAdapter(config.Id, settings);
+            return new IcalinguaAdapter(config.Id, settings, new AdapterMediaStore());
         }
     }
 }

@@ -8,6 +8,8 @@
     <InternalsVisibleTo Include="AgentCoreProcessor" />
     <InternalsVisibleTo Include="AgentCoreProcessor.Tests" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="SocketIOClient" Version="4.0.5" />
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.4.0" />
     <ProjectReference Include="..\Lilara.Logging\Lilara.Logging.csproj" />
   </ItemGroup>
 </Project>

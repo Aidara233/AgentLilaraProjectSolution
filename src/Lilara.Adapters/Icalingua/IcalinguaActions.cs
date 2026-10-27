@@ -5,7 +5,6 @@ using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
-using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -66,8 +65,8 @@ namespace AgentCoreProcessor.Adapter
             {
                 // 旧路径：Content + Mentions + Attachments（兼容非 Segments 调用方）
                 var content = message.Content ?? "";
-                var atDelim = BotOutputParser.AtDelimiter;
-                var atPrefix = BotOutputParser.AtPrefix;
+                var atDelim = InlineMentionProtocol.Delimiter;
+                var atPrefix = InlineMentionProtocol.Prefix;
 
                 if (content.Contains(atDelim))
                 {

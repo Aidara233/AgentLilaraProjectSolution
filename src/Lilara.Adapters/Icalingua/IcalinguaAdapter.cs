@@ -6,7 +6,6 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Logging;
 using Newtonsoft.Json.Linq;
 using SocketIOClient;
@@ -60,9 +59,12 @@ namespace AgentCoreProcessor.Adapter
         private DateTime? lastErrorAt;
         private readonly ConcurrentDictionary<string, TaskCompletionSource<object?>> pendingAcks = new();
 
-        public IcalinguaAdapter(string id, IcalinguaConfig config)
+        internal IAdapterMediaStore? MediaStore { get; }
+
+        public IcalinguaAdapter(string id, IcalinguaConfig config, IAdapterMediaStore? mediaStore = null)
         {
             Id = id;
+            MediaStore = mediaStore;
             this.config = config;
             parser = new IcalinguaMessageParser(this);
             actions = new IcalinguaActions(this);

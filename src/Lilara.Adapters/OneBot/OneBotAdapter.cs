@@ -8,7 +8,6 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Logging;
 using AgentLilara.PluginSDK.Services;
 using Newtonsoft.Json;
@@ -60,10 +59,12 @@ namespace AgentCoreProcessor.Adapter
         private readonly OneBotActions actions;
 
         internal OneBotActions Actions => actions;
+        internal IAdapterMediaStore? MediaStore { get; }
 
-        public OneBotAdapter(string id, OneBotConfig config)
+        public OneBotAdapter(string id, OneBotConfig config, IAdapterMediaStore? mediaStore = null)
         {
             Id = id;
+            MediaStore = mediaStore;
             this.config = config;
             this.configPath = null;
             parser = new OneBotMessageParser(this);

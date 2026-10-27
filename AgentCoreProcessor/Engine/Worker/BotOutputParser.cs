@@ -9,8 +9,8 @@ namespace AgentCoreProcessor.Engine
     /// </summary>
     internal static class BotOutputParser
     {
-        public const char AtDelimiter = '\x01';
-        public const string AtPrefix = "AT:";
+        public const char AtDelimiter = Adapter.InlineMentionProtocol.Delimiter;
+        public const string AtPrefix = Adapter.InlineMentionProtocol.Prefix;
 
         private static readonly Regex AtTagRegex =
             new(@"<at\s+user=""([^""]+)""\s*/>", RegexOptions.Compiled);
