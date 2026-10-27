@@ -42,7 +42,19 @@ internal partial class SessionEngine
         }
     }
 
-    /// <summary>按活跃 session 查找其所在池（compact TakeOver 用）。无池返回 null。</summary>
+    /// <summary>按旧成员定位接管顶层或子池，活跃身份与新成员索引在同一锁内发布。</summary>
+    internal bool TakeOverSessionPool(string oldSessionId, string newSessionId)
+    {
+        lock (_poolLock)
+        {
+            if (!_poolByMember.TryGetValue(oldSessionId, out var pool)) return false;
+            pool.TakeOver(newSessionId);
+            _poolByMember[newSessionId] = pool;
+            return true;
+        }
+    }
+
+    /// <summary>按成员查找所在池。无池返回 null。</summary>
     private SessionPool? FindPoolBySession(string sessionId)
     {
         lock (_poolLock)

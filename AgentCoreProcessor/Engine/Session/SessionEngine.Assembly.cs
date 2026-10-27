@@ -219,8 +219,7 @@ internal partial class SessionEngine
         // 新 session 创建后 connect_channel 会幂等命中（SessionPool.Claim 同 id 重入成功），
         // 不再有 claim 短暂释放的中间态（原 ReleaseSessionClaims → 重新 claim）。
         var newId = Guid.NewGuid().ToString("N")[..12];
-        var oldPool = FindPoolBySession(oldSession.SessionId);
-        oldPool?.TakeOver(newId);
+        TakeOverSessionPool(oldSession.SessionId, newId);
 
         // spec.InputPorts 留空：build port spec 全靠 InitActions.connect_channel 在 BootstrapAsync
         // 阶段一次性完成 claim + 订阅 + 频道上下文载入 —— 与 escalate 路径行为对齐，

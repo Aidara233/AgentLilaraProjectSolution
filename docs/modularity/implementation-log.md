@@ -500,3 +500,7 @@ JournalDto兼容新增可选OccurredAt，WriterAccessImpl原样映射内部请�
 ### C3：移除 RuntimeSession 的具体引擎回指
 
 RuntimeSession 注入 compact/escalate 的 Func<string,Task>，创建与恢复由 SessionEngine 闭包绑定原方法；删除具体 SessionEngine 字段与 SetSessionEngine。CompactTool 仅持有会话 id 与操作委托，不再持有会话/引擎实例。保留摘要原文、异步等待、失败文本、升级失败保活与 compact 工具注入行为。新增9项回归；完整sln构建与752项测试通过（主程序642、邮件52、GraphRuntime41、沙箱17），diff检查通过。仅移除具体类型回指，闭包仍由装配根持有原操作；频道占用权威C12、完整模块迁移及D1/D5仍未完成。未运行真实模型/平台冒烟。
+
+### C12前置：compact接管原子更新
+
+新增TakeOverSessionPool按旧成员定位，在_poolLock内同时更新池活跃身份/Members与新成员索引，CreateFromCompact不再锁外TakeOver。支持顶层和无频道子池，无池返回false并保留原创建路径。新增3项回归覆盖新旧id即时解析、子/孙关系、旧id释放不撤销新claim、幂等claim和无池不预定。完整sln构建与755项测试通过（主程序645、邮件52、GraphRuntime41、沙箱17），diff检查通过。未验证新会话创建失败回滚或真实模型compact；占用状态提纯和C12整体仍待继续。
