@@ -22,7 +22,7 @@
 | `c54c2bf` | **B-1** `RuntimeSession` 拆 partial：inbox / output / activation | ✅ | 441 pass | 无（纯文件拆分） |
 | `9f00978` | **B-5** 拆 partial：lifecycle / children | ✅ | 441 pass | 无 |
 | `ecea9bf` | **B-3a** 拆 partial：core-switch | ✅ | 441 pass | 无 |
-| — | **B-3b**（components + bootstrap）**已回滚** | 见下 | — | — |
+| `3fd8471` | **B-3b（重做）** 拆 partial：components（一刀一 build） | ✅ | 441 pass | 无 |
 
 测试从 385 → **441**，净增 56 条，全部是纯内存单测（不建会话、不碰存储、不调模型）。
 
@@ -63,11 +63,25 @@
 
 ## 下一步
 
-| 顺序 | 内容 |
-|---|---|
-| 1 | **B**：session 拆 20 部件（切文件，不切 csproj） |
-| 2 | **C**：拆 16 个 csproj |
-| 3 | **D**：影子图对拍 → 内置图 JSON 化 |
+| 顺序 | 内容 | 状态 |
+|---|---|---|
+| 1 | **B**：session 拆 20 部件（切文件，不切 csproj） | 进行中（7 个部件已落地） |
+
+### B 阶段进度
+
+| 批次 | 切什么 | 状态 |
+|---|---|---|
+| B-1 | `inbox` + `output` + `activation` | ✅ `c54c2bf` |
+| B-5 | `lifecycle` + `children` | ✅ `9f00978` |
+| B-3a | `core-switch` | ✅ `ecea9bf` |
+| B-3b | `components` | ✅ `3fd8471`（重做，见下） |
+| B-3b' | `bootstrap`（含 `ApplyToolEffectAsync` 接线） | 待做 |
+| B-3b'' | `Enable/Disable/ToggleComponentAsync` 三件 | 待做 |
+| B-4 | `step` 拆方法（12 阶段） | 待做 |
+| B-2 | `snapshot` + `ISnapshotPort` | 待做（**必须最后**） |
+| B-6 | `SessionEngine` 的 8 个 Singleton | 待做 |
+
+当前 `RuntimeSession` 家族：主文件 **1212 行** + 7 个部件文件共 674 行。
 
 B 的前置条件已经具备：`step` 的 12 阶段表、`ToolEffectInterpreter` 纯函数、`ISnapshotPort` 的设计（D3 定为扁平 payload）、H1/H2 两处反向数据流已消除。
 
