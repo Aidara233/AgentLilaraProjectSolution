@@ -144,6 +144,10 @@ internal sealed class KeywordGraphRunner
 
     private void LogDataFlow(EvalContext context, bool success, IReadOnlyList<string> unresolved, string? errorType = null)
     {
+        // A solve exception leaves instance.Last* describing the previous beat.
+        // Only consume sink ledgers when Run completed for this context.
+        var completed = ReferenceEquals(_graph.LastResult?.Context, context);
+        var outcomes = completed ? _graph.LastSinkOutcomes : Array.Empty<SinkOutcome>();
         Logging.Signal.Event(Logging.LogGroup.Engine, "graph.flow.beat", new
         {
             classId = _graph.Class.ClassId,
@@ -151,6 +155,16 @@ internal sealed class KeywordGraphRunner
             traceId = context.TraceId,
             seq = context.Seq,
             success,
+            solveSuccess = success,
+            executionSuccess = success && completed && outcomes.All(outcome => outcome.Success),
+            sinkOutcomes = outcomes.Select(outcome => new
+            {
+                outcome.NodeId, outcome.Success, outcome.ErrorType,
+                error = outcome.ErrorType is null ? outcome.Error : null
+            }).ToArray(),
+            suppressedSinks = completed ? _graph.LastSuppressedSinks : Array.Empty<string>(),
+            firedSinks = completed ? _graph.LastSinkInvocations.Select(sink => sink.NodeId).ToArray() : Array.Empty<string>(),
+            intentCount = completed ? context.Intents.Count : 0,
             errorType,
             unresolved,
             evaluationOrder = context.EvaluationOrder,

@@ -118,7 +118,7 @@ public sealed class ModuleMethodNode : INode, ISinkExecutor, IOptionalInputs
         }
         catch (Exception ex)
         {
-            return SinkOutcome.Failed(Id, $"module '{_module.Id}' method '{_descriptor.Name}' threw: {ex.Message}");
+            return SinkOutcome.Failed(Id, $"module '{_module.Id}' method '{_descriptor.Name}' threw: {ex.Message}") with { ErrorType = ex.GetType().Name };
         }
 
         return SinkOutcome.Ok(Id, MapOutputs(returned));
@@ -319,7 +319,7 @@ public sealed class ModulePropertyWriteNode : INode, ISinkExecutor
         }
         catch (Exception ex)
         {
-            return SinkOutcome.Failed(Id, $"module '{_module.Id}' property '{_descriptor.Name}' threw: {ex.Message}");
+            return SinkOutcome.Failed(Id, $"module '{_module.Id}' property '{_descriptor.Name}' threw: {ex.Message}") with { ErrorType = ex.GetType().Name };
         }
 
         return SinkOutcome.Ok(Id, Empty);

@@ -116,7 +116,7 @@ public sealed class GraphInstance
             }
             catch (Exception ex)
             {
-                outcomes.Add(SinkOutcome.Failed(invocation.NodeId, ex.Message));
+                outcomes.Add(SinkOutcome.Failed(invocation.NodeId, ex.Message) with { ErrorType = ex.GetType().Name });
             }
         }
 

@@ -5,6 +5,8 @@ namespace AgentLilara.GraphRuntime.Graph;
 /// </summary>
 public sealed record SinkOutcome(string NodeId, bool Success, IReadOnlyDictionary<string, Cell> Outputs, string? Error)
 {
+    public string? ErrorType { get; init; }
+
     public static SinkOutcome Ok(string nodeId, IReadOnlyDictionary<string, Cell> outputs) =>
         new(nodeId, true, outputs, null);
 

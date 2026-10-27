@@ -41,9 +41,10 @@ public sealed class GraphFlowDatabaseTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task RunnerPersistsFlowIdentityStateAndFailureNode(bool fails)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task RunnerPersistsFlowIdentityStateAndFailureNode(bool fails, bool sinkFails)
     {
         var root = Path.Combine(Path.GetTempPath(), "flow-db-" + Guid.NewGuid().ToString("N"));
         var writerField = typeof(SignalContext).GetField("_writer", BindingFlags.NonPublic | BindingFlags.Static)!;
@@ -62,7 +63,7 @@ public sealed class GraphFlowDatabaseTests
                 {
                     signalId = signal.SignalId;
                     var graph = new GraphClass("user.flow-test", GraphKind.Static,
-                        new INode[] { new OnMessageEvent("in"), new FlowNode(fails) },
+                        new INode[] { new OnMessageEvent("in"), sinkFails ? new FailingSink() : new FlowNode(fails) },
                         new[] { new Link("in", "event", "consumer", "event") });
                     var runner = KeywordGraphRunner.ForInstance(new GraphInstance(graph, "instance-test"), false);
                     await runner.EvaluateAsync(InboundEvent.Message("test", "42", "private-body", ChannelKind.Group), "trace-test");
@@ -85,6 +86,19 @@ public sealed class GraphFlowDatabaseTests
             Assert.Equal("graph-keyword:trace-test", (string?)detail["traceId"]);
             Assert.True((long)detail["seq"]! > 0);
             Assert.Equal(!fails, (bool)detail["success"]!);
+            Assert.Equal(!fails, (bool)detail["solveSuccess"]!);
+            Assert.Equal(!fails && !sinkFails, (bool)detail["executionSuccess"]!);
+            if (sinkFails)
+            {
+                var outcome = Assert.Single((JArray)detail["sinkOutcomes"]!);
+                Assert.Equal("consumer", (string?)outcome["NodeId"]);
+                Assert.False((bool)outcome["Success"]!);
+                Assert.Equal(nameof(InvalidOperationException), (string?)outcome["ErrorType"]);
+                Assert.Null((string?)outcome["error"]);
+                Assert.DoesNotContain("private-sink-payload", beat.Detail!);
+                Assert.Equal("consumer", (string?)Assert.Single((JArray)detail["firedSinks"]!));
+            }
+            else Assert.Empty((JArray)detail["sinkOutcomes"]!);
             var transfer = Assert.Single((JArray)detail["transfers"]!);
             Assert.Equal("in", (string?)transfer["FromNode"]);
             Assert.Equal("consumer", (string?)transfer["ToNode"]);
@@ -106,6 +120,21 @@ public sealed class GraphFlowDatabaseTests
                 Microsoft.Data.Sqlite.SqliteConnection.ClearPool(poolKey);
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
+    }
+
+    private sealed class FailingSink : INode, ISinkExecutor
+    {
+        public string Id => "consumer";
+        public NodeKind Kind => NodeKind.Sink;
+        public IReadOnlyList<string> InputPorts => new[] { "event" };
+        public IReadOnlyList<string> OutputPorts => Array.Empty<string>();
+        public IReadOnlyDictionary<string, Cell> Evaluate(IReadOnlyDictionary<string, Cell> inputs, EvalContext context)
+        {
+            context.SinkCandidates.Add(new SinkCandidate(Id, inputs, true));
+            return new Dictionary<string, Cell>();
+        }
+        public SinkOutcome Execute(IReadOnlyDictionary<string, Cell> args, EvalContext context) =>
+            throw new InvalidOperationException("private-sink-payload");
     }
 
     private sealed class FlowNode(bool fails) : INode

@@ -448,3 +448,7 @@ ModuleHost新增BindInstance(moduleId, instanceId, implementation)，原Bind及I
 ### C4：文件工具基类上收 SDK
 
 FileToolBase原文迁入PluginSDK并保留FileToolKit.Shared命名空间；旧共享库仅TypeForwardedTo兼容旧插件二进制。DocumentTools/FileOps/FileTools删除共享库项目引用，插件边界检查收紧为只允许SDK项目引用。新增可卸载ALC类型转发/同一SDK类型身份测试，确认兼容壳无本地类型定义。完整sln离线还原、构建和671项测试通过（主程序561、邮件52、GraphRuntime41、沙箱17），diff检查通过。未用既有旧插件DLL执行真实热加载；Llm/Turn离线NU1603与TestHost弃用警告仍在，C/D及全面日志迁移仍未完成。
+
+### 图数据流日志：区分求解与汇块执行
+
+保留SolveResult.Success与原success字段的求解语义，graph.flow.beat新增solveSuccess/executionSuccess、sinkOutcomes、firedSinks、suppressedSinks与intentCount。SinkOutcome增加可选ErrorType，GraphInstance及模块节点异常记录类型；有异常类型时日志省略异常消息以避免载荷正文。读取台账前核对LastResult.Context身份，防止求解抛错时误取上一拍台账。临时SQLite测试覆盖求解成功但汇块失败，验证节点/类型/失败标志及异常正文不泄漏。完整sln构建、672项测试通过（主程序562、邮件52、GraphRuntime41、沙箱17），diff检查通过。未验证WebUI展示或真实模型/适配器；D1全路径对拍与全面旧信号迁移仍未完成。
