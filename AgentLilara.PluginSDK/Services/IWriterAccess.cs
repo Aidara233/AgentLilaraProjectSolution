@@ -57,5 +57,7 @@ namespace AgentLilara.PluginSDK.Services
         public int? ChannelId { get; set; }
         public int? SessionId { get; set; }
         public string? EmotionSignalsJson { get; set; }
+        /// <summary>可选发生时间；省略时由写入服务使用当前时间。</summary>
+        public System.DateTime? OccurredAt { get; set; }
     }
 }

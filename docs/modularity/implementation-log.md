@@ -492,3 +492,7 @@ SDK新增IChannelConnectionAccess，SessionEngine暂实现claim/release/subscrib
 ### C3前置：退出事实查询端口
 
 SDK新增ISessionExitQuery，SessionEngine复用原子会话/资源查询实现；RuntimeSession单独注入，BuildToolEffectContextAsync保持先子会话、再资源、仅资源不阻塞时查询组件。创建与恢复均显式注入。新增3项回归验证事实值/查询顺序/真实组件短路及无服务默认值。完整sln构建与736项测试通过（主程序626、邮件52、GraphRuntime41、沙箱17），diff检查通过。升级、等待经历和compact的具体引擎依赖仍在，C3尚未完成；未做真实模型/适配器冒烟。
+
+### C3前置：wait经历使用SDK写入口
+
+JournalDto兼容新增可选OccurredAt，WriterAccessImpl原样映射内部请求，省略仍保留Writer默认当前时间。RuntimeSession通过Func<IWriterAccess?>动态获取写入口，创建/恢复均由宿主装配原WriterAccessImpl；wait不再访问_sessionEngine.Mind。保留情绪前缀、无服务跳过、本地发生时间和异常吞日志。新增7项定向回归覆盖解析边界、时间、动态替换/异常及内部映射。完整sln构建及743项测试通过（主程序633、邮件52、GraphRuntime41、沙箱17），diff检查通过。未调用真实模型/适配器；compact/升级具体引擎依赖、C整体及D1/D5仍未完成。

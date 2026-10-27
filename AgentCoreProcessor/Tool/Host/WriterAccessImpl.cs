@@ -67,6 +67,7 @@ namespace AgentCoreProcessor.Tool.Host
             ChannelId = dto.ChannelId,
             SessionId = dto.SessionId,
             EmotionSignalsJson = dto.EmotionSignalsJson,
+            OccurredAt = dto.OccurredAt,
         };
     }
 }

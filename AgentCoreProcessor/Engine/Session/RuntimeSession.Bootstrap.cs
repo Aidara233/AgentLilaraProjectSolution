@@ -182,8 +182,8 @@ internal partial class RuntimeSession
     {
         try
         {
-            var mind = _sessionEngine?.Mind;
-            if (mind?.Writer == null) return;
+            var writer = _writerAccess?.Invoke();
+            if (writer is null) return;
 
             var content = raw.Trim();
             string? signalsJson = null;
@@ -211,7 +211,7 @@ internal partial class RuntimeSession
                     signalsJson = $"[{string.Join(",", signals)}]";
             }
 
-            var req = new Mind.WriteJournalRequest
+            var req = new JournalDto
             {
                 Content = content,
                 Kind = "Experience",
@@ -219,9 +219,9 @@ internal partial class RuntimeSession
                 EmotionSignalsJson = signalsJson,
                 OccurredAt = DateTime.Now,
             };
-            await mind.Writer.WriteBatchAsync(new Mind.WriteBatchRequest
+            await writer.WriteBatchAsync(new WriteBatchDto
             {
-                Journals = new List<Mind.WriteJournalRequest> { req },
+                Journals = new List<JournalDto> { req },
             });
         }
         catch (Exception ex)

@@ -47,6 +47,7 @@ internal partial class SessionEngine
         session.SetSessionEngine(this);
         session.SetChannelConnectionAccess(this);
         session.SetSessionExitQuery(this);
+        session.SetWriterAccess(() => Mind?.Writer is { } writer ? new AgentCoreProcessor.Tool.Host.WriterAccessImpl(writer) : null);
         session.OnCompleted += OnRuntimeSessionCompleted;
         InitializeGraphMount(session);
 
@@ -397,6 +398,7 @@ internal partial class SessionEngine
                 session.SetSessionEngine(this);
                 session.SetChannelConnectionAccess(this);
                 session.SetSessionExitQuery(this);
+                session.SetWriterAccess(() => Mind?.Writer is { } writer ? new AgentCoreProcessor.Tool.Host.WriterAccessImpl(writer) : null);
                 session.OnCompleted += OnRuntimeSessionCompleted;
 
                 // 复活善后：订阅重建 session 的完成事件
