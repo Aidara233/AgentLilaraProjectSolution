@@ -65,7 +65,8 @@ namespace AgentCoreProcessor
             if (fileMode || testMode)
             {
                 var fileDir = Path.Combine(PathConfig.StoragePath, "FileAdapter");
-                fileAdapter = new FileAdapter("file-test", fileDir, pollIntervalMs: 2000);
+                fileAdapter = new FileAdapter("file-test", fileDir, pollIntervalMs: 2000,
+                    archive: ImageStorage.CopyToStorageAsync);
                 adapterManager.RegisterAdapter(fileAdapter);
             }
 
@@ -91,7 +92,8 @@ namespace AgentCoreProcessor
                     catch { }
                 }
                 httpCfg ??= new HttpBridgeConfig();
-                adapterManager.RegisterAdapter(new HttpBridgeAdapter("http", httpCfg));
+                adapterManager.RegisterAdapter(new HttpBridgeAdapter("http", httpCfg, httpPath,
+                    AgentCoreProcessor.Util.TimeUtil.ToLocalSafe));
                 Console.WriteLine($"[dev] 自包含调试模式：HttpBridge http://localhost:{httpCfg.Port}（默认频道 {httpCfg.DefaultChannel}），不连接外部平台。用 LilaraConsoleClient 或 curl /api/send 驱动。");
             }
 

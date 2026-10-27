@@ -384,3 +384,7 @@ AdapterManager迁入Lilara.Adapters，构造注入配置目录与创建工厂，
 ### Adapters：工厂显式装配参数
 
 AdapterFactory改实例并迁入Lilara.Adapters，注入Storage根目录、IAdapterMediaStore、文件归档委托与时间转换；生产和测试宿主显式构造工厂并传Create。新增4项回归覆盖默认文件目录、旧/新配置键优先级、HTTP重载配置路径、平台选择与媒体端口传递（不连接平台）。完整解决方案构建与635项测试通过（主程序580、图运行时38、沙箱17），diff检查通过。未启动真实平台/模型；宿主仍保留ImageStorage及两个端口适配器，C/D与完整日志迁移继续。
+
+### 启动直接构造路径注入补齐
+
+Program --file/--test 直接构造FileAdapter补传原图片归档器；--dev直接构造HttpBridge补传http.json路径与TimeUtil转换，避免绕过工厂时丢失依赖。完整解决方案构建、635项测试与diff检查通过；未运行真实启动或适配器收发。
