@@ -151,7 +151,8 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
                 new { sessionId = session.SessionId, channelId = firstChannel, claimed, claimer = GetFullClaimer(firstChannel) });
         }
 
-        // 构建 SessionAgentHost（同步）：InitActions 的 connect_channel 需要 host 已就绪才能挂载频道上下文
+        // 构建 SessionContextHost（同步）：InitActions 的 connect_channel 需要 host 已就绪才能挂载频道上下文
+        // ⚠️ 它是**上下文宿主**（Engine/Context），不是会话宿主；改名的理由见该类型的注释。
         try
         {
             var channelPorts = new List<(int channelId, string? channelName, bool preload)>();
@@ -166,9 +167,9 @@ internal class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessi
             var initialStateText = spec.InitialState is string s ? s
                 : spec.InitialState != null ? Newtonsoft.Json.JsonConvert.SerializeObject(spec.InitialState)
                 : null;
-            var host = new SessionAgentHost(channelPorts, initialStateText, svc);
-            session.SetAgentHost(host);
-            Signal.Event(LogGroup.Engine, "Session AgentHost 就绪",
+            var host = new SessionContextHost(channelPorts, initialStateText, svc);
+            session.SetContextHost(host);
+            Signal.Event(LogGroup.Engine, "Session 上下文宿主就绪",
                 new { sessionId = session.SessionId, channelPorts = channelPorts.Count });
         }
         catch (Exception ex)
@@ -1200,7 +1201,7 @@ InitialState = $"执行定时任务: {task.Description}"
                 // 恢复的 session 用原 SessionId 重新绑定自己的 session-scope 图实例。
                 InitializeGraphMount(session);
 
-                // ⑤ 重建 SessionAgentHost
+                // ⑤ 重建上下文宿主（Engine/Context）
                 try
                 {
                     var channelPorts = new List<(int channelId, string? channelName, bool preload)>();
@@ -1215,8 +1216,8 @@ InitialState = $"执行定时任务: {task.Description}"
                     var initialStateText = spec.InitialState is string s ? s
                         : spec.InitialState != null ? JsonConvert.SerializeObject(spec.InitialState)
                         : null;
-                    var host = new SessionAgentHost(channelPorts, initialStateText, svc);
-                    session.SetAgentHost(host);
+                    var host = new SessionContextHost(channelPorts, initialStateText, svc);
+                    session.SetContextHost(host);
                 }
                 catch (Exception ex)
                 {

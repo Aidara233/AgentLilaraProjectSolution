@@ -1,26 +1,34 @@
-// AgentCoreProcessor/Engine/Session/SessionAgentHost.cs
+// AgentCoreProcessor/Engine/Context/SessionContextHost.cs
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using AgentCoreProcessor.Database;
-using AgentCoreProcessor.Engine.Context;
 using AgentCoreProcessor.Models;
 using AgentCoreProcessor.Util;
 
-namespace AgentCoreProcessor.Engine.Session;
+namespace AgentCoreProcessor.Engine.Context;
 
 /// <summary>
-/// RuntimeSession 的上下文宿主。session 的认知 = 挂载的频道端口集合（每根贡献
-/// 频道信息+参与者+历史）+ InitialState。working/task 共用，差异只在传入的端口集合。
+/// 一个会话的**上下文宿主**：session 的认知 = 挂载的频道端口集合（每根贡献
+/// 频道信息 + 参与者 + 历史）+ InitialState。working / task 共用，差异只在传入的端口集合。
+///
+/// <para>⚠️ <b>它是上下文宿主，不是会话宿主</b>——名字里的 "Host" 曾让人以为是会话的生命周期宿主，
+/// 而它做的三件事全是上下文：<see cref="BuildStartAsync"/>（起始）、
+/// <see cref="BuildRoundAsync"/>（每轮）、<see cref="BuildChannelContextAsync"/>（连接频道时）。
+/// 所以它住在 <c>Engine/Context</c>，与 <see cref="ChannelContextService"/> 同域。</para>
+///
+/// <para>⚠️ <b>它按设计就不该被会话反向持有</b>：会话只通过 <c>SetContextHost</c> 注入一次，
+/// 之后只调它的方法、不读它的内部集合。这条约束是 A3 把它从 <c>Engine/Session</c> 搬出来的理由——
+/// 搬出来之后，"它属于上下文域"就由命名空间表达了，而不是靠注释。</para>
 /// </summary>
-internal class SessionAgentHost
+internal class SessionContextHost
 {
     private readonly List<(int channelId, string? channelName, bool preload)> _channelPorts;
     private readonly string? _initialState;
     private readonly ChannelContextService _svc;
     private readonly Dictionary<int, ChannelContextState> _states = new();
 
-    public SessionAgentHost(
+    public SessionContextHost(
         IReadOnlyList<(int channelId, string? channelName, bool preload)> channelPorts,
         string? initialState, ChannelContextService svc)
     {
@@ -59,7 +67,7 @@ internal class SessionAgentHost
         _channelPorts.RemoveAll(p => p.channelId == channelId);
     }
 
-    /// <summary>连接某频道时构建其上下文块（频道信息+参与者+历史），用于注入当前轮。</summary>
+    /// <summary>连接某频道时构建其上下文块（频道信息 + 参与者 + 历史），用于注入当前轮。</summary>
     public async Task<List<Message>> BuildChannelContextAsync(int channelId)
     {
         var msgs = new List<Message>();

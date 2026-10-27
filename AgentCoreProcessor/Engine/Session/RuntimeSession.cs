@@ -11,6 +11,7 @@ using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Core;
 using AgentCoreProcessor.Database;
 using AgentCoreProcessor.Engine.Axes;
+using AgentCoreProcessor.Engine.Context;
 using AgentCoreProcessor.Engine.Graph;
 using AgentCoreProcessor.Engine.Messaging;
 using AgentCoreProcessor.Engine.Modules;
@@ -84,9 +85,13 @@ internal class RuntimeSession : IRuntimeSession
     /// <summary>由 SessionEngine 在创建/恢复时绑定。</summary>
     internal void SetGraphRunners(IReadOnlyList<KeywordGraphRunner> runners) => _graphRunners = runners;
 
-    private SessionAgentHost? _host;
+    private SessionContextHost? _host;
 
-    public void SetAgentHost(SessionAgentHost host) => _host = host;
+    /// <summary>
+    /// 注入上下文宿主（由 <c>SessionEngine</c> 在创建/恢复时调一次）。
+    /// ⚠️ 它住在 <c>Engine/Context</c>：这是**上下文宿主**，不是会话宿主（见类型注释）。
+    /// </summary>
+    public void SetContextHost(SessionContextHost host) => _host = host;
 
     private ComponentHost? _componentHost;
     private string _componentLoopType = "channel";
