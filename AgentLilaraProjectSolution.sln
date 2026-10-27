@@ -99,6 +99,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lilara.Channel", "src\Lilar
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lilara.Adapters", "src\Lilara.Adapters\Lilara.Adapters.csproj", "{5C873405-9D28-4E0A-B0B0-E150C38C295A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lilara.Turn", "src\Lilara.Turn\Lilara.Turn.csproj", "{AF2AD107-8A21-4CF8-BA52-CDF48B90E54C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -649,6 +651,18 @@ Global
 		{5C873405-9D28-4E0A-B0B0-E150C38C295A}.Release|x64.Build.0 = Release|Any CPU
 		{5C873405-9D28-4E0A-B0B0-E150C38C295A}.Release|x86.ActiveCfg = Release|Any CPU
 		{5C873405-9D28-4E0A-B0B0-E150C38C295A}.Release|x86.Build.0 = Release|Any CPU
+		{AF2AD107-8A21-4CF8-BA52-CDF48B90E54C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AF2AD107-8A21-4CF8-BA52-CDF48B90E54C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AF2AD107-8A21-4CF8-BA52-CDF48B90E54C}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{AF2AD107-8A21-4CF8-BA52-CDF48B90E54C}.Debug|x64.Build.0 = Debug|Any CPU
+		{AF2AD107-8A21-4CF8-BA52-CDF48B90E54C}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{AF2AD107-8A21-4CF8-BA52-CDF48B90E54C}.Debug|x86.Build.0 = Debug|Any CPU
+		{AF2AD107-8A21-4CF8-BA52-CDF48B90E54C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AF2AD107-8A21-4CF8-BA52-CDF48B90E54C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AF2AD107-8A21-4CF8-BA52-CDF48B90E54C}.Release|x64.ActiveCfg = Release|Any CPU
+		{AF2AD107-8A21-4CF8-BA52-CDF48B90E54C}.Release|x64.Build.0 = Release|Any CPU
+		{AF2AD107-8A21-4CF8-BA52-CDF48B90E54C}.Release|x86.ActiveCfg = Release|Any CPU
+		{AF2AD107-8A21-4CF8-BA52-CDF48B90E54C}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -692,6 +706,7 @@ Global
 		{88446BB2-981E-4B8A-818B-E902E10B65FB} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{5898BD35-4771-42A4-8C29-0F3E5272B203} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{5C873405-9D28-4E0A-B0B0-E150C38C295A} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{AF2AD107-8A21-4CF8-BA52-CDF48B90E54C} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {8CEA9C9A-F71A-47CA-9F61-06EB3E4ED44F}

@@ -388,3 +388,7 @@ AdapterFactory改实例并迁入Lilara.Adapters，注入Storage根目录、IAdap
 ### 启动直接构造路径注入补齐
 
 Program --file/--test 直接构造FileAdapter补传原图片归档器；--dev直接构造HttpBridge补传http.json路径与TimeUtil转换，避免绕过工厂时丢失依赖。完整解决方案构建、635项测试与diff检查通过；未运行真实启动或适配器收发。
+
+### C1：Lilara.Turn 原生工具流首切
+
+NativeToolCallHandler与ModelOutput迁入Lilara.Turn，直接引用PluginSDK替代宿主global using，依赖Lilara.Llm协议类型；保留命名空间/internal及友元访问。新增3项流解析回归覆盖参数分片、schema顺序、缺参数、无schema输入顺序、原始JSON、思考文本、空调用及畸形JSON回退。完整sln离线还原和构建成功，638项测试通过（主程序583、GraphRuntime38、沙箱17），diff检查通过。新库继承Llm两项离线NU1603警告，连同既有CA2022/SYSLIB0050仍未解决；未调用真实模型。Turn调用/工具执行编排仍在宿主，C/D与全面日志迁移未完成。
