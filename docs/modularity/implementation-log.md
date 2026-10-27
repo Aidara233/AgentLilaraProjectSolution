@@ -7,6 +7,10 @@
 
 ## 已完成
 
+### C：计数消息端口迁入 Lilara.Session
+
+从 MessageEngine 文件提取 MessageInputPort 原实现到 Lilara.Session，保留旧命名空间，避免改变纯 Channel 库依赖。会话激活/排空和图影子消费者使用同一模块类型。三项测试验证计数是重置以来的入队次数（Receive 不减、Reset 不消费）、取消后仍可收新消息、八个并发写者的 800 条消息全部保留且计数一致。完整构建 0 错误，6 条 NU1603 与既有测试宿主 SYSLIB0050；全量 848 项通过（主程序 738、邮件 52、图运行时 41、图沙箱 17），包含原激活影子回归。并发 Reset/Enqueue 的既有计数窗口未改变，未宣称与队列当前长度相等。
+
 ### C：会话模型调用端口
 
 Lilara.Turn 新增 IAgentModel/AgentModelBinding，并接收 AgentInvokeRequest；RuntimeSession 的活跃模型、缓存、RoundContext 和调用/格式能力查询均改用端口。宿主 AgentCoreModelAdapter 负责具体 Core 构造、CallerTag、兼容默认工具绑定，以及请求体捕获 → 调用 → 成功后立即 shadow observe。创建/恢复两路均在 ConfigureCores 前注入工厂，实例创建后禁止替换工厂。类型白名单、大小写缓存、会话提示词和每轮成对锁定保持。
