@@ -332,3 +332,7 @@ ChannelConfig 与纯 ChannelContextState 原文迁入 src/Lilara.Channel。新�
 ### 频道领域：参与者派生
 
 ParticipantView 与消息发送者/用户/人物快照及 IParticipantSource/ParticipantService 进入 Lilara.Channel，不引用数据库实体或模型协议。宿主 ParticipantSourceAdapter 对旧 IChannelDataSource 查询结果做字段映射，ChannelContextService 委托领域服务。保留数据源顺序、发送者去重、bot/无效用户过滤、姓名优先级与 Unknown=0 默认。新增逐字渲染与缺失人物/用户边界回归，主程序构建、528 项测试、diff --check 通过。整个 IChannelDataSource 及媒体/历史格式化仍待解耦，未跑真实模型/适配器冒烟。
+
+### C 阶段整解决方案验证
+
+完整 sln 离线缓存还原、构建与全部测试真实退出码均为 0。构建 0 错误/4 警告；主程序 528、GraphRuntime 38、GraphSandbox 17，共 583 项通过。详情及未验证范围见 verification-report.md 的对应节。未联网、未运行真实模型/适配器；包审计信息不能因离线警告减少认定已修复。

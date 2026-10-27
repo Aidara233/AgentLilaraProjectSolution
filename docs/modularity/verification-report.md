@@ -100,3 +100,15 @@
 - 已关闭的 23 项里，都指到了具体文件与行号；其中 Q28（156 行）与 Q30（113 行）是**读过正文**的，Q3/Q15/Q16 是**通读 986–1305 全文**后定的。
 - `AgentLilaraCode` 侧只读了 `Axes.cs`、`SystemBlock.cs`、`FloatingContextTool.cs`、`PromptContribution.cs`、`Stepper.cs`（结构与关键段）、`Reclaim.cs`/`ContextCompaction.cs`（头部与互引）、`PluginHost.cs`（相关段）、`docs/07-轴插件接入.md`。**未读 `Stepper.StepAsync` 的 506 行正文**。
 - 因此 D1–D8 是**判断与权衡**，不是阅读能解决的；若你要更硬的依据，只有几条路：编译、跑测试、或继续读 `StepAsync` 全文。
+
+## C 阶段整解决方案离线验证
+
+在提交 `40f4cfc` 后执行完整解决方案检查：
+
+- `dotnet restore AgentLilaraProjectSolution.sln --source <本地空目录> --ignore-failed-sources`：退出码 0，依赖来自本机缓存，未联网。
+- `dotnet build AgentLilaraProjectSolution.sln --no-restore`：退出码 0，0 错误、4 警告，覆盖插件及新增库。
+- `dotnet test AgentLilaraProjectSolution.sln --no-restore --no-build`：退出码 0；主程序 528、GraphRuntime 38、GraphSandbox 17，共 583 项通过，无失败/跳过。
+
+警告：Lilara.Llm 的两个 Microsoft.Extensions 间接依赖缺少缓存版本 10.0.3，解析为 10.0.5（NU1603）；PluginLoader 的 CA2022、测试 TestHost 的 SYSLIB0050 仍存在。离线还原未获取最新漏洞审计数据，不能据此判断此前包漏洞已消失。
+
+本次未运行真实模型、OCR/ONNX、适配器收发或 WebUI 冒烟。编译与测试通过不代表 C 全部拆分、D1 全路径对拍、D2 内置路径迁移或全面信号日志改造已完成。
