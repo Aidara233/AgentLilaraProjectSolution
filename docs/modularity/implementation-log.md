@@ -201,3 +201,39 @@ B 的前置条件已经具备：`step` 的 12 阶段表、`ToolEffectInterpreter
 - 行号搬运的偏移量**每次切割后都会变**，不能复用上一轮记下的行号；
 - **一次只切一刀，切完立刻 build**，不要连切两组再统一编译；
 - 更有抗性的做法：**按方法签名定位**（先 `grep -n` 重新取当前行号），而不是沿用旧数字。
+
+---
+
+## B-4 主循环拆分进度（RunAsync 342 → 241 行）
+
+| 批次 | 抽出的方法 | 状态 | RunAsync |
+|---|---|---|---|
+| — | （起点） | — | 342 |
+| B-4a | `InjectContinueReminderAsync` | ✅ `32e7521` | 327 |
+| B-4b | `InterpretToolEffectsAsync` + `DecideStepAction` + `StepAction`/`ToolBatchOutcome` | ✅ `9b0c725` | 302 |
+| B-4c | `ExecuteToolsAsync` | ✅ `2384f45` | 285 |
+| B-4d | `InvokeModelAsync` | ✅ `8188e1b` | 268 |
+| B-4g | `DrainMidRoundAsync` | ✅ `0441d2d` | **241** |
+| **B-4e** | `PrepareInferenceAsync`（推理前准备 + 压缩锁定 mutation） | ⬜ 未做 | — |
+| **B-4f** | 入口三段（`AwaitActivation` / 组件通知 / `CollectInput`） | ⬜ **故意留最后** | — |
+
+### 两个决策记录
+
+**1. B-4d 的风险被设计消掉了，不是被绕过去**
+映射表里它被标成最高风险，因为 `roundSpan` 的 `using` 覆盖「模型调用 + 工具执行」两段。
+实际做法是**把 span 留在主循环、作为参数传进 `ExecuteToolsAsync`**——
+`using` 的生命周期一个字节没变，风险归零。风险来自"搬 span"，不搬就没有。
+
+**2. B-4f 故意不做**
+它要动 `awaitingInput` 与 `StepAction` 的交互，而那是 express 会话"被动等待"的根。
+这类错误**编译能过、481 个单测全绿、只有冒烟能发现**——
+而当前环境的冒烟**覆盖不到** express 被动等待（没有有效模型凭据，不会有真实回复）。
+所以 B-4f 应留给能跑真实模型调用的环境。
+
+### 这一轮被编译器抓到三次
+
+| 次 | 症状 | 教训 |
+|---|---|---|
+| B-4c | 抽出方法后 `output.ToolCalls` 变得可能为空（CS8602/CS8604） | 不用 `!` 糊：把 `calls` 作为显式参数，让非空保证跟着参数走 |
+| B-4d | `ModelOutput?` 不能隐式转 `ModelOutput`，`!` 也无效 | `ModelOutput` 是 `readonly struct` ⇒ `Nullable<T>`，要 `.Value` |
+| B-4g | 少一个收尾大括号（CS1513） | 行号搬运时括号计数靠编译器兜底，切完立刻 build |
