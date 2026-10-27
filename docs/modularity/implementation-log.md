@@ -320,3 +320,7 @@ Engine/Source 三文件迁入 src/Lilara.Recurring，保留命名空间与源码
 ### Recurring：心跳调度服务
 
 TimerEngine 心跳循环提取到 Lilara.Recurring/HeartbeatService，通过委托发布 tick、查询 Session 存活及发送告警，注入 now/delay 支持虚拟时间验证。保留 240 秒默认、timer-interval 下一次延迟生效、离线严格超过一小时单次告警、恢复重置及取消/停止行为；生命周期日志和告警投递留宿主。主程序编译、523 项测试、diff --check 通过；新增四项虚拟时间回归。未进行真实周期等待或适配器告警发送冒烟。既有 NU1603/CA2022/SYSLIB0050 验证限制仍在。
+
+### C1：Lilara.Session 资源池与规则首切
+
+SessionPool、SessionResourceRegistry、ToolEffectInterpreter、ConnectedChannelState 与 StepPhase/StepAction/ToolBatchOutcome 提取至 src/Lilara.Session，依赖 SDK 与 Logging，保留命名空间/internal，通过友元宿主/测试过渡。StepPhase.cs 中依赖宿主 AgentCore 的 RoundContext 独立留宿主，避免库回指。其余四文件原文迁移，状态/规则未变。离线还原、主程序构建与 523 项主程序测试通过；SessionEngine/RuntimeSession、资源重建编排和占用归属仍留宿主，尚未完成 Session 整体提取或频道占用唯一所有者改造。未做真实模型/适配器冒烟。
