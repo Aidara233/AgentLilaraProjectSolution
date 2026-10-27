@@ -464,3 +464,7 @@ CommandConfig及CommandResult/CommandStep纯类型进入Lilara.Commands，Comman
 ### Vision：阶段配置迁移
 
 PhaseConfig原文迁入Lilara.Vision/Config，默认提示与Load/Save行为保持，宿主路径依赖的VisionEngineConfig未迁。完整sln构建成功，4项定向测试通过：缺文件写入/返回默认、有效配置Unicode往返、null/损坏回退且不覆盖原文；diff检查通过。本次未重复全量测试，未调用真实视觉模型/OCR或适配器。
+
+### Vision：显式路径配置存储
+
+11个配置字段及JsonProperty原样迁入Lilara.Vision/VisionEngineConfigData；VisionConfigStore<T>显式接收文件路径，宿主VisionEngineConfig继承配置值并保留Load()/Save()薄入口。保持缺文件写默认、null/损坏返回默认且不覆盖、部分字段沿默认及原缩进JSON。新增5项回归覆盖全部字段、宿主子类型往返、路径隔离与无库→宿主引用。完整sln构建与699项测试通过（主程序589、邮件52、GraphRuntime41、沙箱17），diff检查通过。未调用真实Vision/OCR模型或适配器；离线依赖替代及TestHost弃用警告仍在，C/D与全面信号迁移未完成。
