@@ -194,3 +194,38 @@ ALC：**权限轴 = 0..5 单调阶梯**（readonly / investigate / standard / au
 
 **这 7 条轴 = A1 的实现范围。** 其中 5 条生效（2 条纯提示 + 1 条提示 + 2 条只声明），2 条等后续阶段。
 
+> **⚠️ 实现时修正一处**：§9.3 表里 `permission` / `network` 的「进上下文」写的是**是**，
+> 实现改成了 **`InContext = false`**。理由：未生效的轴若进提示词，模型读到"权限 off"会自己
+> 把工具调用拒掉——那是**假机制**，比没有更糟。等闸门真接上再翻成 `true`。
+> 所以实际生效的"进上下文"轴只有 3 条：`initiative` / `safety` / `verify`。
+
+---
+
+## 10. 实施状态：**已落地**
+
+| 项 | 结果 |
+|---|---|
+| 提交 | `46eb982` feat(axes): add axes module skeleton with 7 core axes |
+| 新增 | `Engine/Axes/` 5 文件 **604 行**（`Axes.cs` 334 / `AxisStore.cs` 99 / `IAxisPort.cs` 60 / `AxisPort.cs` 60 / `AxisDefinition.cs` 51） |
+| 修改 | `RuntimeSession.cs`（+using、`_axisStore`/`AxisPort`/`FreezeAxes`、快照两处）、`SessionPersistence.cs`（版本 2→3、`Axes` 字段 ×3 处） |
+| 编译 | **成功**，0 error；3 个警告全是既有的（NU1903 ×2、CA2022） |
+| 测试 | **385 passed / 0 failed**（`AgentCoreProcessor.Tests`） |
+| 行为变化 | **无**：轴尚未被任何消费者读取 |
+
+编译期踩到一处：`IAxisPort` 上我写的是 `FreezeNow`，但那只是 `AxisPort` 类上的便捷方法，
+接口里没有 → 改成 `AxisPort.Freeze(AxisState.Snapshot(), now)`。**接口保持最小**是对的：
+消费者拿到的都是"外面传进来的冻结快照"，不需要自己 Freeze。
+
+### 与原始清单的差异
+
+| 原计划 | 实际 | 原因 |
+|---|---|---|
+| 5 文件 ~690 行 | 5 文件 **604 行** | 等级描述压得更实（`effort` 五档写全了，但注释精简） |
+| `permission`/`network` InContext=true | **false** | 见 §9.3 的修正 |
+| 改 2 个文件 | 改 2 个文件 | 一致 |
+
+### 下一步（A2 起）
+
+A2：`PromptAssembly` / `PromptSlot` / `PromptContribution` 进 `contracts`——**顺序契约**，
+为 A3 的三槽位装配与 D5 的拍前装载做准备。它是 A1 的直接继任，且同样不碰现有行为。
+
