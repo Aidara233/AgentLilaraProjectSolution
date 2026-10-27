@@ -25,14 +25,15 @@ namespace AgentCoreProcessor.Engine
         public bool IsInfrastructure => true;
 
         private readonly ISystemContext ctx;
-        private int intervalSeconds = 240;
-        private System.DateTime lastSystemHeartbeat = System.DateTime.Now;
-        private bool alarmSent = false;
+        private readonly Source.HeartbeatService _heartbeat;
         private CancellationTokenSource? _stopCts;
 
         public TimerEngine(ISystemContext ctx)
         {
             this.ctx = ctx;
+            _heartbeat = new Source.HeartbeatService(
+                () => ctx.EventBus.PublishSignal("timer-tick"),
+                () => ctx.HasActiveEngine("Session"), SendSystemCrashAlarmAsync);
         }
 
         public async Task RunAsync()
@@ -48,32 +49,7 @@ namespace AgentCoreProcessor.Engine
 
             try
             {
-                while (IsAlive && !ct.IsCancellationRequested)
-                {
-                    try { await Task.Delay(intervalSeconds * 1000, ct); }
-                    catch (OperationCanceledException) { break; }
-                    if (!IsAlive) break;
-
-                    // 每次心跳创建独立信号源，下游工作继承此信号
-                    using var tickSignal = Signal.Begin(LogGroup.Engine, "timer:heartbeat", "心跳");
-                    ctx.EventBus.PublishSignal("timer-tick");
-
-                    // Phase 8: 检查 SessionEngine 心跳
-                    if (ctx.HasActiveEngine("Session"))
-                    {
-                        lastSystemHeartbeat = System.DateTime.Now;
-                        alarmSent = false;
-                    }
-                    else
-                    {
-                        var elapsed = (System.DateTime.Now - lastSystemHeartbeat).TotalHours;
-                        if (elapsed > 1.0 && !alarmSent)
-                        {
-                            await SendSystemCrashAlarmAsync();
-                            alarmSent = true;
-                        }
-                    }
-                }
+                await _heartbeat.RunAsync(ct, () => IsAlive);
             }
             finally
             {
@@ -129,7 +105,7 @@ namespace AgentCoreProcessor.Engine
             if (e is SignalEvent signal && signal.SignalName == "timer-interval"
                 && signal.Payload is string s && int.TryParse(s, out var val) && val > 0)
             {
-                intervalSeconds = val;
+                _heartbeat.SetInterval(val);
             }
         }
 

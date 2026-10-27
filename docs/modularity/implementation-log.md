@@ -316,3 +316,7 @@ GraphActivationShadow 显式记录 Comparable/Matches/Reason，仅默认普通�
 ### C1：Lilara.Recurring 信源首切
 
 Engine/Source 三文件迁入 src/Lilara.Recurring，保留命名空间与源码原文，友元宿主/测试。仅依赖 PluginSDK、GraphRuntime、Logging；TimerEngine 编排仍留宿主，因此是 Recurring 部分提取。离线缓存还原、主程序编译、519 项测试及 diff --check 通过。未启动真实信源、模型或适配器。
+
+### Recurring：心跳调度服务
+
+TimerEngine 心跳循环提取到 Lilara.Recurring/HeartbeatService，通过委托发布 tick、查询 Session 存活及发送告警，注入 now/delay 支持虚拟时间验证。保留 240 秒默认、timer-interval 下一次延迟生效、离线严格超过一小时单次告警、恢复重置及取消/停止行为；生命周期日志和告警投递留宿主。主程序编译、523 项测试、diff --check 通过；新增四项虚拟时间回归。未进行真实周期等待或适配器告警发送冒烟。既有 NU1603/CA2022/SYSLIB0050 验证限制仍在。
