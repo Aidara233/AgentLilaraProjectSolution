@@ -610,6 +610,10 @@ namespace AgentCoreProcessor.Engine
             Tool.ToolRegistry.Register(new Tool.Core.WatchTool(_toolContext), isNonComponent: true);
             Tool.ToolRegistry.Register(new Tool.Core.UnwatchTool(_toolContext), isNonComponent: true);
             Tool.ToolRegistry.Register(new Tool.Core.ListWatchesTool(_toolContext), isNonComponent: true);
+
+            var wireAccess = new Tool.Host.WireAccessImpl(PathConfig.StoragePath);
+            foreach (var name in new[] { "wire_describe", "wire_validate", "wire_apply", "wire_mount" })
+                Tool.ToolRegistry.Register(new Tool.Core.WireTool(name, wireAccess), isNonComponent: true);
             _pluginLoader = new Tool.Host.PluginLoader(_toolContext, ProviderRegistry);
 
             // === Phase 2: 并行初始化（插件链 + MCP） ===

@@ -176,11 +176,12 @@ public static class NodeTypeCatalog
           ],
           "nodes": [
             { "id": "in",   "type": "on.message" },
+            { "id": "text", "type": "read.const", "params": { "value": "hello" } },
             { "id": "say",  "type": "sink.send" }
           ],
           "links": [
             { "from": "in.event", "to": "say.event" },
-            { "from": "in.channel", "to": "say.text" }
+            { "from": "text.value", "to": "say.text" }
           ]
         }
         """;
