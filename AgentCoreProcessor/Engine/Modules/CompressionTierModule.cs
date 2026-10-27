@@ -17,66 +17,19 @@ namespace AgentCoreProcessor.Engine.Modules
     /// </summary>
     internal class CompressionTierModule
     {
-        private readonly AgentConfig _config;
-        private readonly Func<List<Message>> _getHistory;
-        private readonly Action _onL3Triggered;
-        private readonly int _l1Tokens;
+        private readonly CompressionPolicy _policy;
 
-        private bool _l1Injected;
-        private CompressionTier _currentTier = CompressionTier.None;
+        public CompressionTier CurrentTier => _policy.CurrentTier;
 
-        public CompressionTier CurrentTier => _currentTier;
-
-        public CompressionTierModule(AgentConfig config, Func<List<Message>> getHistory, Action onL3Triggered,
-            int? l1Tokens = null)
+        public CompressionTierModule(AgentConfig config, Func<List<Message>> getHistory, Action onL3Triggered, int? l1Tokens = null)
         {
-            _config = config;
-            _getHistory = getHistory;
-            _onL3Triggered = onL3Triggered;
-            // L1 首次提醒阈值可覆盖（express 轻量会话按 Flash 模型窗口调低，其余类型沿用 config）
-            _l1Tokens = l1Tokens ?? config.CompressL1Tokens;
+            _policy = new CompressionPolicy(new CompressionThresholds(config.CompressMinTokens,
+                config.CompressL1Tokens, config.CompressL2Tokens, config.CompressL3Tokens), onL3Triggered, l1Tokens);
         }
 
-        public CompressionTier Evaluate(int estimatedTokens)
-        {
-            var prev = _currentTier;
-            if (estimatedTokens < _config.CompressMinTokens)
-                _currentTier = CompressionTier.None;
-            else if (estimatedTokens >= _config.CompressL3Tokens)
-                _currentTier = CompressionTier.L3;
-            else if (estimatedTokens >= _config.CompressL2Tokens)
-                _currentTier = CompressionTier.L2;
-            else if (estimatedTokens >= _l1Tokens)
-                _currentTier = CompressionTier.L1;
-            else
-                _currentTier = CompressionTier.None;
-
-            // L3 触发回调：通知 RuntimeSession 在下一轮锁定工具表
-            if (_currentTier == CompressionTier.L3 && prev != CompressionTier.L3)
-                _onL3Triggered?.Invoke();
-
-            return _currentTier;
-        }
-
-        public string? GetInjectText(int estimatedTokens)
-        {
-            _ = Evaluate(estimatedTokens);
-            return _currentTier switch
-            {
-                CompressionTier.L1 when !_l1Injected =>
-                    "[系统提示] 上下文稍大。如果当前内容不重要，可以考虑调用 compact 工具来精简会话。\n" +
-                    "调用时需提供一段摘要作为参数，描述：做了什么、得出了什么、下一步要做什么。",
-                CompressionTier.L2 =>
-                    "[系统警告] 会话长度已经较高，建议尽快在合适的地方调用 compact 工具。\n" +
-                    "compact 参数应是你对当前会话的完整总结。调用后会启动新会话承接你的摘要。",
-                CompressionTier.L3 =>
-                    "[系统强制] 上下文已达硬上限，本轮请调用 compact 工具结束当前会话并切换到新会话。\n" +
-                    "参数是你对会话的完整总结。请认真总结，新会话将基于你的总结继续工作。",
-                _ => null
-            };
-        }
-
-        public void MarkL1Injected() => _l1Injected = true;
+        public CompressionTier Evaluate(int estimatedTokens) => _policy.Evaluate(estimatedTokens);
+        public string? GetInjectText(int estimatedTokens) => _policy.GetInjectText(estimatedTokens);
+        public void MarkL1Injected() => _policy.MarkL1Injected();
 
         /// <summary>估算 Message 字符数。供外部估算 tokens 用（chars/3）。</summary>
         public static int EstimateChars(Message m)
@@ -90,5 +43,4 @@ namespace AgentCoreProcessor.Engine.Modules
         }
     }
 
-    internal enum CompressionTier { None, L1, L2, L3 }
 }

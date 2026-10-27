@@ -50,10 +50,11 @@ public sealed class ChannelRenderMappingTests
         Assert.Equal("user", message.Role);
         Assert.Null(message.Name);
         Assert.Equal("全文\r\n", message.Content);
-        Assert.Equal(new[] { "text", "image", "text" }, message.ContentParts!.Select(p => p.Type));
-        Assert.Equal(" image.png ", message.ContentParts[1].ImagePath);
-        Assert.Equal("", message.ContentParts[2].Text);
-        Assert.All(message.ContentParts, part => { Assert.Null(part.ImageBase64); Assert.Null(part.ToolName); });
+        var parts = Assert.IsType<List<AgentCoreProcessor.Models.ContentPart>>(message.ContentParts);
+        Assert.Equal(new[] { "text", "image", "text" }, parts.Select(p => p.Type));
+        Assert.Equal(" image.png ", parts[1].ImagePath);
+        Assert.Equal("", parts[2].Text);
+        Assert.All(parts, part => { Assert.Null(part.ImageBase64); Assert.Null(part.ToolName); });
     }
 
     [Fact]

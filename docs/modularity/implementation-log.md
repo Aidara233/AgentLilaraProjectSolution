@@ -348,3 +348,7 @@ ChannelContextService 注入 IChannelMediaSource，默认宿主实现逐次代�
 ### 频道渲染领域迁移
 
 渲染主体进入 Lilara.Channel/ChannelRenderer，输入 ChannelMessageSnapshot，输出 ChannelRenderedMessage/Part；查询与媒体均通过频道契约，时间转换由宿主注入。宿主 ChannelContextService 改为兼容门面，ChannelRenderSourceAdapter/Mapping 原样投影实体、时间/CSV 与模型消息，保留现有消费者。渲染语句、媒体查询顺序、null/空内容块语义由既有完整基线验证。新增三种 DateTimeKind 字段映射、输出映射与程序集引用检查；Lilara.Channel 无宿主/Data/Llm 引用。完整解决方案构建与测试通过：主程序 545、GraphRuntime 38、GraphSandbox 17，共 600 项，无失败/跳过。既有 NU1603/CA2022/SYSLIB0050 仍在；未验证真实模型/媒体/适配器，D5 拍前装载及 D1 全路径对拍仍未完成。
+
+### Context：纯压缩阈值策略
+
+CompressionPolicy/CompressionThresholds/CompressionTier 提取到 Lilara.Context，不依赖模型消息或宿主 AgentConfig；宿主 CompressionTierModule 保留构造接口及 EstimateChars，薄适配传入阈值。保持最小阈值优先、L3/L2/L1优先级、L1显式标记后不再提醒、L2/L3逐字提醒及L3进入/重入回调。新增11项边界与状态测试，修正映射测试可空断言；宿主构建、556项测试与diff检查通过。未验证真实模型压缩轮次；现有依赖/弃用警告仍在。
