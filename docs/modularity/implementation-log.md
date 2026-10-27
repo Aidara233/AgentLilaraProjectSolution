@@ -460,3 +460,7 @@ GraphFlowDatabaseTests新增两项真实临时SQLite回归：第一拍执行即�
 ### C1：Commands 解析与提示规则首切
 
 CommandConfig及CommandResult/CommandStep纯类型进入Lilara.Commands，CommandSyntax提取前缀解析和步骤提示渲染；CommandSpawnCheck委托纯方法，交互会话拦截优先级保持，ICommand/Context/Session仍留宿主。保留只按空格拆分、Trim规则、当前文化StartsWith语义、选项声明顺序与平台换行。新增16项解析/文化/提示及配置边界回归。完整sln离线还原与构建成功，690项测试通过（主程序580、邮件52、GraphRuntime41、沙箱17），diff检查通过。Commands仅部分提取；未运行真实命令路由/适配器或模型冒烟，C/D和全面日志迁移仍未完成。
+
+### Vision：阶段配置迁移
+
+PhaseConfig原文迁入Lilara.Vision/Config，默认提示与Load/Save行为保持，宿主路径依赖的VisionEngineConfig未迁。完整sln构建成功，4项定向测试通过：缺文件写入/返回默认、有效配置Unicode往返、null/损坏回退且不覆盖原文；diff检查通过。本次未重复全量测试，未调用真实视觉模型/OCR或适配器。
