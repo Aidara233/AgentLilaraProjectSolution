@@ -324,3 +324,7 @@ TimerEngine 心跳循环提取到 Lilara.Recurring/HeartbeatService，通过委�
 ### C1：Lilara.Session 资源池与规则首切
 
 SessionPool、SessionResourceRegistry、ToolEffectInterpreter、ConnectedChannelState 与 StepPhase/StepAction/ToolBatchOutcome 提取至 src/Lilara.Session，依赖 SDK 与 Logging，保留命名空间/internal，通过友元宿主/测试过渡。StepPhase.cs 中依赖宿主 AgentCore 的 RoundContext 独立留宿主，避免库回指。其余四文件原文迁移，状态/规则未变。离线还原、主程序构建与 523 项主程序测试通过；SessionEngine/RuntimeSession、资源重建编排和占用归属仍留宿主，尚未完成 Session 整体提取或频道占用唯一所有者改造。未做真实模型/适配器冒烟。
+
+### C1/D6 前置：频道显式配置存储
+
+ChannelConfig 与纯 ChannelContextState 原文迁入 src/Lilara.Channel。新增 IChannelStore/FileChannelStore，显式传入 Storage 路径，保留 JSON 优先、无文件时 DB affinity fallback、JSON null 返回默认配置的既有语义；写入采用临时文件原子替换。宿主 ChannelStateManager 仅按规范化路径复用存储实例并委托，不再直接文件 IO/静态锁。离线还原、宿主构建、527 项主程序测试与 diff --check 通过；新增配置往返、回退、路径/频道隔离和 null JSON 回归。仍保留宿主静态兼容注册表，尚未完成亲和度唯一权威、频道占用归属或全部调用注入；未做真实模型/适配器冒烟。

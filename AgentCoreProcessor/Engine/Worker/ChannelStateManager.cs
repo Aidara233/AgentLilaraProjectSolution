@@ -1,47 +1,25 @@
-using System.Collections.Generic;
-using System.IO;
+using System.Collections.Concurrent;
 using AgentCoreProcessor.Config;
-using Newtonsoft.Json;
 
-namespace AgentCoreProcessor.Engine
+namespace AgentCoreProcessor.Engine;
+
+/// <summary>兼容宿主现有调用；文件存储实现由频道模块提供。</summary>
+internal static class ChannelStateManager
 {
-    internal static class ChannelStateManager
+    private static readonly ConcurrentDictionary<string, IChannelStore> Stores =
+        new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+
+    private static IChannelStore Store
     {
-        private static readonly object _lock = new();
-
-        private static string GetConfigPath(int channelId)
+        get
         {
-            var dir = Path.Combine(PathConfig.StoragePath, "ChannelState");
-            Directory.CreateDirectory(dir);
-            return Path.Combine(dir, $"{channelId}.json");
-        }
-
-        public static ChannelConfig LoadConfig(int channelId, float? dbAffinity = null)
-        {
-            var path = GetConfigPath(channelId);
-            lock (_lock)
-            {
-                if (File.Exists(path))
-                {
-                    var json = File.ReadAllText(path);
-                    return JsonConvert.DeserializeObject<ChannelConfig>(json) ?? new();
-                }
-            }
-
-            var config = new ChannelConfig();
-            if (dbAffinity.HasValue)
-                config.Affinity = dbAffinity.Value;
-            return config;
-        }
-
-        public static void SaveConfig(int channelId, ChannelConfig config)
-        {
-            var path = GetConfigPath(channelId);
-            var json = JsonConvert.SerializeObject(config, Formatting.Indented);
-            lock (_lock)
-            {
-                File.WriteAllText(path, json);
-            }
+            var path = Path.GetFullPath(string.IsNullOrEmpty(PathConfig.StoragePath) ? "." : PathConfig.StoragePath);
+            return Stores.GetOrAdd(path, static root => new FileChannelStore(root));
         }
     }
+
+    public static ChannelConfig LoadConfig(int channelId, float? dbAffinity = null) =>
+        Store.LoadConfig(channelId, dbAffinity);
+
+    public static void SaveConfig(int channelId, ChannelConfig config) => Store.SaveConfig(channelId, config);
 }
