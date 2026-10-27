@@ -13,11 +13,6 @@ using AgentCoreProcessor.Util;
 
 namespace AgentCoreProcessor.Engine.Context;
 
-/// <summary>频道上下文的一个参与者视图（DB 派生，无累积状态）。</summary>
-internal record ParticipantView(
-    string DisplayName, string? Aliases, string PlatformId,
-    int PersonId, int TrustLevel, string? Memo, int UserId = 0);
-
 /// <summary>
 /// 频道上下文构建服务。ExpressEngine 与 RuntimeSession 共用。
 /// 纯格式化方法静态；依赖 DB 的方法为实例方法，注入 IChannelDataSource。
@@ -32,26 +27,8 @@ internal partial class ChannelContextService
     // ═══════════════════════════════════════════════════════════
 
     /// <summary>从频道最近消息派生当前参与者（distinct 发送者，排除 bot）。无累积状态。</summary>
-    public async Task<List<ParticipantView>> GetParticipantsAsync(int channelId, int limit = 30)
-    {
-        var result = new List<ParticipantView>();
-        var seen = new HashSet<int>();
-        var msgs = await _data.GetRecentMessagesAsync(channelId, limit);
-        foreach (var m in msgs)
-        {
-            if (m.IsFromBot || m.UserId <= 0 || !seen.Add(m.UserId)) continue;
-            var user = await _data.GetUserByIdAsync(m.UserId);
-            if (user == null) continue;
-            var person = await _data.GetPersonByIdAsync(user.PersonId);
-            var displayName = !string.IsNullOrEmpty(person?.Name) ? person!.Name
-                : !string.IsNullOrEmpty(user.DisplayName) ? user.DisplayName
-                : user.PlatformId;
-            result.Add(new ParticipantView(
-                displayName, person?.Aliases, user.PlatformId,
-                user.PersonId, (int)(person?.TrustLevel ?? Database.TrustLevel.Unknown), person?.FastMemory, user.Id));
-        }
-        return result;
-    }
+    public Task<List<ParticipantView>> GetParticipantsAsync(int channelId, int limit = 30) =>
+        new ParticipantService(new ParticipantSourceAdapter(_data)).GetParticipantsAsync(channelId, limit);
 
     // ═══════════════════════════════════════════════════════════
     // 静态纯格式化

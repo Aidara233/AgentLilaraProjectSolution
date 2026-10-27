@@ -328,3 +328,7 @@ SessionPool、SessionResourceRegistry、ToolEffectInterpreter、ConnectedChannel
 ### C1/D6 前置：频道显式配置存储
 
 ChannelConfig 与纯 ChannelContextState 原文迁入 src/Lilara.Channel。新增 IChannelStore/FileChannelStore，显式传入 Storage 路径，保留 JSON 优先、无文件时 DB affinity fallback、JSON null 返回默认配置的既有语义；写入采用临时文件原子替换。宿主 ChannelStateManager 仅按规范化路径复用存储实例并委托，不再直接文件 IO/静态锁。离线还原、宿主构建、527 项主程序测试与 diff --check 通过；新增配置往返、回退、路径/频道隔离和 null JSON 回归。仍保留宿主静态兼容注册表，尚未完成亲和度唯一权威、频道占用归属或全部调用注入；未做真实模型/适配器冒烟。
+
+### 频道领域：参与者派生
+
+ParticipantView 与消息发送者/用户/人物快照及 IParticipantSource/ParticipantService 进入 Lilara.Channel，不引用数据库实体或模型协议。宿主 ParticipantSourceAdapter 对旧 IChannelDataSource 查询结果做字段映射，ChannelContextService 委托领域服务。保留数据源顺序、发送者去重、bot/无效用户过滤、姓名优先级与 Unknown=0 默认。新增逐字渲染与缺失人物/用户边界回归，主程序构建、528 项测试、diff --check 通过。整个 IChannelDataSource 及媒体/历史格式化仍待解耦，未跑真实模型/适配器冒烟。

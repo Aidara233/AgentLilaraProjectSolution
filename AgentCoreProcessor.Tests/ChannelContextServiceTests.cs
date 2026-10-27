@@ -85,6 +85,39 @@ class FakeDataSource : IChannelDataSource
 public class ParticipantDerivationTests
 {
     [Fact]
+    public async Task DomainProjectionPreservesOrderFallbacksAndExactRendering()
+    {
+        var data = new FakeDataSource();
+        data.Messages.AddRange(new[]
+        {
+            new UserMessage { ChannelId = 1, UserId = 20 },
+            new UserMessage { ChannelId = 1, UserId = 10 },
+            new UserMessage { ChannelId = 1, UserId = 20 },
+            new UserMessage { ChannelId = 1, UserId = 30, IsFromBot = true },
+            new UserMessage { ChannelId = 1, UserId = 0 },
+            new UserMessage { ChannelId = 1, UserId = 99 },
+            new UserMessage { ChannelId = 1, UserId = 40 }
+        });
+        data.Users[20] = new User { Id = 20, PersonId = 200, PlatformId = "p20", DisplayName = "用户乙" };
+        data.Users[10] = new User { Id = 10, PersonId = 100, PlatformId = "p10", DisplayName = "用户甲" };
+        data.Users[40] = new User { Id = 40, PersonId = 400, PlatformId = "p40", DisplayName = "" };
+        data.Persons[200] = new Person { Name = "人物乙", Aliases = "乙", TrustLevel = TrustLevel.Understanding, FastMemory = "备注" };
+        var participants = await new ChannelContextService(data).GetParticipantsAsync(1);
+        Assert.Equal(new[] { 20, 10, 40 }, participants.Select(p => p.UserId));
+        Assert.Equal(new[] { "人物乙", "用户甲", "p40" }, participants.Select(p => p.DisplayName));
+        Assert.Equal(new[] { 2, 0, 0 }, participants.Select(p => p.TrustLevel));
+        var expected = string.Join(Environment.NewLine, new[]
+        {
+            "[频道] 类型: group, 平台ID: 42, 频道ID: 1",
+            "[当前参与者]",
+            "- 人物乙 (别称:乙) [platform_id:p20, person_id:200, trust:2] — 备注",
+            "- 用户甲 [platform_id:p10, person_id:100, trust:0]",
+            "- p40 [platform_id:p40, person_id:400, trust:0]", ""
+        });
+        Assert.Equal(expected, ChannelContextService.RenderParticipants("group_42", 1, participants));
+    }
+
+    [Fact]
     public async Task GetParticipants_DistinctSendersFromRecentMessages()
     {
         var data = new FakeDataSource();
