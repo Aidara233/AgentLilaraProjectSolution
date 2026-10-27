@@ -66,7 +66,8 @@ internal partial class SessionEngine
         if (channelId <= 0)
             throw new InvalidOperationException($"express 会话 {expressSession.SessionId} escalate 时未连接频道");
 
-        TakeOverChannelPool(channelId, newId);
+        if (!TakeOverChannelPool(channelId, newId, expressSession.SessionId))
+            throw new InvalidOperationException($"express 会话 {expressSession.SessionId} 无法接管频道 {channelId}：占用已丢失或接管冲突");
 
         var spec = new CreateSessionSpec
         {
@@ -95,11 +96,13 @@ internal partial class SessionEngine
     /// 同池换活跃 session（escalate / compact 专用）：占用状态原地不动，不释放、不重取。
     /// express escalate 到 working 时两者共享同一池，claim 从 express 平滑移交 working。
     /// </summary>
-    public bool TakeOverChannelPool(int channelId, string newSessionId)
+    public bool TakeOverChannelPool(int channelId, string newSessionId, string? expectedSessionId = null)
     {
         lock (_poolLock)
         {
             if (!_pools.TryGetValue(channelId, out var pool) || !pool.HasFullClaim)
+                return false;
+            if (expectedSessionId is not null && pool.ActiveSessionId != expectedSessionId)
                 return false;
             if (_poolByMember.TryGetValue(newSessionId, out var existing) && !ReferenceEquals(existing, pool))
                 return false;
