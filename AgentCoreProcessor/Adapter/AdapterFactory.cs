@@ -43,7 +43,7 @@ namespace AgentCoreProcessor.Adapter
         private static HttpBridgeAdapter CreateHttp(AdapterInstanceConfig config)
         {
             var settings = config.Settings.ToObject<HttpBridgeConfig>() ?? new HttpBridgeConfig();
-            return new HttpBridgeAdapter(config.Id, settings);
+            return new HttpBridgeAdapter(config.Id, settings, Path.Combine(PathConfig.StoragePath, "Adapter", config.Id + ".json"), Util.TimeUtil.ToLocalSafe);
         }
 
         private static IcalinguaAdapter CreateIcalingua(AdapterInstanceConfig config)

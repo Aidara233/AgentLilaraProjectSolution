@@ -8,14 +8,12 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using AgentCoreProcessor.Config;
-using AgentCoreProcessor.Database;
-using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Logging;
-using AgentCoreProcessor.Util;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -29,14 +27,16 @@ namespace AgentCoreProcessor.Adapter
     /// - WS /ws：双向实时，订阅频道收 bot 出向推送、发消息
     /// 定位：测试调试 + 通用外部接入。频道模型 = 默认单频道（defaultChannel 一条连续对话线）+ 可选 channel 分区。
     /// </summary>
-    internal class HttpBridgeAdapter : IAdapter, IEngineAwareAdapter, IChannelAwareAdapter
+    internal class HttpBridgeAdapter : IAdapter, IHostAwareAdapter, IChannelAwareAdapter
     {
         public string Id { get; }
         public string Platform => "http";
         public event Action<IncomingMessage>? OnMessageReceived;
 
         private readonly HttpBridgeConfig config;
-        private MasterEngine? engine;
+        private IAdapterHostAccess? engine;
+        private readonly string? _configPath;
+        private readonly Func<DateTime, DateTime> _toLocal;
 
         private WebApplication? app;
         private CancellationTokenSource? cts;
@@ -53,9 +53,11 @@ namespace AgentCoreProcessor.Adapter
         private string? lastError;
         private DateTime? lastErrorAt;
 
-        public HttpBridgeAdapter(string id, HttpBridgeConfig config)
+        public HttpBridgeAdapter(string id, HttpBridgeConfig config, string? configPath = null, Func<DateTime, DateTime>? toLocal = null)
         {
             Id = id;
+            _configPath = configPath;
+            _toLocal = toLocal ?? (time => time.ToLocalTime());
             this.config = config;
         }
 
@@ -150,7 +152,7 @@ namespace AgentCoreProcessor.Adapter
             LastErrorAt = lastErrorAt
         };
 
-        public void AttachEngine(MasterEngine engine) => this.engine = engine;
+        public void AttachHost(IAdapterHostAccess engine) => this.engine = engine;
 
         /// <summary>
         /// 热更新配置（WebUI 保存后调用）：重读 Storage/Adapter/{Id}.json，非端口字段即时生效。
@@ -160,7 +162,7 @@ namespace AgentCoreProcessor.Adapter
         {
             try
             {
-                var path = Path.Combine(PathConfig.StoragePath, "Adapter", $"{Id}.json");
+                var path = _configPath;
                 if (!File.Exists(path)) return false;
                 var json = await File.ReadAllTextAsync(path);
                 var cfg = JsonConvert.DeserializeObject<AdapterInstanceConfig>(json);
@@ -288,13 +290,13 @@ namespace AgentCoreProcessor.Adapter
 
                 var engineRef = engine;
                 var afterId = 0L;
-                if (engineRef?.Session != null)
+                if (engineRef?.IsReady == true)
                 {
                     // 发送前记录频道基线（最大已存在消息 id），作为本轮 burst 的起始游标
-                    var chBefore = await engineRef.Session.FindChannelByNameAsync(channel);
+                    var chBefore = await engineRef.FindChannelByNameAsync(channel);
                     if (chBefore != null)
                     {
-                        var latest = await engineRef.Session.GetContextByChannelAsync(chBefore.Id, 1);
+                        var latest = await engineRef.GetContextByChannelAsync(chBefore.Id, 1);
                         afterId = latest.Count > 0 ? latest[0].Id : 0;
                     }
                 }
@@ -303,7 +305,7 @@ namespace AgentCoreProcessor.Adapter
                 Interlocked.Increment(ref messagesReceived);
                 lastMessageReceivedAt = DateTime.Now;
 
-                if (!req.Wait || engineRef == null || engineRef.Session == null)
+                if (!req.Wait || engineRef == null || !engineRef.IsReady)
                 {
                     await WriteJson(ctx, new JObject { ["ok"] = true, ["accepted"] = true });
                     return;
@@ -318,15 +320,15 @@ namespace AgentCoreProcessor.Adapter
                 bool seen = false;
                 bool busyEver = false;
                 int settle = 0;
-                var botReplies = new List<UserMessage>();
+                var botReplies = new List<AdapterMessageView>();
                 long currentAfterId = afterId;
 
                 while (sw.Elapsed < deadline)
                 {
-                    var ch = await engineRef.Session.FindChannelByNameAsync(channel);
+                    var ch = await engineRef.FindChannelByNameAsync(channel);
                     if (ch != null)
                     {
-                        var newMsgs = await engineRef.Session.GetMessagesAfterIdAsync(ch.Id, (int)currentAfterId, 50);
+                        var newMsgs = await engineRef.GetMessagesAfterIdAsync(ch.Id, (int)currentAfterId, 50);
                         if (newMsgs.Count > 0)
                         {
                             seen = true;
@@ -361,7 +363,7 @@ namespace AgentCoreProcessor.Adapter
                         ["id"] = r.Id,
                         ["content"] = r.Content,
                         ["senderName"] = r.SenderName,
-                        ["time"] = TimeUtil.ToLocalSafe(r.Time).ToString("O")
+                        ["time"] = _toLocal(r.Time).ToString("O")
                     });
 
                 await WriteJson(ctx, new JObject
@@ -384,12 +386,12 @@ namespace AgentCoreProcessor.Adapter
             try
             {
                 var engineRef = engine;
-                if (engineRef == null || engineRef.Session == null)
+                if (engineRef == null || !engineRef.IsReady)
                 {
                     await WriteJson(ctx, new JObject { ["ok"] = false, ["error"] = "engine-not-ready" });
                     return;
                 }
-                var channels = await engineRef.Session.GetAllChannelsAsync();
+                var channels = await engineRef.GetAllChannelsAsync();
                 var arr = new JArray();
                 foreach (var c in channels)
                     arr.Add(new JObject { ["id"] = c.Id, ["name"] = c.Name });
@@ -403,7 +405,7 @@ namespace AgentCoreProcessor.Adapter
             try
             {
                 var engineRef = engine;
-                if (engineRef == null || engineRef.Session == null)
+                if (engineRef == null || !engineRef.IsReady)
                 {
                     await WriteJson(ctx, new JObject { ["ok"] = false, ["error"] = "engine-not-ready" });
                     return;
@@ -412,7 +414,7 @@ namespace AgentCoreProcessor.Adapter
                 var q = ctx.Request.Query;
                 var channelName = q["channel"].ToString();
                 if (string.IsNullOrEmpty(channelName)) channelName = config.DefaultChannel;
-                var channel = await engineRef.Session.FindChannelByNameAsync(channelName);
+                var channel = await engineRef.FindChannelByNameAsync(channelName);
                 if (channel == null)
                 {
                     await WriteJson(ctx, new JObject { ["ok"] = true, ["channel"] = null, ["messages"] = new JArray() });
@@ -421,20 +423,20 @@ namespace AgentCoreProcessor.Adapter
 
                 var limit = int.TryParse(q["limit"], out var lim) ? Math.Clamp(lim, 1, 200) : 50;
                 var keyword = q["keyword"].ToString();
-                List<UserMessage> messages;
+                List<AdapterMessageView> messages;
                 if (!string.IsNullOrEmpty(keyword))
                 {
                     var offset = int.TryParse(q["offset"], out var off) ? Math.Max(0, off) : 0;
-                    messages = (await engineRef.Session.SearchMessagesByChannelAsync(channel.Id, keyword, offset, limit))
+                    messages = (await engineRef.SearchMessagesByChannelAsync(channel.Id, keyword, offset, limit))
                         .OrderBy(m => m.Id).ToList();
                 }
                 else if (int.TryParse(q["afterId"], out var aid) && aid > 0)
-                    messages = await engineRef.Session.GetMessagesAfterIdAsync(channel.Id, aid, limit); // 已升序
+                    messages = await engineRef.GetMessagesAfterIdAsync(channel.Id, aid, limit); // 已升序
                 else if (int.TryParse(q["beforeId"], out var bid) && bid > 0)
-                    messages = (await engineRef.Session.GetMessagesBeforeIdAsync(channel.Id, bid, limit))
+                    messages = (await engineRef.GetMessagesBeforeIdAsync(channel.Id, bid, limit))
                         .OrderBy(m => m.Id).ToList();
                 else
-                    messages = (await engineRef.Session.GetContextByChannelAsync(channel.Id, limit))
+                    messages = (await engineRef.GetContextByChannelAsync(channel.Id, limit))
                         .OrderBy(m => m.Id).ToList();
 
                 var arr = new JArray();
@@ -446,7 +448,7 @@ namespace AgentCoreProcessor.Adapter
                         ["senderName"] = m.SenderName,
                         ["content"] = m.Content,
                         ["isFromBot"] = m.IsFromBot,
-                        ["time"] = TimeUtil.ToLocalSafe(m.Time).ToString("O"),
+                        ["time"] = _toLocal(m.Time).ToString("O"),
                         ["platformMessageId"] = m.PlatformMessageId
                     });
                 await WriteJson(ctx, new JObject

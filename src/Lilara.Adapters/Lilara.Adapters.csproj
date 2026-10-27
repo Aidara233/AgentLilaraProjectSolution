@@ -11,5 +11,6 @@
     <PackageReference Include="SocketIOClient" Version="4.0.5" />
     <PackageReference Include="BouncyCastle.Cryptography" Version="2.4.0" />
     <ProjectReference Include="..\Lilara.Logging\Lilara.Logging.csproj" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 </Project>

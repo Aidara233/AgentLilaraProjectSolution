@@ -22,15 +22,15 @@ namespace AgentCoreProcessor.Adapter
         /// <summary>消息入向回调，由 MasterEngine 在 InitAsync 中注入。</summary>
         public Func<IncomingMessage, Task>? OnIncomingMessage { get; set; }
 
-        /// <summary>引擎引用（IEngineAwareAdapter 注入用）。MasterEngine 构造函数注入；InitAsync 前 Session 为 null。</summary>
+        /// <summary>引擎引用（IHostAwareAdapter 注入用）。MasterEngine 构造函数注入；InitAsync 前 Session 为 null。</summary>
         internal MasterEngine? Engine { get; private set; }
 
-        /// <summary>引擎就绪后注入：对已注册 + 后续注册的 IEngineAwareAdapter 分发引擎引用。</summary>
+        /// <summary>引擎就绪后注入：对已注册 + 后续注册的 IHostAwareAdapter 分发引擎引用。</summary>
         internal void AttachEngine(MasterEngine engine)
         {
             Engine = engine;
             foreach (var adapter in adapters.Values)
-                if (adapter is IEngineAwareAdapter aware) aware.AttachEngine(engine);
+                if (adapter is IHostAwareAdapter aware) aware.AttachHost(new AdapterHostAccess(engine));
         }
 
         public event Action? OnAdaptersChanged;
@@ -97,7 +97,7 @@ namespace AgentCoreProcessor.Adapter
             };
             adapters[adapter.Id] = adapter;
             enabledMap[adapter.Id] = enabled;
-            if (Engine != null && adapter is IEngineAwareAdapter aware) aware.AttachEngine(Engine);
+            if (Engine != null && adapter is IHostAwareAdapter aware) aware.AttachHost(new AdapterHostAccess(Engine));
         }
 
         // ── 动态生命周期 ──

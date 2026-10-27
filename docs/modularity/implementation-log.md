@@ -368,3 +368,7 @@ FileAdapter 实现迁入 Lilara.Adapters/File，以构造委托归档附件；�
 ### Adapters：OneBot/Icalingua 实现迁移
 
 新增 IAdapterMediaStore 下载/分类端口，宿主 AdapterMediaStore 代理 ImageStorage，AdapterFactory 注入。OneBot/Icalingua 构造可选媒体端口；未配置时图片沿现有 catch 路径跳过。两个平台目录迁入 Lilara.Adapters，沿用 SocketIOClient 4.0.5/BouncyCastle.Cryptography 2.4.0。发送路径只依赖 BotOutputParser 的 @ 占位符常量，现抽为 InlineMentionProtocol，宿主解析器共用同一值。新增四项假媒体解析回归，验证下载→分类顺序、sticker、图片占位与缺端口跳过。完整 sln 离线还原/构建及617项测试通过（主程序562、GraphRuntime38、沙箱17），diff检查通过；未连接真实平台或模型。既有4项构建警告仍在。
+
+### Adapters：HTTP桥宿主查询端口
+
+HTTP目录迁入Lilara.Adapters，新增IAdapterHostAccess与独立频道/消息DTO；宿主AdapterHostAccess代理原MasterEngine/Session查询与busy/idle。IEngineAwareAdapter移除，以IHostAwareAdapter端口注入替代，AdapterManager对已有/新注册适配器保持注入时机。构造注入配置路径与本地时间转换，宿主工厂传原路径/TimeUtil，查询/排序/轮询逻辑保留。Adapters显式引用AspNetCore框架及Web SDK原隐式扩展命名空间。6项假宿主测试覆盖查询排序、时间字符串、未就绪/状态/频道与配置重载保留端口。完整sl n构建与623项测试通过（主程序568、图运行时38、沙箱17），diff检查通过。未启动Kestrel、真实适配器或模型；send wait轮询/WebSocket未做集成冒烟，既有依赖替代/弃用警告仍在。
