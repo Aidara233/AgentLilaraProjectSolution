@@ -7,6 +7,12 @@
 
 ## 已完成
 
+### C：会话模型调用端口
+
+Lilara.Turn 新增 IAgentModel/AgentModelBinding，并接收 AgentInvokeRequest；RuntimeSession 的活跃模型、缓存、RoundContext 和调用/格式能力查询均改用端口。宿主 AgentCoreModelAdapter 负责具体 Core 构造、CallerTag、兼容默认工具绑定，以及请求体捕获 → 调用 → 成功后立即 shadow observe。创建/恢复两路均在 ConfigureCores 前注入工厂，实例创建后禁止替换工厂。类型白名单、大小写缓存、会话提示词和每轮成对锁定保持。
+
+既有换核测试改用显式 fake 工厂，新增三项端口回归验证懒建缓存/绑定身份/提示词/白名单、暂停调用中切活跃模型仍使用原轮实例及能力、模型失败写入错误并允许下一调用。相关 33 项通过；完整构建 0 错误、6 条既有 NU1603，全量 845 项通过（主程序 735、邮件 52、图运行时 41、图沙箱 17）。未调用真实模型；全路径工具格式与外部切流仍待 D1/D5。AgentCore 的 AdditionalTools null 回落缺口保留原行为，本次不调整工具权限语义。RuntimeSession 仍有 context/component/messaging 等宿主依赖。
+
 ### C：模型配置与重试迁入 Lilara.Llm
 
 新增 `ModelProcessor` 拥有配置读取、客户端缓存、基础提示词装配与流式一次重试，注入配置目录、提示词加载器、请求 dump 路径、告警及可替换客户端工厂/默认客户端。宿主 Processor 仅绑定 PathConfig/PromptLoader/Signal。五项假客户端离线回归覆盖缓存与历史保留、提示词顺序、缺配置保持当前客户端并报告 Base 的原语义、重试前重置一次、二次失败/重置失败传播、成功不重试；没有真实模型请求。原无提示词时保留 BasePrompt、缓存重选时再次追加系统提示行为均保留。完整构建 0 错误（6 条 NU1603 与测试宿主既有 SYSLIB0050），全量 842 项通过（主程序 732、邮件 52、图运行时 41、图沙箱 17）。CoreBase 日志/仓储与 AgentCore 工具注册依赖仍留宿主。

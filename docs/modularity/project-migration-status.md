@@ -11,7 +11,7 @@
 | Lilara.Channel | 配置存储、参与者、快照/渲染契约与渲染主体 | 占用唯一所有者、亲和度权威、游标持久化、兼容门面与端口全面注入 |
 | Lilara.Graph | 管理器、挂载/订阅、运行器与意图基础设施 | 运行时/模块契约/管理层已统一为 Lilara.Graph；其他模块通用挂载、内置路径迁移仍待完成 |
 | Lilara.Session | 资源池、连接状态、资源注册、工具效果规则、阶段值、实例化会话类型配置存储（默认值/缓存/读写/工具规则）、三文件会话存储与快照端口 | RuntimeSession/SessionEngine、生命周期与资源重建仍在宿主；SessionTypeProfiles 静态兼容门面负责路径与告警绑定 |
-| Lilara.Turn | 原生工具流解析、ModelOutput | 单轮模型/工具执行编排仍在宿主 |
+| Lilara.Turn | 原生工具流解析、ModelOutput、IAgentModel/AgentInvokeRequest 模型调用端口 | 具体 AgentCore 与 shadow 适配、单轮模型/工具执行编排仍在宿主；RuntimeSession 已通过工厂依赖模型端口 |
 | Lilara.Mind | 证据数学、提取接口、伴随提取与文本围栏 | 写入、检索、审核、情绪、复活和引擎装配 |
 | Lilara.Vision | OCR/Vision providers | VisionEngine、阶段配置与图片存储 |
 | Lilara.Recurring | 信源管理与心跳调度 | 消息、定时、唤醒与跨会话宿主编排 |

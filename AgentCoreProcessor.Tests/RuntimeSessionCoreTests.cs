@@ -38,7 +38,21 @@ public class RuntimeSessionCoreTests
     }
 
     private static RuntimeSession NewChannelSession()
-        => new(new CreateSessionSpec { Type = "channel" }, new[] { "basic-tools" });
+    {
+        var session = new RuntimeSession(new CreateSessionSpec { Type = "channel" }, new[] { "basic-tools" });
+        session.SetModelFactory(_ => new FakeAgentModel());
+        return session;
+    }
+
+    private sealed class FakeAgentModel : AgentCoreProcessor.Core.IAgentModel
+    {
+        public bool UseNativeTools => true;
+        public bool DisableImageMessages => false;
+        public string? SessionPrompt { private get; set; }
+        public void ConfigureDefaults(string engineType, IReadOnlyList<ITool> tools) { }
+        public Task<AgentCoreProcessor.Core.ModelOutput> InvokeAsync(List<AgentCoreProcessor.Models.Message> messages,
+            AgentCoreProcessor.Core.AgentInvokeRequest request) => throw new NotSupportedException();
+    }
 
     [Fact]
     public void SwitchCore_ValidatesAgainstWhitelist()

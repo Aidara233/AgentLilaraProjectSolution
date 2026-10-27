@@ -94,6 +94,7 @@ internal partial class SessionEngine
         _sessions[session.SessionId] = session;
 
         // 注入多核配置（白名单 + 默认核）和 MessageEngine
+        session.SetModelFactory(binding => new Core.AgentCoreModelAdapter(binding));
         session.ConfigureCores(profile.AllowedCoreConfigs, profile.DefaultCoreConfig);
         var messageEngine = _ctx.GetActiveEnginesSnapshot()
             .OfType<Messaging.MessageEngine>().FirstOrDefault();
@@ -443,6 +444,7 @@ internal partial class SessionEngine
 
                 _sessions[session.SessionId] = session;
 
+                session.SetModelFactory(binding => new Core.AgentCoreModelAdapter(binding));
                 session.ConfigureCores(profile.AllowedCoreConfigs, profile.DefaultCoreConfig, state.ActiveCoreConfig);
                 var messageEngine = _ctx.GetActiveEnginesSnapshot().OfType<Messaging.MessageEngine>().FirstOrDefault();
                 if (messageEngine != null) session.SetMessageEngine(messageEngine);

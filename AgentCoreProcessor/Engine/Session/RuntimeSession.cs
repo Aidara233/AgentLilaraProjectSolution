@@ -125,12 +125,12 @@ internal partial class RuntimeSession : IRuntimeSession, IRuntimeSessionDiagnost
     private ComponentHost? _componentHost;
     private string _componentLoopType = "channel";
     private ICurrencyService? _currency;
-    private AgentCore? _agentCore;
+    private IAgentModel? _agentCore;
 
     // ── 多核支持：白名单（来自会话类型配置）+ 活跃核 + 按核懒建缓存 ──
     private string _activeCoreConfig = "";
     private readonly List<string> _allowedCoreConfigs = new();
-    private readonly Dictionary<string, AgentCore> _coreInstances = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, IAgentModel> _coreInstances = new(StringComparer.OrdinalIgnoreCase);
     private ITool? _switchCoreTool;
 
     // ── 会话本体提示词（来自会话类型配置 PromptFiles，换核不变）──
@@ -731,7 +731,7 @@ internal partial class RuntimeSession : IRuntimeSession, IRuntimeSessionDiagnost
     /// "模型调用 + 工具执行"两段，所以必须传进来而不是在这里开（B-4d 会把这段收进模型调用方法）。</para>
     /// </summary>
     private async Task<IReadOnlyList<ToolResult>> ExecuteToolsAsync(
-        ModelOutput output, List<ToolCall> calls, AgentCore roundCore, SpanHandle roundSpan, int agentRound)
+        ModelOutput output, List<ToolCall> calls, IAgentModel roundCore, SpanHandle roundSpan, int agentRound)
     {
         Func<string, ITool?> resolver = name =>
             _tools.TryGetValue(name, out var t) ? t :
@@ -787,18 +787,11 @@ internal partial class RuntimeSession : IRuntimeSession, IRuntimeSessionDiagnost
     ///
     /// <para>⚠️ 影子快照默认 Off 时是空操作，Legacy 路径一个字节都不变——不要"顺手"让它变成必做项。</para>
     /// </summary>
-    private async Task<ModelOutput?> InvokeModelAsync(AgentCore roundCore, AgentInvokeRequest invokeRequest, int agentRound)
+    private async Task<ModelOutput?> InvokeModelAsync(IAgentModel roundCore, AgentInvokeRequest invokeRequest, int agentRound)
     {
         try
         {
-            var wire = Client.WireRequestCapture.Begin();
-            var output = await roundCore.InvokeAsync(_history, EngineMode.Working, invokeRequest);
-
-            // ⚠️ 影子快照必须紧贴调用之后：下一次 InvokeAsync 会重设客户端历史。
-            Brain.SessionBrainRuntime.Observe(
-                roundCore, SessionId, _componentLoopType, PathConfig.StoragePath, wire.Body);
-
-            return output;
+            return await roundCore.InvokeAsync(_history, invokeRequest);
         }
         catch (Exception ex)
         {

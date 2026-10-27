@@ -7,4 +7,4 @@ namespace AgentCoreProcessor.Engine.Session;
 /// <para>⚠️ 两者必须**成对**产出：`roundCore` 是"本轮锁定的核"（外置切换可能在本轮中途发生），
 /// 而 `invokeRequest` 里带着同一刻的工具表。分开取会拿到两个不同时刻的快照。</para>
 /// </summary>
-internal readonly record struct RoundContext(AgentInvokeRequest Request, AgentCore Core);
+internal readonly record struct RoundContext(AgentInvokeRequest Request, IAgentModel Core);

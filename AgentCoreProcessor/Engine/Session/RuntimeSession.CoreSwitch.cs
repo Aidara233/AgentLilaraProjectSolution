@@ -93,7 +93,7 @@ internal partial class RuntimeSession
     }
 
     /// <summary>把会话提示词绑定到核实例（换核不换提示词的关键注入点）。</summary>
-    private void AttachSessionPrompt(AgentCore core)
+    private void AttachSessionPrompt(IAgentModel core)
     {
         if (core != null && !string.IsNullOrEmpty(_sessionPrompt))
             core.SessionPrompt = _sessionPrompt;
@@ -123,8 +123,7 @@ internal partial class RuntimeSession
         // ⚠️ H2：不再在切换核时写 _agentCore 的轮次字段；每轮调用的参数由 RunAsync 经
         // AgentInvokeRequest 传入（见下方 BuildInvokeRequest）。这里保留字段写入只为兼容
         // 不经 InvokeAsync 的路径（ChatAsync / 旧调用方），值为"当前默认"。
-        _agentCore.EngineType = _componentLoopType;
-        _agentCore.AdditionalTools = _tools.Values.ToList();
+        _agentCore.ConfigureDefaults(_componentLoopType, _tools.Values.ToList());
 
         // 经 _pendingInjections 注入切换通知：下一轮开头 flush 进 _history 并持久化，
         // 不会像直接 _history.Add 那样被轮内 FormatAssistant 的 _history[^1] 覆盖。
@@ -147,15 +146,22 @@ internal partial class RuntimeSession
         AttachSessionPrompt(_agentCore);
     }
 
-    /// <summary>按配置名 get-or-create 核实例（懒建：首次切到该核才 new AgentCore）。</summary>
-    private AgentCore GetOrCreateCore(string configName)
+    private Func<AgentModelBinding, IAgentModel>? _modelFactory;
+
+    internal void SetModelFactory(Func<AgentModelBinding, IAgentModel> factory)
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+        if (_coreInstances.Count != 0)
+            throw new InvalidOperationException("Model factory must be bound before configuring cores.");
+        _modelFactory = factory;
+    }
+
+    private IAgentModel GetOrCreateCore(string configName)
     {
         if (_coreInstances.TryGetValue(configName, out var existing))
             return existing;
-        var core = new AgentCore(configName); // fixedMode 锁配置到该核
-        // CallerTag 标识调用来源：Session:{id}（express/working）/ Task:{id}（task）。
-        // 落进模型调用 span detail（caller）与 JSON 模型日志，token 统计据此归因。
-        core.CallerTag = Type == "task" ? $"Task:{SessionId}" : $"Session:{SessionId}";
+        var factory = _modelFactory ?? throw new InvalidOperationException("Session model factory is not configured.");
+        var core = factory(new AgentModelBinding(configName, SessionId, Type));
         _coreInstances[configName] = core;
         return core;
     }
