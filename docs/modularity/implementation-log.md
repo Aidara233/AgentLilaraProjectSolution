@@ -96,6 +96,45 @@
 
 **副作用**：`bin/Debug/net10.0/win-x64/` 下新生成了一个约 2GB 的 `Storage`（构建产物目录，可删）；项目 `../Storage` 未改动。
 
+## 如何重跑这次冒烟验证（2 分钟）
+
+不必碰真实数据。`--test` 会在 exe 目录下自建 `paths.json` 与 `Storage`，所以按下面做就是隔离的：
+
+```sh
+cd AgentLilaraProjectSolution/AgentCoreProcessor/bin/Debug/net10.0/win-x64
+printf '这是一条冒烟测试消息\n' > Storage/FileAdapter/input/001_smoke.txt
+timeout 120 ./AgentCoreProcessor.exe --test --timeout 20
+# 看结果：
+ls Storage/Sessions/                 # 应出现一个新会话目录
+cat Storage/Sessions/*/state.json     # 应看到 formatVersion:3 + axes 七条 + status
+cat Storage/Sessions/*/history.jsonl  # 应看到 [组件通知] / [系统] 当前时间 / [新消息]
+```
+
+**判据**：会话目录被创建、`state.json` 里 `formatVersion` 为 3 且 `axes` 完整、`history.jsonl` 至少三条（组件通知 / 时间 / 新消息）、`status` 为 `Completed`、进程无异常堆栈。
+
+**注意**：
+- 退出码 1 = 超时（无回复），不是崩溃；
+- 隔离 Storage 里没有可用 provider 凭据，所以它**不会**验证模型请求体；
+- 跑完可以在 `bin/Debug/net10.0/win-x64/` 下删掉那个 `Storage`（约 2GB）。
+
+## 当前 B 阶段收尾状态
+
+| 切片 | 状态 | 主文件行数 |
+|---|---|---|
+| B-1 inbox / output / activation | ✅ | 1646 → 1469 |
+| B-5 lifecycle / children | ✅ | 1469 → 1398 |
+| B-3a core-switch | ✅ | 1398 → 1276 |
+| B-3b components | ✅ | 1276 → 1212 |
+| **B-6 SessionEngine 六切** | ✅ | 1360 → 406（另一个文件） |
+| B-3b' bootstrap | ✅ | 1212 → 961 |
+| B-3b'' 组件启停三件 | ✅ | 961 → 939 |
+| B-3c 频道连接 | ✅ | 939 → 856 |
+| **B-2 第 1 步 持久化（搬文件）** | ✅ | 856 → 767 |
+| **B-2 第 2 步 `ISnapshotPort` 注册表** | ⬜ **未做**（设计改动） | — |
+| **B-4 `RunAsync` 426 行拆方法** | ⬜ **未做**（风险最高） | — |
+
+`RuntimeSession.cs`：**1646 → 767 行**，9 个部件文件共 1224 行。
+
 ## 下一步
 
 | 顺序 | 内容 | 状态 |
