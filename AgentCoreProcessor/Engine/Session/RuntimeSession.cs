@@ -583,8 +583,7 @@ internal class RuntimeSession : IRuntimeSession
         }
     }
 
-    /// <summary>工具副作用结果：是否结束本突发 / 整个会话。</summary>
-    private readonly record struct ToolEffect(bool EndBurst, bool EndSession);
+    /// <summary>工具副作用结果：是否结束本突发 / 整个会话（类型见 <see cref="ToolEffectInterpreter"/>）。</summary>
 
     /// <summary>
     /// 执行初始化工具调用（bootstrap）。由 CreateSession 在 host 就绪后**同步**调用——
@@ -641,90 +640,91 @@ internal class RuntimeSession : IRuntimeSession
     /// <summary>
     /// 统一工具副作用分发。正常 agent 循环与 InitActions bootstrap 共用单一来源。
     /// speak/send_media 等 OutputOnly 工具自带发送，不在此重发。
+    ///
+    /// <para>⚠️ **判定已移到纯函数 <see cref="ToolEffectInterpreter"/>**：这里只做两件事——
+    /// 把会话事实取成值（<see cref="BuildToolEffectContextAsync"/>），以及按顺序执行意图。
+    /// 这样 step 不再直连 <c>_sessionEngine</c> / <c>_componentHost</c> / <c>_mind</c>（H1 之后的第二处解耦），
+    /// 而"哪种工具结果会收尾／终结"第一次有了不建会话也能跑的测试。</para>
     /// </summary>
     private async Task<ToolEffect> ApplyToolEffectAsync(ToolCall call, ToolResult result)
     {
-        // 权限组拒绝/执行失败的工具不触发副作用（避免 stale end_session/wait 等误生效）
-        if (!result.IsSuccess) return default;
+        var context = await BuildToolEffectContextAsync();
+        var effect = ToolEffectInterpreter.Interpret(call, result, context, DateTime.UtcNow);
 
-        switch (call.Tool)
+        var endSession = effect.EndSession;
+
+        foreach (var action in effect.Actions)
         {
-            case "end_session":
-                // 子 agent 检查（现有）
-                var activeChildren = _sessionEngine?.GetActiveChildren(SessionId);
-                if (activeChildren != null && activeChildren.Count > 0)
-                {
-                    InjectExternal($"[系统警告] 你还有 {activeChildren.Count} 个活跃子 agent，请先 stop_sub_agent 后再 end_session。");
-                    return new ToolEffect(false, false);
-                }
+            switch (action)
+            {
+                case ToolEffectAction.SendMessage send:
+                    await SendOutput(send.Text);
+                    break;
 
-                // session-scoped 子资源检查（下载/SSH in-flight）
-                bool hasInFlightResources = _sessionEngine?.AnyResourceBlocksExit(SessionId) == true
-                    || !await (_componentHost?.QueryCanExitAsync() ?? Task.FromResult(true));
+                case ToolEffectAction.InjectContext inject:
+                    InjectExternal(inject.Text);
+                    break;
 
-                if (hasInFlightResources)
-                {
-                    if (_forceExitAttempts > 0)
-                    {
-                        Signal.Event(LogGroup.Engine, "end_session force override", new { sessionId = SessionId });
-                        await SendOutput(result.Data ?? "工作完成（强制退出，仍有未完成资源）。");
-                        return new ToolEffect(false, true);
-                    }
+                case ToolEffectAction.SetWaitUntil wait:
+                    SetWaitUntil(wait.Until);
+                    break;
+
+                case ToolEffectAction.WriteJournal journal:
+                    await WriteJournalFromWaitAsync(journal.Raw);
+                    break;
+
+                case ToolEffectAction.ConnectChannel connect:
+                    await ConnectChannelAsync(connect.ChannelId, connect.Mode);
+                    break;
+
+                case ToolEffectAction.DisconnectChannel:
+                    DisconnectChannel();
+                    break;
+
+                case ToolEffectAction.CountForceExitAttempt:
                     _forceExitAttempts++;
-                    InjectExternal("[系统警告] 仍有未完成的下载或 SSH 任务。请先 cancel_download/cancel ssh 任务后再 end_session；或再次 end_session 强制退出（不推荐）。");
-                    return new ToolEffect(false, false);
-                }
+                    break;
 
-                await SendOutput(result.Data ?? "工作完成。");
-                return new ToolEffect(false, true);
-            case "compact":
-                // compact 执行成功 = 新 session 已接管频道，旧 session 退出循环
-                // tool_result 已在 RunAsync 主路径追加进 _history，"善始善终"
-                return result.IsSuccess
-                    ? new ToolEffect(EndBurst: false, EndSession: true)
-                    : new ToolEffect(EndBurst: false, EndSession: false);  // compact 失败：继续循环
-            case "wait":
-                var mins = 5;
-                if (call.Inputs.Count > 1 && int.TryParse(call.Inputs[1], out var parsed))
-                    mins = parsed;
-                SetWaitUntil(DateTime.UtcNow.AddMinutes(mins));
+                case ToolEffectAction.Note note:
+                    Signal.Event(LogGroup.Engine, note.Message, new { sessionId = SessionId });
+                    break;
 
-                // 可选 journal：随手记当下经历（心智引擎 Writer）
-                if (call.Inputs.Count > 2 && !string.IsNullOrWhiteSpace(call.Inputs[2]))
-                {
-                    await WriteJournalFromWaitAsync(call.Inputs[2]);
-                }
-                return new ToolEffect(true, false);
-            case "escalate":
-                // 仅 express 会话：同池换活跃 session → working，结束 express 会话。
-                // 非 express 会话调用 escalate 视为 no-op（权限组已过滤，此处兜底）。
-                if (Type != "express" || _sessionEngine == null)
-                    return default;
-                try
-                {
-                    await _sessionEngine.CreateFromEscalateAsync(this, result.Data ?? "");
-                    return new ToolEffect(EndBurst: false, EndSession: true);
-                }
-                catch (Exception ex)
-                {
-                    Signal.Warn(LogGroup.Engine, "escalate 创建 working 失败",
-                        new { sessionId = SessionId, error = ex.Message });
-                    return new ToolEffect(EndBurst: false, EndSession: false);
-                }
-            case "connect_channel":
-                if (int.TryParse(result.Data, out var connId))
-                    await ConnectChannelAsync(connId, ConnectionMode.Full);
-                return default;
-            case "listen_channel":
-                if (int.TryParse(result.Data, out var listenId))
-                    await ConnectChannelAsync(listenId, ConnectionMode.Listen);
-                return default;
-            case "disconnect_channel":
-                DisconnectChannel();
-                return default;
-            default:
-                return default;
+                case ToolEffectAction.Escalate escalate:
+                    // 原实现：创建失败时把 EndSession 降回 false（会话继续跑），只记 warn。
+                    if (_sessionEngine is null) { endSession = false; break; }
+                    try
+                    {
+                        await _sessionEngine.CreateFromEscalateAsync(this, escalate.Reason);
+                    }
+                    catch (Exception ex)
+                    {
+                        Signal.Warn(LogGroup.Engine, "escalate 创建 working 失败",
+                            new { sessionId = SessionId, error = ex.Message });
+                        endSession = false;
+                    }
+                    break;
+            }
         }
+
+        return endSession == effect.EndSession ? effect : effect with { EndSession = endSession };
+    }
+
+    /// <summary>
+    /// 把解释工具结果所需的会话事实取成值。⚠️ **保留原实现的短路顺序**：
+    /// 只有在"没有在飞资源"时才会去问组件门（<c>QueryCanExitAsync</c>），
+    /// 多问一次是行为差异，而这正是这类重构最容易悄悄改掉的地方。
+    /// </summary>
+    private async Task<ToolEffectContext> BuildToolEffectContextAsync()
+    {
+        var children = _sessionEngine?.GetActiveChildren(SessionId);
+        var childCount = children?.Count ?? 0;
+        var inFlightResources = _sessionEngine?.AnyResourceBlocksExit(SessionId) == true;
+
+        var canExit = true;
+        if (!inFlightResources)
+            canExit = _componentHost is null || await _componentHost.QueryCanExitAsync();
+
+        return new ToolEffectContext(Type, childCount, inFlightResources, canExit, _forceExitAttempts);
     }
 
     /// <summary>
