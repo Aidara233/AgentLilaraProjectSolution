@@ -284,3 +284,7 @@ IInjectProvider/InjectContext 纯契约原文迁入 PluginSDK，保留 AgentCore
 ### 图数据流日志首切
 
 EvalContext 新增 PortTransfers（实际消费连线的三态、载荷类型、顺序，不存正文）与 EvaluatingNode（Evaluate 异常定位）。Solver 在输入读取点记录；运行时仍不引用日志实现。KeywordGraphRunner 把每拍 class/instance/trace/seq、成功/异常类型、未求解节点、求值顺序与端口流写为 graph.flow.beat 结构化 Signal 事件。新增 Known/NoEvent/Unknown、依赖环与抛错节点定位测试。GraphRuntime 38 项与主程序 493 项测试通过。尚未验证真实运行日志入库/UI 展示；其他图入口及旧生命周期/手工信号尚未迁移，全面信号系统改造仍未完成。
+
+### C1：Lilara.Graph 管理层
+
+图管理/挂载/订阅/运行器等九文件迁入 src/Lilara.Graph，依赖 GraphRuntime 与 Logging，友元宿主/测试。KeywordGraphRunner 中两个宿主消息映射原文迁至宿主 GraphEventMapper；生产调用与测试已更新。MessageGraphIntentDispatcher 发送桥仍留宿主。主程序编译、493 项主程序与 38 项 GraphRuntime 测试通过。只读复核另外发现 wire 输入保留名大小写、缺字段挂载表、频道键规范化、替换激活源兼容性及 session scope 未消费等问题，下一刀优先修复，不能因本次测试通过视为工具完整验收。

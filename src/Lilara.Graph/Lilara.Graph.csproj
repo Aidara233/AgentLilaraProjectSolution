@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>$(HostTargetFramework)</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="AgentCoreProcessor" />
+    <InternalsVisibleTo Include="AgentCoreProcessor.Tests" />
+    <ProjectReference Include="..\AgentLilara.GraphRuntime\AgentLilara.GraphRuntime.csproj" />
+    <ProjectReference Include="..\Lilara.Logging\Lilara.Logging.csproj" />
+  </ItemGroup>
+</Project>

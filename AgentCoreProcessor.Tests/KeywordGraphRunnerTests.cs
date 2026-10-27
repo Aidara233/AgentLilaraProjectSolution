@@ -32,7 +32,7 @@ public class KeywordGraphRunnerTests
         var dispatched = new List<ActionIntent>();
 
         await runner.RunAsync(
-            KeywordGraphRunner.ToEvent(message),
+            GraphEventMapper.ToEvent(message),
             message.MessageId,
             intent =>
             {

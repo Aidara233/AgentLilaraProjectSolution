@@ -71,7 +71,7 @@ public class FileAdapterKeywordGraphTests : IDisposable
         var dispatched = new List<ActionIntent>();
 
         await runner.RunAsync(
-            KeywordGraphRunner.ToEvent(message, channelId: 42),
+            GraphEventMapper.ToEvent(message, channelId: 42),
             "file-msg",
             intent =>
             {
@@ -94,7 +94,7 @@ public class FileAdapterKeywordGraphTests : IDisposable
         var dispatched = new List<ActionIntent>();
 
         await runner.RunAsync(
-            KeywordGraphRunner.ToEvent(message, channelId: 42),
+            GraphEventMapper.ToEvent(message, channelId: 42),
             "file-msg",
             intent =>
             {

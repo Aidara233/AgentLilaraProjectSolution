@@ -59,7 +59,7 @@ namespace AgentCoreProcessor.Engine
             // 键在**成功之后**才占用——失败必须留出给兜底图重试的机会。
             var deliveredKeys = new HashSet<string>(StringComparer.Ordinal);
             var traceId = msg.PlatformMessageId ?? $"{msg.Platform}:{msg.ChannelId}";
-            var messageEvent = Graph.KeywordGraphRunner.ToEvent(msg, channelId);
+            var messageEvent = Graph.GraphEventMapper.ToEvent(msg, channelId);
             var executor = new Graph.IngressIntentExecutor(
                 deliveredKeys,
                 deliveryKey: $"{channelId}:{sessionContext.IncomingMessage?.Id}",
