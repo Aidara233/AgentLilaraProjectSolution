@@ -55,6 +55,7 @@
     <ProjectReference Include="..\src\Lilara.Adapters\Lilara.Adapters.csproj" />
     <ProjectReference Include="..\src\Lilara.Turn\Lilara.Turn.csproj" />
     <ProjectReference Include="..\src\Lilara.Mind\Lilara.Mind.csproj" />
+    <ProjectReference Include="..\src\Lilara.PluginHost\Lilara.PluginHost.csproj" />
   </ItemGroup>
 
   <ItemGroup>

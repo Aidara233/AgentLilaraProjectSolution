@@ -400,3 +400,7 @@ EvidenceMath原文迁入Lilara.Mind，IExtractionLlm从ExtractService原文拆�
 ### Mind：伴随提取服务迁移
 
 ExpressExtractor、ExtractService 与唯一被提取器使用的 TextUtil 原文迁入 Lilara.Mind，方法体及命名空间保持。Mind 引用 PluginSDK、Logging 与 Newtonsoft.Json，不增加无必要的 Llm 横向依赖。完整 sln 离线缓存还原、构建成功（0 错误、6 项既有/传递警告）；主程序583、GraphRuntime38、GraphSandbox17，共638项测试通过，无失败/跳过。diff --check 通过，三个迁移文件均无内容差异。未执行真实提取模型或适配器冒烟；Mind其余服务、C整体边界、D1全路径对拍和完整信号迁移仍待继续。
+
+### PluginHost：工具描述纯渲染首切
+
+ToolDescriptionRenderer进入Lilara.PluginHost，仅接收已筛选ITool序列；ToolRegistry保留原筛选/追加/全局禁用逻辑，委托纯文本渲染。编号、声明参数顺序/索引、示例JSON、平台换行与TrimEnd保持，新增3项回归覆盖空序列、精确文本和注册表筛选/追加。完整sln离线还原与构建成功（0错误、6项既有/传递警告），641项测试通过（主程序586、图运行时38、沙箱17），diff检查通过。权限、静态注册、配置IO及插件加载尚未迁移；未做真实模型/适配器冒烟。

@@ -3,7 +3,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using AgentCoreProcessor.Config;
 using AgentCoreProcessor.Engine;
 using AgentCoreProcessor.Logging;
@@ -103,36 +102,7 @@ namespace AgentCoreProcessor.Tool
             var source = filter != null ? _tools.Values.Where(filter).ToList() : _tools.Values.ToList();
             if (additionalTools != null)
                 source.AddRange(additionalTools);
-            var sb = new StringBuilder();
-            int i = 1;
-
-            foreach (var tool in source)
-            {
-                if (IsDisabled(tool.Name)) continue;
-
-                sb.AppendLine($"工具{i}：{tool.Name}");
-                sb.AppendLine($"描述：{tool.Description}");
-                if (tool.Parameters.Count > 0)
-                {
-                    var paramParts = tool.Parameters.Select(p => $"inputs[{p.Index}] = {p.Name}");
-                    sb.AppendLine($"参数：{string.Join(", ", paramParts)}");
-                }
-                sb.AppendLine($"示例：{GenerateExample(tool)}<over>");
-                sb.AppendLine();
-                i++;
-            }
-
-            return sb.ToString().TrimEnd();
-        }
-
-        private static string GenerateExample(ITool tool)
-        {
-            var example = new
-            {
-                tool = tool.Name,
-                inputs = tool.Parameters.Select(p => $"({p.Name})").ToArray()
-            };
-            return JsonConvert.SerializeObject(example, Formatting.None);
+            return ToolDescriptionRenderer.Render(source.Where(tool => !IsDisabled(tool.Name)));
         }
 
         // ---- 禁用管理 ----
