@@ -675,6 +675,17 @@ internal sealed class GraphManager
                 continue;
             }
 
+            if (scope == "session")
+            {
+                try { SessionGraphContract.Validate(_classes[mount.ClassId]); }
+                catch (ArgumentException ex)
+                {
+                    Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.session.invalid_contract",
+                        new { mount.ClassId, error = ex.Message });
+                    continue;
+                }
+            }
+
             // 同一作用域内实例键必须唯一（classId + 作用域 + 键 + 实例名）。
             if (!seenKeys.Add(mount.InstanceKey))
             {

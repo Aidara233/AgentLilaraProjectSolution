@@ -39,11 +39,19 @@ public class GraphManagerTests : IDisposable
 
     private void WriteMountEntries(params (string Scope, string Key)[] mounts)
     {
+        File.WriteAllText(Path.Combine(_graphs, "user.session-counter.json"), """
+            {"classId":"user.session-counter","kind":"static",
+             "variables":[{"name":"pending","type":"int","initial":0}],
+             "nodes":[{"id":"in","type":"on.message"},{"id":"read","type":"read.variable","params":{"name":"pending"}},
+               {"id":"one","type":"read.const","params":{"value":1}},{"id":"add","type":"math.add"},
+               {"id":"write","type":"write.variable","params":{"name":"pending"}}],
+             "links":[{"from":"read.value","to":"add.a"},{"from":"one.value","to":"add.b"},{"from":"add.result","to":"write.value"}]}
+            """);
         var entries = string.Join(",", mounts.Select(m =>
         {
             var classId = m.Scope == "channel" && m.Key == "quiet"
                 ? "preset.quiet"
-                : "preset.activation";
+                : m.Scope == "session" ? "user.session-counter" : "preset.activation";
             return $"{{\"scope\":\"{m.Scope}\",\"scopeKey\":\"{m.Key}\",\"classId\":\"{classId}\",\"enabled\":true}}";
         }));
 

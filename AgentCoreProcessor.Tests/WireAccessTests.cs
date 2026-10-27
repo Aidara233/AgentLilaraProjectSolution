@@ -112,13 +112,14 @@ public sealed class WireAccessTests : IDisposable
     }
 
     [Fact]
-    public void IncompatibleClassReplacementAndSessionMountAreRejected()
+    public void IncompatibleClassReplacementIsRejectedAndQuietSessionMountIsAccepted()
     {
         Access.Apply(Source);
         Access.Mount("""{"version":1,"mounts":[{"scope":"global","classId":"user.quiet"}]}""");
         Assert.Throws<ArgumentException>(() => Access.Apply(Source.Replace("on.message", "on.error")));
         Assert.Equal(Source, File.ReadAllText(Path.Combine(_root, "Graphs", "user.quiet.json")));
-        Assert.Throws<ArgumentException>(() => Access.Mount("""{"version":1,"mounts":[{"scope":"session","scopeKey":"s1","classId":"user.quiet"}]}"""));
+        Access.Mount("""{"version":1,"mounts":[{"scope":"session","scopeKey":"s1","classId":"user.quiet"}]}""");
+        Assert.Single(GraphManager.Open(_root, false).RunnersForSession("s1"));
     }
 
     public void Dispose() { if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true); }

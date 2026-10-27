@@ -74,7 +74,10 @@ internal sealed class WireAccessImpl : IWireAccess
                 var current = JsonSerializer.Deserialize<Engine.Graph.MountDocument>(File.ReadAllText(mountsPath), Json)
                     ?? throw new ArgumentException("existing mount document is empty");
                 foreach (var mount in current.Mounts.Where(m => string.Equals(m.ClassId, graph.ClassId, StringComparison.OrdinalIgnoreCase)))
+                {
                     CheckTrigger(graph, mount.Trigger);
+                    if (mount.Scope == "session") Engine.Graph.SessionGraphContract.Validate(graph);
+                }
             }
             var revision = Replace(Path.Combine(_directory, graph.ClassId + ".json"), source);
             return new { applied = true, graph.ClassId, revision,
@@ -104,8 +107,8 @@ internal sealed class WireAccessImpl : IWireAccess
                 CheckId(mount.ClassId);
                 mount.Scope = mount.Scope?.Trim().ToLowerInvariant() ?? "";
                 mount.Trigger = mount.Trigger?.Trim().ToLowerInvariant() ?? "";
-                if (mount.Scope is not ("channel" or "global"))
-                    throw new ArgumentException("scope must be channel or global; session graph execution is not implemented");
+                if (mount.Scope is not ("channel" or "global" or "session"))
+                    throw new ArgumentException("scope must be channel, global or session");
                 if (mount.Scope == "global") mount.ScopeKey = null;
                 else if (string.IsNullOrWhiteSpace(mount.ScopeKey))
                     throw new ArgumentException("scopeKey is required");
@@ -121,6 +124,7 @@ internal sealed class WireAccessImpl : IWireAccess
                 var graph = GraphLoader.Load(File.ReadAllText(Resolve(mount.ClassId)));
                 if (graph.ClassId != mount.ClassId) throw new ArgumentException("classId does not match source");
                 CheckTrigger(graph, mount.Trigger);
+                if (mount.Scope == "session") Engine.Graph.SessionGraphContract.Validate(graph);
                 if (!keys.Add(mount.InstanceKey)) throw new ArgumentException("duplicate mount instance");
             }
             var revision = Replace(Path.Combine(_directory, "mounts.json"), JsonSerializer.Serialize(document, Json));

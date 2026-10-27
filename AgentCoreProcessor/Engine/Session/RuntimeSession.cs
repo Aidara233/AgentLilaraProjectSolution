@@ -107,7 +107,7 @@ internal partial class RuntimeSession : IRuntimeSession
 
     /// <summary>
     /// 本会话显式 session-scope 挂载的私有图实例（一个会话可挂多张）。
-    /// <para>⚠️ 目前只做绑定与释放，尚未在会话轮次里消费——真正的消费点落地前这里不会产生行为。</para>
+    /// <para>入口和轮中排空后消费新消息；生产环境通过动态提供器刷新挂载。</para>
     /// </summary>
     private IReadOnlyList<KeywordGraphRunner> _graphRunners = Array.Empty<KeywordGraphRunner>();
 
@@ -473,6 +473,7 @@ internal partial class RuntimeSession : IRuntimeSession
 
                     // 收集输入，并通过 host 格式化（如有），追加到常驻历史 messages
                     var drained = DrainInputPortsRaw(ct);
+                    await ConsumeSessionGraphsAsync(drained);
                     if (drained.Count == 0 && _pendingInjections.Count == 0 && !hasComponentNotification)
                     {
                         awaitingInput = true;
@@ -812,6 +813,7 @@ internal partial class RuntimeSession : IRuntimeSession
     {
                 {
                     var midDrain = DrainInputPortsRaw(CancellationToken.None);
+                    await ConsumeSessionGraphsAsync(midDrain);
                     if (midDrain.Count > 0)
                     {
                         List<Message> midNew = new();
