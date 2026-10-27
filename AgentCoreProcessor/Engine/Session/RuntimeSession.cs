@@ -140,7 +140,8 @@ internal partial class RuntimeSession : IRuntimeSession, IRuntimeSessionDiagnost
 
     /// <summary>图动作执行器（默认 null：图仍只观察，不发送）。</summary>
     private IGraphIntentDispatcher? _graphIntentDispatcher;
-    private SessionEngine? _sessionEngine;
+    private Func<string, Task>? _compact;
+    private Func<string, Task>? _escalate;
     private IChannelConnectionAccess? _channelConnection;
     private ISessionExitQuery? _exitQuery;
     private Func<IWriterAccess?>? _writerAccess;
@@ -229,7 +230,11 @@ internal partial class RuntimeSession : IRuntimeSession, IRuntimeSessionDiagnost
 
     public void SetMessageEngine(MessageEngine me) => _messageEngine = me;
     public void SetGraphIntentDispatcher(IGraphIntentDispatcher dispatcher) => _graphIntentDispatcher = dispatcher;
-    public void SetSessionEngine(SessionEngine se) => _sessionEngine = se;
+    public void SetTransitionOperations(Func<string, Task> compact, Func<string, Task> escalate)
+    {
+        _compact = compact;
+        _escalate = escalate;
+    }
     public void SetChannelConnectionAccess(IChannelConnectionAccess access) => _channelConnection = access;
     public void SetSessionExitQuery(ISessionExitQuery query) => _exitQuery = query;
     public void SetWriterAccess(Func<IWriterAccess?> writerAccess) => _writerAccess = writerAccess;
@@ -255,9 +260,9 @@ internal partial class RuntimeSession : IRuntimeSession, IRuntimeSessionDiagnost
         );
 
         // 创建 CompactTool 并注入工具表
-        if (_sessionEngine != null)
+        if (_compact != null)
         {
-            _compactTool = new Tool.Core.CompactTool(this, _sessionEngine);
+            _compactTool = new Tool.Core.CompactTool(SessionId, _compact);
             if (!_tools.ContainsKey("compact"))
             {
                 _tools["compact"] = _compactTool;

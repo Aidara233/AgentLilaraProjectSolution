@@ -496,3 +496,7 @@ SDK新增ISessionExitQuery，SessionEngine复用原子会话/资源查询实现�
 ### C3前置：wait经历使用SDK写入口
 
 JournalDto兼容新增可选OccurredAt，WriterAccessImpl原样映射内部请求，省略仍保留Writer默认当前时间。RuntimeSession通过Func<IWriterAccess?>动态获取写入口，创建/恢复均由宿主装配原WriterAccessImpl；wait不再访问_sessionEngine.Mind。保留情绪前缀、无服务跳过、本地发生时间和异常吞日志。新增7项定向回归覆盖解析边界、时间、动态替换/异常及内部映射。完整sln构建及743项测试通过（主程序633、邮件52、GraphRuntime41、沙箱17），diff检查通过。未调用真实模型/适配器；compact/升级具体引擎依赖、C整体及D1/D5仍未完成。
+
+### C3：移除 RuntimeSession 的具体引擎回指
+
+RuntimeSession 注入 compact/escalate 的 Func<string,Task>，创建与恢复由 SessionEngine 闭包绑定原方法；删除具体 SessionEngine 字段与 SetSessionEngine。CompactTool 仅持有会话 id 与操作委托，不再持有会话/引擎实例。保留摘要原文、异步等待、失败文本、升级失败保活与 compact 工具注入行为。新增9项回归；完整sln构建与752项测试通过（主程序642、邮件52、GraphRuntime41、沙箱17），diff检查通过。仅移除具体类型回指，闭包仍由装配根持有原操作；频道占用权威C12、完整模块迁移及D1/D5仍未完成。未运行真实模型/平台冒烟。

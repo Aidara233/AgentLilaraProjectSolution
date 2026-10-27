@@ -3,7 +3,6 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using AgentCoreProcessor.Engine.Session;
 using AgentCoreProcessor.Logging;
 using AgentLilara.PluginSDK;
 
@@ -19,8 +18,8 @@ namespace AgentCoreProcessor.Tool.Core
     [ToolMeta(ContinueLoop = false)]
     internal class CompactTool : ITool
     {
-        private readonly RuntimeSession _session;
-        private readonly SessionEngine _sessionEngine;
+        private readonly string _sessionId;
+        private readonly Func<string, Task> _compact;
 
         public string Name => "compact";
         public string Description =>
@@ -35,10 +34,10 @@ namespace AgentCoreProcessor.Tool.Core
         };
         public TimeSpan Timeout => TimeSpan.FromSeconds(30);
 
-        public CompactTool(RuntimeSession session, SessionEngine sessionEngine)
+        public CompactTool(string sessionId, Func<string, Task> compact)
         {
-            _session = session;
-            _sessionEngine = sessionEngine;
+            _sessionId = sessionId;
+            _compact = compact;
         }
 
         public async Task<ToolResult> ExecuteAsync(List<string> resolvedInputs, CancellationToken ct)
@@ -59,10 +58,10 @@ namespace AgentCoreProcessor.Tool.Core
             {
                 // 触发新 session 创建（同步），新 session 在 CreateFromCompact 内部
                 // 通过标准 CreateSession 走 AutoClaim 同步接管频道
-                await _sessionEngine.CreateFromCompact(_session, summary);
+                await _compact(summary);
 
                 Signal.Event(LogGroup.Engine, "compact 已触发新 session",
-                    new { oldSession = _session.SessionId, summaryLength = summary.Length });
+                    new { oldSession = _sessionId, summaryLength = summary.Length });
 
                 // 返回成功：旧 session 退出循环（EndSession 由 ApplyToolEffectAsync 检测 compact 触发）
                 return new ToolResult
@@ -74,7 +73,7 @@ namespace AgentCoreProcessor.Tool.Core
             catch (Exception ex)
             {
                 Signal.Error(LogGroup.Engine, "compact 创建新 session 失败",
-                    new { oldSession = _session.SessionId, error = ex.Message });
+                    new { oldSession = _sessionId, error = ex.Message });
                 return new ToolResult
                 {
                     Status = "failed",

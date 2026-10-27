@@ -138,10 +138,10 @@ internal partial class RuntimeSession
 
                 case ToolEffectAction.Escalate escalate:
                     // 原实现：创建失败时把 EndSession 降回 false（会话继续跑），只记 warn。
-                    if (_sessionEngine is null) { endSession = false; break; }
+                    if (_escalate is null) { endSession = false; break; }
                     try
                     {
-                        await _sessionEngine.CreateFromEscalateAsync(this, escalate.Reason);
+                        await _escalate(escalate.Reason);
                     }
                     catch (Exception ex)
                     {

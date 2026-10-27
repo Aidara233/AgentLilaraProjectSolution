@@ -44,7 +44,8 @@ internal partial class SessionEngine
             ? new RuntimeSession(spec, fixedSessionId, finalComponents)
             : new RuntimeSession(spec, finalComponents);
         session.SetCurrency(_currency!);
-        session.SetSessionEngine(this);
+        session.SetTransitionOperations(summary => CreateFromCompact(session, summary),
+            reason => CreateFromEscalateAsync(session, reason));
         session.SetChannelConnectionAccess(this);
         session.SetSessionExitQuery(this);
         session.SetWriterAccess(() => Mind?.Writer is { } writer ? new AgentCoreProcessor.Tool.Host.WriterAccessImpl(writer) : null);
@@ -395,7 +396,8 @@ internal partial class SessionEngine
                 var profile = SessionTypeProfiles.Get(spec.Type);
                 session = new RuntimeSession(spec, state.SessionId, ComputeFinalComponents(spec, profile));
                 session.SetCurrency(_currency!);
-                session.SetSessionEngine(this);
+                session.SetTransitionOperations(summary => CreateFromCompact(session, summary),
+                    reason => CreateFromEscalateAsync(session, reason));
                 session.SetChannelConnectionAccess(this);
                 session.SetSessionExitQuery(this);
                 session.SetWriterAccess(() => Mind?.Writer is { } writer ? new AgentCoreProcessor.Tool.Host.WriterAccessImpl(writer) : null);
