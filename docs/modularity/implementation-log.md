@@ -288,3 +288,7 @@ EvalContext 新增 PortTransfers（实际消费连线的三态、载荷类型、
 ### C1：Lilara.Graph 管理层
 
 图管理/挂载/订阅/运行器等九文件迁入 src/Lilara.Graph，依赖 GraphRuntime 与 Logging，友元宿主/测试。KeywordGraphRunner 中两个宿主消息映射原文迁至宿主 GraphEventMapper；生产调用与测试已更新。MessageGraphIntentDispatcher 发送桥仍留宿主。主程序编译、493 项主程序与 38 项 GraphRuntime 测试通过。只读复核另外发现 wire 输入保留名大小写、缺字段挂载表、频道键规范化、替换激活源兼容性及 session scope 未消费等问题，下一刀优先修复，不能因本次测试通过视为工具完整验收。
+
+### 图工具复核修复
+
+修复保留文件名大小写别名、缺字段挂载表误清空、频道键非规范文本、更新源码破坏现有触发源兼容性；工具暂拒尚未消费的 session scope，明确订阅需删除重建/重启。运行端也规范化频道键并拒绝不匹配激活源。新增存活 manager 重载/卸载、无效输入保留原文件及手工挂载表回归；旧兜底优先级测试改用真正 on.error 静默图。主程序 501 项测试与 diff --check 通过，未跑真实模型或适配器冒烟。

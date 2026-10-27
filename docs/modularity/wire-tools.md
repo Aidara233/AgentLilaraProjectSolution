@@ -11,9 +11,9 @@
 | wire_apply | source（完整图 JSON） | 校验后保存 Storage/Graphs/{classId}.json，返回审计版本 |
 | wire_mount | source（完整挂载表 JSON） | 验证引用图、作用域、重复实例与激活源后替换 mounts.json |
 
-wire_mount 使用完整表：先 describe，保留其他挂载再修改。`{"version":1,"mounts":[]}` 卸载全部挂载。现有作用域为 channel/session/global；触发源为 message/error。外部信源继续走订阅机制。
+wire_mount 使用完整表：先 describe，保留其他挂载再修改。`{"version":1,"mounts":[]}` 卸载全部挂载。工具可写作用域为 channel/global；session 挂载尚未接入会话执行，写入口暂时拒绝。触发源为 message/error。外部信源继续走订阅机制。
 
-图源码更新不会直接修改已有运行器；重新写入挂载表触发 GraphManager 原有重载路径，或重启后使用新定义。挂载重载会销毁挂载实例的变量，遵循原有 GraphManager 语义。订阅实例有独立生命周期。
+图源码更新不会直接修改已有运行器；重新写入挂载表触发 GraphManager 原有重载路径，或重启后使用新定义。挂载重载会销毁挂载实例的变量，遵循原有 GraphManager 语义。订阅实例有独立生命周期：更新源码后，已有订阅需删除重建或重启宿主；重载挂载表不会重建订阅实例。写入口必须显式提供 version:1 与 mounts 数组，频道键规范化为正整数文本；保留文件名按大小写无关比较。替换图的激活源与现有挂载不兼容时拒绝保存，应先卸载。运行端加载手工挂载表也检查频道键与激活源。
 
 审计文件为 Storage/Graphs/.history/{revision}/change.json，包含 UTC 时间、目标文件名、before/after 全文。写审计成功后才原子替换目标。回滚时可将历史 before 源码重新提交给工具；创建新图的 before 为 null。工具只能写图源码与挂载表，不接受配置文件路径，不修改 caps 或治理配置。
 

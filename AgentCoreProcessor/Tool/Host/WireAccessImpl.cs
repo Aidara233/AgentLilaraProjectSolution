@@ -41,7 +41,8 @@ internal sealed class WireAccessImpl : IWireAccess
             }
             var files = new[] { _directory, _defaults }
                 .Where(Directory.Exists).SelectMany(d => Directory.GetFiles(d, "*.json"))
-                .Where(p => Path.GetFileName(p) is not ("mounts.json" or "subscriptions.json"))
+                .Where(p => !string.Equals(Path.GetFileName(p), "mounts.json", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(Path.GetFileName(p), "subscriptions.json", StringComparison.OrdinalIgnoreCase))
                 .Select(Path.GetFileNameWithoutExtension).Distinct().OrderBy(x => x).ToArray();
             return new
             {
@@ -67,9 +68,17 @@ internal sealed class WireAccessImpl : IWireAccess
         CheckId(graph.ClassId);
         lock (_gate)
         {
+            var mountsPath = Path.Combine(_directory, "mounts.json");
+            if (File.Exists(mountsPath))
+            {
+                var current = JsonSerializer.Deserialize<Engine.Graph.MountDocument>(File.ReadAllText(mountsPath), Json)
+                    ?? throw new ArgumentException("existing mount document is empty");
+                foreach (var mount in current.Mounts.Where(m => string.Equals(m.ClassId, graph.ClassId, StringComparison.OrdinalIgnoreCase)))
+                    CheckTrigger(graph, mount.Trigger);
+            }
             var revision = Replace(Path.Combine(_directory, graph.ClassId + ".json"), source);
             return new { applied = true, graph.ClassId, revision,
-                reload = "Existing instances keep their class until mounts are reloaded or the host restarts." };
+                reload = "Static mount instances require mounts reload or host restart. Existing subscription instances require subscription removal and recreation, or host restart." };
         }
     }
 
@@ -78,6 +87,12 @@ internal sealed class WireAccessImpl : IWireAccess
     {
         lock (_gate)
         {
+            using var input = JsonDocument.Parse(source);
+            if (input.RootElement.ValueKind != JsonValueKind.Object
+                || !input.RootElement.TryGetProperty("version", out var version)
+                || version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out var number) || number != 1
+                || !input.RootElement.TryGetProperty("mounts", out var mounts) || mounts.ValueKind != JsonValueKind.Array)
+                throw new ArgumentException("explicit version:1 and mounts array are required");
             var document = JsonSerializer.Deserialize<Engine.Graph.MountDocument>(source, Json)
                 ?? throw new ArgumentException("mount document is empty");
             if (document.Version != 1 || document.Mounts is null)
@@ -87,29 +102,39 @@ internal sealed class WireAccessImpl : IWireAccess
             {
                 if (mount is null) throw new ArgumentException("null mount");
                 CheckId(mount.ClassId);
-                mount.Scope = mount.Scope.Trim().ToLowerInvariant();
-                mount.Trigger = mount.Trigger.Trim().ToLowerInvariant();
-                if (mount.Scope is not ("channel" or "session" or "global"))
-                    throw new ArgumentException("scope must be channel, session or global");
+                mount.Scope = mount.Scope?.Trim().ToLowerInvariant() ?? "";
+                mount.Trigger = mount.Trigger?.Trim().ToLowerInvariant() ?? "";
+                if (mount.Scope is not ("channel" or "global"))
+                    throw new ArgumentException("scope must be channel or global; session graph execution is not implemented");
                 if (mount.Scope == "global") mount.ScopeKey = null;
                 else if (string.IsNullOrWhiteSpace(mount.ScopeKey))
                     throw new ArgumentException("scopeKey is required");
                 else mount.ScopeKey = mount.ScopeKey.Trim();
-                if (mount.Scope == "channel" && (!int.TryParse(mount.ScopeKey, out var channel) || channel <= 0))
-                    throw new ArgumentException("channel scopeKey must be a positive channel id");
+                if (mount.Scope == "channel")
+                {
+                    if (!int.TryParse(mount.ScopeKey, out var channel) || channel <= 0)
+                        throw new ArgumentException("channel scopeKey must be a positive channel id");
+                    mount.ScopeKey = channel.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                }
                 if (mount.Trigger is not ("message" or "error"))
                     throw new ArgumentException("trigger must be message or error");
                 var graph = GraphLoader.Load(File.ReadAllText(Resolve(mount.ClassId)));
                 if (graph.ClassId != mount.ClassId) throw new ArgumentException("classId does not match source");
-                var activation = graph.Nodes.Single(n => n.IsActivationSource);
-                if ((mount.Trigger == "error" && activation is not AgentLilara.GraphRuntime.Graph.OnErrorEvent)
-                    || (mount.Trigger == "message" && activation is not AgentLilara.GraphRuntime.Graph.OnMessageEvent))
-                    throw new ArgumentException("mount trigger does not match graph activation source");
+                CheckTrigger(graph, mount.Trigger);
                 if (!keys.Add(mount.InstanceKey)) throw new ArgumentException("duplicate mount instance");
             }
             var revision = Replace(Path.Combine(_directory, "mounts.json"), JsonSerializer.Serialize(document, Json));
             return new { mounted = document.Mounts.Count, revision };
         }
+    }
+
+    private static void CheckTrigger(AgentLilara.GraphRuntime.Graph.GraphClass graph, string trigger)
+    {
+        var activation = graph.Nodes.Single(n => n.IsActivationSource);
+        if ((string.Equals(trigger, "error", StringComparison.OrdinalIgnoreCase) && activation is AgentLilara.GraphRuntime.Graph.OnErrorEvent)
+            || (string.Equals(trigger, "message", StringComparison.OrdinalIgnoreCase) && activation is AgentLilara.GraphRuntime.Graph.OnMessageEvent))
+            return;
+        throw new ArgumentException("mount trigger does not match graph activation source; unmount before changing activation source");
     }
 
     private object ReadMounts() => File.Exists(Path.Combine(_directory, "mounts.json"))
@@ -127,7 +152,9 @@ internal sealed class WireAccessImpl : IWireAccess
 
     private static void CheckId(string id)
     {
-        if (string.IsNullOrWhiteSpace(id) || id.Length > 128 || id is "mounts" or "subscriptions"
+        if (string.IsNullOrWhiteSpace(id) || id.Length > 128
+            || string.Equals(id, "mounts", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(id, "subscriptions", StringComparison.OrdinalIgnoreCase)
             || !char.IsAsciiLetterOrDigit(id[0])
             || id.Any(c => !char.IsAsciiLetterOrDigit(c) && c is not ('.' or '-' or '_')))
             throw new ArgumentException("classId must start with a letter/digit and contain only letters, digits, dots, hyphens or underscores; mounts/subscriptions are reserved");

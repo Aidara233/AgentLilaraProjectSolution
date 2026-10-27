@@ -642,6 +642,15 @@ internal sealed class GraphManager
             }
 
             var scopeKey = scope == "global" ? string.Empty : mount.ScopeKey!.Trim();
+            if (scope == "channel")
+            {
+                if (!int.TryParse(scopeKey, out var channelId) || channelId <= 0)
+                {
+                    Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.mount.invalid_channel", new { mount.ClassId, scopeKey });
+                    continue;
+                }
+                scopeKey = channelId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
             mount.Scope = scope;
             mount.ScopeKey = scope == "global" ? null : scopeKey;
 
@@ -656,6 +665,15 @@ internal sealed class GraphManager
                 continue;
             }
             mount.Trigger = trigger;
+
+            var activation = _classes[mount.ClassId].Nodes.Single(n => n.IsActivationSource);
+            if ((trigger == GraphMount.TriggerMessage && activation is not OnMessageEvent)
+                || (trigger == GraphMount.TriggerError && activation is not OnErrorEvent))
+            {
+                Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.mount.incompatible_trigger",
+                    new { mount.ClassId, mount.Trigger });
+                continue;
+            }
 
             // 同一作用域内实例键必须唯一（classId + 作用域 + 键 + 实例名）。
             if (!seenKeys.Add(mount.InstanceKey))

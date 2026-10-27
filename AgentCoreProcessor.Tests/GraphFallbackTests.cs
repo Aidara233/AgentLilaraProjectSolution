@@ -102,9 +102,11 @@ public class GraphFallbackTests : IDisposable
     [Fact]
     public void ChannelErrorMountOverridesGlobalFallback()
     {
+        File.WriteAllText(Path.Combine(GraphDir, "user.error-quiet.json"),
+            """{"classId":"user.error-quiet","kind":"static","nodes":[{"id":"in","type":"on.error"}],"links":[]}""");
         WriteMounts("""
         { "version": 1, "mounts": [
-            { "scope": "channel", "scopeKey": "1", "classId": "preset.quiet", "trigger": "error", "instanceName": "local", "enabled": true },
+            { "scope": "channel", "scopeKey": "1", "classId": "user.error-quiet", "trigger": "error", "instanceName": "local", "enabled": true },
             { "scope": "global",  "classId": "preset.fallback", "trigger": "error", "enabled": true }
         ] }
         """);
@@ -112,7 +114,7 @@ public class GraphFallbackTests : IDisposable
         var manager = GraphManager.TryCreate(_root, active: true)!;
 
         var errorRunner = Assert.Single(manager.RunnersForError(1));
-        Assert.Contains("preset.quiet", errorRunner.Instance.InstanceKey);
+        Assert.Contains("user.error-quiet", errorRunner.Instance.InstanceKey);
 
         // 没有频道级错误图的频道，回退到 global 兜底
         var other = Assert.Single(manager.RunnersForError(9));
