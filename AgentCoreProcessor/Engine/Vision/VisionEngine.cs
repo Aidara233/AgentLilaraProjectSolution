@@ -176,8 +176,8 @@ namespace AgentCoreProcessor.Engine.Vision
             phase2Config.Endpoint = visionEndpoint;
             phase3Config.Endpoint = visionEndpoint;
 
-            phase1Provider = new SiliconFlowVisionProvider(visionApiKey, phase1Config);
-            phase2Provider = new SiliconFlowVisionProvider(visionApiKey, phase2Config);
+            phase1Provider = new SiliconFlowVisionProvider(visionApiKey, phase1Config.Endpoint, phase1Config.Model, phase1Config.Temperature, phase1Config.MaxTokens, phase1Config.PromptTemplate);
+            phase2Provider = new SiliconFlowVisionProvider(visionApiKey, phase2Config.Endpoint, phase2Config.Model, phase2Config.Temperature, phase2Config.MaxTokens, phase2Config.PromptTemplate);
         }
 
         private async Task ProcessPendingImagesAsync()
@@ -407,7 +407,7 @@ namespace AgentCoreProcessor.Engine.Vision
 
                 // 如果 Phase 3 但 provider 模型不同，用 Phase3Config 重建
                 if (signal.TargetPhase == 3 && phase3Config!.Model != phase2Config!.Model)
-                    provider = new SiliconFlowVisionProvider(visionApiKey!, phase3Config);
+                    provider = new SiliconFlowVisionProvider(visionApiKey!, phase3Config.Endpoint, phase3Config.Model, phase3Config.Temperature, phase3Config.MaxTokens, phase3Config.PromptTemplate);
 
                 var prompt = BuildPhasePrompt(signal, record, configForPhase);
                 var path = await ImageStorage.GetModelInputPathAsync(signal.Hash);

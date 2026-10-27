@@ -3,7 +3,7 @@ using System.IO;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
-using AgentCoreProcessor.Engine.Vision;
+
 using Newtonsoft.Json.Linq;
 
 namespace AgentCoreProcessor.Client
@@ -35,14 +35,15 @@ namespace AgentCoreProcessor.Client
             httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
         }
 
-        public SiliconFlowVisionProvider(string apiKey, PhaseConfig config)
+        public SiliconFlowVisionProvider(string apiKey, string endpoint, string model,
+            double temperature, int maxTokens, string? promptTemplate)
         {
             this.apiKey = apiKey;
-            endpoint = config.Endpoint;
-            model = config.Model;
-            temperature = config.Temperature;
-            maxTokens = config.MaxTokens;
-            promptTemplate = config.PromptTemplate;
+            this.endpoint = endpoint;
+            this.model = model;
+            this.temperature = temperature;
+            this.maxTokens = maxTokens;
+            this.promptTemplate = promptTemplate;
             httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
         }
 

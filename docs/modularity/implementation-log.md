@@ -272,3 +272,7 @@ Prompts 两文件与 Axes 五文件迁入 src/Lilara.Context，均保持源码�
 ### C1：Lilara.Llm 模型客户端首切
 
 迁移 Models 三文件与 Client 七文件至 src/Lilara.Llm。客户端直接引用 PluginSDK，脱离宿主 global using；Claude 请求转储目录改由构造注入，Processor 传入原 Storage/Logs/ClaudeRequests 路径。新库依赖 PluginSDK、Lilara.Logging、Anthropic.SDK 5.10.0、OpenAI 2.10.0、Newtonsoft.Json 13.0.4，友元宿主/测试。Core/Processor 与 OCR/embedding/vision provider 暂留宿主。主程序编译和 492 项测试通过；新增离线失败请求转储/脱敏验证。离线还原两个间接依赖缺缓存 10.0.3，NuGet 以 10.0.5 解析并报 NU1603；未联网且未验证真实模型请求。未宣称契约总线与静态状态治理完成。
+
+### C1：Vision/OCR 与 Embedding providers
+
+OCR/Vision 六文件迁入 src/Lilara.Vision，Embedding 五文件及纯 BCL VectorUtil 迁入 Lilara.Llm。SiliconFlowVisionProvider 不再接受宿主 PhaseConfig，由 VisionEngine 三处展开原配置的 endpoint/model/temperature/maxTokens/promptTemplate。新 Vision 库引用 Logging/Newtonsoft，Llm 增加 ONNX 既有版本；保持命名空间与友元过渡。主程序构建、492 项测试及 diff --check 通过。未运行真实 OCR、ONNX 模型或外部模型请求；两项缓存依赖替代 NU1603 与既有 API 警告仍在。VisionEngine 业务编排与 PhaseConfig 仍留宿主。
