@@ -31,7 +31,9 @@ namespace AgentCoreProcessor.Component;
 internal class SubAgentAccessAdapter : ISubAgentAccess, AgentLilara.PluginSDK.Services.ISessionResource
 {
     private readonly Engine.MasterEngine _master;
-    private bool _resourceRegistered;
+    private readonly object _resourceGate = new();
+    private ISessionResourceAccess? _resourceAccess;
+    private readonly Func<ISessionResourceAccess?> _findResourceAccess;
 
     // 子 agent 邮箱端口。父 session send_instruction 写入，子 session WaitForActivation 读出。
     private readonly ConcurrentDictionary<string, MailboxInputPort> _childMailboxes = new();
@@ -39,18 +41,27 @@ internal class SubAgentAccessAdapter : ISubAgentAccess, AgentLilara.PluginSDK.Se
     private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _waitTcs = new();
 
     public SubAgentAccessAdapter(Engine.MasterEngine master)
+        : this(master, () => master.GetActiveEnginesSnapshot().OfType<ISessionResourceAccess>().FirstOrDefault())
     {
-        _master = master;
     }
 
-    private void EnsureResourceRegistered()
+    internal SubAgentAccessAdapter(Engine.MasterEngine master, Func<ISessionResourceAccess?> findResourceAccess)
     {
-        if (_resourceRegistered) return;
-        var se = _master.GetActiveEnginesSnapshot().OfType<SessionEngine>().FirstOrDefault();
-        if (se != null)
+        _master = master;
+        _findResourceAccess = findResourceAccess;
+    }
+
+    internal void EnsureResourceRegistered()
+    {
+        lock (_resourceGate)
         {
-            se.RegisterSessionResource(this);
-            _resourceRegistered = true;
+            var access = _findResourceAccess();
+            if (ReferenceEquals(access, _resourceAccess)) return;
+            _resourceAccess?.Unregister(this);
+            _resourceAccess = null;
+            if (access is null) return;
+            access.Register(this);
+            _resourceAccess = access;
         }
     }
 

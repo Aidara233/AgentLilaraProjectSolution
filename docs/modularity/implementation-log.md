@@ -432,3 +432,7 @@ SDK新增ChannelSessionView/IChannelSessionQuery，SessionEngine复用原_poolLo
 ### C2：会话访问实现归回会话服务
 
 SessionEngine实现现有SDK ISessionAccess，列表DTO映射、频道名查询与跨会话注入/唤醒归入SessionEngine.Access。SessionAccessImpl仅按SDK接口发现并转发，消除具体SessionEngine/RuntimeSession依赖。保留列表字段、无服务空列表/false、活跃目标检查、来源文字及先注入后唤醒顺序。新增独立端口替身发现与真实引擎快照隔离回归，原7项访问测试保持通过。完整sln构建与657项测试通过（主程序550、邮件52、GraphRuntime38、沙箱17），diff检查通过。未运行真实模型/适配器/WebUI冒烟，剩余会话控制与C/D迁移继续。
+
+### 子会话资源注册跟随 SDK 端口实例
+
+SubAgentAccessAdapter通过ISessionResourceAccess发现资源注册服务，以端口实例身份替代永久bool；切换先反注册旧端口，再注册新端口，服务消失清除绑定，返回后可重新注册。注册路径串行化，不改子会话创建/控制或消息路径。新增3项回归验证相同实例幂等、端口替换次序与失去/恢复服务。完整sln构建成功，660项测试通过（主程序553、邮件52、GraphRuntime38、沙箱17），diff检查通过。未做真实引擎重建/模型/适配器冒烟；其余具体SessionEngine依赖与C/D主线继续。
