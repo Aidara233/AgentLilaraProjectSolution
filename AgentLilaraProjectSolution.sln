@@ -1,4 +1,4 @@
-
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
 VisualStudioVersion = 18.8.12023.21
@@ -78,6 +78,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentLilara.GraphRuntime.Tests", "tests\AgentLilara.GraphRuntime.Tests\AgentLilara.GraphRuntime.Tests.csproj", "{C35E33F1-5393-4BBD-825B-5DAEFEA11319}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentLilara.GraphSandbox.Tests", "tests\AgentLilara.GraphSandbox.Tests\AgentLilara.GraphSandbox.Tests.csproj", "{52F96911-ED3B-4C0D-BEE2-F3A4B894A440}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lilara.Logging", "src\Lilara.Logging\Lilara.Logging.csproj", "{8DB50671-871C-41D3-8416-703E8F0B42E5}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -509,6 +511,18 @@ Global
 		{52F96911-ED3B-4C0D-BEE2-F3A4B894A440}.Release|x64.Build.0 = Release|Any CPU
 		{52F96911-ED3B-4C0D-BEE2-F3A4B894A440}.Release|x86.ActiveCfg = Release|Any CPU
 		{52F96911-ED3B-4C0D-BEE2-F3A4B894A440}.Release|x86.Build.0 = Release|Any CPU
+		{8DB50671-871C-41D3-8416-703E8F0B42E5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8DB50671-871C-41D3-8416-703E8F0B42E5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8DB50671-871C-41D3-8416-703E8F0B42E5}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{8DB50671-871C-41D3-8416-703E8F0B42E5}.Debug|x64.Build.0 = Debug|Any CPU
+		{8DB50671-871C-41D3-8416-703E8F0B42E5}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{8DB50671-871C-41D3-8416-703E8F0B42E5}.Debug|x86.Build.0 = Debug|Any CPU
+		{8DB50671-871C-41D3-8416-703E8F0B42E5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8DB50671-871C-41D3-8416-703E8F0B42E5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8DB50671-871C-41D3-8416-703E8F0B42E5}.Release|x64.ActiveCfg = Release|Any CPU
+		{8DB50671-871C-41D3-8416-703E8F0B42E5}.Release|x64.Build.0 = Release|Any CPU
+		{8DB50671-871C-41D3-8416-703E8F0B42E5}.Release|x86.ActiveCfg = Release|Any CPU
+		{8DB50671-871C-41D3-8416-703E8F0B42E5}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -542,6 +556,7 @@ Global
 		{3C47A2EF-33F4-49BD-9834-8A1C511C7867} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{C35E33F1-5393-4BBD-825B-5DAEFEA11319} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{52F96911-ED3B-4C0D-BEE2-F3A4B894A440} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{8DB50671-871C-41D3-8416-703E8F0B42E5} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {8CEA9C9A-F71A-47CA-9F61-06EB3E4ED44F}

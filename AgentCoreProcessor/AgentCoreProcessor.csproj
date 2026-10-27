@@ -43,6 +43,7 @@
     <ProjectReference Include="..\AgentLilara.SessionBrain\AgentLilara.SessionBrain.csproj" />
     <ProjectReference Include="..\AgentLilara.AlcBridge\AgentLilara.AlcBridge.csproj" />
     <ProjectReference Include="..\src\AgentLilara.GraphRuntime\AgentLilara.GraphRuntime.csproj" />
+    <ProjectReference Include="..\src\Lilara.Logging\Lilara.Logging.csproj" />
   </ItemGroup>
 
   <ItemGroup>

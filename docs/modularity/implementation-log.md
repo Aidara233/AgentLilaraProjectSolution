@@ -256,3 +256,7 @@ Directory.Build.props 增加 HostTargetFramework，主程序 TargetFramework 与
 ### C 前置：GraphSandbox 归入测试夹具
 
 受版本控制的 7 个沙箱文件迁入 tests/fixtures/AgentLilara.GraphSandbox；命名空间与方法体保持原样。修正两个项目引用、测试项目引用及解决方案路径/分组（归 tests）。未移动 bin/obj；新目录以本地缓存离线还原后 GraphSandbox.Tests 17 项通过。
+
+### C1：首个业务程序集 Lilara.Logging
+
+日志核心九文件及 LogAccessImpl SDK 桥迁入 src/Lilara.Logging，十文件均为 100% 原文迁移、命名空间保持。新库依赖 PluginSDK、Microsoft.Data.Sqlite 8.0.0、Newtonsoft.Json 13.0.4，宿主单向引用新库。LogCleanupService/LogCleanupConfig/SignalConfig 保留宿主，避免配置/业务数据库回指。离线缓存还原、主程序编译、491 项主程序测试通过。未跑真实适配器或模型；SignalContext 静态状态尚存，本次仅确立编译边界，不宣称 R5 或数据流日志改造完成。
