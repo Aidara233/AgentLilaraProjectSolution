@@ -472,3 +472,7 @@ PhaseConfig原文迁入Lilara.Vision/Config，默认提示与Load/Save行为保�
 ### Vision：结果解析纯规则迁移
 
 ParseVisionOutput/TryParseJson/NormalizeClassification原样提取为Lilara.Vision/VisionOutputParser，宿主保留委托入口；不改变直接JSON、围栏提取及整段文本回退顺序。新增22项定向回归覆盖空内容、七类分类、大小写/未知、空对象、围栏、畸形JSON及数组。宿主构建、定向22项测试与diff检查通过。本次未重复全量测试，未调用真实视觉模型/OCR；C/D与全面日志迁移仍未完成。
+
+### D1前置：轮次上下文时钟冻结
+
+SessionContextHost构造增加可选Func<DateTime>，生产默认DateTime.Now；BuildRoundAsync每次只读取一次。固定文化/本地时间测试验证系统时间全文、消息顺序、跨日日期状态、空输入及独立宿主相同输入序列化UTF-8字节一致。定向测试1项通过，测试过程编译宿主成功，diff检查通过；本次未重复全量测试。媒体读取与装载时序未改，D1全路径对拍和D5仍未完成。

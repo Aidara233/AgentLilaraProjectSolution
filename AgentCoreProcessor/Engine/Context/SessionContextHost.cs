@@ -26,15 +26,17 @@ internal class SessionContextHost
     private readonly List<(int channelId, string? channelName, bool preload)> _channelPorts;
     private readonly string? _initialState;
     private readonly ChannelContextService _svc;
+    private readonly Func<DateTime> _now;
     private readonly Dictionary<int, ChannelContextState> _states = new();
 
     public SessionContextHost(
         IReadOnlyList<(int channelId, string? channelName, bool preload)> channelPorts,
-        string? initialState, ChannelContextService svc)
+        string? initialState, ChannelContextService svc, Func<DateTime>? now = null)
     {
         _channelPorts = new List<(int, string?, bool)>(channelPorts);
         _initialState = initialState;
         _svc = svc;
+        _now = now ?? (() => DateTime.Now);
         foreach (var (cid, cname, _) in channelPorts)
             _states[cid] = new ChannelContextState { ChannelId = cid, ChannelName = cname, Mode = "session" };
     }
@@ -106,7 +108,7 @@ internal class SessionContextHost
     /// <summary>每轮：当前时间 + drained 新消息格式化 + 滞后图片补注。</summary>
     public async Task<List<Message>> BuildRoundAsync(IEnumerable<(int channelId, UserMessage msg, bool isMention)> drained)
     {
-        var now = System.DateTime.Now;
+        var now = _now();
         var msgs = new List<Message>
         {
             new() { Role = "user", Content = $"[系统] 当前时间: {now:yyyy-MM-dd HH:mm:ss dddd} {TimeUtil.TimeZoneAnchorText(now)}" }
