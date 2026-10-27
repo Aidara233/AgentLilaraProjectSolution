@@ -46,6 +46,7 @@ internal partial class SessionEngine
         session.SetCurrency(_currency!);
         session.SetSessionEngine(this);
         session.SetChannelConnectionAccess(this);
+        session.SetSessionExitQuery(this);
         session.OnCompleted += OnRuntimeSessionCompleted;
         InitializeGraphMount(session);
 
@@ -395,6 +396,7 @@ internal partial class SessionEngine
                 session.SetCurrency(_currency!);
                 session.SetSessionEngine(this);
                 session.SetChannelConnectionAccess(this);
+                session.SetSessionExitQuery(this);
                 session.OnCompleted += OnRuntimeSessionCompleted;
 
                 // 复活善后：订阅重建 session 的完成事件

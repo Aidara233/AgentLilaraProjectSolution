@@ -163,9 +163,9 @@ internal partial class RuntimeSession
     /// </summary>
     private async Task<ToolEffectContext> BuildToolEffectContextAsync()
     {
-        var children = _sessionEngine?.GetActiveChildren(SessionId);
+        var children = _exitQuery?.GetActiveChildren(SessionId);
         var childCount = children?.Count ?? 0;
-        var inFlightResources = _sessionEngine?.AnyResourceBlocksExit(SessionId) == true;
+        var inFlightResources = _exitQuery?.AnyResourceBlocksExit(SessionId) == true;
 
         var canExit = true;
         if (!inFlightResources)

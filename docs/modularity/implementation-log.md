@@ -488,3 +488,7 @@ GraphRuntime 全部源码迁入 Lilara.Graph/Runtime，GraphModules 契约迁入
 ### C3/C12 前置：频道连接窄端口
 
 SDK新增IChannelConnectionAccess，SessionEngine暂实现claim/release/subscribe/unsubscribe及频道名称查询；RuntimeSession.ChannelConnect统一使用独立注入端口，移除连接动作对具体SessionEngine/MessageEngine的调用。生产创建与恢复路径显式注入，保留先断旧连接、claim、normal/mention订阅、内存状态、上下文载入及持久化顺序。新增3项假端口回归覆盖Full→Listen释放顺序、拒绝Full claim、频道名与host挂载及无具体引擎运行。完整sln构建与733项测试通过（主程序623、邮件52、GraphRuntime41、沙箱17），diff检查通过。占用权威仍在原资源池；升级/退出/compact等具体引擎依赖仍在，C3/C12未完成；未运行真实模型/适配器冒烟。
+
+### C3前置：退出事实查询端口
+
+SDK新增ISessionExitQuery，SessionEngine复用原子会话/资源查询实现；RuntimeSession单独注入，BuildToolEffectContextAsync保持先子会话、再资源、仅资源不阻塞时查询组件。创建与恢复均显式注入。新增3项回归验证事实值/查询顺序/真实组件短路及无服务默认值。完整sln构建与736项测试通过（主程序626、邮件52、GraphRuntime41、沙箱17），diff检查通过。升级、等待经历和compact的具体引擎依赖仍在，C3尚未完成；未做真实模型/适配器冒烟。

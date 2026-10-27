@@ -22,7 +22,7 @@ namespace AgentCoreProcessor.Engine.Session;
 /// <summary>
 /// Session 管理器。30s 监控循环：WaitUntil 超时、ScheduledTask 触发、TODO 扫描。
 /// </summary>
-internal partial class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessionResourceAccess, IChannelSessionQuery, ISessionAccess, IChannelConnectionAccess
+internal partial class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Services.ISessionResourceAccess, IChannelSessionQuery, ISessionAccess, IChannelConnectionAccess, ISessionExitQuery
 {
     public string EngineType => "Session";
     public bool IsAlive { get; private set; } = true;
@@ -273,7 +273,7 @@ internal partial class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Service
 
     internal System.Threading.Tasks.Task NotifyResourcesCompactingAsync(string oldId, string newId) => _sessionResources.NotifyCompactingAsync(oldId, newId);
     internal System.Threading.Tasks.Task NotifyResourcesFreedAsync(string id) => _sessionResources.NotifyFreedAsync(id);
-    internal bool AnyResourceBlocksExit(string sessionId) => _sessionResources.AnyHasActiveResources(sessionId);
+    public bool AnyResourceBlocksExit(string sessionId) => _sessionResources.AnyHasActiveResources(sessionId);
 
     // ── 30s 监控循环 ──
 

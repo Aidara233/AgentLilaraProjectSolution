@@ -142,6 +142,7 @@ internal partial class RuntimeSession : IRuntimeSession, IRuntimeSessionDiagnost
     private IGraphIntentDispatcher? _graphIntentDispatcher;
     private SessionEngine? _sessionEngine;
     private IChannelConnectionAccess? _channelConnection;
+    private ISessionExitQuery? _exitQuery;
     private IServiceProvider? _services;
     private readonly ConnectedChannelState _connected = new();
     /// <summary>当前连接频道的输入端口（normal + 可选 mention），断开时退订。</summary>
@@ -229,6 +230,7 @@ internal partial class RuntimeSession : IRuntimeSession, IRuntimeSessionDiagnost
     public void SetGraphIntentDispatcher(IGraphIntentDispatcher dispatcher) => _graphIntentDispatcher = dispatcher;
     public void SetSessionEngine(SessionEngine se) => _sessionEngine = se;
     public void SetChannelConnectionAccess(IChannelConnectionAccess access) => _channelConnection = access;
+    public void SetSessionExitQuery(ISessionExitQuery query) => _exitQuery = query;
 
     /// <summary>当前连接频道状态（注入组件 perLoopServices，供发送工具读取）。</summary>
     public ConnectedChannelState ConnectedChannel => _connected;
