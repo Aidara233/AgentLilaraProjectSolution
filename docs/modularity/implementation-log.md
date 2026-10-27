@@ -7,6 +7,14 @@
 
 ## 已完成
 
+### C：会话类型配置存储迁入 Lilara.Session
+
+新增实例化 `SessionTypeProfileStore`，完整迁入默认种子、档案发现、JSON 加载/局部保存、缓存及工具规则；目录和告警从构造参数注入，无新增程序集/包依赖。`SessionTypeProfile`、`SessionTools` 同属 Lilara.Session，沿用旧命名空间与内部友元边界。宿主 `SessionTypeProfiles` 缩为兼容门面，绑定 Storage/SessionTypes 与 Signal.Warn；目录变化时重建存储，原调用入口继续委托新实现。
+
+新增临时目录测试 10 项，验证双实例目录/缓存隔离、Invalidate、默认值与字段回退、显式空工具清单、大小写权限、保存去重并保留扩展字段、保存失败告警和程序集归属。保留已有语义：自定义未知类型仍受 DefaultFor 限制，类型默认值大小写行为未改，未顺带治理可变档案对象的公开成员。
+
+验证：配置/权限/换核/程序集边界相关 42 项通过；全量构建 0 错误、4 条既有 NU1603 警告；全部 828 项测试通过（主程序 718、邮件 52、图运行时 41、图沙箱 17）。RuntimeSession/SessionEngine 主体与 D1/D5/D2 仍未完成。
+
 ### 预定发布的有效性边界
 
 `MarkPublished` 与撤销共用 `_poolLock` 内的票据有效性检查，检查封闭状态、活跃身份及版本、旧新成员索引和根池归属。陈旧票据抛出 `InvalidOperationException`，阻止创建入口继续访问外部初始化服务。补充撤销后发布、重复发布、接管/释放再认领 ABA、旧新索引重映射与根池替换的七项回归；原有有效发布后外部故障保留占用的行为继续成立。
