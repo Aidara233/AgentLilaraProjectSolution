@@ -412,3 +412,7 @@ ToolExecutionScope/ToolExecutionContext 原文迁入 Lilara.PluginHost，保持 
 ### PluginHost：工具执行器策略委托与迁移
 
 ToolExecutor迁入Lilara.PluginHost，resolver、全局禁用/原因、会话类型允许规则均显式注入；宿主ToolExecutorFactory统一传原ToolRegistry/SessionTypeProfiles规则。三处生产构造和权限测试已更新，保留未知→禁用→权限→执行顺序、精确错误文本、timeout/异常、OnToolExecuted顺序与ambient scope恢复。新增4项回归覆盖拒绝顺序、允许执行/回调、异常和超时。完整sln离线还原与构建成功（0错误、6项既有/传递警告），647项测试通过（主程序592、GraphRuntime38、沙箱17），diff检查通过。未调用真实模型/适配器；注册表/插件加载/权限配置IO仍在宿主，C/D和全面日志改造未完成。
+
+### 程序集边界回归与迁移状态
+
+AssemblyBoundaryTests读取全部src/Lilara.*实际DLL元数据，检查无宿主回指/库依赖环，Channel/Context纯边界；插件csproj引用限SDK及既有FileToolKit例外。新增4项回归，修正测试可空键警告。新增project-migration-status.md区分13个已建类库的已迁范围与仍留宿主的实现，不把友元过渡或依赖DAG当最终装配树。完整sln构建成功，651项测试通过（主程序596、GraphRuntime38、沙箱17），diff检查通过。既有NU1603/CA2022/SYSLIB0050仍在；真实模型/外部平台/ONNX/OCR/WebUI冒烟未覆盖，C/D和全面信号迁移未完成。
