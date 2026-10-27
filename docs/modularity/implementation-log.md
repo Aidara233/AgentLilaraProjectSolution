@@ -452,3 +452,7 @@ FileToolBase原文迁入PluginSDK并保留FileToolKit.Shared命名空间；旧�
 ### 图数据流日志：区分求解与汇块执行
 
 保留SolveResult.Success与原success字段的求解语义，graph.flow.beat新增solveSuccess/executionSuccess、sinkOutcomes、firedSinks、suppressedSinks与intentCount。SinkOutcome增加可选ErrorType，GraphInstance及模块节点异常记录类型；有异常类型时日志省略异常消息以避免载荷正文。读取台账前核对LastResult.Context身份，防止求解抛错时误取上一拍台账。临时SQLite测试覆盖求解成功但汇块失败，验证节点/类型/失败标志及异常正文不泄漏。完整sln构建、672项测试通过（主程序562、邮件52、GraphRuntime41、沙箱17），diff检查通过。未验证WebUI展示或真实模型/适配器；D1全路径对拍与全面旧信号迁移仍未完成。
+
+### 连续拍日志台账隔离验证
+
+GraphFlowDatabaseTests新增两项真实临时SQLite回归：第一拍执行即时汇并产生通知意图，第二拍求值抛错时日志fired/outcomes/intents均为空；动态图持续使能的第二拍记录counter/notify为suppressed，即时汇仅执行一次。按traceId查询两拍记录，不依赖时间排序。定向日志测试6项通过，diff检查通过。本次仅增加测试，未重复完整解决方案测试；未验证真实模型/适配器或UI。
