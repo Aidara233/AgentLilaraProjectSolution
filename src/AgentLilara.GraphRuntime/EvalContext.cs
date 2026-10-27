@@ -43,7 +43,17 @@ public sealed class EvalContext
 
     /// <summary>实际求值顺序，用于断言确定性与审计。</summary>
     public List<string> EvaluationOrder { get; } = new();
+
+    /// <summary>实际被下游读取的连线状态。只记录类型，不保留载荷正文。</summary>
+    public List<PortTransfer> PortTransfers { get; } = new();
+
+    /// <summary>节点 Evaluate 抛错时保留该节点 id；成功完成求值后清空。</summary>
+    public string? EvaluatingNode { get; internal set; }
 }
+
+/// <summary>一次输入端口读取，Order 为本拍从零开始的读取序号。</summary>
+public sealed record PortTransfer(int Order, string FromNode, string FromPort,
+    string ToNode, string ToPort, CellState State, string? PayloadType);
 
 /// <summary>一次汇块调用：节点 + 已求值的实参。</summary>
 public sealed record SinkInvocation(string NodeId, IReadOnlyDictionary<string, Cell> Args);

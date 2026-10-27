@@ -118,16 +118,18 @@ internal sealed class KeywordGraphRunner
         // 事件种类由激活源自己筛（on.message / on.error）：这里不做二次过滤，
         // 否则同一张图无法复用到别的触发源上。
         SolveResult result;
+        var context = new EvalContext($"graph-keyword:{traceId}", DateTime.UtcNow.Ticks, @event)
+        {
+            MountParameters = _mountParameters
+        };
         try
         {
-            var context = new EvalContext($"graph-keyword:{traceId}", DateTime.UtcNow.Ticks, @event)
-            {
-                MountParameters = _mountParameters
-            };
             result = _graph.Run(context);
+            LogDataFlow(context, result.Success, result.Unresolved);
         }
         catch (Exception ex)
         {
+            LogDataFlow(context, false, Array.Empty<string>(), ex.GetType().Name);
             Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.keyword.threw", new { traceId, error = ex.Message });
             return Array.Empty<ActionIntent>();
         }
@@ -140,6 +142,27 @@ internal sealed class KeywordGraphRunner
         }
 
         return _graph.LastIntents;
+    }
+
+    private void LogDataFlow(EvalContext context, bool success, IReadOnlyList<string> unresolved, string? errorType = null)
+    {
+        Logging.Signal.Event(Logging.LogGroup.Engine, "graph.flow.beat", new
+        {
+            classId = _graph.Class.ClassId,
+            instanceKey = _graph.InstanceKey,
+            traceId = context.TraceId,
+            seq = context.Seq,
+            success,
+            errorType,
+            unresolved,
+            evaluationOrder = context.EvaluationOrder,
+            evaluatingNode = context.EvaluatingNode,
+            transfers = context.PortTransfers.Select(t => new
+            {
+                t.Order, t.FromNode, t.FromPort, t.ToNode, t.ToPort,
+                state = t.State.ToString(), t.PayloadType
+            }).ToArray()
+        });
     }
 
     /// <summary>适配器入站消息 → 图事件。</summary>

@@ -69,10 +69,16 @@ public static class Solver
                     continue; // 未接线的可选输入口：交给节点按声明默认值处理
                 }
 
-                inputs[port] = cells[source.FromNode][source.FromPort];
+                var input = cells[source.FromNode][source.FromPort];
+                inputs[port] = input;
+                context.PortTransfers.Add(new PortTransfer(context.PortTransfers.Count,
+                    source.FromNode, source.FromPort, id, port, input.State,
+                    input.Payload?.GetType().FullName));
             }
 
+            context.EvaluatingNode = id;
             var outputs = node.Evaluate(inputs, context);
+            context.EvaluatingNode = null;
             var bag = new Dictionary<string, Cell>(StringComparer.Ordinal);
             foreach (var port in node.OutputPorts)
             {

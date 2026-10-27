@@ -280,3 +280,7 @@ OCR/Vision 六文件迁入 src/Lilara.Vision，Embedding 五文件及纯 BCL Vec
 ### C5：WorkingTools 脱离宿主引用
 
 IInjectProvider/InjectContext 纯契约原文迁入 PluginSDK，保留 AgentCoreProcessor.Engine 命名空间。宿主添加真正的 TypeForwardedTo 兼容旧程序集名字；删除 WorkingTools 对宿主的 ProjectReference，TFM 仍 net10.0。插件独立构建零警告，主程序 493 项测试通过；新增 SDK 类型身份/宿主转发解析检查。未用旧插件 DLL 做隔离 ALC 运行冒烟。
+
+### 图数据流日志首切
+
+EvalContext 新增 PortTransfers（实际消费连线的三态、载荷类型、顺序，不存正文）与 EvaluatingNode（Evaluate 异常定位）。Solver 在输入读取点记录；运行时仍不引用日志实现。KeywordGraphRunner 把每拍 class/instance/trace/seq、成功/异常类型、未求解节点、求值顺序与端口流写为 graph.flow.beat 结构化 Signal 事件。新增 Known/NoEvent/Unknown、依赖环与抛错节点定位测试。GraphRuntime 38 项与主程序 493 项测试通过。尚未验证真实运行日志入库/UI 展示；其他图入口及旧生命周期/手工信号尚未迁移，全面信号系统改造仍未完成。
