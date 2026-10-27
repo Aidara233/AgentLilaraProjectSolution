@@ -428,3 +428,7 @@ SDK新增可选IRuntimeSessionDiagnostics，RuntimeSession.RoundCount直接读�
 ### C2：频道占用只读查询端口
 
 SDK新增ChannelSessionView/IChannelSessionQuery，SessionEngine复用原_poolLock与资源池快照实现，移除嵌套快照类型。ChannelAccessImpl及Dashboard频道快照查询按接口发现服务，其他仍需生命周期/TODO的消费者保留具体引擎。新增快照列表独立/释放后消失与无服务空占用回归。完整sln构建成功，655项测试通过（主程序548、邮件52、GraphRuntime38、沙箱17），diff检查通过。占用权威仍在原资源池，C2完整查询/控制端口、C3/C12所有权迁移仍未完成；未做真实模型/适配器/WebUI冒烟。
+
+### C2：会话访问实现归回会话服务
+
+SessionEngine实现现有SDK ISessionAccess，列表DTO映射、频道名查询与跨会话注入/唤醒归入SessionEngine.Access。SessionAccessImpl仅按SDK接口发现并转发，消除具体SessionEngine/RuntimeSession依赖。保留列表字段、无服务空列表/false、活跃目标检查、来源文字及先注入后唤醒顺序。新增独立端口替身发现与真实引擎快照隔离回归，原7项访问测试保持通过。完整sln构建与657项测试通过（主程序550、邮件52、GraphRuntime38、沙箱17），diff检查通过。未运行真实模型/适配器/WebUI冒烟，剩余会话控制与C/D迁移继续。

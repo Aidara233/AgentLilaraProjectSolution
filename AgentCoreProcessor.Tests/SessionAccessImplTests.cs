@@ -28,6 +28,7 @@ public class SessionAccessImplTests
     private sealed class TestContext : ISystemContext
     {
         public SessionEngine? SessionEngine { get; set; }
+        public ISubEngine? PortEngine { get; set; }
         public SessionManager Session => null!;
         public IEmbeddingProvider Embedding => null!;
         public IVisionProvider? Vision => null;
@@ -46,7 +47,8 @@ public class SessionAccessImplTests
         public List<(string Type, int Count)> GetActiveEngineSummary() => new();
         public void RequestStopEnginesByType(string engineType) { }
         public List<ISubEngine> GetActiveEnginesSnapshot()
-            => SessionEngine == null ? new List<ISubEngine>() : new List<ISubEngine> { SessionEngine };
+            => PortEngine is not null ? new List<ISubEngine> { PortEngine }
+                : SessionEngine == null ? new List<ISubEngine>() : new List<ISubEngine> { SessionEngine };
         public bool MuteMode { get; set; }
         public SleepState CurrentSleepState { get; set; }
         public string? CurrentDreamPhase { get; set; }
@@ -74,6 +76,49 @@ public class SessionAccessImplTests
         var ctx = new TestContext { SessionEngine = engine };
         var access = new SessionAccessImpl(ctx);
         return (engine, access);
+    }
+
+    private sealed class PortEngine : ISubEngine, ISessionAccess
+    {
+        public string EngineType => "session-port";
+        public bool IsAlive => true;
+        public List<SessionSummary> Summaries { get; } = new() { new() { SessionId = "port-session", Rounds = 37 } };
+        public (string Target, string Sender, string Content)? Sent { get; private set; }
+        public Task RunAsync() => Task.CompletedTask;
+        public void OnEvent(EngineEvent e) { }
+        public void RequestStop() { }
+        public Task<List<SessionSummary>> ListSessionsAsync() => Task.FromResult(Summaries);
+        public bool SendMessageAsync(string targetSessionId, string senderSessionId, string content)
+        {
+            Sent = (targetSessionId, senderSessionId, content);
+            return true;
+        }
+    }
+
+    [Fact]
+    public async Task DiscoversSdkPortWithoutConcreteSessionEngine()
+    {
+        var port = new PortEngine();
+        var access = new SessionAccessImpl(new TestContext { PortEngine = port });
+        Assert.Same(port.Summaries, await access.ListSessionsAsync());
+        Assert.True(access.SendMessageAsync("target", "sender", "content"));
+        Assert.Equal(("target", "sender", "content"), port.Sent!.Value);
+    }
+
+    [Fact]
+    public async Task EngineImplementsSdkAccessWithSameSnapshotFields()
+    {
+        var (engine, access) = Create("sdk-session", alive: true);
+        TestHost.GetFakeSession(engine, "sdk-session").InheritRoundCount(29);
+        ISessionAccess port = engine;
+        var direct = Assert.Single(await port.ListSessionsAsync());
+        var forwarded = Assert.Single(await access.ListSessionsAsync());
+        Assert.Equal("sdk-session", direct.SessionId);
+        Assert.Equal(29, direct.Rounds);
+        Assert.Equal(direct.SessionId, forwarded.SessionId);
+        Assert.Equal(direct.Rounds, forwarded.Rounds);
+        direct.Rounds = -1;
+        Assert.Equal(29, Assert.Single(await port.ListSessionsAsync()).Rounds);
     }
 
     // ── 1. 列表：活跃 session 字段映射 ──

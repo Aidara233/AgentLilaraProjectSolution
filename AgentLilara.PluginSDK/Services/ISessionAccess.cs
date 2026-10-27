@@ -7,7 +7,7 @@ namespace AgentLilara.PluginSDK.Services
 {
     /// <summary>
     /// 全局 session 状态查询与 session 间消息接口。
-    /// 由宿主实现（Tool.Host.SessionAccessImpl），桥接 SessionEngine。
+    /// 由会话服务实现；工具宿主通过此接口发现服务并转发。
     /// </summary>
     public interface ISessionAccess
     {
