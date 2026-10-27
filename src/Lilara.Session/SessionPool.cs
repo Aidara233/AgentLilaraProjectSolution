@@ -41,6 +41,9 @@ internal sealed class SessionPool
     private readonly List<string> _childListeners = new();
     public string ActiveSessionId => _occupancy?.ActiveSessionId ?? _childActiveSessionId;
 
+    /// <summary>活跃身份写入版本；条件撤销使用，防止身份 ABA。</summary>
+    internal long ActiveVersion { get; private set; }
+
     /// <summary>曾活跃于此池的所有 session（含被 compact 换掉的旧 id），用于寻址历史引用。</summary>
     public HashSet<string> Members { get; } = new();
 
@@ -82,6 +85,7 @@ internal sealed class SessionPool
         }
         else _childActiveSessionId = sessionId;
         Members.Add(sessionId);
+        ActiveVersion++;
         return true;
     }
 
@@ -91,6 +95,7 @@ internal sealed class SessionPool
         if (_occupancy is not null) _occupancy.TakeOver(newSessionId);
         else _childActiveSessionId = newSessionId;
         Members.Add(newSessionId);
+        ActiveVersion++;
     }
 
     /// <summary>释放某 session 的 Full claim（仅当它是当前活跃 session）。</summary>
@@ -98,6 +103,7 @@ internal sealed class SessionPool
     {
         if (ActiveSessionId == sessionId)
         {
+            ActiveVersion++;
             if (_occupancy is not null) return _occupancy.Release(sessionId);
             _childActiveSessionId = "";
             return true;

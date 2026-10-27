@@ -540,3 +540,7 @@ CreateFromEscalateAsync检查接管返回值，失败时在spec/CreateSession前
 ### compact 活跃持有者检查
 
 TakeOverSessionPool增加可选expectedSessionId并在_poolLock内核对，默认保持历史寻址兼容。CreateFromCompact在同一锁内检查旧成员池是否存在；有池时要求当前活跃身份等于调用者，接管拒绝即抛错且不继续创建，无池维持既有独立创建路径。新增3项回归覆盖根/子池历史调用拒绝、当前持有者成功、索引不变及生产入口拒绝前不创建。相关27项、完整sln构建及795项测试通过（主程序685、邮件52、GraphRuntime41、沙箱17），diff检查通过。未实现创建失败回滚票据，未运行真实模型compact或平台冒烟；C12/D1/D5及全面信号迁移仍未完成。
+
+### C12：接管预定票据与条件撤销基础
+
+SessionPool新增ActiveVersion，实际Claim、TakeOver和Release递增，幂等Claim不变。BeginPoolReservation在_poolLock内核对当前身份/跨池索引并记录池、旧/新id、版本与成员/索引原状；TryCancelReservation核对引擎、未封闭票据、版本、活跃身份和新旧索引，根池还核对注册身份，只删除本票据新增成员/索引。MarkPublished与撤销使用同一锁，封闭后禁止撤销。新增8项回归覆盖根/子恢复、历史成员及无索引成员保留、ABA、幂等Claim、跨引擎/跨池索引、发布与重复撤销。完整sln构建和803项测试通过（主程序693、邮件52、GraphRuntime41、沙箱17），diff检查通过。尚未接入CreateSession，不构成创建事务或已发布状态回滚；真实模型/平台冒烟未执行。
