@@ -42,7 +42,24 @@ internal partial class SessionEngine
 
     private void MarkReservationPublished(PoolReservation ticket)
     {
-        lock (_poolLock) ticket.Closed = true;
+        lock (_poolLock)
+        {
+            if (!IsReservationCurrent(ticket))
+                throw new InvalidOperationException("Pool reservation is no longer valid for publication.");
+            ticket.Closed = true;
+        }
+    }
+
+    // Caller holds _poolLock so validation and closing/restoring form one operation.
+    private bool IsReservationCurrent(PoolReservation ticket)
+    {
+        if (!ReferenceEquals(ticket.Owner, this) || ticket.Closed) return false;
+        var pool = ticket.Pool;
+        if (pool.ActiveVersion != ticket.Version || pool.ActiveSessionId != ticket.NewId
+            || !_poolByMember.TryGetValue(ticket.NewId, out var current) || !ReferenceEquals(current, pool)
+            || !_poolByMember.TryGetValue(ticket.OldId, out var old) || !ReferenceEquals(old, pool)) return false;
+        // Reclaimed/replaced roots must never be published or resurrected by an old ticket.
+        return !pool.IsRoot || (_pools.TryGetValue(pool.ChannelId, out var root) && ReferenceEquals(root, pool));
     }
 
     internal bool TryCancelReservation(PoolReservation ticket)
@@ -50,13 +67,8 @@ internal partial class SessionEngine
         ArgumentNullException.ThrowIfNull(ticket);
         lock (_poolLock)
         {
-            if (!ReferenceEquals(ticket.Owner, this) || ticket.Closed) return false;
+            if (!IsReservationCurrent(ticket)) return false;
             var pool = ticket.Pool;
-            if (pool.ActiveVersion != ticket.Version || pool.ActiveSessionId != ticket.NewId
-                || !_poolByMember.TryGetValue(ticket.NewId, out var current) || !ReferenceEquals(current, pool)
-                || !_poolByMember.TryGetValue(ticket.OldId, out var old) || !ReferenceEquals(old, pool)) return false;
-            // Reclaimed/replaced roots must never be resurrected by an old ticket.
-            if (pool.IsRoot && (!_pools.TryGetValue(pool.ChannelId, out var root) || !ReferenceEquals(root, pool))) return false;
             pool.TakeOver(ticket.OldId);
             if (!ticket.HadMember) pool.Members.Remove(ticket.NewId);
             if (!ticket.HadIndex) _poolByMember.TryRemove(ticket.NewId, out _);

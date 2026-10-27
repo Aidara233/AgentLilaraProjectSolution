@@ -41,6 +41,48 @@ public sealed class ReservationCreationBoundaryTests
         Assert.Equal("old", engine.GetFullClaimer(1));
     }
 
+    [Theory]
+    [InlineData("cancelled")]
+    [InlineData("published")]
+    [InlineData("takeover-aba")]
+    [InlineData("claim-aba")]
+    [InlineData("new-index")]
+    [InlineData("old-index")]
+    [InlineData("root-replaced")]
+    public void StaleReservationCannotPublishOrReachExternalServices(string change)
+    {
+        var engine = TestHost.BuildSessionEngineWithFakeSession("old", true, failOnMindAccess: true);
+        var ticket = engine.BeginPoolReservation("old", "new")!;
+        switch (change)
+        {
+            case "cancelled": Assert.True(engine.TryCancelReservation(ticket)); break;
+            case "published": ticket.MarkPublished(); break;
+            case "takeover-aba":
+                engine.TakeOverSessionPool("new", "third");
+                engine.TakeOverSessionPool("third", "new");
+                break;
+            case "claim-aba":
+                Assert.True(ticket.Pool.Release("new"));
+                Assert.True(ticket.Pool.Claim("new"));
+                break;
+            case "new-index": engine.ClaimChannel("new", 2, ClaimLevel.Full); break;
+            case "old-index": engine.ClaimChannel("old", 2, ClaimLevel.Full); break;
+            case "root-replaced":
+                var roots = (System.Collections.Concurrent.ConcurrentDictionary<int, SessionPool>)typeof(SessionEngine)
+                    .GetField("_pools", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(engine)!;
+                roots[1] = new SessionPool(1);
+                break;
+        }
+        var holder = engine.GetFullClaimer(1);
+        Assert.Throws<InvalidOperationException>(() => ticket.MarkPublished());
+        var error = Assert.Throws<InvalidOperationException>(() => engine.CreateSession(
+            new CreateSessionSpec { Type = "channel", ResolvedComponentIds = Array.Empty<string>() }, "new", ticket));
+        Assert.Equal("Pool reservation is no longer valid for publication.", error.Message);
+        Assert.False(engine.TryCancelReservation(ticket));
+        Assert.Equal(holder, engine.GetFullClaimer(1));
+        Assert.Single(engine.GetActiveSessions());
+    }
+
     [Fact]
     public void ExternalServiceFailureAfterPublicationDoesNotCancelReservation()
     {
