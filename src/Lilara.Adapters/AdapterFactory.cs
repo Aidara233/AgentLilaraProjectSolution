@@ -1,13 +1,26 @@
 using System;
 using System.IO;
-using AgentCoreProcessor.Config;
 using Newtonsoft.Json.Linq;
 
 namespace AgentCoreProcessor.Adapter
 {
-    internal static class AdapterFactory
+    internal sealed class AdapterFactory
     {
-        public static IAdapter Create(AdapterInstanceConfig config)
+        private readonly string _storagePath;
+        private readonly IAdapterMediaStore _media;
+        private readonly Func<string, Task<(string LocalPath, string Hash)>> _archive;
+        private readonly Func<DateTime, DateTime> _toLocal;
+
+        public AdapterFactory(string storagePath, IAdapterMediaStore media,
+            Func<string, Task<(string LocalPath, string Hash)>> archive, Func<DateTime, DateTime> toLocal)
+        {
+            _storagePath = storagePath;
+            _media = media;
+            _archive = archive;
+            _toLocal = toLocal;
+        }
+
+        public IAdapter Create(AdapterInstanceConfig config)
         {
             return config.Type.ToLowerInvariant() switch
             {
@@ -19,37 +32,37 @@ namespace AgentCoreProcessor.Adapter
             };
         }
 
-        private static OneBotAdapter CreateOneBot(AdapterInstanceConfig config)
+        private OneBotAdapter CreateOneBot(AdapterInstanceConfig config)
         {
             var settings = config.Settings.ToObject<OneBotConfig>() ?? new OneBotConfig();
-            return new OneBotAdapter(config.Id, settings, new AdapterMediaStore());
+            return new OneBotAdapter(config.Id, settings, _media);
         }
 
-        private static FileAdapter CreateFile(AdapterInstanceConfig config)
+        private FileAdapter CreateFile(AdapterInstanceConfig config)
         {
             // baseDir = 输入根目录（UI 的 input_dir），其下 input/ 与 output/ 用于收发。
             // outputDir 未配置时沿用 baseDir/output；配置后按独立输出目录使用。
             var baseDir = config.Settings["baseDir"]?.ToString()
                 ?? config.Settings["input_dir"]?.ToString()
-                ?? Path.Combine(PathConfig.StoragePath, "FileAdapter");
+                ?? Path.Combine(_storagePath, "FileAdapter");
             var outputDir = config.Settings["outputDir"]?.ToString()
                 ?? config.Settings["output_dir"]?.ToString();
             var pollMs = config.Settings["pollIntervalMs"]?.Value<int>()
                 ?? config.Settings["poll_ms"]?.Value<int>()
                 ?? 2000;
-            return new FileAdapter(config.Id, baseDir, pollMs, outputDir, ImageStorage.CopyToStorageAsync);
+            return new FileAdapter(config.Id, baseDir, pollMs, outputDir, _archive);
         }
 
-        private static HttpBridgeAdapter CreateHttp(AdapterInstanceConfig config)
+        private HttpBridgeAdapter CreateHttp(AdapterInstanceConfig config)
         {
             var settings = config.Settings.ToObject<HttpBridgeConfig>() ?? new HttpBridgeConfig();
-            return new HttpBridgeAdapter(config.Id, settings, Path.Combine(PathConfig.StoragePath, "Adapter", config.Id + ".json"), Util.TimeUtil.ToLocalSafe);
+            return new HttpBridgeAdapter(config.Id, settings, Path.Combine(_storagePath, "Adapter", config.Id + ".json"), _toLocal);
         }
 
-        private static IcalinguaAdapter CreateIcalingua(AdapterInstanceConfig config)
+        private IcalinguaAdapter CreateIcalingua(AdapterInstanceConfig config)
         {
             var settings = config.Settings.ToObject<IcalinguaConfig>() ?? new IcalinguaConfig();
-            return new IcalinguaAdapter(config.Id, settings, new AdapterMediaStore());
+            return new IcalinguaAdapter(config.Id, settings, _media);
         }
     }
 }

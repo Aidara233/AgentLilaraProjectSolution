@@ -380,3 +380,7 @@ HTTP目录迁入Lilara.Adapters，新增IAdapterHostAccess与独立频道/消息
 ### Adapters：管理器显式装配与迁移
 
 AdapterManager迁入Lilara.Adapters，构造注入配置目录与创建工厂，AttachHost接收IAdapterHostAccess替代MasterEngine，保留已有/后注册适配器注入语义。生产启动与测试宿主构造点已更新，宿主AdapterFactory继续负责路径/媒体默认装配。新增3项回归验证宿主注入及替换、配置目录/工厂、启停持久化/路由和消息AdapterId。完整sln构建、631项测试通过（主程序576、GraphRuntime38、沙箱17），diff检查通过。未启动真实平台/模型；factory/图片存储仍留宿主，完整模块树与图化主线继续。
+
+### Adapters：工厂显式装配参数
+
+AdapterFactory改实例并迁入Lilara.Adapters，注入Storage根目录、IAdapterMediaStore、文件归档委托与时间转换；生产和测试宿主显式构造工厂并传Create。新增4项回归覆盖默认文件目录、旧/新配置键优先级、HTTP重载配置路径、平台选择与媒体端口传递（不连接平台）。完整解决方案构建与635项测试通过（主程序580、图运行时38、沙箱17），diff检查通过。未启动真实平台/模型；宿主仍保留ImageStorage及两个端口适配器，C/D与完整日志迁移继续。
