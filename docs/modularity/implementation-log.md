@@ -244,3 +244,7 @@ B 的前置条件已经具备：`step` 的 12 阶段表、`ToolEffectInterpreter
 - `ea6170f`：注册 wire_describe / wire_validate / wire_apply / wire_mount；生产加载器校验、原子替换、.history 前后源码审计。接口与限制见 `wire-tools.md`。
 - B-2a：BuildStateSnapshot 改为七个 ISnapshotPort 采集入口；强类型字段选择器检查重复与遗漏。原有 15 个属性全部覆盖，JSON 格式仍为 v3（仅内部组织改变，无需升版）。资源恢复顺序未改，完整 restore 注册仍待拆分。
 - 主程序测试 490 项通过，GraphRuntime 33 项通过；新增快照归属冲突、遗漏与集合隔离检查。未执行真实模型/适配器冒烟。既有包漏洞和弃用 API 警告仍存在。
+
+### B-2b：纯状态恢复入口
+
+ISnapshotPort 同时提供采集与恢复，RuntimeSession.RestoreFromSnapshot 经同一注册表分发。生命周期、轮次、父关系、连接内存状态与轴值由部件恢复；历史另行灌入。ConfigureCores、频道端口/claim/游标、子关系与压缩初始化仍由 RestoreAll 按既有依赖顺序负责，未改变原有语义。新增恢复→快照对照验证，主程序 491 项测试通过。格式仍为 v3；未进行真实模型冒烟。

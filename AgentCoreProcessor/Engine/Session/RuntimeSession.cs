@@ -30,6 +30,20 @@ namespace AgentCoreProcessor.Engine.Session;
 /// </summary>
 internal partial class RuntimeSession : IRuntimeSession
 {
+    private void RestoreAxesSnapshot(SessionStateSnapshot state)
+    {
+        // 轴值恢复：按轴名逐条校验，未知轴与非法值丢弃、缺失的补默认（见 AxisStore.Reset）。
+        // ⚠️ 丢弃必须记日志——否则一次手改 state.json 就变成"某条轴静默回到默认值"。
+        var droppedAxes = _axisStore.Reset(state.Axes);
+        if (droppedAxes.Count > 0)
+        {
+            var names = new List<string>();
+            foreach (var d in droppedAxes) names.Add($"{d.Axis}:{d.Reason}");
+            Signal.Warn(LogGroup.Engine, "轴值恢复时丢弃了非法项", new { sessionId = SessionId, dropped = names });
+        }
+
+    }
+
     private void CaptureStepSnapshot(SnapshotWriter writer)
     {
         writer.Set(s => s.RoundCount, _roundCount);
@@ -249,36 +263,8 @@ internal partial class RuntimeSession : IRuntimeSession
     /// <summary>恢复存档后灌入运行状态 + 历史。</summary>
     internal void RestoreFromSnapshot(SessionStateSnapshot state, List<Message> history)
     {
-        Status = state.Status == SessionStatus.Crashed ? SessionStatus.Restored : state.Status;
-        _isRestored = true;
-        _createdAt = state.CreatedAt;
-        _roundCount = state.RoundCount;
-        WaitUntil = state.WaitUntil;
-        _lastActivity = state.LastActivity;
+        foreach (var port in SnapshotPorts()) port.Restore(state);
         _history = history ?? new List<Message>();
-        EffectiveParentId = state.EffectiveParentId;
-
-        // 轴值恢复：按轴名逐条校验，未知轴与非法值丢弃、缺失的补默认（见 AxisStore.Reset）。
-        // ⚠️ 丢弃必须记日志——否则一次手改 state.json 就变成"某条轴静默回到默认值"。
-        var droppedAxes = _axisStore.Reset(state.Axes);
-        if (droppedAxes.Count > 0)
-        {
-            var names = new List<string>();
-            foreach (var d in droppedAxes) names.Add($"{d.Axis}:{d.Reason}");
-            Signal.Warn(LogGroup.Engine, "轴值恢复时丢弃了非法项", new { sessionId = SessionId, dropped = names });
-        }
-
-        // 恢复连接频道状态（仅 Full 占用级，Listen 由 RestoreAll 单独重建订阅）
-        if (!string.IsNullOrEmpty(state.ConnectedChannelId)
-            && int.TryParse(state.ConnectedChannelId, out var cid)
-            && !string.IsNullOrEmpty(state.ConnectedMode))
-        {
-            var mode = Enum.TryParse<ConnectionMode>(state.ConnectedMode, true, out var m)
-                ? m : ConnectionMode.Full;
-            // 真正的 claim + 订阅由 SessionEngine.RestoreAll 在 RestoreFromSnapshot 之前重建；
-            // 这里仅恢复 ConnectedChannelState 内存状态
-            _connected.Set(cid, mode);
-        }
     }
 
     /// <summary>compact 后新 session 接续旧 session 的轮次计数。</summary>

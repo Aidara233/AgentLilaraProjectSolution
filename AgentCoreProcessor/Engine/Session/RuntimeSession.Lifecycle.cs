@@ -32,6 +32,17 @@ namespace AgentCoreProcessor.Engine.Session;
 /// </summary>
 internal partial class RuntimeSession
 {
+    private void RestoreLifecycleSnapshot(SessionStateSnapshot state)
+    {
+        Status = state.Status == SessionStatus.Crashed ? SessionStatus.Restored : state.Status;
+        _isRestored = true;
+        _createdAt = state.CreatedAt;
+        WaitUntil = state.WaitUntil;
+        _lastActivity = state.LastActivity;
+
+
+    }
+
     private void CaptureLifecycleSnapshot(SnapshotWriter writer)
     {
         writer.Set(s => s.SessionId, SessionId);

@@ -54,16 +54,19 @@ internal partial class RuntimeSession
     }
 
     /// <summary>构造 state.json 快照对象。</summary>
-    internal SessionStateSnapshot BuildStateSnapshot() => new SnapshotWriter().Capture(new ISnapshotPort[]
+    internal SessionStateSnapshot BuildStateSnapshot() => new SnapshotWriter().Capture(SnapshotPorts());
+
+    private ISnapshotPort[] SnapshotPorts() => new ISnapshotPort[]
     {
-        new SnapshotPort("lifecycle", CaptureLifecycleSnapshot),
-        new SnapshotPort("step", CaptureStepSnapshot),
+        new SnapshotPort("lifecycle", CaptureLifecycleSnapshot, RestoreLifecycleSnapshot),
+        new SnapshotPort("step", CaptureStepSnapshot, state => _roundCount = state.RoundCount),
+        // Context/core resources are initialized by RestoreAll after/before this phase respectively.
         new SnapshotPort("context", CaptureContextSnapshot),
         new SnapshotPort("core", CaptureCoreSnapshot),
-        new SnapshotPort("channel", CaptureChannelSnapshot),
-        new SnapshotPort("children", CaptureChildrenSnapshot),
-        new SnapshotPort("axes", CaptureAxesSnapshot)
-    });
+        new SnapshotPort("channel", CaptureChannelSnapshot, RestoreChannelSnapshot),
+        new SnapshotPort("children", CaptureChildrenSnapshot, state => EffectiveParentId = state.EffectiveParentId),
+        new SnapshotPort("axes", CaptureAxesSnapshot, RestoreAxesSnapshot)
+    };
 
     /// <summary>从 host 维护的各频道 state 取 LastConsumedMessageId 构造游标快照。</summary>
     private Dictionary<int, int> BuildChannelCursors()

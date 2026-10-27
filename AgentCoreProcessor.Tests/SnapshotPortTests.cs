@@ -28,6 +28,31 @@ public sealed class SnapshotPortTests
     }
 
     [Fact]
+    public void RestorePortsPreserveExistingRuntimeStateSemantics()
+    {
+        var session = new RuntimeSession(new CreateSessionSpec { Type = "channel" }, new[] { "basic-tools" });
+        var created = DateTime.UtcNow.AddHours(-2);
+        var wait = DateTime.UtcNow.AddMinutes(3);
+        session.RestoreFromSnapshot(new SessionStateSnapshot
+        {
+            Status = SessionStatus.Crashed, CreatedAt = created, RoundCount = 23,
+            WaitUntil = wait, LastActivity = created.AddMinutes(1), EffectiveParentId = "parent",
+            ConnectedChannelId = "42", ConnectedMode = "Full",
+            Axes = new() { ["initiative"] = "task" }
+        }, new());
+        var snapshot = session.BuildStateSnapshot();
+        Assert.Equal(SessionStatus.Restored, snapshot.Status);
+        Assert.Equal(created, snapshot.CreatedAt);
+        Assert.Equal(23, snapshot.RoundCount);
+        Assert.Equal(wait, snapshot.WaitUntil);
+        Assert.Equal(created.AddMinutes(1), snapshot.LastActivity);
+        Assert.Equal("parent", snapshot.EffectiveParentId);
+        Assert.Equal("42", snapshot.ConnectedChannelId);
+        Assert.Equal("Full", snapshot.ConnectedMode);
+        Assert.Equal("task", snapshot.Axes["initiative"]);
+    }
+
+    [Fact]
     public void RuntimeRegistryCapturesAllFieldsAndCopiesMutableCollections()
     {
         var session = new RuntimeSession(new CreateSessionSpec { Type = "channel" }, new[] { "basic-tools" });

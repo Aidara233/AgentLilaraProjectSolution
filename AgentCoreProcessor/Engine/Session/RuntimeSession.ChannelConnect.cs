@@ -34,6 +34,21 @@ namespace AgentCoreProcessor.Engine.Session;
 /// </summary>
 internal partial class RuntimeSession
 {
+    private void RestoreChannelSnapshot(SessionStateSnapshot state)
+    {
+        // 恢复连接频道状态（仅 Full 占用级，Listen 由 RestoreAll 单独重建订阅）
+        if (!string.IsNullOrEmpty(state.ConnectedChannelId)
+            && int.TryParse(state.ConnectedChannelId, out var cid)
+            && !string.IsNullOrEmpty(state.ConnectedMode))
+        {
+            var mode = Enum.TryParse<ConnectionMode>(state.ConnectedMode, true, out var m)
+                ? m : ConnectionMode.Full;
+            // 真正的 claim + 订阅由 SessionEngine.RestoreAll 在 RestoreFromSnapshot 之前重建；
+            // 这里仅恢复 ConnectedChannelState 内存状态
+            _connected.Set(cid, mode);
+        }
+    }
+
     private void CaptureChannelSnapshot(SnapshotWriter writer)
     {
         writer.Set(s => s.ConnectedChannelId, _connected.CurrentChannelId > 0 ? _connected.CurrentChannelId.ToString() : null);

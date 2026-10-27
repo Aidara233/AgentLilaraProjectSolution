@@ -8,11 +8,14 @@ internal interface ISnapshotPort
 {
     string Owner { get; }
     void Capture(SnapshotWriter writer);
+    void Restore(SessionStateSnapshot snapshot);
 }
 
-internal sealed record SnapshotPort(string Owner, Action<SnapshotWriter> CaptureValues) : ISnapshotPort
+internal sealed record SnapshotPort(string Owner, Action<SnapshotWriter> CaptureValues,
+    Action<SessionStateSnapshot>? RestoreValues = null) : ISnapshotPort
 {
     public void Capture(SnapshotWriter writer) => CaptureValues(writer);
+    public void Restore(SessionStateSnapshot snapshot) => RestoreValues?.Invoke(snapshot);
 }
 
 /// <summary>按字段记录归属，重复采集立即失败。强类型选择器防止字段名和类型漂移。</summary>
