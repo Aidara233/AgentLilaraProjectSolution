@@ -6,7 +6,7 @@
 |---|---|---|
 | Lilara.Data | 实体、仓储、DbManager | 仓储接口与宿主上下文具体仓储引用 |
 | Lilara.Logging | 信号、写入、查询、SDK桥 | 宿主清理服务、静态 SignalContext、全部旧信号的数据流迁移 |
-| Lilara.Llm | 模型客户端、协议模型、embedding providers | CoreBase/Processor 的配置、模型日志和仓储接缝 |
+| Lilara.Llm | 模型客户端、协议模型、embedding providers、ModelProcessor 配置/客户端缓存/提示词装配/流式一次重试 | CoreBase 模型日志和仓储接缝；Processor 为宿主路径/提示词/日志适配 |
 | Lilara.Context | Axes、Prompts、装配器、变更意图、压缩策略 | SessionContextHost、全局组件采集与宿主压缩适配 |
 | Lilara.Channel | 配置存储、参与者、快照/渲染契约与渲染主体 | 占用唯一所有者、亲和度权威、游标持久化、兼容门面与端口全面注入 |
 | Lilara.Graph | 管理器、挂载/订阅、运行器与意图基础设施 | 运行时/模块契约/管理层已统一为 Lilara.Graph；其他模块通用挂载、内置路径迁移仍待完成 |

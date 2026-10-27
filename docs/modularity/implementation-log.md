@@ -7,6 +7,10 @@
 
 ## 已完成
 
+### C：模型配置与重试迁入 Lilara.Llm
+
+新增 `ModelProcessor` 拥有配置读取、客户端缓存、基础提示词装配与流式一次重试，注入配置目录、提示词加载器、请求 dump 路径、告警及可替换客户端工厂/默认客户端。宿主 Processor 仅绑定 PathConfig/PromptLoader/Signal。五项假客户端离线回归覆盖缓存与历史保留、提示词顺序、缺配置保持当前客户端并报告 Base 的原语义、重试前重置一次、二次失败/重置失败传播、成功不重试；没有真实模型请求。原无提示词时保留 BasePrompt、缓存重选时再次追加系统提示行为均保留。完整构建 0 错误（6 条 NU1603 与测试宿主既有 SYSLIB0050），全量 842 项通过（主程序 732、邮件 52、图运行时 41、图沙箱 17）。CoreBase 日志/仓储与 AgentCore 工具注册依赖仍留宿主。
+
 ### C：会话队列端口与持久化注入边界
 
 `MailboxInputPort`、`ChannelInputPort<T>`、`DelegateOutputPort<T>` 原行为迁入 Lilara.Session；RuntimeSession 持久化字段与注入入口改用模块内 SessionFileStore，创建/恢复仍可传入宿主路径适配子类。新增四项端口测试覆盖顺序、peek 不消费、取消挂起读取、邮箱关闭排空和拒绝新写、注入外部队列、输出类型过滤、等待异步处理与异常传播，并确认程序集归属。完整构建 0 错误、6 条 NU1603 与测试宿主既有 SYSLIB0050 警告；全量 837 项通过（主程序 727、邮件 52、图运行时 41、图沙箱 17）。RuntimeSession 仍因 core/context/component/messaging 等依赖留在宿主，未宣称 Session 主体迁移完成。
