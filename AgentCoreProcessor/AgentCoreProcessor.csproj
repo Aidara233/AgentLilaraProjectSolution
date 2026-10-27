@@ -49,6 +49,7 @@
     <ProjectReference Include="..\src\Lilara.Llm\Lilara.Llm.csproj" />
     <ProjectReference Include="..\src\Lilara.Vision\Lilara.Vision.csproj" />
     <ProjectReference Include="..\src\Lilara.Graph\Lilara.Graph.csproj" />
+    <ProjectReference Include="..\src\Lilara.Recurring\Lilara.Recurring.csproj" />
   </ItemGroup>
 
   <ItemGroup>

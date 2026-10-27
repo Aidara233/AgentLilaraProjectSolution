@@ -312,3 +312,7 @@ GraphActivationShadow 显式记录 Comparable/Matches/Reason，仅默认普通�
 ### 发布基础会话图
 
 新增 preset.session-mention.json，on.message→event.mention→gate.if→sink.inject，以 read.mount(sessionId) 指向当前会话；复用现有 Graphs JSON 构建/发布复制规则。新增真实默认目录回退加载及 active/shadow、普通消息/提及、同类实例与跨类型隔离测试。主程序 519 项测试、diff --check 通过；未进行真实模型轮次冒烟。
+
+### C1：Lilara.Recurring 信源首切
+
+Engine/Source 三文件迁入 src/Lilara.Recurring，保留命名空间与源码原文，友元宿主/测试。仅依赖 PluginSDK、GraphRuntime、Logging；TimerEngine 编排仍留宿主，因此是 Recurring 部分提取。离线缓存还原、主程序编译、519 项测试及 diff --check 通过。未启动真实信源、模型或适配器。
