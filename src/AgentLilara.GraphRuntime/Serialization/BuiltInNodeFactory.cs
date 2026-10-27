@@ -7,7 +7,7 @@ namespace AgentLilara.GraphRuntime.Serialization;
 /// 内建节点（激活源 / 数据源 / 纯算子 / 变量写 / 动作意图）。
 /// 动作汇块由 <see cref="IntentCatalog"/> 驱动：清单里加一行就有新节点类型，不用加类。
 /// </summary>
-public sealed class BuiltInNodeFactory : INodeFactory
+public sealed class BuiltInNodeFactory : INodeFactory, INodeTypeCatalog
 {
     private readonly Dictionary<string, Func<string, ParamBag, INode>> _factories;
 
@@ -148,6 +148,9 @@ public sealed class BuiltInNodeFactory : INodeFactory
     }
 
     public IReadOnlyCollection<string> Types => _factories.Keys;
+
+    /// <summary>模型/编辑器读的完整节点类型目录（端口由探针构造，见 NodeTypeCatalog）。</summary>
+    public IReadOnlyList<NodeTypeSpec> NodeTypes => NodeTypeCatalog.Build(this);
 
     public INode Create(string id, string type, IReadOnlyDictionary<string, JsonElement>? parameters)
     {
