@@ -32,6 +32,7 @@ internal partial class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Service
     private readonly ConcurrentDictionary<string, RuntimeSession> _sessions = new();
     /// <summary>顶层资源池：channelId → 池。频道占用状态在池里（Full claim + Listen 旁听）。</summary>
     private readonly ConcurrentDictionary<int, SessionPool> _pools = new();
+    private readonly ChannelOccupancyRegistry _occupancies = new();
     /// <summary>sessionId → 所在池（含全部 member：活跃 + 被 compact 换掉的旧 id）。寻址权威索引。</summary>
     private readonly ConcurrentDictionary<string, SessionPool> _poolByMember = new();
     private readonly List<ScheduledTask> _scheduledTasks = new();

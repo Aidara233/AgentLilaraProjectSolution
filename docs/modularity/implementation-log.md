@@ -512,3 +512,7 @@ Lilara.Channel新增ChannelOccupancyState，顶层SessionPool唯一持有并委�
 ### C12：封装旁听占用修改
 
 ChannelOccupancyState私有保存旁听列表，通过Listen/Unlisten幂等修改，ListenSessionIds返回脱离状态的只读快照；SessionPool委托根占用对象并保留子池兼容行为。引擎不再直接Add/RemoveAll，WebUI继续只读消费。新增3项回归覆盖根/子池幂等、不可写快照、旧快照隔离与Full claim保持。完整sln构建及761项测试通过（主程序651、邮件52、GraphRuntime41、沙箱17），diff检查通过。占用registry生命周期与协调实现仍在后续，C12未完成；未运行真实模型/适配器冒烟。
+
+### C12：频道注册表持有占用对象生命周期
+
+ChannelOccupancyRegistry创建并按引用身份移除占用对象，SessionPool接受共享对象；引擎在_poolLock内同时创建registry状态和根池，空根池回收同步移除两者，不新增锁。独立SessionPool构造保留供规则测试。新增3项回归覆盖共享引用、旁听/子池保留、精确引用移除和回收重建不复用旧状态。完整sln构建及764项测试通过（主程序654、邮件52、GraphRuntime41、沙箱17），diff检查通过。协调实现仍在SessionEngine；子池完成后的空根池回收、Listen成员索引、接管创建失败回滚等仍需后续，C12未完成。未运行真实模型/适配器冒烟。

@@ -90,7 +90,13 @@ internal partial class SessionEngine
     {
         if (!pool.IsEmpty) return;
         if (pool.IsRoot)
-            _pools.TryRemove(pool.ChannelId, out _);
+        {
+            if (_pools.TryGetValue(pool.ChannelId, out var current) && ReferenceEquals(current, pool))
+            {
+                _pools.TryRemove(pool.ChannelId, out _);
+                if (pool.Occupancy is { } occupancy) _occupancies.Remove(pool.ChannelId, occupancy);
+            }
+        }
         else
             pool.Parent?.ChildPools.Remove(pool);
         foreach (var m in pool.Members)

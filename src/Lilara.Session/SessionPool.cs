@@ -18,10 +18,19 @@ namespace AgentCoreProcessor.Engine.Session;
 internal sealed class SessionPool
 {
     public SessionPool(int channelId)
+        : this(channelId, channelId > 0 ? new ChannelOccupancyState() : null)
     {
-        ChannelId = channelId;
-        if (channelId > 0) _occupancy = new ChannelOccupancyState();
     }
+
+    internal SessionPool(int channelId, ChannelOccupancyState? occupancy)
+    {
+        if ((channelId > 0) != (occupancy is not null))
+            throw new ArgumentException("Only channel root pools require occupancy state", nameof(occupancy));
+        ChannelId = channelId;
+        _occupancy = occupancy;
+    }
+
+    internal ChannelOccupancyState? Occupancy => _occupancy;
 
     /// <summary>顶层池对应的频道；子池为 0（无频道，不持有 claim）。</summary>
     public int ChannelId { get; }

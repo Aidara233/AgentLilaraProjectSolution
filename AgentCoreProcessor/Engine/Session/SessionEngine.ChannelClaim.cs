@@ -58,7 +58,12 @@ internal partial class SessionEngine
     {
         lock (_poolLock)
         {
-            var pool = _pools.GetOrAdd(channelId, _ => new SessionPool(channelId));
+            if (!_pools.TryGetValue(channelId, out var pool))
+            {
+                var occupancy = channelId > 0 ? _occupancies.GetOrCreate(channelId) : null;
+                pool = new SessionPool(channelId, occupancy);
+                _pools[channelId] = pool;
+            }
             if (level == ClaimLevel.Full)
             {
                 if (!pool.Claim(sessionId)) return false;
