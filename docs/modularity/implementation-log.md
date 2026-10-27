@@ -404,3 +404,7 @@ ExpressExtractor、ExtractService 与唯一被提取器使用的 TextUtil 原文
 ### PluginHost：工具描述纯渲染首切
 
 ToolDescriptionRenderer进入Lilara.PluginHost，仅接收已筛选ITool序列；ToolRegistry保留原筛选/追加/全局禁用逻辑，委托纯文本渲染。编号、声明参数顺序/索引、示例JSON、平台换行与TrimEnd保持，新增3项回归覆盖空序列、精确文本和注册表筛选/追加。完整sln离线还原与构建成功（0错误、6项既有/传递警告），641项测试通过（主程序586、图运行时38、沙箱17），diff检查通过。权限、静态注册、配置IO及插件加载尚未迁移；未做真实模型/适配器冒烟。
+
+### PluginHost：工具环境作用域迁移
+
+ToolExecutionScope/ToolExecutionContext 原文迁入 Lilara.PluginHost，保持 namespace/internal，ToolExecutor 权限与执行仍留宿主。新增异常释放恢复与带继承作用域的并行异步隔离测试，复用既有基础作用域测试。完整 sln 构建成功，643项测试通过（主程序588、GraphRuntime38、沙箱17），diff检查通过。未运行真实模型/适配器；完整插件宿主迁移及C/D主线仍未完成。
