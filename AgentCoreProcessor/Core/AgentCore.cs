@@ -71,8 +71,14 @@ namespace AgentCoreProcessor.Core
         /// <summary>
         /// 统一入口。会话统一走 Working 路径（Express 旧分支已随 express 会话化移除），
         /// 工具过滤由当前会话类型（EngineType）白/黑名单统一裁决。
+        ///
+        /// <para>⚠️ <b>本轮参数走 <paramref name="request"/>，不靠改字段</b>（H2）：
+        /// 推送方原来每迭代写 <c>EngineType</c> / <c>AdditionalTools</c>，等于推进器在改另一个对象的字段。
+        /// 现在是"入参 → 本次调用生效"，字段只在 <paramref name="request"/> 为 null 时作回落
+        /// （给 <c>Agent.cs</c> 这类既有调用方保持兼容）。</para>
         /// </summary>
-        public async Task<ModelOutput> InvokeAsync(List<Message> messages, Engine.EngineMode mode)
+        public async Task<ModelOutput> InvokeAsync(List<Message> messages, Engine.EngineMode mode,
+            AgentInvokeRequest? request = null)
         {
             // 一次性核配置：processor 缺失或已加载配置与目标核不符则用该核重建。EngineMode 为宿主侧遗留参数，不再分流。
             if (processor == null || processor.CfgName != _configName)
@@ -80,7 +86,11 @@ namespace AgentCoreProcessor.Core
             ApplyExtraMessages();
             SetConversationHistory(messages);
 
-            var (calls, thinking, usage) = await GenerateToolCallsWithThinkingAsync();
+            // 本轮参数：请求优先；缺省落回字段（兼容既有调用方）。
+            var engineType = request?.EngineType ?? EngineType;
+            var additionalTools = request is null ? AdditionalTools : request.AdditionalTools;
+
+            var (calls, thinking, usage) = await GenerateToolCallsWithThinkingAsync(engineType, additionalTools);
             return ModelOutput.FromTools(calls, thinking, usage);
         }
 
@@ -96,11 +106,19 @@ namespace AgentCoreProcessor.Core
 
         /// <summary>
         /// 工具调用解析（Working 模式）。UseNativeTools 时使用原生 tool_use，否则解析文本 JSON。
+        ///
+        /// <para>⚠️ <paramref name="engineType"/> / <paramref name="additionalTools"/> 为 null 时
+        /// **回落读字段**：本方法还有 <c>ChatAsync</c> 那条调用路径（不经过 <c>InvokeAsync</c>），
+        /// 所以不能一刀切成"必须传参"。</para>
         /// </summary>
-        public async Task<(List<ToolCall> Calls, string? Thinking, Usage? Usage)> GenerateToolCallsWithThinkingAsync()
+        public async Task<(List<ToolCall> Calls, string? Thinking, Usage? Usage)> GenerateToolCallsWithThinkingAsync(
+            string? engineType = null, IReadOnlyList<ITool>? additionalTools = null)
         {
+            engineType ??= EngineType;
+            additionalTools ??= AdditionalTools;
+
             if (UseNativeTools)
-                return await GenerateWithNativeToolsAsync();
+                return await GenerateWithNativeToolsAsync(engineType, additionalTools);
 
             // 旧路径：文本 JSON 解析
             var calls = new List<ToolCall>();
@@ -144,23 +162,24 @@ namespace AgentCoreProcessor.Core
             return (calls, thinking, null);
         }
 
-        private async Task<(List<ToolCall> Calls, string? Thinking, Usage? Usage)> GenerateWithNativeToolsAsync()
+        private async Task<(List<ToolCall> Calls, string? Thinking, Usage? Usage)> GenerateWithNativeToolsAsync(
+            string? engineType, IReadOnlyList<ITool>? additionalTools)
         {
             // 只取非组件工具（核心 + MCP + 纯插件），按会话类型白/黑名单过滤
             var toolDefs = ToolRegistry.NonComponentToolNames
                 .Select(ToolRegistry.Get)
                 .Where(t => t != null
-                            && ToolRegistry.IsVisible(t.Name, EngineType)
+                            && ToolRegistry.IsVisible(t.Name, engineType)
                             && (ExcludedToolNames == null || !ExcludedToolNames.Contains(t.Name))
                             && !(DisableImageMessages && ImageDependentTools.Contains(t.Name)))
                 .Select(ToDefinition!)
                 .ToList();
 
             // 合并全局组件工具（可见性由会话类型白/黑名单裁决）
-            MergeTools(toolDefs, GlobalComponentTools);
+            MergeTools(toolDefs, GlobalComponentTools, engineType);
 
             // 合并 loop 组件工具（已由 ComponentHost 按类型清单过滤）
-            MergeTools(toolDefs, AdditionalTools);
+            MergeTools(toolDefs, additionalTools, engineType);
 
             // 图片工具过滤（组件工具路径）
             if (DisableImageMessages)
@@ -201,17 +220,17 @@ namespace AgentCoreProcessor.Core
         /// 工具对当前会话类型的可见性判定。统一走 ToolRegistry.IsVisible
         /// （全局禁用 + 会话类型白/黑名单裁决）。组件工具也接受同一裁决。
         /// </summary>
-        private bool IsVisibleToEngineOrGlobal(ITool t)
+        private bool IsVisibleToEngineOrGlobal(ITool t, string? engineType)
         {
-            return ToolRegistry.IsVisible(t.Name, EngineType);
+            return ToolRegistry.IsVisible(t.Name, engineType);
         }
 
-        private void MergeTools(List<ToolDefinition> defs, List<ITool>? tools)
+        private void MergeTools(List<ToolDefinition> defs, IReadOnlyList<ITool>? tools, string? engineType)
         {
             if (tools == null) return;
             foreach (var t in tools)
             {
-                if (!IsVisibleToEngineOrGlobal(t)) continue;
+                if (!IsVisibleToEngineOrGlobal(t, engineType)) continue;
                 if (defs.Any(d => d.Name == t.Name)) continue;
                 defs.Add(ToDefinition(t));
             }

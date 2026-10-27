@@ -277,6 +277,9 @@ internal class RuntimeSession : IRuntimeSession
         AttachSessionPrompt(_agentCore);
 
         // 立即重设工具装配（外置切换发生在两轮之间也安全；轮中切换由 roundCore 硬化隔离）
+        // ⚠️ H2：不再在切换核时写 _agentCore 的轮次字段；每轮调用的参数由 RunAsync 经
+        // AgentInvokeRequest 传入（见下方 BuildInvokeRequest）。这里保留字段写入只为兼容
+        // 不经 InvokeAsync 的路径（ChatAsync / 旧调用方），值为"当前默认"。
         _agentCore.EngineType = _componentLoopType;
         _agentCore.AdditionalTools = _tools.Values.ToList();
 
@@ -840,8 +843,8 @@ internal class RuntimeSession : IRuntimeSession
                 _activeTools.Clear();
                 _tools[lockTo.ToolName] = _compactTool;
                 _activeTools.Add(lockTo.ToolName);
-                if (_agentCore != null)
-                    _agentCore.AdditionalTools = new List<ITool> { _compactTool };
+                // ⚠️ H2：不再写 _agentCore.AdditionalTools。每轮调用时 BuildInvokeRequest()
+                // 会从 _tools 取当前表，所以锁定效果由"请求参数"承载，而不是"改对象字段"。
                 Signal.Event(LogGroup.Engine, "L3 锁定：工具表只剩 " + lockTo.ToolName,
                     new { sessionId = SessionId, preLockdownCount = _preLockdownTools.Count });
                 break;
@@ -1174,8 +1177,12 @@ internal class RuntimeSession : IRuntimeSession
                     }
                 }
 
-                _agentCore!.EngineType = _componentLoopType;  // 权限组（channel/task）
-                _agentCore!.AdditionalTools = _tools.Values.ToList();
+                // ⚠️ H2：不再把本轮参数写进 _agentCore 的字段——改为随调用传入
+                // （AgentInvokeRequest），参数的生命周期因此只覆盖这一次模型调用。
+                // 原来这两行的后果是：调用结束后字段仍然保留，下一轮看到的是上一轮的值。
+                var invokeRequest = new AgentInvokeRequest(
+                    EngineType: _componentLoopType,          // 权限组（channel/task）
+                    AdditionalTools: _tools.Values.ToList());
 
                 // 硬化：本轮锁定的核引用。外置切换（命令/WebUI）可能在本轮中途发生，
                 // 整轮用 roundCore 保证格式化标志（UseNativeTools 等）与产出本轮的核一致。
@@ -1229,7 +1236,7 @@ internal class RuntimeSession : IRuntimeSession
                     // 只读的线上请求体捕获（默认关闭；影子模式下打开）。必须在调用**之前**开作用域。
                     Phase = StepPhase.Inferring;
                     var wire = Client.WireRequestCapture.Begin();
-                    output = await roundCore.InvokeAsync(_history, EngineMode.Working);
+                    output = await roundCore.InvokeAsync(_history, EngineMode.Working, invokeRequest);
                     // ⚠️ 影子快照必须紧贴调用之后：下一次 InvokeAsync 会重设客户端历史。
                     // 默认 Off 时这一步是空操作，Legacy 路径一个字节都不变。
                     Brain.SessionBrainRuntime.Observe(
