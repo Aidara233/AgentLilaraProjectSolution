@@ -31,10 +31,14 @@ namespace AgentCoreProcessor.Engine.Session;
 /// </summary>
 internal partial class RuntimeSession
 {
+    private string _activationReason = "message";
+
     private async Task<bool> WaitForActivationAsync(CancellationToken ct)
     {
+        _activationReason = "message";
         var activated = await WaitForActivationCoreAsync(ct);
-        _activationShadow?.Compare(activated);
+        _activationShadow?.Compare(activated, activated ? _activationReason : "cancelled");
+        _activationShadow?.Synchronize(_inputs);
         return activated;
     }
 
@@ -49,6 +53,7 @@ internal partial class RuntimeSession
             {
                 if (port is not MessageInputPort && port.TryPeek(out _))
                 {
+                    _activationReason = "system-input";
                     Signal.Debug(LogGroup.Engine, "WaitForActivation 唤醒：系统端口有输入", new { sessionId = SessionId, port = name });
                     return true;
                 }
@@ -84,6 +89,7 @@ internal partial class RuntimeSession
             // ④ 检查 WaitUntil 是否到期
             if (WaitUntil != null && DateTime.UtcNow >= WaitUntil.Value)
             {
+                _activationReason = "timeout";
                 Signal.Debug(LogGroup.Engine, "WaitForActivation 唤醒：WaitUntil 到期", new { sessionId = SessionId });
                 InjectMessage(new { type = "timeout", wait_reason = "wait timeout expired" });
                 return true;
@@ -92,6 +98,7 @@ internal partial class RuntimeSession
             // ⑤ 外部唤醒信号（异步任务完成/跨循环通知）
             if (_wakeSignaled)
             {
+                _activationReason = "wake-signal";
                 _wakeSignaled = false;
                 Signal.Debug(LogGroup.Engine, "WaitForActivation 唤醒：外部信号", new { sessionId = SessionId });
                 return true;

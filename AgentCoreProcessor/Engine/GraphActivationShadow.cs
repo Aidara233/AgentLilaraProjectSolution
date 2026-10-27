@@ -19,7 +19,11 @@ namespace AgentCoreProcessor.Engine;
 /// </summary>
 internal sealed class GraphActivationShadow
 {
-    private readonly GraphInstance _instance;
+    private GraphInstance _instance;
+    private string? _unsupportedReason;
+
+    internal sealed record Comparison(bool Comparable, bool? Matches, string? Reason, bool GraphActivated);
+    internal Comparison? LastComparison { get; private set; }
 
     /// <summary>每个消息端口上次看到的队列深度（用增量喂事件）。</summary>
     private readonly Dictionary<string, int> _seen = new(StringComparer.Ordinal);
@@ -62,8 +66,11 @@ internal sealed class GraphActivationShadow
     /// <summary>把队列增量喂给图（每条积压消息合成一个事件；权重≥100 视为 @提及）。</summary>
     public void Observe(IReadOnlyDictionary<string, IInputPort> inputs)
     {
+        _unsupportedReason = null;
         foreach (var (name, port) in inputs)
         {
+            if (port is MessageInputPort weighted && weighted.Weight < LegacyMentionWeight && weighted.Weight != 5)
+                _unsupportedReason = "non-default-message-weight";
             if (port is not MessageInputPort mp)
             {
                 continue;
@@ -99,23 +106,24 @@ internal sealed class GraphActivationShadow
     }
 
     /// <summary>与旧判定比对。只在激活周期结束时调用一次。</summary>
-    public void Compare(bool legacyActivated)
+    public void Compare(bool legacyActivated, string reason = "message")
     {
-        if (legacyActivated != _graphFired)
-        {
-            Signal.Warn(LogGroup.Engine, "graph.shadow.mismatch", new
-            {
-                legacyActivated,
-                graphActivated = _graphFired,
-                pending = _instance.ReadVariable("pending").ToString(),
-            });
-        }
+        var unsupported = reason == "message" ? _unsupportedReason : reason;
+        LastComparison = new Comparison(unsupported is null,
+            unsupported is null ? legacyActivated == _graphFired : null, unsupported, _graphFired);
+        if (LastComparison.Matches == false)
+            Signal.Warn(LogGroup.Engine, "graph.shadow.mismatch", new { legacyActivated, graphActivated = _graphFired });
+        else if (!LastComparison.Comparable)
+            Signal.Debug(LogGroup.Engine, "graph.shadow.not_comparable", new { reason = unsupported });
+        if (legacyActivated) _graphFired = false;
+    }
 
-        // 旧逻辑激活后会清零队列计数；图的变量已自行清零，这里只清比对窗口
-        if (legacyActivated)
-        {
-            _graphFired = false;
-        }
+    public void Synchronize(IReadOnlyDictionary<string, IInputPort> inputs)
+    {
+        _instance = new GraphInstance(_instance.Class);
+        _seen.Clear();
+        _graphFired = false;
+        Observe(inputs);
     }
 
     /// <summary>旧代码里 mention 端口的权重阈值（`MessageEngine.DeliverToSession` 用 100）。</summary>

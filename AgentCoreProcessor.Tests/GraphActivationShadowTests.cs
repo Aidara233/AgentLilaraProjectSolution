@@ -34,6 +34,54 @@ public class GraphActivationShadowTests
     }
 
     [Fact]
+    public void EqualDepthBatchesAndOversizedBatchResetCorrectly()
+    {
+        var shadow = NewShadow();
+        var ports = Ports(out var normal, out _);
+        foreach (var count in new[] { 25, 20, 20 })
+        {
+            for (var i = 0; i < count; i++) normal.Enqueue(new object());
+            shadow.Observe(ports);
+            Assert.True(shadow.GraphWantsActivation);
+            normal.ResetQueueCount();
+            shadow.Compare(true);
+            Assert.True(shadow.LastComparison!.Matches);
+            shadow.Synchronize(ports);
+            Assert.False(shadow.GraphWantsActivation);
+        }
+        for (var i = 0; i < 19; i++) normal.Enqueue(new object());
+        shadow.Observe(ports);
+        Assert.False(shadow.GraphWantsActivation);
+    }
+
+    [Theory]
+    [InlineData("system-input")]
+    [InlineData("timeout")]
+    [InlineData("wake-signal")]
+    [InlineData("cancelled")]
+    public void NonMessageCausesAreExplicitlyNotComparable(string reason)
+    {
+        var shadow = NewShadow();
+        shadow.Compare(true, reason);
+        Assert.False(shadow.LastComparison!.Comparable);
+        Assert.Null(shadow.LastComparison.Matches);
+        Assert.Equal(reason, shadow.LastComparison.Reason);
+    }
+
+    [Fact]
+    public void NonDefaultWeightIsNotComparedAgainstTwentyMessagePreset()
+    {
+        var shadow = NewShadow();
+        var port = new MessageInputPort(1, "normal", 10);
+        var ports = new Dictionary<string, IInputPort> { ["normal"] = port };
+        for (var i = 0; i < 10; i++) port.Enqueue(new object());
+        shadow.Observe(ports);
+        shadow.Compare(true);
+        Assert.False(shadow.LastComparison!.Comparable);
+        Assert.Equal("non-default-message-weight", shadow.LastComparison.Reason);
+    }
+
+    [Fact]
     public void GraphLoadsFromOutputDirectory()
     {
         Assert.NotNull(GraphActivationShadow.TryCreate());

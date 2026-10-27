@@ -91,6 +91,7 @@ internal partial class RuntimeSession
             if (port is MessageInputPort mp)
                 mp.ResetQueueCount();
         }
+        _activationShadow?.Synchronize(_inputs);
         return result;
     }
 
