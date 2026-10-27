@@ -62,10 +62,10 @@ public sealed class AssemblyBoundaryTests
     }
 
     [Fact]
-    public void PluginProjectReferencesStayWithinSdkAndExistingFileToolkit()
+    public void PluginProjectReferencesStayWithinSdk()
     {
         // Project files express compile-time references even when unused references are
-        // omitted from assembly metadata. Shared FileToolKit remains a documented exception.
+        // omitted from assembly metadata.
         var root = Repository();
         foreach (var path in Directory.GetFiles(Path.Combine(root, "Plugins"), "Plugin.*.csproj", SearchOption.AllDirectories))
         {
@@ -73,7 +73,7 @@ public sealed class AssemblyBoundaryTests
             {
                 var include = reference.Attribute("Include")!.Value.Replace('\\', '/');
                 var target = Path.GetFileNameWithoutExtension(include);
-                Assert.True(target is "AgentLilara.PluginSDK" or "FileToolKit.Shared",
+                Assert.True(target is "AgentLilara.PluginSDK",
                     $"{Path.GetFileName(path)} references {include}");
             }
         }

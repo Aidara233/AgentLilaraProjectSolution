@@ -15,7 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\FileToolKit.Shared\FileToolKit.Shared.csproj" />
+
   </ItemGroup>
 
   <ItemGroup>

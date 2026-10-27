@@ -12,7 +12,7 @@
     <ProjectReference Include="..\..\AgentLilara.PluginSDK\AgentLilara.PluginSDK.csproj">
       <Private>false</Private>
     </ProjectReference>
-    <ProjectReference Include="..\FileToolKit.Shared\FileToolKit.Shared.csproj" />
+
   </ItemGroup>
 
   <ItemGroup>

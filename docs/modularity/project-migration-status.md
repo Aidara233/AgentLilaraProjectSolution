@@ -18,7 +18,7 @@
 | Lilara.Adapters | 协议契约、File/OneBot/Icalingua/HTTP、管理器、工厂 | ImageStorage、宿主访问/媒体适配器及出向路由图化 |
 | Lilara.PluginHost | 工具描述、执行作用域、策略委托执行器 | 静态注册表、插件ALC、MCP、权限与配置装配 |
 
-Commands、独立 WebUI 与最终 Host 装配根尚未完成。PluginSDK 仍为现有契约根；WorkingTools 已删除宿主项目引用，注入接口迁入 SDK 并由宿主类型转发。FileToolKit.Shared 保留为插件引用的已知例外。GraphSandbox 已移入 tests/fixtures。
+Commands、独立 WebUI 与最终 Host 装配根尚未完成。PluginSDK 仍为现有契约根；WorkingTools 已删除宿主项目引用，注入接口迁入 SDK 并由宿主类型转发。FileToolBase 已原文上收 SDK，三个文件插件不再引用 FileToolKit.Shared；旧共享库仅类型转发兼容已有插件二进制。GraphSandbox 已移入 tests/fixtures。
 
 AssemblyBoundaryTests 读取实际编译 DLL 元数据，验证所有 src/Lilara.* 库无宿主引用，库间依赖无环；Channel/Context 不引用其他应用程序集。插件项目引用另从 csproj 检查，避免未使用项目引用被编译器从元数据省略而漏报。该检查不证明静态状态隔离、端口契约完整或最终装配树已经达标。
 
