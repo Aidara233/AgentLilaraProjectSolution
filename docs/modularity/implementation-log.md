@@ -20,6 +20,8 @@
 | `48bbafc` | **A4-2** `StepPhase` 粗阶段字段（只读诊断） | ✅ | 441 pass | 无（只读字段） |
 | `1b9305c` | **A4-3** `AgentInvokeRequest`：每轮参数改传参（H2） | ✅ | 441 pass | 无（等价重构） |
 | `c54c2bf` | **B-1** `RuntimeSession` 拆 partial：inbox / output / activation | ✅ | 441 pass | 无（纯文件拆分） |
+| `9f00978` | **B-5** 拆 partial：lifecycle / children | ✅ | 441 pass | 无 |
+| `ecea9bf` | **B-3a** 拆 partial：core-switch | ✅ | 441 pass | 无 |
 
 测试从 385 → **441**，净增 56 条，全部是纯内存单测（不建会话、不碰存储、不调模型）。
 
