@@ -276,3 +276,7 @@ Prompts 两文件与 Axes 五文件迁入 src/Lilara.Context，均保持源码�
 ### C1：Vision/OCR 与 Embedding providers
 
 OCR/Vision 六文件迁入 src/Lilara.Vision，Embedding 五文件及纯 BCL VectorUtil 迁入 Lilara.Llm。SiliconFlowVisionProvider 不再接受宿主 PhaseConfig，由 VisionEngine 三处展开原配置的 endpoint/model/temperature/maxTokens/promptTemplate。新 Vision 库引用 Logging/Newtonsoft，Llm 增加 ONNX 既有版本；保持命名空间与友元过渡。主程序构建、492 项测试及 diff --check 通过。未运行真实 OCR、ONNX 模型或外部模型请求；两项缓存依赖替代 NU1603 与既有 API 警告仍在。VisionEngine 业务编排与 PhaseConfig 仍留宿主。
+
+### C5：WorkingTools 脱离宿主引用
+
+IInjectProvider/InjectContext 纯契约原文迁入 PluginSDK，保留 AgentCoreProcessor.Engine 命名空间。宿主添加真正的 TypeForwardedTo 兼容旧程序集名字；删除 WorkingTools 对宿主的 ProjectReference，TFM 仍 net10.0。插件独立构建零警告，主程序 493 项测试通过；新增 SDK 类型身份/宿主转发解析检查。未用旧插件 DLL 做隔离 ALC 运行冒烟。
