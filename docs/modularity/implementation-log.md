@@ -7,6 +7,10 @@
 
 ## 已完成
 
+### C：会话队列端口与持久化注入边界
+
+`MailboxInputPort`、`ChannelInputPort<T>`、`DelegateOutputPort<T>` 原行为迁入 Lilara.Session；RuntimeSession 持久化字段与注入入口改用模块内 SessionFileStore，创建/恢复仍可传入宿主路径适配子类。新增四项端口测试覆盖顺序、peek 不消费、取消挂起读取、邮箱关闭排空和拒绝新写、注入外部队列、输出类型过滤、等待异步处理与异常传播，并确认程序集归属。完整构建 0 错误、6 条 NU1603 与测试宿主既有 SYSLIB0050 警告；全量 837 项通过（主程序 727、邮件 52、图运行时 41、图沙箱 17）。RuntimeSession 仍因 core/context/component/messaging 等依赖留在宿主，未宣称 Session 主体迁移完成。
+
 ### C：会话文件存储与快照端口迁入 Lilara.Session
 
 `SessionFileStore` 完整承接 spec/state/history 三文件读写、状态局部更新、历史裁剪恢复及快照/包装 DTO，构造注入 Sessions 根目录；更新子会话父指针也限定使用该根目录。宿主 `SessionPersistence` 仅继承并绑定 PathConfig。快照采集端口与所有权校验一同迁入。保留 spec v2/state v3 格式、旧版本读取不回写、损坏状态降为 Crashed、最近 1000 行与末尾未完成 tool_use 的原恢复规则。

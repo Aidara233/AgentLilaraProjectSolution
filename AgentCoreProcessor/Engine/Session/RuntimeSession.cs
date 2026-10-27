@@ -182,8 +182,8 @@ internal partial class RuntimeSession : IRuntimeSession, IRuntimeSessionDiagnost
     public List<Message> History => _history;
 
     // ── 持久化器（每轮写入 history.jsonl + state.json）──
-    private SessionPersistence? _persister;
-    public void SetPersister(SessionPersistence p) => _persister = p;
+    private SessionFileStore? _persister;
+    public void SetPersister(SessionFileStore p) => _persister = p;
 
     // ── 恢复标记：Restored 的 session 跳过 BuildStartAsync / bootstrap 注入，直接等新消息 ──
     private bool _isRestored;
