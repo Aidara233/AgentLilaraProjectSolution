@@ -476,3 +476,7 @@ ParseVisionOutput/TryParseJson/NormalizeClassification原样提取为Lilara.Visi
 ### D1前置：轮次上下文时钟冻结
 
 SessionContextHost构造增加可选Func<DateTime>，生产默认DateTime.Now；BuildRoundAsync每次只读取一次。固定文化/本地时间测试验证系统时间全文、消息顺序、跨日日期状态、空输入及独立宿主相同输入序列化UTF-8字节一致。定向测试1项通过，测试过程编译宿主成功，diff检查通过；本次未重复全量测试。媒体读取与装载时序未改，D1全路径对拍和D5仍未完成。
+
+### D1：独立无媒体增量影子图对拍
+
+ContextShadowGraphTests以冻结值源→独立格式节点→采集汇构造真实GraphInstance，节点不调用旧渲染器或IO。旧ChannelContextService使用独立状态执行，禁止媒体源查询。覆盖默认时间/首日/同日/跨日、端口与CSV精确mention、bot/回复、特殊字符和连续消息；逐字段比较全文、Role、null块和完整频道状态/图片集合。检查求值顺序、两条实际Known端口流及成功汇结果，故意污染图输出的负对照可检测差异。7项切片测试通过；完整sln构建及729项测试通过（主程序619、邮件52、GraphRuntime41、沙箱17），diff检查通过。未切生产；历史/引用/媒体异步就绪/游标落盘/系统时间行/真实协议仍不在本切片，D1全部与D5尚未完成，不启动D2全量切流。
