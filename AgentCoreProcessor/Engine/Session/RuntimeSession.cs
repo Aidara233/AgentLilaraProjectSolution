@@ -128,6 +128,19 @@ internal class RuntimeSession : IRuntimeSession
     private volatile bool _isBusy;
     public bool IsBusy => _isBusy;
 
+    /// <summary>
+    /// 本突发当前处于哪一段。**只读、只供诊断**（日志 / 控制面 / 排查），不参与任何判定。
+    ///
+    /// <para>⚠️ 它是 `step` 的 `phase` 字段的第一版实现：按 12 阶段表的边界赋值，
+    /// 但**没有把 420 行的 <c>RunAsync</c> 拆成方法**——那是 B 阶段切文件时的事。
+    /// 先有可观测的 phase，才好在拆分前后对照"行为没变"。</para>
+    ///
+    /// <para>⚠️ 12 阶段表见 <c>docs/modularity/module-io-spec.md</c> §5.3；
+    /// 这里只落到 5 个粗档，因为粗档已经能回答"卡在哪一段"，
+    /// 再细就要和方法边界一起定（分阶段拆方法在 B 阶段）。</para>
+    /// </summary>
+    internal StepPhase Phase { get; private set; } = StepPhase.Idle;
+
     /// <summary>end_session 强制退出计数：0=未触发，>=1=已拦截过一次。</summary>
     private int _forceExitAttempts;
 
@@ -1028,6 +1041,7 @@ internal class RuntimeSession : IRuntimeSession
                     SetWaitUntil(null);
                     awaitingInput = false;
                     _isBusy = true; // 突发开始（agent 推理进行中）
+                    Phase = StepPhase.Draining;
 
                     // 新突发开始：重置突发内轮次计数
                     agentRound = 0;
@@ -1213,6 +1227,7 @@ internal class RuntimeSession : IRuntimeSession
                 try
                 {
                     // 只读的线上请求体捕获（默认关闭；影子模式下打开）。必须在调用**之前**开作用域。
+                    Phase = StepPhase.Inferring;
                     var wire = Client.WireRequestCapture.Begin();
                     output = await roundCore.InvokeAsync(_history, EngineMode.Working);
                     // ⚠️ 影子快照必须紧贴调用之后：下一次 InvokeAsync 会重设客户端历史。
@@ -1230,6 +1245,7 @@ internal class RuntimeSession : IRuntimeSession
                 _history.Add(new Message { Role = "assistant", Content = output.Text ?? output.Thinking ?? "" });
 
                 // ── 工具执行 ──
+                Phase = StepPhase.ExecutingTools;
                 if (output.HasToolCalls && output.ToolCalls != null && output.ToolCalls.Count > 0)
                 {
                     System.Func<string, ITool?> resolver = name =>
@@ -1268,6 +1284,7 @@ internal class RuntimeSession : IRuntimeSession
                     });
 
                     // 副作用 + 停止判定（突发结束 ≠ 会话结束）
+                    Phase = StepPhase.Judging;
                     // endBurst：本次突发收尾，清消息回 WaitForActivationAsync，session 保活握 claim
                     // endSession：会话真正终结，break 走 finally 释放 claim
                     var endBurst = false;
@@ -1297,6 +1314,7 @@ internal class RuntimeSession : IRuntimeSession
                             new { sessionId = SessionId, historyCount = _history.Count, waitUntil = WaitUntil });
                         _forceExitAttempts = 0;
                         awaitingInput = true;
+                        Phase = StepPhase.Waiting;
                         continue;
                     }
                 }
@@ -1322,6 +1340,9 @@ internal class RuntimeSession : IRuntimeSession
             if (Status == SessionStatus.Running)
                 Status = SessionStatus.Completed;
             lifeCtx.Close(new { sessionId = SessionId, reason = endReason, status = Status.ToString() });
+
+            // 会话结束：phase 回到 Idle（否则诊断面板会把"已结束"读成"卡在某段"）。
+            Phase = StepPhase.Idle;
 
             // 完成事件由 SessionEngine 释放本会话绑定的 session-scope 图实例。
             OnCompleted?.Invoke(this);
