@@ -19,6 +19,7 @@
 | `5c3f4e7` | **A4-1** `ToolEffectInterpreter`：工具结果解释改纯函数 | ✅ | 441 pass（+22） | 无（等价重构） |
 | `48bbafc` | **A4-2** `StepPhase` 粗阶段字段（只读诊断） | ✅ | 441 pass | 无（只读字段） |
 | `1b9305c` | **A4-3** `AgentInvokeRequest`：每轮参数改传参（H2） | ✅ | 441 pass | 无（等价重构） |
+| `c54c2bf` | **B-1** `RuntimeSession` 拆 partial：inbox / output / activation | ✅ | 441 pass | 无（纯文件拆分） |
 
 测试从 385 → **441**，净增 56 条，全部是纯内存单测（不建会话、不碰存储、不调模型）。
 
@@ -71,13 +72,26 @@ B 的前置条件已经具备：`step` 的 12 阶段表、`ToolEffectInterpreter
 
 **不要一次切 20 个文件**。按"每一刀都能独立编译 + 测试全绿"切：
 
-| 批次 | 切什么 | 为什么这个顺序 |
-|---|---|---|
-| B-1 | `inbox` + `output` + `activation` | 三者最独立，与 `_tools`/`_agentCore` 无关，先建立节奏 |
-| B-2 | `snapshot` + `ISnapshotPort` | 它要遍历各部件，必须**最后**一个切（否则每次加部件都要改它） |
-| B-3 | `core-switch` + `components` + `bootstrap` | 三者围绕 `_agentCore` / `_componentHost` / `_initActions`，一起动 |
-| B-4 | `step` 拆成方法（12 阶段 → 方法边界） | phase 字段已在位（`StepPhase`），拆完对照 phase 赋值点即可验证 |
-| B-5 | `children` + `resources` + `lifecycle` | 收尾，都是小件 |
-| B-6 | Singleton 8 个（pool/assembly/type-profiles/escalate/subagent/brain-bridge） | 在 `SessionEngine` 里，与上一组隔离 |
+| 批次 | 切什么 | 为什么这个顺序 | 状态 |
+|---|---|---|---|
+| B-1 | `inbox` + `output` + `activation` | 三者最独立，与 `_tools`/`_agentCore` 无关，先建立节奏 | ✅ `c54c2bf` |
+| B-2 | `snapshot` + `ISnapshotPort` | 它要遍历各部件，必须**最后**一个切（否则每次加部件都要改它） | 待做 |
+| B-3 | `core-switch` + `components` + `bootstrap` | 三者围绕 `_agentCore` / `_componentHost` / `_initActions`，一起动 | 待做 |
+| B-4 | `step` 拆成方法（12 阶段 → 方法边界） | phase 字段已在位（`StepPhase`），拆完对照 phase 赋值点即可验证 | 待做 |
+| B-5 | `children` + `resources` + `lifecycle` | 收尾，都是小件 | 待做 |
+| B-6 | Singleton 8 个（pool/assembly/type-profiles/escalate/subagent/brain-bridge） | 在 `SessionEngine` 里，与上一组隔离 | 待做 |
 
 ⚠️ **B-2 必须最后**：`ISnapshotPort` 是对"所有有状态部件"的遍历，先切会让它反复返工。
+
+### B-1 实测结果
+
+`RuntimeSession.cs` **1646 → 1469 行**，三个新文件共 278 行：
+
+| 文件 | 行数 | 内容 |
+|---|---:|---|
+| `RuntimeSession.Inbox.cs` | 111 | `AdvanceChannelCursor` + `DrainInputPortsRaw` |
+| `RuntimeSession.Output.cs` | 53 | `SendOutput` |
+| `RuntimeSession.Activation.cs` | 114 | `WaitForActivationAsync` + `WaitForActivationCoreAsync` + `ResetAllMpQueueCounts` |
+
+做法：`RuntimeSession` 改为 `partial`，按方法边界整段搬迁，**不改一行方法体**。
+编译踩到一处：`Inbox` 里的 `JsonConvert` 需要单独 `using Newtonsoft.Json`（partial 文件的 using 不共享）——这类漏 using 是纯文件拆分的唯一真实风险，编译期就能抓住。
