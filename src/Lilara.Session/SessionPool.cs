@@ -48,7 +48,19 @@ internal sealed class SessionPool
     public bool HasFullClaim => _occupancy?.HasFullClaim ?? false;
 
     /// <summary>Listen 占用（仅顶层池，旁听只读消息流，多个可并存）。</summary>
-    public List<string> ListenSessionIds => _occupancy?.ListenSessionIds ?? _childListeners;
+    public IReadOnlyList<string> ListenSessionIds => _occupancy?.ListenSessionIds
+        ?? Array.AsReadOnly(_childListeners.ToArray());
+
+    public bool Listen(string sessionId)
+    {
+        if (_occupancy is not null) return _occupancy.Listen(sessionId);
+        if (_childListeners.Contains(sessionId)) return false;
+        _childListeners.Add(sessionId);
+        return true;
+    }
+
+    public bool Unlisten(string sessionId) => _occupancy?.Unlisten(sessionId)
+        ?? (_childListeners.RemoveAll(id => id == sessionId) != 0);
 
     /// <summary>Full claim 一个 session。已有占用返回 false。同 session 重入视为成功（幂等，供 TakeOver 后续接）。</summary>
     public bool Claim(string sessionId)

@@ -5,8 +5,18 @@ internal sealed class ChannelOccupancyState
 {
     public string ActiveSessionId { get; private set; } = "";
     public bool HasFullClaim => !string.IsNullOrEmpty(ActiveSessionId);
-    // Compatibility with the current coordinator; encapsulating mutation is a later step.
-    public List<string> ListenSessionIds { get; } = new();
+    private readonly List<string> _listeners = new();
+    public IReadOnlyList<string> ListenSessionIds => Array.AsReadOnly(_listeners.ToArray());
+    public bool HasListeners => _listeners.Count != 0;
+
+    public bool Listen(string sessionId)
+    {
+        if (_listeners.Contains(sessionId)) return false;
+        _listeners.Add(sessionId);
+        return true;
+    }
+
+    public bool Unlisten(string sessionId) => _listeners.RemoveAll(id => id == sessionId) != 0;
 
     public bool Claim(string sessionId)
     {

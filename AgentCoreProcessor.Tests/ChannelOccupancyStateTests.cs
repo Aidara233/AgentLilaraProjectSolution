@@ -13,12 +13,12 @@ public sealed class ChannelOccupancyStateTests
         var pool = new SessionPool(42);
         var field = typeof(SessionPool).GetField("_occupancy", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var occupancy = Assert.IsType<ChannelOccupancyState>(field.GetValue(pool));
-        Assert.Same(occupancy.ListenSessionIds, pool.ListenSessionIds);
+        Assert.Equal(occupancy.ListenSessionIds, pool.ListenSessionIds);
         Assert.True(pool.Claim("old"));
         Assert.Equal("old", occupancy.ActiveSessionId);
         Assert.True(pool.Claim("old"));
         Assert.False(pool.Claim("conflict"));
-        pool.ListenSessionIds.Add("listener");
+        pool.Listen("listener");
         pool.TakeOver("new");
         Assert.Same(occupancy, field.GetValue(pool));
         Assert.Equal("new", occupancy.ActiveSessionId);
@@ -30,7 +30,7 @@ public sealed class ChannelOccupancyStateTests
         Assert.Equal("", pool.ActiveSessionId);
         Assert.Equal(new[] { "listener" }, occupancy.ListenSessionIds);
         Assert.False(pool.IsEmpty);
-        pool.ListenSessionIds.Clear();
+        pool.Unlisten("listener");
         Assert.True(pool.IsEmpty);
         Assert.True(pool.Members.SetEquals(new[] { "old", "new" }));
         Assert.DoesNotContain("conflict", pool.Members);
@@ -54,6 +54,52 @@ public sealed class ChannelOccupancyStateTests
         Assert.False(pool.HasFullClaim);
     }
 
+    [Theory]
+    [InlineData(42)]
+    [InlineData(0)]
+    public void ListenerMutationIsIdempotentAndSnapshotsAreDetachedAndReadOnly(int channelId)
+    {
+        var pool = new SessionPool(channelId);
+        Assert.True(pool.Listen("a"));
+        Assert.False(pool.Listen("a"));
+        var before = pool.ListenSessionIds;
+        Assert.Equal(new[] { "a" }, before);
+        var collection = Assert.IsAssignableFrom<IList<string>>(before);
+        Assert.True(collection.IsReadOnly);
+        Assert.Throws<NotSupportedException>(() => collection.Add("injected"));
+        Assert.Throws<NotSupportedException>(() => collection[0] = "changed");
+        Assert.Throws<NotSupportedException>(() => collection.Clear());
+        Assert.True(pool.Listen("b"));
+        Assert.Equal(new[] { "a" }, before);
+        Assert.Equal(new[] { "a", "b" }, pool.ListenSessionIds);
+        Assert.True(pool.Unlisten("a"));
+        Assert.False(pool.Unlisten("a"));
+        Assert.Equal(new[] { "b" }, pool.ListenSessionIds);
+        Assert.False(pool.IsEmpty);
+        Assert.True(pool.Unlisten("b"));
+        Assert.True(pool.IsEmpty);
+        Assert.Empty(pool.Members);
+        Assert.False(pool.HasFullClaim);
+    }
+
+    [Fact]
+    public void ChannelStateOwnsListenerMutationAndPreservesFullClaim()
+    {
+        var occupancy = new ChannelOccupancyState();
+        Assert.True(occupancy.Claim("owner"));
+        Assert.True(occupancy.Listen("listener"));
+        Assert.False(occupancy.Listen("listener"));
+        var before = occupancy.ListenSessionIds;
+        Assert.True(occupancy.HasListeners);
+        Assert.True(occupancy.Unlisten("listener"));
+        Assert.False(occupancy.Unlisten("listener"));
+        Assert.False(occupancy.HasListeners);
+        Assert.Equal(new[] { "listener" }, before);
+        Assert.Equal("owner", occupancy.ActiveSessionId);
+        Assert.True(occupancy.HasFullClaim);
+        Assert.Empty(occupancy.ListenSessionIds);
+    }
+
     [Fact]
     public void DifferentChannelsHaveIndependentOccupancy()
     {
@@ -61,7 +107,7 @@ public sealed class ChannelOccupancyStateTests
         var second = new SessionPool(2);
         first.Claim("a");
         second.Claim("b");
-        first.ListenSessionIds.Add("listener");
+        first.Listen("listener");
         Assert.Equal("b", second.ActiveSessionId);
         Assert.Empty(second.ListenSessionIds);
         first.TakeOver("next");

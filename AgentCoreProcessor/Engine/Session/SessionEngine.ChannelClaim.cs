@@ -66,8 +66,7 @@ internal partial class SessionEngine
             }
             else
             {
-                if (!pool.ListenSessionIds.Contains(sessionId))
-                    pool.ListenSessionIds.Add(sessionId);
+                pool.Listen(sessionId);
                 _poolByMember[sessionId] = pool;
             }
             return true;
@@ -80,7 +79,7 @@ internal partial class SessionEngine
         {
             if (!_pools.TryGetValue(channelId, out var pool)) return;
             pool.Release(sessionId);
-            pool.ListenSessionIds.RemoveAll(x => x == sessionId);
+            pool.Unlisten(sessionId);
             RemoveEmptyPool(pool);
         }
     }
