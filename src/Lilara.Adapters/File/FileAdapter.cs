@@ -32,8 +32,13 @@ namespace AgentCoreProcessor.Adapter
         private long messagesSent;
         private long messagesReceived;
 
-        public FileAdapter(string id, string baseDir, int pollIntervalMs = 2000, string? outputDir = null)
+        private readonly Func<string, Task<(string LocalPath, string Hash)>>? _archive;
+
+        /// <summary>未提供归档委托时跳过输入附件；宿主负责注入媒体存储。</summary>
+        public FileAdapter(string id, string baseDir, int pollIntervalMs = 2000, string? outputDir = null,
+            Func<string, Task<(string LocalPath, string Hash)>>? archive = null)
         {
+            _archive = archive;
             Id = id;
             this.inputDir = Path.Combine(baseDir, "input");
             this.outputDir = string.IsNullOrWhiteSpace(outputDir)
@@ -176,7 +181,7 @@ namespace AgentCoreProcessor.Adapter
                 .ToList();
         }
 
-        private static IncomingMessage ParseJsonMessage(string json)
+        private IncomingMessage ParseJsonMessage(string json)
         {
             var dto = JsonConvert.DeserializeObject<FileMessage>(json) ?? new FileMessage();
 
@@ -186,7 +191,7 @@ namespace AgentCoreProcessor.Adapter
             {
                 foreach (var fa in dto.Attachments)
                 {
-                    if (string.IsNullOrEmpty(fa.Path) || !File.Exists(fa.Path)) continue;
+                    if (_archive is null || string.IsNullOrEmpty(fa.Path) || !File.Exists(fa.Path)) continue;
                     var type = (fa.Type?.ToLowerInvariant()) switch
                     {
                         "image" => AttachmentType.Image,
@@ -196,7 +201,7 @@ namespace AgentCoreProcessor.Adapter
                     };
                     try
                     {
-                        var (localPath, imgHash) = ImageStorage.CopyToStorageAsync(fa.Path).GetAwaiter().GetResult();
+                        var (localPath, imgHash) = _archive(fa.Path).GetAwaiter().GetResult();
                         attachments ??= new List<MessageAttachment>();
                         attachments.Add(new MessageAttachment
                         {

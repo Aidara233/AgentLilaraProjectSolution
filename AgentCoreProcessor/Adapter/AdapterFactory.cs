@@ -37,7 +37,7 @@ namespace AgentCoreProcessor.Adapter
             var pollMs = config.Settings["pollIntervalMs"]?.Value<int>()
                 ?? config.Settings["poll_ms"]?.Value<int>()
                 ?? 2000;
-            return new FileAdapter(config.Id, baseDir, pollMs, outputDir);
+            return new FileAdapter(config.Id, baseDir, pollMs, outputDir, ImageStorage.CopyToStorageAsync);
         }
 
         private static HttpBridgeAdapter CreateHttp(AdapterInstanceConfig config)

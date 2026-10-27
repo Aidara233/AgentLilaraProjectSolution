@@ -8,5 +8,6 @@
     <InternalsVisibleTo Include="AgentCoreProcessor" />
     <InternalsVisibleTo Include="AgentCoreProcessor.Tests" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <ProjectReference Include="..\Lilara.Logging\Lilara.Logging.csproj" />
   </ItemGroup>
 </Project>

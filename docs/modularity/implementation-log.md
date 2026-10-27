@@ -360,3 +360,7 @@ ContextAssembler/ContextMutations 两文件原文迁入 Lilara.Context/Context�
 ### C1：Lilara.Adapters 消息契约首切
 
 IAdapter、AdapterAction、AdapterInstanceConfig、IncomingMessage、OutgoingMessage、MessageAttachment、MessageSegment、AdapterStatus、IChannelAwareAdapter 九文件原文迁入 src/Lilara.Adapters，保留命名空间与可见性，友元宿主/测试；只依赖 Newtonsoft.Json。实现、factory/manager、ImageStorage 和 IEngineAwareAdapter 暂留宿主，仍需后续端口化。完整 sln 离线还原与构建退出码0（0错误、4项既有警告），主程序556、GraphRuntime38、GraphSandbox17，共611项测试通过，无失败/跳过；diff --check通过。未运行真实适配器收发或模型冒烟。
+
+### Adapters：文件适配器媒体依赖注入
+
+FileAdapter 实现迁入 Lilara.Adapters/File，以构造委托归档附件；宿主 AdapterFactory 注入原 ImageStorage.CopyToStorageAsync。保留附件原顺序、无效路径与归档失败跳过；独立构造未提供归档器时明确跳过附件。Adapters 增加 Logging 引用，无宿主回指。新增临时 JSON 文件入站的假归档集成测试（成功/失败/缺文件及未注入）；相关4项通过。完整解决方案离线还原、构建及613项测试通过（主程序558、GraphRuntime38、GraphSandbox17），diff检查通过。未运行真实适配器平台/模型；既有依赖替代及弃用警告仍在。
