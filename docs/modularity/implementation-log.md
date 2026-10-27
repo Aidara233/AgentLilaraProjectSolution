@@ -440,3 +440,7 @@ SubAgentAccessAdapter通过ISessionResourceAccess发现资源注册服务，以�
 ### PluginHost：可靠程序集格式检测
 
 ManagedAssemblyInspector 进入 Lilara.PluginHost，以 PEReader/CLR 元数据和 IsAssembly 替代 PluginLoader 固定512字节与手算偏移检测；候选文件不被加载或执行。新增7项测试覆盖真实SDK/宿主/PluginHost、短文件/随机内容、截断PE、缺文件/目录及读取失败后句柄释放。完整解决方案构建成功，原CA2022消除；667项测试通过（主程序560、邮件52、GraphRuntime38、沙箱17），diff检查通过。仍有Llm/Turn离线NU1603及TestHost SYSLIB0050；未运行真实插件热加载或模型/适配器冒烟。
+
+### 图模块命名实例绑定
+
+ModuleHost新增BindInstance(moduleId, instanceId, implementation)，原Bind及Implementations默认绑定语义保持。模块节点以params.instance选择已绑定字面实例，ordinal精确匹配；未知/空实例加载失败，不回退默认。默认绑定和命名绑定独立，重复绑定、未知模块及错误实现拒绝。新增3项生产GraphLoader→GraphInstance回归，验证两个实例读写隔离、默认兼容及错误输入。完整sln构建、670项测试通过（主程序560、邮件52、GraphRuntime41、沙箱17），diff检查通过。未实现动态$beat/fan-out、实例卸载或生产模块注册接线；未运行真实模型/适配器冒烟。

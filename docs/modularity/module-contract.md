@@ -235,3 +235,7 @@ session.actor#<sessionId>            ← 从外面看，它就是一个模块实
 | Q16 | 组件的 `OnBeforeInvokeAsync` / `OnAfterInvokeAsync` 与 `turn` 的拍边界是否重合？如果不重合，合并 M8 时会丢语义。 |
 
 **未验证声明**：本文基于静态阅读，未 build / 未 run / 未 test。§4 的表格里，行为名与数据名是**按职责推断的**，不全是现有代码的真实签名——尤其是 `channel.*` 与 `mind`，现有实现里这些行为分散在 `ChannelContextService` / `ChannelAccessImpl` / `MindEngine` 中，没有以模块方法的形式存在。落地前必须逐条核对。
+
+### 已实现切片：命名实例字面绑定
+
+宿主可调用 `BindInstance("module.id", "instance-id", implementation)`，节点通过 `"params":{"instance":"instance-id"}` 选择。实例名按 ordinal 精确匹配，未知实例加载失败；省略 instance 继续使用原 Bind 的默认实现。命名绑定与默认绑定独立。此切片尚未实现上文的 `$beat.*` 或 `*`，这些字符串不会进行动态解析。

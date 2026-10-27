@@ -14,6 +14,7 @@ public sealed class ModuleHost : INodeFactory
     private readonly ModuleCatalog _catalog;
     private readonly Dictionary<string, object> _implementations = new(StringComparer.Ordinal);
     private readonly Dictionary<string, NodeSpec> _nodeTypes = new(StringComparer.Ordinal);
+    private readonly Dictionary<(string ModuleId, string InstanceId), object> _instances = new();
 
     public ModuleHost(ModuleCatalog catalog)
     {
@@ -78,20 +79,42 @@ public sealed class ModuleHost : INodeFactory
         return this;
     }
 
+    /// <summary>绑定命名实例；实例名为字面值，使用 ordinal 比较。</summary>
+    public ModuleHost BindInstance(string moduleId, string instanceId, object implementation)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(instanceId);
+        ArgumentNullException.ThrowIfNull(implementation);
+        var contract = _catalog.FindInterface(moduleId)
+            ?? throw new ModuleDescriptorException($"module '{moduleId}' is not in the catalog");
+        if (!contract.IsInstanceOfType(implementation))
+            throw new ModuleDescriptorException($"module '{moduleId}': implementation does not implement '{contract.Name}'");
+        if (!_instances.TryAdd((moduleId, instanceId), implementation))
+            throw new ModuleDescriptorException($"module '{moduleId}' instance '{instanceId}' is already bound");
+        return this;
+    }
+
     public INode Create(string id, string type, IReadOnlyDictionary<string, JsonElement>? parameters)
     {
         var bag = new ParamBag(id, parameters);
-        bag.EnsureOnly(); // 模块节点目前不接受 JSON 参数（waitMs 未实现）
+        var instanceId = bag.GetString("instance");
+        bag.EnsureOnly("instance");
+        if (instanceId is not null && string.IsNullOrWhiteSpace(instanceId))
+            throw new GraphLoadException($"node '{id}': instance must be a non-empty literal");
 
         if (!_nodeTypes.TryGetValue(type, out var spec))
         {
             throw new GraphLoadException($"node '{id}': unknown type '{type}'");
         }
 
-        if (!_implementations.TryGetValue(spec.Module.Id, out var implementation))
+        object? implementation;
+        var found = instanceId is null
+            ? _implementations.TryGetValue(spec.Module.Id, out implementation)
+            : _instances.TryGetValue((spec.Module.Id, instanceId), out implementation);
+        if (!found || implementation is null)
         {
             throw new GraphLoadException(
-                $"node '{id}': module '{spec.Module.Id}' has no bound implementation");
+                $"node '{id}': module '{spec.Module.Id}' has no bound implementation" +
+                (instanceId is null ? "" : $" for instance '{instanceId}'"));
         }
 
         if (spec.Method is not null)
