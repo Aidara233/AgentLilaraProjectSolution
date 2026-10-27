@@ -416,38 +416,7 @@ namespace AgentCoreProcessor.Tool.Host
         public Engine.IEngineLifecycle? InstantiateLifecycle(Type type, IServiceProvider engineServices)
             => InstantiateWithInjection(type, engineServices) as Engine.IEngineLifecycle;
 
-        private static bool IsManagedAssembly(string dllPath)
-        {
-            try
-            {
-                using var fs = new FileStream(dllPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-                if (fs.Length < 512) return false;
-
-                Span<byte> header = stackalloc byte[512];
-                fs.Read(header);
-
-                if (header[0] != 'M' || header[1] != 'Z') return false;
-
-                int peOffset = BitConverter.ToInt32(header.Slice(0x3C, 4));
-                if (peOffset < 64 || peOffset > 448) return false;
-
-                if (header[peOffset] != 'P' || header[peOffset + 1] != 'E'
-                    || header[peOffset + 2] != 0 || header[peOffset + 3] != 0)
-                    return false;
-
-                int optHeader = peOffset + 4 + 20;
-                ushort magic = BitConverter.ToUInt16(header.Slice(optHeader, 2));
-                if (magic != 0x10B && magic != 0x20B) return false;
-
-                int clrDirOffset = optHeader + (magic == 0x20B ? 224 : 208);
-                int clrRva = BitConverter.ToInt32(header.Slice(clrDirOffset, 4));
-                return clrRva != 0;
-            }
-            catch
-            {
-                return false;
-            }
-        }
+        private static bool IsManagedAssembly(string dllPath) => ManagedAssemblyInspector.IsManagedAssembly(dllPath);
     }
 
     internal class PluginManifest
