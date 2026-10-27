@@ -66,6 +66,34 @@
 
 ---
 
+## 端到端冒烟验证（已做，2026-10-27）
+
+用 `--test` 跑了一次真实进程，**在 `bin` 目录下的隔离 Storage 里**（不是项目的 `../Storage`；真 Storage 先备份了 972MB 以防万一）。
+
+投一条消息后：**会话被真实创建并跑完一轮，全程无异常**。
+
+| 观察点 | 证据 | 覆盖的重构 |
+|---|---|---|
+| 5 个引擎自启 | `Message/Timer/Session/Vision/Mind` 全 `IsAlive=True` | `SessionEngine` 六个 partial 的构造与装配 |
+| 会话被创建 | `Sessions/8296a6626b3f/spec.json`，`type=express` + 两个 inputPorts | `SessionEngine.Assembly.cs`（`CreateSession` 555 行那块） |
+| 频道占用建立 | `connectedChannelId:"1"`、`connectedMode:"Full"` | `SessionEngine.ChannelClaim.cs` + `RuntimeSession.ChannelConnect.cs` |
+| 跑完一轮 | `roundCount: 1` | `RunAsync`（尚未拆分，原本整块） |
+| 组件通知注入 | history 第 1 条 `[组件通知] 当前余额: 0.0 币…` | `GlobalPromptSections`（A3-3 抽出）+ `RuntimeSession.Bootstrap.cs` |
+| 每轮上下文 | history 第 2 条 `[系统] 当前时间…` | `SessionContextHost.BuildRoundAsync`（A3-1 搬移） |
+| 消息排空与格式化 | history 第 3 条 `[新消息] ⚠️ [!! @提及 !!] …` | `RuntimeSession.Inbox.cs`（B-1） |
+| 轴值落盘 | `state.json` 的 `axes` 含全部 7 条，`temperature:"0.7"`、`initiative:"persistent"` | A1 的 `AxisStore` + `SessionPersistence` |
+| 快照格式升级 | `state.json` 的 `"formatVersion": 3` | A1 的 2→3 升版 |
+| 干净收尾 | `status:"Completed"`、`compressionTier:"L3"` | `RuntimeSession.Lifecycle.cs` + `ToolEffectInterpreter` |
+
+**证明了**：28 笔改动合起来后，程序能启动、能建会话、能装配上下文、能跑完一轮、能把新字段落盘、能干净收尾。
+
+**没证明**：
+- 无真实模型调用（隔离 Storage 无可用凭据）——**「请求体字节与改动前一致」仍未验证**；
+- 只覆盖 `express` 一条路径，未覆盖 `channel` / `task` / 子 agent / 升级；
+- `--test` 退出码 1 是 20s 超时所致，不是崩溃。
+
+**副作用**：`bin/Debug/net10.0/win-x64/` 下新生成了一个约 2GB 的 `Storage`（构建产物目录，可删）；项目 `../Storage` 未改动。
+
 ## 下一步
 
 | 顺序 | 内容 | 状态 |
