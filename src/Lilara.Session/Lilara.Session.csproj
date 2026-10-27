@@ -10,5 +10,7 @@
     <ProjectReference Include="..\..\AgentLilara.PluginSDK\AgentLilara.PluginSDK.csproj" />
     <ProjectReference Include="..\Lilara.Logging\Lilara.Logging.csproj" />
     <ProjectReference Include="..\Lilara.Channel\Lilara.Channel.csproj" />
+    <ProjectReference Include="..\Lilara.Llm\Lilara.Llm.csproj" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
   </ItemGroup>
 </Project>

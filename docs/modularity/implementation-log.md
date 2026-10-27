@@ -7,6 +7,12 @@
 
 ## 已完成
 
+### C：会话文件存储与快照端口迁入 Lilara.Session
+
+`SessionFileStore` 完整承接 spec/state/history 三文件读写、状态局部更新、历史裁剪恢复及快照/包装 DTO，构造注入 Sessions 根目录；更新子会话父指针也限定使用该根目录。宿主 `SessionPersistence` 仅继承并绑定 PathConfig。快照采集端口与所有权校验一同迁入。保留 spec v2/state v3 格式、旧版本读取不回写、损坏状态降为 Crashed、最近 1000 行与末尾未完成 tool_use 的原恢复规则。
+
+显式引用已有 Lilara.Llm（消息协议）和 Newtonsoft.Json 13.0.4，无新增包版本；程序集边界无宿主引用、无环。该依赖使 Session 也报告 Llm 原有两条 NU1603 回退警告，完整构建共 6 条。五项临时目录测试覆盖字段/格式往返、状态局部更新保留扩展字段、不同根隔离、超大内容裁剪不改原消息、损坏行/尾部工具调用、1000 行窗口及旧状态不回写。快照/恢复/边界相关 30 项通过；完整构建 0 错误，全量 833 项通过（主程序 723、邮件 52、图运行时 41、图沙箱 17）。外部模型/平台、真实崩溃与多写者并发未验证；本次不改变恢复算法。
+
 ### C：会话类型配置存储迁入 Lilara.Session
 
 新增实例化 `SessionTypeProfileStore`，完整迁入默认种子、档案发现、JSON 加载/局部保存、缓存及工具规则；目录和告警从构造参数注入，无新增程序集/包依赖。`SessionTypeProfile`、`SessionTools` 同属 Lilara.Session，沿用旧命名空间与内部友元边界。宿主 `SessionTypeProfiles` 缩为兼容门面，绑定 Storage/SessionTypes 与 Signal.Warn；目录变化时重建存储，原调用入口继续委托新实现。
