@@ -627,28 +627,18 @@ internal partial class RuntimeSession : IRuntimeSession
                 }
 
                 // 每轮推理一条 span，承载模型调用 + 工具执行的耗时与结果
+                // ⚠️ span 的 using 覆盖"模型调用 + 工具执行"两段，所以它留在主循环：
+                // 工具段的 SetCloseDetail 在 ExecuteToolsAsync 里，把 span 收进调用方法会提前释放。
                 using var roundSpan = Signal.Open(LogGroup.Engine, $"Session 轮次 #{agentRound}",
                     new { sessionId = SessionId, round = agentRound, toolCount = _tools.Count });
 
-                ModelOutput output;
-                try
-                {
-                    // 只读的线上请求体捕获（默认关闭；影子模式下打开）。必须在调用**之前**开作用域。
-                    Phase = StepPhase.Inferring;
-                    var wire = Client.WireRequestCapture.Begin();
-                    output = await roundCore.InvokeAsync(_history, EngineMode.Working, invokeRequest);
-                    // ⚠️ 影子快照必须紧贴调用之后：下一次 InvokeAsync 会重设客户端历史。
-                    // 默认 Off 时这一步是空操作，Legacy 路径一个字节都不变。
-                    Brain.SessionBrainRuntime.Observe(
-                        roundCore, SessionId, _componentLoopType, PathConfig.StoragePath, wire.Body);
-                }
-                catch (Exception ex)
-                {
-                    Signal.Warn(LogGroup.Model, "Session 模型调用失败", new { sessionId = SessionId, round = agentRound, error = ex.Message });
-                    _history.Add(new Message { Role = "system", Content = $"[错误] 模型调用失败: {ex.Message}" });
-                    continue;
-                }
+                Phase = StepPhase.Inferring;
+                var maybeOutput = await InvokeModelAsync(roundCore, invokeRequest, agentRound);
+                if (maybeOutput is null)
+                    continue;   // 模型调用失败：已记 [错误]，同一突发内再试一轮
 
+                // ⚠️ ModelOutput 是 readonly struct ⇒ ModelOutput? 是 Nullable<ModelOutput>，取 .Value（上面的 is null 已排除空）。
+                ModelOutput output = maybeOutput.Value;
                 _history.Add(new Message { Role = "assistant", Content = output.Text ?? output.Thinking ?? "" });
 
                 // ── 工具执行 ──
@@ -857,4 +847,41 @@ internal partial class RuntimeSession : IRuntimeSession
         return results;
     }
     internal string[] GetComponentIdsForCompact() => _componentIds.ToArray();
+
+    /// <summary>
+    /// 调一次模型（B-4d，从 <see cref="RunAsync"/> 抽出）。失败返回 <see langword="null"/>，由调用方决定去留。
+    ///
+    /// <para>⚠️ <b>三件事的顺序不能改</b>：</para>
+    /// <list type="number">
+    ///   <item>开线上请求体捕获（必须在调用**之前**开作用域，否则抓不到请求）</item>
+    ///   <item>调 <c>InvokeAsync</c></item>
+    ///   <item>影子快照（必须**紧贴**调用之后：下一次 <c>InvokeAsync</c> 会重设客户端历史）</item>
+    /// </list>
+    ///
+    /// <para>⚠️ **失败不抛，只记 <c>[错误]</c> 并返回 null**：原实现是 <c>catch</c> + <c>continue</c>，
+    /// 让同一突发内再跑一轮。把异常抛给调用方会改变这条语义（会话会直接结束）。</para>
+    ///
+    /// <para>⚠️ 影子快照默认 Off 时是空操作，Legacy 路径一个字节都不变——不要"顺手"让它变成必做项。</para>
+    /// </summary>
+    private async Task<ModelOutput?> InvokeModelAsync(AgentCore roundCore, AgentInvokeRequest invokeRequest, int agentRound)
+    {
+        try
+        {
+            var wire = Client.WireRequestCapture.Begin();
+            var output = await roundCore.InvokeAsync(_history, EngineMode.Working, invokeRequest);
+
+            // ⚠️ 影子快照必须紧贴调用之后：下一次 InvokeAsync 会重设客户端历史。
+            Brain.SessionBrainRuntime.Observe(
+                roundCore, SessionId, _componentLoopType, PathConfig.StoragePath, wire.Body);
+
+            return output;
+        }
+        catch (Exception ex)
+        {
+            Signal.Warn(LogGroup.Model, "Session 模型调用失败",
+                new { sessionId = SessionId, round = agentRound, error = ex.Message });
+            _history.Add(new Message { Role = "system", Content = $"[错误] 模型调用失败: {ex.Message}" });
+            return null;
+        }
+    }
 }
