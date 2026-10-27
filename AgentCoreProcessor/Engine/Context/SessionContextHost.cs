@@ -21,7 +21,7 @@ namespace AgentCoreProcessor.Engine.Context;
 /// 之后只调它的方法、不读它的内部集合。这条约束是 A3 把它从 <c>Engine/Session</c> 搬出来的理由——
 /// 搬出来之后，"它属于上下文域"就由命名空间表达了，而不是靠注释。</para>
 /// </summary>
-internal class SessionContextHost
+internal class SessionContextHost : AgentCoreProcessor.Engine.Session.ISessionContext
 {
     private readonly List<(int channelId, string? channelName, bool preload)> _channelPorts;
     private readonly string? _initialState;

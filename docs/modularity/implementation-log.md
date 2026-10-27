@@ -7,6 +7,10 @@
 
 ## 已完成
 
+### C：会话上下文端口
+
+Lilara.Session 定义 ISessionContext（频道状态/挂卸、起始/连接/轮中消息构建），显式引用已有 Lilara.Data.UserMessage 与 Lilara.Llm.Message；宿主 SessionContextHost 实现端口，RuntimeSession 字段及注入入口只接受端口。既有渲染与调用顺序不变。新增 fake 上下文测试验证连接调用顺序、状态快照游标、断开卸载，无具体上下文服务；原频道连接与时钟回归继续通过。相关 10 项通过，完整构建 0 错误、6 条既有 NU1603，全量 849 项通过（主程序 739、邮件 52、图运行时 41、图沙箱 17），程序集无宿主引用/无环检查通过。未完成起始/轮中全路径 fake 驱动及 D1 全路径对拍；上下文端口仍暴露现有可变 ChannelContextState，这是当前兼容边界。
+
 ### C：计数消息端口迁入 Lilara.Session
 
 从 MessageEngine 文件提取 MessageInputPort 原实现到 Lilara.Session，保留旧命名空间，避免改变纯 Channel 库依赖。会话激活/排空和图影子消费者使用同一模块类型。三项测试验证计数是重置以来的入队次数（Receive 不减、Reset 不消费）、取消后仍可收新消息、八个并发写者的 800 条消息全部保留且计数一致。完整构建 0 错误，6 条 NU1603 与既有测试宿主 SYSLIB0050；全量 848 项通过（主程序 738、邮件 52、图运行时 41、图沙箱 17），包含原激活影子回归。并发 Reset/Enqueue 的既有计数窗口未改变，未宣称与队列当前长度相等。
