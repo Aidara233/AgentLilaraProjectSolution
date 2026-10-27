@@ -33,8 +33,14 @@ namespace AgentCoreProcessor.Engine.Axes;
 /// <para>⚠️ **`temperature` 的默认值是 `0.7`，不是上游那个 `1.0`**。本项目
 /// `Client/ApiClientCfg.Temperature` 的既有默认就是 `0.7`；若这里写 `1.0`，
 /// "轴默认值"与"实际发出去的值"立刻分叉，A1 的"零行为变化"验收当场失效。</para>
+///
+/// <para>⚠️ **类型名是 `AxesCatalog`，不是 `Axes`**。原因很实际：本类型所在命名空间就叫
+/// <c>AgentCoreProcessor.Engine.Axes</c>，而类型名与命名空间名相同时，
+/// **在兄弟命名空间（如 <c>Engine.Context</c>、<c>Engine.Prompts</c>）里
+/// <c>Axes.Xxx</c> 会被解析成命名空间而不是类型**，编译报 CS0234。
+/// 改名比要求每个调用方都写全限定名更可靠——这类坑一旦留下，下一个消费者还会踩。</para>
 /// </summary>
-internal static class Axes
+internal static class AxesCatalog
 {
     public const string Initiative = "initiative";
     public const string Permission = "permission";

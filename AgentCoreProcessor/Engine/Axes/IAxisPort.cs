@@ -5,7 +5,7 @@ using System.Collections.Generic;
 namespace AgentCoreProcessor.Engine.Axes;
 
 /// <summary>
-/// `axes` 模块的对外端口 —— **其他模块只经它读轴，不直接引用 <see cref="Axes"/> 静态表**。
+/// `axes` 模块的对外端口 —— **其他模块只经它读轴，不直接引用 <see cref="AxesCatalog"/> 静态表**。
 ///
 /// <para>为什么要这一层：轴表是**唯一真相**，但它是一个静态类。让 `context` / `step` / 控制面
 /// 直接调静态方法，等于把"这四条边"藏进编译器里看不见的地方——拆模块时无从发现，也无法在
@@ -19,7 +19,7 @@ internal interface IAxisPort
     /// <summary>轴名，按**表序**（人看的序）。</summary>
     IReadOnlyList<string> Names { get; }
 
-    /// <summary>轴名，按 **ordinal**（提示词模板的序——逐机一致的字节，见 <see cref="Axes.RenderOrder"/>）。</summary>
+    /// <summary>轴名，按 **ordinal**（提示词模板的序——逐机一致的字节，见 <see cref="AxesCatalog.RenderOrder"/>）。</summary>
     IReadOnlyList<string> RenderOrder { get; }
 
     /// <summary>该轴的合法取值；未知轴 ⇒ <see langword="null"/>。</summary>
@@ -28,7 +28,7 @@ internal interface IAxisPort
     /// <summary>轴的中文名；未知轴原样返回，<see langword="null"/> 返回空串。</summary>
     string LabelOf(string? axis);
 
-    /// <summary>这条轴的取值进不进上下文（未生效的轴一律 false，见 <see cref="Axes"/> 类注释）。</summary>
+    /// <summary>这条轴的取值进不进上下文（未生效的轴一律 false，见 <see cref="AxesCatalog"/> 类注释）。</summary>
     bool InContext(string? axis);
 
     /// <summary>当前等级的提示解释；未知等级 / 不进上下文的轴 ⇒ <see langword="null"/>。</summary>

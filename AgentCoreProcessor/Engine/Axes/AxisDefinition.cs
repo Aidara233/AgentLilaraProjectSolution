@@ -5,10 +5,10 @@ using System.Collections.Generic;
 namespace AgentCoreProcessor.Engine.Axes;
 
 /// <summary>
-/// 一条轴的完整定义——**只描述，不判定**。判定仍在 <see cref="Axes"/> 那张表里。
+/// 一条轴的完整定义——**只描述，不判定**。判定仍在 <see cref="AxesCatalog"/> 那张表里。
 ///
 /// <para>它存在的理由：控制面（将来的 webui 独立进程）与插件轴注册都需要"把一条轴整个交出去"
-/// 的形状，而 <see cref="Axes"/> 的静态方法是一个个取的。有了这个 record，
+/// 的形状，而 <see cref="AxesCatalog"/> 的静态方法是一个个取的。有了这个 record，
 /// 交出去的是**不可变快照**，调用方拿不到进程级静态表的引用。</para>
 ///
 /// <para>⚠️ <see cref="Values"/> 是只读视图；<see cref="NumericMin"/> 等三个字段非空
@@ -47,5 +47,5 @@ internal sealed record AxisSnapshot(
     public string? Get(string axis) => Values.TryGetValue(axis, out var v) ? v : null;
 
     /// <summary>数值轴的规范值；非数值轴或缺失 ⇒ <see langword="null"/>。</summary>
-    public double? Number(string axis) => Axes.NumberOrNull(axis, Get(axis));
+    public double? Number(string axis) => AxesCatalog.NumberOrNull(axis, Get(axis));
 }

@@ -7,7 +7,7 @@ namespace AgentCoreProcessor.Engine.Axes;
 /// <summary>
 /// 一个会话的轴值存储 —— **唯一的写入点**。
 ///
-/// <para>它是"每会话一份"的可变状态：默认值来自 <see cref="Axes.Defaults"/>，
+/// <para>它是"每会话一份"的可变状态：默认值来自 <see cref="AxesCatalog.Defaults"/>，
 /// 从 <c>state.json</c> 恢复时按轴名逐条校验（未知轴丢弃、非法值丢弃），
 /// 缺失的轴补默认值。</para>
 ///
@@ -35,7 +35,7 @@ internal sealed class AxisStore
     public IReadOnlyList<(string Axis, string Reason)> Reset(IReadOnlyDictionary<string, string>? initial)
     {
         _values.Clear();
-        foreach (var (axis, value) in Axes.Defaults())
+        foreach (var (axis, value) in AxesCatalog.Defaults())
             _values[axis] = value;
 
         var dropped = new List<(string, string)>();
@@ -43,13 +43,13 @@ internal sealed class AxisStore
 
         foreach (var (axis, value) in initial)
         {
-            if (!Axes.IsKnown(axis))
+            if (!AxesCatalog.IsKnown(axis))
             {
                 dropped.Add((axis, "unknown-axis"));
                 continue;
             }
 
-            if (!Axes.TryParse(axis, value, out var canonical))
+            if (!AxesCatalog.TryParse(axis, value, out var canonical))
             {
                 dropped.Add((axis, "invalid-value"));
                 continue;
@@ -67,13 +67,13 @@ internal sealed class AxisStore
 
     /// <summary>
     /// 写一条轴。⚠️ **先校验再写**：非法值不落盘、不改变状态，返回 <see langword="false"/> 让调用方
-    /// 把 <see cref="Axes.LegalValuesText"/> 拼进错误信息——别在调用方各写一遍合法值清单。
+    /// 把 <see cref="AxesCatalog.LegalValuesText"/> 拼进错误信息——别在调用方各写一遍合法值清单。
     /// </summary>
     public bool TrySet(string? axis, string? value, out string canonical)
     {
         canonical = "";
         if (axis is null || value is null) return false;
-        if (!Axes.TryParse(axis, value, out canonical)) return false;
+        if (!AxesCatalog.TryParse(axis, value, out canonical)) return false;
         _values[axis] = canonical;
         return true;
     }
@@ -88,7 +88,7 @@ internal sealed class AxisStore
     public IReadOnlyList<string> CompleteFromDefaults()
     {
         var added = new List<string>();
-        foreach (var (axis, value) in Axes.Defaults())
+        foreach (var (axis, value) in AxesCatalog.Defaults())
         {
             if (_values.ContainsKey(axis)) continue;
             _values[axis] = value;

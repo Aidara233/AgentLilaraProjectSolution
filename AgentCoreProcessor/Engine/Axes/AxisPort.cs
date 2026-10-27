@@ -21,29 +21,29 @@ internal sealed class AxisPort : IAxisPort
 
     public AxisPort(AxisStore store) => _store = store ?? throw new ArgumentNullException(nameof(store));
 
-    public IReadOnlyList<string> Names => Axes.Names;
+    public IReadOnlyList<string> Names => AxesCatalog.Names;
 
-    public IReadOnlyList<string> RenderOrder => Axes.RenderOrder;
+    public IReadOnlyList<string> RenderOrder => AxesCatalog.RenderOrder;
 
-    public IReadOnlyList<string>? ValuesOf(string? axis) => Axes.ValuesOf(axis);
+    public IReadOnlyList<string>? ValuesOf(string? axis) => AxesCatalog.ValuesOf(axis);
 
-    public string LabelOf(string? axis) => Axes.LabelOf(axis);
+    public string LabelOf(string? axis) => AxesCatalog.LabelOf(axis);
 
-    public bool InContext(string? axis) => Axes.InContext(axis);
+    public bool InContext(string? axis) => AxesCatalog.InContext(axis);
 
-    public string? DescriptionOf(string? axis, string? value) => Axes.DescriptionOf(axis, value);
+    public string? DescriptionOf(string? axis, string? value) => AxesCatalog.DescriptionOf(axis, value);
 
-    public bool IsKnown(string? axis) => Axes.IsKnown(axis);
+    public bool IsKnown(string? axis) => AxesCatalog.IsKnown(axis);
 
-    public bool IsNumeric(string? axis) => Axes.IsNumeric(axis);
+    public bool IsNumeric(string? axis) => AxesCatalog.IsNumeric(axis);
 
-    public double? NumberOrNull(string? axis, string? canonical) => Axes.NumberOrNull(axis, canonical);
+    public double? NumberOrNull(string? axis, string? canonical) => AxesCatalog.NumberOrNull(axis, canonical);
 
-    public bool TryParse(string? axis, string value, out string canonical) => Axes.TryParse(axis, value, out canonical);
+    public bool TryParse(string? axis, string value, out string canonical) => AxesCatalog.TryParse(axis, value, out canonical);
 
-    public AxisDefinition? DefinitionOf(string? axis) => Axes.DefinitionOf(axis);
+    public AxisDefinition? DefinitionOf(string? axis) => AxesCatalog.DefinitionOf(axis);
 
-    public IReadOnlyDictionary<string, string> Defaults() => Axes.Defaults();
+    public IReadOnlyDictionary<string, string> Defaults() => AxesCatalog.Defaults();
 
     /// <summary>
     /// 冻结快照。⚠️ 传 <see langword="null"/> 表示"用本会话当前值"——那是**唯一**允许的省略，
