@@ -480,3 +480,7 @@ SessionContextHost构造增加可选Func<DateTime>，生产默认DateTime.Now；
 ### D1：独立无媒体增量影子图对拍
 
 ContextShadowGraphTests以冻结值源→独立格式节点→采集汇构造真实GraphInstance，节点不调用旧渲染器或IO。旧ChannelContextService使用独立状态执行，禁止媒体源查询。覆盖默认时间/首日/同日/跨日、端口与CSV精确mention、bot/回复、特殊字符和连续消息；逐字段比较全文、Role、null块和完整频道状态/图片集合。检查求值顺序、两条实际Known端口流及成功汇结果，故意污染图输出的负对照可检测差异。7项切片测试通过；完整sln构建及729项测试通过（主程序619、邮件52、GraphRuntime41、沙箱17），diff检查通过。未切生产；历史/引用/媒体异步就绪/游标落盘/系统时间行/真实协议仍不在本切片，D1全部与D5尚未完成，不启动D2全量切流。
+
+### C9：图运行时、模块与管理层程序集统一
+
+GraphRuntime 全部源码迁入 Lilara.Graph/Runtime，GraphModules 契约迁入 GraphModules/Agent，均保留原 namespace 且源码100%原文迁移，未改求解方法体。旧两个csproj从sln和源码移除；宿主删除旧Runtime直接引用，Recurring、图测试、沙箱统一引用Lilara.Graph。旧图项目为源码构建内部资产，本次不承诺旧程序集二进制兼容。新增架构断言验证GraphInstance/Solver/ModuleHost/IAgentLoop与管理器属于同一程序集，库元数据和项目文件不再引用旧图程序集。离线缓存还原、强制完整sln构建及730项测试通过（主程序620、邮件52、GraphRuntime41、沙箱17），diff检查通过。仍有Llm/Turn离线NU1603和TestHost弃用警告；未运行真实模型/外部平台，C整体、D1全路径对拍和全面信号迁移未完成。

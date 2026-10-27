@@ -8,7 +8,7 @@
     <InternalsVisibleTo Include="AgentCoreProcessor" />
     <InternalsVisibleTo Include="AgentCoreProcessor.Tests" />
     <ProjectReference Include="..\..\AgentLilara.PluginSDK\AgentLilara.PluginSDK.csproj" />
-    <ProjectReference Include="..\AgentLilara.GraphRuntime\AgentLilara.GraphRuntime.csproj" />
+    <ProjectReference Include="..\Lilara.Graph\Lilara.Graph.csproj" />
     <ProjectReference Include="..\Lilara.Logging\Lilara.Logging.csproj" />
   </ItemGroup>
 </Project>

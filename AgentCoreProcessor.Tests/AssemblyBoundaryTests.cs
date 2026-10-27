@@ -62,6 +62,33 @@ public sealed class AssemblyBoundaryTests
     }
 
     [Fact]
+    public void GraphRuntimeModulesAndManagementShareOneAssembly()
+    {
+        var graph = typeof(AgentCoreProcessor.Engine.Graph.GraphManager).Assembly;
+        Assert.Equal("Lilara.Graph", graph.GetName().Name);
+        Assert.Same(graph, typeof(AgentLilara.GraphRuntime.Graph.GraphInstance).Assembly);
+        Assert.Same(graph, typeof(AgentLilara.GraphRuntime.Graph.Solver).Assembly);
+        Assert.Same(graph, typeof(AgentLilara.GraphRuntime.Modules.ModuleHost).Assembly);
+        Assert.Same(graph, typeof(AgentLilara.GraphModules.Agent.IAgentLoop).Assembly);
+        foreach (var references in References().Values)
+        {
+            Assert.DoesNotContain("AgentLilara.GraphRuntime", references);
+            Assert.DoesNotContain("AgentLilara.GraphModules", references);
+        }
+        var root = Repository();
+        var projectPaths = Directory.GetFiles(Path.Combine(root, "src"), "*.csproj", SearchOption.AllDirectories)
+            .Concat(Directory.GetFiles(Path.Combine(root, "tests"), "*.csproj", SearchOption.AllDirectories))
+            .Append(Path.Combine(root, "AgentCoreProcessor", "AgentCoreProcessor.csproj"));
+        foreach (var path in projectPaths)
+        foreach (var reference in XDocument.Load(path).Descendants("ProjectReference"))
+        {
+            var target = reference.Attribute("Include")!.Value;
+            Assert.DoesNotContain("AgentLilara.GraphRuntime.csproj", target);
+            Assert.DoesNotContain("AgentLilara.GraphModules.csproj", target);
+        }
+    }
+
+    [Fact]
     public void PluginProjectReferencesStayWithinSdk()
     {
         // Project files express compile-time references even when unused references are

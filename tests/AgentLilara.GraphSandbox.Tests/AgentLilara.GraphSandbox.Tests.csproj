@@ -17,7 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\fixtures\AgentLilara.GraphSandbox\AgentLilara.GraphSandbox.csproj" />
-    <ProjectReference Include="..\..\src\AgentLilara.GraphModules\AgentLilara.GraphModules.csproj" />
+    <ProjectReference Include="..\..\src\Lilara.Graph\Lilara.Graph.csproj" />
   </ItemGroup>
 
 </Project>

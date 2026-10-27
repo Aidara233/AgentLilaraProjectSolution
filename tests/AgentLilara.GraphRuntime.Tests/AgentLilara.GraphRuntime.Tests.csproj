@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\AgentLilara.GraphRuntime\AgentLilara.GraphRuntime.csproj" />
+    <ProjectReference Include="..\..\src\Lilara.Graph\Lilara.Graph.csproj" />
   </ItemGroup>
 
 </Project>

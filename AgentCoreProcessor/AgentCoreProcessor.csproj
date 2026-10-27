@@ -42,7 +42,6 @@
     <ProjectReference Include="..\AgentLilara.PluginSDK\AgentLilara.PluginSDK.csproj" />
     <ProjectReference Include="..\AgentLilara.SessionBrain\AgentLilara.SessionBrain.csproj" />
     <ProjectReference Include="..\AgentLilara.AlcBridge\AgentLilara.AlcBridge.csproj" />
-    <ProjectReference Include="..\src\AgentLilara.GraphRuntime\AgentLilara.GraphRuntime.csproj" />
     <ProjectReference Include="..\src\Lilara.Logging\Lilara.Logging.csproj" />
     <ProjectReference Include="..\src\Lilara.Data\Lilara.Data.csproj" />
     <ProjectReference Include="..\src\Lilara.Context\Lilara.Context.csproj" />
