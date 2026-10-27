@@ -101,6 +101,8 @@ internal partial class SessionEngine
         {
             if (!_pools.TryGetValue(channelId, out var pool) || !pool.HasFullClaim)
                 return false;
+            if (_poolByMember.TryGetValue(newSessionId, out var existing) && !ReferenceEquals(existing, pool))
+                return false;
             pool.TakeOver(newSessionId);
             _poolByMember[newSessionId] = pool;
             return true;

@@ -528,3 +528,7 @@ ReleaseChannel在原_poolLock内移除旁听后，仅当session不是该池Full�
 ### C12：批量成员回收保护新池映射
 
 RemoveEmptyPool与OnChildCompleted统一使用RemovePoolMemberIndexes，在原_poolLock内仅删除仍指向被回收池的成员索引。新增根池历史成员迁至其他频道后回收、子池历史成员迁至根池后完成两项回归，验证新池claim/寻址保留且旧索引正常清理。相关池套件33项及完整sln构建/776项测试通过（主程序666、邮件52、GraphRuntime41、沙箱17），diff检查通过。未运行真实模型/适配器；C12协调实现迁移和接管失败回滚仍待继续。
+
+### C12：接管新 ID 冲突保护
+
+TakeOverSessionPool/TakeOverChannelPool 在 _poolLock 内先检查 newSessionId 既有成员索引；属于其他池则返回 false，且不修改活跃身份、Members、父子关系或成员索引。同池历史 id、同 id 重入及无池 false 行为保持。新增12项回归覆盖根/子池、两入口及 Listen-only 索引，相关池套件45项通过，diff --check通过。本次未重复全量测试；未实现预定票据或创建失败回滚，C12尚未完成。

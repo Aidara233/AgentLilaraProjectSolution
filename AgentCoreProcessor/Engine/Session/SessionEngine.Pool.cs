@@ -48,6 +48,8 @@ internal partial class SessionEngine
         lock (_poolLock)
         {
             if (!_poolByMember.TryGetValue(oldSessionId, out var pool)) return false;
+            if (_poolByMember.TryGetValue(newSessionId, out var existing) && !ReferenceEquals(existing, pool))
+                return false;
             pool.TakeOver(newSessionId);
             _poolByMember[newSessionId] = pool;
             return true;
