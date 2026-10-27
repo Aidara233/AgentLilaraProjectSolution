@@ -9,5 +9,6 @@
     <InternalsVisibleTo Include="AgentCoreProcessor.Tests" />
     <ProjectReference Include="..\..\AgentLilara.PluginSDK\AgentLilara.PluginSDK.csproj" />
     <ProjectReference Include="..\Lilara.Logging\Lilara.Logging.csproj" />
+    <ProjectReference Include="..\Lilara.Channel\Lilara.Channel.csproj" />
   </ItemGroup>
 </Project>

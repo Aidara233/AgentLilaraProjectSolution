@@ -504,3 +504,7 @@ RuntimeSession 注入 compact/escalate 的 Func<string,Task>，创建与恢复�
 ### C12前置：compact接管原子更新
 
 新增TakeOverSessionPool按旧成员定位，在_poolLock内同时更新池活跃身份/Members与新成员索引，CreateFromCompact不再锁外TakeOver。支持顶层和无频道子池，无池返回false并保留原创建路径。新增3项回归覆盖新旧id即时解析、子/孙关系、旧id释放不撤销新claim、幂等claim和无池不预定。完整sln构建与755项测试通过（主程序645、邮件52、GraphRuntime41、沙箱17），diff检查通过。未验证新会话创建失败回滚或真实模型compact；占用状态提纯和C12整体仍待继续。
+
+### C12：频道占用状态提纯
+
+Lilara.Channel新增ChannelOccupancyState，顶层SessionPool唯一持有并委托Full/Listen及接管/释放；子池保留自身活跃身份，不持有频道占用。Session引用Channel并通过必要友元访问，协调锁仍在原SessionEngine；Listen列表暂保持兼容，不复制为第二份状态。新增3项根/子池与跨频道隔离回归，确认接管期间对象身份不变、列表同一引用和旧id释放语义。完整sln离线还原/构建及758项测试通过（主程序648、邮件52、GraphRuntime41、沙箱17），diff检查通过。频道registry生命周期与Listen修改封装仍待后续，C12尚未完成；未运行真实模型/适配器。

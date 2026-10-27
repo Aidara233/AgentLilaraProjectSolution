@@ -7,6 +7,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="AgentCoreProcessor" />
     <InternalsVisibleTo Include="AgentCoreProcessor.Tests" />
+    <InternalsVisibleTo Include="Lilara.Session" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
   </ItemGroup>
 </Project>
