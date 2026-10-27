@@ -468,3 +468,7 @@ PhaseConfig原文迁入Lilara.Vision/Config，默认提示与Load/Save行为保�
 ### Vision：显式路径配置存储
 
 11个配置字段及JsonProperty原样迁入Lilara.Vision/VisionEngineConfigData；VisionConfigStore<T>显式接收文件路径，宿主VisionEngineConfig继承配置值并保留Load()/Save()薄入口。保持缺文件写默认、null/损坏返回默认且不覆盖、部分字段沿默认及原缩进JSON。新增5项回归覆盖全部字段、宿主子类型往返、路径隔离与无库→宿主引用。完整sln构建与699项测试通过（主程序589、邮件52、GraphRuntime41、沙箱17），diff检查通过。未调用真实Vision/OCR模型或适配器；离线依赖替代及TestHost弃用警告仍在，C/D与全面信号迁移未完成。
+
+### Vision：结果解析纯规则迁移
+
+ParseVisionOutput/TryParseJson/NormalizeClassification原样提取为Lilara.Vision/VisionOutputParser，宿主保留委托入口；不改变直接JSON、围栏提取及整段文本回退顺序。新增22项定向回归覆盖空内容、七类分类、大小写/未知、空对象、围栏、畸形JSON及数组。宿主构建、定向22项测试与diff检查通过。本次未重复全量测试，未调用真实视觉模型/OCR；C/D与全面日志迁移仍未完成。
