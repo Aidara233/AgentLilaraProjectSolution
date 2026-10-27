@@ -22,6 +22,7 @@
 | `c54c2bf` | **B-1** `RuntimeSession` 拆 partial：inbox / output / activation | ✅ | 441 pass | 无（纯文件拆分） |
 | `9f00978` | **B-5** 拆 partial：lifecycle / children | ✅ | 441 pass | 无 |
 | `ecea9bf` | **B-3a** 拆 partial：core-switch | ✅ | 441 pass | 无 |
+| — | **B-3b**（components + bootstrap）**已回滚** | 见下 | — | — |
 
 测试从 385 → **441**，净增 56 条，全部是纯内存单测（不建会话、不碰存储、不调模型）。
 
@@ -97,3 +98,18 @@ B 的前置条件已经具备：`step` 的 12 阶段表、`ToolEffectInterpreter
 
 做法：`RuntimeSession` 改为 `partial`，按方法边界整段搬迁，**不改一行方法体**。
 编译踩到一处：`Inbox` 里的 `JsonConvert` 需要单独 `using Newtonsoft.Json`（partial 文件的 using 不共享）——这类漏 using 是纯文件拆分的唯一真实风险，编译期就能抓住。
+
+### B-3b 失败并回滚（记录在案）
+
+`components` + `bootstrap` 两个块**同一轮里连着 cut 了两次**，结果：
+
+1. 第一刀（`731..748`）实际切进了 `ToggleComponentAsync` 中间——因为此前几次切割已让行号偏移，我用的还是旧偏移量；
+2. 第二刀（`485..702`）落下两行注释头（`/// <summary>` 与首行说明），主文件里出现孤立注释块；
+3. 编译报 `CS1001` / `CS1519`。
+
+**已 `git checkout` 回滚到 `ecea9bf`，删除未完成的 partial 文件，build + 441 测试重新确认全绿。** 工作区干净。
+
+**教训（已写进 B-3a 的 commit，这里再记一次）**：
+- 行号搬运的偏移量**每次切割后都会变**，不能复用上一轮记下的行号；
+- **一次只切一刀，切完立刻 build**，不要连切两组再统一编译；
+- 更有抗性的做法：**按方法签名定位**（先 `grep -n` 重新取当前行号），而不是沿用旧数字。
