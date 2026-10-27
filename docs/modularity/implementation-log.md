@@ -344,3 +344,7 @@ ParticipantView 与消息发送者/用户/人物快照及 IParticipantSource/Par
 ### 频道媒体查询接缝与顺序基线
 
 ChannelContextService 注入 IChannelMediaSource，默认宿主实现逐次代理 ImageStorage 路径/描述/OCR 与 VisionEngineConfig 阈值；查询时机、顺序与阈值读取条件保持。CollectImagePaths 仅有内部调用，改实例方法。新增交错内容块、重复 hash、缺路径/无效标记、OCR 有效性及阈值读取、未就绪重试、全部描述先于全部 OCR 与集合去重回归。宿主构建、540 项主程序测试通过。尚未整体迁移领域渲染契约，未调用真实媒体存储、OCR 或模型；现有警告仍在。
+
+### 频道渲染领域迁移
+
+渲染主体进入 Lilara.Channel/ChannelRenderer，输入 ChannelMessageSnapshot，输出 ChannelRenderedMessage/Part；查询与媒体均通过频道契约，时间转换由宿主注入。宿主 ChannelContextService 改为兼容门面，ChannelRenderSourceAdapter/Mapping 原样投影实体、时间/CSV 与模型消息，保留现有消费者。渲染语句、媒体查询顺序、null/空内容块语义由既有完整基线验证。新增三种 DateTimeKind 字段映射、输出映射与程序集引用检查；Lilara.Channel 无宿主/Data/Llm 引用。完整解决方案构建与测试通过：主程序 545、GraphRuntime 38、GraphSandbox 17，共 600 项，无失败/跳过。既有 NU1603/CA2022/SYSLIB0050 仍在；未验证真实模型/媒体/适配器，D5 拍前装载及 D1 全路径对拍仍未完成。
