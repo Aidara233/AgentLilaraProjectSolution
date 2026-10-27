@@ -1,0 +1,1051 @@
+{
+  "schemaVersion": "1.0",
+  "title": "AgentLilara 模块切分清单（供网络图渲染）",
+  "repoRoot": "AgentLilaraProjectSolution",
+  "basis": "静态分析：读 sln / csproj / 源码，未 build、未 run、未 test",
+  "verified": false,
+  "generatedBy": "主会话设计回合，基于四路子会话勘察",
+  "readme": "docs/modularity/tree-cut.md",
+
+  "conventions": {
+    "edgeKinds": {
+      "assembly": "实线。装配关系：from 负责创建/持有 to。必须构成严格树：除装配根外，每个节点 assembly 入度恒为 1。",
+      "contract": "细线/总线。每个模块恰好一条指向 contracts，表示它的类型来自契约根。不作为树的组成边。",
+      "port": "虚线。跨模块调用，只经 contracts 里定义的接口。允许扇入，不产生模块间直接引用。",
+      "api": "点划线。跨进程调用（HTTP / WebSocket）。只允许出现在应用根之间，载荷必须是 contracts 里的 DTO，禁止传宿主类型或引擎实例。"
+    },
+    "inDegreeRule": "只统计 assembly 边；contract / port / api 边不计入入度。",
+    "assemblyRoots": ["host", "console-client", "webui"],
+    "nonTreeNodes": {
+      "members": ["graph-sandbox"],
+      "meaning": "不属于装配树的节点（测试夹具 / 已判定迁出生产代码）。渲染时应画成灰色虚线框，与树断开；不参与 R2 入度校验，也不参与契约边统计。"
+    }
+  },
+
+  "invariants": [
+    {
+      "id": "R1",
+      "rule": "单向：依赖只指向下层，禁止回指。",
+      "why": "现有 SessionEngine <-> RuntimeSession 双向环使两类无法分开单测。"
+    },
+    {
+      "id": "R2",
+      "rule": "单父：除装配根外，每个节点的 assembly 入度恰好为 1。",
+      "why": "这是“树”的定义本身。现有 SessionEngine 被 8 处跨模块直连、GraphRuntime 有 3 个消费者，都违反。"
+    },
+    {
+      "id": "R3",
+      "rule": "无兄弟横连：同层模块之间零 assembly 边；协作一律走 contracts 中的端口。",
+      "why": "现有 Tool/Component/Command/WebUI 四个模块都 OfType<SessionEngine>() 强转，即横连。"
+    },
+    {
+      "id": "R4",
+      "rule": "contracts 只放 interface / record / enum / attribute 与零依赖默认实现，不放业务逻辑。",
+      "why": "根被所有模块引用，一旦有可变逻辑就会变成新的耦合中心。用户已确认：允许零依赖的默认实现（如 FileToolBase 的 Ok()/Fail()/Workspace.Resolve）。"
+    },
+    {
+      "id": "R5",
+      "rule": "禁止进程级 static 可变状态；单例一律经 host 注入。",
+      "why": "静态全局让所有模块隐式相连，会使上面三条全部失效。"
+    }
+  ],
+
+  "layers": [
+    { "id": "root", "label": "契约根", "note": "唯一允许多方引用；零业务逻辑" },
+    { "id": "app", "label": "应用入口", "note": "装配根，只负责组装与生命周期" },
+    { "id": "infra", "label": "基础设施", "note": "被 host 唯一持有；对外只暴露 contracts 中的接口" },
+    { "id": "session", "label": "会话域", "note": "当前 4361 行的耦合重灾区" },
+    { "id": "cognition", "label": "认知与感知域", "note": "被 turn 唯一持有" },
+    { "id": "leaf", "label": "叶子", "note": "只依赖 contracts，零扇出" }
+  ],
+
+  "modules": [
+    {
+      "id": "contracts",
+      "name": "Lilara.Contracts",
+      "layer": "root",
+      "status": "merge",
+      "summary": "全部端口、DTO、事件、特性；零业务逻辑；唯一允许多方引用",
+      "owns": [
+        "AgentLilara.PluginSDK/",
+        "AgentLilara.SessionBrain/",
+        "Plugins/FileToolKit.Shared/FileToolBase.cs",
+        "AgentCoreProcessor/Engine/Core/ISubEngine.cs"
+      ],
+      "metrics": { "files": 70, "lines": 2237, "note": "PluginSDK 实测；合并 SessionBrain(2/193) 与上收的 FileToolBase(77)、ISubEngine 后约 2700~3000" },
+      "portsProvided": [
+        "ITool", "IToolContext", "IPluginStorage", "IWorkspaceAccess", "IPluginDataAccess",
+        "IRuntimeSession", "ISessionAccess", "ISessionResourceAccess", "ISubAgentAccess",
+        "IWriterAccess", "IRetrieveAccess", "IReviewQueueAccess", "IReviewStageAccess",
+        "IEmotionAccess", "IImageAccess", "IChannelAccess", "IAdapterAccess", "IEngineAccess",
+        "IEventBusAccess", "ICurrencyService", "IWatchAccess", "IToolHistoryAccess",
+        "ISignalLogger", "ILogAccess", "ISpeakGuard", "ISourceRegistrar", "IProductRegistry",
+        "IWebUIProvider", "IDataSource", "IPageContext", "IEventSource",
+        "IGlobalComponent", "ILoopComponent", "IPromptContributor"
+      ],
+      "dependsOnAssembly": [],
+      "consumedByAssembly": ["host", "console-client", "plugin-leaves"]
+    },
+    {
+      "id": "host",
+      "name": "Lilara.Host",
+      "layer": "app",
+      "status": "split",
+      "summary": "装配根：读配置、造对象、起停生命周期；不含业务",
+      "owns": [
+        "AgentCoreProcessor/Program.cs",
+        "AgentCoreProcessor/Engine/Core/MasterEngine.cs",
+        "AgentCoreProcessor/Core/AgentCore.cs",
+        "AgentCoreProcessor/Core/ExtractionCore.cs",
+        "AgentCoreProcessor/Component/",
+        "AgentCoreProcessor/Config/",
+        "AgentCoreProcessor/Util/"
+      ],
+      "metrics": { "files": 33, "lines": 3954, "note": "Program.cs(499) + Engine/Core 去掉 CoreBase/ISubEngine 部分 + Component(1545) + Config(514) + Util(161)，为估算" },
+      "portsProvided": [],
+      "portsImplemented": ["ISessionPort", "ISessionQuery", "ISessionControl", "IDataPort", "ILlmPort"],
+      "dependsOnAssembly": ["data", "llm", "logging", "plugin-host", "adapters", "commands", "webui", "graph", "session"]
+    },
+    {
+      "id": "data",
+      "name": "Lilara.Data",
+      "layer": "infra",
+      "status": "extract",
+      "summary": "SQLite 实体与 Repository 实现；接口在 contracts",
+      "owns": ["AgentCoreProcessor/Database/", "AgentCoreProcessor/Models/"],
+      "metrics": { "files": 35, "lines": 2612 },
+      "dependsOnAssembly": [],
+      "consumedByAssembly": ["host"],
+      "currentState": "Database/ 下 32 个文件零个 I*Repository 接口；具体类型经 ISubEngine.cs:79-86 穿透到每个子引擎"
+    },
+    {
+      "id": "llm",
+      "name": "Lilara.Llm",
+      "layer": "infra",
+      "status": "extract",
+      "summary": "各家模型客户端、流解析、重试",
+      "owns": ["AgentCoreProcessor/Client/", "AgentCoreProcessor/Core/CoreBase.cs"],
+      "metrics": { "files": 19, "lines": 3186 },
+      "dependsOnAssembly": [],
+      "consumedByAssembly": ["host"],
+      "currentState": "CoreBase.cs 是 abstract 但 0 个 abstract 成员的 509 行工具基类；实质是本模块内容"
+    },
+    {
+      "id": "logging",
+      "name": "Lilara.Logging",
+      "layer": "infra",
+      "status": "extract",
+      "summary": "Signal 日志落盘；无线程级 static",
+      "owns": ["AgentCoreProcessor/Logging/"],
+      "metrics": { "files": 13, "lines": 1284 },
+      "dependsOnAssembly": [],
+      "consumedByAssembly": ["host"],
+      "currentState": "SignalContext.cs:8-9 持 static LogWriter / static int _minLevel，需改注入"
+    },
+    {
+      "id": "plugin-host",
+      "name": "Lilara.PluginHost",
+      "layer": "infra",
+      "status": "merge",
+      "summary": "ALC 加载卸载、ToolRegistry、ToolExecutor、内核桥",
+      "owns": [
+        "AgentCoreProcessor/Tool/",
+        "AgentLilara.AlcBridge/",
+        "AgentCoreProcessor/MCP/"
+      ],
+      "metrics": { "files": 36, "lines": 4360, "note": "Tool(27/2822) + AlcBridge(5/1133) + MCP(4/405)" },
+      "portsImplemented": ["IToolContext", "IToolHost"],
+      "dependsOnAssembly": ["plugin-leaves"],
+      "consumedByAssembly": ["host"],
+      "currentState": "ToolRegistry.cs:21 是宿主全局 static ConcurrentDictionary；隔离在类型层不在注册表层"
+    },
+    {
+      "id": "adapters",
+      "name": "Lilara.Adapters",
+      "layer": "infra",
+      "status": "merge",
+      "summary": "外部协议接入：OneBot / HttpBridge / 图像存储",
+      "owns": ["AgentCoreProcessor/Adapter/", "AgentCoreProcessor/Engine/AdapterEng/"],
+      "metrics": { "files": 30, "lines": 5244 },
+      "dependsOnAssembly": [],
+      "consumedByAssembly": ["host"],
+      "currentState": "ImageStorage.cs:20-23 是 static 类持 static ImageRepository / EventBus"
+    },
+    {
+      "id": "commands",
+      "name": "Lilara.Commands",
+      "layer": "infra",
+      "status": "merge",
+      "summary": "斜杠命令与 CoreCommand",
+      "owns": ["AgentCoreProcessor/Command/", "AgentCoreProcessor/Engine/Command/"],
+      "metrics": { "files": 20, "lines": 1317 },
+      "dependsOnAssembly": [],
+      "consumedByAssembly": ["host"],
+      "currentState": "CoreCommand.cs:22 已 OfType<SessionEngine>()"
+    },
+    {
+      "id": "webui",
+      "name": "Lilara.WebUI",
+      "layer": "app",
+      "status": "extractToProcess",
+      "summary": "独立进程的管理面：Blazor 页面 + 17 个内建 Provider，与 host 只经 API 通信",
+      "owns": ["AgentCoreProcessor/WebUI/"],
+      "metrics": { "files": 35, "lines": 9692, "note": "17 个 Provider 占 8050 行（83%）；真正 Blazor 页面仅 Components 2/25 + Navigation 1/12 + wwwroot 空。所以「webui 独立」实质是管理面后端独立" },
+      "dependsOnAssembly": [],
+      "consumedByAssembly": [],
+      "independentProcess": true,
+      "apiSurface": "HTTP / WebSocket；载荷全为 contracts 中的 DTO",
+      "apiConsumes": ["host"],
+      "selfOwned": [
+        "内建 Provider 注册表 (ProviderRegistry)",
+        "卡片模型整体迁入本项目：CardDefinition / CardSchema / PageDefinition / DataSource / IPageContext（从 contracts 移出）"
+      ],
+      "currentState": "同进程 DI 直接注入引擎实例：五处 OfType<SessionEngine>()（SessionsProvider.cs:269,303,362,511,618）+ SessionsProvider.cs:221-232 反射读 RuntimeSession._roundCount。独立进程后这些写法全部失效，必须改调 API"
+    },
+    {
+      "id": "graph",
+      "name": "Lilara.Graph",
+      "layer": "infra",
+      "status": "merge",
+      "summary": "图运行时 + 图模块 + 宿主侧 GraphManager",
+      "owns": [
+        "AgentCoreProcessor/Engine/Graph/",
+        "src/AgentLilara.GraphRuntime/",
+        "src/AgentLilara.GraphModules/"
+      ],
+      "metrics": { "files": 33, "lines": 4746 },
+      "dependsOnAssembly": [],
+      "consumedByAssembly": ["host"],
+      "currentState": "GraphRuntime 有 3 个消费者（host / GraphModules / GraphSandbox），违反 R2"
+    },
+    {
+      "id": "session",
+      "name": "Lilara.Session",
+      "layer": "session",
+      "status": "split",
+      "summary": "会话池、session 生命周期、升级 escalation；频道占用已移交 channel",
+      "owns": [
+        "AgentCoreProcessor/Engine/Session/（除 RuntimeSession 转轮主体与 ConnectedChannelState）",
+        "AgentCoreProcessor/Engine/Session/SessionPool.cs",
+        "AgentCoreProcessor/Engine/Session/SessionEngine.cs（ClaimChannel / SubscribeChannel / ReleaseChannel 三个方法迁往 channel）"
+      ],
+      "metrics": { "files": 13, "lines": 2770, "note": "Engine/Session 合计 14/4361，扣掉拆往 turn 的约 1400 行为估算" },
+      "portsImplemented": ["ISessionPort", "ISessionQuery", "ISessionControl"],
+      "dependsOnAssembly": ["turn", "recurring"],
+      "consumedByAssembly": ["host"],
+      "currentState": "SessionEngine.cs:97 向 RuntimeSession 注入 this，RuntimeSession.cs:90,282 反调四方法，构成 R1 违反的双向环"
+    },
+    {
+      "id": "channel",
+      "name": "Lilara.Channel",
+      "layer": "session",
+      "status": "extract",
+      "summary": "频道域：占用的唯一所有者（claim / subscribe / release）、频道配置与持续状态、频道上下文构建、对外 IChannelAccess 实现",
+      "owns": [
+        "AgentCoreProcessor/Engine/Context/ChannelContextService.cs",
+        "AgentCoreProcessor/Engine/Context/ChannelContextState.cs",
+        "AgentCoreProcessor/Engine/Context/IChannelDataSource.cs",
+        "AgentCoreProcessor/Engine/Worker/ChannelStateManager.cs",
+        "AgentCoreProcessor/Engine/Worker/ChannelConfig.cs",
+        "AgentCoreProcessor/Engine/Worker/ChannelContextPersistence.cs",
+        "AgentCoreProcessor/Engine/Session/ConnectedChannelState.cs",
+        "AgentCoreProcessor/Engine/Core/ChannelSignal.cs",
+        "AgentCoreProcessor/Tool/Host/ChannelAccessImpl.cs",
+        "AgentCoreProcessor/Command/ChannelCommand.cs",
+        "AgentCoreProcessor/Tool/Core/ConnectChannelTool.cs",
+        "（新）SessionEngine 的 ClaimChannel / SubscribeChannel / ReleaseChannel"
+      ],
+      "metrics": { "files": 11, "lines": 1346, "note": "11 个既有文件合计 1346 行；另加从 SessionEngine 迁出的 3 个方法（这些行数当前仍计在 session 内）" },
+      "portsProvided": ["IChannelPort", "IChannelAccess", "IConnectedChannel"],
+      "dependsOnAssembly": [],
+      "consumedByAssembly": ["host"],
+      "currentState": "现状被切碎在三处：上下文服务在 Engine/Context（578 行）、配置持久化在 Engine/Worker（171 行，且 ChannelStateManager 是 static 且直接读 PathConfig.StoragePath）、占用状态机在 SessionEngine。三处状态分离，没有单一所有者",
+      "risk": "把 claim 所有权从 SessionEngine 移出，会连带改 RuntimeSession 的 6 处调用（:481 / :490,495 / :530），并与 C3（断环）互相影响 —— 这两条切口必须一起设计，不能分开做"
+    },
+    {
+      "id": "turn",
+      "name": "Lilara.Turn",
+      "layer": "session",
+      "status": "extract",
+      "summary": "单轮执行：组装上下文 → 调 LLM → 执行工具 → 落库",
+      "owns": ["AgentCoreProcessor/Engine/Session/RuntimeSession.cs（主体）"],
+      "metrics": { "files": 1, "lines": 1591, "note": "现状单文件 1591 行 / 66 私有字段 / 26 public + 37 private 方法" },
+      "dependsOnAssembly": ["context", "mind", "vision"],
+      "consumedByAssembly": ["session"],
+      "currentState": "同时管 core 切换(:165,:232)、频道 connect(:472)、Bootstrap(:560)、组件启停(:810)、停止唤醒(:826,:838)，职责远超“一轮”"
+    },
+    {
+      "id": "context",
+      "name": "Lilara.Context",
+      "layer": "session",
+      "status": "merge",
+      "summary": "三层压缩、注入、提示贡献者汇总",
+      "owns": ["AgentCoreProcessor/Engine/Context/", "AgentCoreProcessor/Engine/Modules/"],
+      "metrics": { "files": 6, "lines": 724 },
+      "dependsOnAssembly": [],
+      "consumedByAssembly": ["turn"]
+    },
+    {
+      "id": "mind",
+      "name": "Lilara.Mind",
+      "layer": "cognition",
+      "status": "extract",
+      "summary": "情绪、记忆、审核队列、写作",
+      "owns": ["AgentCoreProcessor/Engine/Mind/"],
+      "metrics": { "files": 14, "lines": 2340 },
+      "dependsOnAssembly": [],
+      "consumedByAssembly": ["turn"],
+      "currentState": "SessionEngine.cs:74 暴露 Mind 属性并被 RuntimeSession.cs:704 反向使用，需改为端口"
+    },
+    {
+      "id": "vision",
+      "name": "Lilara.Vision",
+      "layer": "cognition",
+      "status": "extract",
+      "summary": "图像理解与 OCR 流水线",
+      "owns": ["AgentCoreProcessor/Engine/Vision/"],
+      "metrics": { "files": 4, "lines": 797 },
+      "dependsOnAssembly": [],
+      "consumedByAssembly": ["turn"]
+    },
+    {
+      "id": "recurring",
+      "name": "Lilara.Recurring",
+      "layer": "session",
+      "status": "merge",
+      "summary": "定时、唤醒、事件源、跨会话投递",
+      "owns": [
+        "AgentCoreProcessor/Engine/Worker/",
+        "AgentCoreProcessor/Engine/Source/",
+        "AgentCoreProcessor/Engine/Messaging/",
+        "AgentCoreProcessor/Engine/Timer/"
+      ],
+      "metrics": { "files": 22, "lines": 1798 },
+      "dependsOnAssembly": [],
+      "consumedByAssembly": ["session"]
+    },
+    {
+      "id": "console-client",
+      "name": "Lilara.ConsoleClient",
+      "layer": "app",
+      "status": "exists",
+      "summary": "命令行客户端；独立应用根",
+      "owns": ["LilaraConsoleClient/"],
+      "metrics": { "files": 4, "lines": 631 },
+      "dependsOnAssembly": [],
+      "consumedByAssembly": [],
+      "currentState": "当前零 ProjectReference、零 PackageReference，是第二棵装配树"
+    },
+    {
+      "id": "plugin-leaves",
+      "name": "Plugin.*（23 个叶子）",
+      "layer": "leaf",
+      "status": "exists",
+      "summary": "只依赖 contracts 的工具插件；已是合规形态，一个都不用改",
+      "owns": ["Plugins/Plugin.*/"],
+      "metrics": { "files": 191, "lines": 19325 },
+      "members": [
+        "Plugin.BasicTools", "Plugin.CampusPrint", "Plugin.Currency", "Plugin.DocumentTools",
+        "Plugin.Email", "Plugin.FileOps", "Plugin.FileTools", "Plugin.GitTools",
+        "Plugin.GroupFileTools", "Plugin.HomeAssistant", "Plugin.ImageTools", "Plugin.MindTools",
+        "Plugin.NetworkTools", "Plugin.QQTools", "Plugin.QuickActions", "Plugin.ReviewTools",
+        "Plugin.ScheduledTasks", "Plugin.SkillTools", "Plugin.SshTools", "Plugin.SvgTools",
+        "Plugin.SystemTools", "Plugin.WebSearch", "Plugin.WorkingTools"
+      ],
+      "dependsOnAssembly": [],
+      "consumedByAssembly": ["plugin-host"],
+      "currentState": "22/23 只引用 PluginSDK；唯一的 Plugin.WorkingTools 反向引用 AgentCoreProcessor（csproj:14-16），违反 R1"
+    },
+    {
+      "id": "graph-sandbox",
+      "name": "AgentLilara.GraphSandbox",
+      "layer": "leaf",
+      "status": "outOfTree",
+      "summary": "图运行时的手工试验场（Exe），应移入 tests/fixtures，不属生产树",
+      "nonTree": true,
+      "owns": ["src/AgentLilara.GraphSandbox/"],
+      "metrics": { "files": 6, "lines": 596 },
+      "dependsOnAssembly": [],
+      "consumedByAssembly": [],
+      "currentState": "OutputType=Exe，Program.cs 轮询 sandbox-inbox；使 GraphRuntime 多一个消费者"
+    }
+  ],
+
+  "edges": [
+    { "from": "host", "to": "data", "kind": "assembly" },
+    { "from": "host", "to": "llm", "kind": "assembly" },
+    { "from": "host", "to": "logging", "kind": "assembly" },
+    { "from": "host", "to": "plugin-host", "kind": "assembly" },
+    { "from": "host", "to": "adapters", "kind": "assembly" },
+    { "from": "host", "to": "commands", "kind": "assembly" },
+    { "from": "host", "to": "channel", "kind": "assembly" },
+    { "from": "host", "to": "graph", "kind": "assembly" },
+    { "from": "host", "to": "session", "kind": "assembly" },
+    { "from": "plugin-host", "to": "plugin-leaves", "kind": "assembly", "via": "AssemblyLoadContext 动态加载" },
+    { "from": "session", "to": "turn", "kind": "assembly" },
+    { "from": "session", "to": "recurring", "kind": "assembly" },
+    { "from": "turn", "to": "context", "kind": "assembly" },
+    { "from": "turn", "to": "mind", "kind": "assembly" },
+    { "from": "turn", "to": "vision", "kind": "assembly" },
+
+    { "from": "adapters", "to": "session", "kind": "port", "via": "ISessionPort" },
+    { "from": "commands", "to": "session", "kind": "port", "via": "ISessionControl" },
+    { "from": "turn", "to": "llm", "kind": "port", "via": "ILlmPort" },
+    { "from": "turn", "to": "data", "kind": "port", "via": "IDataPort" },
+    { "from": "turn", "to": "plugin-host", "kind": "port", "via": "IToolHost" },
+    { "from": "turn", "to": "logging", "kind": "port", "via": "ISignalLogger" },
+    { "from": "mind", "to": "llm", "kind": "port", "via": "ILlmPort" },
+    { "from": "vision", "to": "llm", "kind": "port", "via": "ILlmPort" },
+    { "from": "mind", "to": "data", "kind": "port", "via": "IDataPort" },
+    { "from": "plugin-leaves", "to": "data", "kind": "port", "via": "IPluginDataAccess" },
+    { "from": "plugin-leaves", "to": "plugin-host", "kind": "port", "via": "IToolContext" },
+    { "from": "commands", "to": "context", "kind": "port", "via": "IContextControl" },
+    { "from": "session", "to": "channel", "kind": "port", "via": "IChannelPort" },
+    { "from": "turn", "to": "channel", "kind": "port", "via": "IChannelPort" },
+    { "from": "adapters", "to": "channel", "kind": "port", "via": "IChannelPort" },
+
+    { "from": "webui", "to": "host", "kind": "api", "via": "HTTP / WebSocket，载荷全 DTO" }
+  ],
+
+  "contractEdges": {
+    "note": "每个模块恰好一条指向 contracts 的契约边；不参与入度计算。渲染时建议画成细线或统一边的颜色。",
+    "targets": [
+      "host", "data", "llm", "logging", "plugin-host", "adapters", "commands",
+      "webui", "graph", "session", "channel", "turn", "context", "mind", "vision",
+      "recurring", "console-client", "plugin-leaves"
+    ]
+  },
+  "linkModel": {
+    "designDoc": "docs/modularity/link-design.md",
+    "claim": "内置连接与用户自定义网络是同一份 LinkSpec 的两个来源，只差一个 builtin 字段（只影响 UI 可编辑性，不影响运行时）。",
+    "runtime": "复用现有 GraphRuntime：GraphClass = nodes + links + variables；一次激活 = 一次求解；失败零副作用。不新增运行时。",
+    "edgeKindToLink": {
+      "assembly": "装配关系，不进图；决定谁创建谁。",
+      "port": "拍内连接 → LinkSpec{ Policy.Mode = Inline }。内置路径全部用这个。",
+      "contract": "类型来源，不是连接。",
+      "api": "跨进程，不映射成 Link；两端走 DTO 序列化。"
+    },
+    "linkSpec": {
+      "fields": ["From", "FromPort", "To", "ToPort", "Policy", "Builtin"],
+      "builtin": "true = 内置连接，UI 只读；false = 用户自定义。运行时行为完全相同。"
+    },
+    "linkPolicy": {
+      "fields": ["Mode", "Capacity", "Overflow", "ActivationWeight", "Guard", "MaxHops"],
+      "mode": ["Inline", "Deferred"],
+      "note": "拍内连接一律 Inline（同步、失败整拍失败）；Deferred 只用于图的边缘（入边/出边），因为它们跨拍且是异步 IO。ActivationWeight 承接现有 IInputPort.Weight（100=立即激活，5=攒多了）。"
+    },
+    "beatSemantics": {
+      "beat": "一个 InboundEvent 触发一次 GraphInstance.Run",
+      "inBeat": "Inline 连接 + Cell 三态 + 深度优先求解",
+      "failure": "整拍零副作用",
+      "ordering": "同一 ChannelKey 的拍严格串行；不同 ChannelKey 可并行",
+      "backpressure": "只在边缘队列上；拍内绝不阻塞",
+      "whyNoInBeatCancel": "Solver 是纯函数式求解；IO 必须在拍前（装载）或拍后（汇执行）。拍内保持纯求解。"
+    },
+    "builtinGraph": {
+      "classId": "builtin.ingress",
+      "file": "graphs/builtin/ingress.json（与用户图同格式，同加载器）",
+      "nodes": [
+        "in: module.channel.inbox",
+        "route: module.channel.route",
+        "occupancy: module.channel.occupancy",
+        "ctx: module.channel.context",
+        "session: module.session.actor",
+        "out: sink.send"
+      ],
+      "links": [
+        { "from": "in", "fromPort": "event", "to": "route", "toPort": "event" },
+        { "from": "route", "fromPort": "route", "to": "session", "toPort": "route" },
+        { "from": "session", "fromPort": "acquire", "to": "occupancy", "toPort": "acquire" },
+        { "from": "occupancy", "fromPort": "grant", "to": "session", "toPort": "grant" },
+        { "from": "session", "fromPort": "intent", "to": "out", "toPort": "intent" },
+        { "from": "route", "fromPort": "route", "to": "ctx", "toPort": "channelKey" },
+        { "from": "ctx", "fromPort": "fragment", "to": "session", "toPort": "input" }
+      ]
+    },
+    "couplingCuts": [
+      {
+        "coupling": "channel <-> session",
+        "fix": "占用收进 channel.occupancy 节点变量（唯一权威），session 经 acquire/grant 两个端口交互",
+        "evidence": ["Engine/Session/SessionEngine.cs:165,1214", "Engine/Session/SessionEngine.cs:688", "Tool/Host/ChannelAccessImpl.cs:30"],
+        "boundTo": ["C3", "C12"]
+      },
+      {
+        "coupling": "channel <-> model",
+        "fix": "channel 只产出 ChannelContextFragment（纯 DTO）；Message/ContentPart 拼装移入 context；OCR 决策移入 vision",
+        "evidence": ["Engine/Context/ChannelContextService.cs:242,258,332,367,433", "Engine/Context/ChannelContextService.cs:134"],
+        "assertable": "Lilara.Channel 源码内不出现 using AgentCoreProcessor.Models / Engine.Vision；IChannelDataSource 不出现 Database"
+      },
+      {
+        "coupling": "channel <-> adapter",
+        "fix": "删除 IChannelAwareAdapter；出向由 outbound.router 按 AdapterId 前缀或订阅记录决定",
+        "evidence": ["Engine/AdapterEng/AdapterEngine.cs:60", "AgentCoreProcessor/Adapter/IChannelAwareAdapter.cs", "Tool/Host/ChannelAccessImpl.cs:6"],
+        "assertable": "adapters 与 channel 互不 using"
+      }
+    ],
+    "migration": [
+      { "phase": "L1", "task": "影子图对拍（复用 AlcBridge 的 WireComparer / CanonicalComparer）", "risk": "low" },
+      { "phase": "L2", "task": "断 channel <-> model", "risk": "low" },
+      { "phase": "L3", "task": "断 channel <-> adapter", "risk": "low" },
+      { "phase": "L4", "task": "断 channel <-> session（与 C3/C12 一体）", "risk": "high" },
+      { "phase": "L5", "task": "内置图切到 JSON 加载，与用户图同源", "risk": "medium" }
+    ],
+    "unresolved": ["Q8 ILoopBus/ModuleBus/EventBus 与 Link 职责重叠", "Q9 ILoopComponent 生命周期映射到无状态求解", "Q10 channel.context 拍内 IO 的装载点", "Q11 Notify 与 SendMessage 语义边界"]
+  },
+  "moduleContract": {
+    "designDoc": "docs/modularity/module-contract.md",
+    "dimensions": {
+      "type": "[Module(id)] on interface —— 已有",
+      "instance": "缺。ModuleHost._implementations 是 Dictionary<string, object>，一模块只能一个实例",
+      "behavior": "[Method] → module.<id>.<method> 节点 —— 已有",
+      "data": "[Property] → module.<id>.read/write.<prop> 节点 —— 已有",
+      "lifecycleEvents": "[Lifecycle(mount|kill)] 只有两个；ILoopComponent 另有 9 个钩子，两套并存"
+    },
+    "composition": {
+      "rule": "模块 = 叶子模块（一个类）| 复合模块（一张类型图 + 每实例一张实例图）| 根网络（整张连接网络）。三者对外契约形状相同：行为 + 数据 + 生命周期事件。",
+      "unit": "图实例（运行单元）= 一组模块实例（装配单元）。一个会话 = 一个图实例 = 它的模块实例集合。",
+      "instanceKey": "等于业务主键：sessionId / channelKey / adapterId / pluginId / graphInstanceKey。"
+    },
+    "uniquenessRule": {
+      "statement": "唯一性由「是否持有私有状态」决定；“用不常用”由参数决定，不能用多实例去表达。每个模块必须二选一，没有第三种。",
+      "singleton": "有私有状态但全局只有一份 → Singleton；或完全没有私有状态 → Singleton + 参数化",
+      "multi": "有私有状态且状态按某主键天然分区 → 多实例，实例键 = 该主键",
+      "knownCorrection": "channel.context 上一版误写为 per-channel；它无私有状态，应为 Singleton + channelKey 参数。"
+    },
+    "typeGraphInstanceGraph": {
+      "statement": "多实例模块同时拥有两张图：所有实例共享的类型图，和只属于自己那个实例的实例图。",
+      "typeGraph": {
+        "identity": "GraphClass.ClassId",
+        "content": "节点声明 + 连线 + 变量声明",
+        "count": "每种模块类型恰好一张",
+        "lifecycle": "Loaded → Validated → Sealed（可选 Reloaded）",
+        "persistence": "不进快照（是代码/资源）",
+        "invariant": "Sealed 后不可修改；要改就整张 Reloaded，并重新校验所有实例图"
+      },
+      "instanceGraph": {
+        "identity": "GraphInstance.InstanceKey",
+        "content": "变量值 + latch + 本实例独有的节点/连线",
+        "count": "每实例恰好一张",
+        "lifecycle": "Created → Mounted → Active(每拍) → Snapshot → Killed",
+        "persistence": "进快照"
+      },
+      "merge": "有效图 = 类型图 ⊕ 实例图 overlay；允许加节点/加连线/覆盖变量初值；禁止删除类型图的节点或连线（关掉用 disabled:true 软禁用）；同名节点覆盖需过类型校验",
+      "solves": {
+        "M1": "绑定发生在实例图合成时，而非全局 ModuleHost；类型图里只有声明",
+        "M6": "复合模块 = 有类型图 + 有实例图的模块，不需要新机制",
+        "Q14": "ModulePropertyReadNode 活在实例图里，_implementation 在合成时已确定为该实例的，现有“构造时抓单实现”恰好正确"
+      },
+      "risk": "类型图是唯一被共享的可变风险点；Sealed 是必须的不变量，否则会出现“一半实例按旧结构、一半按新结构”的半死状态"
+    },
+    "graphAsModule": {
+      "statement": "整张连接网络本身就是一个模块，与其他模块契约形状无异。",
+      "graphType": "graph（模块类型）：不唯一，按 ClassId 一类型一实例",
+      "rootInstance": "graph.root：唯一，一进程一张根网络，即整个框架的连接网络",
+      "behaviors": ["dispatch(InboundEvent) → SolveResult", "validate() → ValidationReport", "reset()", "snapshot()/restore(blob)", "swapClass(newClassId)", "inspect() → 结构 + 上次求解诊断"],
+      "data": ["variables", "lastIntents", "lastResult", "nodeCount", "linkCount", "classId", "instanceKey"],
+      "lifecycle": {
+        "typeSide": ["Loaded", "Validated", "Sealed", "Reloaded"],
+        "instanceSide": ["Created", "Mounted", "Active", "Deactivated", "Snapshot", "Killed", "Crashed"]
+      },
+      "why": [
+        "它有了明确的生命周期：装载/校验/封存/热换现在是散在 GraphLoader + ModuleHost + MasterEngine 里的过程",
+        "它可被观察：inspect()/variables/lastIntents 正是 webui 独立进程后“网络图”页面的数据源",
+        "它可被替换：swapClass 是“内置连接与自定义网络同一方案”的最终形态 —— 换的不是一条连接，是整张图"
+      ],
+      "note": "dispatch 与现有 GraphInstance.Run 是同一件事，但对外只收一个 InboundEvent、返回 SolveResult，不再把 EvalContext 泄出去"
+    },
+    "instanceRefSyntax": {
+      "literal": "固定实例 id",
+      "beat": "$beat.session / $beat.channel —— 从本拍上下文解析",
+      "singleton": "全局唯一实例",
+      "fanout": "* —— 对所有实例求值；只允许接只读数据口，写与调用禁止 fan-out"
+    },
+    "instanceUnits": [
+      { "id": "channel.occupancy", "module": "channel", "scope": "singleton", "reason": "占用是跨频道仲裁；若做成 per-channel，acquire（写）就得 fan-out，违反只读约束" },
+      { "id": "channel.state", "module": "channel", "scope": "per-channel", "reason": "亲和度 / 备注 / 配置天然按频道" },
+      { "id": "channel.context", "module": "channel", "scope": "singleton", "stateless": true, "corrected": "上一版误写为 per-channel。无私有状态 → 唯一实例 + channelKey 参数，不能为对称强行多实例。" },
+      { "id": "graph.root", "module": "graph", "scope": "singleton", "note": "整个框架的连接网络；每进程恰好一个" },
+      { "id": "graph.class", "module": "graph", "scope": "per-graph-class", "note": "任意一张图，实例键 = InstanceKey；graph.root 是其中一个特殊实例" },
+      { "id": "plugin", "module": "plugin-leaves", "scope": "per-plugin", "note": "每个插件一个实例；ITool 是它的行为，不是独立实例" },
+      { "id": "channel.route", "module": "channel", "scope": "singleton" },
+      { "id": "session.actor", "module": "session", "scope": "per-session", "composite": true, "internal": ["turn", "context", "mind", "vision"] },
+      { "id": "turn", "module": "turn", "scope": "per-session" },
+      { "id": "context", "module": "context", "scope": "per-session" },
+      { "id": "mind", "module": "mind", "scope": "per-session" },
+      { "id": "vision", "module": "vision", "scope": "singleton", "reason": "无状态流水线，靠输入区分" },
+      { "id": "recurring", "module": "recurring", "scope": "singleton" },
+      { "id": "adapter", "module": "adapters", "scope": "per-adapter" },
+      { "id": "plugin-host", "module": "plugin-host", "scope": "singleton" },
+      { "id": "graph", "module": "graph", "scope": "per-graph-instance", "note": "GraphInstance.InstanceKey 已是这个位置" },
+      { "id": "data", "module": "data", "scope": "singleton", "asNode": false, "note": "只提供 I*Repository 实现，不暴露为图节点" },
+      { "id": "llm", "module": "llm", "scope": "singleton", "asNode": false },
+      { "id": "logging", "module": "logging", "scope": "singleton", "asNode": false },
+      { "id": "webui", "module": "webui", "scope": "process", "asNode": false, "note": "独立进程，只经 API" },
+      { "id": "contracts", "module": "contracts", "scope": "none", "asNode": false, "note": "纯类型，无实例" }
+    ],
+    "lifecycle": {
+      "birth": ["Created", "Mounted", "Restored", "Ready"],
+      "active": ["Activated", "Deactivated"],
+      "rest": ["Paused", "Resumed", "Slept(state)", "Woke", "Enabled", "Disabled"],
+      "death": ["ShutdownRequested(reason)", "Killing", "Killed", "Crashed(reason)"],
+      "persistence": ["Snapshot", "Restore"],
+      "rejectable": ["ShutdownRequested"],
+      "rejectRule": "只有 ShutdownRequested 可拒绝；拒绝必须附理由并回传给发起方；框架可设强制上限（超时后 Killing），但那是显式策略不是默认。",
+      "outOfBeat": "生命周期事件是带外事件，绝不占一拍。一拍 = 一个 InboundEvent → 一次 Solve。框架调用 [Lifecycle] 方法的同时发带外事件供图观察；可观察、不可干预（shutdown 除外）。",
+      "existingMapping": {
+        "SessionStatus.Creating": "Created",
+        "SessionStatus.Restored": "Restored",
+        "SessionStatus.Running": "Activated / Deactivated",
+        "SessionStatus.Completed": "Killed",
+        "SessionStatus.Crashed": "Crashed",
+        "LifecycleAttribute(mount)": "Mounted",
+        "LifecycleAttribute(kill)": "Killed",
+        "ILoopComponent.OnInitAsync": "Mounted",
+        "ILoopComponent.OnEnabledAsync/OnDisabledAsync": "Enabled / Disabled",
+        "ILoopComponent.OnActivatedAsync/OnPauseAsync": "Activated / Paused",
+        "ILoopComponent.OnShutdownRequestedAsync": "ShutdownRequested（可拒）",
+        "SleepState": "Slept / Woke"
+      }
+    },
+    "correctionToLinkDesign": {
+      "what": "占用（occupancy）必须是 Singleton，不是 per-channel 实例",
+      "why": "acquire 是写操作；per-channel 实例下跨频道仲裁无法表达，而写不允许 fan-out",
+      "consequence": "DB/Channel 与 ChannelState/*.json 不再是两个真相，而是同一个 IChannelStore 端口的两个实现，二选一 —— 这回答了 tree-cut.md 的 Q5"
+    },
+    "gaps": [
+      { "id": "M1", "what": "多实例绑定", "now": "Dictionary<string, object> + Bind(moduleId, impl)", "need": "Dictionary<(moduleId, instanceKey), object> + BindFactory" },
+      { "id": "M2", "what": "实例寻址", "now": "节点只有 type", "need": "节点加 instance 字段 + 四种解析" },
+      { "id": "M3", "what": "实例作用域", "now": "ModuleDescriptor 无 scope", "need": "[Module(Scope=...)]" },
+      { "id": "M4", "what": "生命周期事件集", "now": "mount/kill 两个 + ILoopComponent 九个", "need": "统一成一套，shutdownRequested 可拒" },
+      { "id": "M5", "what": "事件分发", "now": "两套各自直接调方法", "need": "框架调用 + 发带外事件；只有 shutdown 收返回值" },
+      { "id": "M6", "what": "复合模块", "now": "ModuleAttribute 只能标 interface，无“内部是一张图”", "need": "Composite=true + GraphClassId；对外 = 内部图的公开端口子集" },
+      { "id": "M7", "what": "fan-out 限制", "now": "无", "need": "加载期校验 instance=* 只能接只读口" },
+      { "id": "M8", "what": "ILoopComponent 与模块的关系", "now": "组件已是 per-session 多实例（ComponentScope{Global,Loop}），但不在图模块体系里", "need": "组件视为 PerSession 模块；ComponentMeta 并入 ModuleDescriptor —— 合并而非重写" }
+    ],
+    "keyTension": "图的 Evaluate 是无状态求解，模块是有状态实例。桥已存在：ModuleHost 把 [Module] 方法变成节点、节点持实现引用。状态不在节点上而在实现实例上；节点是适配器，模块是实现；因此同一模块实例可被多张图引用 —— 这正是“会话实例也是模块”的前提。",
+    "assertions": [
+      { "id": "U1", "check": "每个模块声明必须给出 Scope，且 ∈ {Singleton, PerSession, PerChannel, PerAdapter, PerPlugin, PerGraphClass}" },
+      { "id": "U2", "check": "Scope=Singleton 的模块不得有实例键字段（防止“既唯一又能寻址”的暧昧态）" },
+      { "id": "U3", "check": "声明多实例的模块，类型图里必须至少有一个 per-key 变量；否则它其实无状态，应降为唯一" },
+      { "id": "U4", "check": "实例图的节点/连线集合 ⊇ 类型图的节点/连线集合（不允许删除）" },
+      { "id": "U5", "check": "类型图必须 Sealed 之后才允许创建实例" },
+      { "id": "U6", "check": "instance=\"*\" 只能接只读数据口；写与调用禁止 fan-out" },
+      { "id": "U7", "check": "复合模块对外暴露的端口 ⊆ 内部图的公开端口" },
+      { "id": "U8", "check": "graph.root 每进程恰好一个；其余 graph 实例的 InstanceKey 必须唯一" },
+      { "id": "U9", "check": "每个 GraphClass.ClassId 恰好一张类型图（现无任何东西守护该不变量，需注册表 + 重复检测）" }
+    ],
+    "unresolved": ["Q12 复合模块的 [Module] 标在 interface 还是 class", "Q13 ModuleDescriptorGenerator 是否支持 Scope/Instance 投影", "Q14 ModulePropertyReadNode 在多实例下如何确定读哪个", "Q15 turn 的 Activated/Deactivated 是否成为热点路径", "Q16 OnBeforeInvoke/OnAfterInvoke 与拍边界是否重合", "Q17 实例图是否要支持引用另一个类型图（嵌套复合模块）", "Q18 实例图 overlay 的持久化格式（现有 SessionPersistence 存状态 blob，非节点/连线增量）", "Q19 GraphClass 的 “类型图恰好一张” 现在没有守护机制，需要注册表 + 重复 ClassId 检测", "Q20 swapClass 热换时正在拍内的实例怎么办（等拍结束还是打断）", "Q21 host 的 ShutdownRequested 可拒，但 Program.cs 是否已有优雅退出路径，未读"]
+  },
+  "migrationImpact": {
+    "designDoc": "docs/modularity/migration-floating-context.md",
+    "source": "E:/Workspace/AgentLilaraCode（221 个 .cs / 53648 行，5 个项目）",
+    "target": "把该仓库的浮动上下文机制迁入本项目",
+    "mechanism": {
+      "axes": "Kernel/Axes.cs 442 行 —— 核心轴唯一真相表；Names(表序) 与 RenderOrder(ordinal) 分开；TryParse 规范化；数值轴用网格",
+      "pluginAxes": "IAxisPlugin + PluginHost.Register/Freeze/Collect —— 插件按 plugin-id.axis-id 注册，schema 原子校验，容量上限",
+      "promptContribution": "PromptSlot{System,Primary,Floating} + PromptContribution(PluginId,Key,Slot,Text,Stable)；宿主排序拼接",
+      "systemBlock": "Session/SystemBlock.cs 242 行 —— 三槽位装配；Render(读盘) 与 Build(纯装配) 分离",
+      "floatingTool": "Session/Tools/FloatingContextTool.cs 133 行 —— 每步必调的记账工具，返回占位",
+      "stepper": "Session/Stepper.cs 1677 行 —— 一步的推进；FloatingContextPair 合成一对 tool_use+tool_result 插在时间线最前面",
+      "reclaim": "Session/Reclaim.cs 396 行 —— 工具结果回收；IsFloatingPlaceholder 保证占位不被回收"
+    },
+    "hardConstraints": [
+      "每步冻结一次快照：渲染必须是纯函数，同一步内重复渲染逐字节相同，否则每步破提示词前缀",
+      "顺序是契约：三槽位顺序固定；插件字段按 (pluginId,key) ordinal 排序；轴表按 RenderOrder(ordinal)，不用文化序（ICU 会让 i/I 在 en-US 与 tr-TR 下序不同，静默破前缀）",
+      "占位是机械保证，不靠文案：读数在对话最前面这件事由工具返回固定占位保证，不靠描述里劝模型别调"
+    ],
+    "adjustments": [
+      { "id": "A", "what": "新增 axes 模块（唯一）", "why": "当前没有“轴”模块，但 context（尾块）/ 单次模型调用（effort、temperature）/ webui 控制面三方共享；无私有状态 → Singleton", "scope": "singleton" },
+      { "id": "B", "what": "新增 builtin-tools 模块（唯一）", "why": "只有 plugin-host 管工具，但 floating_context / plan_* / spawn / tell / finish_goal / compact / release / ask 都是编译进 host 的内建工具；AgentLilaraCode 这块约 6000 行 30 文件", "scope": "singleton" },
+      { "id": "C", "what": "turn 拆成 step（一拍，含 N 次模型调用）+ turn（单次调用）", "why": "Stepper 1677 行说明一拍内会有多次模型调用；原 turn 的粒度写错了。建议 turn 不作为对外模块，退化为 step 内部结构", "scope": "per-session" },
+      { "id": "D", "what": "context 职责细化为四件事", "why": "三槽位装配 / 插件贡献合并 / 工具结果回收 / 层压缩，四者判据与粒度各不相同，混在一起会重演 ChannelContextService 那种“什么都干”", "scope": "per-session" },
+      { "id": "E", "what": "顺序提升到端口数据类型（PromptAssembly）", "why": "Link 只表达谁给谁数据，不表达输出排列顺序；节点求值顺序一变提示词字节就变。需 PromptBlock{Slot,Owner,Key,Text,Stable,Order} + PromptAssembly{Leading,Slots}", "scope": "contract" },
+      { "id": "F", "what": "计划树与子会话视图进清单", "why": "SessionPlan+PlanTree(Kernel/Plan.cs 296 行)、SubagentView(63 行) 都进尾块，原目录完全没提。判为 session 私有状态 + context 渲染输入，不独立成模块", "scope": "per-session" }
+    ],
+    "pendingTreeChange": {
+      "status": "未执行 —— 待批准",
+      "designDocs": ["tree-cut.md", "link-design.md", "module-contract.md", "module-catalog.md", "migration-floating-context.md", "session-decomposition.md"],
+      "modulesBefore": 20,
+      "modulesAfterGraph": 22,
+      "modulesAfterSession": 32,
+      "sessionParts": { "perSession": 12, "hostSingleton": 8, "detailDoc": "docs/modularity/session-decomposition.md", "note": "对外仍只暴露 session.actor 的端口，明细在类型图里" },
+      "changes": ["新增 axes", "新增 builtin-tools", "turn 改名为 step 并降级 turn 为非模块", "session 内部拆 20 个部件（12 PerSession + 8 Singleton）"],
+      "edgesToRewire": ["session -> turn 改为 session -> step", "turn -> {context,mind,vision} 改为 step -> {...}", "turn -> {llm,data,plugin-host,logging,channel} 改为 step -> {...}", "新增 step -> axes（请求参数）", "新增 context -> axes（尾块）"],
+      "blocker": "会动到 tree-cut.md 的 14 个切口编号（C2 抽会话端口、C13 webui 独立都引用了 turn），必须一次性改，不能改一半"
+    },
+    "cutOrder": [
+      { "id": "F1", "task": "axes 模块独立（表 + 冻结快照 + 插件轴注册）", "risk": "low" },
+      { "id": "F2", "task": "PromptSlot / PromptContribution / PromptAssembly 进 contracts", "risk": "low" },
+      { "id": "F3", "task": "context 四件事分开", "risk": "medium" },
+      { "id": "F4", "task": "builtin-tools 独立", "risk": "low" },
+      { "id": "F5", "task": "turn → step", "risk": "medium" },
+      { "id": "F6", "task": "浮动占位对（FloatingContextPair + 占位工具 + 回收保护）", "risk": "medium" },
+      { "id": "F7", "task": "计划树 / 子会话视图接进尾块", "risk": "low" }
+    ],
+    "unresolved": [
+      "Q22 Stepper 1677 行里“一拍”是否还含计划树推进与 goal loop 终止判定；属 step 还是 session —— 未读正文",
+      "Q23 Reclaim(396 行) 与 ContextCompaction(100 行) 是两层还是入口关系 —— 未读",
+      "Q24 三协议构造器（Claude Messages / OpenAI Chat / OpenAI Responses）迁入后是否由 llm 模块承担",
+      "Q25 插件 Stable 约束目前只是作者契约，是否要加强成可验证",
+      "Q32 mind 拆成 6 个模块是否真可独立 —— EmotionService↔ConflictService、RetrieveService↔Resurrector 的相互调用未追",
+      "Q33 recurring 并入 session.scheduler 后，SessionEngine.RunAsync(922–1035, 113 行) 的调度循环是搬过去还是留 tick 适配器"
+    ],
+    "resolved": [
+      "Q31（已关闭）：通读 RuntimeSession.cs 986–1305 全文。结论：step = 突发（含 N 次模型调用），turn = 一次模型调用；phase 校准为 12 个阶段，见 module-io-spec.md §5.3"
+    ],
+    "stepPhases": {
+      "count": 12,
+      "detailDoc": "docs/modularity/module-io-spec.md §5.3",
+      "keyFacts": [
+        "_roundCount 是突发数（:1006 每次突发 +1），不是模型调用数",
+        "agentRound 是突发内模型调用序号（:1144 每迭代 +1）",
+        "模型无工具调用时不 break（:1279-1288），注入提醒后继续下一迭代",
+        "只有 endBurst 才回等待保活（:1276），只有 endSession 才 break（:1268）",
+        "同一迭代有两次排空：:1027 入口 + :1147 中途"
+      ]
+    },
+    "hiddenCouplings": [
+      { "id": "H1", "what": "context 直接改写工具表", "evidence": "RuntimeSession.cs:1113-1125 —— L3 锁定时 _tools.Clear() 只留 compact，并改 _agentCore.AdditionalTools", "fix": "变成显式 mutation SetToolTable(only: compact)，否则 context 依赖 builtin-tools 的内部集合" },
+      { "id": "H2", "what": "step 直写 _agentCore 字段", "evidence": "RuntimeSession.cs:1122,1139-1140 —— 每迭代写 EngineType / AdditionalTools", "fix": "变成 llm.invoke(request) 的入参" },
+      { "id": "H3", "what": "同一迭代两次排空", "evidence": "RuntimeSession.cs:1027（入口）+ :1147（中途）", "fix": "图里 inbox 需要两条不同时序的边，或一个 phase 约束；单边会丢“中途注入”语义" }
+    ]
+  },
+
+  "cuts": [
+    {
+      "id": "C1",
+      "title": "把 AgentCoreProcessor 拆成 16 个 csproj",
+      "fixes": ["R2", "R3"],
+      "evidence": "294 个手写 .cs、43458 行共处一个编译单元，15 个“模块”之间只有 using 边，没有引用边可画",
+      "risk": "high",
+      "prerequisite": null,
+      "note": "所有其他切口的前提；其余 10 条都建立在此之上"
+    },
+    {
+      "id": "C2",
+      "title": "抽 ISessionPort / ISessionQuery / ISessionControl 进 contracts",
+      "fixes": ["R2", "R3"],
+      "evidence": [
+        "Tool/Host/SessionAccessImpl.cs:25",
+        "Component/SubAgentAccessAdapter.cs:49,60",
+        "Command/CoreCommand.cs:22",
+        "WebUI/Providers/SessionsProvider.cs:269,303,362,511,618",
+        "WebUI/Services/Alerts/EngineAlertProvider.cs:18",
+        "Tool/Host/ChannelAccessImpl.cs:30"
+      ],
+      "risk": "medium",
+      "prerequisite": "C1",
+      "note": "一处抽象换掉四个模块的硬绑；session 入度 8 → 1"
+    },
+    {
+      "id": "C3",
+      "title": "断 SessionEngine <-> RuntimeSession 双向环",
+      "fixes": ["R1"],
+      "evidence": [
+        "Engine/Session/SessionEngine.cs:97 session.SetSessionEngine(this)",
+        "Engine/Session/RuntimeSession.cs:90,282",
+        "RuntimeSession.cs:481,490,671,628 反调 ClaimChannel/SubscribeChannel/CreateFromEscalateAsync/AnyResourceBlocksExit"
+      ],
+      "risk": "high",
+      "prerequisite": "C1",
+      "note": "拆出 turn 模块的前提；不先断环，拆开的两个模块仍互相引用"
+    },
+    {
+      "id": "C4",
+      "title": "FileToolBase 从 Plugins/ 上收 contracts",
+      "fixes": ["R2"],
+      "evidence": ["Plugins/FileToolKit.Shared/FileToolBase.cs:11", "被 Plugin.DocumentTools:13 / Plugin.FileOps:15 / Plugin.FileTools:18 引用"],
+      "risk": "low",
+      "prerequisite": "C1",
+      "note": "FileToolKit 入度 3 → 根；同时修好“插件书写契约不在 SDK”"
+    },
+    {
+      "id": "C5",
+      "title": "IInjectProvider / InjectContext 上收 contracts，删 WorkingTools 对主程序的引用",
+      "fixes": ["R1"],
+      "evidence": [
+        "Plugins/Plugin.WorkingTools/Plugin.WorkingTools.csproj:14-16",
+        "RetainListTool.cs:17", "TaskListTool.cs:16", "ThinkingNotesTool.cs:15"
+      ],
+      "risk": "medium",
+      "prerequisite": "C1",
+      "note": "唯一的插件 -> 宿主反向边"
+    },
+    {
+      "id": "C6",
+      "title": "ISubEngine 上下文去掉 8 个具体 XxxRepository",
+      "fixes": ["R2"],
+      "evidence": ["Engine/Core/ISubEngine.cs:79-86", "Engine/Core/MasterEngine.cs:377-394 手工 new 14 个仓储"],
+      "risk": "high",
+      "prerequisite": "C1",
+      "note": "data 入度 N → 1；接口进 contracts，实现留 Data"
+    },
+    {
+      "id": "C7",
+      "title": "4 处进程级 static 改注入",
+      "fixes": ["R5"],
+      "evidence": [
+        "Logging/SignalContext.cs:8-9",
+        "Core/CoreBase.cs:23",
+        "Adapter/ImageStorage.cs:20-23",
+        "Engine/Session/Brain/SessionBrainRuntime.cs:12"
+      ],
+      "risk": "medium",
+      "prerequisite": "C1",
+      "note": "这些是假边：静态全局让所有模块隐式相连，不修则前面所有边界都只是名义上的"
+    },
+    {
+      "id": "C8",
+      "title": "WebUI 反射读私有字段改走查询端口",
+      "fixes": ["R3"],
+      "evidence": ["WebUI/Providers/SessionsProvider.cs:221-232 读取 RuntimeSession._roundCount"],
+      "risk": "low",
+      "prerequisite": "C2",
+      "note": "隐式边：编译期看不见，运行期静默返回 0"
+    },
+    {
+      "id": "C9",
+      "title": "Graph 三项目合一，GraphSandbox 移出生产树",
+      "fixes": ["R2"],
+      "evidence": ["GraphRuntime 有 3 个消费者：AgentCoreProcessor.csproj:45 / GraphModules.csproj:12 / GraphSandbox.csproj:13"],
+      "risk": "low",
+      "prerequisite": "C1",
+      "note": "graph 入度 3 → 1"
+    },
+    {
+      "id": "C10",
+      "title": "AgentCoreProcessor.Tests 去掉对 Plugin.Email 的引用",
+      "fixes": ["R2"],
+      "evidence": ["AgentCoreProcessor.Tests/AgentCoreProcessor.Tests.csproj:17"],
+      "risk": "low",
+      "prerequisite": "C1",
+      "note": "测试 -> 插件的反向边"
+    },
+    {
+      "id": "C11",
+      "title": "TFM 统一到 net10.0",
+      "fixes": ["R4"],
+      "evidence": ["AgentCoreProcessor.csproj:5 net10.0", "AgentLilara.PluginSDK.csproj:4 net8.0", "22 个插件 net8.0", "Directory.Build.props:7 硬编码 net10.0 插件输出目录"],
+      "risk": "medium",
+      "prerequisite": "C1",
+      "note": "根若停在 net8，宿主用到 net10 API 就无法经根暴露，树在类型层面断裂"
+    },
+    {
+      "id": "C12",
+      "title": "channel 独立成模块，claim / subscribe / release 所有权从 SessionEngine 移出",
+      "fixes": ["R2", "R3"],
+      "evidence": [
+        "频道域现散在 11 个文件 1346 行，横跨 context / recurring / session / plugin-host / commands 五个模块",
+        "Engine/Context/ChannelContextService.cs(521) 被归在 Context，实为频道域核心服务",
+        "Engine/Worker/ChannelStateManager.cs(47) 是 static 类且直接读 PathConfig.StoragePath，与 Database/Channel 表并存",
+        "Engine/Session/SessionEngine.cs:675,688,724 持有 claim 所有权"
+      ],
+      "risk": "high",
+      "prerequisite": "C1；与 C3 必须一起设计",
+      "note": "新增 Lilara.Channel 模块；session / turn / adapters 改经 IChannelPort 调用。连带待查：频道亲和度似乎同时存在 DB 列与 ChannelState/*.json 两处"
+    },
+    {
+      "id": "C13",
+      "title": "WebUI 从宿主摘出，独立进程，与 host 只经 HTTP / WebSocket API 通信",
+      "fixes": ["R1", "R2"],
+      "evidence": [
+        "AgentCoreProcessor.csproj:1 Sdk=Microsoft.NET.Sdk.Web（宿主现在兼作 web 宿主）",
+        "Program.cs:104-117 装配时注册 12 个内建 Provider",
+        "现有五处 OfType<SessionEngine>() 与 SessionsProvider.cs:221-232 反射读 _roundCount，全部依赖同进程 DI"
+      ],
+      "risk": "high",
+      "prerequisite": "C1 + C2（端口必须先 DTO 化）+ C8",
+      "note": "摘除后 host 43458 → 33766 行，可降为 Microsoft.NET.Sdk + Exe。C2 从「优化项」升级为「硬前置」"
+    },
+    {
+      "id": "C14",
+      "title": "断 host / plugin-host 对 WebUI.Shell.ProviderRegistry 的依赖，插件卡片能力下线",
+      "fixes": ["R1"],
+      "evidence": [
+        "Engine/Core/MasterEngine.cs:99 public WebUI.Shell.ProviderRegistry? ProviderRegistry",
+        "Tool/Host/PluginLoader.cs:25,35 依赖 WebUI.Shell.ProviderRegistry",
+        "Tool/Host/PluginLoader.cs:253,254,328 加载 IWebUIProvider / WebUIProviderAttribute",
+        "Program.cs:9,104-117"
+      ],
+      "risk": "medium",
+      "prerequisite": "C13",
+      "note": "已确认策略：暂不配插件卡片，webui 只管内建 Provider。因此 IWebUIProvider / WebUIProviderAttribute / WebUICard 契约从 contracts 撤出，卡片模型（CardDefinition / CardSchema / PageDefinition / DataSource / IPageContext）迁入 webui 项目"
+    }
+  ],
+
+  "currentViolations": [
+    {
+      "rule": "R1",
+      "module": "plugin-host",
+      "evidence": "Engine/Core/MasterEngine.cs:99 暴露 WebUI.Shell.ProviderRegistry；Tool/Host/PluginLoader.cs:25,35 依赖它；Program.cs:104-117 注册 12 个 Provider",
+      "impact": "plugin-host -> webui 反向依赖，是 webui 无法拆出的直接障碍；此前遗漏未计"
+    },
+    {
+      "rule": "R2",
+      "module": "channel",
+      "evidence": "频道域散在 11 个文件 1346 行，横跨 context(578) / recurring(171) / session(29+3 方法) / plugin-host(409) / commands(136) / host(23)",
+      "impact": "一个领域没有单一所有者；同一状态（亲和度、占用）分散在 DB 列、json 文件、SessionEngine 三处"
+    },
+    {
+      "rule": "R1",
+      "module": "plugin-leaves",
+      "evidence": "Plugins/Plugin.WorkingTools/Plugin.WorkingTools.csproj:14-16 引用 AgentCoreProcessor",
+      "impact": "唯一破坏 ALC 隔离的插件；绑死宿主程序集，宿主改内部接口即编译期断裂"
+    },
+    {
+      "rule": "R1",
+      "module": "session",
+      "evidence": "SessionEngine.cs:97 <-> RuntimeSession.cs:90,282",
+      "impact": "两类无法分开单测，也无法拆成 session / turn 两个模块"
+    },
+    {
+      "rule": "R2",
+      "module": "session",
+      "evidence": "11 处 OfType<SessionEngine>()：Tool/Host/SessionAccessImpl.cs:25、Component/SubAgentAccessAdapter.cs:49,60、Command/CoreCommand.cs:22、WebUI/Providers/SessionsProvider.cs:269,303,362,511,618、WebUI/Services/Alerts/EngineAlertProvider.cs:18、Tool/Host/ChannelAccessImpl.cs:30",
+      "impact": "session 装配入度 8，违反单父；四个模块同时硬绑具体实现"
+    },
+    {
+      "rule": "R2",
+      "module": "graph",
+      "evidence": "GraphRuntime 三消费者：AgentCoreProcessor.csproj:45、GraphModules.csproj:12、GraphSandbox.csproj:13",
+      "impact": "graph 装配入度 3"
+    },
+    {
+      "rule": "R2",
+      "module": "contracts",
+      "evidence": "Plugins/FileToolKit.Shared/FileToolBase.cs:11 被 3 个插件引用，且不在契约层",
+      "impact": "出现第二个“可被多方引用的共享库”，树破功；同时插件书写契约缺位"
+    },
+    {
+      "rule": "R2",
+      "module": "data",
+      "evidence": "Engine/Core/ISubEngine.cs:79-86 把 8 个具体 XxxRepository 类型放进系统上下文；Database/ 32 文件零 I*Repository",
+      "impact": "data 的具体类型穿透到每个子引擎，入度等于子引擎数量"
+    },
+    {
+      "rule": "R3",
+      "module": "webui",
+      "evidence": "SessionsProvider.cs:221-232 反射读 RuntimeSession._roundCount",
+      "impact": "编译期不可见的隐式边；RuntimeSession 改结构后静默返回 0"
+    },
+    {
+      "rule": "R5",
+      "module": "multiple",
+      "evidence": "SignalContext.cs:8-9、CoreBase.cs:23、ImageStorage.cs:20-23、SessionBrainRuntime.cs:12",
+      "impact": "四个进程级 static 让模块边界失效，并阻断多实例与单测"
+    }
+  ],
+
+  "acceptance": [
+    {
+      "id": "A1",
+      "check": "dotnet list <每个 proj> reference 汇总为邻接表，断言除装配根外每个节点 assembly 入度 == 1",
+      "tool": "shell"
+    },
+    {
+      "id": "A2",
+      "check": "CI grep 断言 using AgentCoreProcessor.Engine.Session 不出现在 adapters / webui / commands / plugin-host 的源码里",
+      "tool": "shell"
+    },
+    {
+      "id": "A3",
+      "check": "每个模块能 dotnet test 独立跑通（最狠的一条：跑不通说明还有隐藏耦合）",
+      "tool": "dotnet_test"
+    },
+    {
+      "id": "A4",
+      "check": "所有 api 边的两端载荷类型都定义在 contracts 里，且不出现宿主类型（可用序列化往返测试兜底）",
+      "tool": "dotnet_test"
+    },
+    {
+      "id": "A5",
+      "check": "webui 项目不引用任何实现项目，只引用 contracts；host 不引用 webui",
+      "tool": "shell"
+    }
+  ],
+
+  "openQuestions": [
+    {
+      "id": "Q1",
+      "question": "AgentCoreProcessor/MCP/（4 文件 405 行）归 plugin-host 还是 adapters？",
+      "currentGuess": "plugin-host",
+      "reason": "未读其源码，仅按“工具协议”猜测"
+    },
+    {
+      "id": "Q2",
+      "question": "AgentCoreProcessor/Models/（3 文件 209 行）是纯 DTO（归 contracts）还是含逻辑（归 data）？",
+      "currentGuess": "data",
+      "reason": "未读源码"
+    },
+    {
+      "id": "Q3",
+      "question": "turn 与 session 的切分线在哪：RuntimeSession.cs 里 core 切换、频道 connect、Bootstrap、组件启停是否都留在 session？",
+      "currentGuess": "只有“一轮执行”进 turn，其余留 session",
+      "reason": "需要通读 RuntimeSession.cs 1591 行才能定，本轮只统计了结构"
+    },
+    {
+      "id": "Q4",
+      "question": "console-client 是否接 contracts 变成单根树，还是保留为第二棵装配树？",
+      "currentGuess": "保留森林（它是独立应用，当前零引用）",
+      "reason": "当前 4 文件 631 行、零 ProjectReference"
+    },
+    {
+      "id": "Q5",
+      "question": "频道亲和度到底有几个存储？ChannelStateManager 读 ChannelState/{id}.json，ChannelRepository 又有 Channel 表，哪个是权威？",
+      "currentGuess": "json 优先、DB 作 fallback（LoadConfig 的 dbAffinity 参数暗示）",
+      "reason": "只读了 ChannelStateManager 47 行全文与 LoadConfig 签名，未追 ChannelContextPersistence 与迁移路径"
+    },
+    {
+      "id": "Q6",
+      "question": "webui 独立后，host 侧 API 的粒度：是给 17 个 Provider 各配一组端点，还是收敛成少数几个通用查询端点？",
+      "currentGuess": "按 Provider 分资源，但共用鉴权与分页",
+      "reason": "需要先看 WebUI/Services/WebAuthService.cs 与 Shell/DataSourceManager.cs 才能定"
+    },
+    {
+      "id": "Q7",
+      "question": "host 内部是否还有除 WebUI 之外的宿主隐蔽依赖（如 WebUI/Services 里的 SystemMonitor、LogStreamService 是否被 Engine 用到）？",
+      "currentGuess": "无（grep 未发现 Engine/Tool/Adapter 引用 WebUI.Services）",
+      "reason": "只 grep 了 AgentCoreProcessor.WebUI 前缀，未逐一核对全部 12 个 Services 文件"
+    }
+  ],
+  "decisions": {
+    "report": "docs/modularity/verification-report.md",
+    "finalDoc": "docs/modularity/decisions.md",
+    "status": "已定稿（D1–D8 全部按下列 leaning 采纳）",
+    "rule": "本段是唯一权威：openQuestions / moduleContract.unresolved / migrationImpact.unresolved 里已被关闭的项以本段为准。",
+    "resolvedCount": 23,
+    "resolvedIds": ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q11", "Q13", "Q14", "Q15", "Q16", "Q19", "Q21", "Q23", "Q24", "Q26", "Q27", "Q28", "Q29", "Q30", "Q32"],
+    "resolvedHighlights": {
+      "Q1": "MCP/ 归 plugin-host（MCP 客户端，把外部 server 工具桥成 ITool）",
+      "Q2": "Models/ 归 llm（LLM 协议类型），先前判 data 是错的",
+      "Q3": "step = 突发（N 次模型调用），turn = 一次模型调用（step 内部）",
+      "Q5": "亲和度两个存储：ChannelState/{id}.json 优先、DB Channel.Affinity 兜底；唯一调用点 ChannelProvider.cs:211",
+      "Q8": "实际两套在用：ModuleBus（组件间）+ EventBus（全局）；ILoopBus 是半迁移残留，应删",
+      "Q13": "ModuleDescriptor 无 Scope/Instance 字段，generator 只遍历 methods+properties",
+      "Q19": "ClassId 无守护，且 GraphManager._classes 三处赋值不一致（:322 静默覆盖）",
+      "Q21": "有优雅退出（Program.cs:473 ApplicationStopping），但绑在 Sdk.Web lifetime 上",
+      "Q24": "本项目 Client/ 已有多协议（ClaudeModelClient + OpenAIModelClient + ModelClientFactory），三协议构造器迁入后归 llm",
+      "Q26": "LoadHistory 1000 行是有意截断（尾部优先 + 崩溃半截处理）",
+      "Q27": "ArchiveAsync 空实现是有意（Phase 1-6 范围），全仓零调用点",
+      "Q28": "CreateSession 156 行是 9 步线性装配脚本，归 session.assembly，不宜再拆",
+      "Q29": "_forceExitAttempts 是两次机会逃生口（:633 检查 / :639 递增 / :1272 重置），保留为策略",
+      "Q32": "mind 可拆 5 域 + 壳；ConflictService 归 mind.write（其注释自述由 Writer/MindEngine 持有）",
+      "Q33": "SessionEngine.RunAsync 30 秒 tick 混了 6 件事，应拆成 tick 分发器 + 5 个订阅者"
+    },
+    "answerFromLeaning": true,
+    "decided": [
+      { "id": "D1", "question": "复合模块的 [Module] 标在哪", "options": ["interface", "class"], "leaning": "interface（与现有 AttributeTargets.Interface 一致）" },
+      { "id": "D2", "question": "实例图要不要支持嵌套引用另一类型图", "options": ["支持", "先只允许一层"], "leaning": "先只允许一层（递归会让 有效图 = 类型图 ⊕ overlay 的校验复杂度陡增）" },
+      { "id": "D3", "question": "实例图 overlay 的持久化格式", "options": ["扩 SessionPersistence 三文件", "新增第四文件", "只存扁平变量值不存结构增量"], "leaning": "只存扁平变量值（现有 SessionStateSnapshot 14 字段已够）" },
+      { "id": "D4", "question": "swapClass 热换时正在拍内的实例怎么办", "options": ["等拍结束", "打断", "拒绝（有活跃拍时不许换）"], "leaning": "等拍结束（与“失败零副作用”一致）" },
+      { "id": "D5", "question": "channel.context 在拍内做 IO 要不要改", "options": ["改成拍前装载（严格纯求解）", "允许拍内 IO（放宽原则）"], "leaning": "改成拍前装载，但这是行为改动（现有 :1032 await BuildRoundAsync 就在拍内）" },
+      { "id": "D6", "question": "频道亲和度以谁为权威", "options": ["json", "DB 列", "统一到 IChannelStore 端口"], "leaning": "统一到 IChannelStore（两个实现二选一，不做双写）" },
+      { "id": "D7", "question": "mind 拆几个", "options": ["5 域（Conflict 归 write）", "6 域（Conflict 独立）", "不拆"], "leaning": "5 域" },
+      { "id": "D8", "question": "插件 Stable 约束要不要可验证", "options": ["保持作者契约", "加正文哈希比对"], "leaning": "先保持作者契约（ALC 明确说宿主不证明正文稳定）" }
+    ],
+    "newFindings": [
+      { "id": "N1", "what": "ILoopBus 是半迁移残留：ModuleBus.cs:6 声称已替代它，但接口仍在，EngineModule.Attach(:43) / LoopControlModule.Attach(:25) 是空实现", "action": "拆模块时删掉，不要搬进新结构" },
+      { "id": "N2", "what": "GraphManager._classes 三处赋值不一致：:322 直接赋值（静默覆盖），:432/:641 有 ContainsKey 检查", "action": "补 U9 的 ClassId 注册表 + 重复检测" }
+    ]
+  }
+}
