@@ -45,6 +45,7 @@
     <ProjectReference Include="..\src\AgentLilara.GraphRuntime\AgentLilara.GraphRuntime.csproj" />
     <ProjectReference Include="..\src\Lilara.Logging\Lilara.Logging.csproj" />
     <ProjectReference Include="..\src\Lilara.Data\Lilara.Data.csproj" />
+    <ProjectReference Include="..\src\Lilara.Context\Lilara.Context.csproj" />
   </ItemGroup>
 
   <ItemGroup>

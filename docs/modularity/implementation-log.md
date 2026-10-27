@@ -264,3 +264,7 @@ Directory.Build.props 增加 HostTargetFramework，主程序 TargetFramework 与
 ### C1：Lilara.Data
 
 Database 全部 32 文件迁入 src/Lilara.Data，保持命名空间且均为 100% 原文迁移。库引用 sqlite-net-pcl 1.9.172、Microsoft.Data.Sqlite 8.0.0、Newtonsoft.Json 13.0.4；宿主单向引用。对宿主与测试声明 InternalsVisibleTo，保留仓储 internal 访问范围，避免本次扩大公开 API。离线缓存还原、主程序编译与 491 项主程序测试通过。仓储接口、进程静态状态与最终装配规则仍需后续改造；未启动真实适配器/模型。
+
+### C1：Lilara.Context 首切
+
+Prompts 两文件与 Axes 五文件迁入 src/Lilara.Context，均保持源码原文、命名空间和 internal；通过友元宿主/测试维持访问。新库只依赖 BCL。ContextAssembler、SessionContextHost 与频道上下文仍留宿主，因此本次是 Context 部分提取。离线缓存还原、主程序构建、491 项主程序测试通过；未跑真实模型冒烟。
