@@ -304,3 +304,7 @@ EvalContext 新增 PortTransfers（实际消费连线的三态、载荷类型、
 ### D1 前置：激活影子范围与批次重置
 
 GraphActivationShadow 显式记录 Comparable/Matches/Reason，仅默认普通消息权重 5 与 mention 消息可比；系统输入、timeout、wake、取消和非默认普通权重标为不可比较。消息激活结束及入口/轮中排空后按实际队列计数同步影子，修复 _seen 保留上一批深度及超阈值批次残留导致的多周期误报。新增连续等深度批次、超阈值批次、19 条边界及不可比原因测试；主程序 513 项通过。生产激活仍用旧判定；未完成 D1 全路径对拍、Inline/D5 时序证伪或真实模型冒烟，不据此启动 D2。
+
+### 数据流日志入库集成与退出重复写修复
+
+使用临时 LogDatabase/LogWriter/SignalContext 跑真实 KeywordGraphRunner，LogQuery 查询成功/异常拍，验证 class/instance/trace/seq、父 span、Known 端口流、失败节点与求值顺序，确认不记录载荷正文。测试恢复静态 writer/minLevel，并清理对应 SQLite 连接池。集成验证发现 LogWriter 退出时可能重写上一批已提交事件，现于尾部排空前清空批次；新增等待提交后退出的确定性回归，验证事件仅一条。主程序 516 项测试通过、diff --check 通过。未验证 WebUI 展示或真实适配器/模型；完整旧信号迁移仍待后续。

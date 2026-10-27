@@ -72,6 +72,9 @@ public class LogWriter : IDisposable
             catch { }
         }
 
+        // The preceding batch has already been submitted. Only drain unread events
+        // during shutdown; otherwise cancellation after WriteBatch replays that batch.
+        batch.Clear();
         while (reader.TryRead(out var remaining))
         {
             batch.Add(remaining);
