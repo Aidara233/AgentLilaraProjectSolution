@@ -372,3 +372,7 @@ FileAdapter 实现迁入 Lilara.Adapters/File，以构造委托归档附件；�
 ### Adapters：HTTP桥宿主查询端口
 
 HTTP目录迁入Lilara.Adapters，新增IAdapterHostAccess与独立频道/消息DTO；宿主AdapterHostAccess代理原MasterEngine/Session查询与busy/idle。IEngineAwareAdapter移除，以IHostAwareAdapter端口注入替代，AdapterManager对已有/新注册适配器保持注入时机。构造注入配置路径与本地时间转换，宿主工厂传原路径/TimeUtil，查询/排序/轮询逻辑保留。Adapters显式引用AspNetCore框架及Web SDK原隐式扩展命名空间。6项假宿主测试覆盖查询排序、时间字符串、未就绪/状态/频道与配置重载保留端口。完整sl n构建与623项测试通过（主程序568、图运行时38、沙箱17），diff检查通过。未启动Kestrel、真实适配器或模型；send wait轮询/WebSocket未做集成冒烟，既有依赖替代/弃用警告仍在。
+
+### HTTP send 端口迁移回归与空内容早返回
+
+通过DefaultHttpContext和假IAdapterHostAccess直接验证发送前基线查询顺序、wait=false接受、无宿主/未就绪接受、wait=true零超时的burst返回形状。发现空内容写出错误后仍继续投递，补return并验证拒绝后不查询/不投递。HTTP定向11项通过；完整解决方案测试628项通过（主程序573、GraphRuntime38、沙箱17），diff检查通过。未启动监听、不联网；正超时轮询、WebSocket真实通信仍未验证。

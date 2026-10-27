@@ -30,10 +30,12 @@ public sealed class HttpBridgeHostTests
         public Task<List<AdapterMessageView>> SearchMessagesByChannelAsync(int id, string keyword, int offset, int limit) => Messages("search:" + keyword + ":" + offset);
     }
 
-    private static async Task<JObject> Request(HttpBridgeAdapter adapter, string handler, string query = "")
+    private static async Task<JObject> Request(HttpBridgeAdapter adapter, string handler, string query = "", string? payload = null)
     {
         var context = new DefaultHttpContext();
         context.Request.QueryString = new QueryString(query);
+        using var input = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(payload ?? ""));
+        context.Request.Body = input;
         using var body = new MemoryStream();
         context.Response.Body = body;
         await (Task)typeof(HttpBridgeAdapter).GetMethod(handler, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(adapter, new object[] { context })!;
@@ -75,6 +77,72 @@ public sealed class HttpBridgeHostTests
         var status = await Request(adapter, "HandleStatusAsync");
         Assert.False((bool)status["engine"]!["isIdle"]!);
         Assert.True((bool)status["engine"]!["busyWorker"]!);
+    }
+
+    [Fact]
+    public async Task SendQueriesBaselineBeforeDeliveringAndAcceptsWithoutWaiting()
+    {
+        var adapter = new HttpBridgeAdapter("test", new());
+        var host = new Host();
+        adapter.AttachHost(host);
+        IncomingMessage? received = null;
+        adapter.OnMessageReceived += message =>
+        {
+            Assert.Equal(new[] { "find:http_test", "recent:1" }, host.Calls);
+            host.Calls.Add("received");
+            received = message;
+        };
+        var result = await Request(adapter, "HandleSendAsync", payload: """{"channel":"http_test","content":"hello","wait":false}""");
+        Assert.True((bool)result["accepted"]!);
+        Assert.Equal("hello", received!.Content);
+        Assert.Equal(new[] { "find:http_test", "recent:1", "received" }, host.Calls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SendWithoutReadyHostIsAccepted(bool attach)
+    {
+        var adapter = new HttpBridgeAdapter("test", new());
+        var host = new Host { IsReady = false };
+        if (attach) adapter.AttachHost(host);
+        var count = 0;
+        adapter.OnMessageReceived += _ => count++;
+        var result = await Request(adapter, "HandleSendAsync", payload: """{"content":"hello","wait":true}""");
+        Assert.True((bool)result["accepted"]!);
+        Assert.Equal(1, count);
+        Assert.Empty(host.Calls);
+    }
+
+    [Fact]
+    public async Task ZeroTimeoutReturnsBurstShapeWithoutPolling()
+    {
+        var adapter = new HttpBridgeAdapter("test", new());
+        var host = new Host();
+        adapter.AttachHost(host);
+        var result = await Request(adapter, "HandleSendAsync", payload: """{"channel":"http_test","content":"hello","wait":true,"timeoutMs":0}""");
+        Assert.True((bool)result["ok"]!);
+        Assert.True((bool)result["timedOut"]!);
+        Assert.False((bool)result["burstSeen"]!);
+        Assert.Empty((JArray)result["replies"]!);
+        Assert.NotNull(result["durationMs"]);
+        Assert.Null(result["accepted"]);
+        Assert.Equal(new[] { "find:http_test", "recent:1" }, host.Calls);
+    }
+
+    [Fact]
+    public async Task EmptyContentIsRejectedBeforeQueryOrDelivery()
+    {
+        var adapter = new HttpBridgeAdapter("test", new());
+        var host = new Host();
+        adapter.AttachHost(host);
+        var count = 0;
+        adapter.OnMessageReceived += _ => count++;
+        var result = await Request(adapter, "HandleSendAsync", payload: """{"content":"  ","wait":false}""");
+        Assert.False((bool)result["ok"]!);
+        Assert.Equal("content required", (string?)result["error"]);
+        Assert.Equal(0, count);
+        Assert.Empty(host.Calls);
     }
 
     [Fact]

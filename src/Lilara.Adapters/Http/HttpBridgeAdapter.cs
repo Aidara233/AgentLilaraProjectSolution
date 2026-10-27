@@ -272,7 +272,10 @@ namespace AgentCoreProcessor.Adapter
                     body = await reader.ReadToEndAsync();
                 var req = ParseSendRequest(body);
                 if (string.IsNullOrWhiteSpace(req.Content))
+                {
                     await WriteJson(ctx, new JObject { ["ok"] = false, ["error"] = "content required" });
+                    return;
+                }
 
                 var channel = string.IsNullOrWhiteSpace(req.Channel) ? config.DefaultChannel : req.Channel;
                 var msg = new IncomingMessage
