@@ -1,0 +1,21 @@
+{
+  "classId": "preset.session-mention",
+  "kind": "static",
+  "version": 1,
+  "nodes": [
+    { "id": "in", "type": "on.message" },
+    { "id": "mention", "type": "event.mention" },
+    { "id": "gate", "type": "gate.if" },
+    { "id": "session", "type": "read.mount", "params": { "name": "sessionId" } },
+    { "id": "note", "type": "read.const", "params": { "value": "[会话图提示] 当前消息提及了你，请结合消息内容处理。" } },
+    { "id": "inject", "type": "sink.inject" }
+  ],
+  "links": [
+    { "from": "in.event", "to": "mention.event" },
+    { "from": "in.event", "to": "gate.event" },
+    { "from": "mention.result", "to": "gate.cond" },
+    { "from": "gate.event", "to": "inject.event" },
+    { "from": "session.value", "to": "inject.sessionRef" },
+    { "from": "note.value", "to": "inject.text" }
+  ]
+}

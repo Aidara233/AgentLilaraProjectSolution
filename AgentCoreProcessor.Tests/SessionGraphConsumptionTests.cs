@@ -97,6 +97,36 @@ public sealed class SessionGraphConsumptionTests
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
 
+    [Theory]
+    [InlineData(true, true, 1)]
+    [InlineData(true, false, 0)]
+    [InlineData(false, true, 0)]
+    public async Task PublishedMentionPresetLoadsFromDefaultDirectory(bool active, bool mention, int expected)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "preset-session-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var access = new WireAccessImpl(root);
+            access.Mount("""{"version":1,"mounts":[{"scope":"session-type","scopeKey":"channel","classId":"preset.session-mention"}]}""");
+            Assert.False(File.Exists(Path.Combine(root, "Graphs", "preset.session-mention.json")));
+            var manager = GraphManager.Open(root, active);
+            var first = new RuntimeSession(new CreateSessionSpec { Type = "channel" }, new[] { "basic-tools" });
+            var second = new RuntimeSession(new CreateSessionSpec { Type = "channel" }, new[] { "basic-tools" });
+            first.SetGraphRunnerProvider(() => manager.RunnersForSession(first.SessionId, first.Type));
+            second.SetGraphRunnerProvider(() => manager.RunnersForSession(second.SessionId, second.Type));
+            await first.ConsumeSessionGraphsAsync(new[] { (42, new UserMessage { Id = 1, Content = "hello" }, mention) });
+            var field = typeof(RuntimeSession).GetField("_history", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var history = (List<Message>)field.GetValue(first)!;
+            Assert.Equal(expected, history.Count);
+            if (expected != 0) Assert.Contains("[会话图提示]", history[0].Content);
+            Assert.Empty((List<Message>)field.GetValue(second)!);
+            Assert.NotSame(Assert.Single(manager.RunnersForSession(first.SessionId, first.Type)),
+                Assert.Single(manager.RunnersForSession(second.SessionId, second.Type)));
+            Assert.Empty(manager.RunnersForSession("task-session", "task"));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
     [Fact]
     public async Task ProviderFailureDoesNotAbortSessionInput()
     {

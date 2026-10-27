@@ -308,3 +308,7 @@ GraphActivationShadow 显式记录 Comparable/Matches/Reason，仅默认普通�
 ### 数据流日志入库集成与退出重复写修复
 
 使用临时 LogDatabase/LogWriter/SignalContext 跑真实 KeywordGraphRunner，LogQuery 查询成功/异常拍，验证 class/instance/trace/seq、父 span、Known 端口流、失败节点与求值顺序，确认不记录载荷正文。测试恢复静态 writer/minLevel，并清理对应 SQLite 连接池。集成验证发现 LogWriter 退出时可能重写上一批已提交事件，现于尾部排空前清空批次；新增等待提交后退出的确定性回归，验证事件仅一条。主程序 516 项测试通过、diff --check 通过。未验证 WebUI 展示或真实适配器/模型；完整旧信号迁移仍待后续。
+
+### 发布基础会话图
+
+新增 preset.session-mention.json，on.message→event.mention→gate.if→sink.inject，以 read.mount(sessionId) 指向当前会话；复用现有 Graphs JSON 构建/发布复制规则。新增真实默认目录回退加载及 active/shadow、普通消息/提及、同类实例与跨类型隔离测试。主程序 519 项测试、diff --check 通过；未进行真实模型轮次冒烟。
