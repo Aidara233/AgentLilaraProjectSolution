@@ -536,3 +536,7 @@ TakeOverSessionPool/TakeOverChannelPool 在 _poolLock 内先检查 newSessionId 
 ### 升级创建必须取得预期频道占用
 
 CreateFromEscalateAsync检查接管返回值，失败时在spec/CreateSession前抛InvalidOperationException。TakeOverChannelPool兼容增加可选expectedSessionId，在_poolLock内核对当前占用者，升级传原express id，防止旧会话夺取第三方claim。新增4项回归覆盖无池、仅Listen、其他占用者及竞争接管；拒绝时会话表/池成员不增加，原状态保持。相关25项、完整sln构建及792项测试通过（主程序682、邮件52、GraphRuntime41、沙箱17），diff检查通过。创建失败回滚票据和C12整体未完成，未运行真实模型/平台冒烟。
+
+### compact 活跃持有者检查
+
+TakeOverSessionPool增加可选expectedSessionId并在_poolLock内核对，默认保持历史寻址兼容。CreateFromCompact在同一锁内检查旧成员池是否存在；有池时要求当前活跃身份等于调用者，接管拒绝即抛错且不继续创建，无池维持既有独立创建路径。新增3项回归覆盖根/子池历史调用拒绝、当前持有者成功、索引不变及生产入口拒绝前不创建。相关27项、完整sln构建及795项测试通过（主程序685、邮件52、GraphRuntime41、沙箱17），diff检查通过。未实现创建失败回滚票据，未运行真实模型compact或平台冒烟；C12/D1/D5及全面信号迁移仍未完成。

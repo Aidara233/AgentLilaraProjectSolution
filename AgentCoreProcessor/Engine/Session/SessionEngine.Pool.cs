@@ -43,11 +43,12 @@ internal partial class SessionEngine
     }
 
     /// <summary>按旧成员定位接管顶层或子池，活跃身份与新成员索引在同一锁内发布。</summary>
-    internal bool TakeOverSessionPool(string oldSessionId, string newSessionId)
+    internal bool TakeOverSessionPool(string oldSessionId, string newSessionId, string? expectedSessionId = null)
     {
         lock (_poolLock)
         {
             if (!_poolByMember.TryGetValue(oldSessionId, out var pool)) return false;
+            if (expectedSessionId is not null && pool.ActiveSessionId != expectedSessionId) return false;
             if (_poolByMember.TryGetValue(newSessionId, out var existing) && !ReferenceEquals(existing, pool))
                 return false;
             pool.TakeOver(newSessionId);

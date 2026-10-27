@@ -219,7 +219,12 @@ internal partial class SessionEngine
         // 新 session 创建后 connect_channel 会幂等命中（SessionPool.Claim 同 id 重入成功），
         // 不再有 claim 短暂释放的中间态（原 ReleaseSessionClaims → 重新 claim）。
         var newId = Guid.NewGuid().ToString("N")[..12];
-        TakeOverSessionPool(oldSession.SessionId, newId);
+        lock (_poolLock)
+        {
+            if (_poolByMember.ContainsKey(oldSession.SessionId)
+                && !TakeOverSessionPool(oldSession.SessionId, newId, oldSession.SessionId))
+                throw new InvalidOperationException($"会话 {oldSession.SessionId} 无法 compact：当前活跃会话已变化或接管冲突");
+        }
 
         // spec.InputPorts 留空：build port spec 全靠 InitActions.connect_channel 在 BootstrapAsync
         // 阶段一次性完成 claim + 订阅 + 频道上下文载入 —— 与 escalate 路径行为对齐，
