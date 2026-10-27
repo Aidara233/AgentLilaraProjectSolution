@@ -98,7 +98,7 @@ internal partial class SessionEngine
         session.ConfigureCores(profile.AllowedCoreConfigs, profile.DefaultCoreConfig);
         var messageEngine = _ctx.GetActiveEnginesSnapshot()
             .OfType<Messaging.MessageEngine>().FirstOrDefault();
-        if (messageEngine != null) session.SetMessageEngine(messageEngine);
+        if (messageEngine != null) session.SetOutputHandler((channelId, text) => messageEngine.SendOutgoing(new EngineOutgoingMessage { ChannelId = channelId, Content = text, SentByBot = true }));
 
         // 根据 PortSpec 创建输入端口并订阅 MessageEngine
         foreach (var (portName, portSpec) in spec.InputPorts)
@@ -447,7 +447,7 @@ internal partial class SessionEngine
                 session.SetModelFactory(binding => new Core.AgentCoreModelAdapter(binding));
                 session.ConfigureCores(profile.AllowedCoreConfigs, profile.DefaultCoreConfig, state.ActiveCoreConfig);
                 var messageEngine = _ctx.GetActiveEnginesSnapshot().OfType<Messaging.MessageEngine>().FirstOrDefault();
-                if (messageEngine != null) session.SetMessageEngine(messageEngine);
+                if (messageEngine != null) session.SetOutputHandler((channelId, text) => messageEngine.SendOutgoing(new EngineOutgoingMessage { ChannelId = channelId, Content = text, SentByBot = true }));
 
                 // ④ 重建输入端口 + 订阅（不重新订阅会丢消息）
                 foreach (var (portName, portSpec) in restorePorts)

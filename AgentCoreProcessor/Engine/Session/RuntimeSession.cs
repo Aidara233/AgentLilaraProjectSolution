@@ -136,7 +136,7 @@ internal partial class RuntimeSession : IRuntimeSession, IRuntimeSessionDiagnost
     // ── 会话本体提示词（来自会话类型配置 PromptFiles，换核不变）──
     private string? _sessionPrompt;
 
-    private MessageEngine? _messageEngine;
+    private Func<int, string, Task>? _sendOutput;
 
     /// <summary>图动作执行器（默认 null：图仍只观察，不发送）。</summary>
     private IGraphIntentDispatcher? _graphIntentDispatcher;
@@ -228,7 +228,7 @@ internal partial class RuntimeSession : IRuntimeSession, IRuntimeSessionDiagnost
     public void SetCurrency(ICurrencyService currency) => _currency = currency;
 
 
-    public void SetMessageEngine(MessageEngine me) => _messageEngine = me;
+    public void SetOutputHandler(Func<int, string, Task> handler) => _sendOutput = handler;
     public void SetGraphIntentDispatcher(IGraphIntentDispatcher dispatcher) => _graphIntentDispatcher = dispatcher;
     public void SetTransitionOperations(Func<string, Task> compact, Func<string, Task> escalate)
     {

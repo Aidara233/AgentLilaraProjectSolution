@@ -7,6 +7,10 @@
 
 ## 已完成
 
+### C：会话出向发送端口
+
+RuntimeSession 不再持有 MessageEngine，改注入 `Func<int,string,Task>`；创建/恢复入口绑定宿主消息引擎并包装原 EngineOutgoingMessage（ChannelId/Content/SentByBot=true）。保留首个 MessageInputPort 决定频道（首个无效时跳过）、空文本/缺处理器/缺频道跳过、原文传递与等待/异常传播。三项 fake 委托测试覆盖上述边界，完整构建 0 错误、6 条 NU1603 与既有测试宿主 SYSLIB0050；全量 852 项通过（主程序 742、邮件 52、图运行时 41、图沙箱 17）。未使用真实出向适配器，不改变连接/工具发送权限或图路由。
+
 ### C：会话上下文端口
 
 Lilara.Session 定义 ISessionContext（频道状态/挂卸、起始/连接/轮中消息构建），显式引用已有 Lilara.Data.UserMessage 与 Lilara.Llm.Message；宿主 SessionContextHost 实现端口，RuntimeSession 字段及注入入口只接受端口。既有渲染与调用顺序不变。新增 fake 上下文测试验证连接调用顺序、状态快照游标、断开卸载，无具体上下文服务；原频道连接与时钟回归继续通过。相关 10 项通过，完整构建 0 错误、6 条既有 NU1603，全量 849 项通过（主程序 739、邮件 52、图运行时 41、图沙箱 17），程序集无宿主引用/无环检查通过。未完成起始/轮中全路径 fake 驱动及 D1 全路径对拍；上下文端口仍暴露现有可变 ChannelContextState，这是当前兼容边界。

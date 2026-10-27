@@ -33,7 +33,7 @@ internal partial class RuntimeSession
 {
     private Task SendOutput(string text)
     {
-        if (_messageEngine == null || string.IsNullOrEmpty(text))
+        if (_sendOutput == null || string.IsNullOrEmpty(text))
             return Task.CompletedTask;
         int channelId = 0;
         foreach (var (_, port) in _inputs)
@@ -43,11 +43,6 @@ internal partial class RuntimeSession
         if (channelId <= 0)
             return Task.CompletedTask;
 
-        return _messageEngine.SendOutgoing(new EngineOutgoingMessage
-        {
-            ChannelId = channelId,
-            Content = text,
-            SentByBot = true
-        });
+        return _sendOutput(channelId, text);
     }
 }
