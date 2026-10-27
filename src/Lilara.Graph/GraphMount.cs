@@ -3,7 +3,7 @@ namespace AgentCoreProcessor.Engine.Graph;
 /// <summary>一条挂载记录：哪个作用域用哪张图、哪份参数。</summary>
 internal sealed class GraphMount
 {
-    /// <summary>作用域：global / channel / session。</summary>
+    /// <summary>作用域：global / channel / session / session-type（同类会话模板，每会话独立实例）。</summary>
     public string Scope { get; set; } = "channel";
 
     /// <summary>作用域键：channel 是内部频道 id；session 是 RuntimeSession.SessionId；global 为空。</summary>

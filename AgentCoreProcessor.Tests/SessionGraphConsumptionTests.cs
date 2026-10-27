@@ -57,6 +57,47 @@ public sealed class SessionGraphConsumptionTests
     }
 
     [Fact]
+    public async Task TypeMountsMergeWithOwnMountsAndKeepInstancesIsolated()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "type-graph-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var access = new WireAccessImpl(root);
+            var source = Source("placeholder").Replace("\"type\":\"read.const\",\"params\":{\"value\":\"placeholder\"}",
+                "\"type\":\"read.mount\",\"params\":{\"name\":\"sessionId\"}");
+            source = source.Replace("\"kind\":\"static\"", "\"kind\":\"static\",\"variables\":[{\"name\":\"count\",\"type\":\"int\",\"initial\":0}]")
+                .Replace("{\"id\":\"in\",\"type\":\"on.message\"}",
+                    "{\"id\":\"in\",\"type\":\"on.message\"},{\"id\":\"one\",\"type\":\"read.const\",\"params\":{\"value\":1}},{\"id\":\"write\",\"type\":\"write.variable\",\"params\":{\"name\":\"count\"}}")
+                .Replace("\"links\":[", "\"links\":[{\"from\":\"one.value\",\"to\":\"write.value\"},");
+            access.Apply(source);
+            access.Mount("""
+                {"version":1,"mounts":[
+                {"scope":"session","scopeKey":"a","classId":"user.session","instanceName":"own","order":5},
+                {"scope":"session-type","scopeKey":"channel","classId":"user.session","instanceName":"type","order":5}]}
+                """);
+            var manager = GraphManager.Open(root, true);
+            var a = manager.RunnersForSession("a", "channel");
+            var b = manager.RunnersForSession("b", "CHANNEL");
+            Assert.Equal(2, a.Count);
+            Assert.Contains("#own@", a[0].Instance.InstanceKey);
+            Assert.Single(b);
+            Assert.NotSame(a[1], b[0]);
+            Assert.Empty(manager.RunnersForSession("c", "task"));
+            var session = new RuntimeSession(new CreateSessionSpec { Type = "channel" }, "a", new[] { "basic-tools" });
+            session.SetGraphRunnerProvider(() => manager.RunnersForSession(session.SessionId, session.Type));
+            await session.ConsumeSessionGraphsAsync(new[] { (42, new UserMessage { Id = 1, Content = "hello" }, false) });
+            var history = (List<Message>)typeof(RuntimeSession).GetField("_history", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(session)!;
+            Assert.Equal(2, history.Count);
+            Assert.Equal(1, a[1].Instance.ReadVariable("count").AsInt());
+            Assert.Equal(0, b[0].Instance.ReadVariable("count").AsInt());
+            manager.ReleaseSession("a");
+            Assert.Equal(1, manager.InstanceCount);
+            Assert.Same(b[0], Assert.Single(manager.RunnersForSession("b", "channel")));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public async Task ProviderFailureDoesNotAbortSessionInput()
     {
         var session = new RuntimeSession(new CreateSessionSpec { Type = "channel" }, new[] { "basic-tools" });

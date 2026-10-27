@@ -46,6 +46,8 @@ internal sealed class GraphManager
     /// <summary>作用域键 → 挂载列表（已按 Order 排序）。同一频道可挂多张图。</summary>
     private readonly Dictionary<string, List<GraphMount>> _byChannel = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<GraphMount>> _bySession = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, List<GraphMount>> _bySessionType = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, int> _mountDeclarationOrder = new(StringComparer.Ordinal);
     private readonly List<GraphMount> _global = new();
 
     // ── 运行时订阅（与静态挂载分区：两个文件、两条重载路径、一个共享的类缓存）──
@@ -154,16 +156,17 @@ internal sealed class GraphManager
             .ToList();
     }
 
-    /// <summary>只取精确匹配 sessionId 的 session-scope 挂载；未显式挂载返回空集合，不回退共享作用域。</summary>
-    public IReadOnlyList<KeywordGraphRunner> RunnersForSession(string sessionId)
+    /// <summary>合并同类型模板挂载与本会话专属挂载；每个会话的变量和实例均隔离。</summary>
+    public IReadOnlyList<KeywordGraphRunner> RunnersForSession(string sessionId, string? sessionType = null)
     {
         EnsureFresh();
-        if (!_bySession.TryGetValue(sessionId, out var mounts) || mounts.Count == 0)
-        {
-            return Array.Empty<KeywordGraphRunner>();
-        }
+        var mounts = new List<GraphMount>();
+        if (sessionType is not null && _bySessionType.TryGetValue(sessionType, out var typed)) mounts.AddRange(typed);
+        if (_bySession.TryGetValue(sessionId, out var own)) mounts.AddRange(own);
 
         return mounts
+            .OrderBy(mount => mount.Order)
+            .ThenBy(mount => _mountDeclarationOrder[mount.InstanceKey])
             .Where(mount => _classes.ContainsKey(mount.ClassId))
             .Select(mount => GetSessionInstance(sessionId, mount))
             .ToList();
@@ -171,24 +174,31 @@ internal sealed class GraphManager
 
     private KeywordGraphRunner GetSessionInstance(string sessionId, GraphMount mount)
     {
-        if (_instances.TryGetValue(mount.InstanceKey, out var existing))
+        var key = mount.Scope == "session-type"
+            ? $"{mount.InstanceKey}@session:{sessionId.Length}:{sessionId}"
+            : mount.InstanceKey;
+        if (_instances.TryGetValue(key, out var existing))
         {
             return existing;
         }
 
-        var graph = new GraphInstance(_classes[mount.ClassId], mount.InstanceKey);
-        var runner = KeywordGraphRunner.ForInstance(graph, _active, mount.Params);
-        _instances[mount.InstanceKey] = runner;
+        var graph = new GraphInstance(_classes[mount.ClassId], key);
+        var parameters = new Dictionary<string, string>(mount.Params, StringComparer.OrdinalIgnoreCase)
+        {
+            ["sessionId"] = sessionId
+        };
+        var runner = KeywordGraphRunner.ForInstance(graph, _active, parameters);
+        _instances[key] = runner;
 
         if (!_sessionInstanceKeys.TryGetValue(sessionId, out var keys))
         {
             keys = new List<string>();
             _sessionInstanceKeys[sessionId] = keys;
         }
-        keys.Add(mount.InstanceKey);
+        keys.Add(key);
 
         Logging.Signal.Event(Logging.LogGroup.Engine, "graph.session.instance_created",
-            new { sessionId, mount.ClassId, instanceKey = mount.InstanceKey });
+            new { sessionId, mount.ClassId, instanceKey = key });
         return runner;
     }
 
@@ -567,6 +577,8 @@ internal sealed class GraphManager
             _classes.Clear();
             _byChannel.Clear();
             _bySession.Clear();
+            _bySessionType.Clear();
+            _mountDeclarationOrder.Clear();
             _sessionInstanceKeys.Clear();
             _global.Clear();
 
@@ -614,14 +626,14 @@ internal sealed class GraphManager
             }
 
             var scope = mount.Scope?.Trim().ToLowerInvariant();
-            if (scope is not ("global" or "channel" or "session"))
+            if (scope is not ("global" or "channel" or "session" or "session-type"))
             {
                 Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.mount.invalid_scope",
                     new { mount.ClassId, mount.Scope });
                 continue;
             }
 
-            if ((scope == "channel" || scope == "session") && string.IsNullOrWhiteSpace(mount.ScopeKey))
+            if ((scope == "channel" || scope == "session" || scope == "session-type") && string.IsNullOrWhiteSpace(mount.ScopeKey))
             {
                 Logging.Signal.Warn(Logging.LogGroup.Engine, "graph.mount.missing_scope_key",
                     new { mount.ClassId, mount.Scope });
@@ -651,6 +663,7 @@ internal sealed class GraphManager
                 }
                 scopeKey = channelId.ToString(System.Globalization.CultureInfo.InvariantCulture);
             }
+            if (scope == "session-type") scopeKey = scopeKey.ToLowerInvariant();
             mount.Scope = scope;
             mount.ScopeKey = scope == "global" ? null : scopeKey;
 
@@ -675,7 +688,7 @@ internal sealed class GraphManager
                 continue;
             }
 
-            if (scope == "session")
+            if (scope is "session" or "session-type")
             {
                 try { SessionGraphContract.Validate(_classes[mount.ClassId]); }
                 catch (ArgumentException ex)
@@ -694,13 +707,14 @@ internal sealed class GraphManager
                 continue;
             }
 
+            _mountDeclarationOrder[mount.InstanceKey] = _mountDeclarationOrder.Count;
             if (scope == "global")
             {
                 _global.Add(mount);
             }
-            else if (scope == "session")
+            else if (scope is "session" or "session-type")
             {
-                AddTo(_bySession, scopeKey, mount);
+                AddTo(scope == "session-type" ? _bySessionType : _bySession, scopeKey, mount);
             }
             else
             {
@@ -712,6 +726,7 @@ internal sealed class GraphManager
         Sort(_global);
         foreach (var mounts in _byChannel.Values) Sort(mounts);
         foreach (var mounts in _bySession.Values) Sort(mounts);
+        foreach (var mounts in _bySessionType.Values) Sort(mounts);
 
         Logging.Signal.Event(Logging.LogGroup.Engine, "graph.mount.loaded", new
         {

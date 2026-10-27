@@ -68,7 +68,7 @@ internal partial class SessionEngine : ISubEngine, AgentLilara.PluginSDK.Service
     /// <summary>只绑定精确匹配本会话的 session-scope 挂载（可多张）；没有挂载时为空集合。</summary>
     private void InitializeGraphMount(RuntimeSession session) =>
         session.SetGraphRunnerProvider(() =>
-            _ctx.Graphs?.RunnersForSession(session.SessionId) ?? Array.Empty<KeywordGraphRunner>());
+            _ctx.Graphs?.RunnersForSession(session.SessionId, session.Type) ?? Array.Empty<KeywordGraphRunner>());
 
     /// <summary>心智引擎（统一写入口 + 情绪 + 可信度服务）。</summary>
     public Mind.MindEngine? Mind => _ctx.Mind;

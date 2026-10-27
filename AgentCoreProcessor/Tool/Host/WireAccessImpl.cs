@@ -76,7 +76,7 @@ internal sealed class WireAccessImpl : IWireAccess
                 foreach (var mount in current.Mounts.Where(m => string.Equals(m.ClassId, graph.ClassId, StringComparison.OrdinalIgnoreCase)))
                 {
                     CheckTrigger(graph, mount.Trigger);
-                    if (mount.Scope == "session") Engine.Graph.SessionGraphContract.Validate(graph);
+                    if (mount.Scope is "session" or "session-type") Engine.Graph.SessionGraphContract.Validate(graph);
                 }
             }
             var revision = Replace(Path.Combine(_directory, graph.ClassId + ".json"), source);
@@ -107,12 +107,13 @@ internal sealed class WireAccessImpl : IWireAccess
                 CheckId(mount.ClassId);
                 mount.Scope = mount.Scope?.Trim().ToLowerInvariant() ?? "";
                 mount.Trigger = mount.Trigger?.Trim().ToLowerInvariant() ?? "";
-                if (mount.Scope is not ("channel" or "global" or "session"))
-                    throw new ArgumentException("scope must be channel, global or session");
+                if (mount.Scope is not ("channel" or "global" or "session" or "session-type"))
+                    throw new ArgumentException("scope must be channel, global, session or session-type");
                 if (mount.Scope == "global") mount.ScopeKey = null;
                 else if (string.IsNullOrWhiteSpace(mount.ScopeKey))
                     throw new ArgumentException("scopeKey is required");
                 else mount.ScopeKey = mount.ScopeKey.Trim();
+                if (mount.Scope == "session-type") mount.ScopeKey = mount.ScopeKey!.ToLowerInvariant();
                 if (mount.Scope == "channel")
                 {
                     if (!int.TryParse(mount.ScopeKey, out var channel) || channel <= 0)
@@ -124,7 +125,7 @@ internal sealed class WireAccessImpl : IWireAccess
                 var graph = GraphLoader.Load(File.ReadAllText(Resolve(mount.ClassId)));
                 if (graph.ClassId != mount.ClassId) throw new ArgumentException("classId does not match source");
                 CheckTrigger(graph, mount.Trigger);
-                if (mount.Scope == "session") Engine.Graph.SessionGraphContract.Validate(graph);
+                if (mount.Scope is "session" or "session-type") Engine.Graph.SessionGraphContract.Validate(graph);
                 if (!keys.Add(mount.InstanceKey)) throw new ArgumentException("duplicate mount instance");
             }
             var revision = Replace(Path.Combine(_directory, "mounts.json"), JsonSerializer.Serialize(document, Json));

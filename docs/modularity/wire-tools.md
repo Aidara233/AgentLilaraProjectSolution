@@ -11,7 +11,7 @@
 | wire_apply | source（完整图 JSON） | 校验后保存 Storage/Graphs/{classId}.json，返回审计版本 |
 | wire_mount | source（完整挂载表 JSON） | 验证引用图、作用域、重复实例与激活源后替换 mounts.json |
 
-wire_mount 使用完整表：先 describe，保留其他挂载再修改。`{"version":1,"mounts":[]}` 卸载全部挂载。工具可写作用域为 channel/global/session。session 图在入口与轮中消息排空后消费，必须使用 on.message；动作只支持 sink.inject 且 sessionRef 必须等于当前 sessionId，可用 read.mount 读取挂载参数。图变量可读写。其他动作尚未建立会话执行契约，挂载时拒绝。channel/global 触发源为 message/error。外部信源继续走订阅机制。
+wire_mount 使用完整表：先 describe，保留其他挂载再修改。`{"version":1,"mounts":[]}` 卸载全部挂载。工具可写作用域为 channel/global/session/session-type。session-type 的 scopeKey 为会话类型（大小写无关），类型挂载与会话专属挂载合并，按 order 和原表声明顺序执行；每个会话各自创建图实例与变量。所有会话图自动获得只读挂载参数 sessionId，可通过 read.mount 指向当前会话。session 图在入口与轮中消息排空后消费，必须使用 on.message；动作只支持 sink.inject 且 sessionRef 必须等于当前 sessionId，可用 read.mount 读取挂载参数。图变量可读写。其他动作尚未建立会话执行契约，挂载时拒绝。channel/global 触发源为 message/error。外部信源继续走订阅机制。
 
 图源码更新不会直接修改已有运行器；重新写入挂载表触发 GraphManager 原有重载路径，或重启后使用新定义。挂载重载会销毁挂载实例的变量，遵循原有 GraphManager 语义。订阅实例有独立生命周期：更新源码后，已有订阅需删除重建或重启宿主；重载挂载表不会重建订阅实例。写入口必须显式提供 version:1 与 mounts 数组，频道键规范化为正整数文本；保留文件名按大小写无关比较。替换图的激活源与现有挂载不兼容时拒绝保存，应先卸载。运行端加载手工挂载表也检查频道键与激活源。
 
