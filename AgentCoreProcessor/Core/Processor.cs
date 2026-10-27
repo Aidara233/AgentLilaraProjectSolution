@@ -53,7 +53,8 @@ namespace AgentCoreProcessor.Core
 
                 cfgName = value;
                 var cfg = ApiClientCfg.FromJson(File.ReadAllText(Path.Combine(cfgDirectoryPath, cfgName) + ".json"));
-                client = ModelClientFactory.Create(cfg);
+                client = ModelClientFactory.Create(cfg,
+                    Path.Combine(Config.PathConfig.StoragePath, "Logs", "ClaudeRequests"));
 
                 // 缓存配置和客户端
                 cfgCache[value] = (cfg, client);

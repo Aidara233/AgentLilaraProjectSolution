@@ -28,8 +28,13 @@ namespace AgentCoreProcessor.Client
         private AnthropicClient? _client;
         private readonly List<(string ToolUseId, string Result, bool IsError, List<string>? ImagePaths)> _pendingToolResults = new();
 
-        public ClaudeModelClient() : base() { }
-        public ClaudeModelClient(ApiClientCfg cfg) : base(cfg) { }
+        private readonly string _dumpDirectory;
+
+        public ClaudeModelClient() : this(new ApiClientCfg()) { }
+        public ClaudeModelClient(ApiClientCfg cfg, string? dumpDirectory = null) : base(cfg)
+        {
+            _dumpDirectory = dumpDirectory ?? Path.Combine(AppContext.BaseDirectory, "Logs", "ClaudeRequests");
+        }
 
         private AnthropicClient GetOrCreateClient()
         {
@@ -37,7 +42,7 @@ namespace AgentCoreProcessor.Client
 
             _client = new AnthropicClient(
                 new APIAuthentication(apiClientCfg.ApiKey),
-                requestInterceptor: new RequestDumpInterceptor());
+                requestInterceptor: new RequestDumpInterceptor(_dumpDirectory));
 
             // 自定义端点（中转站）
             if (!string.IsNullOrEmpty(apiClientCfg.ApiEndpoint))
@@ -508,8 +513,9 @@ namespace AgentCoreProcessor.Client
     /// </summary>
     internal class RequestDumpInterceptor : IRequestInterceptor
     {
-        private static readonly string DumpDir = Path.Combine(
-            Config.PathConfig.StoragePath, "Logs", "ClaudeRequests");
+        private readonly string DumpDir;
+
+        public RequestDumpInterceptor(string dumpDirectory) => DumpDir = dumpDirectory;
         private static int _seq;
 
         public async Task<HttpResponseMessage> InvokeAsync(

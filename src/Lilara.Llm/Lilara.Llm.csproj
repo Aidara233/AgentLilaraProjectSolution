@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>$(HostTargetFramework)</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="AgentCoreProcessor" />
+    <InternalsVisibleTo Include="AgentCoreProcessor.Tests" />
+    <ProjectReference Include="..\..\AgentLilara.PluginSDK\AgentLilara.PluginSDK.csproj" />
+    <ProjectReference Include="..\Lilara.Logging\Lilara.Logging.csproj" />
+    <PackageReference Include="Anthropic.SDK" Version="5.10.0" />
+    <PackageReference Include="OpenAI" Version="2.10.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+  </ItemGroup>
+</Project>

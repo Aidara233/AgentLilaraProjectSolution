@@ -46,6 +46,7 @@
     <ProjectReference Include="..\src\Lilara.Logging\Lilara.Logging.csproj" />
     <ProjectReference Include="..\src\Lilara.Data\Lilara.Data.csproj" />
     <ProjectReference Include="..\src\Lilara.Context\Lilara.Context.csproj" />
+    <ProjectReference Include="..\src\Lilara.Llm\Lilara.Llm.csproj" />
   </ItemGroup>
 
   <ItemGroup>
