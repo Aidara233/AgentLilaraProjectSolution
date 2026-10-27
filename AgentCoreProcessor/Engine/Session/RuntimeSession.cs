@@ -590,41 +590,8 @@ internal partial class RuntimeSession : IRuntimeSession
 
                 agentRound++;
 
-                // 中途注入：每轮推理前检查端口是否有新消息，有就立即注入上下文（不阻塞等待）
-                {
-                    var midDrain = DrainInputPortsRaw(CancellationToken.None);
-                    if (midDrain.Count > 0)
-                    {
-                        List<Message> midNew = new();
-                        if (_host != null)
-                        {
-                            var cd = midDrain.Where(d => d.channelId > 0).ToList();
-                            var sd = midDrain.Where(d => d.channelId <= 0).ToList();
-                            if (cd.Count > 0)
-                            {
-                                var built = await _host.BuildRoundAsync(cd);
-                                midNew.AddRange(built);
-                                _history.AddRange(built);
-                            }
-                            foreach (var grp in cd.GroupBy(d => d.channelId))
-                                AdvanceChannelCursor(grp.Key, grp.Max(d => d.msg.Id));
-                            foreach (var (_, um, _) in sd)
-                            {
-                                var m = new Message { Role = "user", Content = um.Content };
-                                midNew.Add(m);
-                                _history.Add(m);
-                            }
-                        }
-                        else
-                        {
-                            var fallback = midDrain.Select(d => new Message { Role = "user", Content = (d.isMention ? "⚠️ [被@提及]\n" : "") + d.msg.Content }).ToList();
-                            midNew.AddRange(fallback);
-                            _history.AddRange(fallback);
-                        }
-                        if (midNew.Count > 0)
-                            await PersistRoundAsync(midNew);
-                    }
-                }
+                // 中途注入（B-4g：从主循环抽出）
+                await DrainMidRoundAsync();
 
                 // 每轮推理一条 span，承载模型调用 + 工具执行的耗时与结果
                 // ⚠️ span 的 using 覆盖"模型调用 + 工具执行"两段，所以它留在主循环：
@@ -882,6 +849,53 @@ internal partial class RuntimeSession : IRuntimeSession
                 new { sessionId = SessionId, round = agentRound, error = ex.Message });
             _history.Add(new Message { Role = "system", Content = $"[错误] 模型调用失败: {ex.Message}" });
             return null;
+        }
+    }
+    /// <summary>
+    /// 每轮推理前的**中途注入**（B-4g，从 <see cref="RunAsync"/> 抽出）：检查端口有没有新消息，有就立刻并进上下文。
+    ///
+    /// <para>⚠️ 它与"入口排空"是**两个不同时序的调用点**（H3）：入口那一次发生在突发开始、等激活之后；
+    /// 这一次发生在**每一轮推理之前**且**不阻塞**（<c>CancellationToken.None</c>）。
+    /// 两者不能合并成一个方法——合并会丢掉"中途插入的话能不能被本轮看到"这个语义。</para>
+    ///
+    /// <para>⚠️ 游标推进（<c>AdvanceChannelCursor</c>）在这里也做一次：中途注入的消息同样算"已消费"，
+    /// 否则下一轮会重复注入同一条。</para>
+    /// </summary>
+    private async Task DrainMidRoundAsync()
+    {
+                {
+                    var midDrain = DrainInputPortsRaw(CancellationToken.None);
+                    if (midDrain.Count > 0)
+                    {
+                        List<Message> midNew = new();
+                        if (_host != null)
+                        {
+                            var cd = midDrain.Where(d => d.channelId > 0).ToList();
+                            var sd = midDrain.Where(d => d.channelId <= 0).ToList();
+                            if (cd.Count > 0)
+                            {
+                                var built = await _host.BuildRoundAsync(cd);
+                                midNew.AddRange(built);
+                                _history.AddRange(built);
+                            }
+                            foreach (var grp in cd.GroupBy(d => d.channelId))
+                                AdvanceChannelCursor(grp.Key, grp.Max(d => d.msg.Id));
+                            foreach (var (_, um, _) in sd)
+                            {
+                                var m = new Message { Role = "user", Content = um.Content };
+                                midNew.Add(m);
+                                _history.Add(m);
+                            }
+                        }
+                        else
+                        {
+                            var fallback = midDrain.Select(d => new Message { Role = "user", Content = (d.isMention ? "⚠️ [被@提及]\n" : "") + d.msg.Content }).ToList();
+                            midNew.AddRange(fallback);
+                            _history.AddRange(fallback);
+                        }
+                        if (midNew.Count > 0)
+                            await PersistRoundAsync(midNew);
+                    }
         }
     }
 }
