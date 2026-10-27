@@ -95,4 +95,24 @@ internal partial class RuntimeSession
             _activeTools.Add(_switchCoreTool.Name);
         }
     }
+
+    // ── 组件管理 ──
+    // 当前 _componentHost 在 InitComponents 时一次性构建，运行期无法增删组件实例并重建工具表。
+    // 真正实现需要：实例化新组件 → 注册其工具到 _componentHost → RefreshToolList。
+    // 在落地前抛异常而非静默改 _componentIds，避免调用方误以为组件已生效。
+    public void EnableComponent(string componentId)
+        => throw new NotSupportedException("运行时动态启用组件尚未实现，组件须在 CreateSessionSpec.ComponentIds 中预先声明");
+
+    public void DisableComponent(string componentId)
+        => throw new NotSupportedException("运行时动态卸载组件尚未实现，组件须在 CreateSessionSpec.ComponentIds 中预先声明");
+
+    /// <summary>运行时翻转已装载组件实例的启用状态（仅对已在组件清单中的实例生效；新增组件须预先声明，不即时装载）。</summary>
+    internal async Task ToggleComponentAsync(string name, bool enabled)
+    {
+        if (_componentHost == null) return;
+        if (enabled)
+            await _componentHost.EnableComponentAsync(name);
+        else
+            await _componentHost.DisableComponentAsync(name);
+    }
 }
