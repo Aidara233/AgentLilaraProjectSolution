@@ -68,14 +68,10 @@ namespace AgentCoreProcessor.Engine
             }
 
             // ---- 2. 命令前缀解析 ----
-            if (!content.StartsWith(config.Prefix)) return false;
-
-            var body = content[config.Prefix.Length..].TrimStart();
-            var spaceIdx = body.IndexOf(' ');
-            var name = spaceIdx < 0 ? body : body[..spaceIdx];
-            var args = spaceIdx < 0 ? "" : body[(spaceIdx + 1)..].Trim();
-
-            if (string.IsNullOrEmpty(name)) return false;
+            var parsed = CommandSyntax.Parse(content, config.Prefix);
+            if (parsed is null) return false;
+            var name = parsed.Name;
+            var args = parsed.Args;
 
             var command = CommandRegistry.Get(name);
             if (command == null)
@@ -197,18 +193,7 @@ namespace AgentCoreProcessor.Engine
             }
         }
 
-        private static string FormatStepPrompt(CommandStep step)
-        {
-            var sb = new StringBuilder();
-            sb.Append(step.Prompt);
-            if (step.Options != null && step.Options.Count > 0)
-            {
-                sb.AppendLine();
-                sb.Append("可选: ");
-                sb.Append(string.Join(" / ", step.Options));
-            }
-            return sb.ToString();
-        }
+        private static string FormatStepPrompt(CommandStep step) => CommandSyntax.FormatStepPrompt(step);
 
         public ISubEngine Create(ISystemContext ctx)
             => throw new NotSupportedException("CommandSpawnCheck 不创建引擎实例");

@@ -456,3 +456,7 @@ FileToolBase原文迁入PluginSDK并保留FileToolKit.Shared命名空间；旧�
 ### 连续拍日志台账隔离验证
 
 GraphFlowDatabaseTests新增两项真实临时SQLite回归：第一拍执行即时汇并产生通知意图，第二拍求值抛错时日志fired/outcomes/intents均为空；动态图持续使能的第二拍记录counter/notify为suppressed，即时汇仅执行一次。按traceId查询两拍记录，不依赖时间排序。定向日志测试6项通过，diff检查通过。本次仅增加测试，未重复完整解决方案测试；未验证真实模型/适配器或UI。
+
+### C1：Commands 解析与提示规则首切
+
+CommandConfig及CommandResult/CommandStep纯类型进入Lilara.Commands，CommandSyntax提取前缀解析和步骤提示渲染；CommandSpawnCheck委托纯方法，交互会话拦截优先级保持，ICommand/Context/Session仍留宿主。保留只按空格拆分、Trim规则、当前文化StartsWith语义、选项声明顺序与平台换行。新增16项解析/文化/提示及配置边界回归。完整sln离线还原与构建成功，690项测试通过（主程序580、邮件52、GraphRuntime41、沙箱17），diff检查通过。Commands仅部分提取；未运行真实命令路由/适配器或模型冒烟，C/D和全面日志迁移仍未完成。
